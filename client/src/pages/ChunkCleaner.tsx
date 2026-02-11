@@ -232,26 +232,47 @@ export default function ChunkCleaner() {
 
   // ─── Fit view to show all chunks ───
   const fitView = useCallback(() => {
-    if (!bounds || canvasSize.width === 0 || canvasSize.height === 0) return
+    if (!bounds) return
+
+    // Use canvasSize if available, otherwise read container dimensions directly
+    let W = canvasSize.width
+    let H = canvasSize.height
+    if (W === 0 || H === 0) {
+      const container = containerRef.current
+      if (!container) return
+      const rect = container.getBoundingClientRect()
+      W = Math.floor(rect.width)
+      H = Math.floor(rect.height)
+      if (W === 0 || H === 0) return
+      setCanvasSize({ width: W, height: H })
+    }
+
     const rangeX = bounds.maxX - bounds.minX + 1
     const rangeY = bounds.maxY - bounds.minY + 1
     const padding = 40
     const fitScale = Math.min(
-      (canvasSize.width - padding * 2) / rangeX,
-      (canvasSize.height - padding * 2) / rangeY
+      (W - padding * 2) / rangeX,
+      (H - padding * 2) / rangeY
     )
     const newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, fitScale))
     const centerX = (bounds.minX + bounds.maxX + 1) / 2
     const centerY = (bounds.minY + bounds.maxY + 1) / 2
     setScale(newScale)
     setOffset({
-      x: canvasSize.width / 2 - centerX * newScale,
-      y: canvasSize.height / 2 - centerY * newScale
+      x: W / 2 - centerX * newScale,
+      y: H / 2 - centerY * newScale
     })
   }, [bounds, canvasSize])
 
   // Auto-fit when chunks load or canvas resizes
   useEffect(() => { fitView() }, [fitView])
+
+  // Safety net: re-fit after a frame when canvas container appears
+  useEffect(() => {
+    if (!bounds || !hasCanvas) return
+    const id = requestAnimationFrame(() => fitView())
+    return () => cancelAnimationFrame(id)
+  }, [bounds, hasCanvas, fitView])
 
   // ─── Canvas resize observer ───
   useEffect(() => {
