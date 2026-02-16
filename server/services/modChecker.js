@@ -4,6 +4,7 @@ import { getTrackedMods, updateModTimestamp, logServerEvent, getSetting, setSett
 import fs from 'fs';
 import path from 'path';
 import { EventEmitter } from 'events';
+import { sanitizeError } from '../utils/sanitize.js';
 
 export class ModChecker extends EventEmitter {
   constructor() {
@@ -511,7 +512,7 @@ export class ModChecker extends EventEmitter {
     } catch (error) {
       log.error(`Restart failed: ${error.message}`);
       if (this.io) {
-        this.io.emit('mods:restart_failed', { error: error.message });
+        this.io.emit('mods:restart_failed', { error: sanitizeError(error.message) });
       }
     }
   }

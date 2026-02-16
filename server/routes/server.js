@@ -5,6 +5,7 @@ import fs from 'fs';
 import { createLogger } from '../utils/logger.js';
 const log = createLogger('API:Server');
 import { logServerEvent, setSetting, getSetting, getActiveServer } from '../database/init.js';
+import { sanitizeError } from '../utils/sanitize.js';
 
 const router = express.Router();
 
@@ -32,6 +33,11 @@ async function ensureRconConfigured() {
       return false;
     }
     
+    if (!rconPassword) {
+      log.debug('ensureRconConfigured: No RCON password configured');
+      return false;
+    }
+    
     const iniPath = path.join(serverConfigPath, `${serverName}.ini`);
     
     if (!fs.existsSync(iniPath)) {
@@ -52,11 +58,12 @@ async function ensureRconConfigured() {
     // Update RCON settings in the .ini file
     log.info(`Auto-configuring RCON in ${iniPath}`);
     
-    // Update RCONPassword
+    // Update RCONPassword (sanitize to prevent INI injection via newlines)
+    const safePassword = sanitizeIniValue(rconPassword);
     if (content.includes('RCONPassword=')) {
-      content = content.replace(/RCONPassword=.*/g, () => `RCONPassword=${rconPassword}`);
+      content = content.replace(/RCONPassword=.*/g, () => `RCONPassword=${safePassword}`);
     } else {
-      content += `\nRCONPassword=${rconPassword}`;
+      content += `\nRCONPassword=${safePassword}`;
     }
     
     // Update RCONPort
@@ -119,6 +126,11 @@ function isValidPath(inputPath) {
   // Must be absolute path on Windows
   if (!path.isAbsolute(normalized)) return false;
   return true;
+}
+
+// Security: Strip newlines from values before writing to INI files to prevent injection
+function sanitizeIniValue(value) {
+  return String(value).replace(/[\r\n]/g, '');
 }
 
 // Security: Validate integer in range
@@ -224,7 +236,7 @@ router.get('/status', async (req, res) => {
     });
   } catch (error) {
     log.error(`Failed to get server status: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -372,7 +384,7 @@ router.post('/start', async (req, res) => {
     res.json(result);
   } catch (error) {
     log.error(`Failed to start server: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -399,7 +411,7 @@ router.post('/stop', async (req, res) => {
     res.json(result);
   } catch (error) {
     log.error(`Failed to stop server: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -415,7 +427,7 @@ router.post('/force-stop', async (req, res) => {
     res.json(result);
   } catch (error) {
     log.error(`Failed to force stop server: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -423,7 +435,13 @@ router.post('/force-stop', async (req, res) => {
 router.post('/restart', async (req, res) => {
   try {
     const scheduler = req.app.get('scheduler');
-    const warningMinutes = typeof req.body.warningMinutes === 'number' ? req.body.warningMinutes : 5;
+    // Parse and clamp warningMinutes to 0-60 (matches /api/scheduler/restart-now)
+    let warningMinutes = parseInt(req.body.warningMinutes, 10);
+    if (isNaN(warningMinutes) || warningMinutes < 0) {
+      warningMinutes = 5; // Default
+    } else if (warningMinutes > 60) {
+      warningMinutes = 60; // Cap at 60 minutes
+    }
     
     // Run restart in background with specified warning time
     scheduler.performRestart(warningMinutes).catch(err => {
@@ -433,7 +451,7 @@ router.post('/restart', async (req, res) => {
     res.json({ success: true, message: warningMinutes > 0 ? `Restart initiated with ${warningMinutes} minute warning` : 'Immediate restart initiated' });
   } catch (error) {
     log.error(`Failed to restart server: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -445,7 +463,7 @@ router.post('/save', async (req, res) => {
     res.json(result);
   } catch (error) {
     log.error(`Failed to save world: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -467,7 +485,7 @@ router.post('/message', async (req, res) => {
     res.json(result);
   } catch (error) {
     log.error(`Failed to send message: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -479,7 +497,7 @@ router.post('/weather/start-rain', async (req, res) => {
     const result = await rconService.startRain(intensity);
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -489,7 +507,7 @@ router.post('/weather/stop-rain', async (req, res) => {
     const result = await rconService.stopRain();
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -500,7 +518,7 @@ router.post('/weather/start-storm', async (req, res) => {
     const result = await rconService.startStorm(duration);
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -510,7 +528,7 @@ router.post('/weather/stop', async (req, res) => {
     const result = await rconService.stopWeather();
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -521,7 +539,7 @@ router.post('/events/chopper', async (req, res) => {
     const result = await rconService.triggerChopper();
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -531,7 +549,7 @@ router.post('/events/gunshot', async (req, res) => {
     const result = await rconService.triggerGunshot();
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -542,7 +560,7 @@ router.post('/events/lightning', async (req, res) => {
     const result = await rconService.triggerLightning(username);
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -553,7 +571,7 @@ router.post('/events/thunder', async (req, res) => {
     const result = await rconService.triggerThunder(username);
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -564,7 +582,7 @@ router.post('/events/horde', async (req, res) => {
     const result = await rconService.createHorde(count || 50, username);
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -674,7 +692,7 @@ router.get('/branches', async (req, res) => {
     res.json({ 
       branches: FALLBACK_BRANCHES,
       source: 'fallback',
-      message: `Error: ${error.message}`
+      message: `Error: ${sanitizeError(error.message)}`
     });
   }
 });
@@ -1030,7 +1048,7 @@ router.post('/install', async (req, res) => {
           serverConfigPath,
           branch: selectedBranch,
           rconPort: safeRconPort,
-          rconPassword,
+          hasRconPassword: !!rconPassword,
           serverPort: safeServerPort,
           minMemory: safeMinMemory,
           maxMemory: safeMaxMemory
@@ -1055,7 +1073,7 @@ router.post('/install', async (req, res) => {
       log.error(`SteamCMD error: ${error.message}`);
       io.emit('install:complete', { 
         success: false, 
-        message: `Failed to run SteamCMD: ${error.message}` 
+        message: `Failed to run SteamCMD: ${sanitizeError(error.message)}` 
       });
     });
     
@@ -1069,7 +1087,7 @@ router.post('/install', async (req, res) => {
     
   } catch (error) {
     log.error(`Installation error: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -1229,7 +1247,7 @@ router.post('/quick-setup', async (req, res) => {
       serverConfigPath,
       batchFile: `StartServer_${serverName}.bat`,
       rconPort: safeRconPort,
-      rconPassword,
+      hasRconPassword: !!rconPassword,
       serverPort: safeServerPort,
       minMemory: safeMinMemory,
       maxMemory: safeMaxMemory,
@@ -1238,7 +1256,7 @@ router.post('/quick-setup', async (req, res) => {
     
   } catch (error) {
     log.error(`Quick setup error: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -1271,11 +1289,12 @@ router.post('/configure-rcon', async (req, res) => {
     // Read and update the ini file
     let content = fs.readFileSync(iniPath, 'utf-8');
     
-    // Update RCONPassword
+    // Update RCONPassword (sanitize to prevent INI injection via newlines)
+    const safePassword = sanitizeIniValue(rconPassword);
     if (content.includes('RCONPassword=')) {
-      content = content.replace(/RCONPassword=.*/g, () => `RCONPassword=${rconPassword}`);
+      content = content.replace(/RCONPassword=.*/g, () => `RCONPassword=${safePassword}`);
     } else {
-      content += `\nRCONPassword=${rconPassword}`;
+      content += `\nRCONPassword=${safePassword}`;
     }
     
     // Update RCONPort
@@ -1300,7 +1319,7 @@ router.post('/configure-rcon', async (req, res) => {
     });
   } catch (error) {
     log.error(`Failed to configure RCON: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -1370,7 +1389,7 @@ router.post('/configure-network', async (req, res) => {
     });
   } catch (error) {
     log.error(`Failed to configure network settings: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -1383,7 +1402,7 @@ router.post('/alarm', async (req, res) => {
     res.json(result);
   } catch (error) {
     log.error(`Failed to trigger alarm: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -1396,7 +1415,7 @@ router.post('/removezombies', async (req, res) => {
     res.json(result);
   } catch (error) {
     log.error(`Failed to remove zombies: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -1410,8 +1429,9 @@ router.post('/reloadlua', async (req, res) => {
       return res.status(400).json({ error: 'Filename is required' });
     }
     
-    // Validate filename - allow alphanumeric, underscores, dots, and slashes
-    if (!/^[a-zA-Z0-9_./\\-]+\.lua$/.test(filename)) {
+    // Validate filename - allow alphanumeric, underscores, dots, and forward slashes only
+    // Block backslashes and '..' to prevent path traversal
+    if (!/^[a-zA-Z0-9_/.\-]+\.lua$/.test(filename) || filename.includes('..')) {
       return res.status(400).json({ error: 'Invalid filename format' });
     }
     
@@ -1420,7 +1440,7 @@ router.post('/reloadlua', async (req, res) => {
     res.json(result);
   } catch (error) {
     log.error(`Failed to reload Lua: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -1456,7 +1476,7 @@ router.post('/log', async (req, res) => {
     res.json(result);
   } catch (error) {
     log.error(`Failed to set log level: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -1481,7 +1501,7 @@ router.post('/stats', async (req, res) => {
     res.json(result);
   } catch (error) {
     log.error(`Failed to set stats: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -1493,7 +1513,7 @@ router.post('/releasesafehouse', async (req, res) => {
     res.json(result);
   } catch (error) {
     log.error(`Failed to release safehouse: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -1650,7 +1670,7 @@ router.post('/steam-update', async (req, res) => {
       
       io.emit('steam:complete', { 
         success: false, 
-        message: `Failed to run SteamCMD: ${error.message}` 
+        message: `Failed to run SteamCMD: ${sanitizeError(error.message)}` 
       });
       log.error(`SteamCMD error: ${error.message}`);
     });
@@ -1662,7 +1682,7 @@ router.post('/steam-update', async (req, res) => {
     
   } catch (error) {
     log.error(`Steam update failed: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -1779,7 +1799,7 @@ router.post('/steamcmd/download', async (req, res) => {
         steamcmd.on('error', (error) => {
           io.emit('steamcmd:status', { 
             status: 'error', 
-            message: `Failed to run SteamCMD: ${error.message}` 
+            message: `Failed to run SteamCMD: ${sanitizeError(error.message)}` 
           });
           log.error(`SteamCMD run error: ${error.message}`);
         });
@@ -1787,7 +1807,7 @@ router.post('/steamcmd/download', async (req, res) => {
       } catch (extractError) {
         io.emit('steamcmd:status', { 
           status: 'error', 
-          message: `Extraction failed: ${extractError.message}` 
+          message: `Extraction failed: ${sanitizeError(extractError.message)}` 
         });
         log.error(`SteamCMD extraction failed: ${extractError.message}`);
       }
@@ -1797,7 +1817,7 @@ router.post('/steamcmd/download', async (req, res) => {
     
   } catch (error) {
     log.error(`SteamCMD download failed: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -1821,7 +1841,7 @@ router.get('/steamcmd/check', async (req, res) => {
     });
     
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -1840,8 +1860,15 @@ router.post('/delete-files', async (req, res) => {
     }
     
     // Check for known PZ server markers to prevent accidental deletion of wrong folders
-    const pzMarkers = ['ProjectZomboid64.json', 'StartServer64.bat', 'java', 'natives'];
-    const hasPzFiles = pzMarkers.some(marker => fs.existsSync(path.join(deletePath, marker)));
+    // Require one of the PZ-specific files (not just generic dirs like 'java')
+    const pzSpecificMarkers = ['ProjectZomboid64.json', 'ProjectZomboid32.json', 'StartServer64.bat', 'StartServer32.bat'];
+    const hasPzFiles = pzSpecificMarkers.some(marker => fs.existsSync(path.join(deletePath, marker)));
+    
+    // Also reject paths containing '..' after normalization
+    const normalizedDelete = path.normalize(deletePath);
+    if (normalizedDelete.includes('..')) {
+      return res.status(400).json({ error: 'Invalid path' });
+    }
     
     if (!hasPzFiles) {
       return res.status(400).json({ 
@@ -1859,7 +1886,7 @@ router.post('/delete-files', async (req, res) => {
     
   } catch (error) {
     log.error(`Failed to delete server files: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -1868,6 +1895,11 @@ router.post('/browse-folder', async (req, res) => {
   try {
     const { initialPath, description = 'Select a folder' } = req.body;
     const safePath = initialPath && isValidPath(initialPath) ? initialPath.replace(/'/g, "''") : '';
+    
+    // Strict validation for description — alphanumeric, spaces, and basic punctuation only
+    if (typeof description !== 'string' || description.length > 100 || !/^[a-zA-Z0-9 _.\-:()]+$/.test(description)) {
+      return res.status(400).json({ error: 'Invalid description parameter' });
+    }
     const safeDesc = description.replace(/'/g, "''");
     
     // Use modern Windows Vista+ folder picker via COM (Shell.Application)
@@ -1931,7 +1963,7 @@ if ($result -eq 'OK') {
     
   } catch (error) {
     log.error(`Browse folder failed: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -2045,15 +2077,29 @@ router.get('/console-log', async (req, res) => {
     
     // Read last N lines (default 500, max 2000)
     const maxLines = Math.min(parseInt(req.query.lines) || 500, 2000);
-    const content = fs.readFileSync(consoleLogPath, 'utf-8');
+    
+    // Read only the tail of the file to prevent DoS with large log files
+    const stats = fs.statSync(consoleLogPath);
+    const MAX_READ_BYTES = 5 * 1024 * 1024; // 5MB cap
+    let content;
+    if (stats.size > MAX_READ_BYTES) {
+      const fd = fs.openSync(consoleLogPath, 'r');
+      const readStart = stats.size - MAX_READ_BYTES;
+      const buffer = Buffer.alloc(MAX_READ_BYTES);
+      fs.readSync(fd, buffer, 0, MAX_READ_BYTES, readStart);
+      fs.closeSync(fd);
+      // Skip first partial line after seeking
+      const raw = buffer.toString('utf-8');
+      const firstNewline = raw.indexOf('\n');
+      content = firstNewline >= 0 ? raw.slice(firstNewline + 1) : raw;
+    } else {
+      content = fs.readFileSync(consoleLogPath, 'utf-8');
+    }
     const allLines = content.split('\n');
     
     // Apply filtering
     const filteredLines = filterConsoleLogLines(allLines, filterLevel);
     const lines = filteredLines.slice(-maxLines);
-    
-    // Get file stats for change detection
-    const stats = fs.statSync(consoleLogPath);
     
     res.json({
       success: true,
@@ -2069,7 +2115,7 @@ router.get('/console-log', async (req, res) => {
     });
   } catch (error) {
     log.error(`Failed to read server console log: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -2143,7 +2189,7 @@ router.get('/console-log/stream', async (req, res) => {
     });
   } catch (error) {
     log.error(`Failed to stream server console log: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -2168,7 +2214,7 @@ router.post('/console-log/clear', async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     log.error(`Failed to clear server console log: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -2192,7 +2238,7 @@ router.get('/update-check', async (req, res) => {
     }
   } catch (error) {
     log.error(`Update check failed: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -2206,7 +2252,7 @@ router.get('/update-check/status', async (req, res) => {
 
     res.json(updateChecker.getStatus());
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -2227,7 +2273,7 @@ router.post('/update-check/interval', async (req, res) => {
     res.json({ success: true, intervalMinutes: minutes });
   } catch (error) {
     log.error(`Failed to set update check interval: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 

@@ -69,6 +69,9 @@
     - Fixed snow to auto-enable rain
 ]]
 
+-- Forward declaration (referenced in log() before definition below)
+local json
+
 local PanelBridge = {
     VERSION = "1.4.3",
     CHECK_INTERVAL = 1000, -- milliseconds
@@ -76,6 +79,7 @@ local PanelBridge = {
     lastStatusUpdate = 0,
     STATUS_INTERVAL = 3000, -- status update every 3 seconds (faster for detection)
     processedIds = {},
+    processedIdCount = 0,
     basePath = nil,
     initialized = false,
     
@@ -96,7 +100,10 @@ local PanelBridge = {
         errors = {},
         lastError = nil,
         startTime = nil
-    }
+    },
+    
+    -- Pending results buffer (avoids read-modify-write race on results.json)
+    pendingResults = {},
 }
 
 -- ============================================
@@ -110,6 +117,9 @@ local LOG_LEVEL = {
     WARN = 3,
     ERROR = 4
 }
+
+-- Lua 5.1/5.2 compatibility
+local unpack = unpack or table.unpack
 
 -- Internal logging function
 function PanelBridge.log(level, message, context)
@@ -128,7 +138,7 @@ function PanelBridge.log(level, message, context)
     
     -- Add to ring buffer
     table.insert(PanelBridge.debugLog, entry)
-    while #PanelBridge.debugLog > PanelBridge.MAX_DEBUG_ENTRIES do
+    if #PanelBridge.debugLog > PanelBridge.MAX_DEBUG_ENTRIES then
         table.remove(PanelBridge.debugLog, 1)
     end
     
@@ -262,7 +272,7 @@ end
 -- ============================================
 -- JSON LIBRARY (embedded for reliability)
 -- ============================================
-local json = {}
+json = {}
 
 local function kind_of(obj)
     if type(obj) ~= 'table' then return type(obj) end
@@ -550,23 +560,43 @@ end
 -- ============================================
 
 function PanelBridge.sendResult(id, success, data, errorMsg)
-    local results = PanelBridge.readJSON("results.json") or { results = {} }
-    if not results.results then results.results = {} end
-    
-    table.insert(results.results, {
+    -- Buffer results in memory; they're flushed to disk once per tick in flushResults()
+    -- This avoids the read-modify-write race where the Node side reads results.json
+    -- between our read and our write, or two sendResult calls in the same tick
+    -- overwrite each other.
+    table.insert(PanelBridge.pendingResults, {
         id = id,
         success = success,
         data = data,
         error = errorMsg,
         timestamp = getTimestampMs()
     })
+end
+
+function PanelBridge.flushResults()
+    if #PanelBridge.pendingResults == 0 then return end
+    
+    -- Read existing results from disk (Node may not have consumed them yet)
+    local results = PanelBridge.readJSON("results.json") or { results = {} }
+    if not results.results then results.results = {} end
+    
+    -- Append all buffered results at once
+    for _, r in ipairs(PanelBridge.pendingResults) do
+        table.insert(results.results, r)
+    end
     
     -- Keep only last 50 results
     while #results.results > 50 do
         table.remove(results.results, 1)
     end
     
-    PanelBridge.writeJSON("results.json", results)
+    -- Write BEFORE clearing the buffer so results aren't lost if write fails
+    local ok = PanelBridge.writeJSON("results.json", results)
+    if ok then
+        PanelBridge.pendingResults = {}
+    else
+        PanelBridge.warn("flushResults write failed, will retry next tick")
+    end
 end
 
 -- ============================================
@@ -720,18 +750,24 @@ handlers.getServerInfo = function(args)
         for i = 0, onlinePlayers:size() - 1 do
             local player = onlinePlayers:get(i)
             if player then
-                local health = 100
-                local bodyDamage = player:getBodyDamage()
-                if bodyDamage then
-                    health = bodyDamage:getOverallBodyHealth() or 100
+                -- Wrap each player in pcall so one bad player doesn't break the whole list
+                local ok, playerData = pcall(function()
+                    local health = 100
+                    local bodyDamage = player:getBodyDamage()
+                    if bodyDamage then
+                        health = bodyDamage:getOverallBodyHealth() or 100
+                    end
+                    return {
+                        name = player:getUsername() or "Unknown",
+                        x = math.floor(player:getX() or 0),
+                        y = math.floor(player:getY() or 0),
+                        z = math.floor(player:getZ() or 0),
+                        health = health
+                    }
+                end)
+                if ok and playerData then
+                    table.insert(players, playerData)
                 end
-                table.insert(players, {
-                    name = player:getUsername() or "Unknown",
-                    x = math.floor(player:getX() or 0),
-                    y = math.floor(player:getY() or 0),
-                    z = math.floor(player:getZ() or 0),
-                    health = health
-                })
             end
         end
     end
@@ -740,12 +776,22 @@ handlers.getServerInfo = function(args)
     local gameTimeData = nil
     if gameTime then
         pcall(function()
+            -- Use getHour()/getMinutes() on B42, fall back to getTimeOfDay() on B41
+            local hour, minute
+            if gameTime.getHour then
+                hour = gameTime:getHour()
+                minute = gameTime.getMinutes and gameTime:getMinutes() or 0
+            else
+                local tod = gameTime:getTimeOfDay()
+                hour = math.floor(tod)
+                minute = math.floor((tod - hour) * 60)
+            end
             gameTimeData = {
                 day = gameTime:getDay(),
                 month = gameTime:getMonth() + 1, -- Lua 1-indexed
                 year = gameTime:getYear(),
-                hour = gameTime:getHour(),
-                minute = gameTime:getMinutes()
+                hour = hour,
+                minute = minute
             }
         end)
     end
@@ -1350,7 +1396,17 @@ handlers.resetClimateOverrides = function(args)
         end
     end
     
-    return true, { message = "Climate overrides reset", floatsReset = resetCount }
+    -- Also reset ClimateBool overrides (e.g. BOOL_IS_SNOW = 0 set by setSnow)
+    local boolsReset = 0
+    pcall(function()
+        local snowBool = climate:getClimateBool(0) -- BOOL_IS_SNOW
+        if snowBool and snowBool.setEnableAdmin then
+            snowBool:setEnableAdmin(false)
+            boolsReset = boolsReset + 1
+        end
+    end)
+    
+    return true, { message = "Climate overrides reset", floatsReset = resetCount, boolsReset = boolsReset }
 end
 
 -- Get climate float IDs and their current values
@@ -1585,7 +1641,7 @@ end
 local function safeGetValue(obj, methodName, default)
     if obj and obj[methodName] then
         local success, result = pcall(function() return obj[methodName](obj) end)
-        if success then
+        if success and result ~= nil then
             return result
         end
     end
@@ -1668,6 +1724,12 @@ handlers.setGameTime = function(args)
         end
     end
     
+    -- If nothing was updated, report as failure so the caller doesn't
+    -- mistakenly think the operation succeeded.
+    if next(updated) == nil and (args.hour ~= nil or args.day ~= nil or args.month ~= nil or args.year ~= nil) then
+        return false, nil, "Failed to update any time fields"
+    end
+    
     return true, { message = "Game time updated", updated = updated }
 end
 
@@ -1708,48 +1770,56 @@ handlers.getPlayerDetails = function(args)
         return false, nil, "Player not found: " .. username
     end
     
-    local stats = player:getStats()
-    local bodyDamage = player:getBodyDamage()
-    
-    local playerData = {
-        username = player:getUsername(),
-        displayName = player:getDisplayName(),
-        x = player:getX(),
-        y = player:getY(),
-        z = player:getZ(),
-        accessLevel = player:getAccessLevel(),
-        isAlive = player:isAlive(),
-        isAsleep = player:isAsleep(),
-        isSneaking = player:isSneaking(),
-        isRunning = player:isRunning(),
-        stats = {},
-        health = {}
-    }
-    
-    -- Get stats if available
-    if stats then
-        playerData.stats = {
-            hunger = stats:getHunger(),
-            thirst = stats:getThirst(),
-            fatigue = stats:getFatigue(),
-            stress = stats:getStress(),
-            boredom = stats:getBoredom(),
-            unhappiness = stats:getUnhappyness(),
-            pain = stats:getPain(),
-            endurance = stats:getEndurance()
+    local ok, playerData = pcall(function()
+        local stats = player:getStats()
+        local bodyDamage = player:getBodyDamage()
+        
+        local pd = {
+            username = player:getUsername(),
+            displayName = player:getDisplayName(),
+            x = player:getX(),
+            y = player:getY(),
+            z = player:getZ(),
+            accessLevel = player:getAccessLevel(),
+            isAlive = player:isAlive(),
+            isAsleep = player:isAsleep(),
+            isSneaking = player:isSneaking(),
+            isRunning = player:isRunning(),
+            stats = {},
+            health = {}
         }
-    end
+        
+        -- Get stats if available
+        if stats then
+            pd.stats = {
+                hunger = stats:getHunger(),
+                thirst = stats:getThirst(),
+                fatigue = stats:getFatigue(),
+                stress = stats:getStress(),
+                boredom = stats:getBoredom(),
+                unhappiness = stats:getUnhappyness(),
+                pain = stats:getPain(),
+                endurance = stats:getEndurance()
+            }
+        end
+        
+        -- Get health if available
+        if bodyDamage then
+            pd.health = {
+                overallBodyHealth = bodyDamage:getOverallBodyHealth(),
+                isInfected = bodyDamage:IsInfected(),
+                isBleeding = bodyDamage:getIsBleeding(),
+                health = bodyDamage:getHealth(),
+                temperature = bodyDamage:getTemperature(),
+                wetness = bodyDamage:getWetness()
+            }
+        end
+        
+        return pd
+    end)
     
-    -- Get health if available
-    if bodyDamage then
-        playerData.health = {
-            overallBodyHealth = bodyDamage:getOverallBodyHealth(),
-            isInfected = bodyDamage:IsInfected(),
-            isBleeding = bodyDamage:getIsBleeding(),
-            health = bodyDamage:getHealth(),
-            temperature = bodyDamage:getTemperature(),
-            wetness = bodyDamage:getWetness()
-        }
+    if not ok then
+        return false, nil, "Error reading player details: " .. tostring(playerData)
     end
     
     return true, playerData
@@ -1767,31 +1837,44 @@ handlers.getAllPlayerDetails = function(args)
     for i = 0, onlinePlayers:size() - 1 do
         local player = onlinePlayers:get(i)
         if player then
-            local stats = player:getStats()
-            local bodyDamage = player:getBodyDamage()
+            local ok, playerData = pcall(function()
+                local stats = player:getStats()
+                local bodyDamage = player:getBodyDamage()
+                
+                local pd = {
+                    username = player:getUsername(),
+                    displayName = player:getDisplayName(),
+                    x = player:getX(),
+                    y = player:getY(),
+                    z = player:getZ(),
+                    accessLevel = player:getAccessLevel(),
+                    isAlive = player:isAlive()
+                }
+                
+                if stats then
+                    pd.hunger = stats:getHunger()
+                    pd.thirst = stats:getThirst()
+                    pd.fatigue = stats:getFatigue()
+                end
+                
+                if bodyDamage then
+                    pd.health = bodyDamage:getOverallBodyHealth()
+                    pd.isInfected = bodyDamage:IsInfected()
+                end
+                
+                return pd
+            end)
             
-            local playerData = {
-                username = player:getUsername(),
-                displayName = player:getDisplayName(),
-                x = player:getX(),
-                y = player:getY(),
-                z = player:getZ(),
-                accessLevel = player:getAccessLevel(),
-                isAlive = player:isAlive()
-            }
-            
-            if stats then
-                playerData.hunger = stats:getHunger()
-                playerData.thirst = stats:getThirst()
-                playerData.fatigue = stats:getFatigue()
+            if ok and playerData then
+                table.insert(players, playerData)
+            else
+                -- Include minimal info so the player isn't silently dropped
+                local nameOk, name = pcall(function() return player:getUsername() end)
+                table.insert(players, {
+                    username = nameOk and name or "unknown",
+                    error = tostring(playerData)
+                })
             end
-            
-            if bodyDamage then
-                playerData.health = bodyDamage:getOverallBodyHealth()
-                playerData.isInfected = bodyDamage:IsInfected()
-            end
-            
-            table.insert(players, playerData)
         end
     end
     
@@ -2073,7 +2156,7 @@ handlers.importPlayerData = function(args)
             local function addItems(container, itemList)
                 for _, itemData in ipairs(itemList) do
                     local ok, result = pcall(function()
-                        local count = itemData.count or 1
+                        local count = math.min(itemData.count or 1, 100) -- Clamp to prevent server freeze
                         for c = 1, count do
                             local newItem = container:AddItem(itemData.fullType)
                             if newItem then
@@ -2232,6 +2315,9 @@ handlers.sendToServerChat = function(args)
         return false, nil, "Message required"
     end
     
+    -- Clamp message length to prevent abuse
+    if #message > 1000 then message = message:sub(1, 1000) end
+    
     -- Try ChatServer (primary method)
     local success, err = pcall(function()
         local chatServer = ChatServer.getInstance()
@@ -2266,6 +2352,9 @@ handlers.sendToAdminChat = function(args)
         return false, nil, "Message required"
     end
     
+    -- Clamp message length to prevent abuse
+    if #message > 1000 then message = message:sub(1, 1000) end
+    
     local success, err = pcall(function()
         local chatServer = ChatServer.getInstance()
         if chatServer then
@@ -2290,6 +2379,9 @@ handlers.sendToGeneralChat = function(args)
     if not message then
         return false, nil, "Message required"
     end
+    
+    -- Clamp message length to prevent abuse
+    if #message > 1000 then message = message:sub(1, 1000) end
     
     local success, err = pcall(function()
         local chatServer = ChatServer.getInstance()
@@ -2371,7 +2463,7 @@ handlers.getUtilitiesStatus = function(args)
     end
     
     -- Also get sandbox shutdown times
-    local sandbox = SandboxOptions.instance
+    local sandbox = getSandboxOptions()
     local elecShut = "unknown"
     local waterShut = "unknown"
     local elecModifier = 0
@@ -2464,11 +2556,11 @@ local function activateLightSwitchesInLoadedChunks()
         if player then
             local px, py = math.floor(player:getX()), math.floor(player:getY())
             
-            -- Scan a reasonable area around each player (loaded chunks)
-            -- Chunks are 10x10, loaded chunks extend about 50 squares around player
-            for x = px - 50, px + 50 do
-                for y = py - 50, py + 50 do
-                    for z = 0, 7 do  -- All building levels
+            -- Scan loaded area around each player (reduced radius for performance)
+            -- 30-square radius * 4 floors = ~14k squares/player vs ~82k before
+            for x = px - 30, px + 30 do
+                for y = py - 30, py + 30 do
+                    for z = 0, 3 do  -- Ground to 3rd floor (covers most buildings)
                         local sq = cell:getGridSquare(x, y, z)
                         if sq then
                             local objects = sq:getObjects()
@@ -2701,6 +2793,24 @@ handlers.restoreUtilities = function(args)
             -- Same pattern for water - set WaterShutModifier to far future
             SandboxVars.WaterShutModifier = restoreDays
             table.insert(debugInfo, "Set SandboxVars.WaterShutModifier = " .. tostring(restoreDays))
+            
+            -- Set Java-side option (mirrors power restore pattern)
+            local sandboxOptions = getSandboxOptions()
+            if sandboxOptions then
+                local waterOption = sandboxOptions:getOptionByName("WaterShutModifier")
+                if waterOption and waterOption.setValue then
+                    waterOption:setValue(restoreDays)
+                    table.insert(debugInfo, "waterOption:setValue(" .. tostring(restoreDays) .. ")")
+                end
+            end
+            
+            -- Apply settings to sync water state
+            pcall(function()
+                if getSandboxOptions() and getSandboxOptions().applySettings then
+                    getSandboxOptions():applySettings()
+                    table.insert(debugInfo, "Water: SandboxOptions applySettings() called")
+                end
+            end)
         end
         
         -- Final verification
@@ -2845,6 +2955,14 @@ handlers.shutOffUtilities = function(args)
                     table.insert(debugInfo, "waterOption:setValue(0)")
                 end
             end
+            
+            -- Apply settings to sync water state (matches restoreUtilities pattern)
+            pcall(function()
+                if getSandboxOptions() and getSandboxOptions().applySettings then
+                    getSandboxOptions():applySettings()
+                    table.insert(debugInfo, "Water: SandboxOptions applySettings() called")
+                end
+            end)
         end
         
         -- Final verification
@@ -2890,7 +3008,14 @@ handlers.healPlayer = function(args)
     local bodyDamage = player:getBodyDamage()
     if bodyDamage then
         pcall(function()
-            -- Restore overall health
+            -- Clear Knox virus (zombie) infection at body level
+            if bodyDamage.setInfected then
+                bodyDamage:setInfected(false)
+            end
+            if bodyDamage.setInfectedWound then
+                bodyDamage:setInfectedWound(false)
+            end
+            -- Restore individual body parts
             for i = 0, bodyDamage:getNumOfBodyParts() - 1 do
                 local part = bodyDamage:getBodyPart(i)
                 if part then
@@ -2916,6 +3041,7 @@ handlers.healPlayer = function(args)
             stats:setFatigue(0)
             stats:setStress(0)
             stats:setBoredom(0)
+            stats:setUnhappyness(0)
             stats:setPain(0)
             stats:setEndurance(1)
             healed.stats = true
@@ -3091,7 +3217,7 @@ end
 -- Clear zombies around a player
 handlers.clearZombiesNearPlayer = function(args)
     local username = args.username
-    local radius = args.radius or 50
+    local radius = tonumber(args.radius) or 50
     
     if not username then
         return false, nil, "Username required"
@@ -3123,8 +3249,8 @@ handlers.clearZombiesNearPlayer = function(args)
                         if zx and zy and zz then
                             local dist = math.sqrt((zx - px)^2 + (zy - py)^2 + (zz - pz)^2)
                             if dist <= radius then
-                                zombie:removeFromWorld()
                                 zombie:removeFromSquare()
+                                zombie:removeFromWorld()
                                 removed = removed + 1
                             end
                         end
@@ -3158,9 +3284,16 @@ function PanelBridge.processCommands()
     
     local processedCount = 0
     
+    -- Clear commands file immediately after reading to minimise the race window
+    -- where Node writes a new command between our read and our (old) post-loop clear.
+    -- processedIds dedup ensures commands are never processed twice even if the Lua
+    -- mod re-reads a file that Node repopulated in the gap.
+    PanelBridge.clearFile("commands.json")
+    
     for _, cmd in ipairs(commands.commands) do
         if cmd.id and not PanelBridge.processedIds[cmd.id] then
             PanelBridge.processedIds[cmd.id] = true
+            PanelBridge.processedIdCount = PanelBridge.processedIdCount + 1
             processedCount = processedCount + 1
             
             PanelBridge.stats.commandsProcessed = PanelBridge.stats.commandsProcessed + 1
@@ -3205,24 +3338,19 @@ function PanelBridge.processCommands()
         end
     end
     
-    -- Clear commands file after processing
-    -- We clear if we found ANY commands, even if they were duplicates (already processed),
-    -- to prevent the file from getting stuck with old commands that prevent new ones.
-    if commands.commands and #commands.commands > 0 then
-        PanelBridge.clearFile("commands.json")
-        if processedCount > 0 then
-            PanelBridge.debug("Processed " .. processedCount .. " commands")
-        end
+    if processedCount > 0 then
+        PanelBridge.debug("Processed " .. processedCount .. " commands")
     end
     
     -- Cleanup old processed IDs (keep manageable size)
-    local count = 0
-    for _ in pairs(PanelBridge.processedIds) do count = count + 1 end
-    if count > 100 then
-        -- Reset entirely - these are UUIDs from already-processed and cleared commands
-        -- Since commands.json is cleared after processing, re-execution risk is minimal
+    -- Using counter instead of O(n) pairs() iteration
+    if PanelBridge.processedIdCount > 500 then
+        -- Safe to clear: commands.json was just cleared above, so no pending commands
+        -- Higher threshold (500) reduces cleanup frequency
+        local oldCount = PanelBridge.processedIdCount
         PanelBridge.processedIds = {}
-        PanelBridge.debug("Cleared all processed IDs", { previousCount = count })
+        PanelBridge.processedIdCount = 0
+        PanelBridge.debug("Cleared processed IDs", { previousCount = oldCount })
     end
 end
 
@@ -3274,6 +3402,11 @@ function PanelBridge.onTick()
         local success, err = pcall(PanelBridge.processCommands)
         if not success then
             PanelBridge.error("Tick error in processCommands", { error = tostring(err) })
+        end
+        -- Flush any buffered results to disk (single write per tick)
+        local flushOk, flushErr = pcall(PanelBridge.flushResults)
+        if not flushOk then
+            PanelBridge.error("Tick error in flushResults", { error = tostring(flushErr) })
         end
     end
     

@@ -3,6 +3,7 @@ import { createLogger } from '../utils/logger.js';
 const log = createLogger('API:RCON');
 import { getCommandHistory } from '../database/init.js';
 import { PZ_COMMANDS } from '../utils/commands.js';
+import { sanitizeError } from '../utils/sanitize.js';
 
 const router = express.Router();
 
@@ -14,6 +15,11 @@ router.post('/execute', async (req, res) => {
     
     if (!command) {
       return res.status(400).json({ error: 'Command is required' });
+    }
+    
+    // Validate command type and length
+    if (typeof command !== 'string' || command.length > 2000) {
+      return res.status(400).json({ error: 'Invalid command (max 2000 characters)' });
     }
     
     const result = await rconService.execute(command);
@@ -30,7 +36,7 @@ router.post('/execute', async (req, res) => {
     res.json(result);
   } catch (error) {
     log.error(`RCON execute failed: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -41,7 +47,7 @@ router.get('/status', async (req, res) => {
     const config = rconService.getConfig();
     res.json(config);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -50,6 +56,28 @@ router.post('/connect', async (req, res) => {
   try {
     const rconService = req.app.get('rconService');
     const { host, port, password } = req.body;
+    
+    // Validate host format if provided (only alphanumeric, dots, hyphens)
+    if (host !== undefined) {
+      if (typeof host !== 'string' || host.length > 255 || !/^[a-zA-Z0-9.-]+$/.test(host)) {
+        return res.status(400).json({ success: false, error: 'Invalid host format' });
+      }
+    }
+    
+    // Validate port if provided
+    if (port !== undefined) {
+      const portNum = parseInt(port, 10);
+      if (isNaN(portNum) || portNum < 1 || portNum > 65535) {
+        return res.status(400).json({ success: false, error: 'Invalid port (1-65535)' });
+      }
+    }
+    
+    // Validate password if provided
+    if (password !== undefined) {
+      if (typeof password !== 'string' || password.length > 256) {
+        return res.status(400).json({ success: false, error: 'Invalid password format' });
+      }
+    }
     
     if (host || port || password) {
       rconService.updateConfig(host, port, password);
@@ -80,7 +108,7 @@ router.get('/health', async (req, res) => {
       res.status(503).json({ success: false, ...health });
     }
   } catch (error) {
-    res.status(500).json({ success: false, reason: error.message });
+    res.status(500).json({ success: false, reason: sanitizeError(error.message) });
   }
 });
 
@@ -91,7 +119,7 @@ router.post('/disconnect', async (req, res) => {
     await rconService.disconnect();
     res.json({ success: true, message: 'Disconnected from RCON' });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -103,7 +131,7 @@ router.get('/history', async (req, res) => {
     res.json({ history });
   } catch (error) {
     log.error(`Failed to get command history: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 

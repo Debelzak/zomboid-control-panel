@@ -1,4 +1,50 @@
 const API_BASE = '/api'
+const TOKEN_KEY = 'pz_access_token'
+
+// Get stored auth token
+function getAuthToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY)
+}
+
+// Add auth headers to request options
+function withAuth(options?: RequestInit): RequestInit {
+  const token = getAuthToken()
+  if (!token) return options || {}
+  
+  const headers = new Headers(options?.headers)
+  headers.set('Authorization', `Bearer ${token}`)
+  return { ...options, headers }
+}
+
+// Handle 401 responses — try to refresh the token once
+let isRefreshing = false
+let refreshPromise: Promise<boolean> | null = null
+
+async function tryRefreshToken(): Promise<boolean> {
+  if (isRefreshing && refreshPromise) return refreshPromise
+  
+  isRefreshing = true
+  refreshPromise = (async () => {
+    try {
+      const res = await fetch('/api/auth/refresh', { method: 'POST', credentials: 'include' })
+      if (res.ok) {
+        const data = await res.json()
+        localStorage.setItem(TOKEN_KEY, data.accessToken)
+        return true
+      }
+      // Refresh failed — clear token and redirect to login
+      localStorage.removeItem(TOKEN_KEY)
+      return false
+    } catch {
+      return false
+    } finally {
+      isRefreshing = false
+      refreshPromise = null
+    }
+  })()
+  
+  return refreshPromise
+}
 
 // Retry configuration
 const RETRY_CONFIG = {
@@ -54,10 +100,28 @@ async function fetchWithRetry(
       
       try {
         const response = await fetch(url, {
-          ...options,
+          ...withAuth(options),
           signal: controller.signal,
         })
         clearTimeout(timeoutId)
+        
+        // Handle 401 — try token refresh once, then retry
+        if (response.status === 401 && attempt === 0 && !url.includes('/api/auth/')) {
+          const refreshed = await tryRefreshToken()
+          if (refreshed) {
+            // Retry with new token
+            const retryResponse = await fetch(url, {
+              ...withAuth(options),
+              signal: AbortSignal.timeout(RETRY_CONFIG.fetchTimeout),
+            })
+            if (retryResponse.status !== 401) {
+              return retryResponse
+            }
+          }
+          // Refresh failed or still 401 — force reload to show login
+          window.location.reload()
+          return response
+        }
         
         // If response is not retryable error, return it
         if (!isRetryableError(null, response) || attempt === retries) {

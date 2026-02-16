@@ -1,129 +1,219 @@
-# 🎮 Zomboid Control Panel
+# PZ Server Panel
 
-A web-based admin panel for managing Project Zomboid dedicated servers on Windows.  
-Control your server, manage players, track mods, schedule tasks, and more — all from your browser.
-
-![Dashboard](Screenshots/Main_Dashboard.png)
-
----
+A web-based management panel for Project Zomboid dedicated servers on Windows.
 
 ## Quick Start
 
-1. Download the [latest release](https://github.com/fpsacha/zomboid-control-panel/releases/latest)
-2. Extract and run **`ZomboidControlPanel.exe`** — no installation needed
-3. Open **http://localhost:3001** in your browser
-4. Add your server and configure your RCON password
+**Option 1: Standalone Executable (Recommended)**
+- Just double-click `ZomboidControlPanel.exe` - no installation needed!
 
-> Alternatively, run `Start.bat` for development mode (requires Node.js 18+).
+**Option 2: Development Mode**
+- Double-click `Start.bat` (requires Node.js)
 
----
+The launcher will:
+- ✅ Check if Node.js is installed (for dev mode)
+- ✅ Install all dependencies automatically (first run only)
+- ✅ Start the backend and frontend servers
+- ✅ Open your browser to the panel
+
+## Alternative Launchers
+
+| File | Description |
+|------|-------------|
+| `ZomboidControlPanel.exe` | Standalone executable - No Node.js needed |
+| `Start.bat` | Development mode - Best for development |
+| `Start-Production.bat` | Production mode - Faster, single server |
+| `install.bat` | Manual dependency installation |
 
 ## Features
 
-### Server Management
-- 🎮 **Server Control** — Start, stop, restart, and save your server with one click
-- 🖥️ **Multi-Server Support** — Manage multiple PZ servers from a single panel
-- 🌐 **Remote RCON Servers** — Connect to remote servers via RCON (no local install needed)
-- ⏰ **Task Scheduler** — Schedule automatic restarts, messages, and recurring tasks
-- 🔄 **Auto-Restart on Mod Update** — Automatically restart when Steam Workshop mods are updated
-- 📡 **Auto-Start** — Optionally launch your server when the panel starts
+- 🎮 **Server Control** - Start, stop, restart, and save your server
+- 👥 **Player Management** - View online players, kick, ban, set access levels
+- 📤 **Character Export/Import** - Export and import player XP, perks, skills, recipes
+- 💬 **RCON Console** - Execute commands with a real-time terminal interface
+- 📦 **Mod Manager** - Track Steam Workshop mods and auto-detect updates
+- ⏰ **Scheduler** - Schedule automatic restarts and recurring tasks
+- 🔄 **Auto-Restart on Mod Update** - Automatically restart when mods are updated
+- 🌧️ **Weather Control** - Change weather conditions in-game
+- 🧟 **Event Triggers** - Start helicopter events, hordes, and other game events
+- 🤖 **Discord Bot** - Manage your server from Discord
+- 🗑️ **Chunk Cleaner** - Remove old/unused chunks to reduce save size
+- 💾 **Backup & Restore** - Create, restore, and manage save backups from the panel
+- 🛠️ **Server File Editor** - Edit INI, sandbox, spawn points, and spawn regions with backups/templates
+- 🔐 **Authentication & Sessions** - JWT auth with setup flow, refresh tokens, and remember-me login
+- 🛡️ **Security Hardening** - Rate limiting, safer input handling, path sanitization, and hardened endpoints
+- 📈 **Update Detection** - Built-in game server update checks and one-click update flow
+- 🔍 **Debug & Diagnostics** - Health, logs, crash log viewer, performance history, and path tools
+- 🔌 **PanelBridge Lua Mod** - Direct server communication for advanced features
+- 🌐 **Network Configuration** - Configure server port and UPnP settings
+- 🖥️ **Multi-Server Support** - Manage multiple PZ servers from one panel
 
-### Players & Chat
-- 👥 **Player Management** — View online players, kick, ban, teleport, set access levels
-- 📤 **Character Export/Import** — Backup and restore player XP, perks, skills, and recipes
-- 💬 **In-Game Chat** — Read and send messages directly from the panel
-- 💬 **RCON Console** — Full terminal interface for executing server commands
+## What's New in v0.3.0
 
-### World & Mods
-- 📦 **Workshop Mod Manager** — Track installed mods, detect updates, manage mod presets
-- 🌤️ **Weather & Climate Control** — Trigger storms, blizzards, and manipulate temperature, wind, fog, and more
-- 🧟 **Event Triggers** — Start helicopter events, hordes, and sound events
-- 🗑️ **Chunk Cleaner** — Remove old/unused chunks to reduce save file size
-- 💾 **World Backups** — Create and manage server backups
-
-### Configuration
-- ⚙️ **INI Settings Editor** — Edit your server's configuration directly from the panel
-- 🔧 **Sandbox Editor** — Modify sandbox/world settings
-- 🔌 **Panel Settings** — Change panel port, view panel address for sharing with co-admins
-- 🤖 **Discord Bot** — Control your server from Discord
-- 🔌 **PanelBridge** — Server-side Lua script for advanced features (weather, teleport, character export)
-- 🌐 **Server Finder** — Browse public PZ servers
-
----
+- **Security and stability improvements** across API routes, auth, and file operations
+- **Improved session handling** with safer token refresh behavior and better route protection
+- **Safer server management operations** with stricter throttling on destructive actions
+- **Expanded admin tooling** in Debug, Server Files, Backups, and multi-server workflows
+- **PanelBridge improvements** for command validation, reliability, and runtime safety
+- **Frontend robustness updates** to prevent common runtime crashes and improve auth-aware API calls
 
 ## Requirements
 
-- **Windows 10/11**
-- A Project Zomboid dedicated server with **RCON enabled**
-- Node.js 18+ *(only for development mode — not needed for the exe)*
+### For Standalone Executable
+- Windows 10/11
+- A Project Zomboid dedicated server with RCON enabled
 
----
+### For Development Mode
+- Node.js 18+ (download from https://nodejs.org/)
+- A Project Zomboid dedicated server with RCON enabled
+- Windows OS
 
 ## First Time Setup
 
-1. Run **`ZomboidControlPanel.exe`**
-2. Go to **My Servers** and add your server:
-   - **Local server** — Set the server install path and RCON password
-   - **Remote server** — Enter the RCON host, port, and password
-3. Set your RCON password to match your server's `.ini` file
-4. *(Optional)* Install **PanelBridge** for advanced features — see below
+1. **Run the panel** - Double-click `ZomboidControlPanel.exe` (or `Start.bat` for dev mode)
+2. **Configure your server** in the Settings page:
+   - Set RCON password (must match your server's INI file)
+   - Set server paths
+3. **Install PanelBridge mod** (optional but recommended):
+   - Copy the `pz-mod/PanelBridge` folder to your server's mods directory
+   - Add `PanelBridge` to your server's mod list
+   - This enables advanced features like player teleporting, character export/import, and more
 
----
+## Enabling RCON on Your PZ Server
 
-## PanelBridge
-
-**PanelBridge** is a Lua script that runs on your PZ server to enable advanced panel features. It is **not** a Workshop mod.
-
-### What it enables:
-- Player teleportation and detailed stats
-- Character XP/perk export & import
-- Weather & climate control (blizzards, storms, fog, temperature)
-- Sound events (gunshots, alarms) at any location
-- Real-time player positions
-
-### Installation (Recommended)
-1. Open the panel → **Panel Settings**
-2. Scroll to **PanelBridge** section
-3. Click **"Install to Active Server"**
-4. Set `DoLuaChecksum=false` in your server's `.ini` file
-5. Restart the PZ server
-
-### Manual Installation
-Copy `pz-mod/PanelBridge/media/lua/server/PanelBridge.lua` to:
-```
-YOUR_SERVER_INSTALL_PATH/media/lua/server/PanelBridge.lua
+In your server's `.ini` file (usually in `Zomboid/Server/`), set:
+```ini
+RCONPassword=your_password
+RCONPort=27015
 ```
 
-> ⚠️ Do **not** add PanelBridge to your `Mods=` line — it's not a mod.  
-> Re-install after game updates, as updates may overwrite the `lua/server/` folder.
+Then restart your server for changes to take effect.
 
----
+## PanelBridge Lua Mod
+
+The PanelBridge mod enables advanced server control features that aren't possible through RCON alone:
+
+- **Player Management**: Teleport players, view detailed stats, heal players
+- **Character Export/Import**: Backup and restore player XP, perks, skills, and recipes
+- **World Control**: Set time, weather effects, spawn items/vehicles
+- **Server Info**: Get detailed server status, player lists with positions
+
+### Installing PanelBridge
+
+1. Copy `pz-mod/PanelBridge` to your server's workshop mods folder or custom mods folder
+2. Add `PanelBridge` to your server's `Mods=` line in the .ini file
+3. Restart your server
+4. Configure the bridge in the panel's Settings page
+
+## Network Configuration
+
+When creating a new server, you can configure:
+- **Game Port** - The main server port (default: 16261)
+- **UPnP** - Automatic port forwarding for home routers (enabled by default)
+
+## Manual Installation (Optional)
+
+If you prefer manual setup:
+| `RCON_PORT` | PZ server RCON port | 27015 |
+| `RCON_PASSWORD` | RCON password | (required) |
+| `SERVER_PATH` | Path to PZ server installation | |
+| `ZOMBOID_DATA_PATH` | Path to Zomboid user data folder | |
+| `MOD_CHECK_INTERVAL` | Minutes between mod update checks | 30 |
+
+### Server Paths
+
+- **Server Installation**: Where `StartServer64.bat` is located
+- **Config Path**: Usually `C:\Users\<Name>\Zomboid\Server`
+- **Data Path**: Usually `C:\Users\<Name>\Zomboid`
+
+## Project Structure
+
+```
+Dev1/
+├── server/
+│   ├── index.js           # Express server entry point
+│   ├── database/
+│   │   └── init.js        # LowDB JSON database setup
+│   ├── routes/
+│   │   ├── server.js      # Server control endpoints
+│   │   ├── players.js     # Player management endpoints
+│   │   ├── rcon.js        # RCON command endpoints
+│   │   ├── scheduler.js   # Task scheduling endpoints
+│   │   ├── mods.js        # Mod tracking endpoints
+│   │   └── config.js      # Settings endpoints
+│   ├── services/
+│   │   ├── rcon.js        # RCON connection service
+│   │   ├── serverManager.js  # Server process management
+│   │   ├── modChecker.js  # Steam Workshop API integration
+│   │   └── scheduler.js   # Cron job management
+│   └── utils/
+│       ├── logger.js      # Winston logger
+│       └── commands.js    # PZ command definitions
+├── client/
+│   ├── src/
+│   │   ├── components/    # React UI components
+│   │   ├── pages/         # Page components
+│   │   ├── lib/           # API client & utilities
+│   │   └── contexts/      # React contexts
+│   └── ...
+├── data/                  # LowDB database (created at runtime)
+└── logs/                  # Application logs
+```
+
+## RCON Commands Reference
+
+The panel supports all standard Project Zomboid RCON commands:
+
+- **Server**: `save`, `quit`, `servermsg`
+- **Players**: `players`, `kick`, `banuser`, `unbanuser`, `adduser`
+- **Admin**: `setaccesslevel`, `grantadmin`, `removeadmin`
+- **Weather**: `changeoption`, `rain`, `fog`
+- **Events**: `helicopter`, `gunshot`
+- **Items**: `additem`, `addxp`, `addvehicle`
+- **Cheats**: `godmod`, `invisible`, `noclip`
+
+## PanelBridge Commands (via Lua mod)
+
+When PanelBridge is installed, additional commands are available:
+
+- **Player Info**: Get detailed player stats, inventory, position
+- **Teleport**: Move players to coordinates or other players
+- **Character Export**: Save player perks, XP, skills to JSON
+- **Character Import**: Restore perks, stats, recipes to a player
+- **Heal**: Restore player health
+- **Give Items**: Spawn items directly in player inventory
+- **Spawn Vehicles**: Create vehicles at player location
+- **World Time**: Set in-game time and weather
 
 ## Troubleshooting
 
-| Problem | Solution |
-|---------|----------|
-| Can't connect to RCON | Verify RCON is enabled in your `.ini`, password matches, and port isn't firewalled |
-| PanelBridge not working | Check that `PanelBridge.lua` is in `media/lua/server/`, `DoLuaChecksum=false` is set, and server was restarted |
-| Mod updates not detecting | Verify Workshop IDs are correct, try syncing from server config |
-| Server won't start/stop | Check server path is correct, try running as Administrator |
-| Character export/import fails | PanelBridge must be installed and the player must be online |
+### Can't connect to RCON
+1. Make sure your PZ server is running
+2. Verify RCON is enabled in your server's .ini file
+3. Check that the port isn't blocked by a firewall
+4. Ensure the password matches exactly
 
----
+### PanelBridge not working
+1. Make sure the mod is installed in your server's mods folder
+2. Verify `PanelBridge` is in your server's `Mods=` line
+3. Check that the bridge data path is correctly configured in Settings
+4. Restart both the PZ server and the panel after installing
 
-## Tech Stack
+### Mod updates not detecting
+1. Verify your Steam Web API key if using one
+2. Check that mod Workshop IDs are correct
+3. Try syncing mods from server configuration
 
-- **Frontend** — React, TypeScript, Tailwind CSS, shadcn/ui
-- **Backend** — Node.js, Express, Socket.IO
-- **Database** — SQLite (via better-sqlite3)
-- **Packaging** — pkg (standalone Windows executable)
+### Server won't start/stop
+1. Make sure SERVER_PATH points to the correct folder
+2. Run the panel as Administrator if needed
+3. Check Windows Task Manager for zombie processes
 
----
+### Character export/import issues
+1. Make sure PanelBridge mod is installed and running
+2. Player must be online for export/import to work
+3. Check the panel logs for specific error messages
 
 ## License
 
-MIT License — see [LICENSE](LICENSE) for details.
-
----
-
-*Built with the assistance of [Claude](https://www.anthropic.com/) and [GitHub Copilot](https://github.com/features/copilot).*
+MIT License - Feel free to modify and use as needed.

@@ -84,8 +84,21 @@ interface SaveStats {
 // Each chunk occupies 1x1 in world space (world unit = 1 chunk)
 const MIN_SCALE = 0.1    // px per chunk (zoomed way out)
 const MAX_SCALE = 60     // px per chunk (zoomed way in)
+const MIN_FIT_SCALE = 2  // minimum px/chunk when auto-fitting — chunks must be visible
 const MAP_TILE_SIZE = 100 // each grabofus tile covers 100x100 chunks
 const MAP_TILES_CDN = 'https://grabofus.github.io/zomboid-chunk-cleaner/assets'
+
+// Known PZ city / landmark positions (in chunk coordinates)
+// Derived from map.projectzomboid.com overlays.json POI centroids (game-tile ÷ 10)
+const PZ_LANDMARKS: { name: string; x: number; y: number }[] = [
+  { name: 'Muldraugh',      x: 1063, y:  980 },
+  { name: 'West Point',     x: 1190, y:  690 },
+  { name: 'Rosewood',       x:  809, y: 1150 },
+  { name: 'Riverside',      x:  610, y:  540 },
+  { name: 'Louisville',     x: 1270, y:  170 },
+  { name: 'March Ridge',    x: 1010, y: 1270 },
+  { name: 'Valley Station', x: 1320, y:  530 },
+]
 
 function formatSize(bytes: number): string {
   if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
@@ -211,7 +224,33 @@ export default function ChunkCleaner() {
         chunksApi.getChunks(selectedSave),
         chunksApi.getStats(selectedSave)
       ])
-      setChunks(chunksResult.chunks || [])
+      // B42 saves use map/{X}/{Y}.bin with 8×8 tile chunks.
+      // B41 saves use flat files with 10×10 tile chunks.
+      // The grabofus map tiles use B41 chunk space (1 chunk = 10 tiles).
+      // Convert B42 → B41: multiply by 0.8  (8/10).
+      // The 'file' field is preserved unchanged for deletion operations.
+      const rawChunks: ChunkInfo[] = chunksResult.chunks || []
+      const isB42 = chunksResult.isB42 === true || (rawChunks.length > 0 && rawChunks[0].file?.includes('/'))
+      console.log('[ChunkCleaner] isB42:', isB42, '| sample file:', rawChunks[0]?.file, '| raw bounds:', JSON.stringify(chunksResult.bounds))
+      if (isB42) {
+        for (const c of rawChunks) {
+          c.x = Math.floor(c.x * 8 / 10)
+          c.y = Math.floor(c.y * 8 / 10)
+        }
+        // Recompute bounds from converted coords
+        if (chunksResult.bounds) {
+          let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
+          for (const c of rawChunks) {
+            minX = Math.min(minX, c.x)
+            maxX = Math.max(maxX, c.x)
+            minY = Math.min(minY, c.y)
+            maxY = Math.max(maxY, c.y)
+          }
+          chunksResult.bounds = { minX, maxX, minY, maxY }
+        }
+        console.log('[ChunkCleaner] Converted bounds:', JSON.stringify(chunksResult.bounds))
+      }
+      setChunks(rawChunks)
       setBounds(chunksResult.bounds)
       setStats(statsResult)
       setLimitReached(chunksResult.limitReached === true)
@@ -232,7 +271,7 @@ export default function ChunkCleaner() {
 
   // ─── Fit view to show all chunks ───
   const fitView = useCallback(() => {
-    if (!bounds) return
+    if (!chunks.length) return
 
     // Use canvasSize if available, otherwise read container dimensions directly
     let W = canvasSize.width
@@ -247,22 +286,35 @@ export default function ChunkCleaner() {
       setCanvasSize({ width: W, height: H })
     }
 
-    const rangeX = bounds.maxX - bounds.minX + 1
-    const rangeY = bounds.maxY - bounds.minY + 1
-    const padding = 40
+    // Use P5/P95 percentile bounds to exclude outliers that stretch the view
+    const xs = chunks.map(c => c.x).sort((a, b) => a - b)
+    const ys = chunks.map(c => c.y).sort((a, b) => a - b)
+    const p5 = Math.floor(chunks.length * 0.02)
+    const p95 = Math.min(chunks.length - 1, Math.floor(chunks.length * 0.98))
+    const fitMinX = xs[p5]
+    const fitMaxX = xs[p95]
+    const fitMinY = ys[p5]
+    const fitMaxY = ys[p95]
+
+    const rangeX = fitMaxX - fitMinX + 1
+    const rangeY = fitMaxY - fitMinY + 1
+    const padding = 50
     const fitScale = Math.min(
       (W - padding * 2) / rangeX,
       (H - padding * 2) / rangeY
     )
-    const newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, fitScale))
-    const centerX = (bounds.minX + bounds.maxX + 1) / 2
-    const centerY = (bounds.minY + bounds.maxY + 1) / 2
+    // Enforce MIN_FIT_SCALE so chunks are always visible (at least 2px each)
+    // If the data is too spread out to show everything at 2px/chunk, we zoom
+    // to the densest area and the user can pan to see outliers.
+    const newScale = Math.max(MIN_FIT_SCALE, Math.min(MAX_SCALE, fitScale))
+    const centerX = (fitMinX + fitMaxX + 1) / 2
+    const centerY = (fitMinY + fitMaxY + 1) / 2
     setScale(newScale)
     setOffset({
       x: W / 2 - centerX * newScale,
       y: H / 2 - centerY * newScale
     })
-  }, [bounds, canvasSize])
+  }, [chunks, canvasSize])
 
   // Auto-fit when chunks load or canvas resizes
   useEffect(() => { fitView() }, [fitView])
@@ -346,7 +398,7 @@ export default function ChunkCleaner() {
         const maxTY = Math.floor(visMaxY / MAP_TILE_SIZE)
         
         ctx.save()
-        ctx.globalAlpha = 0.5
+        ctx.globalAlpha = 0.45
         for (let ty = minTY; ty <= maxTY; ty++) {
           for (let tx = minTX; tx <= maxTX; tx++) {
             loadMapTile(tx, ty)
@@ -363,7 +415,7 @@ export default function ChunkCleaner() {
       }
       
       // ── Tile grid lines (every 100 chunks — tile boundaries) ──
-      if (showMap && scale > 0.3) {
+      if (showMap && scale > 1) {
         const tileGridMinX = Math.floor(visMinX / MAP_TILE_SIZE) * MAP_TILE_SIZE
         const tileGridMaxX = Math.ceil(visMaxX / MAP_TILE_SIZE) * MAP_TILE_SIZE
         const tileGridMinY = Math.floor(visMinY / MAP_TILE_SIZE) * MAP_TILE_SIZE
@@ -382,6 +434,46 @@ export default function ChunkCleaner() {
           if (sy >= 0 && sy <= H) {
             ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(W, sy); ctx.stroke()
           }
+        }
+      }
+      
+      // ── City / landmark markers ──
+      // Always shown — helps users orient themselves regardless of tile background
+      {
+        const markerSize = Math.max(6, Math.min(14, scale * 3))
+        const fontSize = Math.max(9, Math.min(13, scale * 2.5))
+        ctx.font = `bold ${fontSize}px sans-serif`
+        ctx.textAlign = 'left'
+        ctx.textBaseline = 'middle'
+        
+        for (const lm of PZ_LANDMARKS) {
+          const sx = lm.x * scale + offset.x
+          const sy = lm.y * scale + offset.y
+          // Skip if off screen
+          if (sx < -100 || sx > W + 100 || sy < -50 || sy > H + 50) continue
+          
+          // Diamond marker
+          const half = markerSize / 2
+          ctx.fillStyle = 'rgba(59, 130, 246, 0.85)'
+          ctx.beginPath()
+          ctx.moveTo(sx, sy - half)
+          ctx.lineTo(sx + half, sy)
+          ctx.lineTo(sx, sy + half)
+          ctx.lineTo(sx - half, sy)
+          ctx.closePath()
+          ctx.fill()
+          
+          // White border
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)'
+          ctx.lineWidth = 1
+          ctx.stroke()
+          
+          // Label with shadow
+          const labelX = sx + half + 4
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.6)'
+          ctx.fillText(lm.name, labelX + 1, sy + 1)
+          ctx.fillStyle = 'rgba(220, 230, 255, 0.95)'
+          ctx.fillText(lm.name, labelX, sy)
         }
       }
       
@@ -416,6 +508,7 @@ export default function ChunkCleaner() {
       }
       
       // ── Draw chunks ──
+      // Every chunk draws at its exact world position — use amber fill with dark border
       for (const chunk of chunks) {
         if (chunk.x + 1 < visMinX || chunk.x > visMaxX || chunk.y + 1 < visMinY || chunk.y > visMaxY) continue
         
@@ -423,22 +516,37 @@ export default function ChunkCleaner() {
         const sy = chunk.y * scale + offset.y
         const key = `${chunk.x}_${chunk.y}`
         const isSelected = selectedChunks.has(key)
+        const sz = Math.max(scale, 1) // never go below 1px
         
         if (isSelected) {
-          ctx.fillStyle = 'rgba(220, 38, 38, 0.85)'
+          ctx.fillStyle = 'rgba(239, 68, 68, 0.92)'
         } else {
           const ratio = Math.min(chunk.size / 50000, 1)
-          const g = Math.floor(140 + (1 - ratio) * 60)
-          const b = Math.floor(100 + (1 - ratio) * 40)
-          ctx.fillStyle = `rgba(34, ${g}, ${b}, 0.75)`
+          const r = Math.floor(240 + (1 - ratio) * 15)
+          const g = Math.floor(130 + (1 - ratio) * 70)
+          const b = Math.floor(15 + (1 - ratio) * 15)
+          ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.88)`
         }
         
         if (scale > 4) {
           const gap = Math.max(0.5, scale * 0.06)
           ctx.fillRect(sx + gap, sy + gap, scale - gap * 2, scale - gap * 2)
         } else {
-          ctx.fillRect(sx, sy, Math.max(scale, 1), Math.max(scale, 1))
+          ctx.fillRect(sx, sy, sz, sz)
         }
+      }
+      
+      // ── Chunk region outline (boundary of the data area) ──
+      if (bounds) {
+        const bx = bounds.minX * scale + offset.x
+        const by = bounds.minY * scale + offset.y
+        const bw = (bounds.maxX - bounds.minX + 1) * scale
+        const bh = (bounds.maxY - bounds.minY + 1) * scale
+        ctx.strokeStyle = 'rgba(251, 191, 36, 0.5)'
+        ctx.lineWidth = 1.5
+        ctx.setLineDash([6, 4])
+        ctx.strokeRect(bx, by, bw, bh)
+        ctx.setLineDash([])
       }
       
       // ── Coordinate labels (when zoomed in) ──
@@ -538,9 +646,9 @@ export default function ChunkCleaner() {
         const hoverChunk = chunkMap[hkey]
         const hoverSel = selectedChunks.has(hkey)
         
-        const tileX = Math.floor(hx / MAP_TILE_SIZE)
-        const tileY = Math.floor(hy / MAP_TILE_SIZE)
-        let label = `Chunk ${hx}, ${hy}  |  Tile ${tileX}, ${tileY}`
+        const cellX = Math.floor(hx / 30)
+        const cellY = Math.floor(hy / 30)
+        let label = `Chunk ${hx}, ${hy}  |  Cell ${cellX}, ${cellY}`
         if (hoverChunk) {
           label += ` | ${formatSize(hoverChunk.size)}${hoverSel ? ' | SELECTED' : ''}`
         }
@@ -563,7 +671,11 @@ export default function ChunkCleaner() {
       // ── Top-left bounds info ──
       ctx.textAlign = 'left'
       ctx.textBaseline = 'top'
-      const boundsLabel = `X: ${bounds.minX}–${bounds.maxX}  Y: ${bounds.minY}–${bounds.maxY}  (${chunks.length} chunks)`
+      const cellMinX = Math.floor(bounds.minX / 30)
+      const cellMinY = Math.floor(bounds.minY / 30)
+      const cellMaxX = Math.floor(bounds.maxX / 30)
+      const cellMaxY = Math.floor(bounds.maxY / 30)
+      const boundsLabel = `Chunks ${bounds.minX}–${bounds.maxX}, ${bounds.minY}–${bounds.maxY}  (${chunks.length})  |  Cells ${cellMinX}–${cellMaxX}, ${cellMinY}–${cellMaxY}`
       const bm = ctx.measureText(boundsLabel)
       ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
       ctx.fillRect(6, 6, bm.width + 12, 18)
@@ -1102,7 +1214,7 @@ export default function ChunkCleaner() {
           </CardHeader>
           <CardContent className="text-sm text-muted-foreground space-y-2">
             <p>• <strong>Select a save</strong> — Choose the multiplayer save you want to modify</p>
-            <p>• <strong>Select chunks</strong> — Click to toggle a single chunk, or click+drag to select a region (green = data, red = selected)</p>
+            <p>• <strong>Select chunks</strong> — Click to toggle a single chunk, or click+drag to select a region (orange = data, red = selected)</p>
             <p>• <strong>Hold Shift</strong> — While clicking/dragging to deselect chunks from an existing selection</p>
             <p>• <strong>Navigate</strong> — Scroll to zoom, right-click or middle-click to pan, press 1/2 to switch tools</p>
             <p>• <strong>Map tiles</strong> — Toggle "Map Background" to overlay the PZ world map behind chunks (B41 tiles, may not cover B42 areas)</p>

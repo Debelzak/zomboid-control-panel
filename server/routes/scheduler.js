@@ -2,6 +2,7 @@ import express from 'express';
 import cron from 'node-cron';
 import { createLogger } from '../utils/logger.js';
 const log = createLogger('API:Scheduler');
+import { sanitizeError } from '../utils/sanitize.js';
 import { 
   getScheduledTasks, 
   createScheduledTask, 
@@ -21,7 +22,7 @@ router.get('/status', async (req, res) => {
     res.json(status);
   } catch (error) {
     log.error(`Failed to get scheduler status: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -32,7 +33,7 @@ router.get('/tasks', async (req, res) => {
     res.json({ tasks });
   } catch (error) {
     log.error(`Failed to get scheduled tasks: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -51,7 +52,7 @@ router.post('/validate-cron', async (req, res) => {
     
     res.json({ valid: true });
   } catch (error) {
-    res.status(500).json({ valid: false, error: error.message });
+    res.status(500).json({ valid: false, error: sanitizeError(error.message) });
   }
 });
 
@@ -63,6 +64,17 @@ router.post('/tasks', async (req, res) => {
     
     if (!name || !cronExpression || !command) {
       return res.status(400).json({ error: 'Name, cronExpression, and command are required' });
+    }
+    
+    // Validate input types and lengths
+    if (typeof name !== 'string' || name.length > 100) {
+      return res.status(400).json({ error: 'Invalid task name (max 100 chars)' });
+    }
+    if (typeof command !== 'string' || command.length > 2000) {
+      return res.status(400).json({ error: 'Invalid command (max 2000 chars)' });
+    }
+    if (typeof cronExpression !== 'string' || cronExpression.length > 100) {
+      return res.status(400).json({ error: 'Invalid cron expression format' });
     }
     
     // Validate cron expression before saving
@@ -85,7 +97,7 @@ router.post('/tasks', async (req, res) => {
     res.json({ success: true, task });
   } catch (error) {
     log.error(`Failed to create scheduled task: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -124,7 +136,7 @@ router.put('/tasks/:id', async (req, res) => {
     res.json({ success: true, message: 'Task updated' });
   } catch (error) {
     log.error(`Failed to update scheduled task: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -145,7 +157,7 @@ router.delete('/tasks/:id', async (req, res) => {
     res.json({ success: true, message: 'Task deleted' });
   } catch (error) {
     log.error(`Failed to delete scheduled task: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -171,7 +183,7 @@ router.post('/restart-now', async (req, res) => {
     res.json({ success: true, message: 'Restart initiated' });
   } catch (error) {
     log.error(`Failed to trigger restart: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -203,7 +215,7 @@ router.get('/history', async (req, res) => {
     res.json({ history });
   } catch (error) {
     log.error(`Failed to get schedule history: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -214,7 +226,7 @@ router.delete('/history', async (req, res) => {
     res.json({ success: true, message: 'History cleared' });
   } catch (error) {
     log.error(`Failed to clear schedule history: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 

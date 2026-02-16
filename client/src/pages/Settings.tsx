@@ -22,7 +22,9 @@ import {
   RotateCcw,
   Settings2,
   Globe,
-  RotateCw
+  RotateCw,
+  Lock,
+  User
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { PageHeader } from '@/components/PageHeader'
@@ -44,6 +46,7 @@ import {
 import { useToast } from '@/components/ui/use-toast'
 import { configApi, panelBridgeApi, backupApi, serversApi, serverApi, BackupStatus, BackupFile, ServerInstance } from '@/lib/api'
 import { useSocket } from '@/contexts/SocketContext'
+import { useAuth } from '@/contexts/AuthContext'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   Select,
@@ -69,6 +72,12 @@ interface AppSettings {
   
   // Panel Settings
   panelPort: string
+
+  // HTTPS Settings
+  httpsEnabled: boolean
+  httpsPort: string
+  httpsKeyPath: string
+  httpsCertPath: string
 }
 
 export default function Settings() {
@@ -82,6 +91,10 @@ export default function Settings() {
     autoReconnect: true,
     reconnectInterval: '5',
     panelPort: '3001',
+    httpsEnabled: false,
+    httpsPort: '3443',
+    httpsKeyPath: '',
+    httpsCertPath: '',
   })
   const [originalSettings, setOriginalSettings] = useState<AppSettings | null>(null)
   const [loading, setLoading] = useState(false)
@@ -90,6 +103,15 @@ export default function Settings() {
   const [testingRcon, setTestingRcon] = useState(false)
   const [restarting, setRestarting] = useState(false)
   const { toast } = useToast()
+  const { user, authEnabled } = useAuth()
+  
+  // Change password state
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [changingPassword, setChangingPassword] = useState(false)
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false)
+  const [showNewPassword, setShowNewPassword] = useState(false)
   
   // Panel Bridge state
   const [bridgeStatus, setBridgeStatus] = useState<{
@@ -647,13 +669,50 @@ export default function Settings() {
 
   const updateSetting = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
     // Validate numeric string fields
-    if (typeof value === 'string' && ['modCheckInterval', 'modRestartDelay', 'reconnectInterval', 'panelPort'].includes(key)) {
+    if (typeof value === 'string' && ['modCheckInterval', 'modRestartDelay', 'reconnectInterval', 'panelPort', 'httpsPort'].includes(key)) {
       // Allow empty string but reject non-numeric values
       if (value !== '' && isNaN(parseInt(value))) {
         return // Don't update with invalid value
       }
     }
     setSettings(prev => ({ ...prev, [key]: value }))
+  }
+
+  const handleChangePassword = async () => {
+    if (!newPassword || !confirmPassword) return
+    if (newPassword !== confirmPassword) {
+      toast({ title: 'Passwords do not match', variant: 'destructive' })
+      return
+    }
+    if (newPassword.length < 6) {
+      toast({ title: 'Password must be at least 6 characters', variant: 'destructive' })
+      return
+    }
+    setChangingPassword(true)
+    try {
+      const res = await fetch('/api/auth/change-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('pz_access_token') || ''}`
+        },
+        body: JSON.stringify({ currentPassword, newPassword })
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to change password')
+      toast({ title: 'Password Changed', description: 'Your password has been updated.' })
+      setCurrentPassword('')
+      setNewPassword('')
+      setConfirmPassword('')
+    } catch (error) {
+      toast({
+        title: 'Change Password Failed',
+        description: error instanceof Error ? error.message : 'Unknown error',
+        variant: 'destructive',
+      })
+    } finally {
+      setChangingPassword(false)
+    }
   }
 
   if (loading && !originalSettings) {
@@ -774,6 +833,82 @@ export default function Settings() {
               <p className="text-xs text-muted-foreground">Save settings before restarting</p>
             )}
           </div>
+        </CardContent>
+      </Card>
+
+      {/* HTTPS Settings */}
+      <Card className="card-interactive">
+        <CardHeader className="pb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-green-500/10 flex items-center justify-center">
+              <Lock className="w-5 h-5 text-green-500" />
+            </div>
+            <div>
+              <CardTitle className="text-lg">HTTPS</CardTitle>
+              <CardDescription className="mt-0.5">
+                Enable encrypted connections with SSL/TLS certificates
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center gap-3 p-4 rounded-xl bg-muted/50">
+            <Switch
+              checked={settings.httpsEnabled}
+              onCheckedChange={(value) => updateSetting('httpsEnabled', value)}
+            />
+            <div>
+              <Label className="text-base">Enable HTTPS</Label>
+              <p className="text-sm text-muted-foreground">
+                Serve the panel over HTTPS. A self-signed certificate is generated automatically if no custom paths are set.
+              </p>
+            </div>
+          </div>
+          {settings.httpsEnabled && (
+            <div className="space-y-4 pl-2 border-l-2 border-green-500/20 ml-2">
+              <div className="max-w-xs">
+                <Label>HTTPS Port</Label>
+                <Input
+                  type="number"
+                  value={settings.httpsPort}
+                  onChange={(e) => updateSetting('httpsPort', e.target.value)}
+                  min="1024"
+                  max="65535"
+                  placeholder="3443"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Port for HTTPS connections (default: 3443)
+                </p>
+              </div>
+              <div className="max-w-md">
+                <Label>Custom Certificate Path <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                <Input
+                  value={settings.httpsCertPath}
+                  onChange={(e) => updateSetting('httpsCertPath', e.target.value)}
+                  placeholder="Leave empty to use auto-generated self-signed cert"
+                />
+              </div>
+              <div className="max-w-md">
+                <Label>Custom Key Path <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                <Input
+                  value={settings.httpsKeyPath}
+                  onChange={(e) => updateSetting('httpsKeyPath', e.target.value)}
+                  placeholder="Leave empty to use auto-generated self-signed key"
+                />
+              </div>
+              {originalSettings && settings.httpsEnabled !== originalSettings.httpsEnabled && (
+                <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg flex items-start gap-3">
+                  <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
+                  <div className="text-sm">
+                    <p className="font-medium text-amber-600 dark:text-amber-400">Restart Required</p>
+                    <p className="text-muted-foreground mt-0.5">
+                      HTTPS changes require a panel restart to take effect.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -1365,30 +1500,121 @@ export default function Settings() {
         </CardContent>
       </Card>
 
-      {/* Security Note */}
+      {/* Security & Authentication */}
       <Card className="card-interactive">
         <CardHeader className="pb-4">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-red-500/10 flex items-center justify-center">
               <Shield className="w-5 h-5 text-red-400" />
             </div>
-            <CardTitle className="text-lg">Security Information</CardTitle>
+            <div>
+              <CardTitle className="text-lg">Security & Authentication</CardTitle>
+              <CardDescription className="mt-0.5">
+                Manage your account and view security information
+              </CardDescription>
+            </div>
           </div>
         </CardHeader>
-        <CardContent className="space-y-4 text-sm text-muted-foreground">
-          <p>
-            <strong className="text-foreground">Local Access Only:</strong> This panel is designed 
-            for local use on the same machine as your server. Do not expose it to the internet 
-            without proper security measures.
-          </p>
-          <p>
-            <strong className="text-foreground">RCON Security:</strong> Your RCON password is 
-            stored locally and is never transmitted outside of the RCON connection to your server.
-          </p>
-          <p>
-            <strong className="text-foreground">Admin Commands:</strong> Be careful with admin 
-            commands. Some actions like banning or kicking players cannot be easily undone.
-          </p>
+        <CardContent className="space-y-6">
+          {/* Account Info */}
+          {authEnabled && user && (
+            <div className="p-4 rounded-xl bg-muted/50 space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+                  <User className="w-4 h-4 text-primary" />
+                </div>
+                <div>
+                  <p className="font-medium">{user.username}</p>
+                  <p className="text-xs text-muted-foreground capitalize">{user.role}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Change Password */}
+          {authEnabled && (
+            <div className="space-y-4">
+              <Label className="text-base font-medium">Change Password</Label>
+              <div className="max-w-sm space-y-3">
+                <div className="relative">
+                  <Input
+                    type={showCurrentPassword ? 'text' : 'password'}
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    placeholder="Current password"
+                    className="h-11 pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    {showCurrentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                <div className="relative">
+                  <Input
+                    type={showNewPassword ? 'text' : 'password'}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="New password"
+                    className="h-11 pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPassword(!showNewPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                <Input
+                  type={showNewPassword ? 'text' : 'password'}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Confirm new password"
+                  className="h-11"
+                />
+                {newPassword && confirmPassword && newPassword !== confirmPassword && (
+                  <p className="text-xs text-destructive flex items-center gap-1">
+                    <XCircle className="w-3 h-3" /> Passwords do not match
+                  </p>
+                )}
+                {newPassword && newPassword.length > 0 && newPassword.length < 6 && (
+                  <p className="text-xs text-destructive flex items-center gap-1">
+                    <XCircle className="w-3 h-3" /> Password must be at least 6 characters
+                  </p>
+                )}
+                <Button
+                  onClick={handleChangePassword}
+                  disabled={changingPassword || !currentPassword || !newPassword || !confirmPassword || newPassword !== confirmPassword || newPassword.length < 6}
+                  className="gap-2"
+                >
+                  {changingPassword ? <Loader2 className="w-4 h-4 animate-spin" /> : <Key className="w-4 h-4" />}
+                  {changingPassword ? 'Changing...' : 'Change Password'}
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Security Tips */}
+          <div className="space-y-3 text-sm text-muted-foreground pt-2 border-t">
+            <p>
+              <strong className="text-foreground">RCON Security:</strong> Your RCON password is 
+              stored locally and is never transmitted outside of the RCON connection to your server.
+            </p>
+            <p>
+              <strong className="text-foreground">Admin Commands:</strong> Be careful with admin 
+              commands. Some actions like banning or kicking players cannot be easily undone.
+            </p>
+            {!authEnabled && (
+              <p>
+                <strong className="text-foreground">Authentication:</strong> Authentication is not
+                configured. Create an account via the setup wizard on first launch to protect access to
+                this panel.
+              </p>
+            )}
+          </div>
         </CardContent>
       </Card>
 

@@ -11,12 +11,36 @@ import os from 'os';
 import { fileURLToPath } from 'url';
 import bridge from '../services/panelBridge.js';
 import { getActiveServer, getServer, getAllSettings } from '../database/init.js';
+import { sanitizeError } from '../utils/sanitize.js';
 
 // ES Module __dirname equivalent
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const router = express.Router();
+
+// Valid PanelBridge actions (defense-in-depth — Lua side also validates)
+const VALID_ACTIONS = new Set([
+  'ping', 'getServerInfo', 'getWeather', 'getGameTime', 'getWorldStats',
+  'getPlayerDetails', 'getAllPlayerDetails', 'healPlayer', 'killPlayer',
+  'teleportPlayer', 'setGodMode', 'setInvisible', 'giveItem',
+  'exportPlayerData', 'importPlayerData',
+  'triggerBlizzard', 'triggerTropicalStorm', 'triggerStorm', 'stopWeather',
+  'startRain', 'stopRain', 'setSnow', 'generateWeather',
+  'setTemperature', 'setWind', 'setFog', 'setClouds',
+  'setDayLight', 'setNightStrength', 'setDesaturation', 'setViewDistance', 'setAmbient',
+  'setClimateFloat', 'resetClimateOverrides', 'getClimateFloats',
+  'setGameTime', 'triggerLightning',
+  'playWorldSound', 'playSoundNearPlayer', 'triggerGunshot', 'triggerAlarmSound', 'createNoise',
+  'sendToServerChat', 'sendToAdminChat', 'sendToGeneralChat', 'getChatInfo',
+  'getUtilitiesStatus', 'restoreUtilities', 'shutOffUtilities',
+  'saveWorld', 'getSandboxOptions',
+  'getZombieCount', 'clearZombiesNearPlayer',
+  'getDebugLog', 'setDebugMode', 'getStats', 'checkAPI', 'getAvailableHandlers', 'clearErrors'
+]);
+
+// Username validation for PanelBridge player endpoints
+const BRIDGE_USERNAME_REGEX = /^[a-zA-Z0-9_-]{1,64}$/;
 
 // Get bridge status
 router.get('/status', async (req, res) => {
@@ -182,6 +206,11 @@ router.post('/auto-configure', async (req, res) => {
     // DON'T create the directory - the PZ mod will create it when it runs
     // Just configure the bridge to watch this path
     
+    // Stop bridge first if already running so watcher/poller restarts on new path
+    if (bridge.isRunning) {
+      bridge.stop();
+    }
+    
     // Configure and start bridge - foundPath IS the complete panelbridge folder
     const bridgePath = bridge.configure(foundPath.path, true); // true = direct path
     bridge.start();
@@ -236,7 +265,7 @@ router.post('/auto-configure', async (req, res) => {
       searchedPaths: searchedLocations
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -343,7 +372,7 @@ router.get('/scan-server/:serverId', async (req, res) => {
       recommendedSource: recommendedPath?.source || null
     });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({ success: false, error: sanitizeError(error.message) });
   }
 });
 
@@ -356,6 +385,10 @@ router.post('/auto-detect', (req, res) => {
   }
   
   try {
+    // Stop bridge first if already running so watcher/poller restarts on new path
+    if (bridge.isRunning) {
+      bridge.stop();
+    }
     const bridgePath = bridge.autoDetect(serverName, zomboidUserFolder);
     bridge.start();
     res.json({ 
@@ -364,7 +397,7 @@ router.post('/auto-detect', (req, res) => {
       bridgePath 
     });
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -377,14 +410,16 @@ router.post('/configure', (req, res) => {
   }
   
   try {
+    // Stop bridge first if already running so watcher/poller restarts on new path
+    if (bridge.isRunning) {
+      bridge.stop();
+    }
     const bridgePath = bridge.configure(zomboidSavePath);
     // Also start the bridge automatically after configuring
-    if (!bridge.isRunning) {
-      bridge.start();
-    }
+    bridge.start();
     res.json({ success: true, message: 'Bridge configured and started', bridgePath });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -394,7 +429,7 @@ router.post('/start', (req, res) => {
     bridge.start();
     res.json({ success: true, message: 'Bridge started' });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -404,7 +439,7 @@ router.post('/stop', (req, res) => {
     bridge.stop();
     res.json({ success: true, message: 'Bridge stopped' });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -527,7 +562,7 @@ router.get('/scan-paths', async (req, res) => {
       modConnected: bridge.isModConnected()
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -535,13 +570,8 @@ router.get('/scan-paths', async (req, res) => {
 router.post('/refresh', (req, res) => {
   try {
     if (bridge.isRunning) {
-      bridge.stop();
+      bridge.stop(); // stop() already resets all internal state
     }
-    
-    // Reset internal state
-    bridge.modStatus = null;
-    bridge.consecutiveFailures = 0;
-    bridge.lastStatusFileCheck = 0;
     
     if (bridge.bridgePath) {
       bridge.start();
@@ -557,7 +587,7 @@ router.post('/refresh', (req, res) => {
       });
     }
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -571,7 +601,7 @@ router.get('/ping', async (req, res) => {
     const result = await bridge.ping();
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -581,6 +611,16 @@ router.post('/command', async (req, res) => {
   
   if (!action) {
     return res.status(400).json({ error: 'action is required' });
+  }
+  
+  // Validate action against whitelist
+  if (typeof action !== 'string' || !VALID_ACTIONS.has(action)) {
+    return res.status(400).json({ error: 'Unknown or invalid action' });
+  }
+  
+  // Validate args if provided
+  if (args !== undefined && (typeof args !== 'object' || args === null || Array.isArray(args))) {
+    return res.status(400).json({ error: 'args must be an object' });
   }
   
   if (!bridge.bridgePath) {
@@ -595,7 +635,7 @@ router.post('/command', async (req, res) => {
     const result = await bridge.sendCommand(action, args || {});
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -612,7 +652,7 @@ router.get('/weather', async (req, res) => {
     const result = await bridge.getWeather();
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -629,7 +669,7 @@ router.get('/server-info', async (req, res) => {
     const result = await bridge.getServerInfo();
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -643,7 +683,7 @@ router.post('/weather/blizzard', async (req, res) => {
     const result = await bridge.triggerBlizzard(duration);
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -656,7 +696,7 @@ router.post('/weather/tropical-storm', async (req, res) => {
     const result = await bridge.triggerTropicalStorm(duration);
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -669,7 +709,7 @@ router.post('/weather/storm', async (req, res) => {
     const result = await bridge.triggerStorm(duration);
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -681,7 +721,21 @@ router.post('/weather/stop', async (req, res) => {
     const result = await bridge.stopWeather();
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
+// Generate weather period
+router.post('/weather/generate', async (req, res) => {
+  if (!bridge.isRunning) {
+    return res.status(400).json({ error: 'Bridge not running. Start it first.' });
+  }
+  const { strength, frontType } = req.body;
+  try {
+    const result = await bridge.generateWeather(strength ?? 0.5, frontType ?? 0);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -689,12 +743,12 @@ router.post('/weather/snow', async (req, res) => {
   if (!bridge.isRunning) {
     return res.status(400).json({ error: 'Bridge not running. Start it first.' });
   }
-  const { enabled } = req.body;
+  const { enabled, intensity } = req.body;
   try {
-    const result = await bridge.setSnow(enabled !== false);
+    const result = await bridge.setSnow(enabled !== false, intensity ?? null);
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -709,10 +763,10 @@ router.post('/weather/rain/start', async (req, res) => {
   }
   const { intensity } = req.body;
   try {
-    const result = await bridge.startRain(intensity || 1.0);
+    const result = await bridge.startRain(intensity ?? 0.5);
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -724,7 +778,7 @@ router.post('/weather/rain/stop', async (req, res) => {
     const result = await bridge.stopRain();
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -738,7 +792,7 @@ router.post('/weather/lightning', async (req, res) => {
     const result = await bridge.triggerLightning(x, y, strike, light, rumble);
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -751,7 +805,7 @@ router.get('/climate/floats', async (req, res) => {
     const result = await bridge.getClimateFloats();
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -767,7 +821,7 @@ router.post('/climate/float', async (req, res) => {
     const result = await bridge.setClimateFloat(floatId, value, enable !== false);
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -779,7 +833,60 @@ router.post('/climate/reset', async (req, res) => {
     const result = await bridge.resetClimateOverrides();
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
+// Individual climate shortcuts
+router.post('/climate/temperature', async (req, res) => {
+  if (!bridge.isRunning) {
+    return res.status(400).json({ error: 'Bridge not running. Start it first.' });
+  }
+  const { value } = req.body;
+  try {
+    const result = await bridge.setTemperature(value ?? 22);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
+router.post('/climate/wind', async (req, res) => {
+  if (!bridge.isRunning) {
+    return res.status(400).json({ error: 'Bridge not running. Start it first.' });
+  }
+  const { value } = req.body;
+  try {
+    const result = await bridge.setWind(value ?? 0.5);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
+router.post('/climate/fog', async (req, res) => {
+  if (!bridge.isRunning) {
+    return res.status(400).json({ error: 'Bridge not running. Start it first.' });
+  }
+  const { value } = req.body;
+  try {
+    const result = await bridge.setFog(value ?? 0);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
+router.post('/climate/clouds', async (req, res) => {
+  if (!bridge.isRunning) {
+    return res.status(400).json({ error: 'Bridge not running. Start it first.' });
+  }
+  const { value } = req.body;
+  try {
+    const result = await bridge.setClouds(value ?? 0);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -792,7 +899,7 @@ router.get('/time', async (req, res) => {
     const result = await bridge.getGameTime();
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -805,7 +912,7 @@ router.post('/time', async (req, res) => {
     const result = await bridge.setGameTime({ hour, day, month, year });
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -818,7 +925,7 @@ router.get('/world/stats', async (req, res) => {
     const result = await bridge.getWorldStats();
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -831,7 +938,7 @@ router.post('/world/save', async (req, res) => {
     const result = await bridge.saveWorld();
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -844,7 +951,7 @@ router.get('/players', async (req, res) => {
     const result = await bridge.getAllPlayerDetails();
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -852,11 +959,14 @@ router.get('/players/:username', async (req, res) => {
   if (!bridge.isRunning) {
     return res.status(400).json({ error: 'Bridge not running. Start it first.' });
   }
+  if (!BRIDGE_USERNAME_REGEX.test(req.params.username)) {
+    return res.status(400).json({ error: 'Invalid username format' });
+  }
   try {
     const result = await bridge.getPlayerDetails(req.params.username);
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Failed to get player details' });
   }
 });
 
@@ -864,15 +974,21 @@ router.post('/players/:username/teleport', async (req, res) => {
   if (!bridge.isRunning) {
     return res.status(400).json({ error: 'Bridge not running. Start it first.' });
   }
+  if (!BRIDGE_USERNAME_REGEX.test(req.params.username)) {
+    return res.status(400).json({ error: 'Invalid username format' });
+  }
   const { x, y, z } = req.body;
   if (x === undefined || y === undefined) {
     return res.status(400).json({ error: 'x and y coordinates are required' });
+  }
+  if (typeof x !== 'number' || typeof y !== 'number' || (z !== undefined && typeof z !== 'number')) {
+    return res.status(400).json({ error: 'Coordinates must be numbers' });
   }
   try {
     const result = await bridge.teleportPlayer(req.params.username, x, y, z);
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Teleport failed' });
   }
 });
 
@@ -881,15 +997,15 @@ router.post('/message', async (req, res) => {
   if (!bridge.isRunning) {
     return res.status(400).json({ error: 'Bridge not running. Start it first.' });
   }
-  const { message, color } = req.body;
-  if (!message) {
-    return res.status(400).json({ error: 'message is required' });
+  const { message } = req.body;
+  if (!message || typeof message !== 'string' || message.length > 2000) {
+    return res.status(400).json({ error: 'message is required (max 2000 chars)' });
   }
   try {
-    const result = await bridge.sendServerMessage(message, color);
+    const result = await bridge.sendServerMessage(message);
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -902,61 +1018,99 @@ router.get('/sandbox', async (req, res) => {
     const result = await bridge.getSandboxOptions();
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
-// Get available commands (updated list)
+// Get available commands (complete reference for all 60 Lua handlers)
 router.get('/commands', (req, res) => {
   res.json({
     commands: [
-      // Basic
+      // === Basic / Utility ===
       { action: 'ping', description: 'Health check', args: {} },
-      { action: 'getServerInfo', description: 'Get server info and players', args: {} },
-      
-      // Weather
-      { action: 'getWeather', description: 'Get current weather (enhanced)', args: {} },
-      { action: 'triggerBlizzard', description: 'Trigger a blizzard', args: { duration: 'number (default: 1.0)' } },
-      { action: 'triggerTropicalStorm', description: 'Trigger tropical storm', args: { duration: 'number (default: 1.0)' } },
-      { action: 'triggerStorm', description: 'Trigger a storm', args: { duration: 'number (default: 1.0)' } },
-      { action: 'stopWeather', description: 'Stop all weather', args: {} },
-      { action: 'generateWeather', description: 'Generate weather period', args: { strength: '0-1', frontType: '0-2' } },
-      { action: 'setSnow', description: 'Enable/disable snow (auto-enables rain)', args: { enabled: 'boolean' } },
-      { action: 'startRain', description: 'Start rain', args: { intensity: '0-1 (default: 1.0)' } },
-      { action: 'stopRain', description: 'Stop rain', args: {} },
-      { action: 'triggerLightning', description: 'Trigger lightning bolt', args: { x: 'optional', y: 'optional', strike: 'boolean', light: 'boolean', rumble: 'boolean' } },
-      
-      // Climate Control
-      { action: 'getClimateFloats', description: 'Get all climate float values', args: {} },
-      { action: 'setClimateFloat', description: 'Set climate float value', args: { floatId: '0-12', value: 'number', enable: 'boolean' } },
-      { action: 'resetClimateOverrides', description: 'Reset all admin climate overrides', args: {} },
-      { action: 'setDayLight', description: 'Set daylight strength', args: { value: '0-1' } },
-      { action: 'setNightStrength', description: 'Set night strength', args: { value: '0-1' } },
-      { action: 'setDesaturation', description: 'Set desaturation level', args: { value: '0-1' } },
-      { action: 'setViewDistance', description: 'Set view distance', args: { value: '0-1' } },
-      { action: 'setAmbient', description: 'Set ambient light', args: { value: '0-1' } },
-      
-      // Time
-      { action: 'getGameTime', description: 'Get current game time/date', args: {} },
-      { action: 'setGameTime', description: 'Set game time/date', args: { hour: 'number', day: 'number', month: 'number', year: 'number' } },
-      
-      // World
-      { action: 'getWorldStats', description: 'Get world statistics', args: {} },
-      { action: 'getSandboxOptions', description: 'Get sandbox options (read-only)', args: {} },
+      { action: 'getServerInfo', description: 'Get server info and player list', args: {} },
       { action: 'saveWorld', description: 'Trigger world save', args: {} },
       
-      // Players
-      { action: 'getAllPlayerDetails', description: 'Get detailed info for all players', args: {} },
-      { action: 'getPlayerDetails', description: 'Get detailed info for a player', args: { username: 'string' } },
-      { action: 'teleportPlayer', description: 'Teleport a player', args: { username: 'string', x: 'number', y: 'number', z: 'number (optional)' } },
-      { action: 'sendServerMessage', description: 'Send message to all players', args: { message: 'string', color: 'string (optional)' } },
+      // === Weather ===
+      { action: 'getWeather', description: 'Get current weather data', args: {} },
+      { action: 'triggerBlizzard', description: 'Trigger a blizzard', args: { duration: 'number (hours, default: 2.0)' } },
+      { action: 'triggerTropicalStorm', description: 'Trigger tropical storm', args: { duration: 'number (hours, default: 2.0)' } },
+      { action: 'triggerStorm', description: 'Trigger a storm', args: { duration: 'number (hours, default: 2.0)' } },
+      { action: 'stopWeather', description: 'Stop all weather', args: {} },
+      { action: 'generateWeather', description: 'Generate weather period', args: { strength: 'number 0-1 (default: 0.5)', frontType: 'number 0=stationary, 1=cold, 2=warm (default: 0)' } },
+      { action: 'setSnow', description: 'Enable/disable snow (auto-enables rain)', args: { enabled: 'boolean (default: true)', intensity: 'number 0-1 (optional, for rain start)' } },
+      { action: 'startRain', description: 'Start rain', args: { intensity: 'number 0-1 (default: 0.5)' } },
+      { action: 'stopRain', description: 'Stop rain', args: {} },
+      { action: 'triggerLightning', description: 'Trigger lightning bolt', args: { x: 'number (optional)', y: 'number (optional)', strike: 'boolean (default: true)', light: 'boolean (default: true)', rumble: 'boolean (default: true)' } },
       
-      // Sound/Noise (v1.2.0)
-      { action: 'playWorldSound', description: 'Create zombie-attracting sound at coordinates', args: { x: 'number', y: 'number', z: 'number (optional)', radius: 'number (default: 50)', volume: 'number (default: 100)' } },
-      { action: 'playSoundNearPlayer', description: 'Create sound at player location', args: { username: 'string', radius: 'number (default: 50)', volume: 'number (default: 100)' } },
-      { action: 'triggerGunshot', description: 'Simulate loud gunshot (150m radius)', args: { x: 'number', y: 'number', username: 'string (alternative)' } },
-      { action: 'triggerAlarmSound', description: 'Trigger alarm sound (80m radius)', args: { x: 'number', y: 'number', username: 'string (alternative)' } },
-      { action: 'createNoise', description: 'Create custom noise', args: { x: 'number', y: 'number', radius: 'number', volume: 'number', username: 'string (alternative)' } },
+      // === Climate Control ===
+      { action: 'getClimateFloats', description: 'Get all climate float values (IDs 0-12)', args: {} },
+      { action: 'setClimateFloat', description: 'Set climate float by ID', args: { floatId: 'number 0-12 (required)', value: 'number (required)', enable: 'boolean (default: true)' } },
+      { action: 'resetClimateOverrides', description: 'Reset all admin climate overrides', args: {} },
+      { action: 'setTemperature', description: 'Set temperature (Celsius)', args: { value: 'number -50 to +50 (default: 22)' } },
+      { action: 'setWind', description: 'Set wind intensity', args: { value: 'number 0-1 (default: 0.5)' } },
+      { action: 'setFog', description: 'Set fog intensity', args: { value: 'number 0-1 (default: 0)' } },
+      { action: 'setClouds', description: 'Set cloud intensity', args: { value: 'number 0-1 (default: 0)' } },
+      
+      // === Visual / Lighting ===
+      { action: 'setDayLight', description: 'Set daylight strength', args: { value: 'number 0-1 (default: 1.0)' } },
+      { action: 'setNightStrength', description: 'Set night strength', args: { value: 'number 0-1 (default: 0)' } },
+      { action: 'setDesaturation', description: 'Set desaturation level', args: { value: 'number 0-1 (default: 0)' } },
+      { action: 'setViewDistance', description: 'Set view distance', args: { value: 'number 0-1 (default: 1.0)' } },
+      { action: 'setAmbient', description: 'Set ambient light', args: { value: 'number 0-1 (default: 1.0)' } },
+      
+      // === Time ===
+      { action: 'getGameTime', description: 'Get current game time/date', args: {} },
+      { action: 'setGameTime', description: 'Set game time/date (only sent fields are changed)', args: { hour: 'number (optional)', day: 'number (optional)', month: 'number 1-12 (optional)', year: 'number (optional)' } },
+      
+      // === World / Config ===
+      { action: 'getWorldStats', description: 'Get world statistics', args: {} },
+      { action: 'getSandboxOptions', description: 'Get sandbox options (read-only)', args: {} },
+      
+      // === Players ===
+      { action: 'getAllPlayerDetails', description: 'Get detailed info for all online players', args: {} },
+      { action: 'getPlayerDetails', description: 'Get detailed info for a player', args: { username: 'string (required)' } },
+      { action: 'teleportPlayer', description: 'Teleport a player', args: { username: 'string (required)', x: 'number (required)', y: 'number (required)', z: 'number (default: 0)' } },
+      { action: 'healPlayer', description: 'Fully heal a player', args: { username: 'string (required)' } },
+      { action: 'killPlayer', description: 'Kill a player', args: { username: 'string (required)' } },
+      { action: 'setGodMode', description: 'Toggle god mode', args: { username: 'string (required)', enabled: 'boolean (default: false)' } },
+      { action: 'setInvisible', description: 'Toggle invisibility', args: { username: 'string (required)', enabled: 'boolean (default: false)' } },
+      { action: 'giveItem', description: 'Give item to player', args: { username: 'string (required)', itemType: 'string e.g. "Base.Axe" (required)', count: 'number 1-100 (default: 1)' } },
+      
+      // === Character Export/Import ===
+      { action: 'exportPlayerData', description: 'Export full character data (perks, inventory, traits)', args: { username: 'string (required)' } },
+      { action: 'importPlayerData', description: 'Import/restore character data', args: { username: 'string (required)', data: 'object (required, from export)', options: '{ restorePerks: boolean, restoreInventory: boolean } (optional, both default true)' } },
+      
+      // === Chat ===
+      { action: 'sendServerMessage', description: 'Send message to all players (system announcement)', args: { message: 'string (required)' } },
+      { action: 'sendToServerChat', description: 'Send message to server chat', args: { message: 'string (required)', alert: 'boolean (default: false, true for server alert)' } },
+      { action: 'sendToAdminChat', description: 'Send message to admin-only chat', args: { message: 'string (required)' } },
+      { action: 'sendToGeneralChat', description: 'Send message to general chat with custom author', args: { message: 'string (required)', author: 'string (default: "[Panel]")' } },
+      { action: 'getChatInfo', description: 'Get available chat types', args: {} },
+      
+      // === Sound / Noise ===
+      { action: 'playWorldSound', description: 'Create zombie-attracting sound at coordinates', args: { x: 'number (required)', y: 'number (required)', z: 'number (default: 0)', radius: 'number (default: 50)', volume: 'number (default: 100)' } },
+      { action: 'playSoundNearPlayer', description: 'Create sound at player location', args: { username: 'string (required)', radius: 'number (default: 50)', volume: 'number (default: 100)' } },
+      { action: 'triggerGunshot', description: 'Simulate gunshot (150m radius)', args: { x: 'number', y: 'number', username: 'string (alternative to x/y)' } },
+      { action: 'triggerAlarmSound', description: 'Trigger alarm sound (80m radius)', args: { x: 'number', y: 'number', username: 'string (alternative to x/y)' } },
+      { action: 'createNoise', description: 'Create custom noise', args: { x: 'number', y: 'number', radius: 'number 10-500 (default: 100)', volume: 'number 1-500 (default: 100)', username: 'string (alternative to x/y)' } },
+      
+      // === Utilities (Power/Water) ===
+      { action: 'getUtilitiesStatus', description: 'Get power/water status', args: {} },
+      { action: 'restoreUtilities', description: 'Restore power and/or water', args: { power: 'boolean (default: true)', water: 'boolean (default: true)' } },
+      { action: 'shutOffUtilities', description: 'Shut off power and/or water', args: { power: 'boolean (default: true)', water: 'boolean (default: true)' } },
+      
+      // === Zombies ===
+      { action: 'getZombieCount', description: 'Get zombie count in loaded cells', args: {} },
+      { action: 'clearZombiesNearPlayer', description: 'Remove zombies near a player', args: { username: 'string (required)', radius: 'number (default: 50)' } },
+      
+      // === Debug ===
+      { action: 'getDebugLog', description: 'Get mod debug log entries', args: { limit: 'number (default: 50)', minLevel: 'string: DEBUG|INFO|WARN|ERROR (default: DEBUG)' } },
+      { action: 'getStats', description: 'Get mod statistics', args: {} },
+      { action: 'setDebugMode', description: 'Toggle verbose logging', args: { enabled: 'boolean (required)' } },
+      { action: 'checkAPI', description: 'Check API method availability', args: { object: 'string (default: ClimateManager)', method: 'string (optional, specific method to check)' } },
+      { action: 'getAvailableHandlers', description: 'List all available command handlers', args: {} },
+      { action: 'clearErrors', description: 'Clear mod error log', args: {} },
     ],
     climateFloatIds: {
       0: 'FLOAT_DESATURATION',
@@ -1089,7 +1243,7 @@ router.post('/install-mod-auto', async (req, res) => {
       serverName: targetServer.serverName || targetServer.name
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -1102,6 +1256,24 @@ router.post('/install-mod', (req, res) => {
   
   if (!targetPath) {
     return res.status(400).json({ error: 'serverLuaPath is required (path to media/lua/server/)' });
+  }
+  
+  // Validate path: must be a string, absolute, no traversal
+  if (typeof targetPath !== 'string' || targetPath.length > 500) {
+    return res.status(400).json({ error: 'Invalid path format' });
+  }
+  
+  const resolvedTarget = path.resolve(targetPath);
+  
+  // Must be absolute (Windows drive or UNC)
+  if (!/^[A-Za-z]:[\\/]/.test(resolvedTarget) && !resolvedTarget.startsWith('\\\\')) {
+    return res.status(400).json({ error: 'Must be an absolute path' });
+  }
+  
+  // Path must end with expected PZ Lua server directory pattern
+  const normalizedTarget = resolvedTarget.replace(/\\/g, '/').toLowerCase();
+  if (!normalizedTarget.endsWith('/media/lua/server') && !normalizedTarget.endsWith('/media/lua/server/')) {
+    return res.status(400).json({ error: 'Path must point to a media/lua/server/ directory' });
   }
   
   try {
@@ -1146,7 +1318,7 @@ router.post('/install-mod', (req, res) => {
       path: destPath 
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -1167,7 +1339,7 @@ router.post('/sound/world', async (req, res) => {
     const result = await bridge.playWorldSound(x, y, z, radius, volume);
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -1177,14 +1349,14 @@ router.post('/sound/near-player', async (req, res) => {
     return res.status(400).json({ error: 'Bridge not running. Start it first.' });
   }
   const { username, radius, volume } = req.body;
-  if (!username) {
-    return res.status(400).json({ error: 'username is required' });
+  if (!username || !BRIDGE_USERNAME_REGEX.test(username)) {
+    return res.status(400).json({ error: 'Valid username is required' });
   }
   try {
     const result = await bridge.playSoundNearPlayer(username, radius, volume);
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Failed to play sound' });
   }
 });
 
@@ -1194,11 +1366,14 @@ router.post('/sound/gunshot', async (req, res) => {
     return res.status(400).json({ error: 'Bridge not running. Start it first.' });
   }
   const { x, y, z, username } = req.body;
+  if (username && !BRIDGE_USERNAME_REGEX.test(username)) {
+    return res.status(400).json({ error: 'Invalid username format' });
+  }
   try {
     const result = await bridge.triggerGunshot({ x, y, z, username });
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Failed to trigger gunshot' });
   }
 });
 
@@ -1208,11 +1383,14 @@ router.post('/sound/alarm', async (req, res) => {
     return res.status(400).json({ error: 'Bridge not running. Start it first.' });
   }
   const { x, y, z, username } = req.body;
+  if (username && !BRIDGE_USERNAME_REGEX.test(username)) {
+    return res.status(400).json({ error: 'Invalid username format' });
+  }
   try {
     const result = await bridge.triggerAlarmSound({ x, y, z, username });
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -1222,11 +1400,14 @@ router.post('/sound/noise', async (req, res) => {
     return res.status(400).json({ error: 'Bridge not running. Start it first.' });
   }
   const { x, y, z, radius, volume, username } = req.body;
+  if (username && !BRIDGE_USERNAME_REGEX.test(username)) {
+    return res.status(400).json({ error: 'Invalid username format' });
+  }
   try {
     const result = await bridge.createNoise({ x, y, z, radius, volume, username });
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -1243,7 +1424,7 @@ router.get('/utilities/status', async (req, res) => {
     const result = await bridge.sendCommand('getUtilitiesStatus', {});
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -1260,7 +1441,7 @@ router.post('/utilities/restore', async (req, res) => {
     });
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -1277,7 +1458,7 @@ router.post('/utilities/shutoff', async (req, res) => {
     });
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -1291,14 +1472,14 @@ router.post('/character/export', async (req, res) => {
     return res.status(400).json({ error: 'Bridge not running. Start it first.' });
   }
   const { username } = req.body;
-  if (!username) {
-    return res.status(400).json({ error: 'Username is required' });
+  if (!username || !BRIDGE_USERNAME_REGEX.test(username)) {
+    return res.status(400).json({ error: 'Invalid or missing username' });
   }
   try {
     const result = await bridge.sendCommand('exportPlayerData', { username });
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -1307,9 +1488,9 @@ router.post('/character/import', async (req, res) => {
   if (!bridge.isRunning) {
     return res.status(400).json({ error: 'Bridge not running. Start it first.' });
   }
-  const { username, data } = req.body;
-  if (!username) {
-    return res.status(400).json({ error: 'Username is required' });
+  const { username, data, options } = req.body;
+  if (!username || !BRIDGE_USERNAME_REGEX.test(username)) {
+    return res.status(400).json({ error: 'Invalid or missing username' });
   }
   if (!data) {
     return res.status(400).json({ error: 'Character data is required' });
@@ -1319,16 +1500,16 @@ router.post('/character/import', async (req, res) => {
     return res.status(400).json({ error: 'Character data must be an object' });
   }
   // Check for at least one valid data section
-  const validSections = ['perks', 'xp', 'skills', 'traits', 'recipes', 'stats'];
+  const validSections = ['perks', 'xp', 'skills', 'traits', 'recipes', 'stats', 'inventory', 'wornItems'];
   const hasValidSection = validSections.some(section => data[section] !== undefined);
   if (!hasValidSection) {
-    return res.status(400).json({ error: 'Character data must contain at least one of: perks, xp, skills, traits, recipes, stats' });
+    return res.status(400).json({ error: 'Character data must contain at least one of: ' + validSections.join(', ') });
   }
   try {
-    const result = await bridge.sendCommand('importPlayerData', { username, data });
+    const result = await bridge.sendCommand('importPlayerData', { username, data, options });
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -1342,15 +1523,21 @@ router.post('/players/:username/give-item', async (req, res) => {
     return res.status(400).json({ error: 'Bridge not running' });
   }
   const { username } = req.params;
+  if (!BRIDGE_USERNAME_REGEX.test(username)) {
+    return res.status(400).json({ error: 'Invalid username format' });
+  }
   const { itemType, count = 1 } = req.body;
-  if (!itemType) {
+  if (!itemType || typeof itemType !== 'string' || itemType.length > 200) {
     return res.status(400).json({ error: 'itemType is required (e.g., "Base.Axe")' });
+  }
+  if (typeof count !== 'number' || count < 1 || count > 100) {
+    return res.status(400).json({ error: 'count must be 1-100' });
   }
   try {
     const result = await bridge.sendCommand('giveItem', { username, itemType, count });
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -1360,11 +1547,14 @@ router.post('/players/:username/heal', async (req, res) => {
     return res.status(400).json({ error: 'Bridge not running' });
   }
   const { username } = req.params;
+  if (!BRIDGE_USERNAME_REGEX.test(username)) {
+    return res.status(400).json({ error: 'Invalid username format' });
+  }
   try {
     const result = await bridge.sendCommand('healPlayer', { username });
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -1374,11 +1564,14 @@ router.post('/players/:username/kill', async (req, res) => {
     return res.status(400).json({ error: 'Bridge not running' });
   }
   const { username } = req.params;
+  if (!BRIDGE_USERNAME_REGEX.test(username)) {
+    return res.status(400).json({ error: 'Invalid username format' });
+  }
   try {
     const result = await bridge.sendCommand('killPlayer', { username });
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -1388,12 +1581,15 @@ router.post('/players/:username/godmode', async (req, res) => {
     return res.status(400).json({ error: 'Bridge not running' });
   }
   const { username } = req.params;
+  if (!BRIDGE_USERNAME_REGEX.test(username)) {
+    return res.status(400).json({ error: 'Invalid username format' });
+  }
   const { enabled } = req.body;
   try {
-    const result = await bridge.sendCommand('setGodMode', { username, enabled: enabled !== false });
+    const result = await bridge.sendCommand('setGodMode', { username, enabled: enabled === true });
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -1403,12 +1599,15 @@ router.post('/players/:username/invisible', async (req, res) => {
     return res.status(400).json({ error: 'Bridge not running' });
   }
   const { username } = req.params;
+  if (!BRIDGE_USERNAME_REGEX.test(username)) {
+    return res.status(400).json({ error: 'Invalid username format' });
+  }
   const { enabled } = req.body;
   try {
-    const result = await bridge.sendCommand('setInvisible', { username, enabled: enabled !== false });
+    const result = await bridge.sendCommand('setInvisible', { username, enabled: enabled === true });
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -1425,7 +1624,7 @@ router.get('/zombies/count', async (req, res) => {
     const result = await bridge.sendCommand('getZombieCount', {});
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -1435,14 +1634,17 @@ router.post('/zombies/clear-near-player', async (req, res) => {
     return res.status(400).json({ error: 'Bridge not running' });
   }
   const { username, radius = 50 } = req.body;
-  if (!username) {
-    return res.status(400).json({ error: 'username is required' });
+  if (!username || !BRIDGE_USERNAME_REGEX.test(username)) {
+    return res.status(400).json({ error: 'Valid username is required' });
+  }
+  if (typeof radius !== 'number' || radius < 1 || radius > 500) {
+    return res.status(400).json({ error: 'radius must be 1-500' });
   }
   try {
     const result = await bridge.sendCommand('clearZombiesNearPlayer', { username, radius });
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -1463,7 +1665,7 @@ router.post('/visual/view-distance', async (req, res) => {
     const result = await bridge.sendCommand('setViewDistance', { value });
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -1480,7 +1682,7 @@ router.post('/visual/daylight', async (req, res) => {
     const result = await bridge.sendCommand('setDayLight', { value });
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -1497,7 +1699,7 @@ router.post('/visual/night-strength', async (req, res) => {
     const result = await bridge.sendCommand('setNightStrength', { value });
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -1514,7 +1716,7 @@ router.post('/visual/desaturation', async (req, res) => {
     const result = await bridge.sendCommand('setDesaturation', { value });
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -1531,7 +1733,7 @@ router.post('/visual/ambient', async (req, res) => {
     const result = await bridge.sendCommand('setAmbient', { value });
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -1548,7 +1750,7 @@ router.get('/chat/info', async (req, res) => {
     const result = await bridge.sendCommand('getChatInfo', {});
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -1558,14 +1760,14 @@ router.post('/chat/admin', async (req, res) => {
     return res.status(400).json({ error: 'Bridge not running' });
   }
   const { message } = req.body;
-  if (!message) {
-    return res.status(400).json({ error: 'message is required' });
+  if (!message || typeof message !== 'string' || message.length > 2000) {
+    return res.status(400).json({ error: 'message is required (max 2000 chars)' });
   }
   try {
     const result = await bridge.sendCommand('sendToAdminChat', { message });
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Failed to send admin message' });
   }
 });
 
@@ -1575,14 +1777,17 @@ router.post('/chat/general', async (req, res) => {
     return res.status(400).json({ error: 'Bridge not running' });
   }
   const { message, author = 'Server' } = req.body;
-  if (!message) {
-    return res.status(400).json({ error: 'message is required' });
+  if (!message || typeof message !== 'string' || message.length > 2000) {
+    return res.status(400).json({ error: 'message is required (max 2000 chars)' });
+  }
+  if (typeof author !== 'string' || author.length > 64) {
+    return res.status(400).json({ error: 'Invalid author (max 64 chars)' });
   }
   try {
     const result = await bridge.sendCommand('sendToGeneralChat', { message, author });
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -1592,14 +1797,14 @@ router.post('/chat/alert', async (req, res) => {
     return res.status(400).json({ error: 'Bridge not running' });
   }
   const { message, alert = true } = req.body;
-  if (!message) {
-    return res.status(400).json({ error: 'message is required' });
+  if (!message || typeof message !== 'string' || message.length > 2000) {
+    return res.status(400).json({ error: 'message is required (max 2000 chars)' });
   }
   try {
     const result = await bridge.sendCommand('sendToServerChat', { message, alert });
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -1612,13 +1817,14 @@ router.get('/debug/log', async (req, res) => {
   if (!bridge.isRunning) {
     return res.status(400).json({ error: 'Bridge not running' });
   }
-  const limit = parseInt(req.query.limit) || 50;
-  const minLevel = req.query.level || 'DEBUG';
+  const limit = Math.min(Math.max(parseInt(req.query.limit) || 50, 1), 500);
+  const VALID_LOG_LEVELS = ['DEBUG', 'INFO', 'WARN', 'ERROR'];
+  const minLevel = VALID_LOG_LEVELS.includes(req.query.level) ? req.query.level : 'DEBUG';
   try {
     const result = await bridge.sendCommand('getDebugLog', { limit, minLevel });
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -1631,7 +1837,7 @@ router.get('/debug/stats', async (req, res) => {
     const result = await bridge.sendCommand('getStats', {});
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -1645,7 +1851,7 @@ router.post('/debug/mode', async (req, res) => {
     const result = await bridge.sendCommand('setDebugMode', { enabled: enabled === true });
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -1655,11 +1861,18 @@ router.get('/debug/api', async (req, res) => {
     return res.status(400).json({ error: 'Bridge not running' });
   }
   const { object, method } = req.query;
+  // Validate as identifier-like strings
+  if (object && (typeof object !== 'string' || !/^[a-zA-Z0-9_.]{1,100}$/.test(object))) {
+    return res.status(400).json({ error: 'Invalid object name' });
+  }
+  if (method && (typeof method !== 'string' || !/^[a-zA-Z0-9_.]{1,100}$/.test(method))) {
+    return res.status(400).json({ error: 'Invalid method name' });
+  }
   try {
     const result = await bridge.sendCommand('checkAPI', { object, method });
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -1672,7 +1885,20 @@ router.get('/debug/handlers', async (req, res) => {
     const result = await bridge.sendCommand('getAvailableHandlers', {});
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
+// Clear mod errors
+router.post('/debug/clear-errors', async (req, res) => {
+  if (!bridge.isRunning) {
+    return res.status(400).json({ error: 'Bridge not running' });
+  }
+  try {
+    const result = await bridge.clearErrors();
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 

@@ -24,10 +24,13 @@ import Dashboard from './pages/Dashboard'
 import { Toaster } from './components/ui/toaster'
 import { SocketContext, ConnectionStatus, ConnectionStatusContext } from './contexts/SocketContext'
 import { ThemeProvider } from './contexts/ThemeContext'
+import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { TooltipProvider } from './components/ui/tooltip'
 import { useToast } from './components/ui/use-toast'
 import { PageSkeleton } from './components/PageSkeleton'
 import { ScrollToTop } from './components/ScrollToTop'
+import Login from './pages/Login'
+import Setup from './pages/Setup'
 
 // Lazy load larger pages for code splitting
 const Players = lazy(() => import('./pages/Players'))
@@ -60,6 +63,7 @@ function AppContent() {
     error: null,
   })
   const { toast } = useToast()
+  const { isAuthenticated, isLoading, needsSetup, authEnabled, getToken } = useAuth()
 
   const handleReconnectSuccess = useCallback(() => {
     toast({
@@ -70,12 +74,19 @@ function AppContent() {
   }, [toast])
 
   useEffect(() => {
+    // Don't connect socket until auth is resolved
+    if (isLoading) return
+    // If auth is enabled and user is not authenticated, don't connect
+    if (authEnabled && !isAuthenticated && !needsSetup) return
+
+    const token = getToken()
     const newSocket = io(window.location.origin, {
       transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionAttempts: 10,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
+      auth: token ? { token } : undefined,
     })
 
     // Connection established
@@ -158,7 +169,37 @@ function AppContent() {
     return () => {
       newSocket.close()
     }
-  }, [toast, handleReconnectSuccess])
+  }, [toast, handleReconnectSuccess, isLoading, isAuthenticated, authEnabled, needsSetup, getToken])
+
+  // Auth gate — show loading, setup, or login screens before main app
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-center space-y-3">
+          <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
+          <p className="text-sm text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (needsSetup) {
+    return (
+      <>
+        <Setup />
+        <Toaster />
+      </>
+    )
+  }
+
+  if (authEnabled && !isAuthenticated) {
+    return (
+      <>
+        <Login />
+        <Toaster />
+      </>
+    )
+  }
 
   return (
     <ConnectionStatusContext.Provider value={connectionStatus}>
@@ -197,7 +238,9 @@ function App() {
     <ErrorBoundary>
       <ThemeProvider>
         <TooltipProvider>
-          <AppContent />
+          <AuthProvider>
+            <AppContent />
+          </AuthProvider>
         </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>

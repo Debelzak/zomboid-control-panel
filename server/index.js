@@ -1,12 +1,16 @@
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import { createServer } from 'http';
+import { createServer as createHttpsServer } from 'https';
 import { Server } from 'socket.io';
 import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { exec, spawn } from 'child_process';
+import cookieParser from 'cookie-parser';
 
 import { logger, onLog, createLogger, logSection, logBlank } from './utils/logger.js';
 const log = createLogger('Panel');
@@ -19,6 +23,10 @@ import { DiscordBot } from './services/discordBot.js';
 import { BackupService } from './services/backupService.js';
 import { UpdateChecker } from './services/updateChecker.js';
 import { LogTailer } from './services/logTailer.js';
+import authService from './services/auth.js';
+import authRoutes from './routes/auth.js';
+import { loadOrCreateCerts } from './utils/certs.js';
+import { sanitizeError } from './utils/sanitize.js';
 
 // Global error handlers to prevent app crashes
 process.on('uncaughtException', (error) => {
@@ -121,16 +129,122 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const httpServer = createServer(app);
+
+// HTTPS server — created during startup if certs are available
+let httpsServer = null;
+
+// CORS — restrict to known development and production origins
+// Must be declared before Socket.IO or Express CORS middleware reference it
+const allowedOrigins = ['http://localhost:5173', 'http://localhost:3001'];
+
+// Allow dynamic HTTPS origins (will be populated at startup if HTTPS is enabled)
+function addAllowedOrigin(origin) {
+  if (origin && !allowedOrigins.includes(origin)) {
+    allowedOrigins.push(origin);
+  }
+}
+
 const io = new Server(httpServer, {
   cors: {
-    origin: ['http://localhost:5173', 'http://localhost:3001'],
-    methods: ['GET', 'POST']
+    origin: allowedOrigins,
+    methods: ['GET', 'POST'],
+    credentials: true
   }
 });
 
-// Middleware
-app.use(cors());
-app.use(express.json());
+// Security middleware
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:', 'https:'],
+      connectSrc: ["'self'", 'ws:', 'wss:'],
+      fontSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      frameAncestors: ["'none'"],
+    }
+  },
+  crossOriginEmbedderPolicy: false // Allow loading resources
+}));
+
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (same-origin, curl, mobile apps)
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      // Reject requests from unknown origins
+      log.warn(`CORS blocked request from origin: ${origin}`);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  credentials: true
+}));
+
+// Body parser with explicit size limit
+app.use(express.json({ limit: '1mb' }));
+app.use(cookieParser());
+
+// Rate limiting — applied before auth to protect against unauthenticated floods
+const apiLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 300, // 300 requests per minute per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please try again later.' }
+});
+app.use('/api/', apiLimiter);
+
+// Auth middleware — protects all /api/ routes except /api/auth/*
+app.use(authService.middleware());
+
+// Stricter rate limit for destructive/sensitive operations
+const strictLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000,
+  max: 10, // 10 per minute
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Rate limit exceeded for this operation.' }
+});
+app.use('/api/server/install', strictLimiter);
+app.use('/api/server/delete-files', strictLimiter);
+app.use('/api/server/steam-update', strictLimiter);
+app.use('/api/server/steamcmd/download', strictLimiter);
+app.use('/api/server/start', strictLimiter);
+app.use('/api/server/stop', strictLimiter);
+app.use('/api/server/force-stop', strictLimiter);
+app.use('/api/server/restart', strictLimiter);
+app.use('/api/backup/restore', strictLimiter);
+app.use('/api/backup/delete-older-than', strictLimiter);
+app.delete('/api/backup/:name', strictLimiter);
+app.use('/api/chunks/delete-chunks', strictLimiter);
+app.use('/api/chunks/delete-region', strictLimiter);
+app.use('/api/server-files/raw', strictLimiter);
+app.use('/api/server-files/restore', strictLimiter);
+app.use('/api/server-files/save-and-reload', strictLimiter);
+
+// Mid-tier rate limit for RCON commands (higher than strict, lower than general)
+const rconLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000,
+  max: 60, // 60 commands per minute per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many RCON commands, please slow down.' }
+});
+app.use('/api/rcon/execute', rconLimiter);
+
+// Mid-tier rate limit for direct PanelBridge command endpoint
+const panelBridgeCommandLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000,
+  max: 60, // 60 commands per minute per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many PanelBridge commands, please slow down.' }
+});
+app.use('/api/panel-bridge/command', panelBridgeCommandLimiter);
 
 // Initialize services
 const rconService = new RconService();
@@ -316,6 +430,9 @@ app.set('io', io);
 const updateChecker = new UpdateChecker(io);
 app.set('updateChecker', updateChecker);
 
+// Auth routes (must be before other API routes)
+app.use('/api/auth', authRoutes);
+
 // API Routes
 app.use('/api/server', serverRoutes);
 app.use('/api/servers', serversRoutes);
@@ -336,6 +453,8 @@ app.use('/api/backup', backupRoutes);
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
+
+
 
 // Panel info - returns the panel's own address for remote access
 app.get('/api/panel-info', async (req, res) => {
@@ -379,17 +498,59 @@ if (isPackaged) {
 
 log.debug(`Serving client from: ${clientDistPath}`);
 app.use(express.static(clientDistPath));
-app.get('*', (req, res) => {
+
+// Global API error handler — sanitize internal details from error responses
+// Must be defined before the catch-all route but after all API routes
+app.use('/api', (err, req, res, next) => {
+  log.error(`Unhandled API error on ${req.method} ${req.path}: ${err.message}`);
+  const status = err.status || 500;
+  res.status(status).json({ error: sanitizeError(err.message) });
+});
+
+app.get('*', (req, res, next) => {
   if (req.path.startsWith('/api')) {
     res.status(404).json({ error: 'API endpoint not found' });
   } else {
-    res.sendFile(path.join(clientDistPath, 'index.html'));
+    res.sendFile(path.join(clientDistPath, 'index.html'), (err) => {
+      if (err) {
+        log.error(`Failed to serve index.html: ${err.message}`);
+        res.status(500).send('Page not available');
+      }
+    });
+  }
+});
+
+// Socket.IO authentication middleware
+io.use(async (socket, next) => {
+  try {
+    // Skip auth if no users exist (setup needed) or auth is disabled
+    const needsSetup = await authService.needsSetup();
+    if (needsSetup) return next();
+    
+    const authEnabled = await authService.isAuthEnabled();
+    if (!authEnabled) return next();
+
+    // Check for token in handshake auth or query params
+    const token = socket.handshake.auth?.token || socket.handshake.query?.token;
+    if (!token) {
+      return next(new Error('Authentication required'));
+    }
+
+    const payload = authService.verifyAccessToken(token);
+    if (!payload) {
+      return next(new Error('Invalid or expired token'));
+    }
+
+    socket.user = payload;
+    next();
+  } catch (error) {
+    next(new Error('Authentication error'));
   }
 });
 
 // Socket.IO connection handling
 io.on('connection', (socket) => {
-  log.debug(`Client connected: ${socket.id}`);
+  log.debug(`Client connected: ${socket.id}${socket.user ? ` (${socket.user.username})` : ''}`);
   
   socket.on('disconnect', () => {
     log.debug(`Client disconnected: ${socket.id}`);
@@ -473,6 +634,16 @@ async function start() {
     logSection('Database');
     await initDatabase();
     log.info('Database ready');
+
+    // ── Authentication ──
+    await authService.init();
+    const needsSetup = await authService.needsSetup();
+    if (needsSetup) {
+      log.info('No users found — first-run setup required');
+    } else {
+      const authEnabled = await authService.isAuthEnabled();
+      log.info(`Authentication: ${authEnabled ? 'enabled' : 'disabled'}`);
+    }
 
     // ── Services ──
     logSection('Services');
@@ -653,6 +824,53 @@ async function start() {
     // Read panel port from DB (saved via Settings UI), fallback to env or 3001
     const savedPort = await getSetting('panelPort');
     const PORT = process.env.PORT || savedPort || 3001;
+    
+    // ── HTTPS Setup ──
+    const httpsEnabled = await getSetting('httpsEnabled');
+    const httpsPort = await getSetting('httpsPort') || 3443;
+    const customKeyPath = await getSetting('httpsKeyPath');
+    const customCertPath = await getSetting('httpsCertPath');
+    
+    if (httpsEnabled) {
+      const certs = loadOrCreateCerts(customKeyPath, customCertPath);
+      if (certs) {
+        httpsServer = createHttpsServer(certs, app);
+        // Add HTTPS origin to allowed list dynamically
+        addAllowedOrigin(`https://localhost:${httpsPort}`);
+        // Attach Socket.IO to HTTPS server too
+        const httpsIo = new Server(httpsServer, {
+          cors: {
+            origin: allowedOrigins,
+            methods: ['GET', 'POST'],
+            credentials: true
+          }
+        });
+        // Apply the same Socket.IO auth middleware on HTTPS
+        httpsIo.use(async (socket, next) => {
+          try {
+            const needsSetup = await authService.needsSetup();
+            if (needsSetup) return next();
+            const authEnabled = await authService.isAuthEnabled();
+            if (!authEnabled) return next();
+            const token = socket.handshake.auth?.token || socket.handshake.query?.token;
+            if (!token) return next(new Error('Authentication required'));
+            const payload = authService.verifyAccessToken(token);
+            if (!payload) return next(new Error('Invalid or expired token'));
+            socket.user = payload;
+            next();
+          } catch (error) {
+            next(new Error('Authentication error'));
+          }
+        });
+        
+        httpsServer.listen(httpsPort, () => {
+          log.info(`HTTPS server listening on port ${httpsPort}`);
+        });
+      } else {
+        log.warn('HTTPS enabled but certificate generation failed — running HTTP only');
+      }
+    }
+    
     httpServer.listen(PORT, () => {
       logSection('Ready');
       console.log('');
@@ -661,12 +879,17 @@ async function start() {
       console.log('  ╠═══════════════════════════════════════════════╣');
       console.log(`  ║  Web UI:  http://localhost:${PORT}               ║`);
       console.log(`  ║  API:     http://localhost:${PORT}/api           ║`);
+      if (httpsServer) {
+      console.log(`  ║  HTTPS:   https://localhost:${httpsPort}              ║`);
+      }
       console.log('  ╚═══════════════════════════════════════════════╝');
       console.log('');
       
       // Auto-open browser when running as packaged exe
       if (typeof process.pkg !== 'undefined') {
-        const url = `http://localhost:${PORT}`;
+        const protocol = httpsServer ? 'https' : 'http';
+        const port = httpsServer ? httpsPort : PORT;
+        const url = `${protocol}://localhost:${port}`;
         exec(`start "" "${url}"`, (err) => {
           if (err) log.error('Failed to open browser:', err);
         });

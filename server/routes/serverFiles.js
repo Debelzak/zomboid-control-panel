@@ -4,12 +4,21 @@ import path from 'path';
 import { createLogger } from '../utils/logger.js';
 const log = createLogger('API:Files');
 import { getActiveServer, getAllSettings } from '../database/init.js';
+import { sanitizeError } from '../utils/sanitize.js';
 
 const router = express.Router();
 
 // Helper function to escape regex special characters
 function escapeRegExp(str) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Escape strings for safe interpolation into Lua source code
+function escapeLuaString(str) {
+  return String(str).replace(/[\\"'\n\r\t\0]/g, (c) => {
+    const escapes = { '\\': '\\\\', '"': '\\"', "'": "\\'", '\n': '\\n', '\r': '\\r', '\t': '\\t', '\0': '\\0' };
+    return escapes[c] || c;
+  });
 }
 
 // Get the server config directory path
@@ -145,7 +154,9 @@ function toIni(obj, originalContent = '') {
       if (eqIndex > 0) {
         const key = trimmed.substring(0, eqIndex).trim();
         if (key in obj) {
-          result.push(`${key}=${obj[key]}`);
+          // Strip newlines from values to prevent INI injection
+          const safeValue = String(obj[key]).replace(/[\r\n]/g, '');
+          result.push(`${key}=${safeValue}`);
           written.add(key);
         } else {
           result.push(line);
@@ -158,7 +169,13 @@ function toIni(obj, originalContent = '') {
     // Add any new keys
     for (const [key, value] of Object.entries(obj)) {
       if (!written.has(key)) {
-        result.push(`${key}=${value}`);
+        // Validate key is a safe INI identifier
+        if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(key)) {
+          log.warn(`Invalid INI key skipped: ${key}`);
+          continue;
+        }
+        const safeValue = String(value).replace(/[\r\n]/g, '');
+        result.push(`${key}=${safeValue}`);
       }
     }
     
@@ -167,7 +184,17 @@ function toIni(obj, originalContent = '') {
   
   // Generate from scratch
   return Object.entries(obj)
-    .map(([key, value]) => `${key}=${value}`)
+    .filter(([key]) => {
+      if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(key)) {
+        log.warn(`Invalid INI key skipped: ${key}`);
+        return false;
+      }
+      return true;
+    })
+    .map(([key, value]) => {
+      const safeValue = String(value).replace(/[\r\n]/g, '');
+      return `${key}=${safeValue}`;
+    })
     .join('\n');
 }
 
@@ -265,7 +292,7 @@ function modifySandboxValue(originalContent, key, newValue, nestedBlock = null) 
   } else if (typeof newValue === 'number') {
     formattedValue = newValue.toString();
   } else {
-    formattedValue = `"${newValue}"`;
+    formattedValue = `"${escapeLuaString(String(newValue))}"`;
   }
   
   // Escape key for use in regex (even though we validate, this is defense in depth)
@@ -435,12 +462,23 @@ function toSpawnPoints(professions, serverName) {
   lines.push(`\treturn {`);
   
   for (const [profName, points] of Object.entries(professions)) {
+    // Validate profession name is a safe Lua identifier
+    if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(profName)) {
+      log.warn(`Invalid profession name skipped in spawnpoints: ${profName}`);
+      continue;
+    }
     lines.push(`\t\t${profName} = {`);
     for (const p of points) {
-      if (p.posZ && p.posZ !== 0) {
-        lines.push(`\t\t\t{ worldX = ${p.worldX}, worldY = ${p.worldY}, posX = ${p.posX}, posY = ${p.posY}, posZ = ${p.posZ} }`);
+      // Validate coordinates are finite numbers to prevent Lua injection
+      const wx = Number.isFinite(Number(p.worldX)) ? Number(p.worldX) : 0;
+      const wy = Number.isFinite(Number(p.worldY)) ? Number(p.worldY) : 0;
+      const px = Number.isFinite(Number(p.posX)) ? Number(p.posX) : 0;
+      const py = Number.isFinite(Number(p.posY)) ? Number(p.posY) : 0;
+      const pz = Number.isFinite(Number(p.posZ)) ? Number(p.posZ) : 0;
+      if (pz && pz !== 0) {
+        lines.push(`\t\t\t{ worldX = ${wx}, worldY = ${wy}, posX = ${px}, posY = ${py}, posZ = ${pz} }`);
       } else {
-        lines.push(`\t\t\t{ worldX = ${p.worldX}, worldY = ${p.worldY}, posX = ${p.posX}, posY = ${p.posY} }`);
+        lines.push(`\t\t\t{ worldX = ${wx}, worldY = ${wy}, posX = ${px}, posY = ${py} }`);
       }
     }
     lines.push(`\t\t}`);
@@ -488,10 +526,12 @@ function toSpawnRegions(regions, serverName) {
   lines.push(`        return {`);
   
   for (const r of regions) {
+    const safeName = escapeLuaString(r.name);
+    const safeFile = escapeLuaString(r.file);
     if (r.isServerFile) {
-      lines.push(`                { name = "${r.name}", serverfile = "${r.file}" },`);
+      lines.push(`                { name = "${safeName}", serverfile = "${safeFile}" },`);
     } else {
-      lines.push(`                { name = "${r.name}", file = "${r.file}" },`);
+      lines.push(`                { name = "${safeName}", file = "${safeFile}" },`);
     }
   }
   
@@ -525,7 +565,7 @@ router.get('/paths', async (req, res) => {
     res.json({ configPath, serverName, files, exists });
   } catch (error) {
     log.error('Failed to get paths:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -546,7 +586,7 @@ router.get('/ini', async (req, res) => {
     res.json({ settings: parsed, path: filePath });
   } catch (error) {
     log.error('Failed to read INI:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -576,7 +616,7 @@ router.put('/ini', async (req, res) => {
     res.json({ success: true, message: 'Settings saved' });
   } catch (error) {
     log.error('Failed to save INI:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -597,7 +637,7 @@ router.get('/sandbox', async (req, res) => {
     res.json({ sandbox: parsed, path: filePath });
   } catch (error) {
     log.error('Failed to read SandboxVars:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -628,7 +668,7 @@ router.put('/sandbox', async (req, res) => {
     res.json({ success: true, message: 'Sandbox settings saved' });
   } catch (error) {
     log.error('Failed to save SandboxVars:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -649,7 +689,7 @@ router.get('/spawnpoints', async (req, res) => {
     res.json({ spawnpoints: points, path: filePath });
   } catch (error) {
     log.error('Failed to read spawn points:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -676,7 +716,7 @@ router.put('/spawnpoints', async (req, res) => {
     res.json({ success: true, message: 'Spawn points saved' });
   } catch (error) {
     log.error('Failed to save spawn points:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -697,7 +737,7 @@ router.get('/spawnregions', async (req, res) => {
     res.json({ spawnregions: regions, path: filePath });
   } catch (error) {
     log.error('Failed to read spawn regions:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -724,7 +764,7 @@ router.put('/spawnregions', async (req, res) => {
     res.json({ success: true, message: 'Spawn regions saved' });
   } catch (error) {
     log.error('Failed to save spawn regions:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -756,7 +796,7 @@ router.get('/raw/:type', async (req, res) => {
     res.json({ content, path: filePath, filename: fileMap[type] });
   } catch (error) {
     log.error('Failed to read raw file:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -795,7 +835,7 @@ router.put('/raw/:type', async (req, res) => {
     res.json({ success: true, message: 'File saved' });
   } catch (error) {
     log.error('Failed to save raw file:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -834,7 +874,7 @@ router.get('/backups', async (req, res) => {
     res.json({ backups: files, path: backupDir });
   } catch (error) {
     log.error('Failed to list backups:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -881,7 +921,7 @@ router.post('/restore/:filename', async (req, res) => {
     res.json({ success: true, message: `Restored ${originalName} from backup` });
   } catch (error) {
     log.error('Failed to restore backup:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -898,7 +938,7 @@ router.post('/save-and-reload', async (req, res) => {
     res.json({ success: true, message: 'Options reloaded', result });
   } catch (error) {
     log.error('Failed to reload options:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -947,7 +987,7 @@ router.get('/templates', async (req, res) => {
     res.json({ templates: files });
   } catch (error) {
     log.error('Failed to list templates:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -971,7 +1011,7 @@ router.get('/templates/:id', async (req, res) => {
     res.json(content);
   } catch (error) {
     log.error('Failed to get template:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -1037,7 +1077,7 @@ router.post('/templates', async (req, res) => {
     });
   } catch (error) {
     log.error('Failed to save template:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -1102,7 +1142,7 @@ router.post('/templates/:id/apply', async (req, res) => {
     });
   } catch (error) {
     log.error('Failed to apply template:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -1135,7 +1175,7 @@ router.put('/templates/:id', async (req, res) => {
     res.json({ success: true, message: 'Template updated' });
   } catch (error) {
     log.error('Failed to update template:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -1161,7 +1201,7 @@ router.delete('/templates/:id', async (req, res) => {
     res.json({ success: true, message: 'Template deleted' });
   } catch (error) {
     log.error('Failed to delete template:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 

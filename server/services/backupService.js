@@ -4,10 +4,10 @@ import { createWriteStream } from 'fs';
 import archiver from 'archiver';
 import { createReadStream } from 'fs';
 import { pipeline } from 'stream/promises';
-import { createGunzip } from 'zlib';
 import { createLogger } from '../utils/logger.js';
 const log = createLogger('Backup');
 import { getActiveServer, getSetting, setSetting, logServerEvent } from '../database/init.js';
+import { sanitizeError } from '../utils/sanitize.js';
 
 // Dynamic import for unzipper (CommonJS module)
 let unzipper;
@@ -168,8 +168,8 @@ export class BackupService {
       return await this._doCreateBackup(options, startTime, emitProgress);
     } catch (error) {
       log.error(`Backup failed: ${error.message}`);
-      emitProgress('error', 0, `Backup failed: ${error.message}`);
-      return { success: false, message: error.message };
+      emitProgress('error', 0, `Backup failed: ${sanitizeError(error.message)}`);
+      return { success: false, message: sanitizeError(error.message) };
     } finally {
       this.backupInProgress = false;
     }
@@ -585,16 +585,36 @@ export class BackupService {
         fs.mkdirSync(savesParentPath, { recursive: true });
       }
 
-      // Extract the backup
+      // Extract the backup with zip-slip protection
       log.info('Extracting backup...');
       const unzip = await getUnzipper();
+      const resolvedParent = path.resolve(savesParentPath) + path.sep;
       
       await new Promise((resolve, reject) => {
-        const extractStream = createReadStream(backupPath)
-          .pipe(unzip.Extract({ path: savesParentPath }));
-        
-        extractStream.on('close', resolve);
-        extractStream.on('error', reject);
+        createReadStream(backupPath)
+          .pipe(unzip.Parse())
+          .on('entry', (entry) => {
+            const entryPath = path.join(savesParentPath, entry.path);
+            const resolvedEntry = path.resolve(entryPath);
+            
+            // Block zip-slip: entry must resolve inside the target directory
+            if (!resolvedEntry.startsWith(resolvedParent)) {
+              log.error(`Zip slip attempt blocked: ${entry.path}`);
+              entry.autodrain();
+              return;
+            }
+            
+            if (entry.type === 'Directory') {
+              fs.mkdirSync(resolvedEntry, { recursive: true });
+              entry.autodrain();
+            } else {
+              // Ensure parent directory exists
+              fs.mkdirSync(path.dirname(resolvedEntry), { recursive: true });
+              entry.pipe(fs.createWriteStream(resolvedEntry));
+            }
+          })
+          .on('close', resolve)
+          .on('error', reject);
       });
 
       // Verify the restore

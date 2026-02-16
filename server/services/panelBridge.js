@@ -57,10 +57,8 @@ class PanelBridge extends EventEmitter {
       this.bridgePath = path.join(bridgeFolderPath, 'panelbridge');
     }
     
-    // Ensure directory exists
-    if (!fs.existsSync(this.bridgePath)) {
-      fs.mkdirSync(this.bridgePath, { recursive: true });
-    }
+    // Don't create the directory here — the PZ Lua mod creates it on startup.
+    // Its existence serves as a signal that the mod has been installed and initialized.
 
     log.debug(`Configured path: ${this.bridgePath}`);
     this.emit('configured', { path: this.bridgePath });
@@ -83,13 +81,14 @@ class PanelBridge extends EventEmitter {
         ].filter(Boolean);
 
     for (const base of possibleBases) {
-      const savePath = path.join(base, 'Saves', 'Multiplayer', serverName);
-      if (fs.existsSync(savePath)) {
-        return this.configure(savePath);
+      // The Lua mod writes to: {base}/Lua/panelbridge/{serverName}/
+      const bridgePath = path.join(base, 'Lua', 'panelbridge', serverName);
+      if (fs.existsSync(bridgePath)) {
+        return this.configure(bridgePath, true); // direct path — already the panelbridge folder
       }
     }
 
-    throw new Error(`Could not find save folder for server: ${serverName}`);
+    throw new Error(`Could not find panelbridge folder for server: ${serverName}`);
   }
 
   /**
@@ -244,6 +243,14 @@ class PanelBridge extends EventEmitter {
     }
     this.pendingCommands.clear();
 
+    // Reset state so next start() cycle is clean
+    this.processedResults.clear();
+    this.previousPlayers = new Set();
+    this.watcherRetries = 0;
+    this.modStatus = null;
+    this.consecutiveFailures = 0;
+    this.lastStatusFileCheck = 0;
+
     this.isRunning = false;
     log.info('Stopped');
     this.emit('stopped');
@@ -268,9 +275,17 @@ class PanelBridge extends EventEmitter {
 
     // Serialize file access to prevent TOCTOU race conditions
     if (!this._writeQueue) this._writeQueue = Promise.resolve();
-    this._writeQueue = this._writeQueue.then(() => this._appendCommand(commandsFile, id, action, args))
-      .catch(err => log.error(`PanelBridge write queue error: ${err.message}`));
+    
+    let writeError = null;
+    this._writeQueue = this._writeQueue
+      .then(() => this._appendCommand(commandsFile, id, action, args))
+      .catch(err => { writeError = err; });
     await this._writeQueue;
+
+    // If the command failed to write, reject immediately instead of waiting for timeout
+    if (writeError) {
+      throw new Error(`Failed to write command ${action}: ${writeError.message}`);
+    }
 
     // Return a promise that resolves when we get the result
     return new Promise((resolve, reject) => {
@@ -386,7 +401,9 @@ class PanelBridge extends EventEmitter {
         }
       }
     } catch (e) {
-      // File might be being written, ignore
+      // File might be mid-write by the Lua mod — log at debug level so it's
+      // visible in verbose mode without spamming normal logs.
+      log.debug(`pollResults read error (likely mid-write): ${e.message}`);
     }
   }
 
@@ -663,11 +680,13 @@ class PanelBridge extends EventEmitter {
   /**
    * Convenience method: set snow
    */
-  async setSnow(enabled = true) {
+  async setSnow(enabled = true, intensity = null) {
     if (!this.isRunning) {
       throw new Error('Bridge not running');
     }
-    return this.sendCommand('setSnow', { enabled });
+    const args = { enabled };
+    if (intensity !== null) args.intensity = intensity;
+    return this.sendCommand('setSnow', args);
   }
 
   // =============================================
@@ -677,7 +696,7 @@ class PanelBridge extends EventEmitter {
   /**
    * Convenience method: start rain
    */
-  async startRain(intensity = 1.0) {
+  async startRain(intensity = 0.5) {
     if (!this.isRunning) {
       throw new Error('Bridge not running');
     }
@@ -697,7 +716,7 @@ class PanelBridge extends EventEmitter {
   /**
    * Convenience method: trigger lightning
    */
-  async triggerLightning(x = null, y = null, strike = false, light = true, rumble = true) {
+  async triggerLightning(x = null, y = null, strike = true, light = true, rumble = true) {
     if (!this.isRunning) {
       throw new Error('Bridge not running');
     }
@@ -800,11 +819,11 @@ class PanelBridge extends EventEmitter {
   /**
    * Convenience method: send server message
    */
-  async sendServerMessage(message, color = 'white') {
+  async sendServerMessage(message) {
     if (!this.isRunning) {
       throw new Error('Bridge not running');
     }
-    return this.sendCommand('sendServerMessage', { message, color });
+    return this.sendCommand('sendServerMessage', { message });
   }
 
   /**
@@ -890,6 +909,76 @@ class PanelBridge extends EventEmitter {
       throw new Error('Bridge not running');
     }
     return this.sendCommand('createNoise', options);
+  }
+
+  // =============================================
+  // V1.3.0 CLIMATE / WEATHER / DEBUG METHODS
+  // =============================================
+
+  /**
+   * Generate a weather period
+   * @param {number} strength - Weather strength 0-1 (default 0.5)
+   * @param {number} frontType - 0=stationary, 1=cold, 2=warm (default 0)
+   */
+  async generateWeather(strength = 0.5, frontType = 0) {
+    if (!this.isRunning) {
+      throw new Error('Bridge not running');
+    }
+    return this.sendCommand('generateWeather', { strength, frontType });
+  }
+
+  /**
+   * Set temperature via climate admin override
+   * @param {number} value - Temperature in Celsius (-50 to +50)
+   */
+  async setTemperature(value = 22) {
+    if (!this.isRunning) {
+      throw new Error('Bridge not running');
+    }
+    return this.sendCommand('setTemperature', { value });
+  }
+
+  /**
+   * Set wind intensity via climate admin override
+   * @param {number} value - Wind intensity 0-1
+   */
+  async setWind(value = 0.5) {
+    if (!this.isRunning) {
+      throw new Error('Bridge not running');
+    }
+    return this.sendCommand('setWind', { value });
+  }
+
+  /**
+   * Set fog intensity via climate admin override
+   * @param {number} value - Fog intensity 0-1
+   */
+  async setFog(value = 0) {
+    if (!this.isRunning) {
+      throw new Error('Bridge not running');
+    }
+    return this.sendCommand('setFog', { value });
+  }
+
+  /**
+   * Set cloud intensity via climate admin override
+   * @param {number} value - Cloud intensity 0-1
+   */
+  async setClouds(value = 0) {
+    if (!this.isRunning) {
+      throw new Error('Bridge not running');
+    }
+    return this.sendCommand('setClouds', { value });
+  }
+
+  /**
+   * Clear mod error log
+   */
+  async clearErrors() {
+    if (!this.isRunning) {
+      throw new Error('Bridge not running');
+    }
+    return this.sendCommand('clearErrors', {});
   }
 }
 

@@ -1,6 +1,6 @@
 {
   "name": "pz-server-manager",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Project Zomboid Server Manager - Web-based admin panel",
   "main": "server/index.js",
   "type": "module",
@@ -15,10 +15,15 @@
   },
   "dependencies": {
     "archiver": "^7.0.1",
+    "bcryptjs": "^3.0.3",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "discord.js": "^14.16.3",
     "dotenv": "^16.4.7",
     "express": "^4.21.1",
+    "express-rate-limit": "^8.2.1",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.3",
     "lowdb": "^7.0.1",
     "node-cron": "^3.0.3",
     "rcon-srcds": "^2.0.1",

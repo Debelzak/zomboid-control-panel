@@ -1,5 +1,6 @@
 import express from 'express';
 import { createLogger } from '../utils/logger.js';
+import { sanitizeError } from '../utils/sanitize.js';
 const log = createLogger('API:Discord');
 
 const router = express.Router();
@@ -20,7 +21,7 @@ router.get('/status', async (req, res) => {
     res.json(status);
   } catch (error) {
     log.error(`Failed to get Discord bot status: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -43,7 +44,7 @@ router.get('/config', async (req, res) => {
     });
   } catch (error) {
     log.error(`Failed to get Discord config: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -81,7 +82,7 @@ router.put('/config', async (req, res) => {
     });
   } catch (error) {
     log.error(`Failed to update Discord config: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -106,7 +107,7 @@ router.post('/start', async (req, res) => {
     }
   } catch (error) {
     log.error(`Failed to start Discord bot: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -126,7 +127,7 @@ router.post('/stop', async (req, res) => {
     res.json({ success: true, message: 'Discord bot stopped' });
   } catch (error) {
     log.error(`Failed to stop Discord bot: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -162,7 +163,7 @@ router.post('/test', async (req, res) => {
     });
   } catch (error) {
     log.error(`Discord test failed: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -170,6 +171,10 @@ router.post('/test', async (req, res) => {
 router.post('/test-message', async (req, res) => {
   try {
     const discordBot = req.app.get('discordBot');
+    
+    if (!discordBot) {
+      return res.status(400).json({ error: 'Discord bot not initialized' });
+    }
     
     if (!discordBot.isRunning) {
       return res.status(400).json({ error: 'Bot is not running' });
@@ -179,7 +184,7 @@ router.post('/test-message', async (req, res) => {
     res.json({ success: true, message: 'Test message sent' });
   } catch (error) {
     log.error(`Failed to send test message: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -208,7 +213,7 @@ router.get('/webhook-events', async (req, res) => {
     res.json({ events });
   } catch (error) {
     log.error(`Failed to get webhook events: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -221,17 +226,33 @@ router.put('/webhook-events', async (req, res) => {
     }
     
     const { events } = req.body;
-    if (!events) {
+    if (!events || typeof events !== 'object') {
       return res.status(400).json({ error: 'Events configuration required' });
     }
     
-    discordBot.webhookEvents = events;
-    await discordBot.saveWebhookEvents(events);
+    // Whitelist allowed event keys to prevent arbitrary data storage
+    const VALID_EVENT_KEYS = [
+      'serverStart', 'serverStop', 'playerJoin', 'playerLeave',
+      'scheduledRestart', 'backupComplete', 'playerDeath'
+    ];
+    
+    const sanitizedEvents = {};
+    for (const key of VALID_EVENT_KEYS) {
+      if (events[key] && typeof events[key] === 'object') {
+        sanitizedEvents[key] = {
+          enabled: !!events[key].enabled,
+          template: typeof events[key].template === 'string' ? events[key].template.slice(0, 500) : ''
+        };
+      }
+    }
+    
+    discordBot.webhookEvents = sanitizedEvents;
+    await discordBot.saveWebhookEvents(sanitizedEvents);
     
     res.json({ success: true, message: 'Webhook events updated' });
   } catch (error) {
     log.error(`Failed to update webhook events: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 

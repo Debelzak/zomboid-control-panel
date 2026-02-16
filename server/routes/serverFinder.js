@@ -3,8 +3,35 @@ import dgram from 'dgram';
 import { createLogger } from '../utils/logger.js';
 const log = createLogger('API:Finder');
 import { getSetting } from '../database/init.js';
+import { sanitizeError } from '../utils/sanitize.js';
 
 const router = express.Router();
+
+// Block private/reserved IP ranges to prevent SSRF
+function isPrivateIp(ip) {
+  if (typeof ip !== 'string') return true;
+  // Trim whitespace
+  ip = ip.trim();
+  // Block non-IPv4 patterns (no IPv6 support in this feature)
+  if (!/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(ip)) return true;
+  const parts = ip.split('.').map(Number);
+  if (parts.some(p => p < 0 || p > 255 || isNaN(p))) return true;
+  const [a, b] = parts;
+  // 0.0.0.0/8, 10.0.0.0/8, 127.0.0.0/8, 169.254.0.0/16, 172.16-31.0.0/12, 192.168.0.0/16, 224-255 (multicast/reserved)
+  if (a === 0 || a === 10 || a === 127) return true;
+  if (a === 169 && b === 254) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  if (a >= 224) return true; // multicast + reserved
+  return false;
+}
+
+// Validate IP format for query/ping endpoints
+function validateQueryIp(ip) {
+  if (!ip || typeof ip !== 'string') return false;
+  if (isPrivateIp(ip)) return false;
+  return true;
+}
 
 // Project Zomboid App ID on Steam
 const PZ_APP_ID = 108600;
@@ -438,7 +465,7 @@ router.get('/', async (req, res) => {
     log.error('Failed to get server list:', error);
     res.status(500).json({
       success: false,
-      error: error.message,
+      error: sanitizeError(error.message),
     });
   }
 });
@@ -453,6 +480,14 @@ router.get('/query', async (req, res) => {
     return res.status(400).json({
       success: false,
       error: 'IP and port are required',
+    });
+  }
+
+  // Block private/reserved IPs to prevent SSRF
+  if (!validateQueryIp(ip)) {
+    return res.status(400).json({
+      success: false,
+      error: 'Invalid or disallowed IP address',
     });
   }
 
@@ -483,7 +518,7 @@ router.get('/query', async (req, res) => {
     log.error('Failed to query server:', error);
     res.status(500).json({
       success: false,
-      error: error.message,
+      error: sanitizeError(error.message),
     });
   }
 });
@@ -498,6 +533,14 @@ router.get('/ping', async (req, res) => {
     return res.status(400).json({
       success: false,
       error: 'IP and port are required',
+    });
+  }
+
+  // Block private/reserved IPs to prevent SSRF
+  if (!validateQueryIp(ip)) {
+    return res.status(400).json({
+      success: false,
+      error: 'Invalid or disallowed IP address',
     });
   }
 
@@ -567,7 +610,7 @@ router.get('/debug', async (req, res) => {
     });
   } catch (error) {
     log.error('Debug endpoint error:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 

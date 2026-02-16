@@ -7,6 +7,7 @@ import { createLogger } from '../utils/logger.js';
 const log = createLogger('API:Debug');
 import { getDataPaths, setDataPaths } from '../utils/paths.js';
 import { getPerformanceHistory, recordPerformanceSnapshot, getDatabaseStats, createDatabaseBackup, compactDatabase } from '../database/init.js';
+import { sanitizeError } from '../utils/sanitize.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -56,7 +57,7 @@ router.get('/ram', async (req, res) => {
     });
   } catch (error) {
     log.error(`Failed to get RAM info: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -65,14 +66,22 @@ router.get('/system', async (req, res) => {
   try {
     const paths = getDataPaths();
     
+    // Redact full filesystem paths to relative/basename for security
+    const redactPath = (p) => {
+      if (!p) return 'Not configured';
+      // Show only the last 2 path segments (e.g., "data/db.json")
+      const segments = p.replace(/\\/g, '/').split('/').filter(Boolean);
+      return segments.length > 2 ? '.../' + segments.slice(-2).join('/') : segments.join('/');
+    };
+
     res.json({
       nodeVersion: process.version,
       platform: process.platform,
       uptime: process.uptime(),
       memoryUsage: process.memoryUsage(),
-      dbPath: fs.existsSync(paths.dbPath) ? paths.dbPath : 'Not found',
-      logsPath: fs.existsSync(paths.logsDir) ? paths.logsDir : 'Not found',
-      dataDir: paths.dataDir,
+      dbPath: fs.existsSync(paths.dbPath) ? redactPath(paths.dbPath) : 'Not found',
+      logsPath: fs.existsSync(paths.logsDir) ? redactPath(paths.logsDir) : 'Not found',
+      dataDir: redactPath(paths.dataDir),
       pathsConfigurable: true,
       env: {
         NODE_ENV: process.env.NODE_ENV || 'development',
@@ -82,7 +91,7 @@ router.get('/system', async (req, res) => {
     });
   } catch (error) {
     log.error(`Failed to get system info: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Failed to get system info' });
   }
 });
 
@@ -96,7 +105,7 @@ router.get('/logs', async (req, res) => {
     });
   } catch (error) {
     log.error(`Failed to get logs: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -133,7 +142,7 @@ router.get('/logs/files', async (req, res) => {
     res.json({ files });
   } catch (error) {
     log.error(`Failed to list log files: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -154,7 +163,7 @@ router.get('/logs/download', async (req, res) => {
     readStream.pipe(res);
   } catch (error) {
     log.error(`Failed to download logs: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -182,7 +191,7 @@ router.get('/logs/download/:filename', async (req, res) => {
     readStream.pipe(res);
   } catch (error) {
     log.error(`Failed to download log file: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -192,7 +201,7 @@ router.post('/logs/clear', async (req, res) => {
     logBuffer.length = 0;
     res.json({ success: true, message: 'Log buffer cleared' });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -203,6 +212,14 @@ router.post('/paths', async (req, res) => {
     
     if (!dataDir && !logsDir) {
       return res.status(400).json({ error: 'At least one path must be provided' });
+    }
+    
+    // Validate path format and length
+    if (dataDir && (typeof dataDir !== 'string' || dataDir.length > 500)) {
+      return res.status(400).json({ error: 'Invalid data directory path' });
+    }
+    if (logsDir && (typeof logsDir !== 'string' || logsDir.length > 500)) {
+      return res.status(400).json({ error: 'Invalid logs directory path' });
     }
     
     const result = await setDataPaths({ dataDir, logsDir }, moveFiles !== false);
@@ -221,7 +238,7 @@ router.post('/paths', async (req, res) => {
     }
   } catch (error) {
     log.error(`Failed to update paths: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -254,7 +271,7 @@ router.get('/health', async (req, res) => {
   } catch (error) {
     res.status(500).json({ 
       status: 'error', 
-      error: error.message,
+      error: sanitizeError(error.message),
       timestamp: new Date().toISOString()
     });
   }
@@ -268,7 +285,7 @@ router.get('/performance-history', async (req, res) => {
     res.json({ history });
   } catch (error) {
     log.error(`Failed to get performance history: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -286,7 +303,7 @@ router.post('/performance-snapshot', async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     log.error(`Failed to record performance snapshot: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -297,7 +314,7 @@ router.get('/database', async (req, res) => {
     res.json(stats);
   } catch (error) {
     log.error(`Failed to get database stats: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -308,7 +325,7 @@ router.post('/database/backup', async (req, res) => {
     res.json(result);
   } catch (error) {
     log.error(`Failed to create database backup: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -319,7 +336,7 @@ router.post('/database/compact', async (req, res) => {
     res.json(result);
   } catch (error) {
     log.error(`Failed to compact database: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -382,7 +399,7 @@ router.get('/crash-logs', async (req, res) => {
     res.json({ crashLogs: crashLogs.slice(0, 20) });
   } catch (error) {
     log.error(`Failed to get crash logs: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -436,7 +453,7 @@ router.get('/crash-logs/:filename', async (req, res) => {
     res.status(404).json({ error: 'Crash log not found' });
   } catch (error) {
     log.error(`Failed to read crash log: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 

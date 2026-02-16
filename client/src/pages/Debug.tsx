@@ -147,6 +147,18 @@ export default function Debug() {
   const searchInputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
   const socket = useContext(SocketContext)
+
+  const getAuthHeaders = useCallback(() => {
+    const token = localStorage.getItem('pz_access_token')
+    return token ? { Authorization: `Bearer ${token}` } : {}
+  }, [])
+
+  const authFetch = useCallback((url: string, options: RequestInit = {}) => {
+    const headers = new Headers(options.headers)
+    const authHeaders = getAuthHeaders()
+    Object.entries(authHeaders).forEach(([key, value]) => headers.set(key, value))
+    return fetch(url, { ...options, headers, credentials: 'include' })
+  }, [getAuthHeaders])
   
   // Path editing state
   const [editingPaths, setEditingPaths] = useState(false)
@@ -188,9 +200,14 @@ export default function Debug() {
   // Fetch system info
   const fetchSystemInfo = async () => {
     try {
-      const res = await fetch('/api/debug/system')
+      const res = await authFetch('/api/debug/system')
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
-      setSystemInfo(data)
+      if (data?.memoryUsage) {
+        setSystemInfo(data)
+      } else {
+        setSystemInfo(null)
+      }
     } catch (error) {
       console.error('Failed to fetch system info:', error)
     }
@@ -199,9 +216,14 @@ export default function Debug() {
   // Fetch health status
   const fetchHealthStatus = async () => {
     try {
-      const res = await fetch('/api/debug/health')
+      const res = await authFetch('/api/debug/health')
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
-      setHealthStatus(data)
+      if (data?.services) {
+        setHealthStatus(data)
+      } else {
+        setHealthStatus(null)
+      }
     } catch (error) {
       console.error('Failed to fetch health status:', error)
     }
@@ -210,7 +232,8 @@ export default function Debug() {
   // Fetch log files list
   const fetchLogFiles = async () => {
     try {
-      const res = await fetch('/api/debug/logs/files')
+      const res = await authFetch('/api/debug/logs/files')
+      if (!res.ok) return
       const data = await res.json()
       if (data.files) {
         setLogFiles(data.files)
@@ -222,7 +245,8 @@ export default function Debug() {
   
   const fetchPerformanceHistory = async () => {
     try {
-      const res = await fetch('/api/debug/performance-history?limit=60')
+      const res = await authFetch('/api/debug/performance-history?limit=60')
+      if (!res.ok) return
       const data = await res.json()
       if (data.history) {
         setPerformanceHistory(data.history.map((h: PerformanceSnapshot) => ({
@@ -239,7 +263,8 @@ export default function Debug() {
 
   const fetchCrashLogs = async () => {
     try {
-      const res = await fetch('/api/debug/crash-logs')
+      const res = await authFetch('/api/debug/crash-logs')
+      if (!res.ok) return
       const data = await res.json()
       if (data.crashLogs) {
         setCrashLogs(data.crashLogs)
@@ -253,7 +278,8 @@ export default function Debug() {
     try {
       setLoadingCrashLog(true)
       setSelectedCrashLog(filename)
-      const res = await fetch(`/api/debug/crash-logs/${encodeURIComponent(filename)}`)
+      const res = await authFetch(`/api/debug/crash-logs/${encodeURIComponent(filename)}`)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
       if (data.content) {
         setCrashLogContent(data.content)
@@ -270,7 +296,8 @@ export default function Debug() {
   // Fetch recent logs
   const fetchLogs = async () => {
     try {
-      const res = await fetch('/api/debug/logs')
+      const res = await authFetch('/api/debug/logs')
+      if (!res.ok) return
       const data = await res.json()
       if (data.logs) {
         setLogs(data.logs.map((log: Omit<LogEntry, 'id'>, i: number) => ({
@@ -403,7 +430,7 @@ export default function Debug() {
         })
       } else {
         // Download full log file from server
-        const res = await fetch('/api/debug/logs/download')
+        const res = await authFetch('/api/debug/logs/download')
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         const blob = await res.blob()
         url = window.URL.createObjectURL(blob)
@@ -486,7 +513,7 @@ export default function Debug() {
 
     setSavingPaths(true)
     try {
-      const res = await fetch('/api/debug/paths', {
+      const res = await authFetch('/api/debug/paths', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1185,27 +1212,27 @@ export default function Debug() {
                 {/* RCON Service */}
                 <div className="p-4 rounded-lg border bg-card">
                   <div className="flex items-center gap-3 mb-3">
-                    {healthStatus?.services.rcon.connected 
+                    {healthStatus?.services?.rcon?.connected 
                       ? <Wifi className="w-5 h-5 text-green-500" />
                       : <WifiOff className="w-5 h-5 text-red-500" />
                     }
                     <span className="font-medium">RCON</span>
-                    <Badge variant={healthStatus?.services.rcon.connected ? 'default' : 'destructive'} className="ml-auto">
-                      {healthStatus?.services.rcon.connected ? 'Connected' : 'Disconnected'}
+                    <Badge variant={healthStatus?.services?.rcon?.connected ? 'default' : 'destructive'} className="ml-auto">
+                      {healthStatus?.services?.rcon?.connected ? 'Connected' : 'Disconnected'}
                     </Badge>
                   </div>
                   <p className="text-sm text-muted-foreground">
-                    Host: {healthStatus?.services.rcon.host || 'Not configured'}
+                    Host: {healthStatus?.services?.rcon?.host || 'Not configured'}
                   </p>
                 </div>
 
                 {/* Server Status */}
                 <div className="p-4 rounded-lg border bg-card">
                   <div className="flex items-center gap-3 mb-3">
-                    <Server className={`w-5 h-5 ${healthStatus?.services.server.running ? 'text-green-500' : 'text-gray-500'}`} />
+                    <Server className={`w-5 h-5 ${healthStatus?.services?.server?.running ? 'text-green-500' : 'text-gray-500'}`} />
                     <span className="font-medium">Game Server</span>
-                    <Badge variant={healthStatus?.services.server.running ? 'default' : 'secondary'} className="ml-auto">
-                      {healthStatus?.services.server.running ? 'Running' : 'Stopped'}
+                    <Badge variant={healthStatus?.services?.server?.running ? 'default' : 'secondary'} className="ml-auto">
+                      {healthStatus?.services?.server?.running ? 'Running' : 'Stopped'}
                     </Badge>
                   </div>
                   <p className="text-sm text-muted-foreground">
@@ -1216,15 +1243,15 @@ export default function Debug() {
                 {/* Mod Checker */}
                 <div className="p-4 rounded-lg border bg-card">
                   <div className="flex items-center gap-3 mb-3">
-                    <Settings className={`w-5 h-5 ${healthStatus?.services.modChecker.running ? 'text-green-500' : 'text-gray-500'}`} />
+                    <Settings className={`w-5 h-5 ${healthStatus?.services?.modChecker?.running ? 'text-green-500' : 'text-gray-500'}`} />
                     <span className="font-medium">Mod Checker</span>
-                    <Badge variant={healthStatus?.services.modChecker.running ? 'default' : 'secondary'} className="ml-auto">
-                      {healthStatus?.services.modChecker.running ? 'Active' : 'Inactive'}
+                    <Badge variant={healthStatus?.services?.modChecker?.running ? 'default' : 'secondary'} className="ml-auto">
+                      {healthStatus?.services?.modChecker?.running ? 'Active' : 'Inactive'}
                     </Badge>
                   </div>
                   <p className="text-sm text-muted-foreground">
-                    Interval: {healthStatus?.services.modChecker.interval 
-                      ? `${Math.floor(healthStatus.services.modChecker.interval / 60000)}m`
+                    Interval: {healthStatus?.services?.modChecker?.interval 
+                      ? `${Math.floor((healthStatus.services?.modChecker?.interval || 0) / 60000)}m`
                       : 'N/A'}
                   </p>
                 </div>
@@ -1292,10 +1319,10 @@ export default function Debug() {
               </CardHeader>
               <CardContent>
                 <span className="text-2xl font-bold">
-                  {systemInfo ? formatMemory(systemInfo.memoryUsage.heapUsed) : '-'}
+                  {systemInfo?.memoryUsage ? formatMemory(systemInfo.memoryUsage.heapUsed) : '-'}
                 </span>
                 <p className="text-xs text-muted-foreground mt-1">
-                  of {systemInfo ? formatMemory(systemInfo.memoryUsage.heapTotal) : '-'} heap
+                  of {systemInfo?.memoryUsage ? formatMemory(systemInfo.memoryUsage.heapTotal) : '-'} heap
                 </p>
               </CardContent>
             </Card>

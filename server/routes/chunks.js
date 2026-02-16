@@ -4,6 +4,7 @@ import path from 'path';
 import { createLogger } from '../utils/logger.js';
 const log = createLogger('API:Chunks');
 import { getSetting, getActiveServer } from '../database/init.js';
+import { sanitizeError } from '../utils/sanitize.js';
 
 const router = express.Router();
 
@@ -65,7 +66,7 @@ router.get('/saves', async (req, res) => {
     res.json({ saves });
   } catch (error) {
     log.error(`Failed to get saves: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -248,11 +249,12 @@ router.get('/chunks/:saveName', async (req, res) => {
       totalChunks: chunks.length,
       bounds,
       limitReached: chunks.length >= MAX_CHUNKS,
-      maxChunks: MAX_CHUNKS
+      maxChunks: MAX_CHUNKS,
+      isB42
     });
   } catch (error) {
     log.error(`Failed to get chunks: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -282,6 +284,24 @@ router.post('/delete-chunks', async (req, res) => {
       const normalized = path.normalize(chunk.file);
       if (normalized.includes('..') || path.isAbsolute(normalized)) {
         return res.status(400).json({ error: 'Invalid chunk file path' });
+      }
+      // Validate chunk coordinates are integers to prevent path traversal
+      // chunk.x and chunk.y are used in template literals to build file paths
+      // for chunkdata/isoregiondata/zpop deletion — non-integer values could
+      // inject path separators and ".." sequences
+      if (chunk.x !== undefined && chunk.x !== null) {
+        const nx = Number(chunk.x);
+        if (!Number.isFinite(nx) || !Number.isInteger(nx)) {
+          return res.status(400).json({ error: 'Invalid chunk x coordinate — must be an integer' });
+        }
+        chunk.x = nx;
+      }
+      if (chunk.y !== undefined && chunk.y !== null) {
+        const ny = Number(chunk.y);
+        if (!Number.isFinite(ny) || !Number.isInteger(ny)) {
+          return res.status(400).json({ error: 'Invalid chunk y coordinate — must be an integer' });
+        }
+        chunk.y = ny;
       }
     }
     
@@ -405,7 +425,7 @@ router.post('/delete-chunks', async (req, res) => {
     });
   } catch (error) {
     log.error(`Failed to delete chunks: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -586,7 +606,7 @@ router.post('/delete-region', async (req, res) => {
     });
   } catch (error) {
     log.error(`Failed to delete region: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -659,7 +679,7 @@ router.get('/stats/:saveName', async (req, res) => {
     res.json(stats);
   } catch (error) {
     log.error(`Failed to get save stats: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 

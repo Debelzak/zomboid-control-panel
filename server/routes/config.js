@@ -2,6 +2,7 @@ import express from 'express';
 import { createLogger } from '../utils/logger.js';
 const log = createLogger('API:Config');
 import { getAllSettings, setSetting } from '../database/init.js';
+import { sanitizeError } from '../utils/sanitize.js';
 
 const router = express.Router();
 
@@ -14,7 +15,8 @@ const VALID_SETTINGS_KEYS = [
   'darkMode', 'autoReconnect', 'reconnectInterval',
   'discordEnabled', 'discordToken', 'discordGuildId', 'discordAdminRole',
   'autoStartServer',
-  'panelPort'
+  'panelPort',
+  'httpsEnabled', 'httpsPort', 'httpsKeyPath', 'httpsCertPath'
 ];
 
 const OPTION_NAME_REGEX = /^[a-zA-Z0-9_]{1,64}$/;
@@ -37,7 +39,7 @@ router.get('/', async (req, res) => {
     res.json({ config });
   } catch (error) {
     log.error(`Failed to get config: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -55,7 +57,7 @@ router.put('/', async (req, res) => {
     res.json({ success: true, message: 'Configuration saved' });
   } catch (error) {
     log.error(`Failed to save config: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -67,7 +69,7 @@ router.post('/reload', async (req, res) => {
     res.json(result);
   } catch (error) {
     log.error(`Failed to reload options: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -79,7 +81,7 @@ router.get('/options', async (req, res) => {
     res.json(result);
   } catch (error) {
     log.error(`Failed to get options: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -106,18 +108,31 @@ router.post('/option', async (req, res) => {
     res.json(result);
   } catch (error) {
     log.error(`Failed to change option: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
+
+// Sensitive keys that should be masked in API responses
+const SENSITIVE_KEYS = ['rconPassword', 'discordToken', 'steamApiKey'];
+
+function maskSensitiveSettings(settings) {
+  const masked = { ...settings };
+  for (const key of SENSITIVE_KEYS) {
+    if (masked[key] && typeof masked[key] === 'string' && masked[key].length > 0) {
+      masked[key] = '••••••••' + masked[key].slice(-4);
+    }
+  }
+  return masked;
+}
 
 // Get application settings
 router.get('/app-settings', async (req, res) => {
   try {
     const settings = await getAllSettings();
-    res.json({ settings });
+    res.json({ settings: maskSensitiveSettings(settings) });
   } catch (error) {
     log.error(`Failed to get app settings: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -153,7 +168,7 @@ router.put('/app-settings', async (req, res) => {
     res.json({ success: true, message: 'Settings saved' });
   } catch (error) {
     log.error(`Failed to save app settings: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -166,7 +181,7 @@ router.get('/paths', async (req, res) => {
       serverBat: process.env.PZ_SERVER_BAT || 'StartServer64.bat'
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -181,7 +196,7 @@ router.put('/paths', async (req, res) => {
     res.json({ success: true, message: 'Paths updated' });
   } catch (error) {
     log.error(`Failed to update paths: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -192,7 +207,7 @@ router.get('/rcon', async (req, res) => {
     const config = rconService.getConfig();
     res.json(config);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -233,7 +248,7 @@ router.put('/rcon', async (req, res) => {
     res.json({ success: true, message: 'RCON configuration updated' });
   } catch (error) {
     log.error(`Failed to update RCON config: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -257,7 +272,7 @@ router.post('/test-rcon', async (req, res) => {
       } catch (cmdError) {
         res.json({ 
           success: true, 
-          message: 'Connected but command failed: ' + cmdError.message,
+          message: 'Connected but command failed: ' + sanitizeError(cmdError.message),
           connected: true,
           warning: true
         });
@@ -273,7 +288,7 @@ router.post('/test-rcon', async (req, res) => {
     log.error(`RCON test failed: ${error.message}`);
     res.status(500).json({ 
       success: false, 
-      error: error.message,
+      error: sanitizeError(error.message),
       connected: false 
     });
   }

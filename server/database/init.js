@@ -53,6 +53,7 @@ const defaultData = {
   mod_presets: [],
   performance_history: [],
   discord_webhooks: [],
+  users: [],
   settings: {}
 };
 

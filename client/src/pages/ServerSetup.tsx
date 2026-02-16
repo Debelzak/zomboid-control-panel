@@ -398,6 +398,11 @@ export default function ServerSetup() {
     toast({ title: 'Generated', description: 'New password generated' })
   }
 
+  const getAuthHeaders = (): Record<string, string> => {
+    const token = localStorage.getItem('pz_access_token')
+    return token ? { Authorization: `Bearer ${token}` } : {}
+  }
+
   const handleInstall = async () => {
     if (!adminPassword) {
       toast({ title: 'Error', description: 'Admin password is required for new server installations', variant: 'destructive' })
@@ -411,7 +416,7 @@ export default function ServerSetup() {
     try {
       const response = await fetch('/api/server/install', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({
           steamcmdPath: steamCmdPath,
           installPath,
@@ -454,7 +459,7 @@ export default function ServerSetup() {
     try {
       const response = await fetch('/api/server/quick-setup', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({
           installPath,
           serverName,

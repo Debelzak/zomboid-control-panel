@@ -194,6 +194,11 @@ export default function Servers() {
   const socket = useContext(SocketContext)
   const navigate = useNavigate()
 
+  const getAuthHeaders = (): Record<string, string> => {
+    const token = localStorage.getItem('pz_access_token')
+    return token ? { Authorization: `Bearer ${token}` } : {}
+  }
+
   // Fetch servers
   const fetchServers = async () => {
     try {
@@ -303,7 +308,7 @@ export default function Servers() {
     try {
       const response = await fetch('/api/servers/detect', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ 
           dataPath: newServer.zomboidDataPath,
           installPath: newServer.installPath || undefined
@@ -354,7 +359,7 @@ export default function Servers() {
     try {
       const response = await fetch('/api/servers/auto-scan', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ scanPath: autoScanPath, maxDepth: 4 })
       })
       
@@ -484,7 +489,7 @@ export default function Servers() {
         try {
           await fetch('/api/server/delete-files', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
             body: JSON.stringify({ path: deleteServer.installPath })
           })
         } catch {

@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { createLogger } from '../utils/logger.js';
 const log = createLogger('API:Servers');
+import { sanitizeError } from '../utils/sanitize.js';
 import {
   getServers,
   getServer,
@@ -118,10 +119,21 @@ router.post('/auto-scan', async (req, res) => {
       return res.status(400).json({ error: 'Scan path is required' });
     }
     
-    // Validate scanPath - resolve to absolute and check for path traversal
-    const resolvedPath = path.resolve(scanPath);
-    if (resolvedPath !== scanPath && !scanPath.startsWith('/') && !scanPath.match(/^[A-Za-z]:/)) {
+    // Validate scanPath - must be an absolute path
+    if (typeof scanPath !== 'string' || scanPath.length > 500) {
       return res.status(400).json({ error: 'Invalid path format' });
+    }
+    
+    const resolvedPath = path.resolve(scanPath);
+    
+    // Must be an absolute path (Windows drive letter or UNC)
+    if (!/^[A-Za-z]:[\\/]/.test(resolvedPath) && !resolvedPath.startsWith('\\\\')) {
+      return res.status(400).json({ error: 'Must be an absolute path (e.g., C:\\...)' });
+    }
+    
+    // Block scanning root drives directly — require at least one subfolder
+    if (/^[A-Za-z]:[\\/]?$/.test(resolvedPath)) {
+      return res.status(400).json({ error: 'Cannot scan a drive root. Please specify a subfolder.' });
     }
     
     if (!fs.existsSync(resolvedPath)) {
@@ -130,7 +142,8 @@ router.post('/auto-scan', async (req, res) => {
     
     log.info(`Auto-scanning for PZ servers in: ${resolvedPath}`);
     
-    const results = scanForPzPaths(resolvedPath, Math.min(maxDepth, 5));
+    const clampedDepth = Math.min(Math.max(parseInt(maxDepth, 10) || 3, 1), 3);
+    const results = scanForPzPaths(resolvedPath, clampedDepth);
     
     // For each data path, detect the server configs
     const detectedConfigs = [];
@@ -189,7 +202,7 @@ router.post('/auto-scan', async (req, res) => {
     
   } catch (error) {
     log.error(`Failed to auto-scan: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -202,25 +215,43 @@ router.post('/detect', async (req, res) => {
       return res.status(400).json({ error: 'Data path is required' });
     }
     
+    // Validate path format
+    if (typeof dataPath !== 'string' || dataPath.length > 500) {
+      return res.status(400).json({ error: 'Invalid path format' });
+    }
+    
+    // Must be absolute
+    const resolvedData = path.resolve(dataPath);
+    if (!/^[A-Za-z]:[\\/]/.test(resolvedData) && !resolvedData.startsWith('\\\\')) {
+      return res.status(400).json({ error: 'Must be an absolute path' });
+    }
+    
     // Verify data path exists
-    if (!fs.existsSync(dataPath)) {
+    if (!fs.existsSync(resolvedData)) {
       return res.status(400).json({ error: 'Data path does not exist' });
     }
     
     // Check if this is a valid Zomboid data folder (should have Server subfolder)
-    const serverConfigPath = path.join(dataPath, 'Server');
+    const serverConfigPath = path.join(resolvedData, 'Server');
     if (!fs.existsSync(serverConfigPath)) {
       return res.status(400).json({ error: 'Not a valid Zomboid data folder (no Server subfolder found)' });
     }
     
-    // Check for install path if provided
+    // Validate installPath if provided
+    let resolvedInstall = null;
     let hasNoSteam = false;
     let validInstallPath = false;
-    if (installPath && fs.existsSync(installPath)) {
-      const startBat = path.join(installPath, 'StartServer64.bat');
-      const startBatNoSteam = path.join(installPath, 'StartServer64_nosteam.bat');
-      validInstallPath = fs.existsSync(startBat) || fs.existsSync(startBatNoSteam);
-      hasNoSteam = fs.existsSync(startBatNoSteam);
+    if (installPath) {
+      if (typeof installPath !== 'string' || installPath.length > 500) {
+        return res.status(400).json({ error: 'Invalid install path format' });
+      }
+      resolvedInstall = path.resolve(installPath);
+      if (fs.existsSync(resolvedInstall)) {
+        const startBat = path.join(resolvedInstall, 'StartServer64.bat');
+        const startBatNoSteam = path.join(resolvedInstall, 'StartServer64_nosteam.bat');
+        validInstallPath = fs.existsSync(startBat) || fs.existsSync(startBatNoSteam);
+        hasNoSteam = fs.existsSync(startBatNoSteam);
+      }
     }
     
     // Find server INI files
@@ -259,9 +290,9 @@ router.post('/detect', async (req, res) => {
     
     res.json({
       valid: true,
-      dataPath,
+      dataPath: resolvedData,
       serverConfigPath,
-      installPath: installPath || '',
+      installPath: resolvedInstall || '',
       validInstallPath,
       hasNoSteam,
       detectedServers
@@ -269,7 +300,7 @@ router.post('/detect', async (req, res) => {
     
   } catch (error) {
     log.error(`Failed to detect server: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -280,7 +311,7 @@ router.get('/', async (req, res) => {
     res.json({ servers });
   } catch (error) {
     log.error(`Failed to get servers: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -294,7 +325,7 @@ router.get('/active', async (req, res) => {
     res.json({ server });
   } catch (error) {
     log.error(`Failed to get active server: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -317,7 +348,7 @@ router.get('/:id', async (req, res) => {
     res.json({ server });
   } catch (error) {
     log.error(`Failed to get server: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -379,9 +410,17 @@ router.post('/', async (req, res) => {
     res.status(201).json({ server, message: 'Server created successfully' });
   } catch (error) {
     log.error(`Failed to create server: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
+
+// Allowed fields for server update — prevents mass assignment of internal fields (id, isActive, etc.)
+const ALLOWED_SERVER_UPDATE_FIELDS = [
+  'name', 'serverName', 'installPath', 'serverPath', 'zomboidDataPath',
+  'serverConfigPath', 'branch', 'rconHost', 'rconPort', 'rconPassword',
+  'serverPort', 'minMemory', 'maxMemory', 'useNoSteam', 'useDebug', 'isRemote',
+  'startBat', 'batFile', 'description'
+];
 
 // Update a server
 router.put('/:id', async (req, res) => {
@@ -394,7 +433,13 @@ router.put('/:id', async (req, res) => {
     const isUUID = /[a-f-]/i.test(id);
     const serverId = isUUID ? id : parseInt(id, 10);
     
-    const updates = req.body;
+    // Only allow whitelisted fields — block id, isActive, created, etc.
+    const updates = {};
+    for (const key of ALLOWED_SERVER_UPDATE_FIELDS) {
+      if (req.body[key] !== undefined) {
+        updates[key] = req.body[key];
+      }
+    }
     
     // Validate RCON port if provided
     if (updates.rconPort !== undefined) {
@@ -439,7 +484,7 @@ router.put('/:id', async (req, res) => {
     res.json({ server, message: 'Server updated successfully' });
   } catch (error) {
     log.error(`Failed to update server: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -463,7 +508,7 @@ router.delete('/:id', async (req, res) => {
     res.json({ success: true, message: 'Server deleted successfully' });
   } catch (error) {
     log.error(`Failed to delete server: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -519,7 +564,7 @@ router.post('/:id/activate', async (req, res) => {
     res.json({ server, message: `Now managing: ${server.name}` });
   } catch (error) {
     log.error(`Failed to activate server: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 

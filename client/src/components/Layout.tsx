@@ -23,13 +23,15 @@ import {
   MessagesSquare,
   Archive,
   AlertCircle,
-  RefreshCw
+  RefreshCw,
+  LogOut
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ConnectionStatus } from './ConnectionStatus'
 import { serversApi, ServerInstance, updateApi, UpdateStatus } from '@/lib/api'
 import { SocketContext } from '@/contexts/SocketContext'
 import { useTheme } from '@/contexts/ThemeContext'
+import { useAuth } from '@/contexts/AuthContext'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -127,6 +129,29 @@ const sectionColors: Record<string, { dot: string; icon: string; bg: string; bor
   purple:  { dot: 'bg-violet-500',  icon: 'text-violet-400',  bg: 'bg-violet-500/10',  border: 'border-violet-500/20',  activeBg: 'bg-violet-500/5' },
   cyan:    { dot: 'bg-cyan-500',    icon: 'text-cyan-400',    bg: 'bg-cyan-500/10',    border: 'border-cyan-500/20',    activeBg: 'bg-cyan-500/5' },
   slate:   { dot: 'bg-slate-400',   icon: 'text-slate-400',   bg: 'bg-slate-500/10',   border: 'border-slate-500/20',   activeBg: 'bg-slate-500/5' },
+}
+
+// Auth footer — shows logged-in user and logout button
+function AuthFooter() {
+  const { user, authEnabled, logout } = useAuth()
+  
+  if (!authEnabled || !user) return null
+  
+  return (
+    <div className="flex items-center justify-between text-xs text-muted-foreground">
+      <span className="truncate" title={user.username}>
+        {user.username}
+      </span>
+      <button
+        onClick={logout}
+        className="flex items-center gap-1 hover:text-foreground transition-colors p-1 rounded"
+        title="Sign out"
+      >
+        <LogOut className="w-3 h-3" />
+        <span>Logout</span>
+      </button>
+    </div>
+  )
 }
 
 interface LayoutProps {
@@ -597,6 +622,7 @@ export default function Layout({ children }: LayoutProps) {
         {/* Footer */}
         <div className="p-4 border-t space-y-4">
           <ConnectionStatus showLabel className="justify-center" />
+          <AuthFooter />
           <div className="text-center">
             <p 
               className={cn(

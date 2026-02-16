@@ -96,6 +96,27 @@ export async function setDataPaths(newPaths, moveFiles = true) {
   const current = getDataPaths();
   const filesMoved = { data: false, logs: false };
   
+  // Validate paths — block system-critical directories
+  const BLOCKED_PREFIXES = [
+    'c:\\windows', 'c:\\program files', 'c:\\program files (x86)',
+    'c:\\programdata', 'c:\\users\\public', '/etc', '/usr', '/bin', '/sbin', '/var'
+  ];
+  
+  for (const dir of [newPaths.dataDir, newPaths.logsDir]) {
+    if (!dir) continue;
+    if (typeof dir !== 'string' || dir.length > 500) {
+      return { success: false, error: 'Invalid path format' };
+    }
+    const resolved = path.resolve(dir).toLowerCase();
+    if (BLOCKED_PREFIXES.some(p => resolved.startsWith(p))) {
+      return { success: false, error: 'Path targets a protected system directory' };
+    }
+    // Must be absolute
+    if (!/^[a-zA-Z]:[\\/]/.test(resolved) && !resolved.startsWith('\\\\') && !resolved.startsWith('/')) {
+      return { success: false, error: 'Path must be absolute' };
+    }
+  }
+  
   const updatedConfig = {
     dataDir: newPaths.dataDir || current.dataDir,
     logsDir: newPaths.logsDir || current.logsDir

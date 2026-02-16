@@ -2,6 +2,7 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import { createLogger } from '../utils/logger.js';
+import { sanitizeError } from '../utils/sanitize.js';
 const log = createLogger('API:Backup');
 
 const router = express.Router();
@@ -14,7 +15,7 @@ router.get('/status', async (req, res) => {
     res.json(status);
   } catch (error) {
     log.error(`Failed to get backup status: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -26,7 +27,7 @@ router.get('/info', async (req, res) => {
     res.json(info);
   } catch (error) {
     log.error(`Failed to get backup info: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -38,7 +39,7 @@ router.get('/list', async (req, res) => {
     res.json({ backups });
   } catch (error) {
     log.error(`Failed to list backups: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -48,7 +49,14 @@ router.post('/settings', async (req, res) => {
     const backupService = req.app.get('backupService');
     const scheduler = req.app.get('scheduler');
     
-    const settings = await backupService.updateSettings(req.body);
+    // Whitelist allowed backup settings to prevent prototype pollution
+    const allowed = {};
+    if (req.body.enabled !== undefined) allowed.enabled = !!req.body.enabled;
+    if (req.body.schedule !== undefined) allowed.schedule = String(req.body.schedule);
+    if (req.body.maxBackups !== undefined) allowed.maxBackups = parseInt(req.body.maxBackups, 10);
+    if (req.body.includeDb !== undefined) allowed.includeDb = !!req.body.includeDb;
+    
+    const settings = await backupService.updateSettings(allowed);
     
     // Update scheduler with new backup settings
     if (scheduler && scheduler.setupBackupSchedule) {
@@ -58,7 +66,7 @@ router.post('/settings', async (req, res) => {
     res.json({ success: true, settings });
   } catch (error) {
     log.error(`Failed to update backup settings: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -78,7 +86,7 @@ router.post('/create', async (req, res) => {
     }
   } catch (error) {
     log.error(`Failed to create backup: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -95,7 +103,7 @@ router.delete('/:name', async (req, res) => {
     }
   } catch (error) {
     log.error(`Failed to delete backup: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -124,7 +132,7 @@ router.get('/download/:name', async (req, res) => {
     res.download(backupPath, safeName);
   } catch (error) {
     log.error(`Failed to download backup: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -158,7 +166,7 @@ router.post('/restore/:name', async (req, res) => {
     }
   } catch (error) {
     log.error(`Failed to restore backup: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -177,7 +185,7 @@ router.post('/delete-older-than', async (req, res) => {
     res.json(result);
   } catch (error) {
     log.error(`Failed to delete old backups: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 

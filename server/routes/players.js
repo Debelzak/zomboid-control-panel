@@ -12,6 +12,7 @@ import {
   getPlayerStat
 } from '../database/init.js';
 import { VEHICLES, PERKS, ACCESS_LEVELS } from '../utils/commands.js';
+import { sanitizeError } from '../utils/sanitize.js';
 
 const router = express.Router();
 
@@ -46,7 +47,7 @@ router.get('/activity', async (req, res) => {
     res.json({ success: true, logs });
   } catch (error) {
     log.error(`Failed to get player activity logs: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -64,7 +65,7 @@ router.get('/', async (req, res) => {
     res.json(result);
   } catch (error) {
     log.error(`Failed to get players: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -92,7 +93,7 @@ router.post('/kick', async (req, res) => {
     res.json(result);
   } catch (error) {
     log.error(`Failed to kick player: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -120,7 +121,7 @@ router.post('/ban', async (req, res) => {
     res.json(result);
   } catch (error) {
     log.error(`Failed to ban player: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -144,7 +145,7 @@ router.post('/unban', async (req, res) => {
     res.json(result);
   } catch (error) {
     log.error(`Failed to unban player: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -172,7 +173,7 @@ router.post('/access-level', async (req, res) => {
     res.json(result);
   } catch (error) {
     log.error(`Failed to set access level: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -196,7 +197,7 @@ router.post('/whitelist/add', async (req, res) => {
     res.json(result);
   } catch (error) {
     log.error(`Failed to add to whitelist: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -220,7 +221,7 @@ router.post('/whitelist/remove', async (req, res) => {
     res.json(result);
   } catch (error) {
     log.error(`Failed to remove from whitelist: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -252,7 +253,7 @@ router.post('/teleport', async (req, res) => {
     res.json(result);
   } catch (error) {
     log.error(`Failed to teleport: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -286,7 +287,7 @@ router.post('/add-item', async (req, res) => {
     res.json(result);
   } catch (error) {
     log.error(`Failed to add item: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -318,7 +319,7 @@ router.post('/add-xp', async (req, res) => {
     res.json(result);
   } catch (error) {
     log.error(`Failed to add XP: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -348,7 +349,7 @@ router.post('/add-vehicle', async (req, res) => {
     res.json(result);
   } catch (error) {
     log.error(`Failed to spawn vehicle: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -370,7 +371,7 @@ router.post('/godmode', async (req, res) => {
     res.json(result);
   } catch (error) {
     log.error(`Failed to set godmode: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -392,7 +393,7 @@ router.post('/invisible', async (req, res) => {
     res.json(result);
   } catch (error) {
     log.error(`Failed to set invisible: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -414,7 +415,7 @@ router.post('/noclip', async (req, res) => {
     res.json(result);
   } catch (error) {
     log.error(`Failed to set noclip: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -454,7 +455,7 @@ router.post('/banid', async (req, res) => {
     res.json(result);
   } catch (error) {
     log.error(`Failed to ban SteamID: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -478,7 +479,7 @@ router.post('/unbanid', async (req, res) => {
     res.json(result);
   } catch (error) {
     log.error(`Failed to unban SteamID: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -502,7 +503,7 @@ router.post('/voiceban', async (req, res) => {
     res.json(result);
   } catch (error) {
     log.error(`Failed to set voice ban: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -531,7 +532,7 @@ router.post('/adduser', async (req, res) => {
     res.json(result);
   } catch (error) {
     log.error(`Failed to add user: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -544,7 +545,7 @@ router.post('/whitelist/addall', async (req, res) => {
     res.json(result);
   } catch (error) {
     log.error(`Failed to add all to whitelist: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -559,7 +560,7 @@ router.get('/notes', async (req, res) => {
     res.json({ success: true, notes });
   } catch (error) {
     log.error(`Failed to get player notes: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -570,7 +571,7 @@ router.get('/notes/:playerName', async (req, res) => {
     res.json({ success: true, note });
   } catch (error) {
     log.error(`Failed to get player note: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -601,7 +602,7 @@ router.post('/notes', async (req, res) => {
     res.json({ success: true, note: result });
   } catch (error) {
     log.error(`Failed to save player note: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -612,7 +613,7 @@ router.delete('/notes/:playerName', async (req, res) => {
     res.json({ success });
   } catch (error) {
     log.error(`Failed to delete player note: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -627,7 +628,7 @@ router.get('/stats', async (req, res) => {
     res.json({ success: true, stats });
   } catch (error) {
     log.error(`Failed to get player stats: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -638,7 +639,7 @@ router.get('/stats/:playerName', async (req, res) => {
     res.json({ success: true, stat });
   } catch (error) {
     log.error(`Failed to get player stat: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 

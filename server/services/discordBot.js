@@ -2,6 +2,7 @@ import { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes, EmbedBuil
 import { createLogger } from '../utils/logger.js';
 const log = createLogger('Discord');
 import { getSetting, setSetting } from '../database/init.js';
+import { sanitizeError } from '../utils/sanitize.js';
 
 export class DiscordBot {
   constructor(rconService, serverManager, scheduler, logTailer = null) {
@@ -252,7 +253,7 @@ export class DiscordBot {
     } catch (error) {
       log.error(`command error: ${error.message}`);
       try {
-        const content = `❌ Error: ${error.message}`;
+        const content = `❌ Error: ${sanitizeError(error.message)}`;
         if (interaction.replied || interaction.deferred) {
           await interaction.followUp({ content, ephemeral: true });
         } else {
@@ -393,7 +394,7 @@ export class DiscordBot {
       await this.scheduler.performRestart(minutes);
     } catch (error) {
       log.error(`restart failed: ${error.message}`);
-      await this.sendNotification(`❌ **Server restart failed:** ${error.message}`);
+      await this.sendNotification(`❌ **Server restart failed:** ${sanitizeError(error.message)}`);
     }
   }
 
