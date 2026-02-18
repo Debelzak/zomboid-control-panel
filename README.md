@@ -61,18 +61,6 @@ It combines RCON, file tools, backup workflows, multi-server control, and an opt
 - PanelBridge Lua mod for direct in-game command execution.
 - RCON command console for low-latency admin control.
 
-## UI Modules (Pages)
-
-Dashboard, Players, Console, Chat, Mods, Scheduler, Events, Backups, Discord, Settings, Server Config, Servers, Server Setup, Server Finder, Chunk Cleaner, Debug, Login, Setup.
-
-## What's New in v0.3.0
-
-- Security and stability improvements across API routes, auth, and file operations.
-- Improved session and token refresh behavior.
-- Safer throttling for destructive server/maintenance actions.
-- Expanded reliability in Debug, Backups, Server Files, and multi-server workflows.
-- Better update workflow and diagnostics visibility.
-
 ## Quick Start
 
 ### Option 1: Standalone Executable (recommended)
