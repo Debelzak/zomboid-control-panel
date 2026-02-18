@@ -7,6 +7,7 @@ It combines RCON, file tools, backup workflows, multi-server control, and an opt
 
 ## Why this panel
 
+- I couldn’t find one tool that covered everything I wanted for PZ server administration, so I built my own all-in-one panel.
 - Manage your server from one UI: start/stop, players, mods, backups, config files, logs, and diagnostics.
 - Use **RCON** for standard commands and **PanelBridge** for advanced operations (teleport, weather, character data, and more).
 - Run as a standalone `.exe` (no Node.js required) or in dev mode.
