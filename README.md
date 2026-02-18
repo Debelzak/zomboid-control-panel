@@ -1,6 +1,8 @@
-# PZ Server Panel
+# Zomboid Control Panel
 
 A web-based management panel for Project Zomboid dedicated servers on Windows.
+
+![Zomboid Control Panel Dashboard](Screenshots/Main_Dashboard.png)
 
 ## Quick Start
 
@@ -56,6 +58,12 @@ The launcher will:
 - **Expanded admin tooling** in Debug, Server Files, Backups, and multi-server workflows
 - **PanelBridge improvements** for command validation, reliability, and runtime safety
 - **Frontend robustness updates** to prevent common runtime crashes and improve auth-aware API calls
+- **Better update workflow** with clearer server update detection and smoother upgrade flow
+- **Stronger backup safety** with safer restore handling and improved backup lifecycle operations
+- **Config editing reliability** with safer INI/Lua write paths and improved validation rules
+- **Multi-server quality-of-life upgrades** for activation, setup, and management consistency
+- **Improved diagnostics visibility** across health, logs, and runtime service status panels
+- **General reliability polish** reducing edge-case failures across core admin actions
 
 ## Requirements
 
