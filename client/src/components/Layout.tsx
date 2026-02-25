@@ -166,7 +166,16 @@ export default function Layout({ children }: LayoutProps) {
   const [updateInfo, setUpdateInfo] = useState<UpdateStatus | null>(null)
   const [updateDismissed, setUpdateDismissed] = useState(false)
   const [playerCount, setPlayerCount] = useState<number>(0)
+  const [panelVersion, setPanelVersion] = useState('0.0.0')
   const socket = useContext(SocketContext)
+
+  // Fetch panel version
+  useEffect(() => {
+    fetch('/api/health')
+      .then(r => r.json())
+      .then(d => { if (d.version) setPanelVersion(d.version) })
+      .catch(() => {})
+  }, [])
 
   // Listen for player updates globaly
   useEffect(() => {
@@ -634,7 +643,7 @@ export default function Layout({ children }: LayoutProps) {
               {theme === 'survival' ? '// Zomboid Control Panel' : 'Zomboid Control Panel'}
             </p>
             <p className="text-xs text-muted-foreground mt-0.5">
-              v1.0.0 <span className={cn(
+              v{panelVersion} <span className={cn(
                 "font-semibold ml-1 px-1.5 py-0.5 rounded",
                 theme === 'survival' 
                   ? "text-amber-400 bg-amber-500/15 border border-amber-500/30" 

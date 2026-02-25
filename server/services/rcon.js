@@ -134,7 +134,7 @@ export class RconService extends EventEmitter {
     // Start health check interval to detect stale connections
     this.startHealthCheck();
     
-    log.info('auto-reconnect enabled (60s interval)');
+    log.debug('auto-reconnect enabled (60s interval)');
   }
 
   // Start periodic health checks to detect dead connections
@@ -180,7 +180,7 @@ export class RconService extends EventEmitter {
       }
     }, this.healthCheckDelay);
     
-    log.info('health check enabled (60s interval)');
+    log.debug('health check enabled (60s interval)');
   }
 
   // Stop periodic health checks

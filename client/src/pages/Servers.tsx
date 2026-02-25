@@ -14,12 +14,19 @@ import {
   Search,
   AlertCircle,
   CheckCircle,
+  CheckCircle2,
   RefreshCw,
   ShieldCheck,
   Info,
   Globe,
   Monitor,
-  Wifi
+  Wifi,
+  HardDrive,
+  Database,
+  ArrowRight,
+  GitBranch,
+  Cpu,
+  Network
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -64,7 +71,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { serversApi, ServerInstance, configApi, serverApi } from '@/lib/api'
+import { serversApi, ServerInstance, configApi, serverApi, updateApi, UpdateStatus } from '@/lib/api'
 import { SocketContext } from '@/contexts/SocketContext'
 import { useNavigate } from 'react-router-dom'
 import { PageHeader } from '@/components/PageHeader'
@@ -183,7 +190,9 @@ export default function Servers() {
   const [steamOperation, setSteamOperation] = useState<{ server: ServerInstance; type: 'update' | 'verify'; branch: string } | null>(null)
   const [steamLogs, setSteamLogs] = useState<string[]>([])
   const [steamRunning, setSteamRunning] = useState(false)
+  const [steamCompleted, setSteamCompleted] = useState<'success' | 'error' | null>(null)
   const [steamcmdPath, setSteamcmdPath] = useState('')
+  const [updateInfo, setUpdateInfo] = useState<UpdateStatus | null>(null)
   const [availableBranches, setAvailableBranches] = useState<Array<{name: string, description: string, buildId?: string | null}>>([
     { name: 'stable', description: 'Stable release' },
     { name: 'unstable', description: 'Unstable beta' }
@@ -221,7 +230,32 @@ export default function Servers() {
         setSteamcmdPath(data.settings.steamcmdPath)
       }
     }).catch(() => {})
+    // Load update status
+    updateApi.getStatus().then(status => {
+      if (status.updateAvailable?.updateAvailable) {
+        setUpdateInfo(status.updateAvailable)
+      }
+    }).catch(() => {})
   }, [])
+
+  // Listen for update status changes (clears banner after successful update)
+  useEffect(() => {
+    if (!socket) return
+
+    const handleUpdateAvailable = (data: UpdateStatus) => {
+      setUpdateInfo(data.updateAvailable ? data : null)
+    }
+    const handleUpdateCheck = (data: UpdateStatus) => {
+      setUpdateInfo(data.updateAvailable ? data : null)
+    }
+
+    socket.on('server:updateAvailable', handleUpdateAvailable)
+    socket.on('server:updateCheck', handleUpdateCheck)
+    return () => {
+      socket.off('server:updateAvailable', handleUpdateAvailable)
+      socket.off('server:updateCheck', handleUpdateCheck)
+    }
+  }, [socket])
 
   // Fetch available Steam branches when steam operation dialog opens
   useEffect(() => {
@@ -274,6 +308,7 @@ export default function Servers() {
     
     const handleSteamComplete = (data: { success: boolean; message: string }) => {
       setSteamRunning(false)
+      setSteamCompleted(data.success ? 'success' : 'error')
       setSteamLogs(prev => [...prev, '', data.success ? '✓ ' + data.message : '✗ ' + data.message])
       toast({
         title: data.success ? 'Success' : 'Failed',
@@ -562,6 +597,7 @@ export default function Servers() {
     
     setSteamLogs([])
     setSteamRunning(true)
+    setSteamCompleted(null)
     
     try {
       if (steamOperation.type === 'verify') {
@@ -584,6 +620,7 @@ export default function Servers() {
     setSteamOperation({ server, type, branch: server.branch || 'stable' })
     setSteamLogs([])
     setSteamRunning(false)
+    setSteamCompleted(null)
     
     // Load steamcmd path from settings if not already set
     if (!steamcmdPath) {
@@ -715,6 +752,35 @@ export default function Servers() {
         }
       />
 
+      {/* Update Banner — integrated into the page */}
+      {updateInfo && updateInfo.updateAvailable && (
+        <div className="flex items-center gap-4 p-4 rounded-lg border border-amber-500/40 bg-amber-500/10">
+          <div className="flex items-center justify-center w-10 h-10 rounded-full bg-amber-500/20 shrink-0">
+            <RefreshCw className="w-5 h-5 text-amber-500" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-medium text-amber-600 dark:text-amber-400">Server Update Available</p>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              <span className="font-mono">{updateInfo.installed.branch}</span> branch — Build{' '}
+              <span className="font-mono">{updateInfo.installed.buildId}</span>
+              <ArrowRight className="w-3 h-3 inline mx-1" />
+              <span className="font-mono font-semibold">{updateInfo.latest.buildId}</span>
+              {updateInfo.latest.description && <span className="ml-1.5 text-xs">({updateInfo.latest.description})</span>}
+            </p>
+          </div>
+          <Button
+            size="sm"
+            className="bg-amber-500 hover:bg-amber-600 text-white shrink-0"
+            onClick={() => {
+              const activeServer = servers.find(s => s.isActive)
+              if (activeServer) openSteamOperation(activeServer, 'update')
+            }}
+          >
+            <RefreshCw className="w-4 h-4 mr-1.5" /> Update Now
+          </Button>
+        </div>
+      )}
+
       {/* Server Grid */}
       {servers.length === 0 ? (
         <Card>
@@ -735,16 +801,26 @@ export default function Servers() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 stagger-in">
-          {servers.map(server => (
+        <div className="grid gap-4 md:grid-cols-2 stagger-in">
+          {servers.map(server => {
+            const hasUpdate = updateInfo?.updateAvailable && server.isActive
+            return (
             <Card 
               key={server.id} 
-              className={server.isActive ? 'border-primary ring-1 ring-primary/20' : ''}
+              className={`relative overflow-hidden ${server.isActive ? 'border-primary ring-1 ring-primary/20' : ''} ${hasUpdate ? 'border-amber-500/50' : ''}`}
             >
+              {/* Active indicator bar */}
+              {server.isActive && (
+                <div className="absolute top-0 left-0 right-0 h-0.5 bg-primary" />
+              )}
+              {hasUpdate && !server.isActive && (
+                <div className="absolute top-0 left-0 right-0 h-0.5 bg-amber-500" />
+              )}
+
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between">
-                  <div className="space-y-1">
-                    <CardTitle className="flex items-center gap-2">
+                  <div className="space-y-1.5 min-w-0 flex-1">
+                    <CardTitle className="flex items-center gap-2 flex-wrap">
                       {server.name}
                       {server.isActive && (
                         <Badge variant="default" className="text-xs">
@@ -756,6 +832,11 @@ export default function Servers() {
                           <Globe className="w-3 h-3 mr-1" /> Remote
                         </Badge>
                       )}
+                      {hasUpdate && (
+                        <Badge variant="outline" className="text-xs bg-amber-500/10 text-amber-500 border-amber-500/30">
+                          <RefreshCw className="w-3 h-3 mr-1" /> Update Available
+                        </Badge>
+                      )}
                     </CardTitle>
                     <CardDescription className="font-mono text-xs">
                       {server.serverName}
@@ -764,7 +845,7 @@ export default function Servers() {
                   
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-8 w-8">
+                      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0">
                         <MoreVertical className="w-4 h-4" />
                       </Button>
                     </DropdownMenuTrigger>
@@ -796,49 +877,120 @@ export default function Servers() {
                 </div>
               </CardHeader>
               
-              <CardContent className="space-y-3">
-                <div className="text-sm space-y-1">
+              <CardContent className="space-y-4">
+                {/* Paths Section */}
+                {!server.isRemote && (
+                  <div className="space-y-2">
+                    {server.installPath && (
+                      <div className="flex items-start gap-2 text-sm">
+                        <HardDrive className="w-3.5 h-3.5 mt-0.5 text-muted-foreground shrink-0" />
+                        <div className="min-w-0">
+                          <span className="text-muted-foreground text-xs">Install Path</span>
+                          <p className="font-mono text-xs break-all">{server.installPath}</p>
+                        </div>
+                      </div>
+                    )}
+                    {server.zomboidDataPath && (
+                      <div className="flex items-start gap-2 text-sm">
+                        <Database className="w-3.5 h-3.5 mt-0.5 text-muted-foreground shrink-0" />
+                        <div className="min-w-0">
+                          <span className="text-muted-foreground text-xs">Data Path</span>
+                          <p className="font-mono text-xs break-all">{server.zomboidDataPath}</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Network & Config Grid */}
+                <div className={`grid ${server.isRemote ? 'grid-cols-2' : 'grid-cols-3'} gap-3`}>
+                  <div className="p-2 rounded-md bg-muted/50">
+                    <div className="flex items-center gap-1.5 text-muted-foreground mb-1">
+                      <Network className="w-3 h-3" />
+                      <span className="text-xs">RCON</span>
+                    </div>
+                    <p className="font-mono text-xs font-medium">{server.rconHost}:{server.rconPort}</p>
+                  </div>
+                  <div className="p-2 rounded-md bg-muted/50">
+                    <div className="flex items-center gap-1.5 text-muted-foreground mb-1">
+                      <Globe className="w-3 h-3" />
+                      <span className="text-xs">Game Port</span>
+                    </div>
+                    <p className="font-mono text-xs font-medium">{server.serverPort}</p>
+                  </div>
                   {!server.isRemote && (
-                  <div className="flex justify-between text-muted-foreground">
-                    <span>Data Path:</span>
-                    <span className="font-mono text-xs truncate max-w-[180px]" title={server.zomboidDataPath || 'Default'}>
-                      {server.zomboidDataPath || 'Default'}
-                    </span>
-                  </div>
-                  )}
-                  <div className="flex justify-between text-muted-foreground">
-                    <span>RCON:</span>
-                    <span className="font-mono text-xs">{server.rconHost}:{server.rconPort}</span>
-                  </div>
-                  <div className="flex justify-between text-muted-foreground">
-                    <span>Game Port:</span>
-                    <span className="font-mono text-xs">{server.serverPort}</span>
-                  </div>
-                  {!server.isRemote && (
-                  <div className="flex justify-between text-muted-foreground">
-                    <span>Memory:</span>
-                    <span className="font-mono text-xs">{server.minMemory}MB - {server.maxMemory}MB</span>
-                  </div>
+                    <div className="p-2 rounded-md bg-muted/50">
+                      <div className="flex items-center gap-1.5 text-muted-foreground mb-1">
+                        <Cpu className="w-3 h-3" />
+                        <span className="text-xs">Memory</span>
+                      </div>
+                      <p className="font-mono text-xs font-medium">{server.minMemory / 1024}–{server.maxMemory / 1024} GB</p>
+                    </div>
                   )}
                 </div>
-                
-                {!server.isActive && (
-                  <Button 
-                    variant="outline" 
-                    className="w-full"
-                    onClick={() => handleActivateServer(server)}
-                    disabled={activating === server.id}
-                  >
-                    {activating === server.id ? (
-                      <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Activating...</>
-                    ) : (
-                      <><Power className="w-4 h-4 mr-2" /> Switch to This Server</>
-                    )}
-                  </Button>
+
+                {/* Branch & Build Info (if update info available for active server) */}
+                {server.isActive && updateInfo && (
+                  <div className="p-2.5 rounded-md bg-muted/50 border border-border/50">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <GitBranch className="w-3.5 h-3.5 text-muted-foreground" />
+                        <span className="text-xs text-muted-foreground">Branch:</span>
+                        <Badge variant="secondary" className="text-xs font-mono">{updateInfo.installed.branch}</Badge>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className="text-muted-foreground">Build:</span>
+                        <span className="font-mono font-medium">{updateInfo.installed.buildId}</span>
+                        {updateInfo.updateAvailable && (
+                          <>
+                            <ArrowRight className="w-3 h-3 text-amber-500" />
+                            <span className="font-mono font-semibold text-amber-500">{updateInfo.latest.buildId}</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 )}
+
+                {/* Server branch badge for non-active */}
+                {!server.isActive && server.branch && (
+                  <div className="flex items-center gap-2">
+                    <GitBranch className="w-3.5 h-3.5 text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground">Branch:</span>
+                    <Badge variant="secondary" className="text-xs font-mono">{server.branch}</Badge>
+                  </div>
+                )}
+
+                {/* Action Buttons */}
+                <div className="flex gap-2 pt-1">
+                  {hasUpdate && (
+                    <Button 
+                      size="sm"
+                      className="flex-1 bg-amber-500 hover:bg-amber-600 text-white"
+                      onClick={() => openSteamOperation(server, 'update')}
+                    >
+                      <RefreshCw className="w-4 h-4 mr-1.5" /> Update Now
+                    </Button>
+                  )}
+                  {!server.isActive && (
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      className="flex-1"
+                      onClick={() => handleActivateServer(server)}
+                      disabled={activating === server.id}
+                    >
+                      {activating === server.id ? (
+                        <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> Activating...</>
+                      ) : (
+                        <><Power className="w-4 h-4 mr-1.5" /> Switch to This Server</>
+                      )}
+                    </Button>
+                  )}
+                </div>
               </CardContent>
             </Card>
-          ))}
+          )})}
         </div>
       )}
 
@@ -1519,20 +1671,39 @@ export default function Servers() {
               onClick={() => setSteamOperation(null)}
               disabled={steamRunning}
             >
-              {steamRunning ? 'Running...' : 'Cancel'}
+              {steamRunning ? 'Running...' : steamCompleted ? 'Close' : 'Cancel'}
             </Button>
-            <Button 
-              onClick={handleStartSteamOperation}
-              disabled={steamRunning || !steamcmdPath.trim()}
-            >
-              {steamRunning ? (
-                <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Running...</>
-              ) : steamOperation?.type === 'verify' ? (
-                <><ShieldCheck className="w-4 h-4 mr-2" /> Start Verify</>
-              ) : (
-                <><RefreshCw className="w-4 h-4 mr-2" /> Start Update</>
-              )}
-            </Button>
+            {!steamCompleted && (
+              <Button 
+                onClick={handleStartSteamOperation}
+                disabled={steamRunning || !steamcmdPath.trim()}
+              >
+                {steamRunning ? (
+                  <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Running...</>
+                ) : steamOperation?.type === 'verify' ? (
+                  <><ShieldCheck className="w-4 h-4 mr-2" /> Start Verify</>
+                ) : (
+                  <><RefreshCw className="w-4 h-4 mr-2" /> Start Update</>
+                )}
+              </Button>
+            )}
+            {steamCompleted === 'success' && (
+              <Button 
+                variant="default"
+                className="bg-green-600 hover:bg-green-700"
+                onClick={() => setSteamOperation(null)}
+              >
+                <CheckCircle2 className="w-4 h-4 mr-2" /> Done
+              </Button>
+            )}
+            {steamCompleted === 'error' && (
+              <Button 
+                onClick={() => { setSteamCompleted(null); handleStartSteamOperation(); }}
+                disabled={!steamcmdPath.trim()}
+              >
+                <RefreshCw className="w-4 h-4 mr-2" /> Retry
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

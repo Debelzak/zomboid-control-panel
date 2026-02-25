@@ -286,7 +286,8 @@ export async function getDb() {
     registerShutdownHandlers();
 
     const stats = getDatabaseStatsSync();
-    console.log(`[DB] Loaded — ${stats.totalRecords} records, ${stats.fileSizeKB}KB, ${stats.backupCount} backups`);
+    const dbLog = (await import('../utils/logger.js')).createLogger('DB');
+    dbLog.info(`Loaded — ${stats.totalRecords} records, ${stats.fileSizeKB}KB, ${stats.backupCount} backups`);
   }
   return db;
 }

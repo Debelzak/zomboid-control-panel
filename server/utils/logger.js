@@ -124,9 +124,47 @@ export function logBlank() {
 
 /**
  * Print a section header to console for grouping startup phases.
- * e.g.  ─── Services ────────────────────────
+ * e.g.  ── Services ─────────────────────────────────────
  */
 export function logSection(title) {
-  const line = '─'.repeat(Math.max(0, 44 - title.length));
-  console.log(`\n  ─── ${title} ${line}`);
+  const totalWidth = 50;
+  const prefix = `── ${title} `;
+  const line = '─'.repeat(Math.max(0, totalWidth - prefix.length));
+  console.log(`\n  ${prefix}${line}`);
+}
+
+/**
+ * Print a startup banner with app name and version.
+ */
+export function logBanner(version) {
+  const title = 'Zomboid Control Panel';
+  const ver = version ? `v${version}` : '';
+  const content = ver ? `${title}  ${ver}` : title;
+  const innerWidth = 49;
+  const pad = Math.floor((innerWidth - content.length) / 2);
+  const padded = ' '.repeat(pad) + content + ' '.repeat(innerWidth - pad - content.length);
+
+  console.log('');
+  console.log(`  ╔${'═'.repeat(innerWidth)}╗`);
+  console.log(`  ║${padded}║`);
+  console.log(`  ╚${'═'.repeat(innerWidth)}╝`);
+}
+
+/**
+ * Print the "Ready" box with server URLs.
+ * @param {{ label: string, url: string }[]} urls
+ */
+export function logReady(urls) {
+  const lines = urls.map(u => `  ${u.label}   ${u.url}`);
+  const maxLen = Math.max(...lines.map(l => l.length));
+  const innerWidth = Math.max(maxLen + 2, 45);
+
+  console.log('');
+  console.log(`  ┌${'─'.repeat(innerWidth)}┐`);
+  for (const line of lines) {
+    const padded = line + ' '.repeat(innerWidth - line.length);
+    console.log(`  │${padded}│`);
+  }
+  console.log(`  └${'─'.repeat(innerWidth)}┘`);
+  console.log('');
 }

@@ -4,6 +4,20 @@ const log = createLogger('Discord');
 import { getSetting, setSetting } from '../database/init.js';
 import { sanitizeError } from '../utils/sanitize.js';
 
+// Default permission levels for each command
+// 'everyone' = no role needed, 'moderator' = mod or admin role, 'admin' = admin role only
+const DEFAULT_COMMAND_PERMISSIONS = {
+  status: 'everyone',
+  players: 'everyone',
+  save: 'moderator',
+  broadcast: 'moderator',
+  kick: 'moderator',
+  start: 'admin',
+  stop: 'admin',
+  restart: 'admin',
+  rcon: 'admin'
+};
+
 export class DiscordBot {
   constructor(rconService, serverManager, scheduler, logTailer = null) {
     this.client = null;
@@ -14,9 +28,11 @@ export class DiscordBot {
     this.token = null;
     this.guildId = null;
     this.adminRoleId = null;
+    this.modRoleId = null;
     this.channelId = null;
     this.isRunning = false;
     this.webhookEvents = {};
+    this.commandPermissions = { ...DEFAULT_COMMAND_PERMISSIONS };
     
     // Setup Chat Bridge listener
     if (this.logTailer) {
@@ -46,7 +62,19 @@ export class DiscordBot {
     this.token = await getSetting('discordBotToken');
     this.guildId = await getSetting('discordGuildId');
     this.adminRoleId = await getSetting('discordAdminRoleId');
+    this.modRoleId = await getSetting('discordModRoleId');
     this.channelId = await getSetting('discordChannelId');
+    
+    // Load command permissions
+    const savedPerms = await getSetting('discordCommandPermissions');
+    if (savedPerms) {
+      try {
+        const parsed = typeof savedPerms === 'string' ? JSON.parse(savedPerms) : savedPerms;
+        this.commandPermissions = { ...DEFAULT_COMMAND_PERMISSIONS, ...parsed };
+      } catch (e) {
+        this.commandPermissions = { ...DEFAULT_COMMAND_PERMISSIONS };
+      }
+    }
     
     // Load webhook events
     const savedEvents = await getSetting('discordWebhookEvents');
@@ -78,90 +106,119 @@ export class DiscordBot {
     await this.sendNotification(message);
   }
 
-  async updateConfig(token, guildId, adminRoleId, channelId) {
+  async updateConfig(token, guildId, adminRoleId, channelId, modRoleId) {
     await setSetting('discordBotToken', token);
     await setSetting('discordGuildId', guildId);
     await setSetting('discordAdminRoleId', adminRoleId);
+    await setSetting('discordModRoleId', modRoleId || '');
     await setSetting('discordChannelId', channelId || '');
     
     this.token = token;
     this.guildId = guildId;
     this.adminRoleId = adminRoleId;
+    this.modRoleId = modRoleId || null;
     this.channelId = channelId;
   }
 
+  async updateCommandPermissions(permissions) {
+    // Validate: only allow known commands and valid levels
+    const validLevels = ['everyone', 'moderator', 'admin'];
+    const validCommands = Object.keys(DEFAULT_COMMAND_PERMISSIONS);
+    const cleaned = {};
+    for (const [cmd, level] of Object.entries(permissions)) {
+      if (validCommands.includes(cmd) && validLevels.includes(level)) {
+        cleaned[cmd] = level;
+      }
+    }
+    this.commandPermissions = { ...DEFAULT_COMMAND_PERMISSIONS, ...cleaned };
+    await setSetting('discordCommandPermissions', JSON.stringify(this.commandPermissions));
+    
+    // Re-register commands to update Discord-side default permissions
+    if (this.isRunning && this.client?.user) {
+      await this.registerCommands();
+    }
+    return this.commandPermissions;
+  }
+
+  getCommandPermissions() {
+    return { ...this.commandPermissions };
+  }
+
   getCommands() {
-    return [
-      new SlashCommandBuilder()
-        .setName('status')
-        .setDescription('Get the current server status'),
-      
-      new SlashCommandBuilder()
-        .setName('players')
-        .setDescription('List online players'),
-      
-      new SlashCommandBuilder()
-        .setName('start')
-        .setDescription('Start the Project Zomboid server')
-        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-      
-      new SlashCommandBuilder()
-        .setName('stop')
-        .setDescription('Stop the server (with save)')
-        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-      
-      new SlashCommandBuilder()
-        .setName('restart')
-        .setDescription('Restart the server with warning')
-        .addIntegerOption(option =>
-          option.setName('minutes')
-            .setDescription('Warning time in minutes before restart')
-            .setRequired(false)
-            .setMinValue(0)
-            .setMaxValue(30)
-        )
-        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-      
-      new SlashCommandBuilder()
-        .setName('save')
-        .setDescription('Save the world')
-        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-      
-      new SlashCommandBuilder()
-        .setName('broadcast')
-        .setDescription('Send a message to all players')
-        .addStringOption(option =>
-          option.setName('message')
-            .setDescription('Message to broadcast')
-            .setRequired(true)
-        )
-        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-      
-      new SlashCommandBuilder()
-        .setName('kick')
-        .setDescription('Kick a player from the server')
-        .addStringOption(option =>
-          option.setName('player')
-            .setDescription('Player name to kick')
-            .setRequired(true)
-        )
-        .addStringOption(option =>
-          option.setName('reason')
-            .setDescription('Reason for kick')
-            .setRequired(false)
-        )
-        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-      
-      new SlashCommandBuilder()
-        .setName('rcon')
-        .setDescription('Execute a custom RCON command')
-        .addStringOption(option =>
-          option.setName('command')
-            .setDescription('RCON command to execute')
-            .setRequired(true)
-        )
-        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+    const commands = [
+      { builder: new SlashCommandBuilder().setName('status').setDescription('Get the current server status'), name: 'status' },
+      { builder: new SlashCommandBuilder().setName('players').setDescription('List online players'), name: 'players' },
+      { builder: new SlashCommandBuilder().setName('start').setDescription('Start the Project Zomboid server'), name: 'start' },
+      { builder: new SlashCommandBuilder().setName('stop').setDescription('Stop the server (with save)'), name: 'stop' },
+      {
+        builder: new SlashCommandBuilder()
+          .setName('restart')
+          .setDescription('Restart the server with warning')
+          .addIntegerOption(option =>
+            option.setName('minutes')
+              .setDescription('Warning time in minutes before restart')
+              .setRequired(false)
+              .setMinValue(0)
+              .setMaxValue(30)
+          ),
+        name: 'restart'
+      },
+      { builder: new SlashCommandBuilder().setName('save').setDescription('Save the world'), name: 'save' },
+      {
+        builder: new SlashCommandBuilder()
+          .setName('broadcast')
+          .setDescription('Send a message to all players')
+          .addStringOption(option =>
+            option.setName('message')
+              .setDescription('Message to broadcast')
+              .setRequired(true)
+          ),
+        name: 'broadcast'
+      },
+      {
+        builder: new SlashCommandBuilder()
+          .setName('kick')
+          .setDescription('Kick a player from the server')
+          .addStringOption(option =>
+            option.setName('player')
+              .setDescription('Player name to kick')
+              .setRequired(true)
+          )
+          .addStringOption(option =>
+            option.setName('reason')
+              .setDescription('Reason for kick')
+              .setRequired(false)
+          ),
+        name: 'kick'
+      },
+      {
+        builder: new SlashCommandBuilder()
+          .setName('rcon')
+          .setDescription('Execute a custom RCON command')
+          .addStringOption(option =>
+            option.setName('command')
+              .setDescription('RCON command to execute')
+              .setRequired(true)
+          ),
+        name: 'rcon'
+      },
     ];
+
+    // Apply Discord-side default permission restrictions based on permission level
+    // 'admin' commands require Discord Administrator permission by default (server admins can override)
+    // 'moderator' commands require ManageMessages by default
+    // 'everyone' commands have no restriction
+    for (const cmd of commands) {
+      const level = this.commandPermissions[cmd.name] || 'admin';
+      if (level === 'admin') {
+        cmd.builder.setDefaultMemberPermissions(PermissionFlagsBits.Administrator);
+      } else if (level === 'moderator') {
+        cmd.builder.setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages);
+      }
+      // 'everyone' = no restriction set
+    }
+
+    return commands.map(c => c.builder);
   }
 
   async registerCommands() {
@@ -189,15 +246,35 @@ export class DiscordBot {
     }
   }
 
-  hasAdminRole(interaction) {
-    if (!this.adminRoleId) return true; // No role configured, allow all
-    
+  hasRole(interaction, roleId) {
+    if (!roleId) return false;
     const member = interaction.member;
     if (!member) return false;
-    
-    // Check if user has the admin role
     if (member.roles && member.roles.cache) {
-      return member.roles.cache.has(this.adminRoleId);
+      return member.roles.cache.has(roleId);
+    }
+    return false;
+  }
+
+  checkPermission(interaction, commandName) {
+    const level = this.commandPermissions[commandName] || 'admin';
+    
+    if (level === 'everyone') return true;
+    
+    // Admin role holders can use everything
+    if (this.adminRoleId && this.hasRole(interaction, this.adminRoleId)) return true;
+    
+    if (level === 'moderator') {
+      // Moderator commands: need mod role or admin role
+      if (!this.modRoleId && !this.adminRoleId) return true; // No roles configured, allow all
+      if (this.modRoleId && this.hasRole(interaction, this.modRoleId)) return true;
+      return false;
+    }
+    
+    if (level === 'admin') {
+      // Admin commands: need admin role
+      if (!this.adminRoleId) return true; // No admin role configured, allow all
+      return false; // Already checked above
     }
     
     return false;
@@ -208,11 +285,12 @@ export class DiscordBot {
 
     const { commandName } = interaction;
     
-    // Check admin role for restricted commands
-    const adminCommands = ['start', 'stop', 'restart', 'save', 'broadcast', 'kick', 'rcon'];
-    if (adminCommands.includes(commandName) && !this.hasAdminRole(interaction)) {
+    // Check permission based on command's configured tier
+    if (!this.checkPermission(interaction, commandName)) {
+      const level = this.commandPermissions[commandName] || 'admin';
+      const roleName = level === 'admin' ? 'Admin' : 'Moderator';
       await interaction.reply({
-        content: '❌ You do not have permission to use this command.',
+        content: `❌ You need the **${roleName}** role to use this command.`,
         ephemeral: true
       });
       return;
@@ -558,7 +636,8 @@ export class DiscordBot {
       configured: !!this.token,
       username: this.client?.user?.tag || null,
       guildId: this.guildId,
-      channelId: this.channelId
+      channelId: this.channelId,
+      modRoleId: this.modRoleId || null
     };
   }
 }

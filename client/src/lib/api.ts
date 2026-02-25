@@ -539,8 +539,8 @@ export const configApi = {
 export const discordApi = {
   getStatus: () => apiGet('/discord/status'),
   getConfig: () => apiGet('/discord/config'),
-  updateConfig: (token: string, guildId: string, adminRoleId?: string, channelId?: string) =>
-    apiPut('/discord/config', { token, guildId, adminRoleId, channelId }),
+  updateConfig: (token: string, guildId: string, adminRoleId?: string, channelId?: string, autoStart?: boolean, modRoleId?: string) =>
+    apiPut('/discord/config', { token, guildId, adminRoleId, modRoleId, channelId, autoStart }),
   start: () => apiPost('/discord/start'),
   stop: () => apiPost('/discord/stop'),
   testToken: (token: string) => apiPost('/discord/test', { token }),
@@ -548,6 +548,9 @@ export const discordApi = {
   getWebhookEvents: () => apiGet('/discord/webhook-events'),
   updateWebhookEvents: (events: Record<string, { enabled: boolean; template: string }>) =>
     apiPut('/discord/webhook-events', { events }),
+  getPermissions: () => apiGet('/discord/permissions') as Promise<{ permissions: Record<string, string> }>,
+  updatePermissions: (permissions: Record<string, string>) =>
+    apiPut('/discord/permissions', { permissions }) as Promise<{ success: boolean; permissions: Record<string, string> }>,
 }
 
 // Server Instance Type

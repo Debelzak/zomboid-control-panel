@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -23,7 +23,19 @@ import {
   Shield,
   Hash,
   Server,
-  Bell
+  Bell,
+  Copy,
+  Check,
+  ChevronRight,
+  ChevronLeft,
+  Zap,
+  Settings,
+  ArrowRight,
+  ToggleLeft,
+  UserPlus,
+  MessagesSquare,
+  Users,
+  Lock
 } from 'lucide-react'
 import { PageHeader } from '@/components/PageHeader'
 
@@ -33,6 +45,7 @@ interface DiscordStatus {
   connected?: boolean
   guildName?: string
   channelName?: string
+  username?: string
   error?: string
 }
 
@@ -41,13 +54,16 @@ interface DiscordConfig {
   hasToken: boolean
   guildId: string
   adminRoleId: string
+  modRoleId: string
   channelId: string
+  autoStart: boolean
 }
 
 interface BotInfo {
   username: string
   id: string
   discriminator: string
+  avatar: string | null
 }
 
 interface WebhookEvent {
@@ -57,6 +73,22 @@ interface WebhookEvent {
 
 type WebhookEvents = Record<string, WebhookEvent>
 
+// Small helper to copy text to clipboard
+function CopyButton({ text, label }: { text: string; label?: string }) {
+  const [copied, setCopied] = useState(false)
+  const handleCopy = () => {
+    navigator.clipboard.writeText(text)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+  return (
+    <Button variant="outline" size="sm" onClick={handleCopy} className="gap-1.5 shrink-0">
+      {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+      {label || (copied ? 'Copied!' : 'Copy')}
+    </Button>
+  )
+}
+
 export default function Discord() {
   const [status, setStatus] = useState<DiscordStatus | null>(null)
   const [config, setConfig] = useState<DiscordConfig | null>(null)
@@ -65,45 +97,57 @@ export default function Discord() {
   const [testing, setTesting] = useState(false)
   const [showToken, setShowToken] = useState(false)
   const [botInfo, setBotInfo] = useState<BotInfo | null>(null)
+  const [inviteUrl, setInviteUrl] = useState<string | null>(null)
   const [webhookEvents, setWebhookEvents] = useState<WebhookEvents>({})
   const [savingEvents, setSavingEvents] = useState(false)
+  const [autoStart, setAutoStart] = useState(true)
+  const [commandPermissions, setCommandPermissions] = useState<Record<string, string>>({})
+  const [savingPermissions, setSavingPermissions] = useState(false)
   
   // Form state
   const [token, setToken] = useState('')
   const [guildId, setGuildId] = useState('')
   const [adminRoleId, setAdminRoleId] = useState('')
+  const [modRoleId, setModRoleId] = useState('')
   const [channelId, setChannelId] = useState('')
   
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
 
-  useEffect(() => {
-    loadData()
-  }, [])
+  // Setup wizard state
+  const [setupStep, setSetupStep] = useState(0)
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       setLoading(true)
-      const [statusData, configData, eventsData] = await Promise.all([
+      const [statusData, configData, eventsData, permsData] = await Promise.all([
         discordApi.getStatus().catch(() => ({ running: false, configured: false })),
         discordApi.getConfig().catch(() => null),
-        discordApi.getWebhookEvents().catch(() => ({ events: {} }))
+        discordApi.getWebhookEvents().catch(() => ({ events: {} })),
+        discordApi.getPermissions().catch(() => ({ permissions: {} }))
       ])
       
       setStatus(statusData)
       setConfig(configData)
       setWebhookEvents(eventsData.events || {})
+      setCommandPermissions(permsData.permissions || {})
       
       if (configData) {
         setGuildId(configData.guildId || '')
         setAdminRoleId(configData.adminRoleId || '')
+        setModRoleId(configData.modRoleId || '')
         setChannelId(configData.channelId || '')
+        setAutoStart(configData.autoStart !== false)
       }
     } catch (error) {
       console.error('Failed to load Discord data:', error)
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    loadData()
+  }, [loadData])
 
   // Discord ID validation (snowflake format - 17-19 digit number)
   const isValidDiscordId = (id: string): boolean => {
@@ -111,12 +155,11 @@ export default function Discord() {
     return /^\d{17,19}$/.test(id)
   }
 
-  const handleSaveConfig = async () => {
+  const handleSaveConfig = async (andStart = false) => {
     try {
       setSaving(true)
       setMessage(null)
       
-      // If no new token provided, check if one already exists
       if (!token && !config?.hasToken) {
         setMessage({ type: 'error', text: 'Bot token is required' })
         return
@@ -127,35 +170,43 @@ export default function Discord() {
         return
       }
       
-      // Validate Guild ID format
       if (!isValidDiscordId(guildId)) {
         setMessage({ type: 'error', text: 'Invalid Guild ID format (should be 17-19 digit number)' })
         return
       }
       
-      // Validate Channel ID format if provided
       if (channelId && !isValidDiscordId(channelId)) {
         setMessage({ type: 'error', text: 'Invalid Channel ID format (should be 17-19 digit number)' })
         return
       }
       
-      // Validate Admin Role ID format if provided
       if (adminRoleId && !isValidDiscordId(adminRoleId)) {
         setMessage({ type: 'error', text: 'Invalid Admin Role ID format (should be 17-19 digit number)' })
         return
       }
       
-      // Only send token if user entered a new one, otherwise send special marker
+      if (modRoleId && !isValidDiscordId(modRoleId)) {
+        setMessage({ type: 'error', text: 'Invalid Moderator Role ID format (should be 17-19 digit number)' })
+        return
+      }
+      
       const tokenToSave = token || 'KEEP_EXISTING'
       
       await discordApi.updateConfig(
         tokenToSave,
         guildId,
         adminRoleId || undefined,
-        channelId || undefined
+        channelId || undefined,
+        autoStart,
+        modRoleId || undefined
       )
       
-      setMessage({ type: 'success', text: 'Discord configuration saved successfully' })
+      if (andStart) {
+        await discordApi.start()
+        setMessage({ type: 'success', text: 'Configuration saved and bot started!' })
+      } else {
+        setMessage({ type: 'success', text: 'Discord configuration saved successfully' })
+      }
       setToken('')
       await loadData()
     } catch (error: any) {
@@ -170,6 +221,7 @@ export default function Discord() {
       setTesting(true)
       setMessage(null)
       setBotInfo(null)
+      setInviteUrl(null)
       
       if (!token) {
         setMessage({ type: 'error', text: 'Enter a token to test' })
@@ -178,6 +230,7 @@ export default function Discord() {
       
       const result = await discordApi.testToken(token)
       setBotInfo(result.bot)
+      setInviteUrl(result.inviteUrl || null)
       setMessage({ type: 'success', text: `Token valid! Bot: ${result.bot.username}` })
     } catch (error: any) {
       setMessage({ type: 'error', text: error.message || 'Invalid token' })
@@ -191,7 +244,7 @@ export default function Discord() {
   const [sendingTest, setSendingTest] = useState(false)
 
   const handleStart = async () => {
-    if (starting) return // Prevent double-click
+    if (starting) return
     try {
       setStarting(true)
       setMessage(null)
@@ -206,7 +259,7 @@ export default function Discord() {
   }
 
   const handleStop = async () => {
-    if (stopping) return // Prevent double-click
+    if (stopping) return
     try {
       setStopping(true)
       setMessage(null)
@@ -221,7 +274,7 @@ export default function Discord() {
   }
 
   const handleSendTestMessage = async () => {
-    if (sendingTest) return // Prevent double-click
+    if (sendingTest) return
     try {
       setSendingTest(true)
       setMessage(null)
@@ -278,26 +331,547 @@ export default function Discord() {
     )
   }
 
+  // ─── Determine if we should show setup wizard ───
+  const isConfigured = config?.hasToken && config?.guildId
+  const showSetupWizard = !isConfigured && !status?.running
+
+  // ═════════════════════════════════════════════════
+  // SETUP WIZARD — shown when bot is not yet configured
+  // ═════════════════════════════════════════════════
+  if (showSetupWizard) {
+    const STEPS = [
+      { label: 'Create App', icon: Zap },
+      { label: 'Bot Token', icon: Bot },
+      { label: 'Intents', icon: ToggleLeft },
+      { label: 'Invite Bot', icon: UserPlus },
+      { label: 'Server IDs', icon: Hash },
+      { label: 'Launch', icon: Play },
+    ]
+
+    return (
+      <div className="p-6 space-y-6 page-transition">
+        <PageHeader
+          title="Discord Bot Setup"
+          description="Let's get your Discord bot up and running — follow the steps below"
+          icon={<MessageSquare className="w-5 h-5" />}
+        />
+
+        {/* Status Message */}
+        {message && (
+          <Alert variant={message.type === 'error' ? 'destructive' : 'default'}>
+            {message.type === 'error' ? <AlertCircle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
+            <AlertTitle>{message.type === 'error' ? 'Error' : 'Success'}</AlertTitle>
+            <AlertDescription>{message.text}</AlertDescription>
+          </Alert>
+        )}
+
+        {/* Stepper */}
+        <div className="flex items-center justify-between">
+          {STEPS.map((step, i) => {
+            const Icon = step.icon
+            const isActive = i === setupStep
+            const isDone = i < setupStep
+            return (
+              <div key={i} className="flex items-center flex-1 last:flex-none">
+                <button
+                  onClick={() => setSetupStep(i)}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-sm font-medium shrink-0 ${
+                    isActive ? 'bg-primary text-primary-foreground' :
+                    isDone ? 'bg-green-500/10 text-green-600 dark:text-green-400 hover:bg-green-500/20' :
+                    'bg-muted text-muted-foreground hover:bg-muted/80'
+                  }`}
+                >
+                  {isDone ? <Check className="w-4 h-4" /> : <Icon className="w-4 h-4" />}
+                  <span className="hidden md:inline">{step.label}</span>
+                </button>
+                {i < STEPS.length - 1 && (
+                  <div className={`flex-1 h-px mx-2 ${isDone ? 'bg-green-500/40' : 'bg-border'}`} />
+                )}
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Step Content */}
+        <Card>
+          <CardContent className="pt-6">
+            {/* ── Step 0: Create Application ── */}
+            {setupStep === 0 && (
+              <div className="space-y-6">
+                <div className="space-y-2">
+                  <h3 className="text-lg font-semibold flex items-center gap-2">
+                    <Zap className="w-5 h-5 text-primary" />
+                    Create a Discord Application
+                  </h3>
+                  <p className="text-muted-foreground">
+                    First, you need to create an application on Discord's Developer Portal. This only takes a minute.
+                  </p>
+                </div>
+
+                <div className="space-y-4 pl-1">
+                  <div className="flex items-start gap-3">
+                    <div className="flex items-center justify-center w-7 h-7 rounded-full bg-primary/10 text-primary text-sm font-bold shrink-0 mt-0.5">1</div>
+                    <div>
+                      <p className="font-medium">Open the Discord Developer Portal</p>
+                      <p className="text-sm text-muted-foreground mb-2">Click the button below to open it in a new tab.</p>
+                      <Button variant="outline" asChild>
+                        <a href="https://discord.com/developers/applications" target="_blank" rel="noopener noreferrer">
+                          <ExternalLink className="w-4 h-4 mr-2" /> Open Developer Portal
+                        </a>
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-3">
+                    <div className="flex items-center justify-center w-7 h-7 rounded-full bg-primary/10 text-primary text-sm font-bold shrink-0 mt-0.5">2</div>
+                    <div>
+                      <p className="font-medium">Click "New Application"</p>
+                      <p className="text-sm text-muted-foreground">
+                        It's in the top-right corner. Name it anything you like (e.g. "PZ Server Bot").
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-3">
+                    <div className="flex items-center justify-center w-7 h-7 rounded-full bg-primary/10 text-primary text-sm font-bold shrink-0 mt-0.5">3</div>
+                    <div>
+                      <p className="font-medium">Go to the "Bot" section</p>
+                      <p className="text-sm text-muted-foreground">
+                        In the left sidebar of your new application, click <strong>Bot</strong>. Discord may auto-create a bot user, or you may see an "Add Bot" button — click it if so.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-lg bg-blue-500/10 border border-blue-500/20 text-sm">
+                  <p className="font-medium text-blue-600 dark:text-blue-400 mb-1">Why do I need a bot?</p>
+                  <p className="text-muted-foreground">
+                    A Discord bot lets your panel send messages, register slash commands, and bridge in-game chat to a Discord channel. It's completely free and runs through this panel — no extra hosting needed.
+                  </p>
+                </div>
+
+                <div className="flex justify-end">
+                  <Button onClick={() => setSetupStep(1)}>
+                    Next: Get Bot Token <ChevronRight className="w-4 h-4 ml-1" />
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* ── Step 1: Bot Token ── */}
+            {setupStep === 1 && (
+              <div className="space-y-6">
+                <div className="space-y-2">
+                  <h3 className="text-lg font-semibold flex items-center gap-2">
+                    <Bot className="w-5 h-5 text-primary" />
+                    Copy Your Bot Token
+                  </h3>
+                  <p className="text-muted-foreground">
+                    On the Bot page in the Developer Portal, click <strong>"Reset Token"</strong> (or "Copy" if visible), then paste it below.
+                  </p>
+                </div>
+
+                <div className="p-4 rounded-lg bg-amber-500/10 border border-amber-500/20 text-sm">
+                  <p className="font-medium text-amber-600 dark:text-amber-400 mb-1">Important</p>
+                  <p className="text-muted-foreground">
+                    Discord only shows the token once after you reset it. If you lose it, you'll need to generate a new one. Treat it like a password —  never share it publicly.
+                  </p>
+                </div>
+
+                <div className="space-y-3">
+                  <Label htmlFor="setup-token" className="text-sm font-medium">Bot Token</Label>
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <Input
+                        id="setup-token"
+                        type={showToken ? 'text' : 'password'}
+                        value={token}
+                        onChange={(e) => { setToken(e.target.value); setBotInfo(null); setInviteUrl(null) }}
+                        placeholder="Paste your bot token here..."
+                        className="pr-10 font-mono text-sm"
+                      />
+                      <Button
+                        type="button" variant="ghost" size="icon"
+                        className="absolute right-0 top-0 h-full"
+                        onClick={() => setShowToken(!showToken)}
+                      >
+                        {showToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </Button>
+                    </div>
+                    <Button onClick={handleTestToken} disabled={testing || !token} className="min-w-[100px]">
+                      {testing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <><Zap className="w-4 h-4 mr-1.5" /> Verify</>}
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Token test result */}
+                {botInfo && (
+                  <div className="flex items-center gap-4 p-4 rounded-lg bg-green-500/10 border border-green-500/20">
+                    {botInfo.avatar && (
+                      <img src={botInfo.avatar} alt="" className="w-12 h-12 rounded-full" />
+                    )}
+                    <div>
+                      <p className="font-semibold text-green-600 dark:text-green-400 flex items-center gap-2">
+                        <CheckCircle2 className="w-4 h-4" /> Token verified!
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        Bot: <span className="font-mono font-medium">{botInfo.username}</span> (ID: <span className="font-mono">{botInfo.id}</span>)
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex justify-between">
+                  <Button variant="outline" onClick={() => setSetupStep(0)}>
+                    <ChevronLeft className="w-4 h-4 mr-1" /> Back
+                  </Button>
+                  <Button onClick={() => setSetupStep(2)} disabled={!token && !botInfo}>
+                    Next: Enable Intents <ChevronRight className="w-4 h-4 ml-1" />
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* ── Step 2: Enable Intents ── */}
+            {setupStep === 2 && (
+              <div className="space-y-6">
+                <div className="space-y-2">
+                  <h3 className="text-lg font-semibold flex items-center gap-2">
+                    <ToggleLeft className="w-5 h-5 text-primary" />
+                    Enable Privileged Intents
+                  </h3>
+                  <p className="text-muted-foreground">
+                    Still on the <strong>Bot</strong> page in the Developer Portal, scroll down to <strong>"Privileged Gateway Intents"</strong> and enable these:
+                  </p>
+                </div>
+
+                <div className="space-y-3">
+                  {[
+                    { name: 'Server Members Intent', why: 'Required to check user roles for admin commands', required: true },
+                    { name: 'Message Content Intent', why: 'Required for two-way chat bridge (Discord ↔ Game)', required: true },
+                  ].map(intent => (
+                    <div key={intent.name} className="flex items-start gap-3 p-4 rounded-lg border bg-muted/30">
+                      <div className="w-10 h-5 bg-green-500 rounded-full relative shrink-0 mt-0.5">
+                        <div className="absolute right-0.5 top-0.5 w-4 h-4 bg-white rounded-full" />
+                      </div>
+                      <div>
+                        <p className="font-medium flex items-center gap-2">
+                          {intent.name}
+                          {intent.required && <Badge variant="secondary" className="text-xs">Required</Badge>}
+                        </p>
+                        <p className="text-sm text-muted-foreground">{intent.why}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="p-4 rounded-lg bg-blue-500/10 border border-blue-500/20 text-sm">
+                  <p className="font-medium text-blue-600 dark:text-blue-400 mb-1">Don't forget to save!</p>
+                  <p className="text-muted-foreground">
+                    After toggling the intents on, scroll down and click the <strong>"Save Changes"</strong> button on the Discord page.
+                  </p>
+                </div>
+
+                <div className="flex justify-between">
+                  <Button variant="outline" onClick={() => setSetupStep(1)}>
+                    <ChevronLeft className="w-4 h-4 mr-1" /> Back
+                  </Button>
+                  <Button onClick={() => setSetupStep(3)}>
+                    Next: Invite Bot <ChevronRight className="w-4 h-4 ml-1" />
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* ── Step 3: Invite Bot ── */}
+            {setupStep === 3 && (
+              <div className="space-y-6">
+                <div className="space-y-2">
+                  <h3 className="text-lg font-semibold flex items-center gap-2">
+                    <UserPlus className="w-5 h-5 text-primary" />
+                    Invite the Bot to Your Discord Server
+                  </h3>
+                  <p className="text-muted-foreground">
+                    {inviteUrl 
+                      ? 'Click the button below to invite your bot. Select your Discord server from the dropdown, then click "Authorize".'
+                      : 'We need your bot token to generate an invite link. Go back to Step 2 and paste + verify your token first, or use the manual method below.'
+                    }
+                  </p>
+                </div>
+
+                {inviteUrl ? (
+                  <div className="space-y-4">
+                    {/* One-click invite */}
+                    <div className="p-5 rounded-lg border-2 border-primary/30 bg-primary/5 text-center space-y-3">
+                      <p className="font-medium">Your invite link is ready!</p>
+                      <Button size="lg" asChild>
+                        <a href={inviteUrl} target="_blank" rel="noopener noreferrer">
+                          <UserPlus className="w-5 h-5 mr-2" /> Invite Bot to Server
+                        </a>
+                      </Button>
+                      <div className="flex items-center justify-center gap-2">
+                        <p className="text-xs text-muted-foreground font-mono truncate max-w-md">{inviteUrl}</p>
+                        <CopyButton text={inviteUrl} label="Copy URL" />
+                      </div>
+                    </div>
+
+                    <div className="text-sm text-muted-foreground space-y-1">
+                      <p><strong>Permissions included:</strong> Send Messages, Embed Links, Read Message History, Use Slash Commands</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="p-4 rounded-lg bg-amber-500/10 border border-amber-500/20 text-sm space-y-3">
+                      <p className="font-medium text-amber-600 dark:text-amber-400">Manual invite (if you haven't verified your token yet)</p>
+                      <ol className="text-muted-foreground space-y-2 list-decimal list-inside">
+                        <li>In the Developer Portal, go to your app → <strong>OAuth2</strong> → <strong>URL Generator</strong></li>
+                        <li>Under "Scopes", check <strong>bot</strong> and <strong>applications.commands</strong></li>
+                        <li>Under "Bot Permissions", check <strong>Send Messages</strong>, <strong>Embed Links</strong>, <strong>Read Message History</strong>, <strong>Use Slash Commands</strong></li>
+                        <li>Copy the generated URL at the bottom and open it in your browser</li>
+                        <li>Select your Discord server and click <strong>Authorize</strong></li>
+                      </ol>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Tip: go back to Step 2 and verify your token — we'll generate the invite link automatically.
+                    </p>
+                  </div>
+                )}
+
+                <div className="flex justify-between">
+                  <Button variant="outline" onClick={() => setSetupStep(2)}>
+                    <ChevronLeft className="w-4 h-4 mr-1" /> Back
+                  </Button>
+                  <Button onClick={() => setSetupStep(4)}>
+                    Next: Server IDs <ChevronRight className="w-4 h-4 ml-1" />
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* ── Step 4: Get Server IDs ── */}
+            {setupStep === 4 && (
+              <div className="space-y-6">
+                <div className="space-y-2">
+                  <h3 className="text-lg font-semibold flex items-center gap-2">
+                    <Hash className="w-5 h-5 text-primary" />
+                    Configure Server IDs
+                  </h3>
+                  <p className="text-muted-foreground">
+                    The bot needs your Discord server's ID to register slash commands. You can also set a notification channel and an admin role.
+                  </p>
+                </div>
+
+                {/* Developer Mode instructions */}
+                <div className="p-4 rounded-lg bg-blue-500/10 border border-blue-500/20 text-sm">
+                  <p className="font-medium text-blue-600 dark:text-blue-400 mb-2">How to enable Developer Mode (required to copy IDs)</p>
+                  <ol className="text-muted-foreground space-y-1 list-decimal list-inside">
+                    <li>Open Discord → <strong>User Settings</strong> (gear icon, bottom-left)</li>
+                    <li>Go to <strong>App Settings → Advanced</strong></li>
+                    <li>Toggle on <strong>Developer Mode</strong></li>
+                  </ol>
+                  <p className="text-muted-foreground mt-2">Now you can right-click servers, channels, and roles to see a <strong>"Copy ID"</strong> option.</p>
+                </div>
+
+                <div className="space-y-5">
+                  {/* Guild ID */}
+                  <div className="space-y-2">
+                    <Label htmlFor="setup-guildId" className="flex items-center gap-2 font-medium">
+                      <Server className="w-4 h-4 text-primary" />
+                      Guild (Server) ID
+                      <Badge variant="secondary" className="text-xs">Required</Badge>
+                    </Label>
+                    <Input
+                      id="setup-guildId"
+                      value={guildId}
+                      onChange={(e) => setGuildId(e.target.value)}
+                      placeholder="123456789012345678"
+                      className="font-mono"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Right-click your Discord server name → <strong>Copy Server ID</strong>
+                    </p>
+                    {guildId && !isValidDiscordId(guildId) && (
+                      <p className="text-xs text-destructive">Invalid format — should be a 17-19 digit number</p>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Channel ID */}
+                    <div className="space-y-2">
+                      <Label htmlFor="setup-channelId" className="flex items-center gap-2 font-medium">
+                        <Hash className="w-4 h-4 text-primary" />
+                        Notification / Chat Channel ID
+                        <Badge variant="outline" className="text-xs">Recommended</Badge>
+                      </Label>
+                      <Input
+                        id="setup-channelId"
+                        value={channelId}
+                        onChange={(e) => setChannelId(e.target.value)}
+                        placeholder="123456789012345678"
+                        className="font-mono"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Right-click a text channel → <strong>Copy Channel ID</strong>. Used for notifications and two-way chat bridge.
+                      </p>
+                    </div>
+
+                    {/* Admin Role ID */}
+                    <div className="space-y-2">
+                      <Label htmlFor="setup-adminRole" className="flex items-center gap-2 font-medium">
+                        <Shield className="w-4 h-4 text-primary" />
+                        Admin Role ID
+                        <Badge variant="outline" className="text-xs">Optional</Badge>
+                      </Label>
+                      <Input
+                        id="setup-adminRole"
+                        value={adminRoleId}
+                        onChange={(e) => setAdminRoleId(e.target.value)}
+                        placeholder="123456789012345678"
+                        className="font-mono"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Right-click a role → <strong>Copy Role ID</strong>. Only users with this role can use bot commands. Leave blank to allow everyone.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex justify-between">
+                  <Button variant="outline" onClick={() => setSetupStep(3)}>
+                    <ChevronLeft className="w-4 h-4 mr-1" /> Back
+                  </Button>
+                  <Button onClick={() => setSetupStep(5)} disabled={!guildId || !isValidDiscordId(guildId)}>
+                    Next: Launch <ChevronRight className="w-4 h-4 ml-1" />
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* ── Step 5: Launch ── */}
+            {setupStep === 5 && (
+              <div className="space-y-6">
+                <div className="space-y-2">
+                  <h3 className="text-lg font-semibold flex items-center gap-2">
+                    <Play className="w-5 h-5 text-primary" />
+                    Ready to Launch!
+                  </h3>
+                  <p className="text-muted-foreground">
+                    Review your configuration below, then save and start the bot.
+                  </p>
+                </div>
+
+                {/* Review */}
+                <div className="space-y-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="p-3 rounded-lg bg-muted/50 space-y-1">
+                      <p className="text-xs text-muted-foreground">Bot Token</p>
+                      <p className="font-mono text-sm">{token ? '••••••••' + token.slice(-4) : '(not set — will fail)'}</p>
+                    </div>
+                    <div className="p-3 rounded-lg bg-muted/50 space-y-1">
+                      <p className="text-xs text-muted-foreground">Guild ID</p>
+                      <p className="font-mono text-sm">{guildId || '(not set — required)'}</p>
+                    </div>
+                    <div className="p-3 rounded-lg bg-muted/50 space-y-1">
+                      <p className="text-xs text-muted-foreground">Channel ID</p>
+                      <p className="font-mono text-sm">{channelId || '(none)'}</p>
+                    </div>
+                    <div className="p-3 rounded-lg bg-muted/50 space-y-1">
+                      <p className="text-xs text-muted-foreground">Admin Role ID</p>
+                      <p className="font-mono text-sm">{adminRoleId || '(none — all users can use commands)'}</p>
+                    </div>
+                  </div>
+                  {botInfo && (
+                    <div className="flex items-center gap-3 p-3 rounded-lg bg-green-500/10 border border-green-500/20">
+                      {botInfo.avatar && <img src={botInfo.avatar} alt="" className="w-8 h-8 rounded-full" />}
+                      <p className="text-sm"><span className="text-green-600 dark:text-green-400 font-medium">Token verified</span> — {botInfo.username}</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Auto-Start */}
+                <div className="flex items-center justify-between p-4 rounded-lg border">
+                  <div>
+                    <Label className="font-medium">Auto-start bot</Label>
+                    <p className="text-sm text-muted-foreground">Automatically start the Discord bot when the panel launches</p>
+                  </div>
+                  <Switch checked={autoStart} onCheckedChange={setAutoStart} />
+                </div>
+
+                <div className="flex justify-between">
+                  <Button variant="outline" onClick={() => setSetupStep(4)}>
+                    <ChevronLeft className="w-4 h-4 mr-1" /> Back
+                  </Button>
+                  <div className="flex gap-2">
+                    <Button variant="outline" onClick={() => handleSaveConfig(false)} disabled={saving || !guildId || (!token && !config?.hasToken)}>
+                      {saving ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Settings className="w-4 h-4 mr-2" />}
+                      Save Only
+                    </Button>
+                    <Button onClick={() => handleSaveConfig(true)} disabled={saving || !guildId || (!token && !config?.hasToken)}>
+                      {saving ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />}
+                      Save & Start Bot
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* What you get */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">What does the bot do?</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+              <div className="p-4 rounded-lg bg-muted/30 space-y-2">
+                <div className="flex items-center gap-2 font-medium">
+                  <ArrowRight className="w-4 h-4 text-primary" /> Slash Commands
+                </div>
+                <p className="text-muted-foreground">
+                  Control your PZ server from Discord: /status, /players, /start, /stop, /restart, /broadcast, /kick, /rcon
+                </p>
+              </div>
+              <div className="p-4 rounded-lg bg-muted/30 space-y-2">
+                <div className="flex items-center gap-2 font-medium">
+                  <MessagesSquare className="w-4 h-4 text-primary" /> Two-Way Chat Bridge
+                </div>
+                <p className="text-muted-foreground">
+                  Messages sent in the bot's channel appear in-game, and in-game chat shows up in Discord. Keeps your community connected.
+                </p>
+              </div>
+              <div className="p-4 rounded-lg bg-muted/30 space-y-2">
+                <div className="flex items-center gap-2 font-medium">
+                  <Bell className="w-4 h-4 text-primary" /> Event Notifications
+                </div>
+                <p className="text-muted-foreground">
+                  Server start/stop, player join/leave, deaths, restarts, and backups — all posted to your Discord channel automatically.
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  // ═════════════════════════════════════════════════
+  // MANAGEMENT VIEW — shown when bot is configured
+  // ═════════════════════════════════════════════════
   return (
     <div className="p-6 space-y-6 page-transition">
       {/* Header */}
       <PageHeader
         title="Discord Bot"
-        description="Configure Discord integration for server management commands"
+        description="Manage your Discord bot, slash commands, and event notifications"
         icon={<MessageSquare className="w-5 h-5" />}
         actions={
           <div className="flex items-center gap-2">
             <Badge variant={status?.running ? 'default' : 'secondary'}>
               {status?.running ? (
-                <>
-                  <CheckCircle2 className="w-3 h-3 mr-1" />
-                  Running
-                </>
+                <><CheckCircle2 className="w-3 h-3 mr-1" /> Running</>
               ) : (
-                <>
-                  <AlertCircle className="w-3 h-3 mr-1" />
-                  Stopped
-                </>
+                <><AlertCircle className="w-3 h-3 mr-1" /> Stopped</>
               )}
             </Badge>
             <Button variant="outline" size="icon" onClick={loadData}>
@@ -310,11 +884,7 @@ export default function Discord() {
       {/* Status Message */}
       {message && (
         <Alert variant={message.type === 'error' ? 'destructive' : 'default'}>
-          {message.type === 'error' ? (
-            <AlertCircle className="h-4 w-4" />
-          ) : (
-            <CheckCircle2 className="h-4 w-4" />
-          )}
+          {message.type === 'error' ? <AlertCircle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
           <AlertTitle>{message.type === 'error' ? 'Error' : 'Success'}</AlertTitle>
           <AlertDescription>{message.text}</AlertDescription>
         </Alert>
@@ -328,32 +898,22 @@ export default function Discord() {
               <Bot className="w-5 h-5" />
               Bot Status
             </CardTitle>
-            <CardDescription>
-              Current status of the Discord bot
-            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="p-4 bg-muted rounded-lg">
                 <p className="text-sm text-muted-foreground">Status</p>
-                <p className="text-lg font-semibold">
+                <p className={`text-lg font-semibold ${status?.running ? 'text-green-600 dark:text-green-400' : ''}`}>
                   {status?.running ? 'Online' : 'Offline'}
                 </p>
               </div>
               <div className="p-4 bg-muted rounded-lg">
-                <p className="text-sm text-muted-foreground">Configured</p>
-                <p className="text-lg font-semibold">
-                  {config?.hasToken ? 'Yes' : 'No'}
+                <p className="text-sm text-muted-foreground">Bot User</p>
+                <p className="text-lg font-semibold truncate">
+                  {status?.username || '—'}
                 </p>
               </div>
             </div>
-            
-            {status?.guildName && (
-              <div className="p-4 bg-muted rounded-lg">
-                <p className="text-sm text-muted-foreground">Connected Server</p>
-                <p className="text-lg font-semibold">{status.guildName}</p>
-              </div>
-            )}
             
             {status?.error && (
               <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
@@ -369,11 +929,7 @@ export default function Discord() {
                   {stopping ? 'Stopping...' : 'Stop Bot'}
                 </Button>
               ) : (
-                <Button 
-                  onClick={handleStart} 
-                  className="flex-1"
-                  disabled={!config?.hasToken || starting}
-                >
+                <Button onClick={handleStart} className="flex-1" disabled={starting}>
                   {starting ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />}
                   {starting ? 'Starting...' : 'Start Bot'}
                 </Button>
@@ -389,52 +945,105 @@ export default function Discord() {
           </CardContent>
         </Card>
 
-        {/* Available Commands */}
+        {/* Command Permissions */}
         <Card>
           <CardHeader>
-            <CardTitle>Available Slash Commands</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <Shield className="w-5 h-5" />
+              Command Permissions
+            </CardTitle>
             <CardDescription>
-              Commands that server moderators can use in Discord
+              Control who can use each slash command. Assign a permission tier per command.
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between p-2 bg-muted rounded">
-                <code>/status</code>
-                <span className="text-muted-foreground">View server status</span>
+          <CardContent className="space-y-4">
+            {/* Tier legend */}
+            <div className="flex flex-wrap gap-3 text-sm mb-2">
+              <div className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-green-500 inline-block" />
+                <span className="font-medium">Everyone</span>
+                <span className="text-muted-foreground">— any user</span>
               </div>
-              <div className="flex justify-between p-2 bg-muted rounded">
-                <code>/players</code>
-                <span className="text-muted-foreground">List online players</span>
+              <div className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block" />
+                <span className="font-medium">Moderator</span>
+                <span className="text-muted-foreground">— Mod or Admin role</span>
               </div>
-              <div className="flex justify-between p-2 bg-muted rounded">
-                <code>/start</code>
-                <span className="text-muted-foreground">Start the server</span>
+              <div className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block" />
+                <span className="font-medium">Admin</span>
+                <span className="text-muted-foreground">— Admin role only</span>
               </div>
-              <div className="flex justify-between p-2 bg-muted rounded">
-                <code>/stop</code>
-                <span className="text-muted-foreground">Stop the server</span>
-              </div>
-              <div className="flex justify-between p-2 bg-muted rounded">
-                <code>/restart</code>
-                <span className="text-muted-foreground">Restart with warning</span>
-              </div>
-              <div className="flex justify-between p-2 bg-muted rounded">
-                <code>/save</code>
-                <span className="text-muted-foreground">Save the world</span>
-              </div>
-              <div className="flex justify-between p-2 bg-muted rounded">
-                <code>/broadcast</code>
-                <span className="text-muted-foreground">Send server message</span>
-              </div>
-              <div className="flex justify-between p-2 bg-muted rounded">
-                <code>/kick</code>
-                <span className="text-muted-foreground">Kick a player</span>
-              </div>
-              <div className="flex justify-between p-2 bg-muted rounded">
-                <code>/rcon</code>
-                <span className="text-muted-foreground">Execute RCON command</span>
-              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              {[
+                { cmd: 'status', label: '/status', desc: 'View server status' },
+                { cmd: 'players', label: '/players', desc: 'List online players' },
+                { cmd: 'save', label: '/save', desc: 'Save the world' },
+                { cmd: 'broadcast', label: '/broadcast', desc: 'Send server message' },
+                { cmd: 'kick', label: '/kick', desc: 'Kick a player' },
+                { cmd: 'start', label: '/start', desc: 'Start the server' },
+                { cmd: 'stop', label: '/stop', desc: 'Stop the server' },
+                { cmd: 'restart', label: '/restart', desc: 'Restart with warning' },
+                { cmd: 'rcon', label: '/rcon', desc: 'Execute RCON command' },
+              ].map(c => {
+                const level = commandPermissions[c.cmd] || 'admin'
+                return (
+                  <div key={c.cmd} className="flex items-center justify-between p-2.5 bg-muted rounded-lg">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <code className="text-sm font-semibold shrink-0">{c.label}</code>
+                      <span className="text-sm text-muted-foreground truncate hidden sm:inline">{c.desc}</span>
+                    </div>
+                    <div className="flex gap-1 shrink-0">
+                      {(['everyone', 'moderator', 'admin'] as const).map(tier => {
+                        const isActive = level === tier
+                        const colors = {
+                          everyone: isActive ? 'bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/40' : 'hover:bg-green-500/5',
+                          moderator: isActive ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/40' : 'hover:bg-blue-500/5',
+                          admin: isActive ? 'bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/40' : 'hover:bg-red-500/5',
+                        }
+                        const icons = {
+                          everyone: <Users className="w-3 h-3" />,
+                          moderator: <Shield className="w-3 h-3" />,
+                          admin: <Lock className="w-3 h-3" />,
+                        }
+                        return (
+                          <Button
+                            key={tier}
+                            variant={isActive ? 'outline' : 'ghost'}
+                            size="sm"
+                            className={`h-7 px-2 text-xs gap-1 ${colors[tier]}`}
+                            onClick={() => setCommandPermissions(prev => ({ ...prev, [c.cmd]: tier }))}
+                          >
+                            {icons[tier]}
+                            <span className="hidden sm:inline capitalize">{tier}</span>
+                          </Button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <Button 
+                onClick={async () => {
+                  try {
+                    setSavingPermissions(true)
+                    await discordApi.updatePermissions(commandPermissions)
+                    setMessage({ type: 'success', text: 'Command permissions saved. Slash commands re-registered.' })
+                  } catch (error: any) {
+                    setMessage({ type: 'error', text: error.message || 'Failed to save permissions' })
+                  } finally {
+                    setSavingPermissions(false)
+                  }
+                }} 
+                disabled={savingPermissions}
+              >
+                {savingPermissions ? <><RefreshCw className="w-4 h-4 mr-2 animate-spin" /> Saving...</> : 'Save Permissions'}
+              </Button>
             </div>
           </CardContent>
         </Card>
@@ -443,17 +1052,12 @@ export default function Discord() {
       {/* Configuration */}
       <Card>
         <CardHeader>
-          <CardTitle>Bot Configuration</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <Settings className="w-5 h-5" />
+            Bot Configuration
+          </CardTitle>
           <CardDescription>
-            Set up your Discord bot credentials and permissions.
-            <a 
-              href="https://discord.com/developers/applications" 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="ml-2 text-primary hover:underline inline-flex items-center"
-            >
-              Create a bot <ExternalLink className="w-3 h-3 ml-1" />
-            </a>
+            Update bot credentials and settings
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -463,7 +1067,9 @@ export default function Discord() {
               <Bot className="w-4 h-4" />
               Bot Token
               {config?.hasToken && (
-                <Badge variant="outline" className="text-xs">Configured</Badge>
+                <Badge variant="outline" className="text-xs bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/30">
+                  <CheckCircle2 className="w-3 h-3 mr-1" /> Configured
+                </Badge>
               )}
             </Label>
             <div className="flex gap-2">
@@ -472,17 +1078,12 @@ export default function Discord() {
                   id="token"
                   type={showToken ? 'text' : 'password'}
                   value={token}
-                  onChange={(e) => {
-                    setToken(e.target.value)
-                    setBotInfo(null) // Clear stale bot info when token changes
-                  }}
-                  placeholder={config?.hasToken ? '••••••••••••••••' : 'Enter bot token'}
+                  onChange={(e) => { setToken(e.target.value); setBotInfo(null); setInviteUrl(null) }}
+                  placeholder={config?.hasToken ? '••••••••••••••••  (leave blank to keep current)' : 'Enter bot token'}
                   className="pr-10"
                 />
                 <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
+                  type="button" variant="ghost" size="icon"
                   className="absolute right-0 top-0 h-full"
                   onClick={() => setShowToken(!showToken)}
                 >
@@ -490,15 +1091,18 @@ export default function Discord() {
                 </Button>
               </div>
               <Button variant="outline" onClick={handleTestToken} disabled={testing || !token}>
-                {testing ? <RefreshCw className="w-4 h-4 animate-spin" /> : 'Test'}
+                {testing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <><Zap className="w-4 h-4 mr-1.5" /> Test</>}
               </Button>
             </div>
             {botInfo && (
-              <p className="text-sm text-green-600">✓ Valid token for bot: {botInfo.username}</p>
+              <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
+                {botInfo.avatar && <img src={botInfo.avatar} alt="" className="w-5 h-5 rounded-full" />}
+                <CheckCircle2 className="w-3.5 h-3.5" /> Valid token — {botInfo.username}
+              </div>
             )}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Guild ID */}
             <div className="space-y-2">
               <Label htmlFor="guildId" className="flex items-center gap-2">
@@ -506,64 +1110,79 @@ export default function Discord() {
                 Guild (Server) ID *
               </Label>
               <Input
-                id="guildId"
-                value={guildId}
+                id="guildId" value={guildId}
                 onChange={(e) => setGuildId(e.target.value)}
                 placeholder="123456789012345678"
+                className="font-mono"
               />
-              <p className="text-xs text-muted-foreground">
-                Right-click your server → Copy Server ID
-              </p>
-            </div>
-
-            {/* Admin Role ID */}
-            <div className="space-y-2">
-              <Label htmlFor="adminRoleId" className="flex items-center gap-2">
-                <Shield className="w-4 h-4" />
-                Admin Role ID
-              </Label>
-              <Input
-                id="adminRoleId"
-                value={adminRoleId}
-                onChange={(e) => setAdminRoleId(e.target.value)}
-                placeholder="Optional"
-              />
-              <p className="text-xs text-muted-foreground">
-                Role required to use commands
-              </p>
+              <p className="text-xs text-muted-foreground">Right-click server → Copy Server ID</p>
+              {guildId && !isValidDiscordId(guildId) && (
+                <p className="text-xs text-destructive">Invalid format</p>
+              )}
             </div>
 
             {/* Channel ID */}
             <div className="space-y-2">
               <Label htmlFor="channelId" className="flex items-center gap-2">
                 <Hash className="w-4 h-4" />
-                Notification Channel ID
+                Notification / Chat Channel
               </Label>
               <Input
-                id="channelId"
-                value={channelId}
+                id="channelId" value={channelId}
                 onChange={(e) => setChannelId(e.target.value)}
                 placeholder="Optional"
+                className="font-mono"
               />
-              <p className="text-xs text-muted-foreground">
-                Channel for server notifications
-              </p>
+              <p className="text-xs text-muted-foreground">For notifications & chat bridge</p>
+            </div>
+
+            {/* Admin Role ID */}
+            <div className="space-y-2">
+              <Label htmlFor="adminRoleId" className="flex items-center gap-2">
+                <Lock className="w-4 h-4 text-red-500" />
+                Admin Role ID
+              </Label>
+              <Input
+                id="adminRoleId" value={adminRoleId}
+                onChange={(e) => setAdminRoleId(e.target.value)}
+                placeholder="Optional"
+                className="font-mono"
+              />
+              <p className="text-xs text-muted-foreground">Full access — can use all commands</p>
+            </div>
+
+            {/* Moderator Role ID */}
+            <div className="space-y-2">
+              <Label htmlFor="modRoleId" className="flex items-center gap-2">
+                <Shield className="w-4 h-4 text-blue-500" />
+                Moderator Role ID
+              </Label>
+              <Input
+                id="modRoleId" value={modRoleId}
+                onChange={(e) => setModRoleId(e.target.value)}
+                placeholder="Optional"
+                className="font-mono"
+              />
+              <p className="text-xs text-muted-foreground">Can use "moderator" tier commands</p>
+              {modRoleId && !isValidDiscordId(modRoleId) && (
+                <p className="text-xs text-destructive">Invalid format</p>
+              )}
             </div>
           </div>
 
+          {/* Auto-Start */}
+          <div className="flex items-center justify-between p-4 rounded-lg border">
+            <div>
+              <Label className="font-medium">Auto-start on panel launch</Label>
+              <p className="text-sm text-muted-foreground">The bot will start automatically when the panel boots up</p>
+            </div>
+            <Switch checked={autoStart} onCheckedChange={setAutoStart} />
+          </div>
+
           <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={loadData}>
-              Cancel
-            </Button>
-            <Button onClick={handleSaveConfig} disabled={saving}>
-              {saving ? (
-                <>
-                  <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                  Saving...
-                </>
-              ) : (
-                'Save Configuration'
-              )}
+            <Button variant="outline" onClick={loadData}>Cancel</Button>
+            <Button onClick={() => handleSaveConfig(false)} disabled={saving}>
+              {saving ? <><RefreshCw className="w-4 h-4 mr-2 animate-spin" /> Saving...</> : 'Save Configuration'}
             </Button>
           </div>
         </CardContent>
@@ -574,10 +1193,10 @@ export default function Discord() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Bell className="w-5 h-5" />
-            Webhook Events
+            Event Notifications
           </CardTitle>
           <CardDescription>
-            Configure automatic notifications for server events
+            Automatic notifications posted to your Discord channel when server events occur
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -614,69 +1233,9 @@ export default function Discord() {
           })}
           <div className="flex justify-end">
             <Button onClick={handleSaveWebhookEvents} disabled={savingEvents}>
-              {savingEvents ? (
-                <>
-                  <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                  Saving...
-                </>
-              ) : (
-                'Save Events'
-              )}
+              {savingEvents ? <><RefreshCw className="w-4 h-4 mr-2 animate-spin" /> Saving...</> : 'Save Events'}
             </Button>
           </div>
-        </CardContent>
-      </Card>
-
-      {/* Setup Instructions */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Setup Instructions</CardTitle>
-        </CardHeader>
-        <CardContent className="prose prose-sm dark:prose-invert max-w-none">
-          <ol className="space-y-3">
-            <li>
-              <strong>Create a Discord Application:</strong> Go to the{' '}
-              <a 
-                href="https://discord.com/developers/applications" 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="text-primary hover:underline"
-              >
-                Discord Developer Portal
-              </a>{' '}
-              and create a new application.
-            </li>
-            <li>
-              <strong>Create a Bot:</strong> In your application, go to the "Bot" section and create a bot.
-              Copy the bot token and paste it above.
-            </li>
-            <li>
-              <strong>Enable Intents:</strong> Under "Privileged Gateway Intents", enable:
-              <ul className="mt-2 ml-4">
-                <li>Server Members Intent</li>
-                <li>Message Content Intent (optional, for future features)</li>
-              </ul>
-            </li>
-            <li>
-              <strong>Invite the Bot:</strong> Go to OAuth2 → URL Generator:
-              <ul className="mt-2 ml-4">
-                <li>Select scopes: <code>bot</code> and <code>applications.commands</code></li>
-                <li>Select permissions: <code>Send Messages</code>, <code>Use Slash Commands</code></li>
-                <li>Open the generated URL to invite the bot to your server</li>
-              </ul>
-            </li>
-            <li>
-              <strong>Get IDs:</strong> Enable Developer Mode in Discord settings, then right-click to copy IDs:
-              <ul className="mt-2 ml-4">
-                <li>Server → Copy Server ID (Guild ID)</li>
-                <li>Role → Copy Role ID (Admin Role)</li>
-                <li>Channel → Copy Channel ID (Notifications)</li>
-              </ul>
-            </li>
-            <li>
-              <strong>Start the Bot:</strong> Save your configuration and click "Start Bot".
-            </li>
-          </ol>
         </CardContent>
       </Card>
     </div>

@@ -1658,6 +1658,18 @@ router.post('/steam-update', async (req, res) => {
           : `Server ${operation} failed with code ${code}`
       });
       
+      // After successful update, re-check update status so banner clears
+      if (success) {
+        try {
+          const updateChecker = req.app.get('updateChecker');
+          if (updateChecker) {
+            setTimeout(() => updateChecker.checkForUpdates(true), 3000);
+          }
+        } catch (e) {
+          // Non-critical
+        }
+      }
+      
       logServerEvent(success ? 'server_update' : 'server_update_failed', 
         `Server ${operation} ${success ? 'completed' : 'failed'}`);
       

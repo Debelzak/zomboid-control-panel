@@ -12,7 +12,7 @@ import { fileURLToPath } from 'url';
 import { exec, spawn } from 'child_process';
 import cookieParser from 'cookie-parser';
 
-import { logger, onLog, createLogger, logSection, logBlank } from './utils/logger.js';
+import { logger, onLog, createLogger, logSection, logBlank, logBanner, logReady } from './utils/logger.js';
 const log = createLogger('Panel');
 import { initDatabase, getActiveServer, getAllSettings, getSetting } from './database/init.js';
 import { RconService } from './services/rcon.js';
@@ -449,9 +449,15 @@ app.use('/api/server-finder', serverFinderRoutes);
 app.use('/api/panel-bridge', panelBridgeRoutes);
 app.use('/api/backup', backupRoutes);
 
-// Health check
+// Health check + panel version
+// In exe builds, PANEL_VERSION is injected by esbuild at compile time.
+// In dev mode, fall back to reading package.json.
+let _pkgVersion;
+try {
+  _pkgVersion = typeof PANEL_VERSION !== 'undefined' ? PANEL_VERSION : JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf-8')).version;
+} catch { _pkgVersion = '0.0.0'; }
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.json({ status: 'ok', version: _pkgVersion, timestamp: new Date().toISOString() });
 });
 
 
@@ -630,6 +636,13 @@ function stopPlayerPolling() {
 // Initialize and start server
 async function start() {
   try {
+    // ── Banner ──
+    let panelVersion;
+    try {
+      panelVersion = typeof PANEL_VERSION !== 'undefined' ? PANEL_VERSION : JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf-8')).version;
+    } catch { panelVersion = '0.0.0'; }
+    logBanner(panelVersion);
+
     // ── Database ──
     logSection('Database');
     await initDatabase();
@@ -677,8 +690,11 @@ async function start() {
     
     // Initialize Discord bot
     await discordBot.loadConfig();
-    if (discordBot.token && discordBot.guildId) {
+    const discordAutoStart = await getSetting('discordAutoStart');
+    if (discordBot.token && discordBot.guildId && discordAutoStart !== false) {
       await discordBot.start();
+    } else if (discordBot.token && discordBot.guildId && discordAutoStart === false) {
+      log.info('Discord bot configured but auto-start is disabled');
     }
     
     // ── Server Detection ──
@@ -873,17 +889,14 @@ async function start() {
     
     httpServer.listen(PORT, () => {
       logSection('Ready');
-      console.log('');
-      console.log('  ╔═══════════════════════════════════════════════╗');
-      console.log('  ║         Zomboid Control Panel                 ║');
-      console.log('  ╠═══════════════════════════════════════════════╣');
-      console.log(`  ║  Web UI:  http://localhost:${PORT}               ║`);
-      console.log(`  ║  API:     http://localhost:${PORT}/api           ║`);
+      const urls = [
+        { label: 'Web UI:', url: `http://localhost:${PORT}` },
+        { label: 'API:   ', url: `http://localhost:${PORT}/api` },
+      ];
       if (httpsServer) {
-      console.log(`  ║  HTTPS:   https://localhost:${httpsPort}              ║`);
+        urls.push({ label: 'HTTPS: ', url: `https://localhost:${httpsPort}` });
       }
-      console.log('  ╚═══════════════════════════════════════════════╝');
-      console.log('');
+      logReady(urls);
       
       // Auto-open browser when running as packaged exe
       if (typeof process.pkg !== 'undefined') {

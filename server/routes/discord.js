@@ -35,12 +35,18 @@ router.get('/config', async (req, res) => {
     
     await discordBot.loadConfig();
     
+    // Load auto-start setting
+    const { getSetting } = await import('../database/init.js');
+    const autoStart = await getSetting('discordAutoStart');
+    
     res.json({
       token: discordBot.token ? '••••••••' + discordBot.token.slice(-4) : null,
       hasToken: !!discordBot.token,
       guildId: discordBot.guildId,
       adminRoleId: discordBot.adminRoleId,
-      channelId: discordBot.channelId
+      modRoleId: discordBot.modRoleId,
+      channelId: discordBot.channelId,
+      autoStart: autoStart !== false // default true
     });
   } catch (error) {
     log.error(`Failed to get Discord config: ${error.message}`);
@@ -51,7 +57,7 @@ router.get('/config', async (req, res) => {
 // Update Discord bot config
 router.put('/config', async (req, res) => {
   try {
-    const { token, guildId, adminRoleId, channelId } = req.body;
+    const { token, guildId, adminRoleId, modRoleId, channelId, autoStart } = req.body;
     
     const discordBot = req.app.get('discordBot');
     if (!discordBot) {
@@ -68,7 +74,13 @@ router.put('/config', async (req, res) => {
       return res.status(400).json({ error: 'Token and Guild ID are required' });
     }
     
-    await discordBot.updateConfig(finalToken, guildId, adminRoleId, channelId);
+    await discordBot.updateConfig(finalToken, guildId, adminRoleId, channelId, modRoleId);
+    
+    // Save auto-start preference
+    if (typeof autoStart === 'boolean') {
+      const { setSetting } = await import('../database/init.js');
+      await setSetting('discordAutoStart', autoStart);
+    }
     
     // Restart bot if it was running
     if (discordBot.isRunning) {
@@ -153,13 +165,20 @@ router.post('/test', async (req, res) => {
     
     const userData = await response.json();
     
+    // Build invite URL with required permissions
+    // VIEW_CHANNEL(1024) + SEND_MESSAGES(2048) + EMBED_LINKS(16384) + READ_MESSAGE_HISTORY(65536)
+    const permissions = 84992;
+    const inviteUrl = `https://discord.com/oauth2/authorize?client_id=${userData.id}&permissions=${permissions}&scope=bot%20applications.commands`;
+    
     res.json({ 
       success: true, 
       bot: {
         username: userData.username,
         id: userData.id,
-        discriminator: userData.discriminator
-      }
+        discriminator: userData.discriminator,
+        avatar: userData.avatar ? `https://cdn.discordapp.com/avatars/${userData.id}/${userData.avatar}.png?size=128` : null
+      },
+      inviteUrl
     });
   } catch (error) {
     log.error(`Discord test failed: ${error.message}`);
@@ -252,6 +271,42 @@ router.put('/webhook-events', async (req, res) => {
     res.json({ success: true, message: 'Webhook events updated' });
   } catch (error) {
     log.error(`Failed to update webhook events: ${error.message}`);
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
+// Get command permissions
+router.get('/permissions', async (req, res) => {
+  try {
+    const discordBot = req.app.get('discordBot');
+    if (!discordBot) {
+      return res.status(500).json({ error: 'Discord bot not initialized' });
+    }
+    
+    res.json({ permissions: discordBot.getCommandPermissions() });
+  } catch (error) {
+    log.error(`Failed to get command permissions: ${error.message}`);
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
+// Update command permissions
+router.put('/permissions', async (req, res) => {
+  try {
+    const discordBot = req.app.get('discordBot');
+    if (!discordBot) {
+      return res.status(500).json({ error: 'Discord bot not initialized' });
+    }
+    
+    const { permissions } = req.body;
+    if (!permissions || typeof permissions !== 'object') {
+      return res.status(400).json({ error: 'Permissions object required' });
+    }
+    
+    const updated = await discordBot.updateCommandPermissions(permissions);
+    res.json({ success: true, permissions: updated });
+  } catch (error) {
+    log.error(`Failed to update command permissions: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
