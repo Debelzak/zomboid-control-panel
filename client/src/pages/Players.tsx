@@ -498,11 +498,13 @@ export default function Players() {
     handleAction('Set access level', () => playersApi.setAccessLevel(selectedPlayer, accessLevel))
   }
 
-  const handleAddItem = () => {
+  const handleAddItem = async () => {
     if (!itemName) return
-    handleAction('Add item', () => playersApi.addItem(selectedPlayer || null, itemName, itemCount))
+    const name = itemName
+    const count = itemCount
     setItemName('')
     setItemCount(1)
+    await handleAction('Add item', () => playersApi.addItem(selectedPlayer || null, name, count))
   }
 
   const handleAddXp = () => {
@@ -516,37 +518,40 @@ export default function Players() {
   }
 
   const handleGodMode = (enabled: boolean) => {
-    if (!selectedPlayer) return
+    const player = selectedPlayer
+    if (!player) return
     handleAction(enabled ? 'Enable god mode' : 'Disable god mode', 
       async () => {
-        await playersApi.setGodMode(selectedPlayer, enabled)
+        await playersApi.setGodMode(player, enabled)
         setPlayerPowers(prev => ({
           ...prev,
-          [selectedPlayer]: { ...prev[selectedPlayer], godMode: enabled }
+          [player]: { ...prev[player], godMode: enabled }
         }))
       })
   }
 
   const handleInvisible = (enabled: boolean) => {
-    if (!selectedPlayer) return
+    const player = selectedPlayer
+    if (!player) return
     handleAction(enabled ? 'Enable invisible' : 'Disable invisible',
       async () => {
-        await playersApi.setInvisible(selectedPlayer, enabled)
+        await playersApi.setInvisible(player, enabled)
         setPlayerPowers(prev => ({
           ...prev,
-          [selectedPlayer]: { ...prev[selectedPlayer], invisible: enabled }
+          [player]: { ...prev[player], invisible: enabled }
         }))
       })
   }
 
   const handleNoclip = (enabled: boolean) => {
-    if (!selectedPlayer) return
+    const player = selectedPlayer
+    if (!player) return
     handleAction(enabled ? 'Enable noclip' : 'Disable noclip',
       async () => {
-        await playersApi.setNoclip(selectedPlayer, enabled)
+        await playersApi.setNoclip(player, enabled)
         setPlayerPowers(prev => ({
           ...prev,
-          [selectedPlayer]: { ...prev[selectedPlayer], noclip: enabled }
+          [player]: { ...prev[player], noclip: enabled }
         }))
       })
   }

@@ -46,7 +46,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { serverApi, rconApi, playersApi, panelBridgeApi, backupApi, configApi, serversApi, ServerInstance } from '@/lib/api'
+import { serverApi, rconApi, playersApi, panelBridgeApi, backupApi, configApi, serversApi, debugApi, ServerInstance } from '@/lib/api'
 import { formatUptime } from '@/lib/utils'
 import { useSocket } from '@/contexts/SocketContext'
 import { EmptyState } from '@/components/EmptyState'
@@ -197,10 +197,9 @@ export default function Dashboard() {
 
   const fetchPerformanceHistory = useCallback(async () => {
     try {
-      const res = await fetch('/api/debug/performance-history?limit=30')
-      const data = await res.json()
+      const data = await debugApi.getPerformanceHistory(30)
       if (data.history) {
-        setPerformanceHistory(data.history.map((h: { timestamp: string; playerCount: number; memoryUsed: number }) => ({
+        setPerformanceHistory(data.history.map((h) => ({
           time: new Date(h.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
           playerCount: h.playerCount || 0,
           memoryMB: Math.round((h.memoryUsed || 0) / (1024 * 1024))

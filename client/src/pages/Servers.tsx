@@ -71,7 +71,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { serversApi, ServerInstance, configApi, serverApi, updateApi, UpdateStatus } from '@/lib/api'
+import { serversApi, serversDetectApi, ServerInstance, configApi, serverApi, updateApi, UpdateStatus } from '@/lib/api'
 import { SocketContext } from '@/contexts/SocketContext'
 import { useNavigate } from 'react-router-dom'
 import { PageHeader } from '@/components/PageHeader'
@@ -203,10 +203,7 @@ export default function Servers() {
   const socket = useContext(SocketContext)
   const navigate = useNavigate()
 
-  const getAuthHeaders = (): Record<string, string> => {
-    const token = localStorage.getItem('pz_access_token')
-    return token ? { Authorization: `Bearer ${token}` } : {}
-  }
+
 
   // Fetch servers
   const fetchServers = async () => {
@@ -341,19 +338,13 @@ export default function Servers() {
     setSelectedServerConfig('')
     
     try {
-      const response = await fetch('/api/servers/detect', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-        body: JSON.stringify({ 
-          dataPath: newServer.zomboidDataPath,
-          installPath: newServer.installPath || undefined
-        })
-      })
+      const data = await serversDetectApi.detect({
+        dataPath: newServer.zomboidDataPath,
+        installPath: newServer.installPath || undefined
+      }) as unknown as DetectResult & { error?: string }
       
-      const data = await response.json()
-      
-      if (!response.ok) {
-        setDetectError(data.error || 'Detection failed')
+      if (!data || data.error) {
+        setDetectError(data?.error || 'Detection failed')
         return
       }
       
@@ -392,16 +383,10 @@ export default function Servers() {
     setAutoScanResult(null)
     
     try {
-      const response = await fetch('/api/servers/auto-scan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-        body: JSON.stringify({ scanPath: autoScanPath, maxDepth: 4 })
-      })
+      const data = await serversDetectApi.autoScan({ scanPath: autoScanPath, maxDepth: 4 }) as unknown as AutoScanResult & { error?: string }
       
-      const data = await response.json()
-      
-      if (!response.ok) {
-        toast({ title: 'Scan Failed', description: data.error, variant: 'destructive' })
+      if (!data || data.error) {
+        toast({ title: 'Scan Failed', description: data.error || 'Unknown error', variant: 'destructive' })
         return
       }
       
@@ -522,11 +507,7 @@ export default function Servers() {
       // If deleteFiles is checked and server has an installPath, delete the files first
       if (deleteFiles && deleteServer.installPath) {
         try {
-          await fetch('/api/server/delete-files', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-            body: JSON.stringify({ path: deleteServer.installPath })
-          })
+          await serversDetectApi.deleteFiles(deleteServer.installPath)
         } catch {
           // Continue with panel removal even if file deletion fails
           toast({ 

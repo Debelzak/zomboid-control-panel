@@ -179,37 +179,30 @@ export class ServerManager {
       throw new Error(`Server batch file not found: ${batPath}`);
     }
 
-    return new Promise((resolve, reject) => {
-      try {
-        // Start the server process
-        log.info('Starting server process');
-        
-        this.serverProcess = spawn('cmd.exe', ['/c', this.serverBat], {
-          cwd: this.serverPath,
-          detached: true,
-          stdio: 'ignore'
-        });
-        
-        // Handle spawn errors (e.g., invalid path, permissions)
-        this.serverProcess.on('error', (error) => {
-          log.error(`Server process error: ${error.message}`);
-          this.isRunning = false;
-          this.serverProcess = null;
-        });
-        
-        this.serverProcess.unref();
-        this.isRunning = true;
-        this.startTime = new Date();
-        
-        logServerEvent('server_start', 'Server started via manager');
-        log.info('Server start command executed');
-        
-        resolve({ success: true, message: 'Server start command executed' });
-      } catch (error) {
-        log.error(`Failed to start server: ${error.message}`);
-        reject(error);
-      }
+    // Start the server process
+    log.info('Starting server process');
+    
+    this.serverProcess = spawn('cmd.exe', ['/c', this.serverBat], {
+      cwd: this.serverPath,
+      detached: true,
+      stdio: 'ignore'
     });
+    
+    // Handle spawn errors (e.g., invalid path, permissions)
+    this.serverProcess.on('error', (error) => {
+      log.error(`Server process error: ${error.message}`);
+      this.isRunning = false;
+      this.serverProcess = null;
+    });
+    
+    this.serverProcess.unref();
+    this.isRunning = true;
+    this.startTime = new Date();
+    
+    await logServerEvent('server_start', 'Server started via manager');
+    log.info('Server start command executed');
+    
+    return { success: true, message: 'Server start command executed' };
   }
 
   async stopServer(graceful = true) {
@@ -244,7 +237,7 @@ export class ServerManager {
           this.serverProcess = null;
           this.startTime = null;
           
-          logServerEvent('server_stop', 'Server force stopped');
+          logServerEvent('server_stop', 'Server force stopped').catch(e => log.warn(`Failed to log event: ${e.message}`));
           log.info('Server force stopped');
           
           resolve({ success: true, message: 'Server stopped' });
@@ -272,9 +265,7 @@ export class ServerManager {
       for (const minutes of warnings) {
         if (minutes <= warningMinutes) {
           await sendWarning(`Server restarting in ${minutes} minute(s)!`);
-          if (minutes > 1) {
-            await this.sleep(60000); // Wait 1 minute
-          }
+          await this.sleep(60000); // Wait 1 minute between each warning
         }
       }
 
@@ -320,7 +311,7 @@ export class ServerManager {
       // Start the server
       await this.startServer();
 
-      logServerEvent('server_restart', 'Server restarted');
+      await logServerEvent('server_restart', 'Server restarted');
       return { success: true, message: 'Server restarted successfully' };
     } catch (error) {
       log.error(`Restart failed: ${error.message}`);

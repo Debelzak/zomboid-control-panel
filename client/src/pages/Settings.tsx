@@ -44,7 +44,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 import { useToast } from '@/components/ui/use-toast'
-import { configApi, panelBridgeApi, backupApi, serversApi, serverApi, BackupStatus, BackupFile, ServerInstance } from '@/lib/api'
+import { configApi, panelBridgeApi, backupApi, authApi, serversApi, serverApi, BackupStatus, BackupFile, ServerInstance } from '@/lib/api'
 import { useSocket } from '@/contexts/SocketContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -690,16 +690,7 @@ export default function Settings() {
     }
     setChangingPassword(true)
     try {
-      const res = await fetch('/api/auth/change-password', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('pz_access_token') || ''}`
-        },
-        body: JSON.stringify({ currentPassword, newPassword })
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Failed to change password')
+      await authApi.changePassword(currentPassword, newPassword)
       toast({ title: 'Password Changed', description: 'Your password has been updated.' })
       setCurrentPassword('')
       setNewPassword('')
@@ -1448,11 +1439,9 @@ export default function Settings() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          asChild
+                          onClick={() => backupApi.downloadBackup(backup.name)}
                         >
-                          <a href={backupApi.getDownloadUrl(backup.name)} download>
-                            <Download className="w-4 h-4" />
-                          </a>
+                          <Download className="w-4 h-4" />
                         </Button>
                         <AlertDialog>
                           <AlertDialogTrigger asChild>

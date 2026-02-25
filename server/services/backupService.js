@@ -116,10 +116,10 @@ export class BackupService {
    * Get backup settings
    */
   async getSettings() {
-    const enabled = await getSetting('backupEnabled') || false;
-    const schedule = await getSetting('backupSchedule') || '0 */6 * * *'; // Every 6 hours
-    const maxBackups = await getSetting('backupMaxCount') || 10;
-    const includeDb = await getSetting('backupIncludeDb') || false;
+    const enabled = (await getSetting('backupEnabled')) ?? false;
+    const schedule = (await getSetting('backupSchedule')) ?? '0 */6 * * *'; // Every 6 hours
+    const maxBackups = (await getSetting('backupMaxCount')) ?? 10;
+    const includeDb = (await getSetting('backupIncludeDb')) ?? false;
     
     return { enabled, schedule, maxBackups, includeDb };
   }

@@ -731,12 +731,10 @@ export default function Backups() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            asChild
+                            onClick={() => backupApi.downloadBackup(backup.name)}
                             title="Download backup"
                           >
-                            <a href={backupApi.getDownloadUrl(backup.name)} download>
-                              <Download className="w-4 h-4" />
-                            </a>
+                            <Download className="w-4 h-4" />
                           </Button>
                           <Button
                             variant="ghost"

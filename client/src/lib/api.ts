@@ -292,8 +292,12 @@ export const serverApi = {
     apiGet(`/server/branches${steamcmdPath ? `?steamcmdPath=${encodeURIComponent(steamcmdPath)}` : ''}`) as Promise<{ branches: SteamBranch[]; source: string; message: string }>,
   
   // SteamCMD Installation
-  install: (config: { steamcmdPath: string; installPath: string; serverName: string; branch?: string }) =>
+  install: (config: Record<string, unknown>) =>
     apiPost('/server/install', config),
+  
+  // Quick setup (create server config without SteamCMD)
+  quickSetup: (config: Record<string, unknown>) =>
+    apiPost('/server/quick-setup', config),
   
   // Configure RCON in server ini file
   configureRcon: (config: { rconPassword: string; rconPort?: number }) =>
@@ -1094,8 +1098,49 @@ export const backupApi = {
     message?: string
   }> => apiPost('/backup/delete-older-than', { days }),
 
-  // Get download URL for a backup
+  // Get download URL for a backup (use downloadBackup for authenticated downloads)
   getDownloadUrl: (name: string): string => `${API_BASE}/backup/download/${encodeURIComponent(name)}`,
+
+  // Download a backup file with authentication
+  downloadBackup: async (name: string): Promise<void> => {
+    const response = await fetchWithRetry(`${API_BASE}/backup/download/${encodeURIComponent(name)}`)
+    if (!response.ok) {
+      throw new Error(`Download failed with status ${response.status}`)
+    }
+    const blob = await response.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = name
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  },
+}
+
+// Debug API
+export const debugApi = {
+  getRam: (): Promise<{ totalGB: number; freeGB: number; recommendedMin: number; recommendedMax: number }> =>
+    apiGet('/debug/ram'),
+  getPerformanceHistory: (limit: number = 30): Promise<{ history: Array<{ timestamp: string; playerCount: number; memoryUsed: number }> }> =>
+    apiGet(`/debug/performance-history?limit=${limit}`),
+}
+
+// Auth API
+export const authApi = {
+  changePassword: (currentPassword: string, newPassword: string): Promise<{ success: boolean; message?: string }> =>
+    apiPost('/auth/change-password', { currentPassword, newPassword }),
+}
+
+// Servers detection API helpers (added to serversApi)
+export const serversDetectApi = {
+  detect: (params: { dataPath: string; installPath?: string }): Promise<Record<string, unknown>> =>
+    apiPost('/servers/detect', params) as Promise<Record<string, unknown>>,
+  autoScan: (params: { scanPath: string; maxDepth?: number }): Promise<Record<string, unknown>> =>
+    apiPost('/servers/auto-scan', params) as Promise<Record<string, unknown>>,
+  deleteFiles: (path: string): Promise<unknown> =>
+    apiPost('/server/delete-files', { path }),
 }
 
 // Update Checker API

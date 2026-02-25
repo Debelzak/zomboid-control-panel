@@ -567,19 +567,34 @@ export async function getServerEvents(limit = 100) {
 }
 
 // ============================================
-// Tracked Mods
+// Tracked Mods (per-server scoped)
 // ============================================
+
+/** Get the active server's ID for scoping tracked mods */
+async function getActiveServerId() {
+  const db = await getDb();
+  const active = db.data.servers.find(s => s.isActive) || db.data.servers[0];
+  return active ? String(active.id) : null;
+}
 
 export async function getTrackedMods() {
   const db = await getDb();
-  return db.data.tracked_mods;
+  const serverId = await getActiveServerId();
+  if (!serverId) return db.data.tracked_mods; // no servers yet → return all (legacy)
+  // Return mods for this server, plus legacy mods without a server_id
+  return db.data.tracked_mods.filter(m => m.server_id === serverId || !m.server_id);
 }
 
 export async function addTrackedMod(workshopId, name = null) {
   const db = await getDb();
-  const existing = db.data.tracked_mods.find(m => m.workshop_id === workshopId);
+  const serverId = await getActiveServerId();
+  // Duplicate check scoped to active server
+  const existing = db.data.tracked_mods.find(m =>
+    m.workshop_id === workshopId && (m.server_id === serverId || !m.server_id)
+  );
   if (existing) {
     existing.name = name || existing.name;
+    if (!existing.server_id && serverId) existing.server_id = serverId; // migrate legacy
     scheduleWrite();
     return existing;
   }
@@ -588,6 +603,7 @@ export async function addTrackedMod(workshopId, name = null) {
     id: generateId(),
     workshop_id: workshopId,
     name,
+    server_id: serverId,
     last_updated: null,
     last_checked: null,
     update_available: 0,
@@ -600,26 +616,37 @@ export async function addTrackedMod(workshopId, name = null) {
 
 export async function updateModTimestamp(workshopId, lastUpdated) {
   const db = await getDb();
-  const mod = db.data.tracked_mods.find(m => m.workshop_id === workshopId);
+  const serverId = await getActiveServerId();
+  const mod = db.data.tracked_mods.find(m =>
+    m.workshop_id === workshopId && (m.server_id === serverId || !m.server_id)
+  );
   if (mod) {
     mod.last_updated = lastUpdated;
     mod.last_checked = new Date().toISOString();
+    if (!mod.server_id && serverId) mod.server_id = serverId; // migrate legacy
     scheduleWrite();
   }
 }
 
 export async function setModUpdateAvailable(workshopId, available) {
   const db = await getDb();
-  const mod = db.data.tracked_mods.find(m => m.workshop_id === workshopId);
+  const serverId = await getActiveServerId();
+  const mod = db.data.tracked_mods.find(m =>
+    m.workshop_id === workshopId && (m.server_id === serverId || !m.server_id)
+  );
   if (mod) {
     mod.update_available = available ? 1 : 0;
+    if (!mod.server_id && serverId) mod.server_id = serverId; // migrate legacy
     scheduleWrite();
   }
 }
 
 export async function removeTrackedMod(workshopId) {
   const db = await getDb();
-  const index = db.data.tracked_mods.findIndex(m => m.workshop_id === workshopId);
+  const serverId = await getActiveServerId();
+  const index = db.data.tracked_mods.findIndex(m =>
+    m.workshop_id === workshopId && (m.server_id === serverId || !m.server_id)
+  );
   if (index === -1) return false;
 
   db.data.tracked_mods.splice(index, 1);
@@ -629,7 +656,12 @@ export async function removeTrackedMod(workshopId) {
 
 export async function clearModUpdates() {
   const db = await getDb();
-  db.data.tracked_mods.forEach(m => { m.update_available = 0; });
+  const serverId = await getActiveServerId();
+  db.data.tracked_mods.forEach(m => {
+    if (m.server_id === serverId || !m.server_id) {
+      m.update_available = 0;
+    }
+  });
   scheduleWrite();
 }
 

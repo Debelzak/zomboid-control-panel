@@ -25,7 +25,7 @@ import {
   Info,
   ArrowRight
 } from 'lucide-react'
-import { configApi, serverApi, serversApi } from '@/lib/api'
+import { configApi, serverApi, serversApi, debugApi } from '@/lib/api'
 import { useNavigate } from 'react-router-dom'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -137,6 +137,12 @@ export default function ServerSetup() {
   const logsEndRef = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
   const [startingServer, setStartingServer] = useState(false)
+
+  // Refs for socket handler closure — avoids re-registering socket listeners when form state changes
+  const formStateRef = useRef({ serverName, installPath, zomboidDataPath, useCustomDataPath, rconPort, rconPassword, serverPort, minMemory, maxMemory, useNoSteam, useDebug })
+  useEffect(() => {
+    formStateRef.current = { serverName, installPath, zomboidDataPath, useCustomDataPath, rconPort, rconPassword, serverPort, minMemory, maxMemory, useNoSteam, useDebug }
+  }, [serverName, installPath, zomboidDataPath, useCustomDataPath, rconPort, rconPassword, serverPort, minMemory, maxMemory, useNoSteam, useDebug])
 
   // Total steps based on mode
   const totalSteps = setupMode === 'quick' ? 3 : 4
@@ -278,23 +284,30 @@ export default function ServerSetup() {
         setLogs(prev => [...prev, { type: 'success', message: data.message, timestamp: new Date() }])
         
         try {
+          const s = formStateRef.current
           // Use data from server response which has computed paths
-          await serversApi.create({
-            name: data.serverName || serverName,
-            serverName: data.serverName || serverName,
-            installPath: data.installPath || installPath,
+          const createResult = await serversApi.create({
+            name: data.serverName || s.serverName,
+            serverName: data.serverName || s.serverName,
+            installPath: data.installPath || s.installPath,
             zomboidDataPath: data.zomboidDataPath || null,
             serverConfigPath: data.serverConfigPath || null,
             rconHost: '127.0.0.1',
-            rconPort: data.rconPort || rconPort,
-            rconPassword: data.rconPassword || rconPassword,
-            serverPort: data.serverPort || serverPort,
-            minMemory: (data.minMemory || minMemory) * 1024,
-            maxMemory: (data.maxMemory || maxMemory) * 1024,
-            useNoSteam: useNoSteam,
-            useDebug: useDebug,
+            rconPort: data.rconPort || s.rconPort,
+            rconPassword: data.rconPassword || s.rconPassword,
+            serverPort: data.serverPort || s.serverPort,
+            minMemory: (data.minMemory || s.minMemory) * 1024,
+            maxMemory: (data.maxMemory || s.maxMemory) * 1024,
+            useNoSteam: s.useNoSteam,
+            useDebug: s.useDebug,
           })
           setLogs(prev => [...prev, { type: 'success', message: 'Server registered in panel database', timestamp: new Date() }])
+          
+          // Activate the newly created server so "Start Server Now" starts this one
+          if (createResult.server?.id) {
+            await serversApi.activate(createResult.server.id)
+            setLogs(prev => [...prev, { type: 'success', message: 'Switched active server to new installation', timestamp: new Date() }])
+          }
         } catch (error) {
           console.error('Failed to create server entry:', error)
           setLogs(prev => [...prev, { type: 'error', message: 'Warning: Failed to register server in panel.', timestamp: new Date() }])
@@ -336,7 +349,8 @@ export default function ServerSetup() {
       socket.off('steamcmd:status', handleSteamCmdStatus)
       socket.off('steamcmd:log', handleSteamCmdLog)
     }
-  }, [socket, toast, serverName, installPath, zomboidDataPath, useCustomDataPath, rconPort, rconPassword, serverPort, minMemory, maxMemory, useNoSteam, useDebug])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [socket, toast])
 
   const addLog = (type: InstallLog['type'], message: string) => {
     setLogs(prev => [...prev, { type, message, timestamp: new Date() }])
@@ -367,18 +381,15 @@ export default function ServerSetup() {
   const handleAutoDetectRam = async () => {
     setDetectingRam(true)
     try {
-      const response = await fetch('/api/debug/ram')
-      const data = await response.json()
-      if (response.ok) {
-        setSystemRam({ 
-          totalGB: data.totalGB, 
-          freeGB: data.freeGB,
-          recommendedMin: data.recommendedMin,
-          recommendedMax: data.recommendedMax
-        })
-        setMinMemory(data.recommendedMin)
-        setMaxMemory(data.recommendedMax)
-      }
+      const data = await debugApi.getRam()
+      setSystemRam({ 
+        totalGB: data.totalGB, 
+        freeGB: data.freeGB,
+        recommendedMin: data.recommendedMin,
+        recommendedMax: data.recommendedMax
+      })
+      setMinMemory(data.recommendedMin)
+      setMaxMemory(data.recommendedMax)
     } catch {
       // Silent fail - defaults are fine
     } finally {
@@ -398,11 +409,6 @@ export default function ServerSetup() {
     toast({ title: 'Generated', description: 'New password generated' })
   }
 
-  const getAuthHeaders = (): Record<string, string> => {
-    const token = localStorage.getItem('pz_access_token')
-    return token ? { Authorization: `Bearer ${token}` } : {}
-  }
-
   const handleInstall = async () => {
     if (!adminPassword) {
       toast({ title: 'Error', description: 'Admin password is required for new server installations', variant: 'destructive' })
@@ -414,36 +420,27 @@ export default function ServerSetup() {
     addLog('info', 'Starting installation...')
 
     try {
-      const response = await fetch('/api/server/install', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-        body: JSON.stringify({
-          steamcmdPath: steamCmdPath,
-          installPath,
-          serverName,
-          branch,
-          zomboidDataPath: useCustomDataPath ? zomboidDataPath : null,
-          minMemory,
-          maxMemory,
-          adminPassword: adminPassword || null,
-          serverPort,
-          useUpnp,
-          useNoSteam,
-          useDebug,
-          rconPassword,
-          rconPort
-        })
+      await serverApi.install({
+        steamcmdPath: steamCmdPath,
+        installPath,
+        serverName,
+        branch,
+        zomboidDataPath: useCustomDataPath ? zomboidDataPath : null,
+        minMemory,
+        maxMemory,
+        adminPassword: adminPassword || null,
+        serverPort,
+        useUpnp,
+        useNoSteam,
+        useDebug,
+        rconPassword,
+        rconPort
       })
-
-      const data = await response.json()
-      if (!response.ok) {
-        addLog('error', data.error)
-        setInstalling(false)
-        toast({ title: 'Error', description: data.error, variant: 'destructive' })
-      }
     } catch (error) {
-      addLog('error', `Error: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      const msg = error instanceof Error ? error.message : 'Unknown error'
+      addLog('error', msg)
       setInstalling(false)
+      toast({ title: 'Error', description: msg, variant: 'destructive' })
     }
   }
 
@@ -457,32 +454,27 @@ export default function ServerSetup() {
     addLog('info', 'Creating server configuration...')
 
     try {
-      const response = await fetch('/api/server/quick-setup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-        body: JSON.stringify({
-          installPath,
-          serverName,
-          zomboidDataPath: useCustomDataPath ? zomboidDataPath : null,
-          minMemory,
-          maxMemory,
-          adminPassword: adminPassword || null,
-          serverPort,
-          useUpnp,
-          useNoSteam,
-          useDebug,
-          rconPassword,
-          rconPort
-        })
+      const data = await serverApi.quickSetup({
+        installPath,
+        serverName,
+        zomboidDataPath: useCustomDataPath ? zomboidDataPath : null,
+        minMemory,
+        maxMemory,
+        adminPassword: adminPassword || null,
+        serverPort,
+        useUpnp,
+        useNoSteam,
+        useDebug,
+        rconPassword,
+        rconPort
       })
 
-      const data = await response.json()
-      if (response.ok) {
+      if (data) {
         addLog('success', 'Server configuration created successfully!')
         
         try {
           // Use data from server response which has computed paths
-          await serversApi.create({
+          const createResult = await serversApi.create({
             name: data.serverName || serverName,
             serverName: data.serverName || serverName,
             installPath: data.installPath || installPath,
@@ -498,6 +490,12 @@ export default function ServerSetup() {
             useDebug: useDebug,
           })
           addLog('success', 'Server registered in panel database')
+          
+          // Activate the newly created server so "Start Server Now" starts this one
+          if (createResult.server?.id) {
+            await serversApi.activate(createResult.server.id)
+            addLog('success', 'Switched active server to new installation')
+          }
         } catch (error) {
           console.error('Failed to create server entry:', error)
           addLog('error', 'Warning: Failed to register server in panel.')
