@@ -79,15 +79,22 @@ function AppContent() {
     // If auth is enabled and user is not authenticated, don't connect
     if (authEnabled && !isAuthenticated && !needsSetup) return
 
-    const token = getToken()
     const newSocket = io(window.location.origin, {
       transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionAttempts: 10,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
-      auth: token ? { token } : undefined,
+      autoConnect: false,
     })
+
+    const applySocketAuth = () => {
+      const token = getToken()
+      newSocket.auth = token ? { token } : {}
+    }
+
+    applySocketAuth()
+    newSocket.connect()
 
     // Connection established
     newSocket.on('connect', () => {
@@ -142,6 +149,7 @@ function AppContent() {
 
     // Reconnection events
     newSocket.io.on('reconnect_attempt', (attempt) => {
+      applySocketAuth()
       setConnectionStatus(prev => ({
         ...prev,
         reconnecting: true,

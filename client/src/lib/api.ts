@@ -150,6 +150,10 @@ async function fetchWithRetry(
   throw lastError
 }
 
+export function apiFetch(endpoint: string, options?: RequestInit) {
+  return fetchWithRetry(`${API_BASE}${endpoint}`, options)
+}
+
 async function handleResponse(response: Response) {
   let data
   try {
@@ -359,7 +363,18 @@ export const playersApi = {
   setAccessLevel: (username: string, level: string) => apiPost('/players/access-level', { username, level }),
   addToWhitelist: (username: string) => apiPost('/players/whitelist/add', { username }),
   removeFromWhitelist: (username: string) => apiPost('/players/whitelist/remove', { username }),
-  teleport: (player1: string, player2?: string) => apiPost('/players/teleport', { player1, player2 }),
+  teleport: (player1: string, destination?: string | { x: number; y: number; z?: number }) => {
+    if (destination && typeof destination === 'object') {
+      return apiPost('/players/teleport', {
+        player1,
+        x: destination.x,
+        y: destination.y,
+        z: destination.z ?? 0,
+      })
+    }
+
+    return apiPost('/players/teleport', { player1, player2: destination })
+  },
   addItem: (username: string | null, item: string, count?: number) => apiPost('/players/add-item', { username, item, count }),
   addXp: (username: string, perk: string, amount: number) => apiPost('/players/add-xp', { username, perk, amount }),
   addVehicle: (vehicle: string, username?: string) => apiPost('/players/add-vehicle', { vehicle, username }),

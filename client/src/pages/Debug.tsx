@@ -56,6 +56,7 @@ import {
 import { useToast } from '@/components/ui/use-toast'
 import { SocketContext } from '@/contexts/SocketContext'
 import { PageHeader } from '@/components/PageHeader'
+import { apiFetch } from '@/lib/api'
 
 interface LogEntry {
   id: string
@@ -148,17 +149,10 @@ export default function Debug() {
   const { toast } = useToast()
   const socket = useContext(SocketContext)
 
-  const getAuthHeaders = useCallback(() => {
-    const token = localStorage.getItem('pz_access_token')
-    return token ? { Authorization: `Bearer ${token}` } : {}
-  }, [])
-
   const authFetch = useCallback((url: string, options: RequestInit = {}) => {
-    const headers = new Headers(options.headers)
-    const authHeaders = getAuthHeaders()
-    Object.entries(authHeaders).forEach(([key, value]) => headers.set(key, value))
-    return fetch(url, { ...options, headers, credentials: 'include' })
-  }, [getAuthHeaders])
+    const endpoint = url.startsWith('/api') ? url.slice(4) : url
+    return apiFetch(endpoint, options)
+  }, [])
   
   // Path editing state
   const [editingPaths, setEditingPaths] = useState(false)

@@ -16,6 +16,15 @@ import {
 
 const router = express.Router();
 
+function normalizeMemoryGb(value, fallback) {
+  const parsed = parseInt(value, 10);
+  if (Number.isNaN(parsed) || parsed <= 0) return fallback;
+  if (parsed > 128) {
+    return Math.max(1, Math.round(parsed / 1024));
+  }
+  return parsed;
+}
+
 // Helper: Parse INI file
 function parseIni(content) {
   const result = {};
@@ -399,8 +408,8 @@ router.post('/', async (req, res) => {
       rconPort: rconPort,
       rconPassword: config.rconPassword,
       serverPort: parseInt(config.serverPort, 10) || 16261,
-      minMemory: parseInt(config.minMemory, 10) || 2048,
-      maxMemory: parseInt(config.maxMemory, 10) || 4096,
+      minMemory: normalizeMemoryGb(config.minMemory, 4),
+      maxMemory: normalizeMemoryGb(config.maxMemory, 8),
       useNoSteam: !!config.useNoSteam,
       useDebug: !!config.useDebug,
       isRemote: isRemote
@@ -461,10 +470,10 @@ router.put('/:id', async (req, res) => {
     
     // Parse numeric fields
     if (updates.minMemory !== undefined) {
-      updates.minMemory = parseInt(updates.minMemory, 10) || 2048;
+      updates.minMemory = normalizeMemoryGb(updates.minMemory, 4);
     }
     if (updates.maxMemory !== undefined) {
-      updates.maxMemory = parseInt(updates.maxMemory, 10) || 4096;
+      updates.maxMemory = normalizeMemoryGb(updates.maxMemory, 8);
     }
     
     // Parse boolean fields

@@ -158,6 +158,15 @@ function validateInt(value, min, max, defaultVal) {
   return num;
 }
 
+function normalizeMemoryGb(value, fallback) {
+  const parsed = parseInt(value, 10);
+  if (isNaN(parsed) || parsed <= 0) return fallback;
+  if (parsed > 128) {
+    return Math.max(1, Math.round(parsed / 1024));
+  }
+  return parsed;
+}
+
 // Generate a custom startup batch file with configured options
 function generateStartupBatch(options) {
   const {
@@ -176,6 +185,8 @@ function generateStartupBatch(options) {
   const safeServerName = sanitizeForBatch(serverName);
   const safeAdminPassword = adminPassword ? sanitizeForBatch(adminPassword) : '';
   const safeZomboidDataPath = zomboidDataPath ? sanitizeForBatch(zomboidDataPath) : '';
+  const normalizedMinMemory = normalizeMemoryGb(minMemory, 4);
+  const normalizedMaxMemory = normalizeMemoryGb(maxMemory, 8);
 
   // Build JVM arguments
   const jvmArgs = [
@@ -185,8 +196,8 @@ function generateStartupBatch(options) {
     '-XX:+UseZGC',
     '-XX:-CreateCoredumpOnCrash',
     '-XX:-OmitStackTraceInFastThrow',
-    `-Xms${minMemory}g`,
-    `-Xmx${maxMemory}g`,
+    `-Xms${normalizedMinMemory}g`,
+    `-Xmx${normalizedMaxMemory}g`,
   ];
 
   // Add debug flag if enabled

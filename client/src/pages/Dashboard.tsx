@@ -221,6 +221,15 @@ export default function Dashboard() {
     }
   }, [])
 
+  const fetchActiveServer = useCallback(async () => {
+    try {
+      const data = await serversApi.getActive()
+      setActiveServer(data.server ?? null)
+    } catch {
+      setActiveServer(null)
+    }
+  }, [])
+
   const handleAutoStartChange = async (checked: boolean) => {
     setAutoStartServer(checked)
     try {
@@ -253,7 +262,7 @@ export default function Dashboard() {
           fetchPerformanceHistory(), 
           fetchAutoStartSetting(),
           serverApi.getPanelInfo().then(setPanelInfo).catch(() => {}),
-          serversApi.getActive().then((d: { server: ServerInstance | null }) => setActiveServer(d.server)).catch(() => {})
+          fetchActiveServer()
         ])
       } catch (error) {
         console.error('Failed to load initial data:', error)
@@ -310,7 +319,12 @@ export default function Dashboard() {
         setPlayers(data)
       }
 
-      const handleActiveServerChanged = () => {
+      const handleActiveServerChanged = (data?: { server?: ServerInstance | null }) => {
+        if (data?.server !== undefined) {
+          setActiveServer(data.server)
+        } else {
+          fetchActiveServer()
+        }
         fetchStatus()
         fetchPlayers()
         fetchBridgeStatus()
@@ -355,7 +369,7 @@ export default function Dashboard() {
         socket.off('chat:message', handleChat)
       }
     }
-  }, [socket, fetchStatus, fetchPlayers, fetchBridgeStatus, fetchPlayerActivity, fetchPerformanceHistory])
+  }, [socket, fetchStatus, fetchPlayers, fetchBridgeStatus, fetchPlayerActivity, fetchPerformanceHistory, fetchActiveServer])
 
   // Refetch data when page becomes visible (important for mobile background/foreground)
   useEffect(() => {

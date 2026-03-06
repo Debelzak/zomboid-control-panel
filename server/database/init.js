@@ -689,19 +689,37 @@ export async function getAllSettings() {
 // Server Configurations (Multi-server)
 // ============================================
 
+function normalizeMemoryGb(value, fallback) {
+  const parsed = parseInt(value, 10);
+  if (isNaN(parsed) || parsed <= 0) return fallback;
+  if (parsed > 128) {
+    return Math.max(1, Math.round(parsed / 1024));
+  }
+  return parsed;
+}
+
+function normalizeServerMemory(server) {
+  if (!server) return server;
+  return {
+    ...server,
+    minMemory: normalizeMemoryGb(server.minMemory, 4),
+    maxMemory: normalizeMemoryGb(server.maxMemory, 8)
+  };
+}
+
 export async function getServers() {
   const db = await getDb();
-  return db.data.servers || [];
+  return (db.data.servers || []).map(normalizeServerMemory);
 }
 
 export async function getServer(id) {
   const db = await getDb();
-  return db.data.servers.find(s => String(s.id) === String(id)) || null;
+  return normalizeServerMemory(db.data.servers.find(s => String(s.id) === String(id)) || null);
 }
 
 export async function getActiveServer() {
   const db = await getDb();
-  return db.data.servers.find(s => s.isActive) || db.data.servers[0] || null;
+  return normalizeServerMemory(db.data.servers.find(s => s.isActive) || db.data.servers[0] || null);
 }
 
 export async function createServer(serverConfig) {
@@ -722,8 +740,8 @@ export async function createServer(serverConfig) {
     rconPort: serverConfig.rconPort || 27015,
     rconPassword: serverConfig.rconPassword || '',
     serverPort: serverConfig.serverPort || 16261,
-    minMemory: serverConfig.minMemory || 4,
-    maxMemory: serverConfig.maxMemory || 8,
+    minMemory: normalizeMemoryGb(serverConfig.minMemory, 4),
+    maxMemory: normalizeMemoryGb(serverConfig.maxMemory, 8),
     useNoSteam: serverConfig.useNoSteam || false,
     useDebug: serverConfig.useDebug || false,
     isRemote: serverConfig.isRemote || false,
@@ -738,7 +756,7 @@ export async function createServer(serverConfig) {
   }
 
   scheduleWrite();
-  return server;
+  return normalizeServerMemory(server);
 }
 
 export async function updateServer(id, updates) {
@@ -752,8 +770,10 @@ export async function updateServer(id, updates) {
     id,
     updatedAt: new Date().toISOString()
   };
+  db.data.servers[index].minMemory = normalizeMemoryGb(db.data.servers[index].minMemory, 4);
+  db.data.servers[index].maxMemory = normalizeMemoryGb(db.data.servers[index].maxMemory, 8);
   scheduleWrite();
-  return db.data.servers[index];
+  return normalizeServerMemory(db.data.servers[index]);
 }
 
 export async function deleteServer(id) {
@@ -788,14 +808,15 @@ export async function setActiveServer(id) {
 
 /** Sync active server config to legacy flat settings */
 function syncServerToSettings(db, server) {
+  const normalizedServer = normalizeServerMemory(server);
   db.data.settings.serverPath = server.installPath;
   db.data.settings.serverName = server.serverName;
   db.data.settings.rconHost = server.rconHost;
   db.data.settings.rconPort = server.rconPort;
   db.data.settings.rconPassword = server.rconPassword;
   db.data.settings.serverPort = server.serverPort;
-  db.data.settings.minMemory = server.minMemory;
-  db.data.settings.maxMemory = server.maxMemory;
+  db.data.settings.minMemory = normalizedServer.minMemory;
+  db.data.settings.maxMemory = normalizedServer.maxMemory;
   db.data.settings.zomboidDataPath = server.zomboidDataPath;
   db.data.settings.serverConfigPath = server.serverConfigPath;
 }

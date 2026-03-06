@@ -96,8 +96,16 @@ export default function Chat() {
   // Listen for bridge status updates via socket
   useEffect(() => {
     if (socket) {
-      const handleBridgeStatus = (data: { modConnected: boolean; isRunning: boolean }) => {
-        setBridgeConnected(data.modConnected && data.isRunning)
+      const handleBridgeStatus = (data: { isRunning?: boolean; modConnected?: boolean }) => {
+        setBridgeConnected(prev => {
+          const isRunning = data.isRunning ?? prev
+          const modConnected = data.modConnected ?? prev
+          return Boolean(isRunning && modConnected)
+        })
+      }
+
+      const handleBridgeModStatus = (data: { alive?: boolean }) => {
+        setBridgeConnected(prev => Boolean(prev && data.alive))
       }
 
       const handleSocketMessage = (data: any) => {
@@ -126,11 +134,13 @@ export default function Chat() {
 
       socket.on('panelBridge:status', handleBridgeStatus)
       socket.on('panelbridge:status', handleBridgeStatus)
+      socket.on('panelBridge:modStatus', handleBridgeModStatus)
       socket.on('chat:message', handleSocketMessage)
 
       return () => {
         socket.off('panelBridge:status', handleBridgeStatus)
         socket.off('panelbridge:status', handleBridgeStatus)
+        socket.off('panelBridge:modStatus', handleBridgeModStatus)
         socket.off('chat:message', handleSocketMessage)
       }
     }

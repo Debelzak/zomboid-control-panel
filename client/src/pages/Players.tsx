@@ -443,7 +443,11 @@ export default function Players() {
 
   const handleTeleport = () => {
     if (!teleportTarget || !teleportX || !teleportY) return
-    handleAction('Teleport player', () => playersApi.teleport(teleportTarget, `${teleportX},${teleportY},${teleportZ || '0'}`), () => {
+    handleAction('Teleport player', () => playersApi.teleport(teleportTarget, {
+      x: Number(teleportX),
+      y: Number(teleportY),
+      z: Number(teleportZ || '0')
+    }), () => {
       setTeleportDialogOpen(false)
       setTeleportX('')
       setTeleportY('')

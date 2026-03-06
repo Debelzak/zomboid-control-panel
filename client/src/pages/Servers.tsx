@@ -152,8 +152,8 @@ const defaultNewServer: NewServerForm = {
   rconPort: 27015,
   rconPassword: '',
   serverPort: 16261,
-  minMemory: 2048,
-  maxMemory: 4096,
+  minMemory: 2,
+  maxMemory: 4,
   useNoSteam: false,
   useDebug: false,
   isRemote: false
@@ -905,7 +905,7 @@ export default function Servers() {
                         <Cpu className="w-3 h-3" />
                         <span className="text-xs">Memory</span>
                       </div>
-                      <p className="font-mono text-xs font-medium">{server.minMemory / 1024}–{server.maxMemory / 1024} GB</p>
+                      <p className="font-mono text-xs font-medium">{server.minMemory}–{server.maxMemory} GB</p>
                     </div>
                   )}
                 </div>
@@ -1326,9 +1326,9 @@ export default function Servers() {
                               type="number"
                               min={1}
                               max={64}
-                              value={newServer.minMemory / 1024}
+                              value={newServer.minMemory}
                               className="bg-background"
-                              onChange={e => setNewServer({ ...newServer, minMemory: Math.max(1, parseInt(e.target.value) || 2) * 1024 })}
+                              onChange={e => setNewServer({ ...newServer, minMemory: Math.max(1, parseInt(e.target.value) || 2) })}
                             />
                           </div>
                           <div className="space-y-2">
@@ -1337,9 +1337,9 @@ export default function Servers() {
                               type="number"
                               min={1}
                               max={64}
-                              value={newServer.maxMemory / 1024}
+                              value={newServer.maxMemory}
                               className="bg-background"
-                              onChange={e => setNewServer({ ...newServer, maxMemory: Math.max(1, parseInt(e.target.value) || 4) * 1024 })}
+                              onChange={e => setNewServer({ ...newServer, maxMemory: Math.max(1, parseInt(e.target.value) || 4) })}
                             />
                           </div>
                         </div>
@@ -1485,8 +1485,8 @@ export default function Servers() {
                     type="number"
                     min={1}
                     max={64}
-                    value={Math.round(editingServer.minMemory / 1024)}
-                    onChange={e => setEditingServer({ ...editingServer, minMemory: Math.max(1, parseInt(e.target.value) || 2) * 1024 })}
+                    value={editingServer.minMemory}
+                    onChange={e => setEditingServer({ ...editingServer, minMemory: Math.max(1, parseInt(e.target.value) || 2) })}
                   />
                 </div>
                 <div className="space-y-2">
@@ -1495,8 +1495,8 @@ export default function Servers() {
                     type="number"
                     min={1}
                     max={64}
-                    value={Math.round(editingServer.maxMemory / 1024)}
-                    onChange={e => setEditingServer({ ...editingServer, maxMemory: Math.max(1, parseInt(e.target.value) || 4) * 1024 })}
+                    value={editingServer.maxMemory}
+                    onChange={e => setEditingServer({ ...editingServer, maxMemory: Math.max(1, parseInt(e.target.value) || 4) })}
                   />
                 </div>
                 </>

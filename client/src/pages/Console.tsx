@@ -274,13 +274,15 @@ export default function Console() {
         setRconConnected(true)
       }
       
-      // Add to live log
-      setLiveLog(prev => [...prev, {
-        command,
-        response: result.response || result.error || 'No response',
-        success: result.success,
-        timestamp: new Date().toISOString()
-      }].slice(-100))
+      // Add to live log only when socket updates are unavailable to avoid duplicates.
+      if (!socket?.connected) {
+        setLiveLog(prev => [...prev, {
+          command,
+          response: result.response || result.error || 'No response',
+          success: result.success,
+          timestamp: new Date().toISOString()
+        }].slice(-100))
+      }
 
       // Add to command cache (limit to 100 entries)
       setCommandCache(prev => [...prev.slice(-99), command])

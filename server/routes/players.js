@@ -229,7 +229,17 @@ router.post('/whitelist/remove', async (req, res) => {
 router.post('/teleport', async (req, res) => {
   try {
     const rconService = req.app.get('rconService');
-    const { player1, player2, x, y, z } = req.body;
+    let { player1, player2, x, y, z } = req.body;
+
+    // Backward compatibility: allow coordinates to be sent as "x,y,z" in player2
+    if ((x === undefined || y === undefined || z === undefined) && typeof player2 === 'string' && player2.includes(',')) {
+      const parts = player2.split(',').map(part => part.trim());
+      if (parts.length >= 2) {
+        [x, y] = parts;
+        z = parts[2] ?? '0';
+        player2 = undefined;
+      }
+    }
     
     let result;
     if (x !== undefined && y !== undefined && z !== undefined) {
@@ -297,7 +307,7 @@ router.post('/add-xp', async (req, res) => {
     const rconService = req.app.get('rconService');
     const { username, perk, amount } = req.body;
     
-    if (!username || !perk || !amount) {
+    if (!username || !perk || amount === undefined || amount === null) {
       return res.status(400).json({ error: 'Username, perk, and amount are required' });
     }
     
