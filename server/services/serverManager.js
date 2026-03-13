@@ -321,10 +321,15 @@ export class ServerManager {
       // Helper to send message with timeout (don't let RCON failures block restart)
       const sendWarning = async (msg) => {
         try {
+          let timeoutId;
+          const timeoutPromise = new Promise((_, reject) => {
+            timeoutId = setTimeout(() => reject(new Error('RCON timeout')), 5000);
+          });
           await Promise.race([
             rconService.serverMessage(msg),
-            this.sleep(5000).then(() => { throw new Error('RCON timeout'); })
+            timeoutPromise
           ]);
+          clearTimeout(timeoutId);
         } catch (e) {
           log.warn(`Failed to send restart warning: ${e.message}`);
         }
@@ -345,10 +350,12 @@ export class ServerManager {
 
       // Save the world (with timeout)
       try {
-        await Promise.race([
-          rconService.save(),
-          this.sleep(10000).then(() => { throw new Error('Save timeout'); })
-        ]);
+        let saveTimeoutId;
+        const saveTimeout = new Promise((_, reject) => {
+          saveTimeoutId = setTimeout(() => reject(new Error('Save timeout')), 10000);
+        });
+        await Promise.race([rconService.save(), saveTimeout]);
+        clearTimeout(saveTimeoutId);
       } catch (e) {
         log.warn(`Save before restart failed: ${e.message}`);
       }
@@ -356,10 +363,12 @@ export class ServerManager {
 
       // Quit the server (with timeout)
       try {
-        await Promise.race([
-          rconService.quit(),
-          this.sleep(10000).then(() => { throw new Error('Quit timeout'); })
-        ]);
+        let quitTimeoutId;
+        const quitTimeout = new Promise((_, reject) => {
+          quitTimeoutId = setTimeout(() => reject(new Error('Quit timeout')), 10000);
+        });
+        await Promise.race([rconService.quit(), quitTimeout]);
+        clearTimeout(quitTimeoutId);
       } catch (e) {
         log.warn(`RCON quit failed, will force stop: ${e.message}`);
       }

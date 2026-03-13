@@ -454,30 +454,37 @@ export class ModChecker extends EventEmitter {
     const maxWaitMs = this.maxDelayMinutes * 60 * 1000;
     
     this.playerCheckInterval = setInterval(async () => {
-      const elapsed = Date.now() - startTime;
-      
-      // Check if max delay exceeded
-      if (elapsed >= maxWaitMs) {
-        log.info('Max delay exceeded, forcing restart');
+      try {
+        const elapsed = Date.now() - startTime;
+        
+        // Check if max delay exceeded
+        if (elapsed >= maxWaitMs) {
+          log.info('Max delay exceeded, forcing restart');
+          clearInterval(this.playerCheckInterval);
+          this.playerCheckInterval = null;
+          this.pendingRestart = false;
+          await this.triggerModRestart(updatedMods);
+          return;
+        }
+        
+        // Check player count
+        const playerCount = await this.getOnlinePlayerCount();
+        
+        if (playerCount === 0) {
+          log.info('No players online, triggering restart');
+          clearInterval(this.playerCheckInterval);
+          this.playerCheckInterval = null;
+          this.pendingRestart = false;
+          await this.triggerModRestart(updatedMods);
+        } else {
+          const remainingMin = Math.round((maxWaitMs - elapsed) / 60000);
+          log.debug(`${playerCount} players still online, ${remainingMin} min remaining`);
+        }
+      } catch (error) {
+        log.error(`Player monitoring error: ${error.message}`);
         clearInterval(this.playerCheckInterval);
         this.playerCheckInterval = null;
         this.pendingRestart = false;
-        await this.triggerModRestart(updatedMods);
-        return;
-      }
-      
-      // Check player count
-      const playerCount = await this.getOnlinePlayerCount();
-      
-      if (playerCount === 0) {
-        log.info('No players online, triggering restart');
-        clearInterval(this.playerCheckInterval);
-        this.playerCheckInterval = null;
-        this.pendingRestart = false;
-        await this.triggerModRestart(updatedMods);
-      } else {
-        const remainingMin = Math.round((maxWaitMs - elapsed) / 60000);
-        log.debug(`${playerCount} players still online, ${remainingMin} min remaining`);
       }
     }, 30000); // Check every 30 seconds
   }

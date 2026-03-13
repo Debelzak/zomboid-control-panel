@@ -157,13 +157,11 @@ export default function Chat() {
       }
 
       socket.on('panelBridge:status', handleBridgeStatus)
-      socket.on('panelbridge:status', handleBridgeStatus)
       socket.on('panelBridge:modStatus', handleBridgeModStatus)
       socket.on('chat:message', handleSocketMessage)
 
       return () => {
         socket.off('panelBridge:status', handleBridgeStatus)
-        socket.off('panelbridge:status', handleBridgeStatus)
         socket.off('panelBridge:modStatus', handleBridgeModStatus)
         socket.off('chat:message', handleSocketMessage)
       }

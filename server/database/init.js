@@ -435,15 +435,13 @@ export async function updateScheduledTask(id, name, cronExpression, command, ena
   const index = db.data.scheduled_tasks.findIndex(t => t.id === id);
   if (index === -1) return null;
 
-  db.data.scheduled_tasks[index] = {
-    ...db.data.scheduled_tasks[index],
-    name,
-    cron_expression: cronExpression,
-    command,
-    enabled: enabled ? 1 : 0
-  };
+  const task = db.data.scheduled_tasks[index];
+  if (name !== undefined) task.name = name;
+  if (cronExpression !== undefined) task.cron_expression = cronExpression;
+  if (command !== undefined) task.command = command;
+  if (enabled !== undefined) task.enabled = enabled ? 1 : 0;
   scheduleWrite();
-  return db.data.scheduled_tasks[index];
+  return task;
 }
 
 export async function deleteScheduledTask(id) {
