@@ -17,6 +17,9 @@ RUN cd client && npm run build
 # --- Runtime stage ---
 FROM node:18-alpine
 
+# Use UID 1000 to match typical host user — avoids bind-mount permission issues
+RUN addgroup -g 1000 -S panel && adduser -u 1000 -S panel -G panel
+
 WORKDIR /app
 
 # Install server dependencies only (no devDeps)
@@ -29,10 +32,11 @@ COPY server/ ./server/
 # Copy built client from builder stage
 COPY --from=builder /app/client/dist ./client/dist
 
-# Create runtime directories and non-root user
-RUN mkdir -p data logs \
-    && addgroup -S panel && adduser -S panel -G panel \
-    && chown -R panel:panel /app
+# Copy PanelBridge mod so users can extract it (docker cp)
+COPY pz-mod/ ./pz-mod/
+
+# Create runtime directories owned by panel user
+RUN mkdir -p data logs && chown -R panel:panel /app
 
 USER panel
 

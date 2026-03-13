@@ -10,3 +10,15 @@ logs/*.log
 .git/
 .github/
 Screenshots/
+server/tests/
+build.js
+bundle-server.js
+deploy*.ps1
+release.ps1
+*.bat
+*.md
+nodemon.json
+docker-compose.yml
+Dockerfile
+.dockerignore
+LICENSE
