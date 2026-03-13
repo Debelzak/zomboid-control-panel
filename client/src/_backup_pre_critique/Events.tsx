@@ -30,13 +30,9 @@ import {
   Eye,
   Gauge,
   RotateCcw,
-  Calendar,
-  Sunrise,
-  Sunset,
-  ChevronDown
+  Calendar
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -49,7 +45,6 @@ import { useToast } from '@/components/ui/use-toast'
 import { rconApi, playersApi, panelBridgeApi } from '@/lib/api'
 import { Link } from 'react-router-dom'
 import { PageHeader } from '@/components/PageHeader'
-import { cn } from '@/lib/utils'
 
 interface Player {
   name: string
@@ -60,100 +55,100 @@ function getEventSuccessCopy(action: string) {
   switch (action) {
     case 'Start rain':
     case 'Start Rain':
-      return { title: 'Rain Started', description: 'Rain is now active on the server.' }
+      return { title: 'Rain Front Triggered', description: 'The weather system is now pushing rain into the world.' }
     case 'Stop rain':
     case 'Stop Rain':
-      return { title: 'Rain Stopped', description: 'Rainfall has been cleared.' }
+      return { title: 'Rain Front Cleared', description: 'The current rainfall order has been cancelled.' }
     case 'Start storm':
     case 'Trigger storm':
-      return { title: 'Storm Triggered', description: 'A storm event is now active.' }
+      return { title: 'Storm Cell Released', description: 'The panel has pushed a storm event into the server.' }
     case 'Tropical Storm':
     case 'Trigger tropical storm':
-      return { title: 'Tropical Storm Triggered', description: 'High-intensity weather is now active.' }
+      return { title: 'Tropical Front Released', description: 'High-intensity weather has been queued for the world.' }
     case 'Blizzard':
     case 'Trigger blizzard':
-      return { title: 'Blizzard Triggered', description: 'A blizzard event is now active.' }
+      return { title: 'Blizzard Protocol Started', description: 'A cold-weather event has been injected into the server.' }
     case 'Stop weather':
     case 'Stop All Weather':
-      return { title: 'Weather Cleared', description: 'All forced weather conditions removed.' }
+      return { title: 'Weather Override Cleared', description: 'Forced weather conditions have been removed.' }
     case 'Enable Snow':
-      return { title: 'Snowfall Enabled', description: 'Snow precipitation is now active.' }
+      return { title: 'Snowfall Enabled', description: 'Frozen precipitation is now being forced by the panel.' }
     case 'Disable Snow':
-      return { title: 'Snowfall Disabled', description: 'Snow precipitation turned off.' }
+      return { title: 'Snowfall Disabled', description: 'Forced snow precipitation has been turned off.' }
     case 'Reset Climate':
-      return { title: 'Climate Reset', description: 'All climate overrides cleared.' }
+      return { title: 'Climate Overrides Reset', description: 'All manual climate overrides have been cleared.' }
     case 'Set Fog':
-      return { title: 'Fog Updated', description: 'Fog density applied to the server.' }
+      return { title: 'Fog Override Applied', description: 'Fog density has been updated on the live server.' }
     case 'Set Wind':
-      return { title: 'Wind Updated', description: 'Wind intensity applied to the server.' }
+      return { title: 'Wind Override Applied', description: 'Wind intensity has been updated on the live server.' }
     case 'Set Temperature':
-      return { title: 'Temperature Updated', description: 'Temperature applied to the server.' }
+      return { title: 'Temperature Override Applied', description: 'World temperature has been updated on the live server.' }
     case 'Set Clouds':
-      return { title: 'Cloud Cover Updated', description: 'Cloud intensity applied to the server.' }
+      return { title: 'Cloud Cover Applied', description: 'Cloud intensity has been updated on the live server.' }
     case 'Set Humidity':
-      return { title: 'Humidity Updated', description: 'Humidity level applied to the server.' }
+      return { title: 'Humidity Override Applied', description: 'Humidity levels have been updated on the live server.' }
     case 'Set Precipitation':
-      return { title: 'Precipitation Updated', description: 'Precipitation intensity applied to the server.' }
+      return { title: 'Precipitation Override Applied', description: 'Precipitation intensity has been updated on the live server.' }
     case 'Set Time':
-      return { title: 'Time Updated', description: 'In-game date and time adjusted.' }
+      return { title: 'World Clock Updated', description: 'The in-game date and time have been adjusted.' }
     case 'Restore Utilities':
-      return { title: 'Utilities Restored', description: 'Power and water are back online.' }
+      return { title: 'Utilities Restored', description: 'Power and water have been brought back online.' }
     case 'Shut Off Utilities':
-      return { title: 'Utilities Shut Down', description: 'Power and water have been cut.' }
+      return { title: 'Utilities Shut Down', description: 'Power and water have been cut across the world.' }
     case 'Restore Power':
       return { title: 'Power Restored', description: 'Electrical service is back online.' }
     case 'Restore Water':
       return { title: 'Water Restored', description: 'Water service is back online.' }
     case 'Helicopter':
-      return { title: 'Helicopter Triggered', description: 'A helicopter event is now active.' }
+      return { title: 'Helicopter Event Triggered', description: 'A helicopter event has been released into the world.' }
     case 'Gunshot':
     case 'Gunshot Sound':
     case 'Gunshot at Coords':
-      return { title: 'Gunshot Triggered', description: 'A gunshot sound has been created.' }
+      return { title: 'Gunshot Triggered', description: 'A loud gunshot has been pushed into the target area.' }
     case 'Alarm':
     case 'Alarm Sound':
     case 'Alarm at Coords':
-      return { title: 'Alarm Triggered', description: 'An alarm has been triggered.' }
+      return { title: 'Alarm Triggered', description: 'An alarm event has been triggered at the target location.' }
     case 'Custom Noise':
     case 'Noise at Coords':
-      return { title: 'Noise Created', description: 'A custom sound lure has been placed.' }
+      return { title: 'Noise Event Triggered', description: 'A custom sound lure has been created.' }
     case 'Lightning':
-      return { title: 'Lightning Triggered', description: 'A lightning strike has been called.' }
+      return { title: 'Lightning Strike Triggered', description: 'A lightning event has been called down on the world.' }
     case 'Thunder':
-      return { title: 'Thunder Triggered', description: 'A thunder event is now active.' }
+      return { title: 'Thunder Event Triggered', description: 'Thunder has been pushed into the current weather cell.' }
     case 'Create horde':
-      return { title: 'Horde Spawned', description: 'A zombie group has been created.' }
+      return { title: 'Horde Spawned', description: 'A zombie group has been created near the target.' }
     case 'Create horde (behind)':
-      return { title: 'Rear Horde Spawned', description: 'A zombie group spawned behind the target.' }
+      return { title: 'Rear Horde Spawned', description: 'A zombie group has been spawned behind the target.' }
     case 'Remove all zombies':
-      return { title: 'Zombies Cleared', description: 'All zombies removed from loaded cells.' }
+      return { title: 'Zombie Sweep Complete', description: 'All zombies have been removed from the loaded world.' }
     case 'Set time speed':
-      return { title: 'Time Speed Updated', description: 'The time multiplier has been changed.' }
+      return { title: 'Time Rate Updated', description: 'The world time multiplier has been changed.' }
     case 'Teleport':
     case 'Teleport self':
     case 'Teleport player':
-      return { title: 'Teleport Complete', description: 'The target has been moved.' }
+      return { title: 'Teleport Executed', description: 'The target has been moved successfully.' }
     case 'Spawn vehicle':
-      return { title: 'Vehicle Spawned', description: 'Vehicle delivered to the target player.' }
+      return { title: 'Vehicle Spawned', description: 'The selected vehicle has been delivered to the target player.' }
     case 'Send announcement':
-      return { title: 'Announcement Sent', description: 'Message broadcast to all players.' }
+      return { title: 'Announcement Broadcast', description: 'The message has been sent to the entire server.' }
     default:
-      return { title: 'Action Complete', description: `${action} completed successfully.` }
+      return { title: 'World Event Triggered', description: `${action} completed successfully.` }
   }
 }
 
 // Vehicle presets for GM
 const vehicles = [
-  { id: 'Base.VanAmbulance', name: 'Ambulance' },
-  { id: 'Base.PickUpVanLightsPolice', name: 'Police Van' },
-  { id: 'Base.CarLightsPolice', name: 'Police Car' },
-  { id: 'Base.PickUpTruckMccoy', name: 'Pickup Truck' },
-  { id: 'Base.Van', name: 'Van' },
-  { id: 'Base.ModernCar', name: 'Modern Car' },
-  { id: 'Base.SportsCar', name: 'Sports Car' },
-  { id: 'Base.SUV', name: 'SUV' },
-  { id: 'Base.StepVan', name: 'Step Van' },
-  { id: 'Base.Taxi', name: 'Taxi' },
+  { id: 'Base.VanAmbulance', name: 'Ambulance', icon: '🚑' },
+  { id: 'Base.PickUpVanLightsPolice', name: 'Police Van', icon: '🚔' },
+  { id: 'Base.CarLightsPolice', name: 'Police Car', icon: '🚓' },
+  { id: 'Base.PickUpTruckMccoy', name: 'Pickup Truck', icon: '🛻' },
+  { id: 'Base.Van', name: 'Van', icon: '🚐' },
+  { id: 'Base.ModernCar', name: 'Modern Car', icon: '🚗' },
+  { id: 'Base.SportsCar', name: 'Sports Car', icon: '🏎️' },
+  { id: 'Base.SUV', name: 'SUV', icon: '🚙' },
+  { id: 'Base.StepVan', name: 'Step Van', icon: '📦' },
+  { id: 'Base.Taxi', name: 'Taxi', icon: '🚕' },
 ]
 
 export default function Events() {
@@ -189,7 +184,7 @@ export default function Events() {
   const [blizzardDuration, setBlizzardDuration] = useState(2)
   const [tropicalDuration, setTropicalDuration] = useState(2)
   
-  // Climate controls
+  // Climate controls (v1.1.0)
   const [fogIntensity, setFogIntensity] = useState(0)
   const [windIntensity, setWindIntensity] = useState(0)
   const [temperature, setTemperature] = useState(20)
@@ -197,18 +192,17 @@ export default function Events() {
   const [humidity, setHumidity] = useState(50)
   const [precipitationIntensity, setPrecipitationIntensity] = useState(0)
   
-  // Game time controls
+  // Time controls (v1.1.0)
   const [gameHour, setGameHour] = useState(12)
   const [gameDay, setGameDay] = useState(1)
   const [gameMonth, setGameMonth] = useState(7)
   
-  // Sound controls
+  // Sound controls (v1.2.0)
   const [soundRadius, setSoundRadius] = useState(100)
   const [soundVolume, setSoundVolume] = useState(100)
   const [soundX, setSoundX] = useState('')
-  const [soundY, setSoundY] = useState('')
   
-  // Utilities status
+  // Utilities status (v1.4.0)
   const [utilitiesStatus, setUtilitiesStatus] = useState<{
     hydroPowerOn: boolean
     powerOn: boolean
@@ -216,17 +210,13 @@ export default function Events() {
     elecShut: string
     waterShut: string
   } | null>(null)
+  const [soundY, setSoundY] = useState('')
   
   const { toast } = useToast()
 
-  // Collapsible section state — weather open by default
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>({
-    weather: true,
-    environment: false,
-    sound: false,
-    world: false,
-  })
-  const toggleSection = (id: string) => setOpenSections((prev) => ({ ...prev, [id]: !prev[id] }))
+
+
+
 
   const fetchPlayers = useCallback(async () => {
     try {
@@ -234,8 +224,8 @@ export default function Events() {
       if (data.players) {
         setPlayers(data.players)
       }
-    } catch {
-      // Silently ignore — player list will refresh on next interval
+    } catch (error) {
+      console.error('Failed to fetch players:', error)
     }
   }, [])
 
@@ -429,7 +419,7 @@ export default function Events() {
   const sendAnnouncement = () => executeCommand(`servermsg "${announcement}"`)
 
   return (
-    <div className="space-y-6 page-transition">
+    <div className="space-y-8 page-transition">
       <PageHeader
         title="Events"
         description="Trigger in-game events and world effects"
@@ -443,13 +433,19 @@ export default function Events() {
       />
 
       {/* Target Selection */}
-      <Card>
+      <Card className="card-interactive">
         <CardHeader className="pb-4">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Target className="w-4 h-4 text-primary" />
-            Event Target
-          </CardTitle>
-          <CardDescription>Choose whether events affect all players or a specific player</CardDescription>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+              <Target className="w-5 h-5 text-primary" />
+            </div>
+            <div>
+              <CardTitle className="text-lg">Event Target</CardTitle>
+              <CardDescription className="mt-0.5">
+                Choose whether events affect all players or a specific player
+              </CardDescription>
+            </div>
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center gap-4">
@@ -498,24 +494,19 @@ export default function Events() {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 stagger-in">
-        {/* ── Weather Section ── */}
-        <Collapsible open={openSections.weather} onOpenChange={() => toggleSection('weather')} className="md:col-span-2">
-          <CollapsibleTrigger className="flex items-center gap-2 w-full py-2 text-left group">
-            <ChevronDown className={cn("w-4 h-4 text-muted-foreground transition-transform", openSections.weather && "rotate-180")} />
-            <span className="text-sm font-medium text-muted-foreground uppercase tracking-wide">Weather</span>
-            <div className="flex-1 border-t border-border/40 ml-2" />
-          </CollapsibleTrigger>
-          <CollapsibleContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 stagger-in">
         {/* Weather Controls */}
-        <Card>
+        <Card className="card-interactive">
           <CardHeader className="pb-4">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Cloud className="w-4 h-4 text-primary" />
-              Weather Controls
-            </CardTitle>
-            <CardDescription>Control the in-game weather</CardDescription>
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary">
+                <Cloud className="w-5 h-5" />
+              </div>
+              <div>
+                <CardTitle className="text-lg">Weather Controls</CardTitle>
+                <CardDescription className="mt-0.5">Control the in-game weather</CardDescription>
+              </div>
+            </div>
           </CardHeader>
           <CardContent className="space-y-6">
             {/* Rain */}
@@ -524,7 +515,6 @@ export default function Events() {
                 <Label>Rain Intensity: {rainIntensity}%</Label>
               </div>
               <Slider
-                aria-label="Rain intensity"
                 value={[rainIntensity]}
                 onValueChange={([val]) => setRainIntensity(val)}
                 min={1}
@@ -559,7 +549,6 @@ export default function Events() {
                 <Label>Storm Duration: {stormDuration} game hour{stormDuration !== 1 ? 's' : ''}</Label>
               </div>
               <Slider
-                aria-label="Storm duration"
                 value={[stormDuration]}
                 onValueChange={([val]) => setStormDuration(val)}
                 min={1}
@@ -591,15 +580,17 @@ export default function Events() {
         </Card>
 
         {/* Advanced Weather Controls (via Panel Bridge) */}
-        <Card className={!bridgeConnected ? 'opacity-60' : ''}>
+        <Card className={`card-interactive ${!bridgeConnected ? 'opacity-60' : ''}`}>
           <CardHeader className="pb-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Snowflake className="w-4 h-4 text-primary" />
-                  Advanced Weather
-                </CardTitle>
-                <CardDescription>Control blizzards, tropical storms, and snow</CardDescription>
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary">
+                <Snowflake className="w-5 h-5" />
+              </div>
+              <div className="flex-1">
+                <CardTitle className="text-lg">Advanced Weather</CardTitle>
+                <CardDescription className="mt-0.5">
+                  Blizzards, tropical storms, and snow control
+                </CardDescription>
               </div>
               {bridgeConnected ? (
                 <Badge variant="outline" className="gap-1 text-xs">
@@ -620,7 +611,7 @@ export default function Events() {
                 <AlertTriangle className="h-4 w-4 text-warning" />
                 <AlertTitle className="text-warning">Panel Bridge Required</AlertTitle>
                 <AlertDescription className="space-y-2">
-                  <p>Install <strong className="text-foreground">PanelBridge.lua</strong> and run <strong className="text-foreground">Auto Setup</strong> in Settings, then start the PZ server.</p>
+                  <p>Install <strong className="text-foreground">PanelBridge.lua</strong>, run <strong className="text-foreground">Auto Setup</strong> in Settings, then start the PZ server so the Lua mod can connect.</p>
                   <Link to="/settings" className="inline-flex text-sm text-primary underline hover:text-foreground">Open Bridge Setup</Link>
                 </AlertDescription>
               </Alert>
@@ -635,7 +626,6 @@ export default function Events() {
                     </Label>
                   </div>
                   <Slider
-                    aria-label="Blizzard duration"
                     value={[blizzardDuration]}
                     onValueChange={([val]) => setBlizzardDuration(val)}
                     min={1}
@@ -662,7 +652,6 @@ export default function Events() {
                     </Label>
                   </div>
                   <Slider
-                    aria-label="Tropical storm duration"
                     value={[tropicalDuration]}
                     onValueChange={([val]) => setTropicalDuration(val)}
                     min={1}
@@ -722,15 +711,17 @@ export default function Events() {
         </Card>
 
         {/* Climate Controls (v1.1.0) - spans full width */}
-        <Card className={`lg:col-span-2 ${!bridgeConnected ? 'opacity-60' : ''}`}>
+        <Card className={`card-interactive lg:col-span-2 ${!bridgeConnected ? 'opacity-60' : ''}`}>
           <CardHeader className="pb-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Gauge className="w-4 h-4 text-primary" />
-                  Climate Controls
-                </CardTitle>
-                <CardDescription>Fine-tune weather parameters: fog, wind, temperature, clouds, and more</CardDescription>
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary">
+                <Gauge className="w-5 h-5" />
+              </div>
+              <div className="flex-1">
+                <CardTitle className="text-lg">Climate Controls</CardTitle>
+                <CardDescription className="mt-0.5">
+                  Fine-tune weather parameters: fog, wind, temperature, clouds, and more
+                </CardDescription>
               </div>
               {bridgeConnected && (
                 <Button
@@ -752,7 +743,7 @@ export default function Events() {
                 <AlertTriangle className="h-4 w-4 text-warning" />
                 <AlertTitle className="text-warning">Panel Bridge Required</AlertTitle>
                 <AlertDescription className="space-y-2">
-                  <p>Install <strong className="text-foreground">PanelBridge.lua</strong> and run <strong className="text-foreground">Auto Setup</strong> in Settings, then start the PZ server.</p>
+                  <p>Climate controls use the in-game Lua mod. Install PanelBridge.lua, run Auto Setup, and restart the server.</p>
                   <Link to="/settings" className="inline-flex text-sm text-primary underline hover:text-foreground">Open Bridge Setup</Link>
                 </AlertDescription>
               </Alert>
@@ -767,7 +758,6 @@ export default function Events() {
                     </Label>
                   </div>
                   <Slider
-                    aria-label="Fog intensity"
                     value={[fogIntensity]}
                     onValueChange={([val]) => setFogIntensity(val)}
                     min={0}
@@ -776,6 +766,7 @@ export default function Events() {
                   />
                   <Button
                     variant="outline"
+                    size="sm"
                     onClick={() => handleBridgeAction('Set Fog', () => panelBridgeApi.setClimateFloat(5, fogIntensity / 100))}
                     disabled={bridgeLoading !== null}
                     className="h-11 w-full gap-2"
@@ -793,7 +784,6 @@ export default function Events() {
                     </Label>
                   </div>
                   <Slider
-                    aria-label="Wind intensity"
                     value={[windIntensity]}
                     onValueChange={([val]) => setWindIntensity(val)}
                     min={0}
@@ -802,6 +792,7 @@ export default function Events() {
                   />
                   <Button
                     variant="outline"
+                    size="sm"
                     onClick={() => handleBridgeAction('Set Wind', () => panelBridgeApi.setClimateFloat(6, windIntensity / 100))}
                     disabled={bridgeLoading !== null}
                     className="h-11 w-full gap-2"
@@ -819,7 +810,6 @@ export default function Events() {
                     </Label>
                   </div>
                   <Slider
-                    aria-label="Temperature"
                     value={[temperature]}
                     onValueChange={([val]) => setTemperature(val)}
                     min={-30}
@@ -828,11 +818,12 @@ export default function Events() {
                   />
                   <Button
                     variant="outline"
+                    size="sm"
                     onClick={() => handleBridgeAction('Set Temperature', () => panelBridgeApi.setClimateFloat(4, temperature))}
                     disabled={bridgeLoading !== null}
                     className="h-11 w-full gap-2"
                   >
-                    Apply Temperature
+                    Apply Temp
                   </Button>
                 </div>
 
@@ -845,7 +836,6 @@ export default function Events() {
                     </Label>
                   </div>
                   <Slider
-                    aria-label="Cloud intensity"
                     value={[cloudIntensity]}
                     onValueChange={([val]) => setCloudIntensity(val)}
                     min={0}
@@ -854,6 +844,7 @@ export default function Events() {
                   />
                   <Button
                     variant="outline"
+                    size="sm"
                     onClick={() => handleBridgeAction('Set Clouds', () => panelBridgeApi.setClimateFloat(8, cloudIntensity / 100))}
                     disabled={bridgeLoading !== null}
                     className="h-11 w-full gap-2"
@@ -871,7 +862,6 @@ export default function Events() {
                     </Label>
                   </div>
                   <Slider
-                    aria-label="Humidity"
                     value={[humidity]}
                     onValueChange={([val]) => setHumidity(val)}
                     min={0}
@@ -880,6 +870,7 @@ export default function Events() {
                   />
                   <Button
                     variant="outline"
+                    size="sm"
                     onClick={() => handleBridgeAction('Set Humidity', () => panelBridgeApi.setClimateFloat(12, humidity / 100))}
                     disabled={bridgeLoading !== null}
                     className="h-11 w-full gap-2"
@@ -897,7 +888,6 @@ export default function Events() {
                     </Label>
                   </div>
                   <Slider
-                    aria-label="Precipitation intensity"
                     value={[precipitationIntensity]}
                     onValueChange={([val]) => setPrecipitationIntensity(val)}
                     min={0}
@@ -906,6 +896,7 @@ export default function Events() {
                   />
                   <Button
                     variant="outline"
+                    size="sm"
                     onClick={() => handleBridgeAction('Set Precipitation', () => panelBridgeApi.setClimateFloat(3, precipitationIntensity / 100))}
                     disabled={bridgeLoading !== null}
                     className="h-11 w-full gap-2"
@@ -965,28 +956,19 @@ export default function Events() {
             )}
           </CardContent>
         </Card>
-            </div>
-          </CollapsibleContent>
-        </Collapsible>
-
-        {/* ── Time & Environment Section ── */}
-        <Collapsible open={openSections.environment} onOpenChange={() => toggleSection('environment')} className="md:col-span-2">
-          <CollapsibleTrigger className="flex items-center gap-2 w-full py-2 text-left group">
-            <ChevronDown className={cn("w-4 h-4 text-muted-foreground transition-transform", openSections.environment && "rotate-180")} />
-            <span className="text-sm font-medium text-muted-foreground uppercase tracking-wide">Time & Environment</span>
-            <div className="flex-1 border-t border-border/40 ml-2" />
-          </CollapsibleTrigger>
-          <CollapsibleContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
 
         {/* Game Time Control (v1.1.0) */}
-        <Card className={!bridgeConnected ? 'opacity-60' : ''}>
+        <Card className={`card-interactive ${!bridgeConnected ? 'opacity-60' : ''}`}>
           <CardHeader className="pb-4">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Calendar className="w-4 h-4 text-primary" />
-              Game Time
-            </CardTitle>
-            <CardDescription>Control in-game time and date</CardDescription>
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary">
+                <Calendar className="w-5 h-5" />
+              </div>
+              <div>
+                <CardTitle className="text-lg">Game Time</CardTitle>
+                <CardDescription className="mt-0.5">Control in-game time and date</CardDescription>
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
             {!bridgeConnected ? (
@@ -994,7 +976,7 @@ export default function Events() {
                 <AlertTriangle className="h-4 w-4 text-warning" />
                 <AlertTitle className="text-warning">Panel Bridge Required</AlertTitle>
                 <AlertDescription className="space-y-2">
-                  <p>Install <strong className="text-foreground">PanelBridge.lua</strong> and run <strong className="text-foreground">Auto Setup</strong> in Settings, then start the PZ server.</p>
+                  <p>Time controls only work after the Panel Bridge Lua mod is installed and the panel watcher is connected.</p>
                   <Link to="/settings" className="inline-flex text-sm text-primary underline hover:text-foreground">Open Bridge Setup</Link>
                 </AlertDescription>
               </Alert>
@@ -1013,7 +995,6 @@ export default function Events() {
                     </Label>
                   </div>
                   <Slider
-                    aria-label="Game hour"
                     value={[gameHour]}
                     onValueChange={([val]) => setGameHour(val)}
                     min={0}
@@ -1024,17 +1005,17 @@ export default function Events() {
 
                 {/* Quick time buttons */}
                 <div className="flex gap-2 flex-wrap">
-                  <Button variant={gameHour === 6 ? 'secondary' : 'outline'} size="sm" onClick={() => setGameHour(6)} className="h-10 gap-1.5">
-                    <Sunrise className="w-3.5 h-3.5" /> Dawn
+                  <Button variant={gameHour === 6 ? 'secondary' : 'outline'} size="sm" onClick={() => setGameHour(6)} className="h-10">
+                    🌅 Dawn
                   </Button>
-                  <Button variant={gameHour === 12 ? 'secondary' : 'outline'} size="sm" onClick={() => setGameHour(12)} className="h-10 gap-1.5">
-                    <Sun className="w-3.5 h-3.5" /> Noon
+                  <Button variant={gameHour === 12 ? 'secondary' : 'outline'} size="sm" onClick={() => setGameHour(12)} className="h-10">
+                    ☀️ Noon
                   </Button>
-                  <Button variant={gameHour === 18 ? 'secondary' : 'outline'} size="sm" onClick={() => setGameHour(18)} className="h-10 gap-1.5">
-                    <Sunset className="w-3.5 h-3.5" /> Dusk
+                  <Button variant={gameHour === 18 ? 'secondary' : 'outline'} size="sm" onClick={() => setGameHour(18)} className="h-10">
+                    🌅 Dusk
                   </Button>
-                  <Button variant={gameHour === 0 ? 'secondary' : 'outline'} size="sm" onClick={() => setGameHour(0)} className="h-10 gap-1.5">
-                    <Moon className="w-3.5 h-3.5" /> Midnight
+                  <Button variant={gameHour === 0 ? 'secondary' : 'outline'} size="sm" onClick={() => setGameHour(0)} className="h-10">
+                    🌙 Midnight
                   </Button>
                 </div>
 
@@ -1089,13 +1070,17 @@ export default function Events() {
         </Card>
 
         {/* Infrastructure (Power/Water) Control */}
-        <Card className={!bridgeConnected ? 'opacity-60' : ''}>
+        <Card className={`card-interactive ${!bridgeConnected ? 'opacity-60' : ''}`}>
           <CardHeader className="pb-4">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Zap className="w-4 h-4 text-primary" />
-              Infrastructure
-            </CardTitle>
-            <CardDescription>Control power and water utilities</CardDescription>
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary">
+                <Zap className="w-5 h-5" />
+              </div>
+              <div>
+                <CardTitle className="text-lg">Infrastructure</CardTitle>
+                <CardDescription className="mt-0.5">Control power and water utilities</CardDescription>
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
             {!bridgeConnected ? (
@@ -1103,7 +1088,7 @@ export default function Events() {
                 <AlertTriangle className="h-4 w-4 text-warning" />
                 <AlertTitle className="text-warning">Panel Bridge Required</AlertTitle>
                 <AlertDescription className="space-y-2">
-                  <p>Install <strong className="text-foreground">PanelBridge.lua</strong> and run <strong className="text-foreground">Auto Setup</strong> in Settings, then start the PZ server.</p>
+                  <p>Utilities and infrastructure controls come from the in-game mod, not plain RCON.</p>
                   <Link to="/settings" className="inline-flex text-sm text-primary underline hover:text-foreground">Open Bridge Setup</Link>
                 </AlertDescription>
               </Alert>
@@ -1129,7 +1114,7 @@ export default function Events() {
                 </div>
                 
                 <p className="text-sm text-muted-foreground">
-                  Restore or shut off power and water for the entire world. This affects all players instantly.
+                  Restore or shut off power and water for the entire world. Note: This affects all players instantly.
                 </p>
                 
                 <div className="grid grid-cols-2 gap-3">
@@ -1137,19 +1122,27 @@ export default function Events() {
                     variant="outline"
                     onClick={() => handleUtilitiesAction('Restore Utilities', () => panelBridgeApi.restoreUtilities())}
                     disabled={bridgeLoading !== null}
-                    className="h-11 gap-2"
+                    className="h-14 gap-2 flex-col items-center justify-center"
                   >
-                    {bridgeLoading === 'Restore Utilities' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
-                    Restore All
+                    {bridgeLoading === 'Restore Utilities' ? (
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : (
+                      <Zap className="w-5 h-5" />
+                    )}
+                    <span className="text-xs">Restore Power & Water</span>
                   </Button>
                   <Button
                     variant="outline"
                     onClick={() => handleUtilitiesAction('Shut Off Utilities', () => panelBridgeApi.shutOffUtilities())}
                     disabled={bridgeLoading !== null}
-                    className="h-11 gap-2"
+                    className="h-14 gap-2 flex-col items-center justify-center"
                   >
-                    {bridgeLoading === 'Shut Off Utilities' ? <Loader2 className="w-4 h-4 animate-spin" /> : <CloudOff className="w-4 h-4" />}
-                    Shut Off All
+                    {bridgeLoading === 'Shut Off Utilities' ? (
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : (
+                      <CloudOff className="w-5 h-5" />
+                    )}
+                    <span className="text-xs">Shut Off Utilities</span>
                   </Button>
                 </div>
                 
@@ -1177,95 +1170,93 @@ export default function Events() {
             )}
           </CardContent>
         </Card>
-            </div>
-          </CollapsibleContent>
-        </Collapsible>
-
-        {/* ── Sound Section ── */}
-        <Collapsible open={openSections.sound} onOpenChange={() => toggleSection('sound')} className="md:col-span-2">
-          <CollapsibleTrigger className="flex items-center gap-2 w-full py-2 text-left group">
-            <ChevronDown className={cn("w-4 h-4 text-muted-foreground transition-transform", openSections.sound && "rotate-180")} />
-            <span className="text-sm font-medium text-muted-foreground uppercase tracking-wide">Sound</span>
-            <div className="flex-1 border-t border-border/40 ml-2" />
-          </CollapsibleTrigger>
-          <CollapsibleContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
 
         {/* Sound Events */}
-        <Card>
+        <Card className="card-interactive">
           <CardHeader className="pb-4">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Volume2 className="w-4 h-4 text-primary" />
-              Sound Events
-            </CardTitle>
-            <CardDescription>Trigger sound effects that attract zombies</CardDescription>
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary">
+                <Volume2 className="w-5 h-5" />
+              </div>
+              <div>
+                <CardTitle className="text-lg">Sound Events</CardTitle>
+                <CardDescription className="mt-0.5">Trigger sound effects that attract zombies</CardDescription>
+              </div>
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Helicopter and Gunshot target a random online player. Lightning and Thunder respect the player selection above.
+              <strong>Note:</strong> Helicopter and Gunshot events target a <em>random online player</em> regardless of selection.
+              Lightning and Thunder can target a specific player if selected above.
             </p>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 gap-3">
               <Button
                 variant="outline"
                 onClick={() => handleAction('Helicopter', triggerChopper)}
                 disabled={loading !== null}
-                className="h-11 gap-2"
+                className="h-14 gap-2 flex-col items-center justify-center"
               >
-                {loading === 'Helicopter' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Crosshair className="w-4 h-4" />}
-                Helicopter
+                {loading === 'Helicopter' ? <Loader2 className="w-5 h-5 animate-spin" /> : <Crosshair className="w-5 h-5" />}
+                <span className="text-xs">Helicopter</span>
               </Button>
               <Button
                 variant="outline"
                 onClick={() => handleAction('Gunshot', triggerGunshot)}
                 disabled={loading !== null}
-                className="h-11 gap-2"
+                className="h-14 gap-2 flex-col items-center justify-center"
               >
-                {loading === 'Gunshot' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Volume2 className="w-4 h-4" />}
-                Gunshot
+                {loading === 'Gunshot' ? <Loader2 className="w-5 h-5 animate-spin" /> : <Volume2 className="w-5 h-5" />}
+                <span className="text-xs">Gunshot</span>
               </Button>
               <Button
                 variant="outline"
                 onClick={() => handleAction('Lightning', () => triggerLightning(getTargetPlayer()))}
                 disabled={loading !== null}
-                className="h-11 gap-2"
+                className="h-14 gap-2 flex-col items-center justify-center"
               >
-                {loading === 'Lightning' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
-                Lightning
+                {loading === 'Lightning' ? <Loader2 className="w-5 h-5 animate-spin" /> : <Zap className="w-5 h-5" />}
+                <span className="text-xs">Lightning</span>
               </Button>
               <Button
                 variant="outline"
                 onClick={() => handleAction('Thunder', () => triggerThunder(getTargetPlayer()))}
                 disabled={loading !== null}
-                className="h-11 gap-2"
+                className="h-14 gap-2 flex-col items-center justify-center"
               >
-                {loading === 'Thunder' ? <Loader2 className="w-4 h-4 animate-spin" /> : <CloudLightning className="w-4 h-4" />}
-                Thunder
+                {loading === 'Thunder' ? <Loader2 className="w-5 h-5 animate-spin" /> : <CloudLightning className="w-5 h-5" />}
+                <span className="text-xs">Thunder</span>
               </Button>
               <Button
                 variant="outline"
                 onClick={() => handleAction('Alarm', triggerAlarm)}
                 disabled={loading !== null}
-                className="h-11 gap-2 col-span-2"
+                className="h-14 gap-2 flex-col items-center justify-center col-span-2"
                 title="Requires admin to be in-game - triggers at admin's location"
               >
-                {loading === 'Alarm' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Bell className="w-4 h-4" />}
-                Building Alarm
+                {loading === 'Alarm' ? <Loader2 className="w-5 h-5 animate-spin" /> : <Bell className="w-5 h-5" />}
+                <span className="text-xs">Building Alarm (Admin Location)</span>
               </Button>
             </div>
           </CardContent>
         </Card>
 
         {/* Advanced Sound Controls (Panel Bridge v1.2.0) */}
-        <Card className={!bridgeConnected ? 'opacity-60' : ''}>
+        <Card className={`card-interactive ${!bridgeConnected ? 'opacity-60' : ''}`}>
           <CardHeader className="pb-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Megaphone className="w-4 h-4 text-primary" />
-                  Advanced Sound Controls
-                </CardTitle>
-                <CardDescription>Create sounds at specific locations to attract zombies</CardDescription>
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary">
+                <Megaphone className="w-5 h-5" />
               </div>
+              <div className="flex-1">
+                <CardTitle className="text-lg">Advanced Sound Controls</CardTitle>
+                <CardDescription className="mt-0.5">Create sounds at specific locations to attract zombies</CardDescription>
+              </div>
+              {bridgeConnected && (
+                <Badge variant="outline" className="gap-1 text-xs">
+                  <div className="h-2 w-2 rounded-full bg-primary animate-pulse" />
+                  v1.2
+                </Badge>
+              )}
             </div>
           </CardHeader>
           <CardContent>
@@ -1274,7 +1265,7 @@ export default function Events() {
                 <AlertTriangle className="h-4 w-4 text-warning" />
                 <AlertTitle className="text-warning">Panel Bridge Required</AlertTitle>
                 <AlertDescription className="space-y-2">
-                  <p>Install <strong className="text-foreground">PanelBridge.lua</strong> and run <strong className="text-foreground">Auto Setup</strong> in Settings, then start the PZ server.</p>
+                  <p>Advanced sound placement needs Panel Bridge because the command runs inside the live game world.</p>
                   <Link to="/settings" className="inline-flex text-sm text-primary underline hover:text-foreground">Open Bridge Setup</Link>
                 </AlertDescription>
               </Alert>
@@ -1288,7 +1279,6 @@ export default function Events() {
                       Radius: {soundRadius}m
                     </Label>
                     <Slider
-                      aria-label="Sound radius"
                       value={[soundRadius]}
                       onValueChange={([val]) => setSoundRadius(val)}
                       min={10}
@@ -1303,7 +1293,6 @@ export default function Events() {
                       Volume: {soundVolume}
                     </Label>
                     <Slider
-                      aria-label="Sound volume"
                       value={[soundVolume]}
                       onValueChange={([val]) => setSoundVolume(val)}
                       min={10}
@@ -1333,10 +1322,10 @@ export default function Events() {
                         panelBridgeApi.triggerGunshotBridge({ username: selectedPlayer || undefined })
                       )}
                       disabled={bridgeLoading !== null || (targetAll || !selectedPlayer)}
-                      className="h-11 gap-2"
+                      className="h-12 gap-2 flex-col"
                     >
                       {bridgeLoading === 'Gunshot Sound' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Volume2 className="w-4 h-4" />}
-                      Gunshot
+                      <span className="text-xs">Gunshot</span>
                     </Button>
                     <Button
                       variant="outline"
@@ -1344,10 +1333,10 @@ export default function Events() {
                         panelBridgeApi.triggerAlarmBridge({ username: selectedPlayer || undefined })
                       )}
                       disabled={bridgeLoading !== null || (targetAll || !selectedPlayer)}
-                      className="h-11 gap-2"
+                      className="h-12 gap-2 flex-col"
                     >
                       {bridgeLoading === 'Alarm Sound' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Bell className="w-4 h-4" />}
-                      Alarm
+                      <span className="text-xs">Alarm</span>
                     </Button>
                     <Button
                       variant="outline"
@@ -1355,10 +1344,10 @@ export default function Events() {
                         panelBridgeApi.createNoise({ username: selectedPlayer, radius: soundRadius, volume: soundVolume })
                       )}
                       disabled={bridgeLoading !== null || (targetAll || !selectedPlayer)}
-                      className="h-11 gap-2"
+                      className="h-12 gap-2 flex-col"
                     >
                       {bridgeLoading === 'Custom Noise' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Megaphone className="w-4 h-4" />}
-                      Custom
+                      <span className="text-xs">Custom</span>
                     </Button>
                   </div>
                 </div>
@@ -1396,7 +1385,7 @@ export default function Events() {
                         panelBridgeApi.triggerGunshotBridge({ x: parseInt(soundX), y: parseInt(soundY) })
                       )}
                       disabled={bridgeLoading !== null || !soundX || !soundY}
-                      className="h-11 gap-2"
+                      className="h-10 gap-2"
                     >
                       {bridgeLoading === 'Gunshot at Coords' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Volume2 className="w-4 h-4" />}
                       Gunshot
@@ -1407,7 +1396,7 @@ export default function Events() {
                         panelBridgeApi.triggerAlarmBridge({ x: parseInt(soundX), y: parseInt(soundY) })
                       )}
                       disabled={bridgeLoading !== null || !soundX || !soundY}
-                      className="h-11 gap-2"
+                      className="h-10 gap-2"
                     >
                       {bridgeLoading === 'Alarm at Coords' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Bell className="w-4 h-4" />}
                       Alarm
@@ -1418,7 +1407,7 @@ export default function Events() {
                         panelBridgeApi.createNoise({ x: parseInt(soundX), y: parseInt(soundY), radius: soundRadius, volume: soundVolume })
                       )}
                       disabled={bridgeLoading !== null || !soundX || !soundY}
-                      className="h-11 gap-2"
+                      className="h-10 gap-2"
                     >
                       {bridgeLoading === 'Noise at Coords' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Megaphone className="w-4 h-4" />}
                       Custom
@@ -1429,28 +1418,19 @@ export default function Events() {
             )}
           </CardContent>
         </Card>
-            </div>
-          </CollapsibleContent>
-        </Collapsible>
-
-        {/* ── Combat & World Section ── */}
-        <Collapsible open={openSections.world} onOpenChange={() => toggleSection('world')} className="md:col-span-2">
-          <CollapsibleTrigger className="flex items-center gap-2 w-full py-2 text-left group">
-            <ChevronDown className={cn("w-4 h-4 text-muted-foreground transition-transform", openSections.world && "rotate-180")} />
-            <span className="text-sm font-medium text-muted-foreground uppercase tracking-wide">Combat & World</span>
-            <div className="flex-1 border-t border-border/40 ml-2" />
-          </CollapsibleTrigger>
-          <CollapsibleContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
 
         {/* Zombie Events */}
-        <Card>
+        <Card className="card-interactive">
           <CardHeader className="pb-4">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Skull className="w-4 h-4 text-primary" />
-              Zombie Events
-            </CardTitle>
-            <CardDescription>Spawn zombie hordes</CardDescription>
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary">
+                <Skull className="w-5 h-5" />
+              </div>
+              <div>
+                <CardTitle className="text-lg">Zombie Events</CardTitle>
+                <CardDescription className="mt-0.5">Spawn zombie hordes</CardDescription>
+              </div>
+            </div>
           </CardHeader>
           <CardContent className="space-y-6">
             {/* Horde */}
@@ -1459,7 +1439,6 @@ export default function Events() {
                 <Label>Horde Size: {hordeCount} zombies</Label>
               </div>
               <Slider
-                aria-label="Horde size"
                 value={[hordeCount]}
                 onValueChange={([val]) => setHordeCount(val)}
                 min={10}
@@ -1470,27 +1449,27 @@ export default function Events() {
                 variant="outline"
                 onClick={() => handleAction('Create horde', () => createHorde(hordeCount, getTargetPlayer()))}
                 disabled={loading !== null || (!targetAll && !selectedPlayer)}
-                className="w-full h-11 gap-2"
+                className="w-full h-12 gap-2"
               >
-                {loading === 'Create horde' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Skull className="w-4 h-4" />}
+                {loading === 'Create horde' ? <Loader2 className="w-5 h-5 animate-spin" /> : <Skull className="w-5 h-5" />}
                 Spawn Horde Near {targetAll ? 'Random Player' : selectedPlayer || 'Selected Player'}
               </Button>
               <Button
                 variant="outline"
                 onClick={() => handleAction('Create horde (behind)', () => createHorde2(hordeCount, getTargetPlayer()))}
                 disabled={loading !== null || (!targetAll && !selectedPlayer)}
-                className="w-full h-11 gap-2"
+                className="w-full h-12 gap-2"
               >
-                {loading === 'Create horde (behind)' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Skull className="w-4 h-4" />}
+                {loading === 'Create horde (behind)' ? <Loader2 className="w-5 h-5 animate-spin" /> : <Skull className="w-5 h-5" />}
                 Spawn Horde Behind {targetAll ? 'Random Player' : selectedPlayer || 'Selected Player'}
               </Button>
               <Button
                 variant="destructive"
                 onClick={() => handleAction('Remove all zombies', removeZombies)}
                 disabled={loading !== null}
-                className="w-full h-11 gap-2"
+                className="w-full h-12 gap-2"
               >
-                {loading === 'Remove all zombies' ? <Loader2 className="w-4 h-4 animate-spin" /> : <AlertTriangle className="w-4 h-4" />}
+                {loading === 'Remove all zombies' ? <Loader2 className="w-5 h-5 animate-spin" /> : <AlertTriangle className="w-5 h-5" />}
                 Remove All Zombies
               </Button>
             </div>
@@ -1498,13 +1477,17 @@ export default function Events() {
         </Card>
 
         {/* Time Speed Control */}
-        <Card>
+        <Card className="card-interactive">
           <CardHeader className="pb-4">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Clock className="w-4 h-4 text-primary" />
-              Time Speed
-            </CardTitle>
-            <CardDescription>Control the game time multiplier</CardDescription>
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary">
+                <Clock className="w-5 h-5" />
+              </div>
+              <div>
+                <CardTitle className="text-lg">Time Speed</CardTitle>
+                <CardDescription className="mt-0.5">Control the game time multiplier</CardDescription>
+              </div>
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-3">
@@ -1512,7 +1495,6 @@ export default function Events() {
                 <Label>Time Speed: {timeSpeed}x</Label>
               </div>
               <Slider
-                aria-label="Time speed"
                 value={[timeSpeed]}
                 onValueChange={([val]) => setTimeSpeed(val)}
                 min={1}
@@ -1567,16 +1549,20 @@ export default function Events() {
         </Card>
 
         {/* Teleport */}
-        <Card className="lg:col-span-2">
+        <Card className="card-interactive lg:col-span-2">
           <CardHeader className="pb-4">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <MapPin className="w-4 h-4 text-primary" />
-              Teleport
-            </CardTitle>
-            <CardDescription>Teleport players to locations or other players</CardDescription>
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary">
+                <MapPin className="w-5 h-5" />
+              </div>
+              <div>
+                <CardTitle className="text-lg">Teleport</CardTitle>
+                <CardDescription className="mt-0.5">Teleport players to locations or other players</CardDescription>
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Teleport to Player */}
               <div className="space-y-4">
                 <h4 className="font-medium flex items-center gap-2">
@@ -1619,7 +1605,7 @@ export default function Events() {
                       </Button>
                     ))}
                     {players.length <= 1 && (
-                      <p className="text-sm text-muted-foreground">Need at least 2 players online</p>
+                      <p className="text-sm text-muted-foreground">Need at least 2 players online.</p>
                     )}
                   </div>
                 </div>
@@ -1683,6 +1669,7 @@ export default function Events() {
                   </Button>
                 </div>
                 <p className="text-xs text-muted-foreground">
+                  Coordinates: {teleportX || '?'}, {teleportY || '?'}, {teleportZ || '0'}. 
                   Common locations: Muldraugh (10500, 9700), West Point (11800, 6900), Riverside (6500, 5300)
                 </p>
               </div>
@@ -1691,13 +1678,17 @@ export default function Events() {
         </Card>
 
         {/* Vehicle Spawning */}
-        <Card>
+        <Card className="card-interactive">
           <CardHeader className="pb-4">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Car className="w-4 h-4 text-primary" />
-              Vehicle Spawn
-            </CardTitle>
-            <CardDescription>Summon vehicles for players</CardDescription>
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary">
+                <Car className="w-5 h-5" />
+              </div>
+              <div>
+                <CardTitle className="text-lg">Vehicle Spawn</CardTitle>
+                <CardDescription className="mt-0.5">Summon vehicles for players</CardDescription>
+              </div>
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
@@ -1709,7 +1700,7 @@ export default function Events() {
                 <SelectContent>
                   {vehicles.map((vehicle) => (
                     <SelectItem key={vehicle.id} value={vehicle.id}>
-                      {vehicle.name}
+                      {vehicle.icon} {vehicle.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -1729,9 +1720,9 @@ export default function Events() {
                       size="sm"
                       onClick={() => handleAction('Spawn vehicle', () => spawnVehicle(selectedVehicle, player.name))}
                       disabled={loading !== null}
-                      className="h-10 gap-1.5"
+                      className="h-10"
                     >
-                      <Car className="w-4 h-4" />
+                      <Car className="w-3 h-3 mr-1" />
                       {player.name}
                     </Button>
                   ))
@@ -1742,17 +1733,20 @@ export default function Events() {
         </Card>
 
         {/* Server Announcement */}
-        <Card>
+        <Card className="card-interactive">
           <CardHeader className="pb-4">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Megaphone className="w-4 h-4 text-primary" />
-              GM Announcement
-            </CardTitle>
-            <CardDescription>Broadcast messages to all players</CardDescription>
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary">
+                <Megaphone className="w-5 h-5" />
+              </div>
+              <div>
+                <CardTitle className="text-lg">GM Announcement</CardTitle>
+                <CardDescription className="mt-0.5">Broadcast messages to all players</CardDescription>
+              </div>
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label>Message</Label>
               <Input
                 placeholder="Enter your announcement..."
                 value={announcement}
@@ -1782,9 +1776,6 @@ export default function Events() {
             </div>
           </CardContent>
         </Card>
-            </div>
-          </CollapsibleContent>
-        </Collapsible>
       </div>
     </div>
   )

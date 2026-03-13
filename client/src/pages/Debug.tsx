@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext, useRef, useMemo, useCallback } from 'react'
+import { lazy, Suspense, useState, useEffect, useContext, useRef, useMemo, useCallback } from 'react'
 import { 
   Bug, 
   RefreshCw, 
@@ -30,7 +30,6 @@ import {
   Zap,
   TrendingUp
 } from 'lucide-react'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, ResponsiveContainer, AreaChart, Area } from 'recharts'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -127,6 +126,8 @@ interface CrashLog {
 
 type TimeFormat = 'relative' | 'time' | 'datetime'
 
+const DebugPerformanceCharts = lazy(() => import('@/components/DebugPerformanceCharts'))
+
 export default function Debug() {
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null)
@@ -143,6 +144,7 @@ export default function Debug() {
   const [searchQuery, setSearchQuery] = useState('')
   const [sourceFilter, setSourceFilter] = useState<string>('all')
   const [timeFormat, setTimeFormat] = useState<TimeFormat>('time')
+  const [activeTab, setActiveTab] = useState('logs')
   const [expandedLogs, setExpandedLogs] = useState<Set<string>>(new Set())
   const logsEndRef = useRef<HTMLDivElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
@@ -237,7 +239,7 @@ export default function Debug() {
     }
   }
   
-  const fetchPerformanceHistory = async () => {
+  const fetchPerformanceHistory = useCallback(async () => {
     try {
       const res = await authFetch('/api/debug/performance-history?limit=60')
       if (!res.ok) return
@@ -253,7 +255,7 @@ export default function Debug() {
     } catch {
       // Endpoint may not exist yet
     }
-  }
+  }, [authFetch])
 
   const fetchCrashLogs = async () => {
     try {
@@ -310,17 +312,28 @@ export default function Debug() {
     fetchHealthStatus()
     fetchLogFiles()
     fetchLogs()
-    fetchPerformanceHistory()
     fetchCrashLogs()
 
     // Refresh system info every 30 seconds
     const interval = setInterval(() => {
       fetchSystemInfo()
       fetchHealthStatus()
-      fetchPerformanceHistory()
     }, 30000)
     return () => clearInterval(interval)
   }, [])
+
+  useEffect(() => {
+    if (activeTab !== 'performance') {
+      return
+    }
+
+    fetchPerformanceHistory()
+    const interval = setInterval(() => {
+      fetchPerformanceHistory()
+    }, 30000)
+
+    return () => clearInterval(interval)
+  }, [activeTab, fetchPerformanceHistory])
 
   // Listen for real-time logs via Socket.IO
   useEffect(() => {
@@ -568,21 +581,21 @@ export default function Debug() {
 
   const getLevelIcon = (level: string) => {
     switch (level) {
-      case 'error': return <AlertCircle className="w-4 h-4 text-red-500" />
-      case 'warn': return <AlertTriangle className="w-4 h-4 text-yellow-500" />
-      case 'info': return <Info className="w-4 h-4 text-blue-500" />
-      case 'debug': return <Bug className="w-4 h-4 text-gray-500" />
-      default: return <CheckCircle className="w-4 h-4 text-green-500" />
+      case 'error': return <AlertCircle className="w-4 h-4 text-destructive" />
+      case 'warn': return <AlertTriangle className="w-4 h-4 text-warning" />
+      case 'info': return <Info className="w-4 h-4 text-primary" />
+      case 'debug': return <Bug className="w-4 h-4 text-muted-foreground" />
+      default: return <CheckCircle className="w-4 h-4 text-primary" />
     }
   }
 
   const getLevelColor = (level: string) => {
     switch (level) {
-      case 'error': return 'text-red-400'
-      case 'warn': return 'text-yellow-400'
-      case 'info': return 'text-blue-400'
-      case 'debug': return 'text-gray-400'
-      default: return 'text-green-400'
+      case 'error': return 'text-destructive'
+      case 'warn': return 'text-warning'
+      case 'info': return 'text-primary'
+      case 'debug': return 'text-muted-foreground'
+      default: return 'text-primary'
     }
   }
 
@@ -594,7 +607,7 @@ export default function Debug() {
         icon={<Bug className="w-5 h-5 text-primary" />}
       />
 
-      <Tabs defaultValue="logs" className="space-y-4">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList>
           <TabsTrigger value="logs" className="gap-2">
             <Terminal className="w-4 h-4" />
@@ -621,7 +634,7 @@ export default function Debug() {
         {/* Logs Tab */}
         <TabsContent value="logs" className="space-y-4">
           {/* Stats Bar */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
             <Card className="cursor-pointer hover:bg-accent/50 transition-colors" onClick={() => setLevelFilter('all')}>
               <CardContent className="p-4 flex items-center justify-between">
                 <div>
@@ -631,40 +644,40 @@ export default function Debug() {
                 <Terminal className="w-8 h-8 text-muted-foreground" />
               </CardContent>
             </Card>
-            <Card className="cursor-pointer hover:bg-red-500/10 transition-colors" onClick={() => setLevelFilter('error')}>
+            <Card className="cursor-pointer transition-colors hover:bg-destructive/8" onClick={() => setLevelFilter('error')}>
               <CardContent className="p-4 flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Errors</p>
-                  <p className="text-2xl font-bold text-red-500">{logStats.errors}</p>
+                  <p className="text-2xl font-bold text-destructive">{logStats.errors}</p>
                 </div>
-                <AlertCircle className="w-8 h-8 text-red-500" />
+                <AlertCircle className="w-8 h-8 text-destructive" />
               </CardContent>
             </Card>
-            <Card className="cursor-pointer hover:bg-yellow-500/10 transition-colors" onClick={() => setLevelFilter('warn')}>
+            <Card className="cursor-pointer transition-colors hover:bg-warning/8" onClick={() => setLevelFilter('warn')}>
               <CardContent className="p-4 flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Warnings</p>
-                  <p className="text-2xl font-bold text-yellow-500">{logStats.warnings}</p>
+                  <p className="text-2xl font-bold text-warning">{logStats.warnings}</p>
                 </div>
-                <AlertTriangle className="w-8 h-8 text-yellow-500" />
+                <AlertTriangle className="w-8 h-8 text-warning" />
               </CardContent>
             </Card>
-            <Card className="cursor-pointer hover:bg-blue-500/10 transition-colors" onClick={() => setLevelFilter('info')}>
+            <Card className="cursor-pointer transition-colors hover:bg-primary/8" onClick={() => setLevelFilter('info')}>
               <CardContent className="p-4 flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Info</p>
-                  <p className="text-2xl font-bold text-blue-500">{logStats.info}</p>
+                  <p className="text-2xl font-bold text-primary">{logStats.info}</p>
                 </div>
-                <Info className="w-8 h-8 text-blue-500" />
+                <Info className="w-8 h-8 text-primary" />
               </CardContent>
             </Card>
             <Card className="cursor-pointer hover:bg-accent/50 transition-colors" onClick={() => setLevelFilter('debug')}>
               <CardContent className="p-4 flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Debug</p>
-                  <p className="text-2xl font-bold text-gray-500">{logStats.debug}</p>
+                  <p className="text-2xl font-bold text-muted-foreground">{logStats.debug}</p>
                 </div>
-                <Bug className="w-8 h-8 text-gray-500" />
+                <Bug className="w-8 h-8 text-muted-foreground" />
               </CardContent>
             </Card>
           </div>
@@ -679,7 +692,7 @@ export default function Debug() {
                       <Terminal className="w-5 h-5" />
                       Application Logs
                       {paused && (
-                        <Badge variant="secondary" className="animate-pulse ml-2">
+                        <Badge variant="secondary" className="ml-2">
                           Paused
                         </Badge>
                       )}
@@ -758,6 +771,8 @@ export default function Debug() {
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       className="pl-9 pr-8"
+                      aria-label="Search debug logs"
+                      maxLength={128}
                     />
                     {searchQuery && (
                       <button
@@ -822,10 +837,10 @@ export default function Debug() {
               </div>
             </CardHeader>
             <CardContent>
-              <ScrollArea className="h-[500px] bg-black rounded-lg">
+              <ScrollArea className="h-[300px] sm:h-[500px] rounded-lg border border-border/50 bg-muted/20">
                 <div className="font-mono text-sm p-4">
                   {filteredLogs.length === 0 ? (
-                    <div className="text-gray-500 text-center py-8">
+                    <div className="py-8 text-center text-muted-foreground">
                       {logs.length === 0 
                         ? 'No logs to display. Logs will appear here as the application runs.'
                         : 'No logs match your filters.'}
@@ -841,17 +856,17 @@ export default function Debug() {
                       return (
                         <div 
                           key={log.id} 
-                          className="group flex items-start gap-2 hover:bg-gray-900 px-2 py-1 rounded cursor-pointer"
+                          className="group flex cursor-pointer items-start gap-2 rounded px-2 py-1 hover:bg-muted/35"
                           onClick={() => isLongMessage && toggleLogExpanded(log.id)}
                         >
                           {isLongMessage ? (
                             isExpanded 
-                              ? <ChevronDown className="w-4 h-4 text-gray-500 shrink-0 mt-0.5" />
-                              : <ChevronRight className="w-4 h-4 text-gray-500 shrink-0 mt-0.5" />
+                              ? <ChevronDown className="mt-0.5 w-4 h-4 shrink-0 text-muted-foreground" />
+                              : <ChevronRight className="mt-0.5 w-4 h-4 shrink-0 text-muted-foreground" />
                           ) : (
                             getLevelIcon(log.level)
                           )}
-                          <span className="text-gray-500 shrink-0">
+                          <span className="shrink-0 text-muted-foreground">
                             [{formatTimestamp(log.timestamp)}]
                           </span>
                           <Badge 
@@ -873,9 +888,9 @@ export default function Debug() {
                               e.stopPropagation()
                               copyLogEntry(log)
                             }}
-                            className="opacity-0 group-hover:opacity-100 ml-auto shrink-0 p-1 hover:bg-gray-800 rounded transition-opacity"
+                            className="ml-auto shrink-0 rounded p-1 opacity-0 transition-opacity hover:bg-muted/50 group-hover:opacity-100"
                           >
-                            <Copy className="w-3 h-3 text-gray-400" />
+                            <Copy className="w-3 h-3 text-muted-foreground" />
                           </button>
                         </div>
                       )
@@ -947,7 +962,7 @@ export default function Debug() {
                     No crash logs found. That's good news!
                   </p>
                 ) : (
-                  <ScrollArea className="h-[400px]">
+                  <ScrollArea className="h-[300px] sm:h-[400px]">
                     <div className="space-y-2">
                       {crashLogs.map((log) => (
                         <div
@@ -976,22 +991,22 @@ export default function Debug() {
             {/* Crash Log Viewer */}
             <Card className="lg:col-span-2">
               <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2">
-                  <FileText className="w-5 h-5" />
-                  {selectedCrashLog || 'Crash Log Viewer'}
+                <CardTitle className="flex items-center gap-2 min-w-0">
+                  <FileText className="w-5 h-5 shrink-0" />
+                  <span className="truncate">{selectedCrashLog || 'Crash Log Viewer'}</span>
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 {!selectedCrashLog ? (
-                  <div className="h-[400px] flex items-center justify-center text-muted-foreground">
+                  <div className="h-[300px] sm:h-[400px] flex items-center justify-center text-muted-foreground">
                     Select a crash log to view its contents
                   </div>
                 ) : loadingCrashLog ? (
-                  <div className="h-[400px] flex items-center justify-center">
+                  <div className="h-[300px] sm:h-[400px] flex items-center justify-center">
                     <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
                   </div>
                 ) : (
-                  <ScrollArea className="h-[400px]">
+                  <ScrollArea className="h-[300px] sm:h-[400px]">
                     <pre className="text-xs font-mono whitespace-pre-wrap break-all p-2 bg-muted/30 rounded">
                       {crashLogContent}
                     </pre>
@@ -1004,75 +1019,30 @@ export default function Debug() {
 
         {/* Performance Tab */}
         <TabsContent value="performance" className="space-y-4">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {/* Memory Usage Chart */}
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2">
-                  <TrendingUp className="w-5 h-5" />
-                  Memory Usage
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {performanceHistory.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={250}>
-                    <AreaChart data={performanceHistory}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-                      <XAxis dataKey="time" stroke="#888" fontSize={12} />
-                      <YAxis stroke="#888" fontSize={12} unit=" MB" />
-                      <RTooltip />
-                      <Area 
-                        type="monotone" 
-                        dataKey="memoryMB" 
-                        stroke="#8884d8" 
-                        fill="#8884d8" 
-                        fillOpacity={0.3}
-                        name="Memory (MB)"
-                      />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="h-[250px] flex items-center justify-center text-muted-foreground">
-                    No performance data yet. Data collects over time.
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* CPU Load Chart */}
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2">
-                  <Activity className="w-5 h-5" />
-                  CPU Load Average
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {performanceHistory.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={250}>
-                    <LineChart data={performanceHistory}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-                      <XAxis dataKey="time" stroke="#888" fontSize={12} />
-                      <YAxis stroke="#888" fontSize={12} />
-                      <RTooltip />
-                      <Line 
-                        type="monotone" 
-                        dataKey="cpuLoad" 
-                        stroke="#82ca9d" 
-                        strokeWidth={2}
-                        dot={false}
-                        name="CPU Load"
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="h-[250px] flex items-center justify-center text-muted-foreground">
-                    No performance data yet. Data collects over time.
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
+          <Suspense
+            fallback={
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                {[0, 1].map((index) => (
+                  <Card key={index}>
+                    <CardHeader className="pb-3">
+                      <div className="h-5 w-32 rounded bg-muted/60" />
+                    </CardHeader>
+                    <CardContent>
+                      <div className="h-[250px] animate-pulse rounded-lg bg-muted/40" />
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            }
+          >
+            {activeTab === 'performance' && performanceHistory.length > 0 ? <DebugPerformanceCharts performanceHistory={performanceHistory} /> : null}
+            {activeTab === 'performance' && performanceHistory.length === 0 && (
+              <div className="text-center py-8 text-muted-foreground">
+                <p className="text-sm">No performance data collected yet.</p>
+                <p className="text-xs mt-1">Data is recorded while the server is running.</p>
+              </div>
+            )}
+          </Suspense>
 
           {/* Current Stats */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -1129,11 +1099,11 @@ export default function Debug() {
               <CardContent>
                 <div className="flex items-center gap-4">
                   <div className={`w-16 h-16 rounded-full flex items-center justify-center ${
-                    healthStatus?.status === 'ok' ? 'bg-green-500/20' : 'bg-red-500/20'
+                    healthStatus?.status === 'ok' ? 'bg-primary/10' : 'bg-destructive/10'
                   }`}>
                     {healthStatus?.status === 'ok' 
-                      ? <CheckCircle className="w-8 h-8 text-green-500" />
-                      : <AlertCircle className="w-8 h-8 text-red-500" />
+                      ? <CheckCircle className="w-8 h-8 text-primary" />
+                      : <AlertCircle className="w-8 h-8 text-destructive" />
                     }
                   </div>
                   <div>
@@ -1207,8 +1177,8 @@ export default function Debug() {
                 <div className="p-4 rounded-lg border bg-card">
                   <div className="flex items-center gap-3 mb-3">
                     {healthStatus?.services?.rcon?.connected 
-                      ? <Wifi className="w-5 h-5 text-green-500" />
-                      : <WifiOff className="w-5 h-5 text-red-500" />
+                      ? <Wifi className="w-5 h-5 text-primary" />
+                      : <WifiOff className="w-5 h-5 text-destructive" />
                     }
                     <span className="font-medium">RCON</span>
                     <Badge variant={healthStatus?.services?.rcon?.connected ? 'default' : 'destructive'} className="ml-auto">
@@ -1223,7 +1193,7 @@ export default function Debug() {
                 {/* Server Status */}
                 <div className="p-4 rounded-lg border bg-card">
                   <div className="flex items-center gap-3 mb-3">
-                    <Server className={`w-5 h-5 ${healthStatus?.services?.server?.running ? 'text-green-500' : 'text-gray-500'}`} />
+                    <Server className={`w-5 h-5 ${healthStatus?.services?.server?.running ? 'text-primary' : 'text-muted-foreground'}`} />
                     <span className="font-medium">Game Server</span>
                     <Badge variant={healthStatus?.services?.server?.running ? 'default' : 'secondary'} className="ml-auto">
                       {healthStatus?.services?.server?.running ? 'Running' : 'Stopped'}
@@ -1237,7 +1207,7 @@ export default function Debug() {
                 {/* Mod Checker */}
                 <div className="p-4 rounded-lg border bg-card">
                   <div className="flex items-center gap-3 mb-3">
-                    <Settings className={`w-5 h-5 ${healthStatus?.services?.modChecker?.running ? 'text-green-500' : 'text-gray-500'}`} />
+                    <Settings className={`w-5 h-5 ${healthStatus?.services?.modChecker?.running ? 'text-primary' : 'text-muted-foreground'}`} />
                     <span className="font-medium">Mod Checker</span>
                     <Badge variant={healthStatus?.services?.modChecker?.running ? 'default' : 'secondary'} className="ml-auto">
                       {healthStatus?.services?.modChecker?.running ? 'Active' : 'Inactive'}
@@ -1323,17 +1293,15 @@ export default function Debug() {
           </div>
 
           {/* File Paths */}
-          <Card className="card-interactive">
+          <Card>
             <CardHeader className="pb-4">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center">
-                    <FolderOpen className="w-5 h-5 text-amber-500" />
-                  </div>
-                  <div>
-                    <CardTitle className="text-lg">File Paths</CardTitle>
-                    <CardDescription className="mt-0.5">Data and log file locations</CardDescription>
-                  </div>
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <FolderOpen className="w-4 h-4 text-warning" />
+                    File Paths
+                  </CardTitle>
+                  <CardDescription>Data and log file locations</CardDescription>
                 </div>
                 {!editingPaths && (
                   <Button variant="outline" size="sm" onClick={handleEditPaths}>
@@ -1345,11 +1313,11 @@ export default function Debug() {
             <CardContent className="space-y-4">
               {editingPaths ? (
                 <div className="space-y-4">
-                  <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 text-sm">
+                  <div className="rounded-lg border border-warning/25 bg-warning/8 p-3 text-sm">
                     <div className="flex items-start gap-2">
-                      <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
+                      <AlertTriangle className="mt-0.5 w-4 h-4 shrink-0 text-warning" />
                       <div>
-                        <p className="font-medium text-amber-600 dark:text-amber-400">Restart Required</p>
+                        <p className="font-medium text-warning">Restart Required</p>
                         <p className="text-muted-foreground">Changing paths requires restarting the application to take effect.</p>
                       </div>
                     </div>
@@ -1361,8 +1329,9 @@ export default function Debug() {
                       id="dataDir"
                       value={newDataDir}
                       onChange={(e) => setNewDataDir(e.target.value)}
-                      placeholder="C:\MyApp\data"
+                      placeholder="/opt/panel/data"
                       className="font-mono"
+                      maxLength={260}
                     />
                   </div>
 
@@ -1372,8 +1341,9 @@ export default function Debug() {
                       id="logsDir"
                       value={newLogsDir}
                       onChange={(e) => setNewLogsDir(e.target.value)}
-                      placeholder="C:\MyApp\logs"
+                      placeholder="/opt/panel/logs"
                       className="font-mono"
+                      maxLength={260}
                     />
                   </div>
 

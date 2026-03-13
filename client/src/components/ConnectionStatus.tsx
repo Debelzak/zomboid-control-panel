@@ -19,8 +19,8 @@ export function ConnectionStatus({ className, showLabel = false }: ConnectionSta
     if (connected) {
       return {
         icon: Wifi,
-        color: 'text-green-500',
-        bgColor: 'bg-green-500/10',
+        color: 'text-primary',
+        surface: 'border-primary/25 bg-primary/12',
         label: 'Connected',
         description: 'Real-time updates active',
       }
@@ -28,8 +28,8 @@ export function ConnectionStatus({ className, showLabel = false }: ConnectionSta
     if (reconnecting) {
       return {
         icon: Loader2,
-        color: 'text-yellow-500',
-        bgColor: 'bg-yellow-500/10',
+        color: 'text-warning',
+        surface: 'border-warning/30 bg-warning/12',
         label: 'Reconnecting...',
         description: `Attempt ${reconnectAttempt}/10`,
         animate: true,
@@ -37,8 +37,8 @@ export function ConnectionStatus({ className, showLabel = false }: ConnectionSta
     }
     return {
       icon: WifiOff,
-      color: 'text-red-500',
-      bgColor: 'bg-red-500/10',
+      color: 'text-destructive',
+      surface: 'border-destructive/30 bg-destructive/12',
       label: 'Disconnected',
       description: error || 'Connection lost',
     }
@@ -52,8 +52,8 @@ export function ConnectionStatus({ className, showLabel = false }: ConnectionSta
       <TooltipTrigger asChild>
         <div 
           className={cn(
-            'flex items-center gap-2 px-2 py-1 rounded-md transition-colors',
-            status.bgColor,
+            'flex items-center gap-2 rounded-md border px-2.5 py-1.5 transition-colors',
+            status.surface,
             className
           )}
         >
@@ -62,13 +62,15 @@ export function ConnectionStatus({ className, showLabel = false }: ConnectionSta
               'h-4 w-4',
               status.color,
               status.animate && 'animate-spin'
-            )} 
+            )}
+            aria-hidden="true"
           />
           {showLabel && (
-            <span className={cn('text-sm font-medium', status.color)}>
+            <span className={cn('text-sm font-medium text-foreground', status.color)}>
               {status.label}
             </span>
           )}
+          {!showLabel && <span className="sr-only">{status.label}</span>}
         </div>
       </TooltipTrigger>
       <TooltipContent side="bottom">

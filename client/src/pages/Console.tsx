@@ -1,5 +1,5 @@
-import { useEffect, useState, useRef, useCallback, useMemo } from 'react'
-import { Terminal as TerminalIcon, Send, Trash2, Wifi, WifiOff, Loader2, Megaphone, MessageCircle, FileText, RefreshCw, Pause, Play, Filter } from 'lucide-react'
+import { useEffect, useState, useRef, useCallback, useMemo, memo } from 'react'
+import { Terminal as TerminalIcon, Send, Trash2, WifiOff, Loader2, Megaphone, MessageCircle, FileText, RefreshCw, Pause, Play, Filter } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -12,6 +12,8 @@ import { rconApi, configApi, serverApi } from '@/lib/api'
 import { useSocket } from '@/contexts/SocketContext'
 import { EmptyState } from '@/components/EmptyState'
 import { PageHeader } from '@/components/PageHeader'
+import { StatusIndicator } from '@/components/StatusIndicator'
+import { cn } from '@/lib/utils'
 
 interface CommandEntry {
   id: number
@@ -69,6 +71,90 @@ function parseLogLine(line: string): ParsedLogLine {
   
   return { type: 'UNKNOWN', category: '', message: trimmed, raw: line }
 }
+
+// Log line type → text color
+const typeColors: Record<string, string> = {
+  'ERROR': 'text-destructive',
+  'WARN': 'text-warning',
+  'LOG': 'text-foreground/90',
+  'DEBUG': 'text-muted-foreground',
+  'INFO': 'text-primary',
+  'UNKNOWN': 'text-muted-foreground'
+}
+
+// Log line type → badge color
+const typeBadgeColors: Record<string, string> = {
+  'ERROR': 'border border-destructive/25 bg-destructive/10 text-destructive',
+  'WARN': 'border border-warning/25 bg-warning/10 text-warning',
+  'LOG': 'border border-border/60 bg-muted/40 text-foreground/90',
+  'DEBUG': 'border border-border/50 bg-muted/25 text-muted-foreground',
+  'INFO': 'border border-primary/20 bg-primary/10 text-primary',
+  'UNKNOWN': 'border border-border/50 bg-muted/25 text-muted-foreground'
+}
+
+// Chat channels available in PZ
+const chatChannels = [
+  { value: 'say', label: 'Local (Say)', description: 'Nearby players only' },
+  { value: 'all', label: 'General', description: 'All players' },
+  { value: 'admin', label: 'Admin', description: 'Admin chat' },
+  { value: 'faction', label: 'Faction', description: 'Faction members' },
+  { value: 'safehouse', label: 'Safehouse', description: 'Safehouse members' },
+]
+
+// Memoized log line to avoid re-rendering unchanged lines
+const ServerLogLine = memo(function ServerLogLine({ line }: { line: string }) {
+  const parsed = parseLogLine(line)
+  if (!parsed.message && !parsed.raw.trim()) return null
+
+  return (
+    <div
+      className={cn(
+        'mb-1 rounded-md border-l px-2 py-1.5',
+        parsed.type === 'ERROR'
+          ? 'border-destructive/30 bg-destructive/10'
+          : parsed.type === 'WARN'
+            ? 'border-warning/30 bg-warning/10'
+            : parsed.type === 'INFO'
+              ? 'border-primary/18 bg-primary/10'
+              : 'border-border/35 bg-transparent'
+      )}
+    >
+      <div className="flex items-start gap-2">
+        {parsed.type !== 'UNKNOWN' && (
+          <span className={`px-1.5 py-0.5 rounded-md text-xs font-semibold uppercase tracking-wide shrink-0 ${typeBadgeColors[parsed.type]}`}>
+            {parsed.type}
+          </span>
+        )}
+        {parsed.category && (
+          <span className="shrink-0 text-muted-foreground">[{parsed.category}]</span>
+        )}
+        <span className={`${typeColors[parsed.type]} break-words min-w-0`}>
+          {parsed.message || parsed.raw}
+        </span>
+      </div>
+    </div>
+  )
+})
+
+const quickCommands = [
+  { label: 'Players', command: 'players' },
+  { label: 'Save', command: 'save' },
+  { label: 'Show Options', command: 'showoptions' },
+  { label: 'Check Mods', command: 'checkModsNeedUpdate' },
+  { label: 'Help', command: 'help' },
+  { label: 'Server Info', command: 'serverinfo' },
+  { label: 'Get Memory', command: 'getmemory' },
+]
+
+// Quick broadcast message templates
+const quickBroadcasts = [
+  { label: 'Restart 15min', message: 'SERVER RESTART in 15 minutes - Please find a safe location!' },
+  { label: 'Restart 5min', message: 'SERVER RESTART in 5 minutes - Save your progress!' },
+  { label: 'Restart 1min', message: 'SERVER RESTART in 1 minute - Disconnecting soon!' },
+  { label: 'Maintenance', message: 'Server entering MAINTENANCE MODE - Please disconnect' },
+  { label: 'Back Online', message: 'Server maintenance complete - Welcome back!' },
+  { label: 'Save Warning', message: 'Server is saving - Brief lag expected' },
+]
 
 export default function Console() {
   const [command, setCommand] = useState('')
@@ -163,7 +249,7 @@ export default function Console() {
         // Stream new content - use ref to avoid stale closure
         const data = await serverApi.streamConsoleLog(serverLogSizeRef.current)
         if (data.newLines && data.newLines.length > 0) {
-          setServerLogLines(prev => [...prev, ...data.newLines].slice(-2000))
+          setServerLogLines(prev => [...prev, ...data.newLines].slice(-500))
         }
         if (data.rotated) {
           // File was rotated, replace all content
@@ -226,7 +312,8 @@ export default function Console() {
   // Auto-scroll server log
   useEffect(() => {
     if (serverLogAutoScroll && serverLogRef.current) {
-      serverLogRef.current.scrollTop = serverLogRef.current.scrollHeight
+      const el = serverLogRef.current
+      requestAnimationFrame(() => { el.scrollTop = el.scrollHeight })
     }
   }, [serverLogLines, serverLogAutoScroll])
 
@@ -256,7 +343,8 @@ export default function Console() {
   useEffect(() => {
     // Auto-scroll to bottom
     if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+      const el = scrollRef.current
+      requestAnimationFrame(() => { el.scrollTop = el.scrollHeight })
     }
   }, [liveLog])
 
@@ -334,14 +422,7 @@ export default function Console() {
     setLiveLog([])
   }
 
-  // Chat channels available in PZ
-  const chatChannels = [
-    { value: 'say', label: 'Local (Say)', description: 'Nearby players only' },
-    { value: 'all', label: 'General', description: 'All players' },
-    { value: 'admin', label: 'Admin', description: 'Admin chat' },
-    { value: 'faction', label: 'Faction', description: 'Faction members' },
-    { value: 'safehouse', label: 'Safehouse', description: 'Safehouse members' },
-  ]
+
 
   const sendAnnouncement = async () => {
     if (!announcement.trim()) return
@@ -421,25 +502,7 @@ export default function Console() {
     }
   }
 
-  const quickCommands = [
-    { label: 'Players', command: 'players' },
-    { label: 'Save', command: 'save' },
-    { label: 'Show Options', command: 'showoptions' },
-    { label: 'Check Mods', command: 'checkModsNeedUpdate' },
-    { label: 'Help', command: 'help' },
-    { label: 'Server Info', command: 'serverinfo' },
-    { label: 'Get Memory', command: 'getmemory' },
-  ]
-  
-  // Quick broadcast message templates
-  const quickBroadcasts = [
-    { label: 'Restart 15min', message: 'SERVER RESTART in 15 minutes - Please find a safe location!' },
-    { label: 'Restart 5min', message: 'SERVER RESTART in 5 minutes - Save your progress!' },
-    { label: 'Restart 1min', message: 'SERVER RESTART in 1 minute - Disconnecting soon!' },
-    { label: 'Maintenance', message: 'Server entering MAINTENANCE MODE - Please disconnect' },
-    { label: 'Back Online', message: 'Server maintenance complete - Welcome back!' },
-    { label: 'Save Warning', message: 'Server is saving - Brief lag expected' },
-  ]
+
 
   return (
     <div className="space-y-4 sm:space-y-6 page-transition">
@@ -462,141 +525,89 @@ export default function Console() {
         </TabsList>
 
         {/* Server Console Log Tab */}
-        <TabsContent value="server-log" className="space-y-4">
-          <Card>
-            <CardHeader className="pb-3 flex flex-row items-center justify-between">
-              <div>
-                <CardTitle className="flex items-center gap-2">
-                  <FileText className="w-5 h-5" />
-                  Server Console Output
-                </CardTitle>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {serverLogPath ? serverLogPath : 'Loading...'}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                {serverLogLoading && (
-                  <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-                )}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setServerLogPaused(!serverLogPaused)}
-                  title={serverLogPaused ? 'Resume auto-update' : 'Pause auto-update'}
-                >
-                  {serverLogPaused ? (
-                    <Play className="w-4 h-4" />
-                  ) : (
-                    <Pause className="w-4 h-4" />
-                  )}
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setServerLogFiltered(!serverLogFiltered)}
-                  title={serverLogFiltered ? 'Show all messages (including noise)' : 'Filter out repetitive messages'}
-                  className={serverLogFiltered ? 'text-primary' : ''}
-                >
-                  <Filter className="w-4 h-4 mr-1" />
-                  <span className="text-xs">{serverLogFiltered ? 'Filtered' : 'All'}</span>
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setServerLogAutoScroll(!serverLogAutoScroll)}
-                  title={serverLogAutoScroll ? 'Disable auto-scroll' : 'Enable auto-scroll'}
-                  className={serverLogAutoScroll ? 'text-primary' : ''}
-                >
-                  <span className="text-xs">Auto-scroll</span>
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => fetchServerLog(true)}
-                  title="Refresh log"
-                >
-                  <RefreshCw className="w-4 h-4" />
-                </Button>
-                <Button variant="ghost" size="sm" onClick={clearServerLog}>
-                  <Trash2 className="w-4 h-4 mr-2" />
-                  Clear
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {!serverLogExists ? (
-                <div className="bg-black/50 rounded-lg p-4 h-[500px] flex items-center justify-center">
-                  <EmptyState type="serverOffline" title="Server console log not found" description="Make sure the server is running" compact />
-                </div>
-              ) : (
-                <div
-                  ref={serverLogRef}
-                  className="bg-black/50 rounded-lg p-2 h-[500px] overflow-auto font-mono text-xs"
-                >
-                  {filteredLogLines.length === 0 ? (
-                    <p className="text-muted-foreground p-2">{serverLogFiltered && serverLogLines.length > 0 ? 'All messages filtered out. Try disabling the filter.' : 'Console log is empty.'}</p>
-                  ) : (
-                    filteredLogLines.map((line, index) => {
-                      const parsed = parseLogLine(line)
-                      if (!parsed.message && !parsed.raw.trim()) return null
-                      
-                      const typeColors: Record<string, string> = {
-                        'ERROR': 'bg-red-500/20 text-red-400 border-red-500/30',
-                        'WARN': 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
-                        'LOG': 'text-green-400',
-                        'DEBUG': 'text-blue-400',
-                        'INFO': 'text-cyan-400',
-                        'UNKNOWN': 'text-gray-400'
-                      }
-                      
-                      const typeBadgeColors: Record<string, string> = {
-                        'ERROR': 'bg-red-500 text-white',
-                        'WARN': 'bg-yellow-500 text-black',
-                        'LOG': 'bg-green-600 text-white',
-                        'DEBUG': 'bg-blue-500 text-white',
-                        'INFO': 'bg-cyan-500 text-white',
-                        'UNKNOWN': 'bg-gray-600 text-white'
-                      }
-                      
-                      return (
-                        <div
-                          key={index}
-                          className={`py-1 px-2 border-l-2 mb-0.5 ${
-                            parsed.type === 'ERROR' ? 'border-red-500 bg-red-500/10' :
-                            parsed.type === 'WARN' ? 'border-yellow-500 bg-yellow-500/5' :
-                            parsed.type === 'LOG' ? 'border-green-500/50' :
-                            'border-transparent'
-                          }`}
-                        >
-                          <div className="flex items-start gap-2">
-                            {parsed.type !== 'UNKNOWN' && (
-                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0 ${typeBadgeColors[parsed.type]}`}>
-                                {parsed.type}
-                              </span>
-                            )}
-                            {parsed.category && (
-                              <span className="text-purple-400 shrink-0">[{parsed.category}]</span>
-                            )}
-                            <span className={`${typeColors[parsed.type]} break-words`}>
-                              {parsed.message || parsed.raw}
-                            </span>
-                          </div>
-                        </div>
-                      )
-                    })
-                  )}
-                </div>
+        <TabsContent value="server-log" className="space-y-0">
+          {/* Toolbar */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 py-3">
+            <p className="text-xs text-muted-foreground font-mono truncate">
+              {serverLogPath ? serverLogPath : 'Loading...'}
+            </p>
+            <div className="flex flex-wrap items-center gap-1">
+              {serverLogLoading && (
+                <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
               )}
-              <div className="flex items-center justify-between mt-2 text-xs text-muted-foreground">
-                <span>
-                  {serverLogFiltered 
-                    ? `${filteredLogLines.length} lines shown (${serverLogLines.length - filteredLogLines.length} filtered)` 
-                    : `${serverLogLines.length} lines loaded`}
-                </span>
-                <span>{serverLogPaused ? 'Paused' : 'Live updating every 2s'}</span>
-              </div>
-            </CardContent>
-          </Card>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setServerLogPaused(!serverLogPaused)}
+                title={serverLogPaused ? 'Resume auto-update' : 'Pause auto-update'}
+              >
+                {serverLogPaused ? (
+                  <Play className="w-4 h-4" />
+                ) : (
+                  <Pause className="w-4 h-4" />
+                )}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setServerLogFiltered(!serverLogFiltered)}
+                title={serverLogFiltered ? 'Show all messages (including noise)' : 'Filter out repetitive messages'}
+                className={serverLogFiltered ? 'text-primary' : ''}
+              >
+                <Filter className="w-4 h-4 mr-1" />
+                <span className="text-xs">{serverLogFiltered ? 'Filtered' : 'All'}</span>
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setServerLogAutoScroll(!serverLogAutoScroll)}
+                title={serverLogAutoScroll ? 'Disable auto-scroll' : 'Enable auto-scroll'}
+                className={serverLogAutoScroll ? 'text-primary' : ''}
+              >
+                <span className="text-xs">Auto-scroll</span>
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => fetchServerLog(true)}
+                title="Refresh log"
+              >
+                <RefreshCw className="w-4 h-4" />
+              </Button>
+              <Button variant="ghost" size="sm" onClick={clearServerLog}>
+                <Trash2 className="w-4 h-4 mr-2" />
+                Clear
+              </Button>
+            </div>
+          </div>
+
+          {/* Terminal pane */}
+          {!serverLogExists ? (
+            <div className="flex h-[55vh] min-h-[300px] items-center justify-center rounded-lg border border-border/50 bg-muted/20 p-4">
+              <EmptyState type="serverOffline" title="Server console log not found" description="Make sure the server is running" compact />
+            </div>
+          ) : (
+            <div
+              ref={serverLogRef}
+              className="h-[55vh] min-h-[300px] overflow-auto rounded-lg border border-border/30 bg-black/40 p-3 font-mono text-xs terminal-output"
+            >
+              {filteredLogLines.length === 0 ? (
+                <p className="text-muted-foreground p-2">{serverLogFiltered && serverLogLines.length > 0 ? 'All messages filtered out. Try disabling the filter.' : 'Console log is empty.'}</p>
+              ) : (
+                filteredLogLines.map((line, index) => (
+                  <ServerLogLine key={index} line={line} />
+                ))
+              )}
+            </div>
+          )}
+          <div className="flex items-center justify-between mt-2 text-xs text-muted-foreground">
+            <span>
+              {serverLogFiltered 
+                ? `${filteredLogLines.length} lines shown (${serverLogLines.length - filteredLogLines.length} filtered)` 
+                : `${serverLogLines.length} lines loaded`}
+            </span>
+            <span>{serverLogPaused ? 'Live updates paused' : 'Updates every 2 seconds'}</span>
+          </div>
         </TabsContent>
 
         {/* RCON Console Tab */}
@@ -605,22 +616,14 @@ export default function Console() {
             {testingConnection ? (
               <div className="flex items-center gap-2 text-muted-foreground">
                 <Loader2 className="w-4 h-4 animate-spin" />
-                <span className="text-sm">Testing...</span>
+                <span className="text-sm">Checking connection...</span>
               </div>
             ) : rconConnected === null ? (
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <span className="text-sm">Unknown</span>
-              </div>
+              <StatusIndicator state="unknown" label="RCON status unknown" />
             ) : rconConnected ? (
-              <div className="flex items-center gap-2 text-green-500">
-                <Wifi className="w-4 h-4" />
-                <span className="text-sm font-medium">Connected</span>
-              </div>
+              <StatusIndicator state="online" label="RCON connected" />
             ) : (
-              <div className="flex items-center gap-2 text-red-500">
-                <WifiOff className="w-4 h-4" />
-                <span className="text-sm font-medium">Disconnected</span>
-              </div>
+              <StatusIndicator state="offline" label="RCON disconnected" />
             )}
             <Button 
               variant="ghost" 
@@ -628,46 +631,41 @@ export default function Console() {
               onClick={testRconConnection}
               disabled={testingConnection}
             >
-              Refresh
+              Check again
             </Button>
           </div>
 
       {/* RCON Disconnected Warning */}
       {rconConnected === false && (
-        <div className="bg-red-500/10 border border-red-500/50 rounded-lg p-4 flex items-center gap-3">
-          <WifiOff className="w-5 h-5 text-red-500 shrink-0" />
+        <div className="flex items-center gap-3 rounded-lg border border-destructive/25 bg-destructive/8 p-4">
+          <WifiOff className="w-5 h-5 shrink-0 text-destructive" />
           <div>
-            <p className="font-medium text-red-500">RCON Not Connected</p>
+            <p className="font-medium text-destructive">RCON Not Connected</p>
             <p className="text-sm text-muted-foreground">
-              Make sure the server is running and RCON is configured in Settings.
+              Start the server, then confirm the RCON host, port, and password in Panel Settings.
             </p>
           </div>
         </div>
       )}
 
       {/* Quick Commands */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Quick Commands</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-wrap gap-2">
-            {quickCommands.map((qc) => (
-              <Button
-                key={qc.command}
-                variant="secondary"
-                size="sm"
-                onClick={() => {
-                  setCommand(qc.command)
-                  inputRef.current?.focus()
-                }}
-              >
-                {qc.label}
-              </Button>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs text-muted-foreground font-medium">Quick:</span>
+        {quickCommands.map((qc) => (
+          <Button
+            key={qc.command}
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs"
+            onClick={() => {
+              setCommand(qc.command)
+              inputRef.current?.focus()
+            }}
+          >
+            {qc.label}
+          </Button>
+        ))}
+      </div>
 
       {/* Messaging Section */}
       <div className="grid gap-4 sm:gap-6 grid-cols-1 lg:grid-cols-2">
@@ -681,7 +679,7 @@ export default function Console() {
           </CardHeader>
           <CardContent className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              Broadcast a message to all players on the server.
+              Send one message to everyone currently online.
             </p>
             
             {/* Quick Broadcast Templates */}
@@ -703,8 +701,9 @@ export default function Console() {
             <Textarea
               value={announcement}
               onChange={(e) => setAnnouncement(e.target.value)}
-              placeholder="Enter announcement message..."
+              placeholder="Write the announcement players should see..."
               className="min-h-[80px]"
+              maxLength={500}
               disabled={sendingAnnouncement || rconConnected === false}
             />
             <Button 
@@ -732,11 +731,11 @@ export default function Console() {
           </CardHeader>
           <CardContent className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              Send a message to a specific chat channel.
+              Send one message to a specific chat channel through RCON.
             </p>
             <Select value={selectedChannel} onValueChange={setSelectedChannel}>
               <SelectTrigger>
-                <SelectValue placeholder="Select channel" />
+                <SelectValue placeholder="Choose a channel" />
               </SelectTrigger>
               <SelectContent>
                 {chatChannels.map((channel) => (
@@ -752,7 +751,7 @@ export default function Console() {
             <Input
               value={channelMessage}
               onChange={(e) => setChannelMessage(e.target.value)}
-              placeholder="Enter message..."
+              placeholder="Write the message for this channel..."
               disabled={sendingChannelMessage || rconConnected === false}
               onKeyDown={(e: React.KeyboardEvent) => e.key === 'Enter' && sendChannelMessage()}
             />
@@ -773,43 +772,42 @@ export default function Console() {
       </div>
 
       {/* Console */}
-      <Card>
-        <CardHeader className="pb-3 flex flex-row items-center justify-between">
-          <CardTitle className="flex items-center gap-2">
-            <TerminalIcon className="w-5 h-5" />
+      <div>
+        <div className="flex items-center justify-between pb-2">
+          <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+            <TerminalIcon className="w-4 h-4" />
             Console Output
-          </CardTitle>
+          </div>
           <Button variant="ghost" size="sm" onClick={clearLog}>
             <Trash2 className="w-4 h-4 mr-2" />
             Clear
           </Button>
-        </CardHeader>
-        <CardContent>
-          <div 
-            ref={scrollRef}
-            className="bg-black/50 rounded-lg p-4 h-[400px] overflow-auto terminal-output"
-          >
-            {liveLog.length === 0 ? (
-              <p className="text-muted-foreground">No commands executed yet. Type a command below.</p>
-            ) : (
-              liveLog.map((entry) => (
-                <div key={`${entry.timestamp}-${entry.command}`} className="mb-3">
-                  <div className="flex items-center gap-2">
-                    <span className="text-primary">{'>'}</span>
-                    <span className="text-blue-400">{entry.command}</span>
-                    <span className="text-muted-foreground text-xs ml-auto">
-                      {new Date(entry.timestamp).toLocaleTimeString()}
-                    </span>
-                  </div>
-                  <div className={`ml-4 ${entry.success ? 'text-green-400' : 'text-red-400'}`}>
-                    {entry.response.split('\n').map((line, i) => (
-                      <div key={`line-${i}`}>{line || '\u00A0'}</div>
-                    ))}
-                  </div>
+        </div>
+        <div 
+          ref={scrollRef}
+          className="h-[35vh] min-h-[200px] sm:h-[40vh] overflow-auto rounded-lg border border-border/30 bg-black/40 p-3 terminal-output"
+        >
+          {liveLog.length === 0 ? (
+            <p className="text-muted-foreground font-mono text-xs">No commands yet. Run an RCON command to see the response here.</p>
+          ) : (
+            liveLog.map((entry) => (
+              <div key={`${entry.timestamp}-${entry.command}`} className="mb-3 font-mono text-sm">
+                <div className="flex items-center gap-2">
+                  <span className="text-primary">{'>'}</span>
+                  <span className="text-foreground/90">{entry.command}</span>
+                  <span className="text-muted-foreground text-xs ml-auto">
+                    {new Date(entry.timestamp).toLocaleTimeString()}
+                  </span>
                 </div>
-              ))
-            )}
-          </div>
+                <div className={cn('ml-4 text-xs', entry.success ? 'text-foreground/85' : 'text-destructive')}>
+                  {entry.response.split('\n').map((line, i) => (
+                    <div key={`line-${i}`}>{line || '\u00A0'}</div>
+                  ))}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
 
           {/* Quick Commands */}
           <div className="flex flex-wrap gap-2 mt-4">
@@ -843,9 +841,10 @@ export default function Console() {
                 value={command}
                 onChange={(e) => setCommand(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Enter command..."
+                placeholder="Type an RCON command..."
                 className="pl-8 font-mono"
                 disabled={loading}
+                maxLength={2000}
                 aria-label="RCON command input"
               />
             </div>
@@ -858,33 +857,30 @@ export default function Console() {
             </Button>
           </div>
           <p className="text-xs text-muted-foreground mt-2">
-            Use ↑/↓ arrows to navigate command history. Press Enter to execute.
+            Press Enter to run the command. Use ↑ and ↓ to reuse earlier commands.
           </p>
-        </CardContent>
-      </Card>
+      </div>
 
       {/* Command History */}
-      <Card>
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <CardTitle>Command History</CardTitle>
-            <div className="relative w-48">
+      <div>
+        <div className="flex items-center justify-between pb-2">
+          <span className="text-sm font-medium text-foreground">Command History</span>
+          <div className="relative w-full sm:w-48">
               <Filter className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
-                placeholder="Search commands..."
+                placeholder="Search command history..."
                 value={historySearch}
                 onChange={(e) => setHistorySearch(e.target.value)}
                 className="pl-8 h-8 text-sm"
+                aria-label="Search command history"
               />
             </div>
           </div>
-        </CardHeader>
-        <CardContent>
-          <ScrollArea className="h-[300px]">
+          <ScrollArea className="h-[35vh] min-h-[200px] rounded-lg border border-border/30 bg-black/40">
             {history.length === 0 ? (
-              <p className="text-muted-foreground text-center py-4">No command history</p>
+              <p className="text-muted-foreground text-center py-4 font-mono text-xs">No command history yet.</p>
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-1 p-2">
                 {history
                   .filter(entry => 
                     !historySearch || 
@@ -892,40 +888,32 @@ export default function Console() {
                     entry.response?.toLowerCase().includes(historySearch.toLowerCase())
                   )
                   .map((entry) => (
-                  <div
+                  <button
                     key={entry.id}
-                    className="p-3 rounded-lg border hover:bg-muted/50 cursor-pointer"
+                    type="button"
+                    className="w-full text-left p-2.5 rounded-md hover:bg-muted/30 cursor-pointer transition-colors"
                     onClick={() => {
                       setCommand(entry.command)
                       inputRef.current?.focus()
                     }}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        setCommand(entry.command)
-                        inputRef.current?.focus()
-                      }
-                    }}
                   >
                     <div className="flex items-center justify-between">
-                      <code className="text-sm font-mono text-primary">{entry.command}</code>
+                      <code className="text-sm font-mono text-primary truncate">{entry.command}</code>
                       <span className="text-xs text-muted-foreground">
                         {new Date(entry.executed_at).toLocaleString()}
                       </span>
                     </div>
                     {entry.response && (
-                      <p className={`text-xs mt-1 truncate ${entry.success ? 'text-green-400' : 'text-red-400'}`}>
+                      <p className={cn('mt-1 truncate text-xs font-mono', entry.success ? 'text-muted-foreground' : 'text-destructive')}>
                         {entry.response}
                       </p>
                     )}
-                  </div>
+                  </button>
                 ))}
               </div>
             )}
           </ScrollArea>
-        </CardContent>
-      </Card>
+      </div>
         </TabsContent>
       </Tabs>
     </div>

@@ -97,10 +97,14 @@ export async function setDataPaths(newPaths, moveFiles = true) {
   const filesMoved = { data: false, logs: false };
   
   // Validate paths — block system-critical directories
-  const BLOCKED_PREFIXES = [
-    'c:\\windows', 'c:\\program files', 'c:\\program files (x86)',
-    'c:\\programdata', 'c:\\users\\public', '/etc', '/usr', '/bin', '/sbin', '/var'
-  ];
+  const BLOCKED_PREFIXES = process.platform === 'win32' 
+    ? [
+        'c:\\windows', 'c:\\program files', 'c:\\program files (x86)',
+        'c:\\programdata', 'c:\\users\\public'
+      ]
+    : [
+        '/etc', '/usr', '/bin', '/sbin', '/var', '/boot', '/proc', '/sys', '/dev'
+      ];
   
   for (const dir of [newPaths.dataDir, newPaths.logsDir]) {
     if (!dir) continue;
@@ -112,7 +116,7 @@ export async function setDataPaths(newPaths, moveFiles = true) {
       return { success: false, error: 'Path targets a protected system directory' };
     }
     // Must be absolute
-    if (!/^[a-zA-Z]:[\\/]/.test(resolved) && !resolved.startsWith('\\\\') && !resolved.startsWith('/')) {
+    if (!path.isAbsolute(resolved)) {
       return { success: false, error: 'Path must be absolute' };
     }
   }

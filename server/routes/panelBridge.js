@@ -1265,8 +1265,8 @@ router.post('/install-mod', (req, res) => {
   
   const resolvedTarget = path.resolve(targetPath);
   
-  // Must be absolute (Windows drive or UNC)
-  if (!/^[A-Za-z]:[\\/]/.test(resolvedTarget) && !resolvedTarget.startsWith('\\\\')) {
+  // Must be absolute
+  if (!path.isAbsolute(resolvedTarget)) {
     return res.status(400).json({ error: 'Must be an absolute path' });
   }
   

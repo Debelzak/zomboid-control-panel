@@ -1,17 +1,17 @@
 # Zomboid Control Panel
 
-Web-based admin panel for **Project Zomboid dedicated servers on Windows**.
+Web-based admin panel for **Project Zomboid dedicated servers** on **Windows** and **Linux/Ubuntu**.
 It combines RCON, file tools, backup workflows, multi-server control, and an optional Lua bridge for advanced in-game actions.
 
 ![Zomboid Control Panel Dashboard](Screenshots/Main_Dashboard.png)
 
 ## Why this panel
 
-- I couldn’t find one tool that covered everything I wanted for PZ server administration, so I built my own all-in-one panel.
+- I couldn't find one tool that covered everything I wanted for PZ server administration, so I built my own all-in-one panel.
 - Manage your server from one UI: start/stop, players, mods, backups, config files, logs, and diagnostics.
 - Use **RCON** for standard commands and **PanelBridge** for advanced operations (teleport, weather, character data, and more).
-- Run as a standalone `.exe` (no Node.js required) or in dev mode.
-- Built specifically for Windows-based PZ hosting workflows.
+- Run as a standalone executable (no Node.js required) or in dev mode.
+- **Cross-platform**: runs on Windows (`.exe`) and Linux/Ubuntu (native binary).
 
 ## Full Feature Overview
 
@@ -65,10 +65,24 @@ It combines RCON, file tools, backup workflows, multi-server control, and an opt
 ## Quick Start
 
 ### Option 1: Standalone Executable (recommended)
-1. Run `ZomboidControlPanel.exe`.
+
+**Windows:**
+1. Run `ZomboidControlPanel.exe` (or double-click `Start.bat`).
 2. Complete setup/login flow.
 3. Configure server paths + RCON settings.
 4. Start managing your server from the panel.
+
+**Linux/Ubuntu:**
+1. Download the `ZomboidControlPanel` binary.
+2. Extract and make it executable:
+   ```bash
+   chmod +x ZomboidControlPanel start.sh
+   ./start.sh
+   ```
+3. Open `http://localhost:3001` in your browser.
+4. Complete setup/login, configure server paths + RCON settings.
+
+> **Note:** On Linux, optional folder browsing in the UI requires `zenity` (GNOME) or `kdialog` (KDE). You can always type paths manually.
 
 ### Option 2: Development Mode
 1. Install Node.js 18+.
@@ -79,24 +93,23 @@ It combines RCON, file tools, backup workflows, multi-server control, and an opt
 
 ## Launchers
 
-| File | Purpose |
-|------|---------|
-| `ZomboidControlPanel.exe` | Standalone build (no Node runtime needed) |
-| `Start.bat` | Development startup helper |
-| `Start-Production.bat` | Production-style startup helper |
-| `install.bat` | Dependency installation helper |
+| File | Platform | Purpose |
+|------|----------|---------|
+| `ZomboidControlPanel.exe` | Windows | Standalone build (no Node runtime needed) |
+| `ZomboidControlPanel` | Linux | Standalone build (no Node runtime needed) |
+| `Start.bat` | Windows | Startup helper |
+| `start.sh` | Linux | Startup helper |
 
 ## Requirements
 
 ### Runtime
-- Windows 10/11
+- **Windows** 10/11 or **Linux** (Ubuntu 20.04+, Debian, etc.)
 - Project Zomboid dedicated server
 - RCON enabled in server config
 
 ### Development
 - Node.js 18+
 - npm
-- Windows environment
 
 ## First-Time Server Setup
 
@@ -172,9 +185,10 @@ Dev1/
 
 ## Build and Release
 
-- Build executable package: `node build.js`
+- Build Windows executable: `node build.js`
+- Build Linux binary: `node build.js --linux`
 - Full release pipeline (version bump/build/deploy/sync/release):
-  - `./release.ps1 -Version "0.3.0"`
+  - `./release.ps1 -Version "0.5.0"`
 
 ## Troubleshooting
 
@@ -191,7 +205,7 @@ Dev1/
 4. Inspect Debug/log pages for command errors.
 
 ### Server start/stop actions fail
-1. Verify server path points to folder containing `StartServer64.bat`.
+1. Verify server path points to folder containing `StartServer64.bat` (Windows) or `start-server.sh` (Linux).
 2. Check for stale zombie server processes.
 3. Run panel with elevated permissions when required.
 

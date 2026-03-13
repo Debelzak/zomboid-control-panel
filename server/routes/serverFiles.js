@@ -44,7 +44,7 @@ async function getServerConfigPath() {
     return path.join(settings.zomboidDataPath, 'Server');
   }
   
-  // Default Windows path
+  // Default path: ~/Zomboid/Server
   const userProfile = process.env.USERPROFILE || process.env.HOME || '';
   return path.join(userProfile, 'Zomboid', 'Server');
 }
@@ -602,6 +602,11 @@ router.put('/ini', async (req, res) => {
       return res.status(400).json({ error: 'Settings object required' });
     }
     
+    // Guard against prototype pollution
+    if ('__proto__' in settings || 'constructor' in settings || 'prototype' in settings) {
+      return res.status(400).json({ error: 'Invalid settings' });
+    }
+    
     // Read original to preserve comments/structure
     let originalContent = '';
     if (fs.existsSync(filePath)) {
@@ -821,6 +826,10 @@ router.put('/raw/:type', async (req, res) => {
     
     if (typeof content !== 'string') {
       return res.status(400).json({ error: 'Content string required' });
+    }
+    
+    if (content.length > 512 * 1024) {
+      return res.status(400).json({ error: 'Content too large (max 512KB)' });
     }
     
     const filePath = path.join(configPath, fileMap[type]);

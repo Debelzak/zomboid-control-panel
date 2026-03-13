@@ -45,9 +45,9 @@ function parseIni(content) {
 // Helper: Recursively scan for PZ server paths (max depth 3)
 function scanForPzPaths(rootPath, maxDepth = 3) {
   const results = {
-    installPaths: [],   // Folders containing StartServer64.bat
+    installPaths: [],   // Folders containing PZ server startup scripts
     dataPaths: [],      // Folders containing Server/ subfolder with .ini files
-    customBatFiles: []  // Custom StartServer_*.bat files found
+    customBatFiles: []  // Custom startup scripts found
   };
   
   function scan(currentPath, depth) {
@@ -58,23 +58,29 @@ function scanForPzPaths(rootPath, maxDepth = 3) {
       
       const items = fs.readdirSync(currentPath);
       
-      // Check if this is an install path (has StartServer64.bat or jre64)
+      // Check if this is an install path (has startup script or jre64)
       if (items.includes('StartServer64.bat') || items.includes('StartServer64_nosteam.bat') || 
+          items.includes('start-server.sh') ||
           (items.includes('jre64') && items.includes('ProjectZomboid64.json'))) {
         results.installPaths.push(currentPath);
         
-        // Also look for custom StartServer_*.bat files
-        const customBats = items.filter(f => 
-          f.startsWith('StartServer_') && f.endsWith('.bat') ||
-          f.startsWith('StartServer64_') && f.endsWith('.bat') && f !== 'StartServer64_nosteam.bat'
+        // Also look for custom startup scripts
+        const customScripts = items.filter(f => 
+          (f.startsWith('StartServer_') && f.endsWith('.bat')) ||
+          (f.startsWith('StartServer64_') && f.endsWith('.bat') && f !== 'StartServer64_nosteam.bat') ||
+          (f.startsWith('StartServer_') && f.endsWith('.sh')) ||
+          (f.startsWith('start-server-') && f.endsWith('.sh'))
         );
-        for (const bat of customBats) {
-          // Extract server name from bat file name (e.g., StartServer_DoomerZ.bat -> DoomerZ)
-          let serverName = bat.replace(/^StartServer(64)?_/, '').replace('.bat', '');
+        for (const script of customScripts) {
+          // Extract server name from script file name (e.g., StartServer_DoomerZ.bat -> DoomerZ)
+          let serverName = script
+            .replace(/^StartServer(64)?_/, '')
+            .replace(/^start-server-/, '')
+            .replace(/\.(bat|sh)$/, '');
           results.customBatFiles.push({
-            path: path.join(currentPath, bat),
+            path: path.join(currentPath, script),
             folder: currentPath,
-            fileName: bat,
+            fileName: script,
             serverName: serverName
           });
         }
@@ -135,14 +141,17 @@ router.post('/auto-scan', async (req, res) => {
     
     const resolvedPath = path.resolve(scanPath);
     
-    // Must be an absolute path (Windows drive letter or UNC)
-    if (!/^[A-Za-z]:[\\/]/.test(resolvedPath) && !resolvedPath.startsWith('\\\\')) {
-      return res.status(400).json({ error: 'Must be an absolute path (e.g., C:\\...)' });
+    // Must be an absolute path
+    if (!path.isAbsolute(resolvedPath)) {
+      return res.status(400).json({ error: 'Must be an absolute path' });
     }
     
-    // Block scanning root drives directly — require at least one subfolder
-    if (/^[A-Za-z]:[\\/]?$/.test(resolvedPath)) {
-      return res.status(400).json({ error: 'Cannot scan a drive root. Please specify a subfolder.' });
+    // Block scanning root paths directly — require at least one subfolder
+    const isRootPath = process.platform === 'win32'
+      ? /^[A-Za-z]:[\\/]?$/.test(resolvedPath)
+      : resolvedPath === '/';
+    if (isRootPath) {
+      return res.status(400).json({ error: 'Cannot scan a root path. Please specify a subfolder.' });
     }
     
     if (!fs.existsSync(resolvedPath)) {
@@ -231,7 +240,7 @@ router.post('/detect', async (req, res) => {
     
     // Must be absolute
     const resolvedData = path.resolve(dataPath);
-    if (!/^[A-Za-z]:[\\/]/.test(resolvedData) && !resolvedData.startsWith('\\\\')) {
+    if (!path.isAbsolute(resolvedData)) {
       return res.status(400).json({ error: 'Must be an absolute path' });
     }
     
@@ -258,7 +267,8 @@ router.post('/detect', async (req, res) => {
       if (fs.existsSync(resolvedInstall)) {
         const startBat = path.join(resolvedInstall, 'StartServer64.bat');
         const startBatNoSteam = path.join(resolvedInstall, 'StartServer64_nosteam.bat');
-        validInstallPath = fs.existsSync(startBat) || fs.existsSync(startBatNoSteam);
+        const startSh = path.join(resolvedInstall, 'start-server.sh');
+        validInstallPath = fs.existsSync(startBat) || fs.existsSync(startBatNoSteam) || fs.existsSync(startSh);
         hasNoSteam = fs.existsSync(startBatNoSteam);
       }
     }
@@ -375,6 +385,11 @@ router.post('/', async (req, res) => {
       if (!config[field]) {
         return res.status(400).json({ error: `Missing required field: ${field}` });
       }
+    }
+    
+    // Validate display name length
+    if (typeof config.name !== 'string' || config.name.length > 100) {
+      return res.status(400).json({ error: 'Server name must be under 100 characters' });
     }
     
     // Validate RCON port

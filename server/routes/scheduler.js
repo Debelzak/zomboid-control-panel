@@ -113,8 +113,16 @@ router.put('/tasks/:id', async (req, res) => {
       return res.status(400).json({ error: 'Invalid task ID' });
     }
     
+    // Validate name and command length
+    if (name !== undefined && (typeof name !== 'string' || name.length > 100)) {
+      return res.status(400).json({ error: 'Invalid task name (max 100 characters)' });
+    }
+    if (command !== undefined && (typeof command !== 'string' || command.length > 2000)) {
+      return res.status(400).json({ error: 'Invalid command (max 2000 characters)' });
+    }
+    
     // Validate cron expression before saving to prevent DB/scheduler inconsistency
-    if (enabled && !cron.validate(cronExpression)) {
+    if (cronExpression && !cron.validate(cronExpression)) {
       return res.status(400).json({ error: 'Invalid cron expression. Use format: minute hour day month weekday (e.g., "0 */6 * * *" for every 6 hours)' });
     }
     

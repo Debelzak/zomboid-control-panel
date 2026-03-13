@@ -66,6 +66,13 @@ interface CronPreset {
   cron: string
 }
 
+const commonCommands = [
+  { label: 'Restart Server', value: 'restart' },
+  { label: 'Save World', value: 'save' },
+  { label: 'Server Message', value: 'servermsg Server maintenance in progress' },
+  { label: 'Check Mod Updates', value: 'checkModsNeedUpdate' },
+]
+
 export default function Scheduler() {
   const [tasks, setTasks] = useState<ScheduledTask[]>([])
   const [history, setHistory] = useState<ScheduleHistoryEntry[]>([])
@@ -340,12 +347,7 @@ export default function Scheduler() {
     }
   }
 
-  const commonCommands = [
-    { label: 'Restart Server', value: 'restart' },
-    { label: 'Save World', value: 'save' },
-    { label: 'Server Message', value: 'servermsg Server maintenance in progress' },
-    { label: 'Check Mod Updates', value: 'checkModsNeedUpdate' },
-  ]
+
 
   return (
     <div className="space-y-6 page-transition">
@@ -377,6 +379,7 @@ export default function Scheduler() {
                   value={newTaskName}
                   onChange={(e) => setNewTaskName(e.target.value)}
                   placeholder="e.g., Daily Restart"
+                  maxLength={100}
                 />
               </div>
               <div>
@@ -403,7 +406,7 @@ export default function Scheduler() {
                     </div>
 
                     {simpleIntervalType === 'daily' && (
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="space-y-2">
                           <Label>Hour (0-23)</Label>
                           <Input 
@@ -477,6 +480,7 @@ export default function Scheduler() {
                         onChange={(e) => setNewTaskCron(e.target.value)}
                         placeholder="e.g., 0 */2 * * *"
                         className="font-mono"
+                        maxLength={100}
                       />
                     </div>
                     <p className="text-xs text-muted-foreground">
@@ -504,6 +508,7 @@ export default function Scheduler() {
                   value={newTaskCommand}
                   onChange={(e) => setNewTaskCommand(e.target.value)}
                   placeholder="Or enter custom command"
+                  maxLength={2000}
                 />
               </div>
             </div>
@@ -698,7 +703,7 @@ export default function Scheduler() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <ScrollArea className="h-[400px]">
+          <ScrollArea className="h-[300px] sm:h-[400px]">
             {tasks.length === 0 ? (
               <EmptyState type="noSchedule" title="No scheduled tasks" description="Create a task to automate server commands" />
             ) : (
@@ -712,13 +717,13 @@ export default function Scheduler() {
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex-1">
-                        <div className="flex items-center gap-3">
-                          <h3 className="font-medium">{task.name}</h3>
-                          <code className="text-xs bg-muted px-2 py-0.5 rounded">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <h3 className="font-medium truncate">{task.name}</h3>
+                          <code className="text-xs bg-muted px-2 py-0.5 rounded shrink min-w-0 truncate max-w-[200px]" title={task.cron_expression}>
                             {task.cron_expression}
                           </code>
                         </div>
-                        <p className="text-sm text-muted-foreground mt-1">
+                        <p className="text-sm text-muted-foreground mt-1 truncate">
                           Command: <code className="text-primary">{task.command}</code>
                         </p>
                         {task.last_run && (
@@ -752,6 +757,7 @@ export default function Scheduler() {
                               variant="ghost"
                               size="icon"
                               disabled={loading}
+                              aria-label={`Delete task ${task.name}`}
                             >
                               <Trash2 className="w-4 h-4 text-destructive" />
                             </Button>
@@ -840,7 +846,7 @@ export default function Scheduler() {
           </div>
         </CardHeader>
         <CardContent>
-          <ScrollArea className="h-[400px]">
+          <ScrollArea className="h-[300px] sm:h-[400px]">
             {history.length === 0 ? (
               <div className="text-center py-8">
                 <History className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
@@ -861,7 +867,7 @@ export default function Scheduler() {
                     <div className="flex items-start justify-between">
                       <div className="flex items-center gap-2">
                         {entry.success ? (
-                          <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
+                          <CheckCircle2 className="w-4 h-4 text-primary flex-shrink-0" />
                         ) : (
                           <XCircle className="w-4 h-4 text-destructive flex-shrink-0" />
                         )}
@@ -902,7 +908,7 @@ export default function Scheduler() {
           <CardTitle>Cron Expression Help</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-5 gap-4 text-sm">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 text-sm">
             <div>
               <p className="font-medium">Minute</p>
               <p className="text-muted-foreground">0-59</p>

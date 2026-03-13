@@ -26,12 +26,14 @@ import {
   Lock,
   User
 } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { PageHeader } from '@/components/PageHeader'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -102,6 +104,7 @@ export default function Settings() {
   const [saving, setSaving] = useState(false)
   const [testingRcon, setTestingRcon] = useState(false)
   const [restarting, setRestarting] = useState(false)
+  const restartTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const { toast } = useToast()
   const { user, authEnabled } = useAuth()
   
@@ -173,6 +176,45 @@ export default function Settings() {
   
   // Track if there are unsaved changes
   const isDirty = originalSettings !== null && JSON.stringify(settings) !== JSON.stringify(originalSettings)
+
+  // Section navigation
+  const settingsSections = [
+    { id: 'panel', label: 'Panel', icon: Globe },
+    { id: 'https', label: 'HTTPS', icon: Lock },
+    { id: 'rcon', label: 'RCON', icon: Link },
+    { id: 'bridge', label: 'Bridge', icon: Zap },
+    { id: 'mods', label: 'Mods', icon: Clock },
+    { id: 'api-keys', label: 'API Keys', icon: Key },
+    { id: 'backups', label: 'Backups', icon: Archive },
+    { id: 'security', label: 'Security', icon: Shield },
+    { id: 'about', label: 'About', icon: Server },
+  ]
+  const [activeSection, setActiveSection] = useState('panel')
+
+  // Track visible section via IntersectionObserver
+  useEffect(() => {
+    const ids = settingsSections.map((s) => s.id)
+    const elements = ids.map((id) => document.getElementById(`settings-${id}`)).filter(Boolean) as HTMLElement[]
+    if (elements.length === 0) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        // Find the topmost visible section
+        const visible = entries
+          .filter((e) => e.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)
+        if (visible.length > 0) {
+          const id = visible[0].target.id.replace('settings-', '')
+          setActiveSection(id)
+        }
+      },
+      { rootMargin: '-80px 0px -60% 0px', threshold: 0 }
+    )
+
+    elements.forEach((el) => observer.observe(el))
+    return () => observer.disconnect()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading])
   
   // Warn before leaving with unsaved changes
   useEffect(() => {
@@ -186,6 +228,11 @@ export default function Settings() {
     window.addEventListener('beforeunload', handleBeforeUnload)
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
   }, [isDirty])
+
+  // Clean up restart redirect timer on unmount
+  useEffect(() => () => {
+    if (restartTimeoutRef.current) clearTimeout(restartTimeoutRef.current)
+  }, [])
 
   const fetchSettings = useCallback(async () => {
     setLoading(true)
@@ -678,6 +725,15 @@ export default function Settings() {
     setSettings(prev => ({ ...prev, [key]: value }))
   }
 
+  const selectedInstallServer = servers.find((server) => String(server.id) === selectedInstallServerId) || null
+  const selectedInstallTarget = selectedInstallServer
+    ? `${selectedInstallServer.installPath}\\media\\lua\\server\\PanelBridge.lua`
+    : null
+  const watchedBridgeFolder = bridgeStatus?.bridgePath
+    || (selectedInstallServer?.zomboidDataPath
+      ? `${selectedInstallServer.zomboidDataPath}\\panelbridge\\${selectedInstallServer.serverName}`
+      : null)
+
   const handleChangePassword = async () => {
     if (!newPassword || !confirmPassword) return
     if (newPassword !== confirmPassword) {
@@ -715,24 +771,22 @@ export default function Settings() {
   }
 
   return (
-    <div className="space-y-8 page-transition">
+    <div className="page-transition">
       {/* Unsaved Changes Warning */}
       {isDirty && (
-        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 flex items-center gap-4 sticky top-0 z-10 shadow-lg shadow-amber-500/5">
-          <div className="w-10 h-10 rounded-full bg-amber-500/15 flex items-center justify-center flex-shrink-0">
-            <AlertTriangle className="w-5 h-5 text-amber-500" />
-          </div>
-          <div className="flex-1">
-            <p className="font-semibold text-amber-600 dark:text-amber-400">Unsaved Changes</p>
-            <p className="text-sm text-muted-foreground">
-              You have unsaved changes. Click "Save Settings" to apply them.
-            </p>
-          </div>
-          <Button onClick={handleSave} disabled={saving} size="lg" className="gap-2">
-            {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
-            Save Now
-          </Button>
-        </div>
+        <Alert className="border-warning/40 bg-warning/10 shadow-sm mb-5">
+          <AlertTriangle className="h-4 w-4 text-warning" />
+          <AlertTitle className="text-warning">Unsaved Changes</AlertTitle>
+          <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <span className="text-sm text-muted-foreground">
+              You have unsaved changes. Click Save Settings to apply them.
+            </span>
+            <Button onClick={handleSave} disabled={saving} size="sm" variant="warning" className="self-start gap-2">
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              Save Now
+            </Button>
+          </AlertDescription>
+        </Alert>
       )}
       
       <PageHeader
@@ -747,20 +801,44 @@ export default function Settings() {
         }
       />
 
-      {/* Panel Settings */}
-      <Card className="card-interactive">
-        <CardHeader className="pb-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center">
-              <Globe className="w-5 h-5 text-blue-500" />
-            </div>
-            <div>
-              <CardTitle className="text-lg">Panel Settings</CardTitle>
-              <CardDescription className="mt-0.5">
-                Configure how the control panel runs
-              </CardDescription>
-            </div>
+      <div className="mt-6 flex gap-8">
+        {/* Sidebar nav — hidden on small screens */}
+        <nav className="hidden lg:block w-44 shrink-0">
+          <div className="sticky top-20 space-y-0.5">
+            {settingsSections.map((section) => {
+              const Icon = section.icon
+              return (
+                <button
+                  key={section.id}
+                  onClick={() => {
+                    document.getElementById(`settings-${section.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                  }}
+                  className={cn(
+                    'flex items-center gap-2.5 w-full rounded-lg px-3 py-2 text-sm transition-colors text-left',
+                    activeSection === section.id
+                      ? 'bg-primary/10 text-primary font-medium'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+                  )}
+                >
+                  <Icon className="w-3.5 h-3.5 shrink-0" />
+                  {section.label}
+                </button>
+              )
+            })}
           </div>
+        </nav>
+
+        {/* Content */}
+        <div className="flex-1 min-w-0 space-y-5">
+
+      {/* Panel Settings */}
+      <Card id="settings-panel">
+        <CardHeader className="pb-4">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Globe className="w-4 h-4 text-primary" />
+            Panel Settings
+          </CardTitle>
+          <CardDescription>Configure how the control panel runs</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="max-w-xs">
@@ -778,15 +856,13 @@ export default function Settings() {
             </p>
           </div>
           {originalSettings && settings.panelPort !== originalSettings.panelPort && (
-            <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg flex items-start gap-3">
-              <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
-              <div className="text-sm">
-                <p className="font-medium text-amber-600 dark:text-amber-400">Restart Required</p>
-                <p className="text-muted-foreground mt-0.5">
-                  Changing the port requires a panel restart to take effect. Save your settings first, then restart.
-                </p>
-              </div>
-            </div>
+            <Alert className="border-warning/40 bg-warning/10">
+              <AlertTriangle className="h-4 w-4 text-warning" />
+              <AlertTitle className="text-warning">Restart Required</AlertTitle>
+              <AlertDescription>
+                Changing the port requires a panel restart to take effect. Save your settings first, then restart.
+              </AlertDescription>
+            </Alert>
           )}
           <div className="flex items-center gap-3">
             <Button 
@@ -800,7 +876,8 @@ export default function Settings() {
                     description: `Panel is restarting on port ${settings.panelPort}. Reconnecting...`,
                   })
                   // Wait then redirect to the (potentially new) port
-                  setTimeout(() => {
+                  if (restartTimeoutRef.current) clearTimeout(restartTimeoutRef.current)
+                  restartTimeoutRef.current = setTimeout(() => {
                     const newPort = settings.panelPort || '3001'
                     const newUrl = `${window.location.protocol}//${window.location.hostname}:${newPort}${window.location.pathname}`
                     window.location.href = newUrl
@@ -828,19 +905,13 @@ export default function Settings() {
       </Card>
 
       {/* HTTPS Settings */}
-      <Card className="card-interactive">
+      <Card id="settings-https">
         <CardHeader className="pb-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-green-500/10 flex items-center justify-center">
-              <Lock className="w-5 h-5 text-green-500" />
-            </div>
-            <div>
-              <CardTitle className="text-lg">HTTPS</CardTitle>
-              <CardDescription className="mt-0.5">
-                Enable encrypted connections with SSL/TLS certificates
-              </CardDescription>
-            </div>
-          </div>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Lock className="w-4 h-4 text-primary" />
+            HTTPS
+          </CardTitle>
+          <CardDescription>Enable encrypted connections with SSL/TLS certificates</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center gap-3 p-4 rounded-xl bg-muted/50">
@@ -856,7 +927,7 @@ export default function Settings() {
             </div>
           </div>
           {settings.httpsEnabled && (
-            <div className="space-y-4 pl-2 border-l-2 border-green-500/20 ml-2">
+            <div className="ml-2 space-y-4 border-l-2 border-primary/20 pl-2">
               <div className="max-w-xs">
                 <Label>HTTPS Port</Label>
                 <Input
@@ -877,6 +948,7 @@ export default function Settings() {
                   value={settings.httpsCertPath}
                   onChange={(e) => updateSetting('httpsCertPath', e.target.value)}
                   placeholder="Leave empty to use auto-generated self-signed cert"
+                  maxLength={260}
                 />
               </div>
               <div className="max-w-md">
@@ -885,18 +957,17 @@ export default function Settings() {
                   value={settings.httpsKeyPath}
                   onChange={(e) => updateSetting('httpsKeyPath', e.target.value)}
                   placeholder="Leave empty to use auto-generated self-signed key"
+                  maxLength={260}
                 />
               </div>
               {originalSettings && settings.httpsEnabled !== originalSettings.httpsEnabled && (
-                <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg flex items-start gap-3">
-                  <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
-                  <div className="text-sm">
-                    <p className="font-medium text-amber-600 dark:text-amber-400">Restart Required</p>
-                    <p className="text-muted-foreground mt-0.5">
-                      HTTPS changes require a panel restart to take effect.
-                    </p>
-                  </div>
-                </div>
+                <Alert className="border-warning/40 bg-warning/10">
+                  <AlertTriangle className="h-4 w-4 text-warning" />
+                  <AlertTitle className="text-warning">Restart Required</AlertTitle>
+                  <AlertDescription>
+                    HTTPS changes require a panel restart to take effect.
+                  </AlertDescription>
+                </Alert>
               )}
             </div>
           )}
@@ -904,19 +975,13 @@ export default function Settings() {
       </Card>
 
       {/* RCON Settings */}
-      <Card className="card-interactive">
+      <Card id="settings-rcon">
         <CardHeader className="pb-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-              <Link className="w-5 h-5 text-primary" />
-            </div>
-            <div>
-              <CardTitle className="text-lg">RCON Connection</CardTitle>
-              <CardDescription className="mt-0.5">
-                RCON settings are configured per-server in the Servers page
-              </CardDescription>
-            </div>
-          </div>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Link className="w-4 h-4 text-primary" />
+            RCON Connection
+          </CardTitle>
+          <CardDescription>RCON settings are configured per-server in the Servers page</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
@@ -956,27 +1021,25 @@ export default function Settings() {
       </Card>
 
       {/* Panel Bridge - Advanced Features */}
-      <Card className="card-interactive">
+      <Card id="settings-bridge">
         <CardHeader className="pb-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-purple-500/10 flex items-center justify-center">
-              <Zap className="w-5 h-5 text-purple-500" />
-            </div>
-            <div className="flex-1">
-              <CardTitle className="text-lg">Panel Bridge</CardTitle>
-              <CardDescription className="mt-0.5">
-                Enables weather control and advanced features
-              </CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Zap className="w-4 h-4 text-primary" />
+                Panel Bridge
+              </CardTitle>
+              <CardDescription>Connects this panel to the live game for weather, utilities, richer chat, and other in-world actions</CardDescription>
             </div>
             {bridgeStatus && (
               <div className="flex items-center gap-2">
                 {bridgeStatus.modConnected ? (
-                  <div className="flex items-center gap-2 text-emerald-500">
+                  <div className="flex items-center gap-2 text-primary">
                     <CheckCircle2 className="w-5 h-5" />
                     <span className="text-sm font-medium">Connected</span>
                   </div>
                 ) : bridgeStatus.isRunning ? (
-                  <div className="flex items-center gap-2 text-amber-500">
+                  <div className="flex items-center gap-2 text-warning">
                     <Cloud className="w-5 h-5" />
                     <span className="text-sm font-medium">Waiting for mod...</span>
                   </div>
@@ -991,16 +1054,62 @@ export default function Settings() {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
+          <Alert className="border-border/60 bg-muted/40">
+            <Zap className="h-4 w-4 text-primary" />
+            <AlertTitle>What Panel Bridge does</AlertTitle>
+            <AlertDescription className="space-y-3 text-sm text-muted-foreground">
+              <p>
+                Panel Bridge has two pieces that must meet in the middle: the panel runs a local watcher, and your Project Zomboid server runs <strong className="text-foreground">PanelBridge.lua</strong> inside the game.
+              </p>
+              <div className="grid gap-3 md:grid-cols-3">
+                <div className="rounded-xl border border-border/60 bg-background/60 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">1. Install The Lua File</p>
+                  <p className="mt-2 text-sm text-foreground">Copy <strong>PanelBridge.lua</strong> into the server install folder.</p>
+                  <p className="mt-2 break-all text-xs text-muted-foreground">
+                    {selectedInstallTarget || 'Select a server below to see the exact install path.'}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-border/60 bg-background/60 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">2. Run Auto Setup</p>
+                  <p className="mt-2 text-sm text-foreground">Tell the panel which server data folder to watch.</p>
+                  <p className="mt-2 break-all text-xs text-muted-foreground">
+                    {watchedBridgeFolder || 'When configured, the panel watches the panelbridge folder for your selected server.'}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-border/60 bg-background/60 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">3. Start The Server</p>
+                  <p className="mt-2 text-sm text-foreground">When the game loads the mod, the status changes from Waiting to Connected.</p>
+                  <p className="mt-2 text-xs text-muted-foreground">Connected means the Lua mod is alive in-game and ready to answer advanced commands.</p>
+                </div>
+              </div>
+            </AlertDescription>
+          </Alert>
+
+          <div className="grid gap-3 md:grid-cols-3">
+            <div className="rounded-xl border border-border/60 bg-muted/25 p-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Not Running</p>
+              <p className="mt-2 text-sm text-foreground">The panel watcher is not started yet.</p>
+            </div>
+            <div className="rounded-xl border border-warning/30 bg-warning/8 p-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-warning">Waiting</p>
+              <p className="mt-2 text-sm text-foreground">The panel is watching the folder, but the PZ server has not loaded the mod yet.</p>
+            </div>
+            <div className="rounded-xl border border-primary/30 bg-primary/8 p-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Connected</p>
+              <p className="mt-2 text-sm text-foreground">The panel watcher and the in-game Lua mod can now exchange commands and status.</p>
+            </div>
+          </div>
+
           {/* Status Display - when connected */}
           {bridgeStatus?.modConnected && bridgeStatus.modStatus && (
-            <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl">
+            <Alert className="border-primary/30 bg-primary/10">
               <div className="flex items-center gap-3 mb-3">
-                <CheckCircle2 className="w-5 h-5 text-emerald-500" />
-                <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+                <CheckCircle2 className="w-5 h-5 text-primary" />
+                <span className="font-semibold text-primary">
                   Connected to {bridgeStatus.modStatus.serverName || 'server'}
                 </span>
               </div>
-              <div className="grid grid-cols-2 gap-4 text-sm">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
                 <div>
                   <span className="text-muted-foreground">Mod Version:</span>{' '}
                   <span className="font-medium">{bridgeStatus.modStatus.version || 'Unknown'}</span>
@@ -1011,16 +1120,16 @@ export default function Settings() {
                 </div>
               </div>
               <p className="text-xs text-muted-foreground mt-2">
-                Weather controls are now available on the Events page!
+                Advanced features on Events, Players, and Chat are now available.
               </p>
-            </div>
+            </Alert>
           )}
 
           {/* Not running - show auto-setup button */}
           {!bridgeStatus?.isRunning && (
             <div className="p-4 bg-muted rounded-xl space-y-4">
               <p className="text-sm text-muted-foreground">
-                Panel Bridge connects your panel to the game server for advanced features like weather control.
+                Start with <strong className="text-foreground">Auto Setup</strong>. It points the panel at the correct server data folder and starts the bridge watcher for the active server.
               </p>
               <div className="flex flex-wrap gap-3">
                 <Button 
@@ -1032,7 +1141,7 @@ export default function Settings() {
                   Auto Setup
                 </Button>
                 <p className="text-xs text-muted-foreground self-center">
-                  Automatically configures and starts the bridge for your active server
+                  Best first step after installing the Lua file
                 </p>
               </div>
             </div>
@@ -1040,27 +1149,27 @@ export default function Settings() {
 
           {/* Waiting for mod */}
           {bridgeStatus?.isRunning && !bridgeStatus?.modConnected && (
-            <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl space-y-3">
-              <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 font-medium">
-                <Cloud className="w-4 h-4" />
-                Waiting for PZ mod to respond...
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Make sure your PZ server is running. The bridge will connect automatically when the mod starts.
-              </p>
-              {bridgeStatus?.bridgePath && (
-                <p className="text-xs text-muted-foreground">
-                  Watching: <code className="bg-background px-1 rounded">{bridgeStatus.bridgePath}</code>
-                </p>
-              )}
-            </div>
+            <Alert className="border-warning/40 bg-warning/10">
+              <Cloud className="h-4 w-4 text-warning" />
+              <AlertTitle className="text-warning">Waiting for PZ mod to respond</AlertTitle>
+              <AlertDescription className="space-y-2">
+                <p>The panel side is ready. Now start the Project Zomboid server with PanelBridge.lua installed and enabled in the server mod list.</p>
+                {bridgeStatus?.bridgePath && (
+                  <p className="text-xs text-muted-foreground">
+                    Watching folder: <code className="rounded bg-background px-1">{bridgeStatus.bridgePath}</code>
+                  </p>
+                )}
+              </AlertDescription>
+            </Alert>
           )}
 
           {/* Error display */}
           {bridgeError && (
-            <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-600 dark:text-red-400 text-sm">
-              {bridgeError}
-            </div>
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertTitle>Panel Bridge Error</AlertTitle>
+              <AlertDescription>{bridgeError}</AlertDescription>
+            </Alert>
           )}
 
           {/* Control buttons when running */}
@@ -1074,7 +1183,7 @@ export default function Settings() {
                 className="gap-2"
               >
                 {bridgeLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4" />}
-                Stop
+                Stop Bridge
               </Button>
               <Button 
                 onClick={handlePingMod}
@@ -1084,7 +1193,7 @@ export default function Settings() {
                 disabled={!bridgeStatus?.modConnected}
               >
                 <RefreshCw className="w-4 h-4" />
-                Test
+                Ping Mod
               </Button>
               <Button 
                 onClick={fetchBridgeStatus}
@@ -1093,26 +1202,19 @@ export default function Settings() {
                 className="gap-2"
               >
                 <RefreshCw className="w-4 h-4" />
-                Refresh
+                Refresh Status
               </Button>
             </div>
           )}
 
-          {/* Info box */}
-          <div className="p-4 bg-purple-500/10 border border-purple-500/20 rounded-lg text-sm">
-            <p className="font-medium text-purple-600 dark:text-purple-400 mb-2">
-              How it works
-            </p>
-            <ul className="list-disc list-inside space-y-1 text-muted-foreground">
-              <li>Install PanelBridge.lua to your server using the button below</li>
-              <li>The bridge auto-connects when you start your PZ server</li>
-              <li>Enables weather control, real-time monitoring, and more</li>
-            </ul>
-          </div>
-          
           {/* Install Mod Section */}
           <div className="p-4 bg-muted rounded-xl space-y-3">
-            <p className="text-sm font-medium">Install PanelBridge.lua</p>
+            <div className="space-y-1">
+              <p className="text-sm font-medium">Install PanelBridge.lua</p>
+              <p className="text-xs text-muted-foreground">
+                This copies the Lua file into your game server install so Project Zomboid can load it on startup.
+              </p>
+            </div>
             <div className="flex flex-wrap gap-3 items-center">
               <Select value={selectedInstallServerId} onValueChange={setSelectedInstallServerId}>
                 <SelectTrigger className="w-[200px]">
@@ -1136,27 +1238,31 @@ export default function Settings() {
                 Install Mod
               </Button>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Copies PanelBridge.lua to <code className="bg-background px-1 rounded">media/lua/server/</code> in the selected server's install folder
-            </p>
+            <div className="space-y-2 text-xs text-muted-foreground">
+              <p>
+                Copies PanelBridge.lua to <code className="bg-background px-1 rounded">media/lua/server/</code> in the selected server's install folder.
+              </p>
+              <p className="break-all">
+                Exact destination: <code className="bg-background px-1 rounded">{selectedInstallTarget || 'Select a server to see the destination path.'}</code>
+              </p>
+              <p>
+                After copying the file, start Auto Setup and then restart the PZ server so the mod can load.
+              </p>
+            </div>
           </div>
         </CardContent>
       </Card>
 
       {/* Mod Update Settings */}
-      <Card className="card-interactive">
+      <Card id="settings-mods">
         <CardHeader className="pb-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center">
-              <Clock className="w-5 h-5 text-blue-400" />
-            </div>
-            <div>
-              <CardTitle className="text-lg">Mod Update Settings</CardTitle>
-              <CardDescription className="mt-0.5">
-                Configure automatic mod update checking and server restarts
-              </CardDescription>
-            </div>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Clock className="w-4 h-4 text-primary" />
+              Mod Update Settings
+            </CardTitle>
           </div>
+          <CardDescription>Configure automatic mod update checking and server restarts</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="max-w-xs space-y-2">
@@ -1203,19 +1309,13 @@ export default function Settings() {
       </Card>
 
       {/* API Keys */}
-      <Card className="card-interactive">
+      <Card id="settings-api-keys">
         <CardHeader className="pb-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-violet-500/10 flex items-center justify-center">
-              <Key className="w-5 h-5 text-violet-400" />
-            </div>
-            <div>
-              <CardTitle className="text-lg">API Keys</CardTitle>
-              <CardDescription className="mt-0.5">
-                Configure API keys for external services
-              </CardDescription>
-            </div>
-          </div>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Key className="w-4 h-4 text-primary" />
+            API Keys
+          </CardTitle>
+          <CardDescription>Configure API keys for external services</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="space-y-2">
@@ -1227,6 +1327,7 @@ export default function Settings() {
                 onChange={(e) => updateSetting('steamApiKey', e.target.value)}
                 placeholder="Your Steam API key"
                 className="h-11 pr-10"
+                maxLength={128}
               />
               <button
                 type="button"
@@ -1254,17 +1355,15 @@ export default function Settings() {
       </Card>
 
       {/* World Backups */}
-      <Card className="card-interactive">
+      <Card id="settings-backups">
         <CardHeader className="pb-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-cyan-500/10 flex items-center justify-center">
-              <Archive className="w-5 h-5 text-cyan-500" />
-            </div>
-            <div className="flex-1">
-              <CardTitle className="text-lg">World Backups</CardTitle>
-              <CardDescription className="mt-0.5">
-                Backup your server world data on a schedule
-              </CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Archive className="w-4 h-4 text-primary" />
+                World Backups
+              </CardTitle>
+              <CardDescription>Backup your server world data on a schedule</CardDescription>
             </div>
             <Button 
               onClick={handleCreateBackup} 
@@ -1288,9 +1387,9 @@ export default function Settings() {
                 <HardDrive className="w-4 h-4 text-muted-foreground" />
                 <span className="text-sm">
                   {backupStatus.savesExists ? (
-                    <span className="text-emerald-500">Saves folder found</span>
+                    <span className="text-primary">Saves folder found</span>
                   ) : (
-                    <span className="text-red-400">Saves folder not found</span>
+                    <span className="text-destructive">Saves folder not found</span>
                   )}
                 </span>
               </div>
@@ -1328,7 +1427,7 @@ export default function Settings() {
             </div>
 
             {backupStatus?.enabled && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pl-4 border-l-2 border-cyan-500/30">
+              <div className="grid grid-cols-1 gap-4 border-l-2 border-primary/20 pl-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="backup-schedule">Schedule (Cron)</Label>
                   <Input
@@ -1337,6 +1436,7 @@ export default function Settings() {
                     onChange={(e) => setBackupSchedule(e.target.value)}
                     placeholder="0 */6 * * *"
                     className="font-mono"
+                    maxLength={100}
                   />
                   <p className="text-xs text-muted-foreground">
                     Default: Every 6 hours. Format: minute hour day month weekday
@@ -1384,7 +1484,7 @@ export default function Settings() {
                       className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
                     >
                       <div className="flex items-center gap-3 min-w-0">
-                        <Archive className="w-4 h-4 text-cyan-500 flex-shrink-0" />
+                        <Archive className="w-4 h-4 text-primary flex-shrink-0" />
                         <div className="min-w-0">
                           <p className="text-sm font-medium truncate">{backup.name}</p>
                           <p className="text-xs text-muted-foreground">
@@ -1400,7 +1500,7 @@ export default function Settings() {
                               size="sm"
                               onClick={() => setRestoreConfirmBackup(backup.name)}
                               disabled={restoringBackup !== null}
-                              className="text-amber-400 hover:text-amber-500 hover:bg-amber-500/10"
+                              className="text-warning hover:text-warning hover:bg-warning/10"
                               title="Restore this backup (server must be stopped)"
                             >
                               {restoringBackup === backup.name ? (
@@ -1413,7 +1513,7 @@ export default function Settings() {
                           <AlertDialogContent>
                             <AlertDialogHeader>
                               <AlertDialogTitle className="flex items-center gap-2">
-                                <AlertTriangle className="w-5 h-5 text-amber-500" />
+                                <AlertTriangle className="w-5 h-5 text-warning" />
                                 Restore Backup
                               </AlertDialogTitle>
                               <AlertDialogDescription className="text-left space-y-2">
@@ -1429,7 +1529,7 @@ export default function Settings() {
                               <AlertDialogCancel>Cancel</AlertDialogCancel>
                               <AlertDialogAction
                                 onClick={() => handleRestoreBackup(backup.name)}
-                                className="bg-amber-600 text-white hover:bg-amber-700"
+                                className="bg-warning text-warning-foreground hover:bg-warning/90"
                               >
                                 Restore Backup
                               </AlertDialogAction>
@@ -1448,7 +1548,7 @@ export default function Settings() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="text-red-400 hover:text-red-500 hover:bg-red-500/10"
+                              className="text-destructive hover:text-destructive hover:bg-destructive/10"
                             >
                               <Trash2 className="w-4 h-4" />
                             </Button>
@@ -1490,19 +1590,13 @@ export default function Settings() {
       </Card>
 
       {/* Security & Authentication */}
-      <Card className="card-interactive">
+      <Card id="settings-security">
         <CardHeader className="pb-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-red-500/10 flex items-center justify-center">
-              <Shield className="w-5 h-5 text-red-400" />
-            </div>
-            <div>
-              <CardTitle className="text-lg">Security & Authentication</CardTitle>
-              <CardDescription className="mt-0.5">
-                Manage your account and view security information
-              </CardDescription>
-            </div>
-          </div>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Shield className="w-4 h-4 text-primary" />
+            Security & Authentication
+          </CardTitle>
+          <CardDescription>Manage your account and view security information</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           {/* Account Info */}
@@ -1532,6 +1626,7 @@ export default function Settings() {
                     onChange={(e) => setCurrentPassword(e.target.value)}
                     placeholder="Current password"
                     className="h-11 pr-10"
+                    maxLength={128}
                   />
                   <button
                     type="button"
@@ -1548,6 +1643,7 @@ export default function Settings() {
                     onChange={(e) => setNewPassword(e.target.value)}
                     placeholder="New password"
                     className="h-11 pr-10"
+                    maxLength={128}
                   />
                   <button
                     type="button"
@@ -1563,6 +1659,7 @@ export default function Settings() {
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="Confirm new password"
                   className="h-11"
+                  maxLength={128}
                 />
                 {newPassword && confirmPassword && newPassword !== confirmPassword && (
                   <p className="text-xs text-destructive flex items-center gap-1">
@@ -1608,14 +1705,12 @@ export default function Settings() {
       </Card>
 
       {/* About */}
-      <Card className="card-interactive">
+      <Card id="settings-about">
         <CardHeader className="pb-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center">
-              <Server className="w-5 h-5 text-emerald-500" />
-            </div>
-            <CardTitle className="text-lg">About PZ Server Panel</CardTitle>
-          </div>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Server className="w-4 h-4 text-primary" />
+            About PZ Server Panel
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <p className="mb-3 text-muted-foreground">
@@ -1632,6 +1727,8 @@ export default function Settings() {
           </div>
         </CardContent>
       </Card>
+        </div>
+      </div>
     </div>
   )
 }

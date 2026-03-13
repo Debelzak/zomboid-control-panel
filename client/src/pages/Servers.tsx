@@ -34,6 +34,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useToast } from '@/components/ui/use-toast'
 import { Badge } from '@/components/ui/badge'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Checkbox } from '@/components/ui/checkbox'
 import { 
   Dialog, 
   DialogContent, 
@@ -226,13 +228,13 @@ export default function Servers() {
       if (data.settings?.steamcmdPath) {
         setSteamcmdPath(data.settings.steamcmdPath)
       }
-    }).catch(() => {})
+    }).catch(e => console.warn('Failed to load settings:', e.message))
     // Load update status
     updateApi.getStatus().then(status => {
       if (status.updateAvailable?.updateAvailable) {
         setUpdateInfo(status.updateAvailable)
       }
-    }).catch(() => {})
+    }).catch(e => console.warn('Failed to load update status:', e.message))
   }, [])
 
   // Listen for update status changes (clears banner after successful update)
@@ -733,51 +735,79 @@ export default function Servers() {
         }
       />
 
-      {/* Update Banner — integrated into the page */}
-      {updateInfo && updateInfo.updateAvailable && (
-        <div className="flex items-center gap-4 p-4 rounded-lg border border-amber-500/40 bg-amber-500/10">
-          <div className="flex items-center justify-center w-10 h-10 rounded-full bg-amber-500/20 shrink-0">
-            <RefreshCw className="w-5 h-5 text-amber-500" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="font-medium text-amber-600 dark:text-amber-400">Server Update Available</p>
-            <p className="text-sm text-muted-foreground mt-0.5">
-              <span className="font-mono">{updateInfo.installed.branch}</span> branch — Build{' '}
-              <span className="font-mono">{updateInfo.installed.buildId}</span>
-              <ArrowRight className="w-3 h-3 inline mx-1" />
-              <span className="font-mono font-semibold">{updateInfo.latest.buildId}</span>
-              {updateInfo.latest.description && <span className="ml-1.5 text-xs">({updateInfo.latest.description})</span>}
-            </p>
-          </div>
-          <Button
-            size="sm"
-            className="bg-amber-500 hover:bg-amber-600 text-white shrink-0"
-            onClick={() => {
-              const activeServer = servers.find(s => s.isActive)
-              if (activeServer) openSteamOperation(activeServer, 'update')
-            }}
-          >
-            <RefreshCw className="w-4 h-4 mr-1.5" /> Update Now
-          </Button>
-        </div>
-      )}
-
       {/* Server Grid */}
       {servers.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <Server className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-            <h3 className="font-semibold mb-2">No Servers Configured</h3>
-            <p className="text-muted-foreground mb-4">
-              Add an existing server or install a new one to get started
-            </p>
-            <div className="flex items-center justify-center gap-2">
-              <Button variant="outline" onClick={() => setShowAddDialog(true)}>
-                <FolderOpen className="w-4 h-4 mr-2" /> Add Existing Server
-              </Button>
-              <Button onClick={() => navigate('/server-setup')}>
-                <Download className="w-4 h-4 mr-2" /> Install New Server
-              </Button>
+        <Card className="mission-brief overflow-hidden border-primary/20 bg-[linear-gradient(135deg,hsl(var(--card)),hsl(var(--primary)/0.07))]">
+          <CardContent className="py-10">
+            <div className="mx-auto max-w-4xl space-y-8">
+              <div className="text-center">
+                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-primary/20 bg-primary/10 text-primary">
+                  <Server className="h-7 w-7" />
+                </div>
+                <h3 className="text-xl font-semibold text-foreground">No Servers Configured</h3>
+                <p className="mx-auto mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+                  Start with one server. Once one server is added and marked active, the rest of the panel starts paying off: status, players, backups, mods, and remote actions.
+                </p>
+              </div>
+
+              <div className="mission-step-grid grid gap-4 md:grid-cols-3">
+                <div className="mission-step-card rounded-2xl border border-border/60 bg-background/40 p-5">
+                  <div className="mission-step-icon mb-3 flex h-11 w-11 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary">
+                    <FolderOpen className="h-5 w-5" />
+                  </div>
+                  <p className="text-sm font-semibold text-foreground">Add an existing local server</p>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                    Best when the server already exists on this machine and you just need the panel to detect paths and credentials.
+                  </p>
+                  <Button variant="outline" className="onboarding-cta mt-4 w-full" onClick={() => { setAddMode('local'); setShowAddDialog(true) }}>
+                    <FolderOpen className="mr-2 h-4 w-4" />
+                    Add Existing Server
+                  </Button>
+                </div>
+
+                <div className="mission-step-card rounded-2xl border border-border/60 bg-background/40 p-5">
+                  <div className="mission-step-icon mb-3 flex h-11 w-11 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary">
+                    <Download className="h-5 w-5" />
+                  </div>
+                  <p className="text-sm font-semibold text-foreground">Install a new local server</p>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                    Use the guided installer when you need SteamCMD, server files, passwords, ports, and memory settings handled in one flow.
+                  </p>
+                  <Button className="onboarding-cta mt-4 w-full" onClick={() => navigate('/server-setup')}>
+                    <Download className="mr-2 h-4 w-4" />
+                    Install New Server
+                  </Button>
+                </div>
+
+                <div className="mission-step-card rounded-2xl border border-border/60 bg-background/40 p-5">
+                  <div className="mission-step-icon mb-3 flex h-11 w-11 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary">
+                    <Globe className="h-5 w-5" />
+                  </div>
+                  <p className="text-sm font-semibold text-foreground">Connect a remote server</p>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                    Use this when the panel should manage a server running elsewhere through RCON instead of local start and stop scripts.
+                  </p>
+                  <Button variant="secondary" className="onboarding-cta mt-4 w-full" onClick={() => { setAddMode('remote'); setShowAddDialog(true) }}>
+                    <Globe className="mr-2 h-4 w-4" />
+                    Add Remote Server
+                  </Button>
+                </div>
+              </div>
+
+              <div className="grid gap-3 rounded-2xl border border-border/60 bg-background/30 p-5 md:grid-cols-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">Step 1</p>
+                  <p className="mt-1 text-sm font-medium text-foreground">Bring in one server</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">Step 2</p>
+                  <p className="mt-1 text-sm font-medium text-foreground">Set it active and verify RCON</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">Step 3</p>
+                  <p className="mt-1 text-sm font-medium text-foreground">Return to Dashboard for live control</p>
+                </div>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -788,33 +818,33 @@ export default function Servers() {
             return (
             <Card 
               key={server.id} 
-              className={`relative overflow-hidden ${server.isActive ? 'border-primary ring-1 ring-primary/20' : ''} ${hasUpdate ? 'border-amber-500/50' : ''}`}
+              className={`relative overflow-hidden ${server.isActive ? 'border-primary ring-1 ring-primary/20' : ''} ${hasUpdate ? 'border-warning/50' : ''}`}
             >
               {/* Active indicator bar */}
               {server.isActive && (
                 <div className="absolute top-0 left-0 right-0 h-0.5 bg-primary" />
               )}
               {hasUpdate && !server.isActive && (
-                <div className="absolute top-0 left-0 right-0 h-0.5 bg-amber-500" />
+                <div className="absolute top-0 left-0 right-0 h-0.5 bg-warning" />
               )}
 
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between">
                   <div className="space-y-1.5 min-w-0 flex-1">
-                    <CardTitle className="flex items-center gap-2 flex-wrap">
-                      {server.name}
+                    <CardTitle className="flex items-center gap-2 flex-wrap min-w-0">
+                      <span className="truncate">{server.name}</span>
                       {server.isActive && (
                         <Badge variant="default" className="text-xs">
                           <Star className="w-3 h-3 mr-1" /> Active
                         </Badge>
                       )}
                       {server.isRemote && (
-                        <Badge variant="outline" className="text-xs bg-purple-500/10 text-purple-500 border-purple-500/30">
+                        <Badge variant="outline" className="text-xs">
                           <Globe className="w-3 h-3 mr-1" /> Remote
                         </Badge>
                       )}
                       {hasUpdate && (
-                        <Badge variant="outline" className="text-xs bg-amber-500/10 text-amber-500 border-amber-500/30">
+                        <Badge variant="warning" className="text-xs">
                           <RefreshCw className="w-3 h-3 mr-1" /> Update Available
                         </Badge>
                       )}
@@ -826,7 +856,7 @@ export default function Servers() {
                   
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0">
+                      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" aria-label="Server options">
                         <MoreVertical className="w-4 h-4" />
                       </Button>
                     </DropdownMenuTrigger>
@@ -835,7 +865,7 @@ export default function Servers() {
                         <Edit2 className="w-4 h-4 mr-2" /> Edit
                       </DropdownMenuItem>
                       {!server.isActive && (
-                        <DropdownMenuItem onClick={() => handleActivateServer(server)}>
+                        <DropdownMenuItem onClick={() => handleActivateServer(server)} disabled={activating !== null}>
                           <Power className="w-4 h-4 mr-2" /> Set Active
                         </DropdownMenuItem>
                       )}
@@ -884,7 +914,7 @@ export default function Servers() {
                 )}
 
                 {/* Network & Config Grid */}
-                <div className={`grid ${server.isRemote ? 'grid-cols-2' : 'grid-cols-3'} gap-3`}>
+                <div className={`grid ${server.isRemote ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1 sm:grid-cols-3'} gap-3`}>
                   <div className="p-2 rounded-md bg-muted/50">
                     <div className="flex items-center gap-1.5 text-muted-foreground mb-1">
                       <Network className="w-3 h-3" />
@@ -924,8 +954,8 @@ export default function Servers() {
                         <span className="font-mono font-medium">{updateInfo.installed.buildId}</span>
                         {updateInfo.updateAvailable && (
                           <>
-                            <ArrowRight className="w-3 h-3 text-amber-500" />
-                            <span className="font-mono font-semibold text-amber-500">{updateInfo.latest.buildId}</span>
+                            <ArrowRight className="w-3 h-3 text-warning" />
+                            <span className="font-mono font-semibold text-warning">{updateInfo.latest.buildId}</span>
                           </>
                         )}
                       </div>
@@ -947,7 +977,8 @@ export default function Servers() {
                   {hasUpdate && (
                     <Button 
                       size="sm"
-                      className="flex-1 bg-amber-500 hover:bg-amber-600 text-white"
+                      variant="warning"
+                      className="flex-1"
                       onClick={() => openSteamOperation(server, 'update')}
                     >
                       <RefreshCw className="w-4 h-4 mr-1.5" /> Update Now
@@ -1007,11 +1038,11 @@ export default function Servers() {
               onClick={() => { setAddMode('remote'); setNewServer({ ...defaultNewServer, isRemote: true, rconHost: '' }); setDetectResult(null); setDetectError(null); setSelectedServerConfig('') }}
               className={`flex items-center gap-3 p-3 rounded-lg border-2 transition-all ${
                 addMode === 'remote' 
-                  ? 'border-purple-500 bg-purple-500/5' 
+                  ? 'border-primary bg-primary/5' 
                   : 'border-border hover:border-muted-foreground/30'
               }`}
             >
-              <Globe className={`w-5 h-5 ${addMode === 'remote' ? 'text-purple-500' : 'text-muted-foreground'}`} />
+              <Globe className={`w-5 h-5 ${addMode === 'remote' ? 'text-primary' : 'text-muted-foreground'}`} />
               <div className="text-left">
                 <p className="text-sm font-medium">Remote Server</p>
                 <p className="text-xs text-muted-foreground">RCON only — another machine</p>
@@ -1021,17 +1052,13 @@ export default function Servers() {
 
           {/* Remote Server Info Banner */}
           {addMode === 'remote' && (
-            <div className="flex items-start gap-3 p-3 rounded-lg bg-purple-500/10 border border-purple-500/20">
-              <Wifi className="w-5 h-5 text-purple-500 mt-0.5 shrink-0" />
-              <div className="text-sm">
-                <p className="font-medium text-purple-600 dark:text-purple-400">RCON-Only Connection</p>
-                <p className="text-muted-foreground mt-1">
-                  Features like config editing, mod management, backups, server start/stop, and file operations 
-                  will be unavailable. You'll be able to use the console, manage players, send chat messages, 
-                  control weather/events, and run scheduled commands.
-                </p>
-              </div>
-            </div>
+            <Alert className="border-primary/20 bg-primary/5">
+              <Wifi className="h-4 w-4 text-primary" />
+              <AlertTitle>RCON-Only Connection</AlertTitle>
+              <AlertDescription>
+                Features like config editing, mod management, backups, server start/stop, and file operations will be unavailable. You can still use the console, manage players, send chat messages, control weather and events, and run scheduled commands.
+              </AlertDescription>
+            </Alert>
           )}
           
           <div className="space-y-4 py-2">
@@ -1044,10 +1071,11 @@ export default function Servers() {
                     value={newServer.name}
                     onChange={e => setNewServer({ ...newServer, name: e.target.value })}
                     placeholder="My Remote PZ Server"
+                    maxLength={64}
                   />
                 </div>
                 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>RCON Host / IP *</Label>
                     <Input
@@ -1113,7 +1141,7 @@ export default function Servers() {
                     <Input
                       value={autoScanPath}
                       onChange={e => setAutoScanPath(e.target.value)}
-                      placeholder="E:\PZ or C:\Servers\Zomboid"
+                      placeholder="Path to scan for PZ servers"
                       className="font-mono text-sm flex-1"
                     />
                     <Button 
@@ -1137,7 +1165,7 @@ export default function Servers() {
                       <div className="space-y-2 max-h-64 overflow-y-auto">
                         {autoScanResult.detectedConfigs.map((config, idx) => (
                           <div 
-                            key={idx}
+                            key={config.serverName || idx}
                             className="p-3 rounded border bg-background hover:bg-accent cursor-pointer transition-colors"
                             onClick={() => handleSelectScannedConfig(config, autoScanResult.installPaths[0])}
                           >
@@ -1151,15 +1179,15 @@ export default function Servers() {
                               📁 Data: {config.dataPath}
                             </div>
                             {config.matchedBatFile ? (
-                              <div className="text-xs text-green-500 mt-1 font-mono truncate">
+                              <div className="mt-1 text-xs font-mono text-primary truncate">
                                 ✓ Matched: {config.matchedBatFile}
                               </div>
                             ) : autoScanResult.installPaths.length > 0 ? (
-                              <div className="text-xs text-yellow-500 mt-1">
-                                ⚠ No matching .bat file - will use default install path
+                              <div className="mt-1 text-xs text-warning">
+                                ⚠ No matching startup script - will use default install path
                               </div>
                             ) : (
-                              <div className="text-xs text-orange-500 mt-1">
+                              <div className="mt-1 text-xs text-warning">
                                 ⚠ No install path found - enter manually below
                               </div>
                             )}
@@ -1173,7 +1201,7 @@ export default function Servers() {
                           <p>📁 Install paths found: {autoScanResult.installPaths.length}</p>
                         )}
                         {autoScanResult.customBatFiles && autoScanResult.customBatFiles.length > 0 && (
-                          <p>🎯 Custom .bat files: {autoScanResult.customBatFiles.map(b => b.fileName).join(', ')}</p>
+                          <p>🎯 Custom startup scripts: {autoScanResult.customBatFiles.map(b => b.fileName).join(', ')}</p>
                         )}
                       </div>
                     </div>
@@ -1195,8 +1223,9 @@ export default function Servers() {
                       setDetectResult(null)
                       setDetectError(null)
                     }}
-                    placeholder="C:\Users\YourName\Zomboid"
+                    placeholder="Path to Zomboid data folder"
                     className="font-mono text-sm flex-1"
+                    maxLength={260}
                   />
                   <Button 
                     variant="secondary" 
@@ -1220,8 +1249,9 @@ export default function Servers() {
                 <Input
                   value={newServer.installPath}
                   onChange={e => setNewServer({ ...newServer, installPath: e.target.value })}
-                  placeholder="D:\Servers\ProjectZomboid (folder with StartServer64.bat)"
+                  placeholder="Path to PZ server folder (contains StartServer64.bat or start-server.sh)"
                   className="font-mono text-sm"
+                  maxLength={260}
                 />
               </div>
             </div>
@@ -1239,10 +1269,11 @@ export default function Servers() {
             {detectResult && (
               <div className="space-y-4">
                 {detectResult.detectedServers.length === 0 ? (
-                  <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-500/10 text-amber-600">
-                    <AlertCircle className="w-4 h-4" />
-                    <span className="text-sm">No server configs found. Run the server once to create the INI file.</span>
-                  </div>
+                  <Alert className="border-warning/40 bg-warning/10">
+                    <AlertCircle className="h-4 w-4 text-warning" />
+                    <AlertTitle className="text-warning">No server configs found</AlertTitle>
+                    <AlertDescription>Run the server once to create the INI file.</AlertDescription>
+                  </Alert>
                 ) : (
                   <>
                     {/* Server Selection (if multiple) */}
@@ -1272,13 +1303,13 @@ export default function Servers() {
                     
                     {/* Detected Settings Summary */}
                     {selectedServerConfig && (
-                      <div className="space-y-3 p-4 rounded-lg bg-muted/50 border">
-                        <div className="flex items-center gap-2 text-green-600 mb-3">
+                      <div className="space-y-3 rounded-lg border bg-muted/50 p-4">
+                        <div className="mb-3 flex items-center gap-2 text-primary">
                           <CheckCircle className="w-4 h-4" />
                           <span className="font-medium">Server detected successfully!</span>
                         </div>
                         
-                        <div className="grid grid-cols-2 gap-3 text-sm">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                           <div>
                             <span className="text-muted-foreground">Server Name:</span>
                             <p className="font-medium">{newServer.name}</p>
@@ -1308,18 +1339,18 @@ export default function Servers() {
                             onChange={e => setNewServer({ ...newServer, rconPassword: e.target.value })}
                           />
                           {!newServer.rconPassword ? (
-                            <p className="text-xs text-amber-600">
-                              Required for server control. You can also set <code className="bg-amber-500/20 px-1 rounded">RCONPassword=yourpassword</code> in your {newServer.serverName}.ini file.
+                            <p className="text-xs text-warning">
+                              Required for server control. You can also set <code className="rounded bg-warning/20 px-1">RCONPassword=yourpassword</code> in your {newServer.serverName}.ini file.
                             </p>
                           ) : (
-                            <p className="text-xs text-green-600 flex items-center gap-1">
+                            <p className="flex items-center gap-1 text-xs text-primary">
                               <CheckCircle className="w-3 h-3" /> Password set
                             </p>
                           )}
                         </div>
                         
                         {/* Memory Configuration */}
-                        <div className="grid grid-cols-2 gap-3 mt-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
                           <div className="space-y-2">
                             <Label>Min Memory (GB)</Label>
                             <Input
@@ -1385,13 +1416,14 @@ export default function Servers() {
             <div className="space-y-4">
               {/* Remote server indicator */}
               {editingServer.isRemote && (
-                <div className="flex items-center gap-2 p-3 rounded-lg bg-purple-500/10 border border-purple-500/20">
-                  <Globe className="w-4 h-4 text-purple-500" />
-                  <span className="text-sm font-medium text-purple-600 dark:text-purple-400">Remote Server (RCON Only)</span>
-                </div>
+                <Alert className="border-primary/20 bg-primary/5">
+                  <Globe className="h-4 w-4 text-primary" />
+                  <AlertTitle>Remote Server</AlertTitle>
+                  <AlertDescription>RCON-only management is available for this server.</AlertDescription>
+                </Alert>
               )}
               
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Display Name</Label>
                   <Input
@@ -1431,7 +1463,7 @@ export default function Servers() {
               </>
               )}
               
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label className="flex items-center gap-1.5">
                     RCON Host
@@ -1468,7 +1500,7 @@ export default function Servers() {
                 />
               </div>
               
-              <div className={editingServer.isRemote ? "grid grid-cols-1 gap-4" : "grid grid-cols-3 gap-4"}>
+              <div className={editingServer.isRemote ? "grid grid-cols-1 gap-4" : "grid grid-cols-1 sm:grid-cols-3 gap-4"}>
                 <div className="space-y-2">
                   <Label>Game Port</Label>
                   <Input
@@ -1527,11 +1559,10 @@ export default function Servers() {
                 
                 {deleteServer?.installPath && (
                   <div className="flex items-start gap-3 p-3 rounded-lg border bg-muted/50">
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       id="deleteFiles"
                       checked={deleteFiles}
-                      onChange={(e) => setDeleteFiles(e.target.checked)}
+                      onCheckedChange={(checked) => setDeleteFiles(checked === true)}
                       className="mt-1"
                     />
                     <label htmlFor="deleteFiles" className="text-sm cursor-pointer">
@@ -1590,12 +1621,12 @@ export default function Servers() {
               <Input
                 value={steamcmdPath}
                 onChange={e => setSteamcmdPath(e.target.value)}
-                placeholder="D:\SteamCMD"
+                placeholder="Path to SteamCMD folder"
                 className="font-mono text-sm"
                 disabled={steamRunning}
               />
               <p className="text-xs text-muted-foreground">
-                Folder containing steamcmd.exe
+                Folder containing steamcmd
               </p>
             </div>
             
@@ -1637,7 +1668,7 @@ export default function Servers() {
             {steamLogs.length > 0 && (
               <div className="space-y-2">
                 <Label>Progress</Label>
-                <div className="bg-black rounded-lg p-3 h-48 overflow-y-auto font-mono text-xs text-green-400">
+                <div className="h-48 overflow-y-auto rounded-lg border bg-muted/40 p-3 font-mono text-xs text-foreground">
                   {steamLogs.map((log, i) => (
                     <div key={i}>{log}</div>
                   ))}
@@ -1671,7 +1702,6 @@ export default function Servers() {
             {steamCompleted === 'success' && (
               <Button 
                 variant="default"
-                className="bg-green-600 hover:bg-green-700"
                 onClick={() => setSteamOperation(null)}
               >
                 <CheckCircle2 className="w-4 h-4 mr-2" /> Done

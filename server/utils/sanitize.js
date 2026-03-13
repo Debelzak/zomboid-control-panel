@@ -9,6 +9,8 @@ const WIN_PATH_RE = /[A-Z]:\\[^\s'")\]>}]+/gi;
 const WIN_FWD_PATH_RE = /[A-Z]:\/[^\s'")\]>}]+/gi;
 // Matches UNC paths like \\server\share\path
 const UNC_PATH_RE = /\\\\[^\s'")\]>}]+/gi;
+// Matches Linux/macOS absolute paths like /home/user/something or /opt/pz/server
+const UNIX_PATH_RE = /\/(?:home|opt|usr|var|tmp|srv|root|etc|mnt|media)\/[^\s'")\]>}]+/gi;
 
 /**
  * Remove filesystem paths from an error message.
@@ -20,5 +22,6 @@ export function sanitizeError(message) {
   return message
     .replace(WIN_PATH_RE, '[path]')
     .replace(WIN_FWD_PATH_RE, '[path]')
-    .replace(UNC_PATH_RE, '[path]');
+    .replace(UNC_PATH_RE, '[path]')
+    .replace(UNIX_PATH_RE, '[path]');
 }

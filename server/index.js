@@ -1,4 +1,5 @@
 import express from 'express';
+import compression from 'compression';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
@@ -158,10 +159,10 @@ app.use(helmet({
     directives: {
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'", "'unsafe-inline'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
       imgSrc: ["'self'", 'data:', 'https:'],
       connectSrc: ["'self'", 'ws:', 'wss:'],
-      fontSrc: ["'self'"],
+      fontSrc: ["'self'", 'https://fonts.gstatic.com'],
       objectSrc: ["'none'"],
       frameAncestors: ["'none'"],
     }
@@ -187,6 +188,9 @@ app.use(cors({
 // Body parser with explicit size limit
 app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
+
+// Compress all HTTP responses (gzip/deflate)
+app.use(compression({ threshold: 1024 }));
 
 // Rate limiting — applied before auth to protect against unauthenticated floods
 const apiLimiter = rateLimit({
@@ -503,7 +507,17 @@ if (isPackaged) {
 }
 
 log.debug(`Serving client from: ${clientDistPath}`);
-app.use(express.static(clientDistPath));
+// Serve hashed assets with long cache, HTML with no-cache
+app.use(express.static(clientDistPath, {
+  maxAge: '7d',
+  immutable: true,
+  setHeaders(res, filePath) {
+    // HTML must not be cached — it references hashed assets
+    if (filePath.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-cache');
+    }
+  },
+}));
 
 // Global API error handler — sanitize internal details from error responses
 // Must be defined before the catch-all route but after all API routes
@@ -903,7 +917,12 @@ async function start() {
         const protocol = httpsServer ? 'https' : 'http';
         const port = httpsServer ? httpsPort : PORT;
         const url = `${protocol}://localhost:${port}`;
-        exec(`start "" "${url}"`, (err) => {
+        const openCmd = process.platform === 'win32' 
+          ? `start "" "${url}"` 
+          : process.platform === 'darwin' 
+            ? `open "${url}"` 
+            : `xdg-open "${url}"`;
+        exec(openCmd, (err) => {
           if (err) log.error('Failed to open browser:', err);
         });
       }

@@ -13,14 +13,18 @@ export function PageHeader({ title, description, icon, actions, badge }: PageHea
     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
       <div className="space-y-1.5">
         <div className="flex items-center gap-3">
+          {icon && (
+            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-primary/25 bg-gradient-to-br from-primary/18 via-primary/10 to-accent/18 text-primary shadow-sm">
+              {icon}
+            </div>
+          )}
           <div>
             <div className="flex items-center gap-3">
-              {icon && <span className="text-primary shrink-0">{icon}</span>}
-              <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl font-display">{title}</h1>
+              <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">{title}</h1>
               {badge}
             </div>
             {description && (
-              <p className="mt-1 max-w-3xl text-sm text-muted-foreground sm:text-base">{description}</p>
+              <p className="mt-1 max-w-3xl text-sm text-muted-foreground sm:text-[15px]">{description}</p>
             )}
           </div>
         </div>

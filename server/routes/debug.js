@@ -185,7 +185,8 @@ router.get('/logs/download/:filename', async (req, res) => {
     }
     
     res.setHeader('Content-Type', 'text/plain');
-    res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
+    const safeFilename = filename.replace(/["\r\n]/g, '');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}"`);
     
     const readStream = fs.createReadStream(logsPath);
     readStream.pipe(res);

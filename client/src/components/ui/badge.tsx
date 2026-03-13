@@ -14,8 +14,8 @@ function Badge({ className, variant = 'default', ...props }: BadgeProps) {
     secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
     destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/80",
     outline: "text-foreground border border-input",
-    success: "bg-green-600 text-white hover:bg-green-700",
-    warning: "bg-yellow-600 text-white hover:bg-yellow-700"
+    success: "bg-[hsl(var(--success))] text-[hsl(var(--success-foreground))] hover:bg-[hsl(var(--success)/0.85)]",
+    warning: "bg-[hsl(var(--warning))] text-[hsl(var(--warning-foreground))] hover:bg-[hsl(var(--warning)/0.85)]"
   }
 
   return (
@@ -25,6 +25,7 @@ function Badge({ className, variant = 'default', ...props }: BadgeProps) {
         variants[variant],
         className
       )}
+      data-badge-variant={variant}
       {...props}
     />
   )

@@ -22,6 +22,7 @@ import { useToast } from '@/components/ui/use-toast'
 import { panelBridgeApi, playersApi, rconApi } from '@/lib/api'
 import { useSocket } from '@/contexts/SocketContext'
 import { EmptyState } from '@/components/EmptyState'
+import { cn } from '@/lib/utils'
 
 interface ChatMessage {
   id: string
@@ -37,6 +38,29 @@ interface Player {
 }
 
 type ChatChannel = 'server' | 'admin' | 'general' | 'alert'
+
+const channelTone: Record<ChatChannel, { surface: string; icon: string; label: string }> = {
+  server: {
+    surface: 'border-border/60 bg-muted/30',
+    icon: 'text-primary',
+    label: 'text-foreground/90',
+  },
+  alert: {
+    surface: 'border-warning/20 bg-warning/10',
+    icon: 'text-warning',
+    label: 'text-warning',
+  },
+  admin: {
+    surface: 'border-destructive/20 bg-destructive/10',
+    icon: 'text-destructive',
+    label: 'text-destructive',
+  },
+  general: {
+    surface: 'border-primary/20 bg-primary/10',
+    icon: 'text-primary',
+    label: 'text-primary',
+  },
+}
 
 export default function Chat() {
   const [message, setMessage] = useState('')
@@ -213,8 +237,8 @@ export default function Chat() {
         }].slice(-200))
         setMessage('')
         toast({
-          title: 'Message Sent',
-          description: `Sent to ${channelLabel}`,
+          title: 'Transmission Sent',
+          description: `Routed cleanly to ${channelLabel}`,
           variant: 'success' as const,
         })
       } else {
@@ -239,28 +263,19 @@ export default function Chat() {
   }
 
   const getMessageStyle = (type: ChatChannel) => {
-    switch (type) {
-      case 'alert':
-        return 'bg-amber-500/10 border-l-4 border-amber-500 ml-4'
-      case 'admin':
-        return 'bg-red-500/10 border-l-4 border-red-500 ml-4'
-      case 'general':
-        return 'bg-blue-500/10 border-l-4 border-blue-500 ml-4'
-      default:
-        return 'bg-primary/10 ml-4'
-    }
+    return cn('ml-4 rounded-xl border px-3 py-3', channelTone[type].surface)
   }
 
   const getMessageIcon = (type: ChatChannel) => {
     switch (type) {
       case 'alert':
-        return <Bell className="w-3 h-3 text-amber-500" />
+        return <Bell className={cn('w-3 h-3', channelTone[type].icon)} />
       case 'admin':
-        return <Shield className="w-3 h-3 text-red-500" />
+        return <Shield className={cn('w-3 h-3', channelTone[type].icon)} />
       case 'general':
-        return <MessageSquare className="w-3 h-3 text-blue-500" />
+        return <MessageSquare className={cn('w-3 h-3', channelTone[type].icon)} />
       default:
-        return <Megaphone className="w-3 h-3 text-primary" />
+        return <Megaphone className={cn('w-3 h-3', channelTone[type].icon)} />
     }
   }
 
@@ -268,17 +283,24 @@ export default function Chat() {
     <div className="space-y-6 page-transition">
       <PageHeader
         title="In-Game Chat"
-        description="Send messages to players via PanelBridge"
+        description="Send server, alert, admin, or custom-name messages through PanelBridge, with RCON fallback for standard broadcasts."
         icon={<MessagesSquare className="w-5 h-5" />}
         actions={
           <div className="flex items-center gap-2">
-            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg ${bridgeConnected ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'}`}>
-              {bridgeLoading ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <div className={`w-2 h-2 rounded-full ${bridgeConnected ? 'bg-emerald-500' : 'bg-red-500'}`} />
+            <div
+              className={cn(
+                'flex items-center gap-2 rounded-lg border px-3 py-1.5',
+                bridgeConnected ? 'border-primary/15 bg-primary/8 text-foreground' : 'border-destructive/20 bg-destructive/8 text-foreground'
               )}
-              <span className="text-sm font-medium">{bridgeConnected ? 'Bridge Connected' : 'Bridge Offline'}</span>
+            >
+              {bridgeLoading ? (
+                <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+              ) : (
+                <div className={cn('w-2 h-2 rounded-full', bridgeConnected ? 'bg-primary' : 'bg-destructive')} aria-hidden="true" />
+              )}
+              <span className={cn('text-sm font-medium', bridgeConnected ? 'text-foreground' : 'text-destructive')}>
+                {bridgeConnected ? 'Bridge ready' : 'Bridge offline'}
+              </span>
             </div>
             <Button variant="outline" size="sm" onClick={() => { fetchPlayers(); checkBridgeStatus() }} className="gap-2">
               <RefreshCw className="w-4 h-4" />
@@ -290,13 +312,13 @@ export default function Chat() {
 
       {/* Bridge Warning */}
       {!bridgeConnected && !bridgeLoading && (
-        <Card className="border-amber-500/30 bg-amber-500/5">
+        <Card className="border-warning/25 bg-warning/8">
           <CardContent className="flex items-center gap-4 py-4">
-            <AlertCircle className="w-5 h-5 text-amber-500 shrink-0" />
+            <AlertCircle className="w-5 h-5 text-warning shrink-0" />
             <div>
-              <p className="font-medium text-amber-600 dark:text-amber-400">PanelBridge Not Connected</p>
+              <p className="font-medium text-warning">PanelBridge Not Connected</p>
               <p className="text-sm text-muted-foreground">
-                Make sure the PZ server is running and PanelBridge mod is installed. Configure in Panel Settings.
+                Standard broadcasts can still go out through RCON. Reconnect PanelBridge for admin chat, custom author names, and richer routing controls.
               </p>
             </div>
           </CardContent>
@@ -306,34 +328,30 @@ export default function Chat() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Chat Window */}
         <div className="lg:col-span-2">
-          <Card className="card-interactive h-[600px] flex flex-col">
+          <Card className="h-[50vh] min-h-[300px] sm:h-[600px] flex flex-col">
             <CardHeader className="pb-3 border-b shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-                  <MessagesSquare className="w-5 h-5 text-primary" />
-                </div>
-                <div>
-                  <CardTitle className="text-lg">Server Chat</CardTitle>
-                  <CardDescription className="mt-0.5">Send messages to players in-game</CardDescription>
-                </div>
-              </div>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <MessagesSquare className="w-4 h-4 text-primary" />
+                Server Chat
+              </CardTitle>
+              <CardDescription>Send a live message to connected players.</CardDescription>
             </CardHeader>
             <CardContent className="flex-1 flex flex-col p-0 min-h-0">
               {/* Messages Area */}
               <ScrollArea className="flex-1 px-4">
                 <div className="py-4 space-y-3">
                   {chatHistory.length === 0 ? (
-                    <EmptyState type="noMessages" title="No messages yet" description="Send a message to get started" compact />
+                    <EmptyState type="noMessages" title="No chat messages yet" description="Send a message to test the bridge and start the chat log." compact />
                   ) : (
                     chatHistory.map((msg) => (
                       <div
                         key={msg.id}
-                        className={`p-3 rounded-lg ${getMessageStyle(msg.type)}`}
+                        className={getMessageStyle(msg.type)}
                       >
                         <div className="flex items-center justify-between mb-1">
                           <div className="flex items-center gap-2">
                             {getMessageIcon(msg.type)}
-                            <span className="text-xs font-medium text-muted-foreground">
+                            <span className={cn('text-xs font-medium', channelTone[msg.type].label)}>
                               {msg.type === 'general' && msg.author ? msg.author : getChannelLabel(msg.type)}
                             </span>
                           </div>
@@ -341,7 +359,7 @@ export default function Chat() {
                             {msg.timestamp.toLocaleTimeString()}
                           </span>
                         </div>
-                        <p className="text-sm">{msg.message}</p>
+                        <p className="text-sm break-words [overflow-wrap:anywhere]">{msg.message}</p>
                       </div>
                     ))
                   )}
@@ -351,9 +369,9 @@ export default function Chat() {
 
               {/* Message Input */}
               <div className="p-4 border-t bg-muted/30">
-                <div className="flex gap-2 mb-3">
+                <div className="flex flex-wrap gap-2 mb-3">
                   <Select value={channel} onValueChange={(v) => setChannel(v as ChatChannel)}>
-                    <SelectTrigger className="w-44">
+                    <SelectTrigger className="h-11 w-full sm:w-44">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -365,20 +383,20 @@ export default function Chat() {
                       </SelectItem>
                       <SelectItem value="alert">
                         <div className="flex items-center gap-2">
-                          <Bell className="w-4 h-4 text-amber-500" />
-                          Alert (Prominent)
+                          <Bell className="w-4 h-4 text-warning" />
+                          Alert (high visibility)
                         </div>
                       </SelectItem>
                       <SelectItem value="admin">
                         <div className="flex items-center gap-2">
-                          <Shield className="w-4 h-4 text-red-500" />
+                          <Shield className="w-4 h-4 text-destructive" />
                           Admin Only
                         </div>
                       </SelectItem>
                       <SelectItem value="general">
                         <div className="flex items-center gap-2">
-                          <MessageSquare className="w-4 h-4 text-blue-500" />
-                          Custom Author
+                          <MessageSquare className="w-4 h-4 text-primary" />
+                          Custom name
                         </div>
                       </SelectItem>
                     </SelectContent>
@@ -386,27 +404,29 @@ export default function Chat() {
                   
                   {channel === 'general' && (
                     <Input
-                      placeholder="Author name..."
+                      placeholder="Display name"
                       value={authorName}
                       onChange={(e) => setAuthorName(e.target.value)}
-                      className="w-32"
+                      maxLength={32}
+                      className="h-11 w-full sm:w-36"
                     />
                   )}
                 </div>
 
                 <div className="flex gap-2">
                   <Input
-                    placeholder="Type your message..."
+                    placeholder="Write a message to players..."
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    disabled={sending || !bridgeConnected}
-                    className="flex-1"
+                    disabled={sending}
+                    maxLength={500}
+                    className="h-11 flex-1"
                   />
                   <Button
                     onClick={sendMessage}
-                    disabled={sending || !message.trim() || !bridgeConnected}
-                    className="gap-2"
+                    disabled={sending || !message.trim()}
+                    className="h-11 min-w-28 gap-2"
                   >
                     {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                     Send
@@ -420,27 +440,23 @@ export default function Chat() {
         {/* Sidebar */}
         <div className="space-y-6">
           {/* Online Players */}
-          <Card className="card-interactive">
+          <Card>
             <CardHeader className="pb-3">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center">
-                  <Users className="w-5 h-5 text-emerald-400" />
-                </div>
-                <div>
-                  <CardTitle className="text-lg">Online Players</CardTitle>
-                  <CardDescription>{players.length} players</CardDescription>
-                </div>
-              </div>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Users className="w-4 h-4 text-primary" />
+                Online Players
+              </CardTitle>
+              <CardDescription>{players.length} players</CardDescription>
             </CardHeader>
             <CardContent>
               {players.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No players online</p>
+                <p className="text-sm text-muted-foreground">No players are online right now.</p>
               ) : (
                 <div className="space-y-2">
                   {players.map((player) => (
-                    <div key={player.name} className="flex items-center gap-2 p-2 rounded-lg bg-muted/50">
-                      <div className="w-2 h-2 rounded-full bg-emerald-500" />
-                      <span className="text-sm font-medium">{player.name}</span>
+                    <div key={player.name} className="flex items-center gap-2 p-2 rounded-lg bg-muted/50 min-w-0">
+                      <div className="w-2 h-2 rounded-full bg-primary" aria-hidden="true" />
+                      <span className="text-sm font-medium truncate">{player.name}</span>
                     </div>
                   ))}
                 </div>
@@ -449,56 +465,52 @@ export default function Chat() {
           </Card>
 
           {/* Chat Types Info */}
-          <Card className="card-interactive">
+          <Card>
             <CardHeader className="pb-3">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center">
-                  <Info className="w-5 h-5 text-blue-400" />
-                </div>
-                <CardTitle className="text-lg">Chat Types</CardTitle>
-              </div>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Info className="w-4 h-4 text-muted-foreground" />
+                Chat Types
+              </CardTitle>
             </CardHeader>
             <CardContent className="text-sm space-y-3">
               <div className="flex items-start gap-2">
                 <Megaphone className="w-4 h-4 mt-0.5 text-primary shrink-0" />
                 <div>
                   <strong className="text-foreground">Server Chat:</strong>
-                  <span className="text-muted-foreground"> Standard message visible to all players.</span>
+                  <span className="text-muted-foreground"> Standard message shown to everyone online.</span>
                 </div>
               </div>
               <div className="flex items-start gap-2">
-                <Bell className="w-4 h-4 mt-0.5 text-amber-500 shrink-0" />
+                <Bell className="w-4 h-4 mt-0.5 text-warning shrink-0" />
                 <div>
                   <strong className="text-foreground">Alert:</strong>
-                  <span className="text-muted-foreground"> Prominent alert-style message to all.</span>
+                  <span className="text-muted-foreground"> Higher-visibility message for everyone online.</span>
                 </div>
               </div>
               <div className="flex items-start gap-2">
-                <Shield className="w-4 h-4 mt-0.5 text-red-500 shrink-0" />
+                <Shield className="w-4 h-4 mt-0.5 text-destructive shrink-0" />
                 <div>
                   <strong className="text-foreground">Admin Only:</strong>
-                  <span className="text-muted-foreground"> Only visible to admins.</span>
+                  <span className="text-muted-foreground"> Visible only to admins in game.</span>
                 </div>
               </div>
               <div className="flex items-start gap-2">
-                <MessageSquare className="w-4 h-4 mt-0.5 text-blue-500 shrink-0" />
+                <MessageSquare className="w-4 h-4 mt-0.5 text-primary shrink-0" />
                 <div>
                   <strong className="text-foreground">Custom Author:</strong>
-                  <span className="text-muted-foreground"> Appears in general chat with your name.</span>
+                  <span className="text-muted-foreground"> Sends a general chat message with the display name you choose.</span>
                 </div>
               </div>
             </CardContent>
           </Card>
 
           {/* Quick Messages */}
-          <Card className="card-interactive">
+          <Card>
             <CardHeader className="pb-3">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center">
-                  <Megaphone className="w-5 h-5 text-amber-400" />
-                </div>
-                <CardTitle className="text-lg">Quick Messages</CardTitle>
-              </div>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Megaphone className="w-4 h-4 text-warning" />
+                Quick Messages
+              </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
               {[
@@ -512,7 +524,7 @@ export default function Chat() {
                   key={quickMsg}
                   variant="outline"
                   size="sm"
-                  className="w-full justify-start text-left h-auto py-2 px-3"
+                  className="min-h-11 w-full justify-start whitespace-normal px-3 py-2 text-left"
                   onClick={() => setMessage(quickMsg)}
                 >
                   {quickMsg}

@@ -181,8 +181,8 @@ export default function Backups() {
       const result = await backupApi.createBackup()
       if (result.success && result.backup) {
         toast({
-          title: 'Backup Created',
-          description: `Created ${result.backup.name} in ${result.duration?.toFixed(1)}s`,
+          title: 'Safehouse Snapshot Created',
+          description: `Stored ${result.backup.name} in ${result.duration?.toFixed(1)}s`,
           variant: 'success' as const,
         })
         await fetchBackups()
@@ -209,8 +209,8 @@ export default function Backups() {
       const result = await backupApi.restoreBackup(name, { createPreRestoreBackup: true })
       if (result.success) {
         toast({
-          title: 'Backup Restored',
-          description: `Restored ${name} in ${(result.duration || 0).toFixed(1)}s`,
+          title: 'Recovery Point Restored',
+          description: `Rolled back to ${name} in ${(result.duration || 0).toFixed(1)}s`,
           variant: 'success' as const,
         })
         await fetchBackups()
@@ -249,8 +249,8 @@ export default function Backups() {
 
       if (successCount > 0) {
         toast({
-          title: 'Backups Deleted',
-          description: `Deleted ${successCount} backup${successCount !== 1 ? 's' : ''}${failCount > 0 ? ` (${failCount} failed)` : ''}`,
+          title: 'Old Snapshots Cleared',
+          description: `Removed ${successCount} backup${successCount !== 1 ? 's' : ''}${failCount > 0 ? ` (${failCount} failed)` : ''}`,
           variant: 'success' as const,
         })
       }
@@ -282,8 +282,8 @@ export default function Backups() {
       const result = await backupApi.deleteOlderThan(deleteOlderDays)
       if (result.success) {
         toast({
-          title: 'Old Backups Deleted',
-          description: result.message || `Deleted ${result.deleted || 0} backups`,
+          title: 'Rotation Complete',
+          description: result.message || `Removed ${result.deleted || 0} aging backups`,
           variant: 'success' as const,
         })
         await fetchBackups()
@@ -315,13 +315,13 @@ export default function Backups() {
       })
       await fetchBackupStatus()
       toast({
-        title: 'Settings Saved',
-        description: 'Backup settings have been updated',
+        title: 'Backup Plan Updated',
+        description: 'The panel saved your current backup schedule and limits.',
         variant: 'success' as const,
       })
     } catch (error) {
       toast({
-        title: 'Error',
+        title: 'Backup Plan Update Failed',
         description: error instanceof Error ? error.message : 'Failed to save settings',
         variant: 'destructive',
       })
@@ -335,12 +335,13 @@ export default function Backups() {
       await backupApi.updateSettings({ enabled })
       await fetchBackupStatus()
       toast({
-        title: enabled ? 'Scheduled Backups Enabled' : 'Scheduled Backups Disabled',
+        title: enabled ? 'Automatic Snapshots Armed' : 'Automatic Snapshots Stood Down',
+        description: enabled ? 'Recurring backup jobs are now active.' : 'Recurring backup jobs are currently paused.',
         variant: 'success' as const,
       })
     } catch (error) {
       toast({
-        title: 'Error',
+        title: 'Automatic Backup Update Failed',
         description: error instanceof Error ? error.message : 'Failed to update backup settings',
         variant: 'destructive',
       })
@@ -398,6 +399,18 @@ export default function Backups() {
         actions={
           <div className="flex items-center gap-2">
             <Button
+              onClick={handleCreateBackup}
+              disabled={creatingBackup || restoringBackup !== null || !backupStatus?.savesExists}
+              className="gap-2"
+            >
+              {creatingBackup ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Archive className="w-4 h-4" />
+              )}
+              {creatingBackup ? 'Creating...' : 'Create Backup'}
+            </Button>
+            <Button
               variant="outline"
               size="sm"
               onClick={() => setShowSettings(!showSettings)}
@@ -406,7 +419,14 @@ export default function Backups() {
               <Settings className="w-4 h-4" />
               Settings
             </Button>
-            <Button variant="outline" size="sm" onClick={refreshAll} disabled={loading}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={refreshAll}
+              disabled={loading}
+              aria-label="Refresh backup status"
+              title="Refresh backup status"
+            >
               <RefreshCw className={cn('w-4 h-4', loading && 'animate-spin')} />
             </Button>
           </div>
@@ -415,12 +435,10 @@ export default function Backups() {
 
       {/* Status Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 stagger-in">
-        <Card className="card-interactive">
+        <Card>
           <CardContent className="pt-6">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-cyan-500/10 flex items-center justify-center">
-                <Archive className="w-5 h-5 text-cyan-500" />
-              </div>
+              <Archive className="w-5 h-5 text-primary shrink-0" />
               <div>
                 <p className="text-2xl font-bold">{backups.length}</p>
                 <p className="text-sm text-muted-foreground">Total Backups</p>
@@ -429,12 +447,10 @@ export default function Backups() {
           </CardContent>
         </Card>
 
-        <Card className="card-interactive">
+        <Card>
           <CardContent className="pt-6">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-purple-500/10 flex items-center justify-center">
-                <HardDrive className="w-5 h-5 text-purple-500" />
-              </div>
+              <HardDrive className="w-5 h-5 text-muted-foreground shrink-0" />
               <div>
                 <p className="text-2xl font-bold">{formatBytes(totalSize)}</p>
                 <p className="text-sm text-muted-foreground">Total Size</p>
@@ -443,14 +459,12 @@ export default function Backups() {
           </CardContent>
         </Card>
 
-        <Card className="card-interactive">
+        <Card>
           <CardContent className="pt-6">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center">
-                <Clock className="w-5 h-5 text-emerald-500" />
-              </div>
+              <Clock className="w-5 h-5 text-primary shrink-0" />
               <div>
-                <p className="text-sm font-medium truncate max-w-[140px]">
+                <p className="text-sm font-medium truncate">
                   {backupStatus?.lastBackup
                     ? formatDate(backupStatus.lastBackup.created)
                     : 'Never'}
@@ -461,15 +475,10 @@ export default function Backups() {
           </CardContent>
         </Card>
 
-        <Card className="card-interactive">
+        <Card>
           <CardContent className="pt-6">
             <div className="flex items-center gap-3">
-              <div className={cn(
-                'w-10 h-10 rounded-xl flex items-center justify-center',
-                backupStatus?.enabled ? 'bg-emerald-500/10' : 'bg-zinc-500/10'
-              )}>
-                <Clock className={cn('w-5 h-5', backupStatus?.enabled ? 'text-emerald-500' : 'text-zinc-500')} />
-              </div>
+              <Clock className={cn('w-5 h-5 shrink-0', backupStatus?.enabled ? 'text-primary' : 'text-muted-foreground')} />
               <div className="flex-1">
                 <p className="text-sm font-medium">
                   {backupStatus?.enabled ? 'Auto-backup On' : 'Auto-backup Off'}
@@ -487,7 +496,7 @@ export default function Backups() {
 
       {/* Settings Panel (collapsible) */}
       {showSettings && (
-        <Card className="card-interactive border-cyan-500/30">
+        <Card className="border-primary/15">
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
               <Settings className="w-5 h-5" />
@@ -546,16 +555,16 @@ export default function Backups() {
                 </p>
               </div>
             </div>
-            <div className="flex justify-between items-center pt-2">
-              <div className="text-xs text-muted-foreground">
+            <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0 text-xs text-muted-foreground">
                 {backupStatus?.savesPath && (
-                  <span className="flex items-center gap-1">
+                  <span className="flex flex-wrap items-center gap-1 break-all">
                     <FolderOpen className="w-3 h-3" />
                     Saves: {backupStatus.savesPath}
                   </span>
                 )}
               </div>
-              <Button onClick={handleSaveSettings} disabled={savingSettings} size="sm">
+              <Button onClick={handleSaveSettings} disabled={savingSettings} size="sm" className="h-10 gap-2 self-start sm:self-auto">
                 {savingSettings && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                 Save Settings
               </Button>
@@ -566,17 +575,17 @@ export default function Backups() {
 
       {/* Progress Bar */}
       {(creatingBackup || backupProgress) && (
-        <Card className="card-interactive border-cyan-500/50 bg-cyan-500/5">
+        <Card className="border-primary/15 bg-primary/5">
           <CardContent className="pt-6">
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   {backupProgress?.phase === 'complete' ? (
-                    <Check className="w-5 h-5 text-emerald-500" />
+                    <Check className="w-5 h-5 text-primary" />
                   ) : backupProgress?.phase === 'error' ? (
-                    <AlertTriangle className="w-5 h-5 text-red-500" />
+                    <AlertTriangle className="w-5 h-5 text-destructive" />
                   ) : (
-                    <Loader2 className="w-5 h-5 animate-spin text-cyan-500" />
+                    <Loader2 className="w-5 h-5 animate-spin text-primary" />
                   )}
                   <span className="font-medium">
                     {backupProgress?.message || 'Creating backup...'}
@@ -598,26 +607,26 @@ export default function Backups() {
       )}
 
       {/* Main Backup Card */}
-      <Card className="card-interactive">
+      <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3">
               <CardTitle className="text-lg">Backup Files</CardTitle>
               {!backupStatus?.savesExists && (
-                <span className="text-xs text-amber-500 flex items-center gap-1">
+                <span className="flex items-center gap-1 text-xs text-warning">
                   <AlertTriangle className="w-3 h-3" />
                   Saves folder not found
                 </span>
               )}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {isAnySelected && (
                 <Button
                   variant="destructive"
                   size="sm"
                   onClick={() => setDeleteDialog({ open: true, names: Array.from(selectedBackups) })}
                   disabled={deletingBackups}
-                  className="gap-2"
+                  className="h-10 gap-2"
                 >
                   <Trash2 className="w-4 h-4" />
                   Delete ({selectedBackups.size})
@@ -628,26 +637,26 @@ export default function Backups() {
                 size="sm"
                 onClick={() => setDeleteOlderDialog(true)}
                 disabled={deletingOlder || backups.length === 0}
-                className="gap-2"
+                className="h-10 gap-2"
               >
                 {deletingOlder ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
                   <Clock className="w-4 h-4" />
                 )}
-                Delete Old
+                Delete Older
               </Button>
               <Button
                 onClick={handleCreateBackup}
-                disabled={creatingBackup || !backupStatus?.savesExists}
-                className="gap-2"
+                disabled={creatingBackup || restoringBackup !== null || !backupStatus?.savesExists}
+                className="h-10 gap-2"
               >
                 {creatingBackup ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
                   <Archive className="w-4 h-4" />
                 )}
-                {creatingBackup ? 'Creating...' : 'Create Backup'}
+                {creatingBackup ? 'Creating backup...' : 'Create backup'}
               </Button>
             </div>
           </div>
@@ -658,7 +667,7 @@ export default function Backups() {
               <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
             </div>
           ) : backups.length === 0 ? (
-            <EmptyState type="noData" title="No backups found" description="Create a backup to protect your server data" />
+            <EmptyState type="noData" title="No backups yet" description="Create a manual backup before you change saves, mods, or server settings." />
           ) : (
             <div className="space-y-2">
               {/* Select All Header */}
@@ -669,12 +678,12 @@ export default function Backups() {
                   id="select-all"
                 />
                 <Label htmlFor="select-all" className="text-sm font-medium cursor-pointer flex-1">
-                  {allSelected ? 'Deselect All' : 'Select All'} ({backups.length} backups)
+                  {allSelected ? 'Clear backup selection' : 'Select all backups'} ({backups.length})
                 </Label>
               </div>
 
               {/* Backup List */}
-              <ScrollArea className="h-[400px]">
+              <ScrollArea className="h-[300px] sm:h-[400px]">
                 <div className="space-y-2 pr-4">
                   {backups.map((backup) => {
                     const isSelected = selectedBackups.has(backup.name)
@@ -686,7 +695,7 @@ export default function Backups() {
                         className={cn(
                           'flex items-center gap-3 p-4 rounded-lg border transition-all',
                           isSelected
-                            ? 'bg-cyan-500/10 border-cyan-500/50'
+                            ? 'border-primary/25 bg-primary/8'
                             : 'bg-muted/30 border-transparent hover:bg-muted/50'
                         )}
                       >
@@ -698,7 +707,7 @@ export default function Backups() {
 
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
-                            <Archive className="w-4 h-4 text-cyan-500 flex-shrink-0" />
+                            <Archive className="w-4 h-4 text-primary flex-shrink-0" />
                             <p className="font-medium truncate">{backup.name}</p>
                           </div>
                           <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
@@ -718,8 +727,9 @@ export default function Backups() {
                             variant="ghost"
                             size="sm"
                             onClick={() => setRestoreDialog({ open: true, backupName: backup.name })}
-                            disabled={isRestoring || restoringBackup !== null}
-                            className="text-amber-400 hover:text-amber-500 hover:bg-amber-500/10"
+                            disabled={isRestoring || restoringBackup !== null || creatingBackup}
+                            className="h-9 w-9 text-warning hover:text-warning hover:bg-warning/10"
+                            aria-label={`Restore ${backup.name}`}
                             title="Restore this backup"
                           >
                             {isRestoring ? (
@@ -732,6 +742,8 @@ export default function Backups() {
                             variant="ghost"
                             size="sm"
                             onClick={() => backupApi.downloadBackup(backup.name)}
+                            className="h-9 w-9"
+                            aria-label={`Download ${backup.name}`}
                             title="Download backup"
                           >
                             <Download className="w-4 h-4" />
@@ -741,7 +753,8 @@ export default function Backups() {
                             size="sm"
                             onClick={() => setDeleteDialog({ open: true, names: [backup.name] })}
                             disabled={deletingBackups}
-                            className="text-red-400 hover:text-red-500 hover:bg-red-500/10"
+                            className="h-9 w-9 text-destructive hover:text-destructive hover:bg-destructive/10"
+                            aria-label={`Delete ${backup.name}`}
                             title="Delete backup"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -761,19 +774,18 @@ export default function Backups() {
       <AlertDialog open={restoreDialog.open} onOpenChange={(open) => setRestoreDialog({ open, backupName: null })}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2 text-amber-500">
+            <AlertDialogTitle className="flex items-center gap-2 text-warning">
               <AlertTriangle className="w-5 h-5" />
               Restore Backup
             </AlertDialogTitle>
             <AlertDialogDescription className="space-y-2">
               <p>
-                This will restore <strong>{restoreDialog.backupName}</strong> and{' '}
-                <span className="text-red-400 font-medium">OVERWRITE</span> the current world data.
+                Restore <strong>{restoreDialog.backupName}</strong>. This will <span className="font-medium text-destructive">replace</span> the current world data.
               </p>
               <ul className="list-disc list-inside text-sm space-y-1 mt-2">
-                <li>The server must be <strong>STOPPED</strong></li>
-                <li>A pre-restore backup will be created automatically</li>
-                <li>This action cannot be undone</li>
+                <li>Stop the server first.</li>
+                <li>The panel will create a safety backup before restoring.</li>
+                <li>This action cannot be undone.</li>
               </ul>
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -781,9 +793,9 @@ export default function Backups() {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => restoreDialog.backupName && handleRestoreBackup(restoreDialog.backupName)}
-              className="bg-amber-500 hover:bg-amber-600 text-black"
+              className="bg-warning text-warning-foreground hover:bg-warning/90"
             >
-              Restore Backup
+              Restore this backup
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -793,20 +805,18 @@ export default function Backups() {
       <AlertDialog open={deleteDialog.open} onOpenChange={(open) => setDeleteDialog({ open, names: [] })}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2 text-red-500">
+            <AlertDialogTitle className="flex items-center gap-2 text-destructive">
               <Trash2 className="w-5 h-5" />
               Delete Backup{deleteDialog.names.length > 1 ? 's' : ''}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {deleteDialog.names.length === 1 ? (
                 <p>
-                  Are you sure you want to delete <strong>{deleteDialog.names[0]}</strong>? This action
-                  cannot be undone.
+                  Delete <strong>{deleteDialog.names[0]}</strong>? This permanently removes the backup file.
                 </p>
               ) : (
                 <p>
-                  Are you sure you want to delete <strong>{deleteDialog.names.length} backups</strong>?
-                  This action cannot be undone.
+                  Delete <strong>{deleteDialog.names.length} backups</strong>? This permanently removes those files.
                 </p>
               )}
             </AlertDialogDescription>
@@ -815,9 +825,9 @@ export default function Backups() {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => handleDeleteBackups(deleteDialog.names)}
-              className="bg-red-500 hover:bg-red-600"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Delete
+              Delete backup{deleteDialog.names.length > 1 ? 's' : ''}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -827,13 +837,13 @@ export default function Backups() {
       <AlertDialog open={deleteOlderDialog} onOpenChange={setDeleteOlderDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2 text-amber-500">
+            <AlertDialogTitle className="flex items-center gap-2 text-warning">
               <Clock className="w-5 h-5" />
               Delete Old Backups
             </AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-4">
-                <p>Delete all backups older than a specific number of days.</p>
+                <p>Delete every backup older than the number of days you choose here.</p>
                 <div className="flex items-center gap-3">
                   <Label htmlFor="delete-days" className="text-foreground whitespace-nowrap">Delete backups older than</Label>
                   <Input
@@ -853,7 +863,7 @@ export default function Backups() {
                   <span className="text-foreground">days</span>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  This will permanently delete all backups created more than {deleteOlderDays} days ago.
+                  This permanently deletes backups created more than {deleteOlderDays} days ago.
                 </p>
               </div>
             </AlertDialogDescription>
@@ -862,9 +872,9 @@ export default function Backups() {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDeleteOlderThan}
-              className="bg-amber-500 hover:bg-amber-600 text-black"
+              className="bg-warning text-warning-foreground hover:bg-warning/90"
             >
-              Delete Old Backups
+              Delete older backups
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

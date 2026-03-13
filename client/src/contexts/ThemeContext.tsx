@@ -1,4 +1,20 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
+import { createContext, useContext, useEffect, useMemo, ReactNode } from 'react'
+
+const SURVIVAL_FONT_STYLESHEET_ID = 'pz-survival-fonts'
+const SURVIVAL_FONT_STYLESHEET_HREF = 'https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Special+Elite&display=swap'
+
+function ensureSurvivalFontsLoaded() {
+  // Font stylesheet is preloaded in index.html; only inject if missing (e.g. dev hot-reload)
+  if (document.getElementById(SURVIVAL_FONT_STYLESHEET_ID)) return
+  const existing = document.querySelector(`link[href="${SURVIVAL_FONT_STYLESHEET_HREF}"]`)
+  if (existing) return
+
+  const link = document.createElement('link')
+  link.id = SURVIVAL_FONT_STYLESHEET_ID
+  link.rel = 'stylesheet'
+  link.href = SURVIVAL_FONT_STYLESHEET_HREF
+  document.head.appendChild(link)
+}
 
 export type ThemeName = 'clean' | 'survival'
 
@@ -10,21 +26,22 @@ interface ThemeContextType {
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined)
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setTheme] = useState<ThemeName>(() => {
-    const saved = localStorage.getItem('pz-theme')
-    return (saved as ThemeName) || 'clean'
-  })
+  const theme: ThemeName = 'survival'
+  const setTheme = () => {}
 
   useEffect(() => {
-    localStorage.setItem('pz-theme', theme)
+    localStorage.setItem('pz-theme', 'survival')
+    ensureSurvivalFontsLoaded()
     
     // Update document class for theme
     document.documentElement.classList.remove('theme-clean', 'theme-survival')
-    document.documentElement.classList.add(`theme-${theme}`)
+    document.documentElement.classList.add('theme-survival')
   }, [theme])
 
+  const value = useMemo(() => ({ theme, setTheme }), [theme])
+
   return (
-    <ThemeContext.Provider value={{ theme, setTheme }}>
+    <ThemeContext.Provider value={value}>
       {children}
     </ThemeContext.Provider>
   )

@@ -27,6 +27,19 @@ const emptyStateIcons = {
   empty: FolderOpen,
 } as const
 
+const emptyStateEyebrows = {
+  noData: 'Quiet Sector',
+  noResults: 'Nothing Matched',
+  serverOffline: 'Cold Server',
+  noPlayers: 'No Survivors Online',
+  noFile: 'Missing Record',
+  disconnected: 'Radio Silence',
+  noSchedule: 'No Tasks Armed',
+  noMods: 'Loadout Empty',
+  noMessages: 'Comms Quiet',
+  empty: 'Ready Space',
+} as const
+
 export type EmptyStateType = keyof typeof emptyStateIcons
 
 interface EmptyStateProps {
@@ -53,25 +66,29 @@ export function EmptyState({
   className = ''
 }: EmptyStateProps) {
   const IconComponent = emptyStateIcons[type]
+  const eyebrow = emptyStateEyebrows[type]
   const iconSize = compact ? 'w-10 h-10' : 'w-14 h-14'
   const containerSize = compact ? 'w-16 h-16' : 'w-20 h-20'
   const padding = compact ? 'py-8' : 'py-16'
 
   return (
     <div className={`flex flex-col items-center justify-center ${padding} px-4 text-center ${className}`}>
-      <div className={`${containerSize} rounded-2xl bg-muted/50 border border-border/50 flex items-center justify-center mb-4 empty-state-icon`}>
-        {icon || <IconComponent className={`${iconSize} text-muted-foreground/40`} />}
+      <div className="relative mb-4">
+        <div className={`${containerSize} empty-state-aura rounded-2xl border border-border/50 bg-muted/50 flex items-center justify-center empty-state-icon`} aria-hidden="true">
+          {icon || <IconComponent className={`${iconSize} text-muted-foreground/40`} />}
+        </div>
       </div>
+      <p className="mb-2 text-xs font-medium uppercase tracking-[0.24em] text-muted-foreground/80">{eyebrow}</p>
       <h3 className={`${compact ? 'text-base' : 'text-lg'} font-semibold text-foreground/80 mb-1`}>{title}</h3>
       {description && (
-        <p className={`${compact ? 'text-xs' : 'text-sm'} text-muted-foreground max-w-sm`}>{description}</p>
+        <p className={`${compact ? 'text-xs' : 'text-sm'} max-w-sm leading-6 text-muted-foreground`}>{description}</p>
       )}
       {action && (
         <Button
           variant={action.variant || 'outline'}
           size={compact ? 'sm' : 'default'}
           onClick={action.onClick}
-          className="mt-4"
+          className="mt-4 min-h-11"
         >
           {action.label}
         </Button>

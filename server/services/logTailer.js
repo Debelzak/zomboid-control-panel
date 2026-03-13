@@ -27,7 +27,8 @@ export class LogTailer extends EventEmitter {
     try {
         const activeServer = await getActiveServer();
         // Default Zomboid path logic
-        let basePath = process.env.USERPROFILE ? path.join(process.env.USERPROFILE, 'Zomboid') : '';
+        const homeDir = process.env.USERPROFILE || process.env.HOME || '';
+        let basePath = homeDir ? path.join(homeDir, 'Zomboid') : '';
         
         // Use explicitly configured Zomboid path if available
         if (activeServer?.zomboidDataPath) {

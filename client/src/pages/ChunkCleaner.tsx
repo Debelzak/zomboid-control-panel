@@ -231,7 +231,6 @@ export default function ChunkCleaner() {
       // The 'file' field is preserved unchanged for deletion operations.
       const rawChunks: ChunkInfo[] = chunksResult.chunks || []
       const isB42 = chunksResult.isB42 === true || (rawChunks.length > 0 && rawChunks[0].file?.includes('/'))
-      console.log('[ChunkCleaner] isB42:', isB42, '| sample file:', rawChunks[0]?.file, '| raw bounds:', JSON.stringify(chunksResult.bounds))
       if (isB42) {
         for (const c of rawChunks) {
           c.x = Math.floor(c.x * 8 / 10)
@@ -248,7 +247,6 @@ export default function ChunkCleaner() {
           }
           chunksResult.bounds = { minX, maxX, minY, maxY }
         }
-        console.log('[ChunkCleaner] Converted bounds:', JSON.stringify(chunksResult.bounds))
       }
       setChunks(rawChunks)
       setBounds(chunksResult.bounds)
@@ -378,8 +376,21 @@ export default function ChunkCleaner() {
       const W = canvasSize.width
       const H = canvasSize.height
       
+      // Read theme colors from CSS custom properties
+      const style = getComputedStyle(canvas)
+      const cssVar = (name: string) => style.getPropertyValue(name).trim()
+      const bgVar = cssVar('--background')
+      const primaryVar = cssVar('--primary') || '217 91% 60%'
+      const destructiveVar = cssVar('--destructive') || '0 70% 50%'
+      const mutedFgVar = cssVar('--muted-foreground') || '215 14% 55%'
+      const foregroundVar = cssVar('--foreground') || '210 11% 90%'
+      const warningVar = cssVar('--warning') || '28 80% 55%'
+      const hsl = (v: string, a: number) => `hsl(${v} / ${a})`
+
+      const canvasBg = bgVar ? `hsl(${bgVar})` : '#0f1117'
+      
       // Dark background
-      ctx.fillStyle = '#0f1117'
+      ctx.fillStyle = canvasBg
       ctx.fillRect(0, 0, W, H)
       
       if (!bounds || chunks.length === 0) return
@@ -421,7 +432,7 @@ export default function ChunkCleaner() {
         const tileGridMinY = Math.floor(visMinY / MAP_TILE_SIZE) * MAP_TILE_SIZE
         const tileGridMaxY = Math.ceil(visMaxY / MAP_TILE_SIZE) * MAP_TILE_SIZE
         
-        ctx.strokeStyle = 'rgba(59, 130, 246, 0.25)'
+        ctx.strokeStyle = hsl(primaryVar, 0.25)
         ctx.lineWidth = 1
         for (let x = tileGridMinX; x <= tileGridMaxX; x += MAP_TILE_SIZE) {
           const sx = Math.floor(x * scale + offset.x) + 0.5
@@ -454,7 +465,7 @@ export default function ChunkCleaner() {
           
           // Diamond marker
           const half = markerSize / 2
-          ctx.fillStyle = 'rgba(59, 130, 246, 0.85)'
+          ctx.fillStyle = hsl(primaryVar, 0.85)
           ctx.beginPath()
           ctx.moveTo(sx, sy - half)
           ctx.lineTo(sx + half, sy)
@@ -464,7 +475,7 @@ export default function ChunkCleaner() {
           ctx.fill()
           
           // White border
-          ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)'
+          ctx.strokeStyle = hsl(foregroundVar, 0.7)
           ctx.lineWidth = 1
           ctx.stroke()
           
@@ -472,14 +483,14 @@ export default function ChunkCleaner() {
           const labelX = sx + half + 4
           ctx.fillStyle = 'rgba(0, 0, 0, 0.6)'
           ctx.fillText(lm.name, labelX + 1, sy + 1)
-          ctx.fillStyle = 'rgba(220, 230, 255, 0.95)'
+          ctx.fillStyle = hsl(foregroundVar, 0.95)
           ctx.fillText(lm.name, labelX, sy)
         }
       }
       
       // ── Grid lines (only when zoomed in enough) ──
       if (scale > 4) {
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)'
+        ctx.strokeStyle = hsl(foregroundVar, 0.06)
         ctx.lineWidth = 1
         
         const gridMinX = Math.max(bounds.minX, visMinX)
@@ -519,7 +530,7 @@ export default function ChunkCleaner() {
         const sz = Math.max(scale, 1) // never go below 1px
         
         if (isSelected) {
-          ctx.fillStyle = 'rgba(239, 68, 68, 0.92)'
+          ctx.fillStyle = hsl(destructiveVar, 0.92)
         } else {
           const ratio = Math.min(chunk.size / 50000, 1)
           const r = Math.floor(240 + (1 - ratio) * 15)
@@ -542,7 +553,7 @@ export default function ChunkCleaner() {
         const by = bounds.minY * scale + offset.y
         const bw = (bounds.maxX - bounds.minX + 1) * scale
         const bh = (bounds.maxY - bounds.minY + 1) * scale
-        ctx.strokeStyle = 'rgba(251, 191, 36, 0.5)'
+        ctx.strokeStyle = hsl(warningVar, 0.5)
         ctx.lineWidth = 1.5
         ctx.setLineDash([6, 4])
         ctx.strokeRect(bx, by, bw, bh)
@@ -553,7 +564,7 @@ export default function ChunkCleaner() {
       if (scale > 18) {
         const fontSize = Math.min(10, scale * 0.5)
         ctx.font = `${fontSize}px monospace`
-        ctx.fillStyle = 'rgba(156, 163, 175, 0.6)'
+        ctx.fillStyle = hsl(mutedFgVar, 0.6)
         
         ctx.textAlign = 'center'
         ctx.textBaseline = 'bottom'
@@ -592,9 +603,9 @@ export default function ChunkCleaner() {
         const rw = Math.abs(s2x - s1x)
         const rh = Math.abs(s2y - s1y)
         
-        ctx.fillStyle = 'rgba(59, 130, 246, 0.15)'
+        ctx.fillStyle = hsl(primaryVar, 0.15)
         ctx.fillRect(rx, ry, rw, rh)
-        ctx.strokeStyle = '#3b82f6'
+        ctx.strokeStyle = hsl(primaryVar, 1)
         ctx.lineWidth = 2
         ctx.setLineDash([6, 4])
         ctx.strokeRect(rx, ry, rw, rh)
@@ -613,10 +624,10 @@ export default function ChunkCleaner() {
           ctx.textBaseline = 'bottom'
           const mx = rx + rw / 2
           const lm = ctx.measureText(selLabel)
-          ctx.fillStyle = 'rgba(59, 130, 246, 0.9)'
+          ctx.fillStyle = hsl(primaryVar, 0.9)
           const pw = lm.width + 10
           ctx.fillRect(mx - pw / 2, ry - 18, pw, 16)
-          ctx.fillStyle = '#fff'
+          ctx.fillStyle = hsl(foregroundVar, 1)
           ctx.fillText(selLabel, mx, ry - 4)
         }
       }
@@ -629,7 +640,7 @@ export default function ChunkCleaner() {
         const shx = hx * scale + offset.x
         const shy = hy * scale + offset.y
         
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)'
+        ctx.strokeStyle = hsl(foregroundVar, 0.5)
         ctx.lineWidth = 1.5
         ctx.strokeRect(shx, shy, scale, scale)
       }
@@ -656,7 +667,7 @@ export default function ChunkCleaner() {
         const metrics = ctx.measureText(label)
         ctx.fillStyle = 'rgba(0, 0, 0, 0.7)'
         ctx.fillRect(6, H - 22, metrics.width + 12, 18)
-        ctx.fillStyle = '#e5e7eb'
+        ctx.fillStyle = hsl(foregroundVar, 0.85)
         ctx.fillText(label, 12, H - 8)
       }
       
@@ -665,7 +676,7 @@ export default function ChunkCleaner() {
       const zm = ctx.measureText(zLabel)
       ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
       ctx.fillRect(W - zm.width - 16, H - 22, zm.width + 12, 18)
-      ctx.fillStyle = 'rgba(156, 163, 175, 0.7)'
+      ctx.fillStyle = hsl(mutedFgVar, 0.7)
       ctx.fillText(zLabel, W - 10, H - 8)
       
       // ── Top-left bounds info ──
@@ -679,7 +690,7 @@ export default function ChunkCleaner() {
       const bm = ctx.measureText(boundsLabel)
       ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
       ctx.fillRect(6, 6, bm.width + 12, 18)
-      ctx.fillStyle = 'rgba(156, 163, 175, 0.7)'
+      ctx.fillStyle = hsl(mutedFgVar, 0.7)
       ctx.fillText(boundsLabel, 12, 9)
     }
     
@@ -902,7 +913,7 @@ export default function ChunkCleaner() {
 
   return (
     <TooltipProvider>
-      <div className="space-y-4 page-transition">
+      <div className="space-y-6 page-transition">
         {/* Header */}
         <PageHeader
           title="Chunk Cleaner"
@@ -911,10 +922,10 @@ export default function ChunkCleaner() {
         />
 
         {/* Warning */}
-        <div className="p-3 rounded-lg border border-yellow-500/50 bg-yellow-500/10 flex items-start gap-3">
-          <AlertTriangle className="w-5 h-5 text-yellow-500 flex-shrink-0 mt-0.5" />
+        <div className="flex items-start gap-3 rounded-lg border border-warning/25 bg-warning/8 p-3">
+          <AlertTriangle className="mt-0.5 w-5 h-5 flex-shrink-0 text-warning" />
           <div className="text-sm">
-            <p className="font-medium text-yellow-500">Caution: This tool modifies save files</p>
+            <p className="font-medium text-warning">Caution: This tool modifies save files</p>
             <p className="text-muted-foreground">
               Deleting chunks will reset those areas. Any player constructions, loot, or zombies in those areas will be lost.
               Always create a backup before making changes. Stop the server before editing saves.
@@ -924,10 +935,10 @@ export default function ChunkCleaner() {
 
         {/* Limit Warning */}
         {limitReached && (
-          <div className="p-3 rounded-lg border border-orange-500/50 bg-orange-500/10 flex items-start gap-3">
-            <AlertTriangle className="w-5 h-5 text-orange-500 flex-shrink-0 mt-0.5" />
+          <div className="flex items-start gap-3 rounded-lg border border-warning/25 bg-warning/8 p-3">
+            <AlertTriangle className="mt-0.5 w-5 h-5 flex-shrink-0 text-warning" />
             <div className="text-sm">
-              <p className="font-medium text-orange-500">Chunk limit reached</p>
+              <p className="font-medium text-warning">Chunk limit reached</p>
               <p className="text-muted-foreground">
                 Only the first {chunks.length.toLocaleString()} chunks are shown. The save contains more chunks than can be displayed.
                 Use the region delete feature or select smaller areas at a time.
@@ -1043,6 +1054,7 @@ export default function ChunkCleaner() {
                       <Button
                         variant="outline"
                         size="icon"
+                        aria-label="Zoom in"
                         onClick={() => {
                           const newScale = Math.min(MAX_SCALE, scale * 1.3)
                           const cx = canvasSize.width / 2
@@ -1064,6 +1076,7 @@ export default function ChunkCleaner() {
                       <Button
                         variant="outline"
                         size="icon"
+                        aria-label="Zoom out"
                         onClick={() => {
                           const newScale = Math.max(MIN_SCALE, scale * 0.7)
                           const cx = canvasSize.width / 2
@@ -1082,7 +1095,7 @@ export default function ChunkCleaner() {
                   
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button variant="outline" size="icon" onClick={fitView}>
+                      <Button variant="outline" size="icon" onClick={fitView} aria-label="Fit all chunks">
                         <Maximize className="w-4 h-4" />
                       </Button>
                     </TooltipTrigger>
@@ -1138,7 +1151,7 @@ export default function ChunkCleaner() {
 
           {/* Right Panel - Canvas */}
           <div className="lg:col-span-3">
-            <Card className="h-[600px]">
+            <Card className="h-[50vh] min-h-[300px] sm:h-[60vh]">
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-sm flex items-center gap-2">
@@ -1213,14 +1226,14 @@ export default function ChunkCleaner() {
             </CardTitle>
           </CardHeader>
           <CardContent className="text-sm text-muted-foreground space-y-2">
-            <p>• <strong>Select a save</strong> — Choose the multiplayer save you want to modify</p>
-            <p>• <strong>Select chunks</strong> — Click to toggle a single chunk, or click+drag to select a region (orange = data, red = selected)</p>
-            <p>• <strong>Hold Shift</strong> — While clicking/dragging to deselect chunks from an existing selection</p>
-            <p>• <strong>Navigate</strong> — Scroll to zoom, right-click or middle-click to pan, press 1/2 to switch tools</p>
-            <p>• <strong>Map tiles</strong> — Toggle "Map Background" to overlay the PZ world map behind chunks (B41 tiles, may not cover B42 areas)</p>
-            <p>• <strong>Delete chunks</strong> — Selected chunks (red) will be deleted, resetting those map areas when players revisit</p>
-            <p>• <strong>Keyboard</strong> — Escape to clear selection, Delete to open delete dialog, 1/2 to switch tools</p>
-            <p>• <strong>Backup recommended</strong> — Always enable backup before deleting</p>
+            <p>• <strong>Select a save</strong> — Choose the multiplayer save you want to edit.</p>
+            <p>• <strong>Select chunks</strong> — Click one chunk, or click and drag to select an area. Orange chunks contain data; red chunks are selected.</p>
+            <p>• <strong>Remove chunks from the selection</strong> — Hold Shift while clicking or dragging.</p>
+            <p>• <strong>Move around the map</strong> — Scroll to zoom, right-click or middle-click to pan, and press 1 or 2 to switch tools.</p>
+            <p>• <strong>Map Background</strong> — Turn this on to overlay the Project Zomboid map behind the chunks. B41 tiles may not cover every B42 area.</p>
+            <p>• <strong>Delete selected chunks</strong> — When players revisit those areas, the game rebuilds them and removes player-built structures, loot, and zombies there.</p>
+            <p>• <strong>Keyboard shortcuts</strong> — Press Escape to clear the selection or Delete to open the delete dialog.</p>
+            <p>• <strong>Create a backup first</strong> — Keep backup enabled so you can undo mistakes later.</p>
           </CardContent>
         </Card>
 
@@ -1230,20 +1243,19 @@ export default function ChunkCleaner() {
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2 text-destructive">
                 <AlertTriangle className="w-5 h-5" />
-                Delete {selectedChunks.size} Chunks?
+                Delete {selectedChunks.size} selected chunks?
               </DialogTitle>
               <DialogDescription>
-                This will permanently delete the selected chunk files ({formatSize(selectedSize)}). The map areas will regenerate
-                when players visit them, but any player constructions or stored items will be lost.
+                This permanently removes {selectedChunks.size} chunk files ({formatSize(selectedSize)}). When players revisit those areas, the game rebuilds them and removes any player-built structures or stored items there.
               </DialogDescription>
             </DialogHeader>
             
             <div className="space-y-4">
               <div className="flex items-center justify-between p-3 rounded-lg bg-muted">
                 <div>
-                  <Label>Create Backup</Label>
+                  <Label>Create safety backup</Label>
                   <p className="text-xs text-muted-foreground">
-                    Save a copy of deleted chunks before removal
+                    Save a copy of the selected chunks before deleting them.
                   </p>
                 </div>
                 <Switch
@@ -1253,9 +1265,9 @@ export default function ChunkCleaner() {
               </div>
               
               {!createBackup && (
-                <div className="p-3 rounded-lg border border-destructive/50 bg-destructive/10 text-sm">
-                  <p className="font-medium text-destructive">Warning: No backup will be created</p>
-                  <p className="text-muted-foreground">Deleted chunks cannot be recovered without a backup.</p>
+                <div className="rounded-lg border border-destructive/25 bg-destructive/8 p-3 text-sm">
+                  <p className="font-medium text-destructive">No backup will be created</p>
+                  <p className="text-muted-foreground">You will not be able to recover these chunks after deletion.</p>
                 </div>
               )}
             </div>
@@ -1268,12 +1280,12 @@ export default function ChunkCleaner() {
                 {deleting ? (
                   <>
                     <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                    Deleting...
+                    Deleting chunks...
                   </>
                 ) : (
                   <>
                     <Trash2 className="w-4 h-4 mr-2" />
-                    Delete Chunks
+                    Delete selected chunks
                   </>
                 )}
               </Button>

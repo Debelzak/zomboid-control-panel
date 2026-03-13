@@ -67,6 +67,13 @@ interface InstallLog {
 
 type SetupMode = 'select' | 'full' | 'quick'
 
+function handleCardKeyDown(event: React.KeyboardEvent<HTMLDivElement>, onActivate: () => void) {
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault()
+    onActivate()
+  }
+}
+
 // Generate a random password
 function generatePassword(length = 12): string {
   const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
@@ -91,11 +98,11 @@ export default function ServerSetup() {
   const [currentStep, setCurrentStep] = useState(1)
   
   // Step 1: Prerequisites
-  const [steamCmdPath, setSteamCmdPath] = useState('C:\\SteamCMD')
+  const [steamCmdPath, setSteamCmdPath] = useState('')
   const [hasSteamCmd, setHasSteamCmd] = useState(false)
   
   // Step 2: Server Config
-  const [installPath, setInstallPath] = useState('C:\\PZServer')
+  const [installPath, setInstallPath] = useState('')
   const [serverName, setServerName] = useState('myserver')
   const [branch, setBranch] = useState('public')
   const [availableBranches, setAvailableBranches] = useState<Array<{name: string, description: string, buildId?: string | null}>>([
@@ -397,12 +404,17 @@ export default function ServerSetup() {
     }
   }
 
+  const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   const handleCopyPassword = () => {
     navigator.clipboard.writeText(rconPassword)
     setCopiedPassword(true)
     toast({ title: 'Copied', description: 'Password copied to clipboard' })
-    setTimeout(() => setCopiedPassword(false), 2000)
+    if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current)
+    copyTimeoutRef.current = setTimeout(() => setCopiedPassword(false), 2000)
   }
+
+  useEffect(() => () => { if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current) }, [])
 
   const handleRegeneratePassword = () => {
     setRconPassword(generatePassword(12))
@@ -535,32 +547,43 @@ export default function ServerSetup() {
 
         <div className="grid gap-6 md:grid-cols-2">
           {/* Full Install Card */}
+          {(() => {
+            const activate = () => {
+              setSetupMode('full')
+              setCurrentStep(1)
+            }
+
+            return (
           <Card 
-            className="cursor-pointer transition-all hover:border-primary hover:shadow-lg group relative overflow-hidden"
-            onClick={() => { setSetupMode('full'); setCurrentStep(1) }}
+            role="button"
+            tabIndex={0}
+            aria-describedby="full-setup-description"
+            className="group relative overflow-hidden cursor-pointer border-border/70 bg-gradient-to-br from-card via-secondary/50 to-accent/12 transition-all hover:border-primary/40 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            onClick={activate}
+            onKeyDown={(event) => handleCardKeyDown(event, activate)}
           >
-            <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+            <div className="absolute inset-0 bg-gradient-to-br from-primary/12 via-accent/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
             <CardHeader className="pb-4">
-              <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
+              <div className="w-14 h-14 rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/18 to-accent/16 flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
                 <Download className="w-7 h-7 text-primary" />
               </div>
               <CardTitle className="text-xl">Fresh Install</CardTitle>
-              <CardDescription>
+              <CardDescription id="full-setup-description">
                 Download and set up a new server from scratch
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2 text-sm">
                 <div className="flex items-center gap-2 text-muted-foreground">
-                  <CheckCircle className="w-4 h-4 text-green-500" />
+                  <CheckCircle className="w-4 h-4 text-primary" />
                   <span>Downloads server files via SteamCMD (~3GB)</span>
                 </div>
                 <div className="flex items-center gap-2 text-muted-foreground">
-                  <CheckCircle className="w-4 h-4 text-green-500" />
+                  <CheckCircle className="w-4 h-4 text-primary" />
                   <span>Choose game version branch</span>
                 </div>
                 <div className="flex items-center gap-2 text-muted-foreground">
-                  <CheckCircle className="w-4 h-4 text-green-500" />
+                  <CheckCircle className="w-4 h-4 text-primary" />
                   <span>Auto-configure everything</span>
                 </div>
               </div>
@@ -569,34 +592,47 @@ export default function ServerSetup() {
               </div>
             </CardContent>
           </Card>
+            )
+          })()}
 
           {/* Quick Setup Card */}
+          {(() => {
+            const activate = () => {
+              setSetupMode('quick')
+              setCurrentStep(1)
+            }
+
+            return (
           <Card 
-            className="cursor-pointer transition-all hover:border-green-500 hover:shadow-lg group relative overflow-hidden"
-            onClick={() => { setSetupMode('quick'); setCurrentStep(1) }}
+            role="button"
+            tabIndex={0}
+            aria-describedby="quick-setup-description"
+            className="group relative overflow-hidden cursor-pointer border-border/70 bg-gradient-to-br from-card via-secondary/45 to-primary/10 transition-all hover:border-primary/30 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            onClick={activate}
+            onKeyDown={(event) => handleCardKeyDown(event, activate)}
           >
-            <div className="absolute inset-0 bg-gradient-to-br from-green-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+            <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-accent/8 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
             <CardHeader className="pb-4">
-              <div className="w-14 h-14 rounded-2xl bg-green-500/10 flex items-center justify-center mb-4 group-hover:bg-green-500/20 transition-colors">
-                <Plus className="w-7 h-7 text-green-500" />
+              <div className="w-14 h-14 rounded-2xl border border-primary/18 bg-gradient-to-br from-primary/16 to-secondary flex items-center justify-center mb-4 group-hover:bg-primary/22 transition-colors">
+                <Plus className="w-7 h-7 text-primary" />
               </div>
               <CardTitle className="text-xl">Use Existing Files</CardTitle>
-              <CardDescription>
+              <CardDescription id="quick-setup-description">
                 Create a new server from files you already have
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2 text-sm">
                 <div className="flex items-center gap-2 text-muted-foreground">
-                  <CheckCircle className="w-4 h-4 text-green-500" />
+                  <CheckCircle className="w-4 h-4 text-primary" />
                   <span>No download required</span>
                 </div>
                 <div className="flex items-center gap-2 text-muted-foreground">
-                  <CheckCircle className="w-4 h-4 text-green-500" />
+                  <CheckCircle className="w-4 h-4 text-primary" />
                   <span>Point to existing PZ server folder</span>
                 </div>
                 <div className="flex items-center gap-2 text-muted-foreground">
-                  <CheckCircle className="w-4 h-4 text-green-500" />
+                  <CheckCircle className="w-4 h-4 text-primary" />
                   <span>Quick 2-step setup</span>
                 </div>
               </div>
@@ -605,14 +641,16 @@ export default function ServerSetup() {
               </div>
             </CardContent>
           </Card>
+            )
+          })()}
         </div>
 
         {/* Quick Tips */}
-        <Card className="bg-muted/50">
+        <Card className="bg-gradient-to-br from-secondary/80 via-card to-accent/18 border-border/70 shadow-sm">
           <CardContent className="pt-6">
             <div className="flex items-start gap-4">
-              <div className="w-10 h-10 rounded-lg bg-blue-500/10 flex items-center justify-center shrink-0">
-                <Info className="w-5 h-5 text-blue-500" />
+              <div className="w-10 h-10 rounded-lg border border-primary/20 bg-primary/10 flex items-center justify-center shrink-0">
+                <Info className="w-5 h-5 text-primary" />
               </div>
               <div className="space-y-1">
                 <p className="font-medium">Not sure which to choose?</p>
@@ -658,9 +696,9 @@ export default function ServerSetup() {
                   onClick={() => isClickable && setCurrentStep(step.id)}
                   disabled={!isClickable}
                   className={cn(
-                    "flex items-center gap-2 px-4 py-2.5 rounded-full transition-all",
+                    "flex items-center gap-2 px-3 py-2 sm:px-4 sm:py-2.5 rounded-full transition-all",
                     isActive && "bg-primary text-primary-foreground shadow-md",
-                    !isActive && isComplete && "bg-green-500/20 text-green-600 dark:text-green-400",
+                    !isActive && isComplete && "bg-primary/16 text-primary",
                     !isActive && !isComplete && "bg-muted text-muted-foreground",
                     isClickable && !isActive && "hover:bg-muted/80 cursor-pointer"
                   )}
@@ -670,12 +708,12 @@ export default function ServerSetup() {
                   ) : (
                     <Icon className="w-4 h-4" />
                   )}
-                  <span className="text-sm font-medium">{step.label}</span>
+                  <span className="text-sm font-medium hidden sm:inline">{step.label}</span>
                 </button>
                 {index < steps.length - 1 && (
                   <ArrowRight className={cn(
-                    "w-4 h-4 mx-2",
-                    isComplete ? "text-green-500" : "text-muted-foreground/50"
+                    "w-4 h-4 mx-1 sm:mx-2",
+                    isComplete ? "text-primary" : "text-muted-foreground/50"
                   )} />
                 )}
               </div>
@@ -699,7 +737,7 @@ export default function ServerSetup() {
       {!hasSteamCmd ? (
         <div className="space-y-6">
           {/* One-Click Setup */}
-          <Card className="border-primary/50 bg-primary/5">
+          <Card className="border-primary/35 bg-gradient-to-br from-primary/10 via-card to-accent/12 shadow-sm">
             <CardContent className="pt-6">
               <div className="flex items-start gap-4">
                 <div className="w-12 h-12 rounded-xl bg-primary/20 flex items-center justify-center shrink-0">
@@ -717,9 +755,10 @@ export default function ServerSetup() {
                     <Input
                       value={steamCmdPath}
                       onChange={(e) => setSteamCmdPath(e.target.value)}
-                      placeholder="C:\SteamCMD"
+                      placeholder="Path to SteamCMD folder"
                       className="font-mono flex-1"
                       disabled={downloadingSteamCmd}
+                      maxLength={260}
                     />
                     <TooltipProvider>
                       <Tooltip>
@@ -729,6 +768,7 @@ export default function ServerSetup() {
                             size="icon"
                             onClick={() => handleBrowseFolder(setSteamCmdPath, 'Select SteamCMD folder', steamCmdPath)}
                             disabled={downloadingSteamCmd}
+                            aria-label="Browse folder"
                           >
                             <FolderOpen className="w-4 h-4" />
                           </Button>
@@ -772,18 +812,18 @@ export default function ServerSetup() {
               </AccordionTrigger>
               <AccordionContent className="px-4 pb-4">
                 <div className="space-y-4">
-                  <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4 text-sm">
-                    <p className="font-medium text-amber-600 dark:text-amber-400">Manual Setup Instructions:</p>
+                  <div className="bg-warning/10 border border-warning/40 rounded-lg p-4 text-sm shadow-sm">
+                    <p className="font-medium text-warning">Manual Setup Instructions:</p>
                     <ol className="list-decimal list-inside space-y-1 text-muted-foreground mt-2">
                       <li>Download SteamCMD from Valve</li>
-                      <li>Extract to a folder (e.g., <code className="bg-muted px-1 rounded">C:\SteamCMD</code>)</li>
-                      <li>Run <code className="bg-muted px-1 rounded">steamcmd.exe</code> once to update</li>
+                      <li>Extract to a folder (e.g., <code className="bg-muted px-1 rounded">C:\SteamCMD</code> or <code className="bg-muted px-1 rounded">~/steamcmd</code>)</li>
+                      <li>Run <code className="bg-muted px-1 rounded">steamcmd</code> once to update</li>
                     </ol>
                     <Button 
                       variant="outline" 
                       size="sm" 
                       className="mt-3"
-                      onClick={() => window.open('https://steamcdn-a.akamaihd.net/client/installer/steamcmd.zip', '_blank')}
+                      onClick={() => window.open('https://developer.valvesoftware.com/wiki/SteamCMD#Downloading_SteamCMD', '_blank')}
                     >
                       <Download className="w-4 h-4 mr-2" />
                       Download SteamCMD
@@ -795,13 +835,15 @@ export default function ServerSetup() {
                     <Input
                       value={steamCmdPath}
                       onChange={(e) => setSteamCmdPath(e.target.value)}
-                      placeholder="C:\SteamCMD"
+                      placeholder="Path to SteamCMD folder"
                       className="font-mono flex-1"
+                      maxLength={260}
                     />
                     <Button
                       variant="outline"
                       size="icon"
                       onClick={() => handleBrowseFolder(setSteamCmdPath, 'Select SteamCMD folder', steamCmdPath)}
+                      aria-label="Browse folder"
                     >
                       <FolderOpen className="w-4 h-4" />
                     </Button>
@@ -815,11 +857,11 @@ export default function ServerSetup() {
           </Accordion>
         </div>
       ) : (
-        <Card className="border-green-500/50 bg-green-500/5">
+        <Card className="border-primary/30 bg-gradient-to-r from-primary/10 via-secondary/45 to-card shadow-sm">
           <CardContent className="pt-6">
             <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-green-500/20 flex items-center justify-center">
-                <CheckCircle className="w-6 h-6 text-green-500" />
+              <div className="w-12 h-12 rounded-xl border border-primary/25 bg-primary/14 flex items-center justify-center">
+                <CheckCircle className="w-6 h-6 text-primary" />
               </div>
               <div className="flex-1">
                 <p className="font-semibold">SteamCMD Ready</p>
@@ -853,8 +895,9 @@ export default function ServerSetup() {
             <Input
               value={installPath}
               onChange={(e) => setInstallPath(e.target.value)}
-              placeholder="C:\PZServer"
+              placeholder="Path to install server files"
               className="font-mono flex-1"
+              maxLength={260}
             />
             <TooltipProvider>
               <Tooltip>
@@ -863,6 +906,7 @@ export default function ServerSetup() {
                     variant="outline"
                     size="icon"
                     onClick={() => handleBrowseFolder(setInstallPath, 'Select server folder', installPath)}
+                    aria-label="Browse folder"
                   >
                     <FolderOpen className="w-4 h-4" />
                   </Button>
@@ -882,6 +926,7 @@ export default function ServerSetup() {
             onChange={(e) => setServerName(e.target.value.replace(/[^a-zA-Z0-9_]/g, ''))}
             placeholder="myserver"
             className="font-mono"
+            maxLength={64}
           />
           <p className="text-xs text-muted-foreground">
             Alphanumeric and underscores only. Used for config files.
@@ -925,7 +970,7 @@ export default function ServerSetup() {
             <AccordionContent className="px-4 pb-4">
               <div className="space-y-3">
                 <p className="text-sm text-muted-foreground">
-                  By default, server config goes to <code className="bg-muted px-1 rounded">%USERPROFILE%\Zomboid</code>
+                  By default, server config goes to <code className="bg-muted px-1 rounded">~/Zomboid</code>
                 </p>
                 <div className="flex items-center gap-3">
                   <Switch checked={useCustomDataPath} onCheckedChange={setUseCustomDataPath} />
@@ -936,13 +981,15 @@ export default function ServerSetup() {
                     <Input
                       value={zomboidDataPath}
                       onChange={(e) => setZomboidDataPath(e.target.value)}
-                      placeholder="D:\PZServerData"
+                      placeholder="Custom data folder path"
                       className="font-mono flex-1"
+                      maxLength={260}
                     />
                     <Button
                       variant="outline"
                       size="icon"
                       onClick={() => handleBrowseFolder(setZomboidDataPath, 'Select config folder', zomboidDataPath)}
+                      aria-label="Browse folder"
                     >
                       <FolderOpen className="w-4 h-4" />
                     </Button>
@@ -967,7 +1014,7 @@ export default function ServerSetup() {
       </div>
 
       {/* RCON Section - Critical */}
-      <Card className="border-primary/50 bg-primary/5">
+      <Card className="border-primary/35 bg-gradient-to-br from-primary/10 via-card to-accent/12 shadow-sm">
         <CardHeader className="pb-4">
           <div className="flex items-center gap-2">
             <Shield className="w-5 h-5 text-primary" />
@@ -1003,7 +1050,7 @@ export default function ServerSetup() {
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button variant="outline" size="icon" onClick={handleCopyPassword}>
+                      <Button variant="outline" size="icon" onClick={handleCopyPassword} aria-label="Copy password">
                         {copiedPassword ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                       </Button>
                     </TooltipTrigger>
@@ -1013,7 +1060,7 @@ export default function ServerSetup() {
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button variant="outline" size="icon" onClick={handleRegeneratePassword}>
+                      <Button variant="outline" size="icon" onClick={handleRegeneratePassword} aria-label="Generate new password">
                         <RefreshCw className="w-4 h-4" />
                       </Button>
                     </TooltipTrigger>
@@ -1120,7 +1167,7 @@ export default function ServerSetup() {
               </div>
 
               <div className="space-y-2">
-                <Label>Admin Password <span className="text-red-500">*</span></Label>
+                <Label>Admin Password <span className="text-destructive">*</span></Label>
                 <div className="relative">
                   <Input
                     type={showAdminPassword ? 'text' : 'password'}
@@ -1128,6 +1175,7 @@ export default function ServerSetup() {
                     onChange={(e) => setAdminPassword(e.target.value)}
                     placeholder="Required for first run"
                     className="pr-10"
+                    maxLength={128}
                   />
                   <Button
                     type="button"
@@ -1216,9 +1264,9 @@ export default function ServerSetup() {
       </Card>
 
       {/* Port Info */}
-      <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4 text-sm">
+      <div className="bg-gradient-to-r from-primary/10 via-secondary/50 to-accent/14 border border-primary/28 rounded-lg p-4 text-sm shadow-sm">
         <p className="font-medium flex items-center gap-2">
-          <Info className="w-4 h-4 text-blue-500" />
+          <Info className="w-4 h-4 text-primary" />
           Firewall / Port Forwarding
         </p>
         <p className="text-muted-foreground mt-1">
@@ -1279,15 +1327,15 @@ export default function ServerSetup() {
             <div className="font-mono text-xs space-y-0.5">
               {logs.map((log, i) => (
                 <div key={i} className={cn(
-                  log.type === 'error' || log.type === 'stderr' ? 'text-red-400' :
-                  log.type === 'success' ? 'text-green-400' :
-                  log.type === 'command' ? 'text-blue-400' :
-                  'text-gray-300'
+                  log.type === 'error' || log.type === 'stderr' ? 'text-destructive' :
+                  log.type === 'success' ? 'text-success' :
+                  log.type === 'command' ? 'text-primary' :
+                  'text-foreground/80'
                 )}>
                   {log.message}
                 </div>
               ))}
-              {installing && <div className="text-gray-400 animate-pulse">...</div>}
+              {installing && <div className="text-muted-foreground animate-pulse">...</div>}
               <div ref={logsEndRef} />
             </div>
           </ScrollArea>
@@ -1296,16 +1344,16 @@ export default function ServerSetup() {
 
       {/* Post-install */}
       {installComplete && (
-        <Card className="border-green-500/50 bg-green-500/5">
+        <Card className="border-primary/32 bg-gradient-to-br from-primary/10 via-secondary/45 to-card shadow-sm">
           <CardContent className="pt-6 space-y-4">
-            <div className="flex items-center gap-2 text-green-500">
+            <div className="flex items-center gap-2 text-primary">
               <CheckCircle className="w-5 h-5" />
               <span className="font-medium">Installation Complete!</span>
             </div>
             
             {/* First-run setup notice */}
-            <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4 text-sm">
-              <p className="font-medium flex items-center gap-2 text-amber-500">
+            <div className="bg-warning/10 border border-warning/40 rounded-lg p-4 text-sm shadow-sm">
+              <p className="font-medium flex items-center gap-2 text-warning">
                 <Info className="w-4 h-4" />
                 First Run Required
               </p>
@@ -1363,16 +1411,16 @@ export default function ServerSetup() {
         </p>
       </div>
 
-      <Card className="bg-blue-500/5 border-blue-500/30">
+      <Card className="bg-gradient-to-r from-secondary/80 via-card to-primary/10 border-primary/24 shadow-sm">
         <CardContent className="pt-6">
           <div className="flex items-start gap-4">
-            <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center shrink-0">
-              <HardDrive className="w-5 h-5 text-blue-500" />
+            <div className="w-10 h-10 rounded-lg border border-primary/20 bg-primary/10 flex items-center justify-center shrink-0">
+              <HardDrive className="w-5 h-5 text-primary" />
             </div>
             <div className="space-y-1">
               <p className="font-medium">Using existing files</p>
               <p className="text-sm text-muted-foreground">
-                The folder should contain <code className="bg-muted px-1 rounded">StartServer64.bat</code> and the <code className="bg-muted px-1 rounded">java</code> folder.
+                The folder should contain <code className="bg-muted px-1 rounded">StartServer64.bat</code> (Windows) or <code className="bg-muted px-1 rounded">start-server.sh</code> (Linux) and the <code className="bg-muted px-1 rounded">java</code> folder.
               </p>
             </div>
           </div>
@@ -1385,8 +1433,9 @@ export default function ServerSetup() {
           <Input
             value={installPath}
             onChange={(e) => setInstallPath(e.target.value)}
-            placeholder="D:\PZServer"
+            placeholder="Path to existing PZ server folder"
             className="font-mono flex-1"
+            maxLength={260}
           />
           <TooltipProvider>
             <Tooltip>
@@ -1395,6 +1444,7 @@ export default function ServerSetup() {
                   variant="outline"
                   size="icon"
                   onClick={() => handleBrowseFolder(setInstallPath, 'Select PZ server folder', installPath)}
+                  aria-label="Browse folder"
                 >
                   <FolderOpen className="w-4 h-4" />
                 </Button>
@@ -1429,6 +1479,7 @@ export default function ServerSetup() {
             onChange={(e) => setServerName(e.target.value.replace(/[^a-zA-Z0-9_]/g, ''))}
             placeholder="myserver"
             className="font-mono"
+            maxLength={64}
           />
           <p className="text-xs text-muted-foreground">
             Each server needs a unique name. Creates separate config files.
@@ -1436,7 +1487,7 @@ export default function ServerSetup() {
         </div>
 
         {/* RCON - Critical */}
-        <Card className="border-primary/50 bg-primary/5">
+        <Card className="border-primary/35 bg-gradient-to-br from-primary/10 via-card to-accent/12 shadow-sm">
           <CardHeader className="pb-4">
             <div className="flex items-center gap-2">
               <Shield className="w-5 h-5 text-primary" />
@@ -1455,6 +1506,7 @@ export default function ServerSetup() {
                       value={rconPassword}
                       onChange={(e) => setRconPassword(e.target.value)}
                       className="pr-10 font-mono"
+                      maxLength={128}
                     />
                     <Button
                       type="button"
@@ -1469,7 +1521,7 @@ export default function ServerSetup() {
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Button variant="outline" size="icon" onClick={handleCopyPassword}>
+                        <Button variant="outline" size="icon" onClick={handleCopyPassword} aria-label="Copy password">
                           {copiedPassword ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                         </Button>
                       </TooltipTrigger>
@@ -1479,7 +1531,7 @@ export default function ServerSetup() {
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Button variant="outline" size="icon" onClick={handleRegeneratePassword}>
+                        <Button variant="outline" size="icon" onClick={handleRegeneratePassword} aria-label="Generate new password">
                           <RefreshCw className="w-4 h-4" />
                         </Button>
                       </TooltipTrigger>
@@ -1578,13 +1630,15 @@ export default function ServerSetup() {
                   <Input
                     value={zomboidDataPath}
                     onChange={(e) => setZomboidDataPath(e.target.value)}
-                    placeholder="D:\PZServerData"
+                    placeholder="Custom data folder path"
                     className="font-mono flex-1"
+                    maxLength={260}
                   />
                   <Button
                     variant="outline"
                     size="icon"
                     onClick={() => handleBrowseFolder(setZomboidDataPath, 'Select config folder', zomboidDataPath)}
+                    aria-label="Browse folder"
                   >
                     <FolderOpen className="w-4 h-4" />
                   </Button>
@@ -1602,12 +1656,13 @@ export default function ServerSetup() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Admin Password <span className="text-red-500">*</span></Label>
+                  <Label>Admin Password <span className="text-destructive">*</span></Label>
                   <Input
                     type="password"
                     value={adminPassword}
                     onChange={(e) => setAdminPassword(e.target.value)}
                     placeholder="Required for first run"
+                    maxLength={128}
                   />
                 </div>
               </div>
@@ -1702,9 +1757,9 @@ export default function ServerSetup() {
             <div className="font-mono text-xs space-y-0.5">
               {logs.map((log, i) => (
                 <div key={i} className={cn(
-                  log.type === 'error' ? 'text-red-400' :
-                  log.type === 'success' ? 'text-green-400' :
-                  'text-gray-300'
+                  log.type === 'error' ? 'text-destructive' :
+                  log.type === 'success' ? 'text-success' :
+                  'text-foreground/80'
                 )}>
                   {log.message}
                 </div>
@@ -1717,9 +1772,9 @@ export default function ServerSetup() {
 
       {/* Post-create */}
       {installComplete && (
-        <Card className="border-green-500/50 bg-green-500/5">
+        <Card className="border-primary/30 bg-gradient-to-r from-primary/10 via-secondary/45 to-card shadow-sm">
           <CardContent className="pt-6 space-y-4">
-            <div className="flex items-center gap-2 text-green-500">
+            <div className="flex items-center gap-2 text-primary">
               <CheckCircle className="w-5 h-5" />
               <span className="font-medium">Server Created!</span>
             </div>

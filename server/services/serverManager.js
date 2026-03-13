@@ -6,16 +6,23 @@ import { createLogger } from '../utils/logger.js';
 const log = createLogger('Server');
 import { logServerEvent, getSetting, getActiveServer } from '../database/init.js';
 
+const isWindows = process.platform === 'win32';
+
 // Helper function to escape regex special characters
 function escapeRegExp(str) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Get the default startup script name for the current platform
+function getDefaultStartupScript() {
+  return isWindows ? 'StartServer64.bat' : 'start-server.sh';
 }
 
 export class ServerManager {
   constructor() {
     this.serverProcess = null;
     this.serverPath = process.env.PZ_SERVER_PATH || '';
-    this.serverBat = process.env.PZ_SERVER_BAT || 'StartServer64.bat';
+    this.serverBat = process.env.PZ_SERVER_BAT || getDefaultStartupScript();
     this.savePath = process.env.PZ_SAVE_PATH || '';
     this.serverName = 'servertest';
     this.isRunning = false;
@@ -30,7 +37,7 @@ export class ServerManager {
   async reloadConfig() {
     // Reset all config to defaults before reloading
     this.serverPath = process.env.PZ_SERVER_PATH || '';
-    this.serverBat = process.env.PZ_SERVER_BAT || 'StartServer64.bat';
+    this.serverBat = process.env.PZ_SERVER_BAT || getDefaultStartupScript();
     this.savePath = process.env.PZ_SAVE_PATH || '';
     this.serverName = 'servertest';
     this.configLoaded = false;
@@ -68,15 +75,27 @@ export class ServerManager {
         if (activeServer.serverName) {
           this.serverName = activeServer.serverName;
           // Only look for custom batch file if we didn't already get one from installPath
-          if (!this.serverBat || this.serverBat === 'StartServer64.bat') {
-            const customBat = `StartServer_${activeServer.serverName}.bat`;
-            const customBatPath = path.join(this.serverPath, customBat);
-            if (fs.existsSync(customBatPath)) {
-              this.serverBat = customBat;
-            } else if (activeServer.useNoSteam) {
-              this.serverBat = 'StartServer64_nosteam.bat';
+          if (!this.serverBat || this.serverBat === getDefaultStartupScript()) {
+            if (isWindows) {
+              const customBat = `StartServer_${activeServer.serverName}.bat`;
+              const customBatPath = path.join(this.serverPath, customBat);
+              if (fs.existsSync(customBatPath)) {
+                this.serverBat = customBat;
+              } else if (activeServer.useNoSteam) {
+                this.serverBat = 'StartServer64_nosteam.bat';
+              } else {
+                this.serverBat = 'StartServer64.bat';
+              }
             } else {
-              this.serverBat = 'StartServer64.bat';
+              const customSh = `start-server_${activeServer.serverName}.sh`;
+              const customShPath = path.join(this.serverPath, customSh);
+              if (fs.existsSync(customShPath)) {
+                this.serverBat = customSh;
+              } else if (activeServer.useNoSteam) {
+                this.serverBat = 'start-server.sh';
+              } else {
+                this.serverBat = 'start-server.sh';
+              }
             }
           }
         }
@@ -99,8 +118,12 @@ export class ServerManager {
       }
       if (dbServerName) {
         this.serverName = dbServerName;
-        // Use custom batch file if server was set up through the app
-        this.serverBat = `StartServer_${dbServerName}.bat`;
+        // Use custom startup script if server was set up through the app
+        if (isWindows) {
+          this.serverBat = `StartServer_${dbServerName}.bat`;
+        } else {
+          this.serverBat = `start-server_${dbServerName}.sh`;
+        }
       }
       if (dbZomboidPath) {
         this.savePath = dbZomboidPath;
@@ -114,48 +137,60 @@ export class ServerManager {
   async checkServerRunning() {
     return new Promise((resolve) => {
       // Check if ProjectZomboid DEDICATED SERVER is running
-      // The dedicated server runs as java.exe with zombie.network.GameServer class
-      // The game client also uses ProjectZomboid64.exe, so we need to check command line
+      // The dedicated server runs as java with zombie.network.GameServer class
       
-      // Set a timeout to prevent hanging if PowerShell is slow
       const timeout = setTimeout(() => {
-        log.warn('checkServerRunning: PowerShell timed out, assuming server is not running');
+        log.warn('checkServerRunning: Process detection timed out, assuming server is not running');
         resolve(false);
-      }, 10000); // 10 second timeout
+      }, 10000);
       
-      // First, check for java.exe with the GameServer class (primary server detection)
-      exec('powershell -Command "Get-CimInstance Win32_Process -Filter \\"Name=\'java.exe\'\\" | Select-Object CommandLine | Format-List"', { timeout: 8000 }, (psError, psStdout) => {
-        if (!psError && psStdout) {
-          // Check if any java process is running the PZ dedicated server
-          const isPZServer = psStdout.toLowerCase().includes('zombie.network.gameserver');
-          if (isPZServer) {
-            clearTimeout(timeout);
-            this.isRunning = true;
-            resolve(true);
-            return;
+      if (isWindows) {
+        // Windows: Use PowerShell Get-CimInstance to inspect command lines
+        exec('powershell -Command "Get-CimInstance Win32_Process -Filter \\"Name=\'java.exe\'\\" | Select-Object CommandLine | Format-List"', { timeout: 8000 }, (psError, psStdout) => {
+          if (!psError && psStdout) {
+            const isPZServer = psStdout.toLowerCase().includes('zombie.network.gameserver');
+            if (isPZServer) {
+              clearTimeout(timeout);
+              this.isRunning = true;
+              resolve(true);
+              return;
+            }
           }
-        }
-        
-        // Fallback: Check for standalone server builds (ProjectZomboid64.exe with -server flag)
-        // The game client does NOT have -server in its command line
-        exec('powershell -Command "Get-CimInstance Win32_Process -Filter \\"Name=\'ProjectZomboid64.exe\'\\" | Select-Object CommandLine | Format-List"', { timeout: 8000 }, (psError2, psStdout2) => {
+          
+          // Fallback: Check for standalone server builds (ProjectZomboid64.exe with -server flag)
+          exec('powershell -Command "Get-CimInstance Win32_Process -Filter \\"Name=\'ProjectZomboid64.exe\'\\" | Select-Object CommandLine | Format-List"', { timeout: 8000 }, (psError2, psStdout2) => {
+            clearTimeout(timeout);
+            if (psError2 || !psStdout2) {
+              this.isRunning = false;
+              resolve(false);
+              return;
+            }
+            
+            const cmdLine = psStdout2.toLowerCase();
+            const isServer = cmdLine.includes('-server') || 
+                            cmdLine.includes('zombie.network.gameserver') ||
+                            cmdLine.includes('startserver');
+            
+            this.isRunning = isServer;
+            resolve(isServer);
+          });
+        });
+      } else {
+        // Linux/macOS: Use ps + grep to find the PZ server java process
+        exec('ps aux', { timeout: 8000 }, (err, stdout) => {
           clearTimeout(timeout);
-          if (psError2 || !psStdout2) {
+          if (err || !stdout) {
             this.isRunning = false;
             resolve(false);
             return;
           }
           
-          // Check if it's a server process (has -server flag or zombie.network.gameserver)
-          const cmdLine = psStdout2.toLowerCase();
-          const isServer = cmdLine.includes('-server') || 
-                          cmdLine.includes('zombie.network.gameserver') ||
-                          cmdLine.includes('startserver');
-          
-          this.isRunning = isServer;
-          resolve(isServer);
+          const lines = stdout.toLowerCase();
+          const isPZServer = lines.includes('zombie.network.gameserver');
+          this.isRunning = isPZServer;
+          resolve(isPZServer);
         });
-      });
+      }
     });
   }
 
@@ -176,17 +211,31 @@ export class ServerManager {
     const batPath = path.join(this.serverPath, this.serverBat);
     
     if (!fs.existsSync(batPath)) {
-      throw new Error(`Server batch file not found: ${batPath}`);
+      throw new Error(`Server startup script not found: ${batPath}`);
     }
 
     // Start the server process
     log.info('Starting server process');
     
-    this.serverProcess = spawn('cmd.exe', ['/c', this.serverBat], {
-      cwd: this.serverPath,
-      detached: true,
-      stdio: 'ignore'
-    });
+    if (isWindows) {
+      this.serverProcess = spawn('cmd.exe', ['/c', this.serverBat], {
+        cwd: this.serverPath,
+        detached: true,
+        stdio: 'ignore'
+      });
+    } else {
+      // Ensure the script is executable
+      try {
+        fs.chmodSync(batPath, 0o755);
+      } catch (e) {
+        log.warn(`Could not chmod startup script: ${e.message}`);
+      }
+      this.serverProcess = spawn('bash', [this.serverBat], {
+        cwd: this.serverPath,
+        detached: true,
+        stdio: 'ignore'
+      });
+    }
     
     // Handle spawn errors (e.g., invalid path, permissions)
     this.serverProcess.on('error', (error) => {
@@ -214,35 +263,56 @@ export class ServerManager {
     }
 
     return new Promise((resolve, reject) => {
-      // First try to kill java.exe running the PZ dedicated server
-      exec('powershell -Command "Get-CimInstance Win32_Process -Filter \\"Name=\'java.exe\'\\" | Where-Object { $_.CommandLine -like \'*zombie.network.gameserver*\' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"', (javaErr) => {
-        // Also try to kill ProjectZomboid64.exe (for standalone builds)
-        exec('taskkill /IM ProjectZomboid64.exe /F', (pzError, stdout, stderr) => {
-          // Check if at least one process was killed
-          const javaKilled = !javaErr;
-          const pzKilled = !pzError;
-          
-          if (!javaKilled && !pzKilled) {
-            // Neither process found - server wasn't running
-            if (pzError && pzError.message.includes('not found')) {
-              resolve({ success: true, message: 'Server was not running' });
+      if (isWindows) {
+        // Windows: Kill java.exe running PZ server, then ProjectZomboid64.exe
+        exec('powershell -Command "Get-CimInstance Win32_Process -Filter \\"Name=\'java.exe\'\\" | Where-Object { $_.CommandLine -like \'*zombie.network.gameserver*\' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"', (javaErr) => {
+          exec('taskkill /IM ProjectZomboid64.exe /F', (pzError, stdout, stderr) => {
+            const javaKilled = !javaErr;
+            const pzKilled = !pzError;
+            
+            if (!javaKilled && !pzKilled) {
+              if (pzError && pzError.message.includes('not found')) {
+                resolve({ success: true, message: 'Server was not running' });
+                return;
+              }
+              resolve({ success: true, message: 'Server may not have been running' });
               return;
             }
-            // Some other error
-            resolve({ success: true, message: 'Server may not have been running' });
+            
+            this.isRunning = false;
+            this.serverProcess = null;
+            this.startTime = null;
+            
+            logServerEvent('server_stop', 'Server force stopped').catch(e => log.warn(`Failed to log event: ${e.message}`));
+            log.info('Server force stopped');
+            
+            resolve({ success: true, message: 'Server stopped' });
+          });
+        });
+      } else {
+        // Linux: Find and kill the PZ server java process by command line
+        exec("ps aux | grep '[z]ombie.network.GameServer' | awk '{print $2}'", (err, stdout) => {
+          const pids = (stdout || '').trim().split('\n').filter(Boolean);
+          
+          if (pids.length === 0) {
+            resolve({ success: true, message: 'Server was not running' });
             return;
           }
           
-          this.isRunning = false;
-          this.serverProcess = null;
-          this.startTime = null;
-          
-          logServerEvent('server_stop', 'Server force stopped').catch(e => log.warn(`Failed to log event: ${e.message}`));
-          log.info('Server force stopped');
-          
-          resolve({ success: true, message: 'Server stopped' });
+          // Kill each matching PID
+          const killCmd = `kill -9 ${pids.join(' ')}`;
+          exec(killCmd, (killErr) => {
+            this.isRunning = false;
+            this.serverProcess = null;
+            this.startTime = null;
+            
+            logServerEvent('server_stop', 'Server force stopped').catch(e => log.warn(`Failed to log event: ${e.message}`));
+            log.info('Server force stopped');
+            
+            resolve({ success: true, message: 'Server stopped' });
+          });
         });
-      });
+      }
     });
   }
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -16,6 +16,7 @@ import {
   RefreshCw, 
   CheckCircle2, 
   AlertCircle,
+  AlertTriangle,
   Eye,
   EyeOff,
   Send,
@@ -76,18 +77,40 @@ type WebhookEvents = Record<string, WebhookEvent>
 // Small helper to copy text to clipboard
 function CopyButton({ text, label }: { text: string; label?: string }) {
   const [copied, setCopied] = useState(false)
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const handleCopy = () => {
     navigator.clipboard.writeText(text)
     setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+    if (timeoutRef.current) clearTimeout(timeoutRef.current)
+    timeoutRef.current = setTimeout(() => setCopied(false), 2000)
   }
+  useEffect(() => () => { if (timeoutRef.current) clearTimeout(timeoutRef.current) }, [])
   return (
     <Button variant="outline" size="sm" onClick={handleCopy} className="gap-1.5 shrink-0">
-      {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+      {copied ? <Check className="w-3.5 h-3.5 text-primary" /> : <Copy className="w-3.5 h-3.5" />}
       {label || (copied ? 'Copied!' : 'Copy')}
     </Button>
   )
 }
+
+const eventLabels: Record<string, { label: string; description: string; variables: string }> = {
+  serverStart: { label: 'Server Start', description: 'When server starts', variables: 'None' },
+  serverStop: { label: 'Server Stop', description: 'When server stops', variables: 'None' },
+  playerJoin: { label: 'Player Join', description: 'When a player connects', variables: '{player}' },
+  playerLeave: { label: 'Player Leave', description: 'When a player disconnects', variables: '{player}' },
+  scheduledRestart: { label: 'Scheduled Restart', description: 'Before scheduled restart', variables: '{minutes}' },
+  backupComplete: { label: 'Backup Complete', description: 'After backup finishes', variables: 'None' },
+  playerDeath: { label: 'Player Death', description: 'When a player dies', variables: '{player}' }
+}
+
+const SETUP_STEPS = [
+  { label: 'Create App', icon: Zap },
+  { label: 'Bot Token', icon: Bot },
+  { label: 'Intents', icon: ToggleLeft },
+  { label: 'Invite Bot', icon: UserPlus },
+  { label: 'Server IDs', icon: Hash },
+  { label: 'Launch', icon: Play },
+]
 
 export default function Discord() {
   const [status, setStatus] = useState<DiscordStatus | null>(null)
@@ -313,15 +336,7 @@ export default function Discord() {
     }
   }
 
-  const eventLabels: Record<string, { label: string; description: string; variables: string }> = {
-    serverStart: { label: 'Server Start', description: 'When server starts', variables: 'None' },
-    serverStop: { label: 'Server Stop', description: 'When server stops', variables: 'None' },
-    playerJoin: { label: 'Player Join', description: 'When a player connects', variables: '{player}' },
-    playerLeave: { label: 'Player Leave', description: 'When a player disconnects', variables: '{player}' },
-    scheduledRestart: { label: 'Scheduled Restart', description: 'Before scheduled restart', variables: '{minutes}' },
-    backupComplete: { label: 'Backup Complete', description: 'After backup finishes', variables: 'None' },
-    playerDeath: { label: 'Player Death', description: 'When a player dies', variables: '{player}' }
-  }
+
 
   if (loading) {
     return (
@@ -339,15 +354,6 @@ export default function Discord() {
   // SETUP WIZARD — shown when bot is not yet configured
   // ═════════════════════════════════════════════════
   if (showSetupWizard) {
-    const STEPS = [
-      { label: 'Create App', icon: Zap },
-      { label: 'Bot Token', icon: Bot },
-      { label: 'Intents', icon: ToggleLeft },
-      { label: 'Invite Bot', icon: UserPlus },
-      { label: 'Server IDs', icon: Hash },
-      { label: 'Launch', icon: Play },
-    ]
-
     return (
       <div className="p-6 space-y-6 page-transition">
         <PageHeader
@@ -367,7 +373,7 @@ export default function Discord() {
 
         {/* Stepper */}
         <div className="flex items-center justify-between">
-          {STEPS.map((step, i) => {
+          {SETUP_STEPS.map((step, i) => {
             const Icon = step.icon
             const isActive = i === setupStep
             const isDone = i < setupStep
@@ -377,15 +383,15 @@ export default function Discord() {
                   onClick={() => setSetupStep(i)}
                   className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-sm font-medium shrink-0 ${
                     isActive ? 'bg-primary text-primary-foreground' :
-                    isDone ? 'bg-green-500/10 text-green-600 dark:text-green-400 hover:bg-green-500/20' :
+                    isDone ? 'bg-primary/10 text-primary hover:bg-primary/15' :
                     'bg-muted text-muted-foreground hover:bg-muted/80'
                   }`}
                 >
                   {isDone ? <Check className="w-4 h-4" /> : <Icon className="w-4 h-4" />}
                   <span className="hidden md:inline">{step.label}</span>
                 </button>
-                {i < STEPS.length - 1 && (
-                  <div className={`flex-1 h-px mx-2 ${isDone ? 'bg-green-500/40' : 'bg-border'}`} />
+                {i < SETUP_STEPS.length - 1 && (
+                  <div className={`flex-1 h-px mx-2 ${isDone ? 'bg-primary/30' : 'bg-border'}`} />
                 )}
               </div>
             )
@@ -443,12 +449,13 @@ export default function Discord() {
                   </div>
                 </div>
 
-                <div className="p-4 rounded-lg bg-blue-500/10 border border-blue-500/20 text-sm">
-                  <p className="font-medium text-blue-600 dark:text-blue-400 mb-1">Why do I need a bot?</p>
-                  <p className="text-muted-foreground">
-                    A Discord bot lets your panel send messages, register slash commands, and bridge in-game chat to a Discord channel. It's completely free and runs through this panel — no extra hosting needed.
-                  </p>
-                </div>
+                <Alert className="border-border/60 bg-muted/40 text-sm">
+                  <Bot className="h-4 w-4 text-primary" />
+                  <AlertTitle>Why do I need a bot?</AlertTitle>
+                  <AlertDescription>
+                    A Discord bot lets your panel send messages, register slash commands, and bridge in-game chat to a Discord channel. It runs through this panel, so you do not need separate hosting.
+                  </AlertDescription>
+                </Alert>
 
                 <div className="flex justify-end">
                   <Button onClick={() => setSetupStep(1)}>
@@ -471,12 +478,13 @@ export default function Discord() {
                   </p>
                 </div>
 
-                <div className="p-4 rounded-lg bg-amber-500/10 border border-amber-500/20 text-sm">
-                  <p className="font-medium text-amber-600 dark:text-amber-400 mb-1">Important</p>
-                  <p className="text-muted-foreground">
-                    Discord only shows the token once after you reset it. If you lose it, you'll need to generate a new one. Treat it like a password —  never share it publicly.
-                  </p>
-                </div>
+                <Alert className="border-warning/40 bg-warning/10 text-sm">
+                  <AlertTriangle className="h-4 w-4 text-warning" />
+                  <AlertTitle className="text-warning">Important</AlertTitle>
+                  <AlertDescription>
+                    Discord only shows the token once after you reset it. If you lose it, you will need to generate a new one. Treat it like a password and never share it publicly.
+                  </AlertDescription>
+                </Alert>
 
                 <div className="space-y-3">
                   <Label htmlFor="setup-token" className="text-sm font-medium">Bot Token</Label>
@@ -489,11 +497,13 @@ export default function Discord() {
                         onChange={(e) => { setToken(e.target.value); setBotInfo(null); setInviteUrl(null) }}
                         placeholder="Paste your bot token here..."
                         className="pr-10 font-mono text-sm"
+                        maxLength={200}
                       />
                       <Button
                         type="button" variant="ghost" size="icon"
                         className="absolute right-0 top-0 h-full"
                         onClick={() => setShowToken(!showToken)}
+                        aria-label={showToken ? 'Hide token' : 'Show token'}
                       >
                         {showToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </Button>
@@ -506,19 +516,19 @@ export default function Discord() {
 
                 {/* Token test result */}
                 {botInfo && (
-                  <div className="flex items-center gap-4 p-4 rounded-lg bg-green-500/10 border border-green-500/20">
+                  <Alert className="border-primary/30 bg-primary/10">
                     {botInfo.avatar && (
-                      <img src={botInfo.avatar} alt="" className="w-12 h-12 rounded-full" />
+                      <img src={botInfo.avatar} alt={`${botInfo.username} avatar`} className="w-12 h-12 rounded-full" />
                     )}
                     <div>
-                      <p className="font-semibold text-green-600 dark:text-green-400 flex items-center gap-2">
+                      <p className="flex items-center gap-2 font-semibold text-primary">
                         <CheckCircle2 className="w-4 h-4" /> Token verified!
                       </p>
                       <p className="text-sm text-muted-foreground">
                         Bot: <span className="font-mono font-medium">{botInfo.username}</span> (ID: <span className="font-mono">{botInfo.id}</span>)
                       </p>
                     </div>
-                  </div>
+                  </Alert>
                 )}
 
                 <div className="flex justify-between">
@@ -551,8 +561,8 @@ export default function Discord() {
                     { name: 'Message Content Intent', why: 'Required for two-way chat bridge (Discord ↔ Game)', required: true },
                   ].map(intent => (
                     <div key={intent.name} className="flex items-start gap-3 p-4 rounded-lg border bg-muted/30">
-                      <div className="w-10 h-5 bg-green-500 rounded-full relative shrink-0 mt-0.5">
-                        <div className="absolute right-0.5 top-0.5 w-4 h-4 bg-white rounded-full" />
+                      <div className="relative mt-0.5 h-5 w-10 shrink-0 rounded-full border border-primary/15 bg-primary/10">
+                        <div className="absolute right-0.5 top-0.5 h-4 w-4 rounded-full bg-card shadow-sm" />
                       </div>
                       <div>
                         <p className="font-medium flex items-center gap-2">
@@ -565,12 +575,13 @@ export default function Discord() {
                   ))}
                 </div>
 
-                <div className="p-4 rounded-lg bg-blue-500/10 border border-blue-500/20 text-sm">
-                  <p className="font-medium text-blue-600 dark:text-blue-400 mb-1">Don't forget to save!</p>
-                  <p className="text-muted-foreground">
-                    After toggling the intents on, scroll down and click the <strong>"Save Changes"</strong> button on the Discord page.
-                  </p>
-                </div>
+                <Alert className="border-border/60 bg-muted/40 text-sm">
+                  <Bell className="h-4 w-4 text-primary" />
+                  <AlertTitle>Do not forget to save</AlertTitle>
+                  <AlertDescription>
+                    After toggling the intents on, scroll down and click the Save Changes button on the Discord page.
+                  </AlertDescription>
+                </Alert>
 
                 <div className="flex justify-between">
                   <Button variant="outline" onClick={() => setSetupStep(1)}>
@@ -621,8 +632,11 @@ export default function Discord() {
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    <div className="p-4 rounded-lg bg-amber-500/10 border border-amber-500/20 text-sm space-y-3">
-                      <p className="font-medium text-amber-600 dark:text-amber-400">Manual invite (if you haven't verified your token yet)</p>
+                    <Alert className="border-warning/40 bg-warning/10 text-sm">
+                      <AlertTriangle className="h-4 w-4 text-warning" />
+                      <AlertTitle className="text-warning">Manual invite</AlertTitle>
+                      <AlertDescription className="space-y-3">
+                        <p>If you have not verified your token yet, you can still invite the bot manually.</p>
                       <ol className="text-muted-foreground space-y-2 list-decimal list-inside">
                         <li>In the Developer Portal, go to your app → <strong>OAuth2</strong> → <strong>URL Generator</strong></li>
                         <li>Under "Scopes", check <strong>bot</strong> and <strong>applications.commands</strong></li>
@@ -630,7 +644,8 @@ export default function Discord() {
                         <li>Copy the generated URL at the bottom and open it in your browser</li>
                         <li>Select your Discord server and click <strong>Authorize</strong></li>
                       </ol>
-                    </div>
+                      </AlertDescription>
+                    </Alert>
                     <p className="text-sm text-muted-foreground">
                       Tip: go back to Step 2 and verify your token — we'll generate the invite link automatically.
                     </p>
@@ -662,15 +677,18 @@ export default function Discord() {
                 </div>
 
                 {/* Developer Mode instructions */}
-                <div className="p-4 rounded-lg bg-blue-500/10 border border-blue-500/20 text-sm">
-                  <p className="font-medium text-blue-600 dark:text-blue-400 mb-2">How to enable Developer Mode (required to copy IDs)</p>
+                <Alert className="border-border/60 bg-muted/40 text-sm">
+                  <Settings className="h-4 w-4 text-primary" />
+                  <AlertTitle>How to enable Developer Mode</AlertTitle>
+                  <AlertDescription>
                   <ol className="text-muted-foreground space-y-1 list-decimal list-inside">
                     <li>Open Discord → <strong>User Settings</strong> (gear icon, bottom-left)</li>
                     <li>Go to <strong>App Settings → Advanced</strong></li>
                     <li>Toggle on <strong>Developer Mode</strong></li>
                   </ol>
                   <p className="text-muted-foreground mt-2">Now you can right-click servers, channels, and roles to see a <strong>"Copy ID"</strong> option.</p>
-                </div>
+                  </AlertDescription>
+                </Alert>
 
                 <div className="space-y-5">
                   {/* Guild ID */}
@@ -686,6 +704,7 @@ export default function Discord() {
                       onChange={(e) => setGuildId(e.target.value)}
                       placeholder="123456789012345678"
                       className="font-mono"
+                      maxLength={20}
                     />
                     <p className="text-xs text-muted-foreground">
                       Right-click your Discord server name → <strong>Copy Server ID</strong>
@@ -709,6 +728,7 @@ export default function Discord() {
                         onChange={(e) => setChannelId(e.target.value)}
                         placeholder="123456789012345678"
                         className="font-mono"
+                        maxLength={20}
                       />
                       <p className="text-xs text-muted-foreground">
                         Right-click a text channel → <strong>Copy Channel ID</strong>. Used for notifications and two-way chat bridge.
@@ -728,6 +748,7 @@ export default function Discord() {
                         onChange={(e) => setAdminRoleId(e.target.value)}
                         placeholder="123456789012345678"
                         className="font-mono"
+                        maxLength={20}
                       />
                       <p className="text-xs text-muted-foreground">
                         Right-click a role → <strong>Copy Role ID</strong>. Only users with this role can use bot commands. Leave blank to allow everyone.
@@ -781,10 +802,10 @@ export default function Discord() {
                     </div>
                   </div>
                   {botInfo && (
-                    <div className="flex items-center gap-3 p-3 rounded-lg bg-green-500/10 border border-green-500/20">
-                      {botInfo.avatar && <img src={botInfo.avatar} alt="" className="w-8 h-8 rounded-full" />}
-                      <p className="text-sm"><span className="text-green-600 dark:text-green-400 font-medium">Token verified</span> — {botInfo.username}</p>
-                    </div>
+                    <Alert className="border-primary/30 bg-primary/10 py-3">
+                      {botInfo.avatar && <img src={botInfo.avatar} alt={`${botInfo.username} avatar`} className="w-8 h-8 rounded-full" />}
+                      <p className="text-sm"><span className="font-medium text-primary">Token verified</span> — {botInfo.username}</p>
+                    </Alert>
                   )}
                 </div>
 
@@ -874,7 +895,7 @@ export default function Discord() {
                 <><AlertCircle className="w-3 h-3 mr-1" /> Stopped</>
               )}
             </Badge>
-            <Button variant="outline" size="icon" onClick={loadData}>
+            <Button variant="outline" size="icon" onClick={loadData} aria-label="Refresh status">
               <RefreshCw className="w-4 h-4" />
             </Button>
           </div>
@@ -903,7 +924,7 @@ export default function Discord() {
             <div className="grid grid-cols-2 gap-4">
               <div className="p-4 bg-muted rounded-lg">
                 <p className="text-sm text-muted-foreground">Status</p>
-                <p className={`text-lg font-semibold ${status?.running ? 'text-green-600 dark:text-green-400' : ''}`}>
+                <p className={`text-lg font-semibold ${status?.running ? 'text-primary' : ''}`}>
                   {status?.running ? 'Online' : 'Offline'}
                 </p>
               </div>
@@ -960,17 +981,17 @@ export default function Discord() {
             {/* Tier legend */}
             <div className="flex flex-wrap gap-3 text-sm mb-2">
               <div className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-full bg-green-500 inline-block" />
+                <span className="inline-block h-2.5 w-2.5 rounded-full bg-primary" />
                 <span className="font-medium">Everyone</span>
                 <span className="text-muted-foreground">— any user</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block" />
+                <span className="inline-block h-2.5 w-2.5 rounded-full bg-muted-foreground" />
                 <span className="font-medium">Moderator</span>
                 <span className="text-muted-foreground">— Mod or Admin role</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block" />
+                <span className="inline-block h-2.5 w-2.5 rounded-full bg-destructive" />
                 <span className="font-medium">Admin</span>
                 <span className="text-muted-foreground">— Admin role only</span>
               </div>
@@ -998,11 +1019,13 @@ export default function Discord() {
                     <div className="flex gap-1 shrink-0">
                       {(['everyone', 'moderator', 'admin'] as const).map(tier => {
                         const isActive = level === tier
-                        const colors = {
-                          everyone: isActive ? 'bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/40' : 'hover:bg-green-500/5',
-                          moderator: isActive ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/40' : 'hover:bg-blue-500/5',
-                          admin: isActive ? 'bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/40' : 'hover:bg-red-500/5',
-                        }
+                        const variant = isActive
+                          ? tier === 'everyone'
+                            ? 'default'
+                            : tier === 'moderator'
+                              ? 'secondary'
+                              : 'destructive'
+                          : 'ghost'
                         const icons = {
                           everyone: <Users className="w-3 h-3" />,
                           moderator: <Shield className="w-3 h-3" />,
@@ -1011,9 +1034,9 @@ export default function Discord() {
                         return (
                           <Button
                             key={tier}
-                            variant={isActive ? 'outline' : 'ghost'}
+                            variant={variant}
                             size="sm"
-                            className={`h-7 px-2 text-xs gap-1 ${colors[tier]}`}
+                            className="h-7 gap-1 px-2 text-xs"
                             onClick={() => setCommandPermissions(prev => ({ ...prev, [c.cmd]: tier }))}
                           >
                             {icons[tier]}
@@ -1067,7 +1090,7 @@ export default function Discord() {
               <Bot className="w-4 h-4" />
               Bot Token
               {config?.hasToken && (
-                <Badge variant="outline" className="text-xs bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/30">
+                <Badge variant="outline" className="text-xs">
                   <CheckCircle2 className="w-3 h-3 mr-1" /> Configured
                 </Badge>
               )}
@@ -1081,11 +1104,13 @@ export default function Discord() {
                   onChange={(e) => { setToken(e.target.value); setBotInfo(null); setInviteUrl(null) }}
                   placeholder={config?.hasToken ? '••••••••••••••••  (leave blank to keep current)' : 'Enter bot token'}
                   className="pr-10"
+                  maxLength={200}
                 />
                 <Button
                   type="button" variant="ghost" size="icon"
                   className="absolute right-0 top-0 h-full"
                   onClick={() => setShowToken(!showToken)}
+                  aria-label={showToken ? 'Hide token' : 'Show token'}
                 >
                   {showToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </Button>
@@ -1095,8 +1120,8 @@ export default function Discord() {
               </Button>
             </div>
             {botInfo && (
-              <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
-                {botInfo.avatar && <img src={botInfo.avatar} alt="" className="w-5 h-5 rounded-full" />}
+              <div className="flex items-center gap-2 text-sm text-primary">
+                {botInfo.avatar && <img src={botInfo.avatar} alt={`${botInfo.username} avatar`} className="w-5 h-5 rounded-full" />}
                 <CheckCircle2 className="w-3.5 h-3.5" /> Valid token — {botInfo.username}
               </div>
             )}
@@ -1114,6 +1139,7 @@ export default function Discord() {
                 onChange={(e) => setGuildId(e.target.value)}
                 placeholder="123456789012345678"
                 className="font-mono"
+                maxLength={20}
               />
               <p className="text-xs text-muted-foreground">Right-click server → Copy Server ID</p>
               {guildId && !isValidDiscordId(guildId) && (
@@ -1132,6 +1158,7 @@ export default function Discord() {
                 onChange={(e) => setChannelId(e.target.value)}
                 placeholder="Optional"
                 className="font-mono"
+                maxLength={20}
               />
               <p className="text-xs text-muted-foreground">For notifications & chat bridge</p>
             </div>
@@ -1139,7 +1166,7 @@ export default function Discord() {
             {/* Admin Role ID */}
             <div className="space-y-2">
               <Label htmlFor="adminRoleId" className="flex items-center gap-2">
-                <Lock className="w-4 h-4 text-red-500" />
+                <Lock className="w-4 h-4 text-primary" />
                 Admin Role ID
               </Label>
               <Input
@@ -1147,6 +1174,7 @@ export default function Discord() {
                 onChange={(e) => setAdminRoleId(e.target.value)}
                 placeholder="Optional"
                 className="font-mono"
+                maxLength={20}
               />
               <p className="text-xs text-muted-foreground">Full access — can use all commands</p>
             </div>
@@ -1154,7 +1182,7 @@ export default function Discord() {
             {/* Moderator Role ID */}
             <div className="space-y-2">
               <Label htmlFor="modRoleId" className="flex items-center gap-2">
-                <Shield className="w-4 h-4 text-blue-500" />
+                <Shield className="w-4 h-4 text-primary" />
                 Moderator Role ID
               </Label>
               <Input
@@ -1162,6 +1190,7 @@ export default function Discord() {
                 onChange={(e) => setModRoleId(e.target.value)}
                 placeholder="Optional"
                 className="font-mono"
+                maxLength={20}
               />
               <p className="text-xs text-muted-foreground">Can use "moderator" tier commands</p>
               {modRoleId && !isValidDiscordId(modRoleId) && (

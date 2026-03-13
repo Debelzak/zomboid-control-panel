@@ -62,6 +62,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { PageHeader } from '@/components/PageHeader'
 // DropdownMenu imports available if needed
 import { serverFilesApi, SpawnPointsByProfession, SpawnRegion, SandboxData, ConfigTemplate } from '@/lib/api'
 import { EmptyState } from '@/components/EmptyState'
@@ -98,8 +100,8 @@ const IniSettingRow = memo(({
   // Multiline settings
   if (setting.type === 'multiline') {
     return (
-      <div className={`grid gap-2 py-3 border-b last:border-0 pr-4 rounded-md transition-colors ${
-        isModified ? 'bg-orange-500/5 border-l-2 border-l-orange-500 pl-3' : ''
+      <div className={`grid gap-2 rounded-md border-b py-3 pr-4 transition-colors last:border-0 ${
+        isModified ? 'border-l-2 border-l-warning bg-warning/5 pl-3' : ''
       }`}>
         <div className="flex items-center justify-between">
           <div>
@@ -107,7 +109,7 @@ const IniSettingRow = memo(({
             <p className="text-xs text-muted-foreground mt-0.5">{setting.description}</p>
           </div>
           {isModified && onReset && (
-            <Button variant="ghost" size="sm" className="h-7 text-xs text-orange-500 hover:text-orange-600" onClick={() => onReset(setting.key)}>
+            <Button variant="ghost" size="sm" className="h-7 text-xs text-warning hover:text-warning" onClick={() => onReset(setting.key)}>
               <Undo2 className="w-3 h-3 mr-1" /> Reset
             </Button>
           )}
@@ -115,12 +117,12 @@ const IniSettingRow = memo(({
         <Textarea
           value={value}
           onChange={(e) => onChange(setting.key, e.target.value)}
-          className={`w-full min-h-[80px] px-3 py-2 text-sm resize-y ${isModified ? 'border-orange-500/30' : ''}`}
+          className={`min-h-[80px] resize-y ${isModified ? 'border-warning/40' : ''}`}
         />
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <code className="bg-muted px-1 rounded">{setting.key}</code>
           {setting.default !== undefined && (
-            <span className={isDifferentFromDefault ? 'text-orange-500' : ''}>Default: {String(setting.default)}</span>
+            <span className={isDifferentFromDefault ? 'text-warning' : ''}>Default: {String(setting.default)}</span>
           )}
         </div>
       </div>
@@ -129,15 +131,15 @@ const IniSettingRow = memo(({
 
   // Standard settings
   return (
-    <div className={`grid gap-2 py-3 border-b last:border-0 pr-4 rounded-md transition-colors ${
-      isModified ? 'bg-orange-500/5 border-l-2 border-l-orange-500 pl-3' : ''
+    <div className={`grid gap-2 rounded-md border-b py-3 pr-4 transition-colors last:border-0 ${
+      isModified ? 'border-l-2 border-l-warning bg-warning/5 pl-3' : ''
     }`}>
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <Label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">{setting.label}</Label>
             {isModified && (
-              <Badge variant="outline" className="h-5 text-[10px] bg-orange-500/10 text-orange-500 border-orange-500/30">modified</Badge>
+              <Badge variant="warning" className="h-5 text-xs">modified</Badge>
             )}
           </div>
           <p className="text-xs text-muted-foreground mt-1.5">{setting.description}</p>
@@ -147,7 +149,7 @@ const IniSettingRow = memo(({
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-8 w-8 text-orange-500 hover:text-orange-600" onClick={() => onReset(setting.key)}>
+                  <Button variant="ghost" size="icon" className="h-9 w-9 text-warning hover:text-warning" onClick={() => onReset(setting.key)} aria-label={`Reset ${setting.label} to loaded value`}>
                     <Undo2 className="w-3.5 h-3.5" />
                   </Button>
                 </TooltipTrigger>
@@ -155,7 +157,7 @@ const IniSettingRow = memo(({
               </Tooltip>
             </TooltipProvider>
           )}
-          <div className="w-48">
+          <div className="w-full sm:w-48">
             {setting.type === 'boolean' ? (
               <div className="flex items-center gap-2 justify-end">
                 <span className="text-xs text-muted-foreground">{String(value).toLowerCase() === 'true' ? 'On' : 'Off'}</span>
@@ -190,10 +192,10 @@ const IniSettingRow = memo(({
                   }}
                   min={setting.min}
                   max={setting.max}
-                  className={`text-right ${isModified ? 'border-orange-500/30' : ''}`}
+                  className={`text-right ${isModified ? 'border-warning/40' : ''}`}
                 />
                 {(setting.min !== undefined || setting.max !== undefined) && (
-                  <div className="text-[10px] text-muted-foreground/60 text-right mt-0.5">
+                  <div className="text-xs text-muted-foreground/60 text-right mt-0.5">
                     {setting.min !== undefined && setting.max !== undefined
                       ? `${setting.min} – ${setting.max}`
                       : setting.min !== undefined
@@ -206,7 +208,8 @@ const IniSettingRow = memo(({
               <Input
                 value={String(value)}
                 onChange={(e) => onChange(setting.key, e.target.value)}
-                className={isModified ? 'border-orange-500/30' : ''}
+                className={isModified ? 'border-warning/40' : ''}
+                maxLength={512}
               />
             )}
           </div>
@@ -215,7 +218,7 @@ const IniSettingRow = memo(({
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         <code className="bg-muted px-1 rounded">{setting.key}</code>
         {setting.default !== undefined && (
-          <span className={isDifferentFromDefault ? 'text-orange-500' : ''}>Default: {String(setting.default)}</span>
+          <span className={isDifferentFromDefault ? 'text-warning' : ''}>Default: {String(setting.default)}</span>
         )}
       </div>
     </div>
@@ -242,22 +245,22 @@ const SandboxSettingRow = memo(({
   const isDifferentFromDefault = setting.default !== undefined && JSON.stringify(value) !== JSON.stringify(setting.default)
 
   return (
-    <div className={`grid gap-2 py-3 border-b last:border-0 pr-4 rounded-md transition-colors ${
-      isModified ? 'bg-orange-500/5 border-l-2 border-l-orange-500 pl-3' : ''
+    <div className={`grid gap-2 rounded-md border-b py-3 pr-4 transition-colors last:border-0 ${
+      isModified ? 'border-l-2 border-l-warning bg-warning/5 pl-3' : ''
     }`}>
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <Label className="text-sm font-medium">{setting.label}</Label>
             {isModified && (
-              <Badge variant="outline" className="h-5 text-[10px] bg-orange-500/10 text-orange-500 border-orange-500/30">modified</Badge>
+              <Badge variant="warning" className="h-5 text-xs">modified</Badge>
             )}
           </div>
           <p className="text-xs text-muted-foreground mt-1.5">{setting.description}</p>
           <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
             <code className="bg-muted px-1 rounded">{setting.key}</code>
             {setting.default !== undefined && (
-              <span className={isDifferentFromDefault ? 'text-orange-500' : ''}>Default: {String(setting.default)}</span>
+              <span className={isDifferentFromDefault ? 'text-warning' : ''}>Default: {String(setting.default)}</span>
             )}
           </div>
         </div>
@@ -266,7 +269,7 @@ const SandboxSettingRow = memo(({
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-8 w-8 text-orange-500 hover:text-orange-600" onClick={() => onReset(setting.key)}>
+                  <Button variant="ghost" size="icon" className="h-9 w-9 text-warning hover:text-warning" onClick={() => onReset(setting.key)} aria-label={`Reset ${setting.label} to loaded value`}>
                     <Undo2 className="w-3.5 h-3.5" />
                   </Button>
                 </TooltipTrigger>
@@ -274,7 +277,7 @@ const SandboxSettingRow = memo(({
               </Tooltip>
             </TooltipProvider>
           )}
-          <div className="w-48">
+          <div className="w-full sm:w-48">
             {setting.type === 'boolean' ? (
               <div className="flex items-center gap-2 justify-end">
                 <span className="text-xs text-muted-foreground">{Boolean(value) ? 'On' : 'Off'}</span>
@@ -303,10 +306,10 @@ const SandboxSettingRow = memo(({
                   min={setting.min}
                   max={setting.max}
                   step={setting.max && setting.max <= 1 ? 0.1 : 1}
-                  className={`text-right ${isModified ? 'border-orange-500/30' : ''}`}
+                  className={`text-right ${isModified ? 'border-warning/40' : ''}`}
                 />
                 {(setting.min !== undefined || setting.max !== undefined) && (
-                  <div className="text-[10px] text-muted-foreground/60 text-right mt-0.5">
+                  <div className="text-xs text-muted-foreground/60 text-right mt-0.5">
                     {setting.min !== undefined && setting.max !== undefined
                       ? `${setting.min} – ${setting.max}`
                       : setting.min !== undefined
@@ -325,6 +328,35 @@ const SandboxSettingRow = memo(({
   return prev.value === next.value && prev.setting === next.setting && prev.originalValue === next.originalValue
 })
 SandboxSettingRow.displayName = 'SandboxSettingRow'
+
+function ConfigSummaryCard({
+  icon,
+  value,
+  label,
+  detail,
+}: {
+  icon: React.ReactNode
+  value: string | number
+  label: string
+  detail?: React.ReactNode
+}) {
+  return (
+    <Card className="border-border/60 bg-card/80 shadow-sm">
+      <CardContent className="p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-2xl font-semibold tracking-tight">{value}</div>
+            <div className="text-sm text-muted-foreground">{label}</div>
+            {detail ? <div className="mt-1 text-xs text-muted-foreground/80">{detail}</div> : null}
+          </div>
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-primary/20 bg-primary/10 text-primary">
+            {icon}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
 
 export default function ServerConfig() {
   const [activeTab, setActiveTab] = useState('ini')
@@ -374,12 +406,22 @@ export default function ServerConfig() {
   
   // Copy state
   const [copied, setCopied] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const copiedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   
   const { toast } = useToast()
 
   // Load initial data
   useEffect(() => {
     loadData()
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (copiedTimeoutRef.current) {
+        clearTimeout(copiedTimeoutRef.current)
+      }
+    }
   }, [])
 
   const loadData = async () => {
@@ -411,8 +453,10 @@ export default function ServerConfig() {
         const regionsRes = await serverFilesApi.getSpawnRegions()
         setSpawnRegions(regionsRes.spawnregions)
       }
+      setLoadError(null)
     } catch (error) {
       console.error('Failed to load config:', error)
+      setLoadError(error instanceof Error ? error.message : 'Failed to load server config.')
       toast({
         title: 'Error',
         description: error instanceof Error ? error.message : 'Failed to load server config',
@@ -462,6 +506,15 @@ export default function ServerConfig() {
     return JSON.stringify(sandboxData) !== JSON.stringify(originalSandboxData)
   }, [editorMode, activeTab, rawContent, originalRawContent, sandboxData, originalSandboxData])
 
+  // Warn before leaving with unsaved changes
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault() }
+    if (hasIniChanges || hasSandboxChanges) {
+      window.addEventListener('beforeunload', handler)
+    }
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [hasIniChanges, hasSandboxChanges])
+
   // Create manual backup
   const handleCreateBackup = async (type: 'ini' | 'sandbox' | 'spawnpoints' | 'spawnregions') => {
     try {
@@ -484,7 +537,10 @@ export default function ServerConfig() {
     try {
       await navigator.clipboard.writeText(rawContent)
       setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
+      if (copiedTimeoutRef.current) {
+        clearTimeout(copiedTimeoutRef.current)
+      }
+      copiedTimeoutRef.current = setTimeout(() => setCopied(false), 2000)
       toast({ title: 'Copied', description: 'Content copied to clipboard' })
     } catch {
       toast({ title: 'Error', description: 'Failed to copy', variant: 'destructive' })
@@ -913,119 +969,86 @@ export default function ServerConfig() {
 
   return (
     <div className="space-y-6 page-transition">
-      {/* Header with gradient */}
-      <div className="relative overflow-hidden rounded-xl bg-gradient-to-r from-violet-500/10 via-purple-500/10 to-fuchsia-500/10 border p-6">
-        <div className="absolute inset-0 bg-grid-white/5" />
-        <div className="relative flex items-start justify-between">
-          <div>
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-violet-500/20">
-                <Settings className="w-6 h-6 text-violet-500" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold">Server Configuration</h1>
-                <p className="text-muted-foreground">
-                  Fine-tune your server settings, sandbox variables, and spawn points
-                </p>
-              </div>
-            </div>
-            {pathsInfo && (
-              <div className="mt-3 flex items-center gap-2">
-                <Badge variant="outline" className="font-mono text-xs">
-                  <FolderOpen className="w-3 h-3 mr-1" />
-                  {pathsInfo.serverName}
-                </Badge>
-                <span className="text-xs text-muted-foreground truncate max-w-md">
-                  {pathsInfo.configPath}
-                </span>
-              </div>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
+      {loadError && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Configuration data could not be fully loaded</AlertTitle>
+          <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <span className="min-w-0 break-words">{loadError}</span>
+            <Button variant="outline" size="sm" onClick={loadData} className="self-start">
+              <RefreshCw className="mr-2 h-4 w-4" /> Retry
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      <PageHeader
+        title="Server Configuration"
+        description="Fine-tune your server settings, sandbox variables, and spawn points"
+        icon={<Settings className="h-5 w-5 text-primary" />}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
             {(hasIniChanges || hasSandboxChanges) && (
-              <Badge className="bg-orange-500/20 text-orange-500 border-orange-500/50 animate-pulse">
-                <AlertTriangle className="w-3 h-3 mr-1" />
+              <Badge variant="warning" className="animate-pulse">
+                <AlertTriangle className="mr-1 h-3 w-3" />
                 Unsaved Changes
               </Badge>
             )}
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="outline" size="sm" onClick={loadTemplates} className="bg-background/50 backdrop-blur-sm">
-                    <Bookmark className="w-4 h-4 mr-2" /> Templates
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Save or load config profiles</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="outline" size="sm" onClick={loadBackups} className="bg-background/50 backdrop-blur-sm">
-                    <History className="w-4 h-4 mr-2" /> Backups
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>View and restore previous versions</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-            <Button variant="outline" size="sm" onClick={loadData} className="bg-background/50 backdrop-blur-sm">
-              <RefreshCw className="w-4 h-4 mr-2" /> Refresh
+            <Button variant="outline" size="sm" onClick={loadTemplates}>
+              <Bookmark className="mr-2 h-4 w-4" /> Templates
+            </Button>
+            <Button variant="outline" size="sm" onClick={loadBackups}>
+              <History className="mr-2 h-4 w-4" /> Backups
+            </Button>
+            <Button variant="outline" size="sm" onClick={loadData}>
+              <RefreshCw className="mr-2 h-4 w-4" /> Refresh
             </Button>
           </div>
-        </div>
+        }
+      />
 
-        {/* Stats Cards */}
-        <div className="relative grid grid-cols-2 md:grid-cols-4 gap-4 mt-6 stagger-in">
-          <div className="p-4 rounded-lg bg-background/60 backdrop-blur-sm border">
-            <div className="flex items-center justify-between">
-              <div className="text-2xl font-bold text-blue-500">{iniSettingsCount}</div>
-              <Settings className="w-5 h-5 text-blue-500/50" />
+      <Card className="border-border/60 bg-card/80">
+        <CardContent className="space-y-4 p-4">
+          {pathsInfo && (
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline" className="max-w-full font-mono text-xs">
+                <FolderOpen className="mr-1 h-3 w-3" />
+                {pathsInfo.serverName}
+              </Badge>
+              <span className="min-w-0 break-all text-xs text-muted-foreground sm:max-w-md">
+                {pathsInfo.configPath}
+              </span>
             </div>
-            <div className="text-sm text-muted-foreground">Server Settings</div>
-            <div className="text-xs text-muted-foreground/70 mt-1">
-              {pathsInfo?.exists.ini ? (
-                <span className="text-green-500">● Loaded</span>
-              ) : (
-                <span className="text-yellow-500">● Not found</span>
-              )}
-            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4 stagger-in">
+            <ConfigSummaryCard
+              icon={<Settings className="h-5 w-5" />}
+              value={iniSettingsCount}
+              label="Server Settings"
+              detail={pathsInfo?.exists.ini ? 'Loaded' : 'Not found'}
+            />
+            <ConfigSummaryCard
+              icon={<FileText className="h-5 w-5" />}
+              value={sandboxSettingsCount}
+              label="Sandbox Variables"
+              detail={pathsInfo?.exists.sandbox ? 'Loaded' : 'Not found'}
+            />
+            <ConfigSummaryCard
+              icon={<MapPin className="h-5 w-5" />}
+              value={spawnPointsCount}
+              label="Spawn Points"
+              detail={`Across ${professionsCount} profession${professionsCount !== 1 ? 's' : ''}`}
+            />
+            <ConfigSummaryCard
+              icon={<Map className="h-5 w-5" />}
+              value={spawnRegions.length}
+              label="Spawn Regions"
+              detail="Available towns"
+            />
           </div>
-          <div className="p-4 rounded-lg bg-background/60 backdrop-blur-sm border">
-            <div className="flex items-center justify-between">
-              <div className="text-2xl font-bold text-green-500">{sandboxSettingsCount}</div>
-              <FileText className="w-5 h-5 text-green-500/50" />
-            </div>
-            <div className="text-sm text-muted-foreground">Sandbox Variables</div>
-            <div className="text-xs text-muted-foreground/70 mt-1">
-              {pathsInfo?.exists.sandbox ? (
-                <span className="text-green-500">● Loaded</span>
-              ) : (
-                <span className="text-yellow-500">● Not found</span>
-              )}
-            </div>
-          </div>
-          <div className="p-4 rounded-lg bg-background/60 backdrop-blur-sm border">
-            <div className="flex items-center justify-between">
-              <div className="text-2xl font-bold text-purple-500">{spawnPointsCount}</div>
-              <MapPin className="w-5 h-5 text-purple-500/50" />
-            </div>
-            <div className="text-sm text-muted-foreground">Spawn Points</div>
-            <div className="text-xs text-muted-foreground/70 mt-1">
-              Across {professionsCount} profession{professionsCount !== 1 ? 's' : ''}
-            </div>
-          </div>
-          <div className="p-4 rounded-lg bg-background/60 backdrop-blur-sm border">
-            <div className="flex items-center justify-between">
-              <div className="text-2xl font-bold text-orange-500">{spawnRegions.length}</div>
-              <Map className="w-5 h-5 text-orange-500/50" />
-            </div>
-            <div className="text-sm text-muted-foreground">Spawn Regions</div>
-            <div className="text-xs text-muted-foreground/70 mt-1">
-              Available towns
-            </div>
-          </div>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
       {/* Search and Editor Mode */}
       <div className="flex flex-col sm:flex-row sm:items-center gap-4">
@@ -1036,6 +1059,8 @@ export default function ServerConfig() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-9 bg-background/50"
+            aria-label="Search server settings"
+            maxLength={128}
           />
           {searchQuery && (
             <Button
@@ -1110,64 +1135,66 @@ export default function ServerConfig() {
           loadRawContent(typeMap[v] || 'ini')
         }
       }}>
-        <TabsList className="grid w-full grid-cols-4 h-12 p-1 bg-muted/50">
-          <TabsTrigger value="ini" className="flex items-center gap-2 data-[state=active]:bg-blue-500/10 data-[state=active]:text-blue-600 data-[state=active]:border-b-2 data-[state=active]:border-blue-500 rounded-none">
+        <div className="overflow-x-auto pb-1">
+        <TabsList className="inline-flex h-auto min-w-max gap-1 rounded-xl border border-border/60 bg-muted/40 p-1">
+          <TabsTrigger value="ini" className="min-h-10 shrink-0 rounded-md px-3">
             <Settings className="w-4 h-4" />
             <span className="font-medium">Server Settings</span>
             {changedIniCount > 0 && (
-              <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 bg-orange-500/10 text-orange-500 border-orange-500/30">
+              <Badge variant="warning" className="h-4 px-1.5 py-0 text-xs">
                 {changedIniCount}
               </Badge>
             )}
             {hasIniChanges && activeTab !== 'ini' && (
-              <span className="w-2 h-2 bg-orange-500 rounded-full animate-pulse" title="Unsaved changes" />
+              <span className="h-2 w-2 rounded-full bg-warning animate-pulse" title="Unsaved changes" />
             )}
             {pathsInfo?.exists.ini ? (
-              <CheckCircle className="w-3 h-3 text-green-500" />
+              <CheckCircle className="w-3 h-3 text-primary" />
             ) : (
-              <AlertCircle className="w-3 h-3 text-yellow-500" />
+              <AlertCircle className="w-3 h-3 text-warning" />
             )}
           </TabsTrigger>
-          <TabsTrigger value="sandbox" className="flex items-center gap-2 data-[state=active]:bg-green-500/10 data-[state=active]:text-green-600 data-[state=active]:border-b-2 data-[state=active]:border-green-500 rounded-none">
+          <TabsTrigger value="sandbox" className="min-h-10 shrink-0 rounded-md px-3">
             <FileText className="w-4 h-4" />
             <span className="font-medium">Sandbox</span>
             {changedSandboxCount > 0 && (
-              <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 bg-orange-500/10 text-orange-500 border-orange-500/30">
+              <Badge variant="warning" className="h-4 px-1.5 py-0 text-xs">
                 {changedSandboxCount}
               </Badge>
             )}
             {hasSandboxChanges && activeTab !== 'sandbox' && (
-              <span className="w-2 h-2 bg-orange-500 rounded-full animate-pulse" title="Unsaved changes" />
+              <span className="h-2 w-2 rounded-full bg-warning animate-pulse" title="Unsaved changes" />
             )}
             {pathsInfo?.exists.sandbox ? (
-              <CheckCircle className="w-3 h-3 text-green-500" />
+              <CheckCircle className="w-3 h-3 text-primary" />
             ) : (
-              <AlertCircle className="w-3 h-3 text-yellow-500" />
+              <AlertCircle className="w-3 h-3 text-warning" />
             )}
           </TabsTrigger>
-          <TabsTrigger value="spawnpoints" className="flex items-center gap-2 data-[state=active]:bg-purple-500/10 data-[state=active]:text-purple-600 data-[state=active]:border-b-2 data-[state=active]:border-purple-500 rounded-none">
+          <TabsTrigger value="spawnpoints" className="min-h-10 shrink-0 rounded-md px-3">
             <MapPin className="w-4 h-4" />
             <span className="font-medium">Spawn Points</span>
           </TabsTrigger>
-          <TabsTrigger value="spawnregions" className="flex items-center gap-2 data-[state=active]:bg-orange-500/10 data-[state=active]:text-orange-600 data-[state=active]:border-b-2 data-[state=active]:border-orange-500 rounded-none">
+          <TabsTrigger value="spawnregions" className="min-h-10 shrink-0 rounded-md px-3">
             <Map className="w-4 h-4" />
             <span className="font-medium">Spawn Regions</span>
           </TabsTrigger>
         </TabsList>
+        </div>
 
         {/* INI Settings Tab */}
         <TabsContent value="ini" className="mt-4">
-          <Card className="border-t-4 border-t-blue-500">
-            <CardHeader className="pb-3 bg-gradient-to-r from-blue-500/5 to-transparent">
+          <Card className="border-border/60">
+            <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <div>
                   <CardTitle className="flex items-center gap-2">
-                    <div className="p-1.5 rounded bg-blue-500/10">
-                      <Settings className="w-4 h-4 text-blue-500" />
+                    <div className="rounded-lg border border-primary/20 bg-primary/10 p-1.5 text-primary">
+                      <Settings className="w-4 h-4" />
                     </div>
                     Server Settings (INI)
                     {hasIniChanges && (
-                      <Badge className="bg-orange-500/20 text-orange-600 border-orange-500/30">
+                      <Badge variant="warning">
                         <AlertTriangle className="w-3 h-3 mr-1" />
                         Unsaved
                       </Badge>
@@ -1181,7 +1208,7 @@ export default function ServerConfig() {
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Button variant="outline" size="icon" onClick={() => handleCreateBackup('ini')}>
+                        <Button variant="outline" size="icon" className="h-9 w-9" onClick={() => handleCreateBackup('ini')} aria-label="Download INI backup">
                           <Download className="w-4 h-4" />
                         </Button>
                       </TooltipTrigger>
@@ -1196,7 +1223,7 @@ export default function ServerConfig() {
                   >
                     <ExternalLink className="w-3 h-3" /> PZ Wiki
                   </a>
-                  <Button onClick={handleSaveIni} disabled={saving} className="bg-blue-600 hover:bg-blue-700">
+                  <Button onClick={handleSaveIni} disabled={saving}>
                     {saving ? (
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                     ) : (
@@ -1220,7 +1247,7 @@ export default function ServerConfig() {
                           onClick={handleCopyRaw}
                         >
                           {copied ? (
-                            <Check className="w-4 h-4 text-green-500" />
+                            <Check className="w-4 h-4 text-primary" />
                           ) : (
                             <Copy className="w-4 h-4" />
                           )}
@@ -1229,10 +1256,10 @@ export default function ServerConfig() {
                       <TooltipContent>{copied ? 'Copied!' : 'Copy to clipboard'}</TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
-                  <textarea
+                  <Textarea
                     value={rawContent}
                     onChange={(e) => setRawContent(e.target.value)}
-                    className="w-full h-[calc(100vh-380px)] min-h-[400px] font-mono text-sm p-4 rounded-md border border-input bg-background resize-y"
+                    className="h-[calc(100vh-380px)] min-h-[400px] resize-y font-mono text-sm"
                     spellCheck={false}
                   />
                 </div>
@@ -1250,24 +1277,24 @@ export default function ServerConfig() {
                           onClick={() => toggleCategory(category.id)}
                           className={`flex items-center gap-3 w-full py-2.5 px-4 rounded-lg transition-all duration-200 ${
                             isExpanded 
-                              ? 'bg-blue-500/10 border border-blue-500/30 shadow-sm' 
+                              ? 'border border-primary/30 bg-primary/10 shadow-sm' 
                               : 'bg-muted/50 hover:bg-muted border border-transparent'
                           }`}
                         >
-                          <div className={`p-1 rounded transition-colors ${isExpanded ? 'bg-blue-500/20' : 'bg-muted'}`}>
+                          <div className={`p-1 rounded transition-colors ${isExpanded ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>
                             {isExpanded ? (
-                              <ChevronDown className={`w-4 h-4 ${isExpanded ? 'text-blue-500' : ''}`} />
+                              <ChevronDown className="w-4 h-4" />
                             ) : (
                               <ChevronRight className="w-4 h-4" />
                             )}
                           </div>
-                          <span className={`font-medium ${isExpanded ? 'text-blue-600' : ''}`}>{category.label}</span>
-                          <Badge variant={isExpanded ? "default" : "secondary"} className={`ml-auto ${isExpanded ? 'bg-blue-500' : ''}`}>
+                          <span className={`font-medium ${isExpanded ? 'text-primary' : ''}`}>{category.label}</span>
+                          <Badge variant={isExpanded ? "default" : "secondary"} className="ml-auto">
                             {settings.length}
                           </Badge>
                         </button>
                         {isExpanded && (
-                          <div className="mt-3 pl-4 border-l-2 border-blue-500/30 ml-4 space-y-1">
+                          <div className="mt-3 ml-4 space-y-1 border-l-2 border-primary/30 pl-4">
                             {settings.map(setting => (
                               <IniSettingRow 
                                 key={setting.key} 
@@ -1291,17 +1318,17 @@ export default function ServerConfig() {
 
         {/* Sandbox Tab */}
         <TabsContent value="sandbox" className="mt-4">
-          <Card className="border-t-4 border-t-green-500">
-            <CardHeader className="pb-3 bg-gradient-to-r from-green-500/5 to-transparent">
+          <Card className="border-border/60">
+            <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <div>
                   <CardTitle className="flex items-center gap-2">
-                    <div className="p-1.5 rounded bg-green-500/10">
-                      <FileText className="w-4 h-4 text-green-500" />
+                    <div className="rounded-lg border border-primary/20 bg-primary/10 p-1.5 text-primary">
+                      <FileText className="w-4 h-4" />
                     </div>
                     Sandbox Settings
                     {hasSandboxChanges && (
-                      <Badge className="bg-orange-500/20 text-orange-600 border-orange-500/30">
+                      <Badge variant="warning">
                         <AlertTriangle className="w-3 h-3 mr-1" />
                         Unsaved
                       </Badge>
@@ -1315,14 +1342,14 @@ export default function ServerConfig() {
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Button variant="outline" size="icon" onClick={() => handleCreateBackup('sandbox')}>
+                        <Button variant="outline" size="icon" className="h-9 w-9" onClick={() => handleCreateBackup('sandbox')} aria-label="Download Sandbox backup">
                           <Download className="w-4 h-4" />
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent>Download Sandbox backup</TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
-                  <Button onClick={handleSaveSandbox} disabled={saving} className="bg-green-600 hover:bg-green-700">
+                  <Button onClick={handleSaveSandbox} disabled={saving}>
                     {saving ? (
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                     ) : (
@@ -1346,7 +1373,7 @@ export default function ServerConfig() {
                           onClick={handleCopyRaw}
                         >
                           {copied ? (
-                            <Check className="w-4 h-4 text-green-500" />
+                            <Check className="w-4 h-4 text-primary" />
                           ) : (
                             <Copy className="w-4 h-4" />
                           )}
@@ -1355,10 +1382,10 @@ export default function ServerConfig() {
                       <TooltipContent>{copied ? 'Copied!' : 'Copy to clipboard'}</TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
-                  <textarea
+                  <Textarea
                     value={rawContent}
                     onChange={(e) => setRawContent(e.target.value)}
-                    className="w-full h-[calc(100vh-380px)] min-h-[400px] font-mono text-sm p-4 rounded-md border border-input bg-background resize-y"
+                    className="h-[calc(100vh-380px)] min-h-[400px] resize-y font-mono text-sm"
                     spellCheck={false}
                   />
                 </div>
@@ -1376,24 +1403,24 @@ export default function ServerConfig() {
                           onClick={() => toggleCategory(category.id)}
                           className={`flex items-center gap-3 w-full py-2.5 px-4 rounded-lg transition-all duration-200 ${
                             isExpanded 
-                              ? 'bg-green-500/10 border border-green-500/30 shadow-sm' 
+                              ? 'border border-primary/30 bg-primary/10 shadow-sm' 
                               : 'bg-muted/50 hover:bg-muted border border-transparent'
                           }`}
                         >
-                          <div className={`p-1 rounded transition-colors ${isExpanded ? 'bg-green-500/20' : 'bg-muted'}`}>
+                          <div className={`p-1 rounded transition-colors ${isExpanded ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>
                             {isExpanded ? (
-                              <ChevronDown className={`w-4 h-4 ${isExpanded ? 'text-green-500' : ''}`} />
+                              <ChevronDown className="w-4 h-4" />
                             ) : (
                               <ChevronRight className="w-4 h-4" />
                             )}
                           </div>
-                          <span className={`font-medium ${isExpanded ? 'text-green-600' : ''}`}>{category.label}</span>
-                          <Badge variant={isExpanded ? "default" : "secondary"} className={`ml-auto ${isExpanded ? 'bg-green-500' : ''}`}>
+                          <span className={`font-medium ${isExpanded ? 'text-primary' : ''}`}>{category.label}</span>
+                          <Badge variant={isExpanded ? "default" : "secondary"} className="ml-auto">
                             {settings.length}
                           </Badge>
                         </button>
                         {isExpanded && (
-                          <div className="mt-3 pl-4 border-l-2 border-green-500/30 ml-4 space-y-1">
+                          <div className="mt-3 ml-4 space-y-1 border-l-2 border-primary/30 pl-4">
                             {settings.map(setting => (
                               <SandboxSettingRow 
                                 key={setting.key} 
@@ -1417,13 +1444,13 @@ export default function ServerConfig() {
 
         {/* Spawn Points Tab */}
         <TabsContent value="spawnpoints" className="mt-4">
-          <Card className="border-t-4 border-t-purple-500">
-            <CardHeader className="pb-3 bg-gradient-to-r from-purple-500/5 to-transparent">
+          <Card className="border-border/60">
+            <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <div>
                   <CardTitle className="flex items-center gap-2">
-                    <div className="p-1.5 rounded bg-purple-500/10">
-                      <MapPin className="w-4 h-4 text-purple-500" />
+                    <div className="rounded-lg border border-primary/20 bg-primary/10 p-1.5 text-primary">
+                      <MapPin className="w-4 h-4" />
                     </div>
                     Spawn Points
                   </CardTitle>
@@ -1435,7 +1462,7 @@ export default function ServerConfig() {
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Button variant="outline" size="icon" onClick={() => handleCreateBackup('spawnpoints')}>
+                        <Button variant="outline" size="icon" className="h-9 w-9" onClick={() => handleCreateBackup('spawnpoints')} aria-label="Download Spawn Points backup">
                           <Download className="w-4 h-4" />
                         </Button>
                       </TooltipTrigger>
@@ -1466,7 +1493,7 @@ export default function ServerConfig() {
                           onClick={handleCopyRaw}
                         >
                           {copied ? (
-                            <Check className="w-4 h-4 text-green-500" />
+                            <Check className="w-4 h-4 text-primary" />
                           ) : (
                             <Copy className="w-4 h-4" />
                           )}
@@ -1475,14 +1502,14 @@ export default function ServerConfig() {
                       <TooltipContent>{copied ? 'Copied!' : 'Copy to clipboard'}</TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
-                  <textarea
+                  <Textarea
                     value={rawContent}
                     onChange={(e) => setRawContent(e.target.value)}
-                    className="w-full h-[400px] font-mono text-sm p-4 rounded-md border border-input bg-background resize-y"
+                    className="h-[400px] resize-y font-mono text-sm"
                     spellCheck={false}
                   />
                   <div className="flex justify-end mt-3">
-                    <Button onClick={handleSaveSpawnPoints} disabled={saving} className="bg-purple-600 hover:bg-purple-700">
+                    <Button onClick={handleSaveSpawnPoints} disabled={saving}>
                       {saving ? (
                         <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                       ) : (
@@ -1494,8 +1521,8 @@ export default function ServerConfig() {
                 </div>
               ) : (
                 <div className="text-center py-16">
-                  <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-purple-500/10 mb-4">
-                    <MapPin className="w-8 h-8 text-purple-500" />
+                  <div className="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-full border border-primary/20 bg-primary/10 text-primary">
+                    <MapPin className="w-8 h-8" />
                   </div>
                   <h3 className="text-lg font-medium mb-2">Spawn Points Managed by Mods</h3>
                   <p className="text-muted-foreground max-w-md mx-auto">
@@ -1522,13 +1549,13 @@ export default function ServerConfig() {
 
         {/* Spawn Regions Tab */}
         <TabsContent value="spawnregions" className="mt-4">
-          <Card className="border-t-4 border-t-orange-500">
-            <CardHeader className="pb-3 bg-gradient-to-r from-orange-500/5 to-transparent">
+          <Card className="border-border/60">
+            <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <div>
                   <CardTitle className="flex items-center gap-2">
-                    <div className="p-1.5 rounded bg-orange-500/10">
-                      <Map className="w-4 h-4 text-orange-500" />
+                    <div className="rounded-lg border border-primary/20 bg-primary/10 p-1.5 text-primary">
+                      <Map className="w-4 h-4" />
                     </div>
                     Spawn Regions
                   </CardTitle>
@@ -1540,14 +1567,14 @@ export default function ServerConfig() {
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Button variant="outline" size="icon" onClick={() => handleCreateBackup('spawnregions')}>
+                        <Button variant="outline" size="icon" className="h-9 w-9" onClick={() => handleCreateBackup('spawnregions')} aria-label="Download Spawn Regions backup">
                           <Download className="w-4 h-4" />
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent>Download Spawnregions backup</TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
-                  <Button onClick={handleSaveSpawnRegions} disabled={saving} className="bg-orange-600 hover:bg-orange-700">
+                  <Button onClick={handleSaveSpawnRegions} disabled={saving}>
                     {saving ? (
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                     ) : (
@@ -1560,10 +1587,10 @@ export default function ServerConfig() {
             </CardHeader>
             <CardContent>
               {editorMode === 'raw' ? (
-                <textarea
+                <Textarea
                   value={rawContent}
                   onChange={(e) => setRawContent(e.target.value)}
-                  className="w-full h-[400px] font-mono text-sm p-4 rounded-md border border-input bg-background resize-y"
+                  className="h-[400px] resize-y font-mono text-sm"
                   spellCheck={false}
                 />
               ) : (
@@ -1583,10 +1610,10 @@ export default function ServerConfig() {
                   ) : (
                     <div className="space-y-2">
                       {spawnRegions.map((region, index) => (
-                        <div key={index} className="flex items-center gap-2 p-3 border rounded-lg">
-                          <span className="text-sm font-medium w-8">#{index + 1}</span>
-                          <div className="flex-1 space-y-2">
-                            <div className="grid grid-cols-2 gap-4">
+                        <div key={index} className="flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center">
+                          <span className="text-sm font-medium sm:w-8">#{index + 1}</span>
+                          <div className="min-w-0 flex-1 space-y-2">
+                            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                               <div>
                                 <Label className="text-xs">Display Name</Label>
                                 <Input
@@ -1597,6 +1624,7 @@ export default function ServerConfig() {
                                     setSpawnRegions(newRegions)
                                   }}
                                   placeholder="e.g., Muldraugh, KY"
+                                  maxLength={64}
                                 />
                               </div>
                               <div>
@@ -1615,6 +1643,7 @@ export default function ServerConfig() {
                                   }}
                                   placeholder={region.isServerFile ? "ServerName_spawnpoints.lua" : "media/maps/Muldraugh, KY/spawnpoints.lua"}
                                   className="font-mono text-xs"
+                                  maxLength={512}
                                 />
                               </div>
                             </div>
@@ -1622,8 +1651,9 @@ export default function ServerConfig() {
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="text-destructive hover:text-destructive"
+                            className="h-9 w-9 self-end text-destructive hover:text-destructive sm:self-center"
                             onClick={() => setSpawnRegions(spawnRegions.filter((_, i) => i !== index))}
+                            aria-label={`Delete spawn region ${region.name || index + 1}`}
                           >
                             <Trash2 className="w-4 h-4" />
                           </Button>
@@ -1689,33 +1719,33 @@ export default function ServerConfig() {
                     // Determine file type from filename
                     const filename = backup.filename.toLowerCase()
                     let fileType = 'config'
-                    let typeColor = 'bg-gray-500'
+                    let typeColor = 'bg-muted-foreground'
                     if (filename.includes('_ini_') || filename.endsWith('.ini')) {
                       fileType = 'INI'
-                      typeColor = 'bg-blue-500'
+                      typeColor = 'bg-primary'
                     } else if (filename.includes('sandbox')) {
                       fileType = 'Sandbox'
-                      typeColor = 'bg-green-500'
+                      typeColor = 'bg-chart-4'
                     } else if (filename.includes('spawnpoints')) {
                       fileType = 'SpawnPoints'
-                      typeColor = 'bg-purple-500'
+                      typeColor = 'bg-accent-foreground'
                     } else if (filename.includes('spawnregions')) {
                       fileType = 'SpawnRegions'
-                      typeColor = 'bg-orange-500'
+                      typeColor = 'bg-warning'
                     }
                     
                     return (
-                      <div key={backup.filename} className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/50 transition-colors">
-                        <div className="flex items-center gap-3">
+                      <div key={backup.filename} className="flex flex-col gap-3 rounded-lg border p-3 transition-colors hover:bg-muted/50 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="flex min-w-0 items-start gap-3 sm:items-center">
                           <Badge className={`${typeColor} text-white text-xs`}>{fileType}</Badge>
-                          <div>
-                            <p className="text-sm font-medium font-mono">{backup.filename}</p>
+                          <div className="min-w-0">
+                            <p className="break-all text-sm font-medium font-mono">{backup.filename}</p>
                             <p className="text-xs text-muted-foreground">
                               {new Date(backup.created).toLocaleString()} • {Math.round(backup.size / 1024)}KB
                             </p>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 self-end sm:self-auto">
                           <TooltipProvider>
                             <Tooltip>
                               <TooltipTrigger asChild>
@@ -1796,33 +1826,33 @@ export default function ServerConfig() {
             ) : (
               <div className="space-y-3">
                 {templates.map((template) => (
-                  <div key={template.id} className="p-4 border rounded-lg hover:bg-muted/50 transition-colors">
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
+                  <div key={template.id} className="rounded-lg border p-4 transition-colors hover:bg-muted/50">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
                           <h4 className="font-medium">{template.name}</h4>
                           <Badge variant="secondary" className="text-xs">
                             {template.type === 'both' ? 'INI + Sandbox' : template.type.toUpperCase()}
                           </Badge>
                         </div>
                         {template.description && (
-                          <p className="text-sm text-muted-foreground mt-1">{template.description}</p>
+                          <p className="mt-1 break-words text-sm text-muted-foreground">{template.description}</p>
                         )}
-                        <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
+                        <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
                           <span>Created: {new Date(template.created).toLocaleDateString()}</span>
                           <span>•</span>
                           <span className="flex items-center gap-1">
-                            {template.hasIni && <CheckCircle className="w-3 h-3 text-green-500" />}
+                            {template.hasIni && <CheckCircle className="w-3 h-3 text-primary" />}
                             {template.hasIni && 'INI'}
                           </span>
                           {template.hasIni && template.hasSandbox && <span>•</span>}
                           <span className="flex items-center gap-1">
-                            {template.hasSandbox && <CheckCircle className="w-3 h-3 text-green-500" />}
+                            {template.hasSandbox && <CheckCircle className="w-3 h-3 text-primary" />}
                             {template.hasSandbox && 'Sandbox'}
                           </span>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 ml-4">
+                      <div className="flex items-center gap-2 sm:ml-4 sm:self-start">
                         <TooltipProvider>
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -1851,8 +1881,9 @@ export default function ServerConfig() {
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="text-destructive hover:text-destructive"
+                                className="h-9 w-9 text-destructive hover:text-destructive"
                                 onClick={() => handleDeleteTemplate(template.id, template.name)}
+                                aria-label={`Delete template ${template.name}`}
                               >
                                 <Trash2 className="w-4 h-4" />
                               </Button>
@@ -1896,19 +1927,23 @@ export default function ServerConfig() {
                 id="template-name"
                 placeholder="e.g., PvE Casual, Hardcore Survival..."
                 value={newTemplateName}
-                onChange={(e) => setNewTemplateName(e.target.value)}
+                onChange={(e) => setNewTemplateName(e.target.value.slice(0, 60))}
+                maxLength={60}
               />
+              <p className="text-xs text-muted-foreground">{newTemplateName.length}/60 characters</p>
             </div>
             
             <div className="space-y-2">
               <Label htmlFor="template-desc">Description (optional)</Label>
-              <textarea
+              <Textarea
                 id="template-desc"
                 placeholder="Describe what this template is for..."
                 value={newTemplateDesc}
-                onChange={(e) => setNewTemplateDesc(e.target.value)}
-                className="w-full min-h-[80px] px-3 py-2 text-sm rounded-md border border-input bg-background resize-y"
+                onChange={(e) => setNewTemplateDesc(e.target.value.slice(0, 240))}
+                className="min-h-[80px] resize-y"
+                maxLength={240}
               />
+              <p className="text-xs text-muted-foreground">{newTemplateDesc.length}/240 characters</p>
             </div>
             
             <div className="space-y-3">

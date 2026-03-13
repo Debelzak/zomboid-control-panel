@@ -1,6 +1,33 @@
 const API_BASE = '/api'
 const TOKEN_KEY = 'pz_access_token'
 
+export class ApiError extends Error {
+  status?: number
+  code?: string
+  isRetryable: boolean
+  isTimeout: boolean
+  isNetworkError: boolean
+
+  constructor(
+    message: string,
+    options?: {
+      status?: number
+      code?: string
+      isRetryable?: boolean
+      isTimeout?: boolean
+      isNetworkError?: boolean
+    }
+  ) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = options?.status
+    this.code = options?.code
+    this.isRetryable = Boolean(options?.isRetryable)
+    this.isTimeout = Boolean(options?.isTimeout)
+    this.isNetworkError = Boolean(options?.isNetworkError)
+  }
+}
+
 // Get stored auth token
 function getAuthToken(): string | null {
   return localStorage.getItem(TOKEN_KEY)
@@ -36,6 +63,7 @@ async function tryRefreshToken(): Promise<boolean> {
       localStorage.removeItem(TOKEN_KEY)
       return false
     } catch {
+      localStorage.removeItem(TOKEN_KEY)
       return false
     } finally {
       isRefreshing = false
@@ -66,6 +94,9 @@ function getRetryDelay(attempt: number): number {
 
 // Check if error is retryable
 function isRetryableError(error: unknown, response?: Response): boolean {
+  if (error instanceof ApiError) {
+    return error.isRetryable
+  }
   // Network errors are retryable
   if (error instanceof TypeError && error.message.includes('fetch')) {
     return true
@@ -83,6 +114,101 @@ function isRetryableError(error: unknown, response?: Response): boolean {
     return true
   }
   return false
+}
+
+function getStatusMessage(status: number): string {
+  switch (status) {
+    case 400:
+      return 'The request was invalid. Check the provided values and try again.'
+    case 401:
+      return 'Your session has expired. Sign in again and retry.'
+    case 403:
+      return 'You do not have permission to perform this action.'
+    case 404:
+      return 'The requested resource was not found.'
+    case 408:
+      return 'The request timed out. Try again.'
+    case 409:
+      return 'The request could not be completed because the data changed.'
+    case 413:
+      return 'The submitted content is too large.'
+    case 422:
+      return 'The server rejected the submitted values. Review the form and try again.'
+    case 429:
+      return 'Too many requests were sent. Wait a moment and try again.'
+    case 500:
+    case 502:
+    case 503:
+    case 504:
+      return 'The server is temporarily unavailable. Try again shortly.'
+    default:
+      return `Request failed with status ${status}.`
+  }
+}
+
+function toApiError(error: unknown): ApiError {
+  if (error instanceof ApiError) {
+    return error
+  }
+
+  if (error instanceof DOMException && error.name === 'AbortError') {
+    return new ApiError('The request timed out. Check your connection and try again.', {
+      code: 'TIMEOUT',
+      isRetryable: true,
+      isTimeout: true,
+      isNetworkError: true,
+    })
+  }
+
+  if (error instanceof TypeError) {
+    return new ApiError('Unable to reach the server. Check your network connection and try again.', {
+      code: 'NETWORK_ERROR',
+      isRetryable: true,
+      isNetworkError: true,
+    })
+  }
+
+  if (error instanceof Error) {
+    return new ApiError(error.message)
+  }
+
+  return new ApiError('An unexpected error occurred while contacting the server.')
+}
+
+async function parseResponseBody(response: Response): Promise<unknown> {
+  const contentType = response.headers.get('content-type') || ''
+
+  if (contentType.includes('application/json')) {
+    try {
+      return await response.json()
+    } catch {
+      return null
+    }
+  }
+
+  try {
+    const text = await response.text()
+    return text || null
+  } catch {
+    return null
+  }
+}
+
+function buildResponseError(response: Response, payload?: unknown): ApiError {
+  const messageFromPayload =
+    payload && typeof payload === 'object' && 'error' in payload && typeof payload.error === 'string'
+      ? payload.error
+      : payload && typeof payload === 'object' && 'message' in payload && typeof payload.message === 'string'
+      ? payload.message
+      : typeof payload === 'string' && payload.trim()
+      ? payload.trim()
+      : getStatusMessage(response.status)
+
+  return new ApiError(messageFromPayload, {
+    status: response.status,
+    code: `HTTP_${response.status}`,
+    isRetryable: response.status >= 500 || response.status === 429 || response.status === 408,
+  })
 }
 
 async function fetchWithRetry(
@@ -109,11 +235,13 @@ async function fetchWithRetry(
         if (response.status === 401 && attempt === 0 && !url.includes('/api/auth/')) {
           const refreshed = await tryRefreshToken()
           if (refreshed) {
+            const retryController = new AbortController()
+            const retryTimeoutId = setTimeout(() => retryController.abort(), RETRY_CONFIG.fetchTimeout)
             // Retry with new token
             const retryResponse = await fetch(url, {
               ...withAuth(options),
-              signal: AbortSignal.timeout(RETRY_CONFIG.fetchTimeout),
-            })
+              signal: retryController.signal,
+            }).finally(() => clearTimeout(retryTimeoutId))
             if (retryResponse.status !== 401) {
               return retryResponse
             }
@@ -135,68 +263,65 @@ async function fetchWithRetry(
       // Wait before retrying
       await new Promise(resolve => setTimeout(resolve, getRetryDelay(attempt)))
     } catch (error) {
-      lastError = error
+      lastError = toApiError(error)
       
       // Don't retry if it's the last attempt or non-retryable
-      if (attempt === retries || !isRetryableError(error)) {
-        throw error
+      if (attempt === retries || !isRetryableError(lastError)) {
+        throw lastError
       }
       
-      console.warn(`Request failed, retrying (${attempt + 1}/${retries})...`, error)
+      console.warn(`Request failed, retrying (${attempt + 1}/${retries})...`, lastError)
       await new Promise(resolve => setTimeout(resolve, getRetryDelay(attempt)))
     }
   }
   
-  throw lastError
+  throw toApiError(lastError)
 }
 
 export function apiFetch(endpoint: string, options?: RequestInit) {
   return fetchWithRetry(`${API_BASE}${endpoint}`, options)
 }
 
-async function handleResponse(response: Response) {
-  let data
-  try {
-    data = await response.json()
-  } catch {
-    // Non-JSON response (e.g., HTML error page, empty body)
-    if (!response.ok) {
-      throw new Error(`Request failed with status ${response.status}`)
-    }
-    throw new Error('Invalid JSON response from server')
-  }
+async function handleResponse<T = any>(response: Response): Promise<T> {
+  const data = await parseResponseBody(response)
   if (!response.ok) {
-    throw new Error(data.error || 'Request failed')
+    throw buildResponseError(response, data)
   }
-  return data
+  if (data === null || typeof data !== 'object') {
+    throw new ApiError('The server returned an invalid response.', {
+      status: response.status,
+      code: 'INVALID_RESPONSE',
+    })
+  }
+  return data as T
 }
 
 // Helper for GET requests with retry
-function apiGet(endpoint: string) {
-  return fetchWithRetry(`${API_BASE}${endpoint}`).then(handleResponse)
+function apiGet<T = any>(endpoint: string): Promise<T> {
+  return fetchWithRetry(`${API_BASE}${endpoint}`).then((response) => handleResponse<T>(response))
 }
 
 // Helper for POST requests with retry
-function apiPost(endpoint: string, body?: unknown) {
+function apiPost<T = any>(endpoint: string, body?: unknown): Promise<T> {
   return fetchWithRetry(`${API_BASE}${endpoint}`, {
     method: 'POST',
     headers: body ? { 'Content-Type': 'application/json' } : undefined,
     body: body ? JSON.stringify(body) : undefined,
-  }).then(handleResponse)
+  }).then((response) => handleResponse<T>(response))
 }
 
 // Helper for DELETE requests with retry
-function apiDelete(endpoint: string) {
-  return fetchWithRetry(`${API_BASE}${endpoint}`, { method: 'DELETE' }).then(handleResponse)
+function apiDelete<T = any>(endpoint: string): Promise<T> {
+  return fetchWithRetry(`${API_BASE}${endpoint}`, { method: 'DELETE' }).then((response) => handleResponse<T>(response))
 }
 
 // Helper for PUT requests with retry
-function apiPut(endpoint: string, body?: unknown) {
+function apiPut<T = any>(endpoint: string, body?: unknown): Promise<T> {
   return fetchWithRetry(`${API_BASE}${endpoint}`, {
     method: 'PUT',
     headers: body ? { 'Content-Type': 'application/json' } : undefined,
     body: body ? JSON.stringify(body) : undefined,
-  }).then(handleResponse)
+  }).then((response) => handleResponse<T>(response))
 }
 
 // Steam branch info
@@ -1095,7 +1220,7 @@ export const backupApi = {
 
   // Delete a backup
   deleteBackup: (name: string): Promise<{ success: boolean; message?: string }> =>
-    fetchWithRetry(`${API_BASE}/backup/${encodeURIComponent(name)}`, { method: 'DELETE' }).then(handleResponse),
+    fetchWithRetry(`${API_BASE}/backup/${encodeURIComponent(name)}`, { method: 'DELETE' }).then((response) => handleResponse<{ success: boolean; message?: string }>(response)),
 
   // Restore a backup
   restoreBackup: (name: string, options?: { createPreRestoreBackup?: boolean }): Promise<{
@@ -1120,7 +1245,8 @@ export const backupApi = {
   downloadBackup: async (name: string): Promise<void> => {
     const response = await fetchWithRetry(`${API_BASE}/backup/download/${encodeURIComponent(name)}`)
     if (!response.ok) {
-      throw new Error(`Download failed with status ${response.status}`)
+      const payload = await parseResponseBody(response)
+      throw buildResponseError(response, payload)
     }
     const blob = await response.blob()
     const url = URL.createObjectURL(blob)

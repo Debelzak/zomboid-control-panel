@@ -1,5 +1,7 @@
 import { Skeleton } from '@/components/ui/skeleton'
 
+const SKELETON_WIDTHS = ['w-[62%]', 'w-[78%]', 'w-[55%]', 'w-[90%]', 'w-[68%]', 'w-[82%]', 'w-[47%]', 'w-[73%]', 'w-[60%]', 'w-[85%]', 'w-[52%]', 'w-[76%]']
+
 interface PageSkeletonProps {
   variant?: 'dashboard' | 'list' | 'form' | 'console' | 'default'
 }
@@ -92,7 +94,7 @@ export function PageSkeleton({ variant = 'default' }: PageSkeletonProps) {
           </div>
           <div className="space-y-1.5">
             {Array.from({ length: 12 }).map((_, i) => (
-              <Skeleton key={i} className="h-4" style={{ width: `${60 + Math.random() * 40}%` }} />
+              <Skeleton key={i} className={`h-4 ${SKELETON_WIDTHS[i]}`} />
             ))}
           </div>
         </div>

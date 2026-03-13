@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import {
   Search,
   RefreshCw,
@@ -42,6 +43,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { useToast } from '@/components/ui/use-toast'
+import { apiFetch } from '@/lib/api'
 
 interface GameServer {
   name: string
@@ -79,6 +81,7 @@ export default function ServerFinder() {
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('')
+  const debouncedSearch = useDebouncedValue(searchQuery, 200)
   const [hideEmpty, setHideEmpty] = useState(false)
   const [hideFull, setHideFull] = useState(false)
   const [hidePrivate, setHidePrivate] = useState(false)
@@ -104,7 +107,7 @@ export default function ServerFinder() {
 
     try {
       const url = forceRefresh ? '/api/server-finder?refresh=true' : '/api/server-finder'
-      const response = await fetch(url)
+      const response = await apiFetch(url.replace('/api', ''))
       const data = await response.json()
 
       if (!data.success) {
@@ -120,6 +123,10 @@ export default function ServerFinder() {
         activeServers: data.activeServers || 0,
         totalCapacity: data.totalCapacity || 0,
       })
+
+      if (data.apiKeyConfigured === false) {
+        setError('Steam API key missing')
+      }
       
       if (data.servers?.length > 0) {
         toast({
@@ -130,11 +137,6 @@ export default function ServerFinder() {
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error'
       setError(message)
-      toast({
-        title: 'Error',
-        description: message,
-        variant: 'destructive',
-      })
     } finally {
       setLoading(false)
     }
@@ -150,8 +152,8 @@ export default function ServerFinder() {
     let result = [...servers]
 
     // Search filter
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase()
+    if (debouncedSearch) {
+      const query = debouncedSearch.toLowerCase()
       result = result.filter(
         s =>
           s.name.toLowerCase().includes(query) ||
@@ -217,7 +219,7 @@ export default function ServerFinder() {
     setFilteredServers(result)
     // Reset to page 1 when filters change
     setCurrentPage(1)
-  }, [servers, searchQuery, hideEmpty, hideFull, hidePrivate, showVacOnly, versionFilter, sortField, sortDirection, serverPings])
+  }, [servers, debouncedSearch, hideEmpty, hideFull, hidePrivate, showVacOnly, versionFilter, sortField, sortDirection, serverPings])
 
   // Compute available versions from servers
   const availableVersions = useMemo(() => {
@@ -240,10 +242,10 @@ export default function ServerFinder() {
 
   // Calculate pagination from filtered servers
   const totalPages = Math.max(1, Math.ceil(filteredServers.length / ITEMS_PER_PAGE))
-  const paginatedServers = filteredServers.slice(
+  const paginatedServers = useMemo(() => filteredServers.slice(
     (currentPage - 1) * ITEMS_PER_PAGE,
     currentPage * ITEMS_PER_PAGE
-  )
+  ), [filteredServers, currentPage])
 
   const goToPage = (page: number) => {
     const validPage = Math.max(1, Math.min(page, totalPages))
@@ -307,18 +309,18 @@ export default function ServerFinder() {
 
   const getPingColor = (ping: number | null | undefined) => {
     if (ping === null || ping === undefined) return 'text-muted-foreground'
-    if (ping < 50) return 'text-green-500'
-    if (ping < 100) return 'text-yellow-500'
-    if (ping < 200) return 'text-orange-500'
-    return 'text-red-500'
+    if (ping < 50) return 'text-primary'
+    if (ping < 100) return 'text-warning'
+    if (ping < 200) return 'text-warning'
+    return 'text-destructive'
   }
 
   return (
     <div className="space-y-6 page-transition">
       {/* Header */}
       <PageHeader
-        title="Server Finder"
-        description="Browse Project Zomboid multiplayer servers"
+        title="Browse Public Servers"
+        description="Search the public Project Zomboid server list and copy a server address to join quickly"
         icon={<Globe className="w-5 h-5" />}
         actions={
           <div className="flex gap-2">
@@ -328,11 +330,11 @@ export default function ServerFinder() {
               ) : (
                 <RefreshCw className="h-4 w-4 mr-2" />
               )}
-              {cached ? 'Cached' : 'Refresh'}
+              Refresh List
             </Button>
             <Button onClick={() => fetchServers(true)} disabled={loading}>
               <RefreshCw className="h-4 w-4 mr-2" />
-              Force Refresh
+              Reload from Steam
             </Button>
           </div>
         }
@@ -340,13 +342,13 @@ export default function ServerFinder() {
 
       {/* API Key Warning */}
       {!apiKeyConfigured && !loading && (
-        <Card className="border-yellow-500/50 bg-yellow-500/10">
+        <Card className="border-warning/40 bg-warning/10 shadow-sm">
           <CardContent className="flex items-start gap-4 py-4">
-            <AlertCircle className="h-6 w-6 text-yellow-500 shrink-0 mt-0.5" />
+            <AlertCircle className="h-6 w-6 text-warning shrink-0 mt-0.5" />
             <div className="space-y-1">
-              <p className="font-medium text-yellow-600 dark:text-yellow-400">Steam API Key Required</p>
+              <p className="font-medium text-warning">Steam API Key Missing</p>
               <p className="text-sm text-muted-foreground">
-                To browse Project Zomboid servers, you need to configure your Steam API key.
+                Add your Steam API key in Settings before this page can load the public server list.
               </p>
               <ol className="text-sm text-muted-foreground list-decimal list-inside space-y-1 mt-2">
                 <li>Go to <a href="https://steamcommunity.com/dev/apikey" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Steam API Key page</a> and register for a key</li>
@@ -360,7 +362,7 @@ export default function ServerFinder() {
 
       {/* Stats */}
       <div className="grid gap-4 md:grid-cols-4 stagger-in">
-        <Card>
+        <Card className="border-border/70 bg-gradient-to-br from-secondary/80 via-card to-accent/12 shadow-sm">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Servers</CardTitle>
             <Server className="h-4 w-4 text-muted-foreground" />
@@ -374,7 +376,7 @@ export default function ServerFinder() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="border-border/70 bg-gradient-to-br from-secondary/80 via-card to-primary/10 shadow-sm">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Active Servers</CardTitle>
             <Globe className="h-4 w-4 text-muted-foreground" />
@@ -385,7 +387,7 @@ export default function ServerFinder() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="border-border/70 bg-gradient-to-br from-secondary/80 via-card to-accent/16 shadow-sm">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Players</CardTitle>
             <Users className="h-4 w-4 text-muted-foreground" />
@@ -396,7 +398,7 @@ export default function ServerFinder() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="border-border/70 bg-gradient-to-br from-secondary/80 via-card to-primary/12 shadow-sm">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Showing</CardTitle>
             <Filter className="h-4 w-4 text-muted-foreground" />
@@ -409,7 +411,7 @@ export default function ServerFinder() {
       </div>
 
       {/* Search and Filters */}
-      <Card>
+      <Card className="border-border/70 bg-card/92 shadow-sm">
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
             <CardTitle className="text-lg">Search & Filters</CardTitle>
@@ -427,6 +429,8 @@ export default function ServerFinder() {
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               className="pl-9"
+              aria-label="Search public servers"
+              maxLength={128}
             />
           </div>
 
@@ -526,22 +530,22 @@ export default function ServerFinder() {
 
       {/* Error State */}
       {error && (
-        <Card className="border-destructive">
+        <Card className="border-destructive/40 bg-destructive/10 shadow-sm">
           <CardContent className="flex items-center gap-4 py-4">
             <AlertCircle className="h-8 w-8 text-destructive" />
             <div>
-              <p className="font-medium text-destructive">Failed to load servers</p>
+              <p className="font-medium text-destructive">Can't load public servers</p>
               <p className="text-sm text-muted-foreground">{error}</p>
             </div>
             <Button variant="outline" onClick={() => fetchServers()} className="ml-auto">
-              Retry
+              Try Again
             </Button>
           </CardContent>
         </Card>
       )}
 
       {/* Server List */}
-      <Card>
+      <Card className="border-border/70 bg-card/92 shadow-sm">
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle>Server List</CardTitle>
@@ -564,7 +568,11 @@ export default function ServerFinder() {
           ) : filteredServers.length === 0 ? (
             <div className="text-center py-12">
               {servers.length === 0 ? (
-                <EmptyState type="noResults" title="No servers found" description="Make sure your Steam API key is configured" />
+                <EmptyState
+                  type="noResults"
+                  title={apiKeyConfigured ? 'No public servers found' : 'Steam API key missing'}
+                  description={apiKeyConfigured ? 'Try refreshing the list in a moment.' : 'Add your Steam API key in Settings to load the public Project Zomboid server list.'}
+                />
               ) : (
                 <EmptyState
                   type="noResults"
@@ -584,7 +592,7 @@ export default function ServerFinder() {
               )}
             </div>
           ) : (
-            <ScrollArea className="h-[600px]">
+            <ScrollArea className="h-[400px] sm:h-[600px]">
               <div className="space-y-2">
                 {paginatedServers.map((server, index) => {
                   const serverKey = `${server.ip}:${server.port}`
@@ -594,7 +602,7 @@ export default function ServerFinder() {
                   return (
                     <div
                       key={`${serverKey}-${index}`}
-                      className="flex items-center gap-4 p-4 rounded-lg border bg-card hover:bg-accent/50 transition-colors"
+                      className="flex items-center gap-4 p-4 rounded-lg border border-border/70 bg-card/70 hover:bg-accent/24 transition-colors"
                     >
                       {/* Server Info */}
                       <div className="flex-1 min-w-0">
@@ -603,7 +611,7 @@ export default function ServerFinder() {
                           {server.isPrivate && (
                             <Tooltip>
                               <TooltipTrigger>
-                                <Lock className="h-4 w-4 text-yellow-500" />
+                                <Lock className="h-4 w-4 text-warning" />
                               </TooltipTrigger>
                               <TooltipContent>Password Protected</TooltipContent>
                             </Tooltip>
@@ -611,7 +619,7 @@ export default function ServerFinder() {
                           {server.vac && (
                             <Tooltip>
                               <TooltipTrigger>
-                                <Shield className="h-4 w-4 text-blue-500" />
+                                <Shield className="h-4 w-4 text-primary" />
                               </TooltipTrigger>
                               <TooltipContent>VAC Secured</TooltipContent>
                             </Tooltip>
@@ -624,8 +632,8 @@ export default function ServerFinder() {
                           </span>
                           {server.map && (
                             <span className="flex items-center gap-1">
-                              <MapPin className="h-3 w-3" />
-                              {server.map}
+                              <MapPin className="h-3 w-3 shrink-0" />
+                              <span className="truncate">{server.map}</span>
                             </span>
                           )}
                           {server.version && (
@@ -637,7 +645,7 @@ export default function ServerFinder() {
                         {server.tags && server.tags.length > 0 && (
                           <div className="flex flex-wrap gap-1 mt-1">
                             {server.tags.slice(0, 5).map((tag, i) => (
-                              <Badge key={i} variant="secondary" className="text-xs px-1.5 py-0">
+                              <Badge key={i} variant="secondary" className="text-xs px-1.5 py-0 max-w-[150px] truncate">
                                 {tag}
                               </Badge>
                             ))}
@@ -656,9 +664,9 @@ export default function ServerFinder() {
                         <span
                           className={
                             server.players >= server.maxPlayers
-                              ? 'text-red-500 font-medium'
+                                ? 'text-destructive font-medium'
                               : server.players > 0
-                              ? 'text-green-500 font-medium'
+                                ? 'text-primary font-medium'
                               : 'text-muted-foreground'
                           }
                         >

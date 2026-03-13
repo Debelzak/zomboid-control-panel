@@ -111,7 +111,7 @@ export class UpdateChecker {
    * Get latest build info from Steam for a specific branch
    */
   async getLatestBuildInfo(steamcmdPath, branch = 'public') {
-    const steamcmdExe = path.join(steamcmdPath, 'steamcmd.exe');
+    const steamcmdExe = path.join(steamcmdPath, process.platform === 'win32' ? 'steamcmd.exe' : 'steamcmd.sh');
       
     try {
         await fs.promises.access(steamcmdExe);

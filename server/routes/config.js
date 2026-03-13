@@ -178,7 +178,7 @@ router.get('/paths', async (req, res) => {
     res.json({
       serverPath: process.env.PZ_SERVER_PATH || '',
       savePath: process.env.PZ_SAVE_PATH || '',
-      serverBat: process.env.PZ_SERVER_BAT || 'StartServer64.bat'
+      serverBat: process.env.PZ_SERVER_BAT || (process.platform === 'win32' ? 'StartServer64.bat' : 'start-server.sh')
     });
   } catch (error) {
     res.status(500).json({ error: sanitizeError(error.message) });
@@ -190,6 +190,18 @@ router.put('/paths', async (req, res) => {
   try {
     const serverManager = req.app.get('serverManager');
     const { serverPath, savePath } = req.body;
+    
+    // Validate paths
+    if (serverPath !== undefined) {
+      if (typeof serverPath !== 'string' || serverPath.length > 500 || serverPath.includes('..')) {
+        return res.status(400).json({ error: 'Invalid server path' });
+      }
+    }
+    if (savePath !== undefined) {
+      if (typeof savePath !== 'string' || savePath.length > 500 || savePath.includes('..')) {
+        return res.status(400).json({ error: 'Invalid save path' });
+      }
+    }
     
     serverManager.updatePaths(serverPath, savePath);
     

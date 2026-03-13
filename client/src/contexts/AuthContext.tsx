@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, useMemo, type ReactNode } from 'react'
 
 interface User {
   id: string
@@ -134,7 +134,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     if (!res.ok) {
       const data = await res.json()
-      throw new Error(data.error || 'Login failed')
+      throw new Error(data.error || "We couldn't sign you in. Check your username and password and try again.")
     }
 
     const data = await res.json()
@@ -158,7 +158,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     if (!res.ok) {
       const data = await res.json()
-      throw new Error(data.error || 'Setup failed')
+      throw new Error(data.error || "We couldn't create the admin account. Try again.")
     }
 
     const data = await res.json()
@@ -187,7 +187,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   return (
-    <AuthContext.Provider value={{ ...state, login, setup, logout, getToken }}>
+    <AuthContext.Provider value={useMemo(() => ({ ...state, login, setup, logout, getToken }), [state, login, setup, logout, getToken])}>
       {children}
     </AuthContext.Provider>
   )

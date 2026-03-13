@@ -1,26 +1,11 @@
 import { Routes, Route } from 'react-router-dom'
 import { useEffect, useState, useCallback, lazy, Suspense } from 'react'
-import { io, Socket } from 'socket.io-client'
+import type { Socket } from 'socket.io-client'
 import Layout from './components/Layout'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import {
-  DashboardErrorBoundary,
-  PlayersErrorBoundary,
-  ConsoleErrorBoundary,
-  SchedulerErrorBoundary,
-  ModsErrorBoundary,
-  ChunkCleanerErrorBoundary,
-  DiscordErrorBoundary,
-  SettingsErrorBoundary,
-  ServerSetupErrorBoundary,
-  ServersErrorBoundary,
-  ServerConfigErrorBoundary,
-  EventsErrorBoundary,
-  ChatErrorBoundary,
-  BackupsErrorBoundary,
   FeatureErrorBoundary,
 } from './components/FeatureErrorBoundary'
-import Dashboard from './pages/Dashboard'
 import { Toaster } from './components/ui/toaster'
 import { SocketContext, ConnectionStatus, ConnectionStatusContext } from './contexts/SocketContext'
 import { ThemeProvider } from './contexts/ThemeContext'
@@ -29,10 +14,16 @@ import { TooltipProvider } from './components/ui/tooltip'
 import { useToast } from './components/ui/use-toast'
 import { PageSkeleton } from './components/PageSkeleton'
 import { ScrollToTop } from './components/ScrollToTop'
-import Login from './pages/Login'
-import Setup from './pages/Setup'
+import { Shield } from 'lucide-react'
+
+const AUTH_LOADING_MESSAGES = [
+  'Verifying credentials and restoring your post.',
+  'Syncing the control room with the active panel state.',
+  'Waking the admin systems and checking live channels.',
+]
 
 // Lazy load larger pages for code splitting
+const Dashboard = lazy(() => import('./pages/Dashboard'))
 const Players = lazy(() => import('./pages/Players'))
 const Console = lazy(() => import('./pages/Console'))
 const Scheduler = lazy(() => import('./pages/Scheduler'))
@@ -48,10 +39,51 @@ const ServerFinder = lazy(() => import('./pages/ServerFinder'))
 const Events = lazy(() => import('./pages/Events'))
 const Chat = lazy(() => import('./pages/Chat'))
 const Backups = lazy(() => import('./pages/Backups'))
+const Login = lazy(() => import('./pages/Login'))
+const Setup = lazy(() => import('./pages/Setup'))
 
 // Loading fallback — shows a skeleton layout instead of a plain spinner
 function PageLoader() {
   return <PageSkeleton variant="default" />
+}
+
+function AuthScreenLoader() {
+  const [messageIndex, setMessageIndex] = useState(0)
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setMessageIndex((current) => (current + 1) % AUTH_LOADING_MESSAGES.length)
+    }, 2200)
+
+    return () => {
+      window.clearInterval(intervalId)
+    }
+  }, [])
+
+  return (
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background px-4 py-10">
+      <div
+        aria-hidden="true"
+        className="absolute inset-0 opacity-60"
+        style={{
+          backgroundImage:
+            'radial-gradient(circle at top, hsl(var(--primary) / 0.1), transparent 34%), linear-gradient(180deg, hsl(var(--background)), hsl(var(--background)))',
+        }}
+      />
+      <div aria-hidden="true" className="control-room-sweep absolute inset-0 opacity-60" />
+      <div className="relative w-full max-w-sm rounded-2xl border border-border/60 bg-card/78 px-6 py-8 text-center shadow-[0_24px_80px_-40px_hsl(var(--foreground)/0.45)] backdrop-blur-sm">
+        <div className="mx-auto mb-3 inline-flex items-center rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-medium uppercase tracking-[0.22em] text-primary/90">
+          Secure Handshake
+        </div>
+        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-primary/12 bg-primary/8 text-primary shadow-[0_0_30px_hsl(var(--primary)/0.12)]">
+          <Shield className="h-6 w-6" />
+        </div>
+        <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-2 border-primary/35 border-t-primary" />
+        <p className="text-sm font-medium text-foreground">Checking access</p>
+        <p key={messageIndex} className="mt-1 text-sm text-muted-foreground fade-in">{AUTH_LOADING_MESSAGES[messageIndex]}</p>
+      </div>
+    </div>
+  )
 }
 
 function AppContent() {
@@ -79,103 +111,115 @@ function AppContent() {
     // If auth is enabled and user is not authenticated, don't connect
     if (authEnabled && !isAuthenticated && !needsSetup) return
 
-    const newSocket = io(window.location.origin, {
-      transports: ['websocket', 'polling'],
-      reconnection: true,
-      reconnectionAttempts: 10,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
-      autoConnect: false,
-    })
+    let cancelled = false
+    let createdSocket: Socket | null = null
 
-    const applySocketAuth = () => {
-      const token = getToken()
-      newSocket.auth = token ? { token } : {}
-    }
+    const setupSocket = async () => {
+      const { io } = await import('socket.io-client')
+      if (cancelled) return
 
-    applySocketAuth()
-    newSocket.connect()
-
-    // Connection established
-    newSocket.on('connect', () => {
-      setConnectionStatus(prev => {
-        // Show toast only on reconnect, not initial connect
-        if (prev.reconnecting || prev.reconnectAttempt > 0) {
-          handleReconnectSuccess()
-        }
-        return {
-          connected: true,
-          reconnecting: false,
-          reconnectAttempt: 0,
-          error: null,
-        }
+      const newSocket = io(window.location.origin, {
+        transports: ['websocket', 'polling'],
+        reconnection: true,
+        reconnectionAttempts: 10,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000,
+        autoConnect: false,
       })
-      // Subscribe to updates
-      newSocket.emit('subscribe:status')
-      newSocket.emit('subscribe:players')
-      newSocket.emit('subscribe:logs')
-    })
+      createdSocket = newSocket
 
-    // Connection lost
-    newSocket.on('disconnect', (reason) => {
-      setConnectionStatus(prev => ({
-        ...prev,
-        connected: false,
-        error: reason === 'io server disconnect' ? 'Server closed connection' : null,
-      }))
-    })
+      const applySocketAuth = () => {
+        const token = getToken()
+        newSocket.auth = token ? { token } : {}
+      }
 
-    // Connection error with detailed logging (from Socket.IO best practices)
-    newSocket.on('connect_error', (err) => {
-      console.error('Connection error:', err.message)
-      if (newSocket.active) {
-        // Temporary failure, socket will automatically reconnect
+      applySocketAuth()
+      newSocket.connect()
+
+      // Connection established
+      newSocket.on('connect', () => {
+        setConnectionStatus(prev => {
+          // Show toast only on reconnect, not initial connect
+          if (prev.reconnecting || prev.reconnectAttempt > 0) {
+            handleReconnectSuccess()
+          }
+          return {
+            connected: true,
+            reconnecting: false,
+            reconnectAttempt: 0,
+            error: null,
+          }
+        })
+        // Subscribe to updates
+        newSocket.emit('subscribe:status')
+        newSocket.emit('subscribe:players')
+        newSocket.emit('subscribe:logs')
+      })
+
+      // Connection lost
+      newSocket.on('disconnect', (reason) => {
         setConnectionStatus(prev => ({
           ...prev,
           connected: false,
-          reconnecting: true,
-          error: err.message,
+          error: reason === 'io server disconnect' ? 'Server closed connection' : null,
         }))
-      } else {
-        // Connection denied by server - needs manual reconnect
+      })
+
+      // Connection error with detailed logging (from Socket.IO best practices)
+      newSocket.on('connect_error', (err) => {
+        console.error('Connection error:', err.message)
+        if (newSocket.active) {
+          // Temporary failure, socket will automatically reconnect
+          setConnectionStatus(prev => ({
+            ...prev,
+            connected: false,
+            reconnecting: true,
+            error: err.message,
+          }))
+        } else {
+          // Connection denied by server - needs manual reconnect
+          setConnectionStatus({
+            connected: false,
+            reconnecting: false,
+            reconnectAttempt: 0,
+            error: err.message,
+          })
+        }
+      })
+
+      // Reconnection events
+      newSocket.io.on('reconnect_attempt', (attempt) => {
+        applySocketAuth()
+        setConnectionStatus(prev => ({
+          ...prev,
+          reconnecting: true,
+          reconnectAttempt: attempt,
+        }))
+      })
+
+      newSocket.io.on('reconnect_failed', () => {
+        console.error('All reconnection attempts failed')
         setConnectionStatus({
           connected: false,
           reconnecting: false,
           reconnectAttempt: 0,
-          error: err.message,
+          error: 'Failed to reconnect after multiple attempts',
         })
-      }
-    })
-
-    // Reconnection events
-    newSocket.io.on('reconnect_attempt', (attempt) => {
-      applySocketAuth()
-      setConnectionStatus(prev => ({
-        ...prev,
-        reconnecting: true,
-        reconnectAttempt: attempt,
-      }))
-    })
-
-    newSocket.io.on('reconnect_failed', () => {
-      console.error('All reconnection attempts failed')
-      setConnectionStatus({
-        connected: false,
-        reconnecting: false,
-        reconnectAttempt: 0,
-        error: 'Failed to reconnect after multiple attempts',
+        toast({
+          title: 'Connection Lost',
+          description: 'Unable to reconnect to server. Please refresh the page.',
+          variant: 'destructive',
+        })
       })
-      toast({
-        title: 'Connection Lost',
-        description: 'Unable to reconnect to server. Please refresh the page.',
-        variant: 'destructive',
-      })
-    })
 
-    setSocket(newSocket)
+      setSocket(newSocket)
+    }
+
+    void setupSocket()
 
     return () => {
-      newSocket.close()
+      cancelled = true
+      createdSocket?.close()
     }
   }, [toast, handleReconnectSuccess, isLoading, isAuthenticated, authEnabled, needsSetup, getToken])
 
@@ -193,19 +237,23 @@ function AppContent() {
 
   if (needsSetup) {
     return (
-      <>
-        <Setup />
-        <Toaster />
-      </>
+      <Suspense fallback={<AuthScreenLoader />}>
+        <>
+          <Setup />
+          <Toaster />
+        </>
+      </Suspense>
     )
   }
 
   if (authEnabled && !isAuthenticated) {
     return (
-      <>
-        <Login />
-        <Toaster />
-      </>
+      <Suspense fallback={<AuthScreenLoader />}>
+        <>
+          <Login />
+          <Toaster />
+        </>
+      </Suspense>
     )
   }
 
@@ -216,22 +264,22 @@ function AppContent() {
           <ScrollToTop />
           <Suspense fallback={<PageLoader />}>
             <Routes>
-              <Route path="/" element={<DashboardErrorBoundary><Dashboard /></DashboardErrorBoundary>} />
-              <Route path="/players" element={<PlayersErrorBoundary><Players /></PlayersErrorBoundary>} />
-              <Route path="/console" element={<ConsoleErrorBoundary><Console /></ConsoleErrorBoundary>} />
-              <Route path="/scheduler" element={<SchedulerErrorBoundary><Scheduler /></SchedulerErrorBoundary>} />
-              <Route path="/mods" element={<ModsErrorBoundary><Mods /></ModsErrorBoundary>} />
-              <Route path="/chunks" element={<ChunkCleanerErrorBoundary><ChunkCleaner /></ChunkCleanerErrorBoundary>} />
-              <Route path="/discord" element={<DiscordErrorBoundary><Discord /></DiscordErrorBoundary>} />
-              <Route path="/settings" element={<SettingsErrorBoundary><Settings /></SettingsErrorBoundary>} />
-              <Route path="/server-setup" element={<ServerSetupErrorBoundary><ServerSetup /></ServerSetupErrorBoundary>} />
-              <Route path="/servers" element={<ServersErrorBoundary><Servers /></ServersErrorBoundary>} />
-              <Route path="/server-config" element={<ServerConfigErrorBoundary><ServerConfig /></ServerConfigErrorBoundary>} />
+              <Route path="/" element={<FeatureErrorBoundary featureName="Dashboard"><Dashboard /></FeatureErrorBoundary>} />
+              <Route path="/players" element={<FeatureErrorBoundary featureName="Player Management"><Players /></FeatureErrorBoundary>} />
+              <Route path="/console" element={<FeatureErrorBoundary featureName="Console"><Console /></FeatureErrorBoundary>} />
+              <Route path="/scheduler" element={<FeatureErrorBoundary featureName="Scheduler"><Scheduler /></FeatureErrorBoundary>} />
+              <Route path="/mods" element={<FeatureErrorBoundary featureName="Mod Manager"><Mods /></FeatureErrorBoundary>} />
+              <Route path="/chunks" element={<FeatureErrorBoundary featureName="Chunk Cleaner"><ChunkCleaner /></FeatureErrorBoundary>} />
+              <Route path="/discord" element={<FeatureErrorBoundary featureName="Discord Integration"><Discord /></FeatureErrorBoundary>} />
+              <Route path="/settings" element={<FeatureErrorBoundary featureName="Settings"><Settings /></FeatureErrorBoundary>} />
+              <Route path="/server-setup" element={<FeatureErrorBoundary featureName="Server Setup"><ServerSetup /></FeatureErrorBoundary>} />
+              <Route path="/servers" element={<FeatureErrorBoundary featureName="Server Manager"><Servers /></FeatureErrorBoundary>} />
+              <Route path="/server-config" element={<FeatureErrorBoundary featureName="Server Configuration"><ServerConfig /></FeatureErrorBoundary>} />
               <Route path="/server-finder" element={<FeatureErrorBoundary featureName="Server Finder"><ServerFinder /></FeatureErrorBoundary>} />
               <Route path="/debug" element={<FeatureErrorBoundary featureName="Debug"><Debug /></FeatureErrorBoundary>} />
-              <Route path="/events" element={<EventsErrorBoundary><Events /></EventsErrorBoundary>} />
-              <Route path="/chat" element={<ChatErrorBoundary><Chat /></ChatErrorBoundary>} />
-              <Route path="/backups" element={<BackupsErrorBoundary><Backups /></BackupsErrorBoundary>} />
+              <Route path="/events" element={<FeatureErrorBoundary featureName="Events & Weather"><Events /></FeatureErrorBoundary>} />
+              <Route path="/chat" element={<FeatureErrorBoundary featureName="In-Game Chat"><Chat /></FeatureErrorBoundary>} />
+              <Route path="/backups" element={<FeatureErrorBoundary featureName="Backups"><Backups /></FeatureErrorBoundary>} />
             </Routes>
           </Suspense>
         </Layout>

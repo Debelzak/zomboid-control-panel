@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
+import { Link } from 'react-router-dom'
 import { 
   Users, 
   UserX, 
@@ -38,6 +39,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
 import { 
@@ -76,6 +78,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { useToast } from '@/components/ui/use-toast'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { EmptyState } from '@/components/EmptyState'
 import { playersApi } from '@/lib/api'
 import { PageHeader } from '@/components/PageHeader'
@@ -98,6 +101,57 @@ const TELEPORT_PRESETS = [
   { name: 'Ekron', x: '4500', y: '9000', z: '0' },
   { name: 'Military Base', x: '10300', y: '12900', z: '0' },
 ]
+
+function SummaryCard({
+  icon,
+  label,
+  value,
+}: {
+  icon: React.ReactNode
+  label: string
+  value: string | number
+}) {
+  return (
+    <Card className="border-border/60 bg-card/80 shadow-sm">
+      <CardContent className="flex items-center gap-3 p-4">
+        <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-primary/20 bg-primary/10 text-primary">
+          {icon}
+        </div>
+        <div className="min-w-0">
+          <p className="text-2xl font-semibold tracking-tight">{value}</p>
+          <p className="text-xs text-muted-foreground">{label}</p>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function ActionTile({
+  icon,
+  label,
+  disabled,
+  emphasis = 'default',
+}: {
+  icon: React.ReactNode
+  label: string
+  disabled?: boolean
+  emphasis?: 'default' | 'danger'
+}) {
+  return (
+    <div
+      className={[
+        'flex min-h-20 w-full flex-col items-center justify-center gap-2 rounded-xl border px-3 py-3 text-center transition-colors',
+        emphasis === 'danger'
+          ? 'border-destructive/30 text-destructive hover:bg-destructive/5'
+          : 'border-border/60 hover:bg-accent/40',
+        disabled ? 'opacity-50' : '',
+      ].join(' ')}
+    >
+      {icon}
+      <span className="text-xs font-medium">{label}</span>
+    </div>
+  )
+}
 
 export default function Players() {
   const [players, setPlayers] = useState<Player[]>([])
@@ -210,6 +264,13 @@ export default function Players() {
   const [newTag, setNewTag] = useState('')
   const [notesLoading, setNotesLoading] = useState(false)
   const [savingNote, setSavingNote] = useState(false)
+  const [playersLoadError, setPlayersLoadError] = useState<string | null>(null)
+  const [toolsLoadError, setToolsLoadError] = useState<string | null>(null)
+  const [notesError, setNotesError] = useState<string | null>(null)
+  const [logsError, setLogsError] = useState<string | null>(null)
+
+  const getErrorMessage = (error: unknown, fallback: string) =>
+    error instanceof Error ? error.message : fallback
   
   // Filter players by search term (memoized to avoid recalculation on every render)
   const filteredPlayers = useMemo(() => 
@@ -233,8 +294,10 @@ export default function Players() {
         setPlayers(data.players)
         setLastRefresh(new Date())
       }
+      setPlayersLoadError(null)
     } catch (error) {
       console.error('Failed to fetch players:', error)
+      setPlayersLoadError(getErrorMessage(error, 'Failed to load players.'))
     }
   }, [])
   
@@ -245,8 +308,10 @@ export default function Players() {
       if (data.logs) {
         setActivityLogs(data.logs)
       }
+      setLogsError(null)
     } catch (error) {
       console.error('Failed to fetch activity logs:', error)
+      setLogsError(getErrorMessage(error, 'Failed to load activity logs.'))
     } finally {
       setLogsLoading(false)
     }
@@ -270,8 +335,10 @@ export default function Players() {
       }
       setPlayerNotes(notesMap)
       setPlayerStats(statsMap)
+      setNotesError(null)
     } catch (error) {
       console.error('Failed to fetch notes/stats:', error)
+      setNotesError(getErrorMessage(error, 'Failed to load player notes and stats.'))
     } finally {
       setNotesLoading(false)
     }
@@ -279,9 +346,10 @@ export default function Players() {
   
   const handleSaveNote = async () => {
     if (!selectedPlayer) return
+    const normalizedNote = currentNote.trim()
     setSavingNote(true)
     try {
-      await playersApi.saveNote(selectedPlayer, currentNote, currentTags)
+      await playersApi.saveNote(selectedPlayer, normalizedNote, currentTags)
       toast({
         title: 'Note saved',
         description: `Note for ${selectedPlayer} has been saved`,
@@ -292,7 +360,7 @@ export default function Players() {
         ...prev,
         [selectedPlayer]: {
           playerName: selectedPlayer,
-          note: currentNote,
+          note: normalizedNote,
           tags: currentTags,
           updated_at: new Date().toISOString()
         }
@@ -338,8 +406,8 @@ export default function Players() {
   }
   
   const addTag = () => {
-    const tag = newTag.trim().toLowerCase()
-    if (tag && !currentTags.includes(tag)) {
+    const tag = newTag.trim().toLowerCase().slice(0, 24)
+    if (tag && !currentTags.includes(tag) && currentTags.length < 10) {
       setCurrentTags([...currentTags, tag])
     }
     setNewTag('')
@@ -367,8 +435,10 @@ export default function Players() {
       ])
       setVehicles(vehiclesData.vehicles || [])
       setPerks(perksData.perks || [])
+      setToolsLoadError(null)
     } catch (error) {
       console.error('Failed to fetch data:', error)
+      setToolsLoadError(getErrorMessage(error, 'Failed to load player tools and reference data.'))
     } finally {
       setInitialLoading(false)
     }
@@ -585,63 +655,35 @@ export default function Players() {
         }
       />
 
+      {(playersLoadError || toolsLoadError) && (
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Players page is partially unavailable</AlertTitle>
+          <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <span className="min-w-0 break-words">
+              {playersLoadError || toolsLoadError}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                fetchPlayers()
+                fetchData()
+              }}
+              className="self-start"
+            >
+              <RefreshCw className="mr-2 h-4 w-4" /> Retry
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* Stats Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 stagger-in">
-        <Card className="bg-gradient-to-br from-green-500/10 to-green-600/5 border-green-500/20">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-green-500/20">
-                <Users className="w-5 h-5 text-green-500" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{players.length}</p>
-                <p className="text-xs text-muted-foreground">Online Now</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card className="bg-gradient-to-br from-blue-500/10 to-blue-600/5 border-blue-500/20">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-blue-500/20">
-                <TrendingUp className="w-5 h-5 text-blue-500" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{peakPlayers}</p>
-                <p className="text-xs text-muted-foreground">Peak Today</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card className="bg-gradient-to-br from-purple-500/10 to-purple-600/5 border-purple-500/20">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-purple-500/20">
-                <Shield className="w-5 h-5 text-purple-500" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{selectedPlayer ? '1' : '0'}</p>
-                <p className="text-xs text-muted-foreground">Selected</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card className="bg-gradient-to-br from-amber-500/10 to-amber-600/5 border-amber-500/20">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-amber-500/20">
-                <Clock className="w-5 h-5 text-amber-500" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">15s</p>
-                <p className="text-xs text-muted-foreground">Auto Refresh</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 stagger-in">
+        <SummaryCard icon={<Users className="h-5 w-5" />} label="Online Now" value={players.length} />
+        <SummaryCard icon={<TrendingUp className="h-5 w-5" />} label="Peak Today" value={peakPlayers} />
+        <SummaryCard icon={<Shield className="h-5 w-5" />} label="Selected" value={selectedPlayer ? '1' : '0'} />
+        <SummaryCard icon={<Clock className="h-5 w-5" />} label="Auto Refresh" value="15s" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -665,10 +707,11 @@ export default function Players() {
                 value={playerSearchFilter}
                 onChange={(e) => setPlayerSearchFilter(e.target.value)}
                 className="pl-9"
+                aria-label="Search players"
               />
             </div>
             
-            <ScrollArea className="h-[320px]">
+            <ScrollArea className="h-[250px] sm:h-[320px]">
               {initialLoading ? (
                 <div className="flex items-center justify-center py-8">
                   <Loader2 className="w-6 h-6 animate-spin text-primary" />
@@ -687,36 +730,30 @@ export default function Players() {
                     const stat = playerStats[player.name]
                     
                     return (
-                      <div
+                      <button
                         key={player.name}
-                        role="button"
-                        tabIndex={0}
-                        className={`group p-3 rounded-lg border cursor-pointer transition-all duration-200 ${
+                        type="button"
+                        className={`group w-full text-left p-3 rounded-lg border cursor-pointer transition-all duration-200 ${
                           isSelected
                             ? 'bg-primary/10 border-primary shadow-sm'
                             : 'hover:bg-muted/50 border-transparent hover:border-border'
                         }`}
                         onClick={() => setSelectedPlayer(player.name)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault()
-                            setSelectedPlayer(player.name)
-                          }
-                        }}
                       >
                         <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                            <span className="font-medium">{player.name}</span>
+                          <div className="flex items-center gap-2 min-w-0">
+                            <div className="w-2 h-2 rounded-full bg-primary animate-pulse shrink-0" aria-hidden="true" />
+                            <span className="font-medium truncate">{player.name}</span>
+                            <span className="sr-only">Online</span>
                             {note && note.tags && note.tags.length > 0 && (
                               <div className="flex gap-1">
                                 {note.tags.slice(0, 2).map(tag => (
-                                  <Badge key={tag} variant="outline" className="text-[10px] px-1.5 py-0 h-4">
+                                  <Badge key={tag} variant="outline" className="text-xs px-1.5 py-0 h-4">
                                     {tag}
                                   </Badge>
                                 ))}
                                 {note.tags.length > 2 && (
-                                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4">
+                                  <Badge variant="outline" className="text-xs px-1.5 py-0 h-4">
                                     +{note.tags.length - 2}
                                   </Badge>
                                 )}
@@ -725,27 +762,25 @@ export default function Players() {
                           </div>
                           <div className="flex items-center gap-1">
                             {stat && (
-                              <span className="text-[10px] text-muted-foreground mr-1">
+                              <span className="text-xs text-muted-foreground mr-1">
                                 {formatPlaytime(stat.total_playtime_seconds)}
                               </span>
                             )}
-                            {note && (
-                              <StickyNote className="w-3 h-3 text-yellow-500" />
-                            )}
+                            {note && <StickyNote className="w-3 h-3 text-muted-foreground" />}
                             {hasPowers && (
                               <div className="flex gap-0.5">
                                 {powers.godMode && (
-                                  <Badge variant="outline" className="px-1 py-0 text-[10px] bg-yellow-500/10 text-yellow-500 border-yellow-500/30">
+                                  <Badge variant="secondary" className="px-1 py-0 text-xs">
                                     <Ghost className="w-3 h-3" />
                                   </Badge>
                                 )}
                                 {powers.invisible && (
-                                  <Badge variant="outline" className="px-1 py-0 text-[10px] bg-blue-500/10 text-blue-500 border-blue-500/30">
+                                  <Badge variant="secondary" className="px-1 py-0 text-xs">
                                     <Eye className="w-3 h-3" />
                                   </Badge>
                                 )}
                                 {powers.noclip && (
-                                  <Badge variant="outline" className="px-1 py-0 text-[10px] bg-purple-500/10 text-purple-500 border-purple-500/30">
+                                  <Badge variant="secondary" className="px-1 py-0 text-xs">
                                     <Layers className="w-3 h-3" />
                                   </Badge>
                                 )}
@@ -754,7 +789,7 @@ export default function Players() {
                             <ChevronRight className={`w-4 h-4 text-muted-foreground transition-transform ${isSelected ? 'rotate-90' : ''}`} />
                           </div>
                         </div>
-                      </div>
+                      </button>
                     )
                   })}
                 </div>
@@ -781,7 +816,7 @@ export default function Players() {
                 <CardTitle className="flex items-center gap-2">
                   {selectedPlayer ? (
                     <>
-                      <div className="w-2 h-2 rounded-full bg-green-500" />
+                      <div className="w-2 h-2 rounded-full bg-primary" aria-hidden="true" />
                       {selectedPlayer}
                     </>
                   ) : (
@@ -801,6 +836,7 @@ export default function Players() {
                     size="sm"
                     onClick={() => setKickDialogOpen(true)}
                     className="gap-1"
+                    title="Kick"
                   >
                     <UserX className="w-4 h-4" />
                     <span className="hidden sm:inline">Kick</span>
@@ -810,6 +846,7 @@ export default function Players() {
                     size="sm"
                     onClick={() => setTeleportDialogOpen(true)}
                     className="gap-1"
+                    title="Teleport"
                   >
                     <MapPin className="w-4 h-4" />
                     <span className="hidden sm:inline">Teleport</span>
@@ -821,27 +858,29 @@ export default function Players() {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => handleGodMode(!selectedPlayerPowers?.godMode)}>
+                      <DropdownMenuItem onClick={() => handleGodMode(!selectedPlayerPowers?.godMode)} disabled={loading}>
                         <Ghost className="w-4 h-4 mr-2" />
                         {selectedPlayerPowers?.godMode ? 'Disable' : 'Enable'} God Mode
                       </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleInvisible(!selectedPlayerPowers?.invisible)}>
+                      <DropdownMenuItem onClick={() => handleInvisible(!selectedPlayerPowers?.invisible)} disabled={loading}>
                         <Eye className="w-4 h-4 mr-2" />
                         {selectedPlayerPowers?.invisible ? 'Disable' : 'Enable'} Invisible
                       </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleNoclip(!selectedPlayerPowers?.noclip)}>
+                      <DropdownMenuItem onClick={() => handleNoclip(!selectedPlayerPowers?.noclip)} disabled={loading}>
                         <Layers className="w-4 h-4 mr-2" />
                         {selectedPlayerPowers?.noclip ? 'Disable' : 'Enable'} Noclip
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem 
                         onClick={() => handleAction('Add to whitelist', () => playersApi.addToWhitelist(selectedPlayer))}
+                        disabled={loading}
                       >
                         <UserPlus className="w-4 h-4 mr-2" />
                         Add to Whitelist
                       </DropdownMenuItem>
                       <DropdownMenuItem 
                         onClick={() => handleAction('Remove from whitelist', () => playersApi.removeFromWhitelist(selectedPlayer))}
+                        disabled={loading}
                       >
                         <UserMinus className="w-4 h-4 mr-2" />
                         Remove from Whitelist
@@ -862,32 +901,34 @@ export default function Players() {
             
             {/* Power Status Bar */}
             {selectedPlayer && selectedPlayerPowers && (selectedPlayerPowers.godMode || selectedPlayerPowers.invisible || selectedPlayerPowers.noclip) && (
-              <div className="flex items-center gap-2 mt-2">
-                <Zap className="w-4 h-4 text-yellow-500" />
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                <Zap className="w-4 h-4 text-primary" />
                 <span className="text-sm text-muted-foreground">Active powers:</span>
                 {selectedPlayerPowers.godMode && (
-                  <Badge variant="secondary" className="text-xs bg-yellow-500/10 text-yellow-600">God Mode</Badge>
+                  <Badge variant="secondary" className="text-xs">God Mode</Badge>
                 )}
                 {selectedPlayerPowers.invisible && (
-                  <Badge variant="secondary" className="text-xs bg-blue-500/10 text-blue-600">Invisible</Badge>
+                  <Badge variant="secondary" className="text-xs">Invisible</Badge>
                 )}
                 {selectedPlayerPowers.noclip && (
-                  <Badge variant="secondary" className="text-xs bg-purple-500/10 text-purple-600">Noclip</Badge>
+                  <Badge variant="secondary" className="text-xs">Noclip</Badge>
                 )}
               </div>
             )}
           </CardHeader>
           <CardContent>
             <Tabs defaultValue="moderation">
-              <TabsList className="grid grid-cols-7 w-full h-auto p-1">
-                <TabsTrigger value="moderation" className="text-xs px-2">Moderation</TabsTrigger>
-                <TabsTrigger value="items" className="text-xs px-2">Items & XP</TabsTrigger>
-                <TabsTrigger value="vehicles" className="text-xs px-2">Vehicles</TabsTrigger>
-                <TabsTrigger value="powers" className="text-xs px-2">Powers</TabsTrigger>
-                <TabsTrigger value="import-export" className="text-xs px-2">Import/Export</TabsTrigger>
-                <TabsTrigger value="notes" className="text-xs px-2">Notes</TabsTrigger>
-                <TabsTrigger value="activity" className="text-xs px-2" onClick={() => fetchActivityLogs()}>Activity</TabsTrigger>
-              </TabsList>
+              <div className="overflow-x-auto pb-1">
+                <TabsList className="inline-flex h-auto min-w-max gap-1 rounded-xl border border-border/60 bg-muted/40 p-1">
+                  <TabsTrigger value="moderation" className="min-h-9 shrink-0 text-xs px-3">Moderation</TabsTrigger>
+                  <TabsTrigger value="items" className="min-h-9 shrink-0 text-xs px-3">Items & XP</TabsTrigger>
+                  <TabsTrigger value="vehicles" className="min-h-9 shrink-0 text-xs px-3">Vehicles</TabsTrigger>
+                  <TabsTrigger value="powers" className="min-h-9 shrink-0 text-xs px-3">Powers</TabsTrigger>
+                  <TabsTrigger value="import-export" className="min-h-9 shrink-0 text-xs px-3">Import/Export</TabsTrigger>
+                  <TabsTrigger value="notes" className="min-h-9 shrink-0 text-xs px-3">Notes</TabsTrigger>
+                  <TabsTrigger value="activity" className="min-h-9 shrink-0 text-xs px-3" onClick={() => fetchActivityLogs()}>Activity</TabsTrigger>
+                </TabsList>
+              </div>
 
               {/* Moderation Tab */}
               <TabsContent value="moderation" className="space-y-4 mt-4">
@@ -895,9 +936,8 @@ export default function Players() {
                   {/* Kick */}
                   <Dialog open={kickDialogOpen} onOpenChange={setKickDialogOpen}>
                     <DialogTrigger asChild>
-                      <Button variant="outline" disabled={!selectedPlayer} className="h-auto py-3 flex-col gap-1">
-                        <UserX className="w-5 h-5" />
-                        <span className="text-xs">Kick</span>
+                      <Button variant="ghost" disabled={!selectedPlayer} className="h-auto w-full p-0 hover:bg-transparent">
+                        <ActionTile icon={<UserX className="w-5 h-5" />} label="Kick" disabled={!selectedPlayer} />
                       </Button>
                     </DialogTrigger>
                     <DialogContent>
@@ -929,9 +969,8 @@ export default function Players() {
                   {/* Ban */}
                   <Dialog open={banDialogOpen} onOpenChange={setBanDialogOpen}>
                     <DialogTrigger asChild>
-                      <Button variant="outline" disabled={!selectedPlayer} className="h-auto py-3 flex-col gap-1 hover:border-destructive hover:text-destructive">
-                        <Ban className="w-5 h-5" />
-                        <span className="text-xs">Ban</span>
+                      <Button variant="ghost" disabled={!selectedPlayer} className="h-auto w-full p-0 hover:bg-transparent">
+                        <ActionTile icon={<Ban className="w-5 h-5" />} label="Ban" disabled={!selectedPlayer} emphasis="danger" />
                       </Button>
                     </DialogTrigger>
                     <DialogContent>
@@ -1000,9 +1039,8 @@ export default function Players() {
                   {/* Unban */}
                   <Dialog open={unbanDialogOpen} onOpenChange={setUnbanDialogOpen}>
                     <DialogTrigger asChild>
-                      <Button variant="outline" className="h-auto py-3 flex-col gap-1">
-                        <UserPlus className="w-5 h-5" />
-                        <span className="text-xs">Unban</span>
+                      <Button variant="ghost" className="h-auto w-full p-0 hover:bg-transparent">
+                        <ActionTile icon={<UserPlus className="w-5 h-5" />} label="Unban" />
                       </Button>
                     </DialogTrigger>
                     <DialogContent>
@@ -1028,9 +1066,8 @@ export default function Players() {
                   {/* Access Level */}
                   <Dialog>
                     <DialogTrigger asChild>
-                      <Button variant="outline" disabled={!selectedPlayer} className="h-auto py-3 flex-col gap-1">
-                        <Shield className="w-5 h-5" />
-                        <span className="text-xs">Access Level</span>
+                      <Button variant="ghost" disabled={!selectedPlayer} className="h-auto w-full p-0 hover:bg-transparent">
+                        <ActionTile icon={<Shield className="w-5 h-5" />} label="Access Level" disabled={!selectedPlayer} />
                       </Button>
                     </DialogTrigger>
                     <DialogContent>
@@ -1066,9 +1103,8 @@ export default function Players() {
                   {/* Teleport */}
                   <Dialog open={teleportDialogOpen} onOpenChange={setTeleportDialogOpen}>
                     <DialogTrigger asChild>
-                      <Button variant="outline" disabled={!selectedPlayer} className="h-auto py-3 flex-col gap-1">
-                        <MapPin className="w-5 h-5" />
-                        <span className="text-xs">Teleport</span>
+                      <Button variant="ghost" disabled={!selectedPlayer} className="h-auto w-full p-0 hover:bg-transparent">
+                        <ActionTile icon={<MapPin className="w-5 h-5" />} label="Teleport" disabled={!selectedPlayer} />
                       </Button>
                     </DialogTrigger>
                     <DialogContent className="max-w-md">
@@ -1091,13 +1127,13 @@ export default function Players() {
                         {/* Quick Location Presets */}
                         <div>
                           <Label className="text-xs text-muted-foreground mb-2 block">Quick Locations</Label>
-                          <div className="grid grid-cols-4 gap-1">
+                          <div className="grid grid-cols-2 gap-1 sm:grid-cols-4">
                             {TELEPORT_PRESETS.map((preset) => (
                               <Button
                                 key={preset.name}
                                 variant="outline"
                                 size="sm"
-                                className="text-xs h-8"
+                                className="h-8 min-w-0 text-xs"
                                 onClick={() => {
                                   setTeleportX(preset.x)
                                   setTeleportY(preset.y)
@@ -1118,6 +1154,8 @@ export default function Players() {
                               value={teleportX}
                               onChange={(e) => setTeleportX(e.target.value)}
                               placeholder="10500"
+                              min={-100000}
+                              max={100000}
                             />
                           </div>
                           <div>
@@ -1127,6 +1165,8 @@ export default function Players() {
                               value={teleportY}
                               onChange={(e) => setTeleportY(e.target.value)}
                               placeholder="9700"
+                              min={-100000}
+                              max={100000}
                             />
                           </div>
                           <div>
@@ -1136,6 +1176,8 @@ export default function Players() {
                               value={teleportZ}
                               onChange={(e) => setTeleportZ(e.target.value)}
                               placeholder="0"
+                              min={0}
+                              max={20}
                             />
                           </div>
                         </div>
@@ -1158,9 +1200,8 @@ export default function Players() {
                   {/* Voice Ban */}
                   <Dialog open={voiceBanDialogOpen} onOpenChange={setVoiceBanDialogOpen}>
                     <DialogTrigger asChild>
-                      <Button variant="outline" className="h-auto py-3 flex-col gap-1">
-                        <MicOff className="w-5 h-5" />
-                        <span className="text-xs">Voice Ban</span>
+                      <Button variant="ghost" className="h-auto w-full p-0 hover:bg-transparent">
+                        <ActionTile icon={<MicOff className="w-5 h-5" />} label="Voice Ban" />
                       </Button>
                     </DialogTrigger>
                     <DialogContent>
@@ -1212,9 +1253,8 @@ export default function Players() {
                   {/* SteamID Ban */}
                   <Dialog open={steamIdBanDialogOpen} onOpenChange={setSteamIdBanDialogOpen}>
                     <DialogTrigger asChild>
-                      <Button variant="outline" className="h-auto py-3 flex-col gap-1 hover:border-destructive hover:text-destructive">
-                        <Ban className="w-5 h-5" />
-                        <span className="text-xs">SteamID Ban</span>
+                      <Button variant="ghost" className="h-auto w-full p-0 hover:bg-transparent">
+                        <ActionTile icon={<Ban className="w-5 h-5" />} label="SteamID Ban" emphasis="danger" />
                       </Button>
                     </DialogTrigger>
                     <DialogContent>
@@ -1264,9 +1304,8 @@ export default function Players() {
                   {/* Add User */}
                   <Dialog open={addUserDialogOpen} onOpenChange={setAddUserDialogOpen}>
                     <DialogTrigger asChild>
-                      <Button variant="outline" className="h-auto py-3 flex-col gap-1">
-                        <UserPlus className="w-5 h-5" />
-                        <span className="text-xs">Add User</span>
+                      <Button variant="ghost" className="h-auto w-full p-0 hover:bg-transparent">
+                        <ActionTile icon={<UserPlus className="w-5 h-5" />} label="Add User" />
                       </Button>
                     </DialogTrigger>
                     <DialogContent>
@@ -1283,6 +1322,7 @@ export default function Players() {
                             value={addUserUsername}
                             onChange={(e) => setAddUserUsername(e.target.value)}
                             placeholder="Enter username..."
+                            maxLength={64}
                           />
                         </div>
                         <div>
@@ -1292,6 +1332,7 @@ export default function Players() {
                             value={addUserPassword}
                             onChange={(e) => setAddUserPassword(e.target.value)}
                             placeholder="Enter password (min 4 characters)..."
+                            maxLength={128}
                           />
                         </div>
                       </div>
@@ -1324,8 +1365,8 @@ export default function Players() {
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-3">
-                      <div className="grid grid-cols-3 gap-2">
-                        <div className="col-span-2">
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                        <div className="sm:col-span-2">
                           <Label className="text-xs">Item Name</Label>
                           <Input
                             value={itemName}
@@ -1340,6 +1381,7 @@ export default function Players() {
                             value={itemCount}
                             onChange={(e) => setItemCount(parseInt(e.target.value) || 1)}
                             min={1}
+                            max={100}
                           />
                         </div>
                       </div>
@@ -1359,7 +1401,7 @@ export default function Players() {
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-3">
-                      <div className="grid grid-cols-2 gap-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         <div>
                           <Label className="text-xs">Perk</Label>
                           <Select value={selectedPerk} onValueChange={setSelectedPerk}>
@@ -1382,6 +1424,7 @@ export default function Players() {
                             value={xpAmount}
                             onChange={(e) => setXpAmount(parseInt(e.target.value) || 0)}
                             min={1}
+                            max={10000}
                           />
                         </div>
                       </div>
@@ -1439,10 +1482,10 @@ export default function Players() {
                 </p>
                 <div className="grid gap-3">
                   {/* God Mode */}
-                  <div className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors">
+                  <div className="flex items-center justify-between rounded-xl border border-border/60 bg-card/50 p-4 transition-colors hover:bg-accent/30">
                     <div className="flex items-center gap-3">
-                      <div className="p-2 rounded-lg bg-yellow-500/10">
-                        <Ghost className="w-5 h-5 text-yellow-500" />
+                      <div className="rounded-lg border border-primary/20 bg-primary/10 p-2 text-primary">
+                        <Ghost className="w-5 h-5" />
                       </div>
                       <div>
                         <p className="font-medium">God Mode</p>
@@ -1467,10 +1510,10 @@ export default function Players() {
                   </div>
                   
                   {/* Invisible */}
-                  <div className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors">
+                  <div className="flex items-center justify-between rounded-xl border border-border/60 bg-card/50 p-4 transition-colors hover:bg-accent/30">
                     <div className="flex items-center gap-3">
-                      <div className="p-2 rounded-lg bg-blue-500/10">
-                        <Eye className="w-5 h-5 text-blue-500" />
+                      <div className="rounded-lg border border-primary/20 bg-primary/10 p-2 text-primary">
+                        <Eye className="w-5 h-5" />
                       </div>
                       <div>
                         <p className="font-medium">Invisible</p>
@@ -1495,10 +1538,10 @@ export default function Players() {
                   </div>
                   
                   {/* Noclip */}
-                  <div className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors">
+                  <div className="flex items-center justify-between rounded-xl border border-border/60 bg-card/50 p-4 transition-colors hover:bg-accent/30">
                     <div className="flex items-center gap-3">
-                      <div className="p-2 rounded-lg bg-purple-500/10">
-                        <Layers className="w-5 h-5 text-purple-500" />
+                      <div className="rounded-lg border border-primary/20 bg-primary/10 p-2 text-primary">
+                        <Layers className="w-5 h-5" />
                       </div>
                       <div>
                         <p className="font-medium">Noclip</p>
@@ -1582,7 +1625,7 @@ export default function Players() {
                             <Button
                               size="sm"
                               variant="ghost"
-                              className="h-6 w-6 p-0"
+                              className="h-7 w-7 p-0"
                               onClick={() => {
                                 navigator.clipboard.writeText(characterData)
                                 setCopied(true)
@@ -1593,10 +1636,10 @@ export default function Players() {
                               {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                             </Button>
                           </div>
-                          <textarea
+                          <Textarea
                             readOnly
                             value={characterData}
-                            className="w-full h-32 p-2 text-xs font-mono bg-muted rounded border resize-none"
+                            className="h-32 resize-none font-mono text-xs"
                           />
                           <Button
                             size="sm"
@@ -1632,11 +1675,11 @@ export default function Players() {
                       </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-3">
-                      <textarea
+                      <Textarea
                         value={importCharacterData}
                         onChange={(e) => setImportCharacterData(e.target.value)}
                         placeholder='Paste character JSON here...'
-                        className="w-full h-24 p-2 text-xs font-mono bg-background rounded border resize-none"
+                        className="h-24 resize-none font-mono text-xs"
                       />
                       <div className="flex gap-2">
                         <Button
@@ -1708,9 +1751,10 @@ export default function Players() {
                           />
                         </label>
                       </div>
-                      <p className="text-xs text-muted-foreground">
-                        Player must be online. Requires PanelBridge mod.
-                      </p>
+                      <div className="space-y-1 text-xs text-muted-foreground">
+                        <p>Player must be online. Character import and export run through PanelBridge inside the live server.</p>
+                        <Link to="/settings" className="inline-flex text-primary underline hover:text-foreground">Open Bridge Setup</Link>
+                      </div>
                     </CardContent>
                   </Card>
                 </div>
@@ -1731,18 +1775,18 @@ export default function Players() {
                   <div className="space-y-4">
                     {/* Player Stats Card */}
                     {playerStats[selectedPlayer] && (
-                      <Card className="bg-muted/30">
+                      <Card className="border-border/60 bg-muted/20">
                         <CardContent className="pt-4">
                           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
                             <div className="flex items-center gap-2">
-                              <Clock className="w-4 h-4 text-blue-500" />
+                              <Clock className="w-4 h-4 text-primary" />
                               <div>
                                 <div className="text-muted-foreground text-xs">Total Playtime</div>
                                 <div className="font-medium">{formatPlaytime(playerStats[selectedPlayer].total_playtime_seconds)}</div>
                               </div>
                             </div>
                             <div className="flex items-center gap-2">
-                              <TrendingUp className="w-4 h-4 text-green-500" />
+                              <TrendingUp className="w-4 h-4 text-primary" />
                               <div>
                                 <div className="text-muted-foreground text-xs">Sessions</div>
                                 <div className="font-medium">{playerStats[selectedPlayer].session_count}</div>
@@ -1774,7 +1818,8 @@ export default function Players() {
                             <button
                               type="button"
                               onClick={() => removeTag(tag)}
-                              className="ml-1 hover:bg-muted rounded p-0.5"
+                              className="ml-1 rounded p-1 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                              aria-label={`Remove ${tag} tag`}
                             >
                               <X className="w-3 h-3" />
                             </button>
@@ -1783,7 +1828,7 @@ export default function Players() {
                         <div className="flex items-center gap-1">
                           <Input
                             value={newTag}
-                            onChange={(e) => setNewTag(e.target.value)}
+                            onChange={(e) => setNewTag(e.target.value.slice(0, 24))}
                             onKeyDown={(e) => {
                               if (e.key === 'Enter') {
                                 e.preventDefault()
@@ -1791,30 +1836,45 @@ export default function Players() {
                               }
                             }}
                             placeholder="Add tag..."
-                            className="h-7 w-24 text-xs"
+                            className="h-8 w-28 text-xs"
+                            maxLength={24}
                           />
-                          <Button size="sm" variant="ghost" onClick={addTag} className="h-7 w-7 p-0">
+                          <Button size="sm" variant="ghost" onClick={addTag} className="h-8 w-8 p-0" aria-label="Add tag">
                             <Plus className="w-4 h-4" />
                           </Button>
                         </div>
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        Common tags: trusted, suspicious, new, vip, builder, griefer, afk
+                        Common tags: trusted, suspicious, new, vip, builder, griefer, afk. Up to 10 tags, 24 characters each.
                       </p>
                     </div>
                     
                     {/* Note */}
                     <div className="space-y-2">
+                      {notesError && (
+                        <Alert variant="destructive">
+                          <AlertTriangle className="h-4 w-4" />
+                          <AlertTitle>Notes could not be loaded</AlertTitle>
+                          <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <span className="min-w-0 break-words">{notesError}</span>
+                            <Button variant="outline" size="sm" onClick={() => fetchNotesAndStats()} className="self-start">
+                              <RefreshCw className="mr-2 h-4 w-4" /> Retry
+                            </Button>
+                          </AlertDescription>
+                        </Alert>
+                      )}
                       <Label className="text-sm font-medium flex items-center gap-2">
                         <StickyNote className="w-4 h-4" />
                         Admin Note
                       </Label>
-                      <textarea
+                      <Textarea
                         value={currentNote}
-                        onChange={(e) => setCurrentNote(e.target.value)}
+                        onChange={(e) => setCurrentNote(e.target.value.slice(0, 1000))}
                         placeholder="Add notes about this player..."
-                        className="w-full min-h-[120px] px-3 py-2 text-sm rounded-md border border-input bg-background resize-y"
+                        className="min-h-[120px] resize-y"
+                        maxLength={1000}
                       />
+                      <p className="text-xs text-muted-foreground">{currentNote.length}/1000 characters</p>
                     </div>
                     
                     {/* Actions */}
@@ -1840,7 +1900,7 @@ export default function Players() {
                         <Button
                           size="sm"
                           onClick={handleSaveNote}
-                          disabled={savingNote || (!currentNote && currentTags.length === 0)}
+                          disabled={savingNote || (!currentNote.trim() && currentTags.length === 0)}
                         >
                           {savingNote ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Save className="w-4 h-4 mr-1" />}
                           Save Note
@@ -1853,6 +1913,18 @@ export default function Players() {
 
               {/* Activity Log Tab */}
               <TabsContent value="activity" className="space-y-4 mt-4">
+                {logsError && (
+                  <Alert variant="destructive">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertTitle>Activity log unavailable</AlertTitle>
+                    <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <span className="min-w-0 break-words">{logsError}</span>
+                      <Button variant="outline" size="sm" onClick={() => fetchActivityLogs(logPlayerFilter || undefined)} className="self-start">
+                        <RefreshCw className="mr-2 h-4 w-4" /> Retry
+                      </Button>
+                    </AlertDescription>
+                  </Alert>
+                )}
                 <div className="flex items-center gap-2">
                   <div className="relative flex-1">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -1864,6 +1936,7 @@ export default function Players() {
                         if (e.key === 'Enter') fetchActivityLogs(logPlayerFilter || undefined)
                       }}
                       className="pl-9"
+                      aria-label="Filter activity logs by player name"
                     />
                   </div>
                   <Button
@@ -1877,7 +1950,7 @@ export default function Players() {
                 </div>
                 
                 <div className="rounded-md border max-h-[350px] overflow-auto">
-                  <table className="w-full text-sm">
+                  <table className="w-full min-w-[480px] text-sm">
                     <thead className="bg-muted/50 sticky top-0">
                       <tr>
                         <th className="text-left p-2 font-medium text-xs">Time</th>
@@ -1899,22 +1972,24 @@ export default function Players() {
                             <td className="p-2 whitespace-nowrap text-xs text-muted-foreground">
                               {new Date(log.logged_at).toLocaleString()}
                             </td>
-                            <td className="p-2 font-medium text-xs">{log.player_name}</td>
+                            <td className="p-2 text-xs font-medium break-words">{log.player_name}</td>
                             <td className="p-2">
                               <Badge
-                                variant="secondary"
-                                className={`text-xs ${
-                                  log.action === 'connect' ? 'bg-green-500/20 text-green-600' :
-                                  log.action === 'disconnect' ? 'bg-red-500/20 text-red-600' :
-                                  log.action === 'kick' ? 'bg-orange-500/20 text-orange-600' :
-                                  log.action === 'ban' ? 'bg-red-600/20 text-red-700' :
-                                  ''
-                                }`}
+                                variant={
+                                  log.action === 'connect'
+                                    ? 'success'
+                                    : log.action === 'disconnect' || log.action === 'ban'
+                                      ? 'destructive'
+                                      : log.action === 'kick'
+                                        ? 'warning'
+                                        : 'secondary'
+                                }
+                                className="text-xs"
                               >
                                 {log.action}
                               </Badge>
                             </td>
-                            <td className="p-2 text-xs text-muted-foreground truncate max-w-[150px]">
+                            <td className="max-w-[280px] p-2 text-xs text-muted-foreground break-words">
                               {log.details || '-'}
                             </td>
                           </tr>

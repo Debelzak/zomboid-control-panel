@@ -1033,7 +1033,7 @@ function getWorkshopPaths(workshopId, serverPath) {
     // Alternative location
     path.join(serverPath, '..', 'steamapps', 'workshop', 'content', '108600', workshopId),
     // User's Steam folder (less common for dedicated servers)
-    path.join(process.env.USERPROFILE || '', 'Steam', 'steamapps', 'workshop', 'content', '108600', workshopId),
+    path.join(process.env.USERPROFILE || process.env.HOME || '', 'Steam', 'steamapps', 'workshop', 'content', '108600', workshopId),
   ];
 }
 
