@@ -23,6 +23,7 @@ import { Scheduler } from './services/scheduler.js';
 import { DiscordBot } from './services/discordBot.js';
 import { BackupService } from './services/backupService.js';
 import { UpdateChecker } from './services/updateChecker.js';
+import { PanelUpdateChecker } from './services/panelUpdateChecker.js';
 import { LogTailer } from './services/logTailer.js';
 import authService from './services/auth.js';
 import authRoutes from './routes/auth.js';
@@ -434,6 +435,10 @@ app.set('io', io);
 const updateChecker = new UpdateChecker(io);
 app.set('updateChecker', updateChecker);
 
+// Initialize panel self-update checker
+const panelUpdateChecker = new PanelUpdateChecker(io);
+app.set('panelUpdateChecker', panelUpdateChecker);
+
 // Auth routes (must be before other API routes)
 app.use('/api/auth', authRoutes);
 
@@ -491,6 +496,35 @@ app.post('/api/panel/restart', (req, res) => {
     }
     process.exit(0);
   }, 1000);
+});
+
+// Panel self-update endpoints
+app.get('/api/panel/update-check', async (req, res) => {
+  try {
+    const checker = req.app.get('panelUpdateChecker');
+    if (!checker) return res.status(500).json({ error: 'Panel update checker not available' });
+    const status = await checker.checkForUpdate();
+    res.json(status);
+  } catch (error) {
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
+app.get('/api/panel/update-status', (req, res) => {
+  const checker = req.app.get('panelUpdateChecker');
+  if (!checker) return res.status(500).json({ error: 'Panel update checker not available' });
+  res.json(checker.getStatus());
+});
+
+app.post('/api/panel/update-download', async (req, res) => {
+  try {
+    const checker = req.app.get('panelUpdateChecker');
+    if (!checker) return res.status(500).json({ error: 'Panel update checker not available' });
+    const result = await checker.downloadUpdate();
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
 });
 
 // Serve static files in production
@@ -850,6 +884,9 @@ async function start() {
     
     // Start update checker for server updates
     updateChecker.start();
+
+    // Start panel self-update checker
+    panelUpdateChecker.start(_pkgVersion);
     
     // Read panel port from DB (saved via Settings UI), fallback to env or 3001
     const savedPort = await getSetting('panelPort');

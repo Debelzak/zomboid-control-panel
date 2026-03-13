@@ -11,7 +11,9 @@
     "build": "cd client && npm run build",
     "build:exe": "node build.js",
     "start": "node server/index.js",
-    "install:all": "npm install && cd client && npm install"
+    "install:all": "npm install && cd client && npm install",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "archiver": "^7.0.1",
@@ -38,6 +40,7 @@
     "concurrently": "^9.1.0",
     "esbuild": "^0.27.1",
     "nodemon": "^3.1.7",
-    "pkg": "^5.8.1"
+    "pkg": "^5.8.1",
+    "vitest": "^4.1.0"
   }
 }

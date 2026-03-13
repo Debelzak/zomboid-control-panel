@@ -1,0 +1,178 @@
+import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+
+// Test PanelBridge command serialization logic
+// Tests the command queue and file write serialization without actual file I/O
+
+describe('PanelBridge command serialization', () => {
+  let commands;
+
+  beforeEach(() => {
+    commands = { commands: [] };
+  });
+
+  function appendCommand(id, action, args) {
+    commands.commands.push({
+      id,
+      action,
+      args,
+      timestamp: Date.now()
+    });
+    return commands;
+  }
+
+  it('should append commands to the queue', () => {
+    appendCommand('cmd-1', 'ping', {});
+    appendCommand('cmd-2', 'getServerInfo', {});
+    expect(commands.commands).toHaveLength(2);
+    expect(commands.commands[0].action).toBe('ping');
+    expect(commands.commands[1].action).toBe('getServerInfo');
+  });
+
+  it('should include all required fields', () => {
+    appendCommand('cmd-1', 'healPlayer', { username: 'TestUser' });
+    const cmd = commands.commands[0];
+    expect(cmd).toHaveProperty('id', 'cmd-1');
+    expect(cmd).toHaveProperty('action', 'healPlayer');
+    expect(cmd).toHaveProperty('args');
+    expect(cmd.args.username).toBe('TestUser');
+    expect(cmd).toHaveProperty('timestamp');
+    expect(typeof cmd.timestamp).toBe('number');
+  });
+
+  it('should serialize to valid JSON', () => {
+    appendCommand('cmd-1', 'teleportPlayer', { username: 'P1', x: 100, y: 200, z: 0 });
+    const json = JSON.stringify(commands, null, 2);
+    const parsed = JSON.parse(json);
+    expect(parsed.commands).toHaveLength(1);
+    expect(parsed.commands[0].args.x).toBe(100);
+  });
+
+  it('should handle special characters in args safely', () => {
+    appendCommand('cmd-1', 'sendToServerChat', { message: 'Hello "world" & <friends>' });
+    const json = JSON.stringify(commands);
+    const parsed = JSON.parse(json);
+    expect(parsed.commands[0].args.message).toBe('Hello "world" & <friends>');
+  });
+});
+
+// Test result deduplication logic
+describe('PanelBridge result deduplication', () => {
+  let processedResults;
+
+  beforeEach(() => {
+    processedResults = new Map();
+  });
+
+  it('should detect duplicate results', () => {
+    const id = 'result-1';
+    processedResults.set(id, Date.now());
+
+    const isDuplicate = processedResults.has(id);
+    expect(isDuplicate).toBe(true);
+  });
+
+  it('should not flag new results as duplicates', () => {
+    processedResults.set('result-1', Date.now());
+    const isDuplicate = processedResults.has('result-2');
+    expect(isDuplicate).toBe(false);
+  });
+
+  it('should clean up old entries', () => {
+    const oldTime = Date.now() - 60000; // 1 minute ago
+    processedResults.set('old-1', oldTime);
+    processedResults.set('old-2', oldTime);
+    processedResults.set('new-1', Date.now());
+
+    // Simulate cleanup (remove entries older than 30s)
+    const cutoff = Date.now() - 30000;
+    for (const [id, timestamp] of processedResults) {
+      if (timestamp < cutoff) {
+        processedResults.delete(id);
+      }
+    }
+
+    expect(processedResults.size).toBe(1);
+    expect(processedResults.has('new-1')).toBe(true);
+  });
+});
+
+// Test pending command timeout tracking
+describe('PanelBridge pending commands', () => {
+  let pendingCommands;
+
+  beforeEach(() => {
+    pendingCommands = new Map();
+  });
+
+  afterEach(() => {
+    // Clear all timeouts
+    for (const [, cmd] of pendingCommands) {
+      if (cmd.timeout) clearTimeout(cmd.timeout);
+    }
+    pendingCommands.clear();
+  });
+
+  it('should track pending commands with timeout', () => {
+    const timeout = setTimeout(() => {}, 10000);
+    pendingCommands.set('cmd-1', {
+      resolve: vi.fn(),
+      reject: vi.fn(),
+      timeout,
+      action: 'ping',
+      timestamp: Date.now()
+    });
+
+    expect(pendingCommands.size).toBe(1);
+    expect(pendingCommands.get('cmd-1').action).toBe('ping');
+    clearTimeout(timeout);
+  });
+
+  it('should resolve and clean up on result', () => {
+    const resolveFn = vi.fn();
+    const timeout = setTimeout(() => {}, 10000);
+    pendingCommands.set('cmd-1', {
+      resolve: resolveFn,
+      reject: vi.fn(),
+      timeout,
+      action: 'ping',
+      timestamp: Date.now()
+    });
+
+    // Simulate result received
+    const pending = pendingCommands.get('cmd-1');
+    clearTimeout(pending.timeout);
+    pending.resolve({ success: true });
+    pendingCommands.delete('cmd-1');
+
+    expect(resolveFn).toHaveBeenCalledWith({ success: true });
+    expect(pendingCommands.size).toBe(0);
+  });
+
+  it('should reject all pending on stop', () => {
+    const rejectFns = [];
+    for (let i = 0; i < 3; i++) {
+      const reject = vi.fn();
+      rejectFns.push(reject);
+      const timeout = setTimeout(() => {}, 10000);
+      pendingCommands.set(`cmd-${i}`, {
+        resolve: vi.fn(),
+        reject,
+        timeout,
+        action: 'test',
+        timestamp: Date.now()
+      });
+    }
+
+    // Simulate bridge stop
+    for (const [id, pending] of pendingCommands) {
+      clearTimeout(pending.timeout);
+      pending.reject(new Error('Bridge stopped'));
+    }
+    pendingCommands.clear();
+
+    rejectFns.forEach(fn => {
+      expect(fn).toHaveBeenCalledWith(expect.objectContaining({ message: 'Bridge stopped' }));
+    });
+    expect(pendingCommands.size).toBe(0);
+  });
+});

@@ -716,6 +716,7 @@ export class RconService extends EventEmitter {
       
       // Track successful command for connection health monitoring
       this.lastSuccessfulCommand = Date.now();
+      this.consecutiveHealthFailures = 0;
       
       // Log to database (unless skipLog is set for automatic commands)
       if (!skipLog) {

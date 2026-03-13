@@ -56,6 +56,7 @@ It combines RCON, file tools, backup workflows, multi-server control, and an opt
 - Crash/log viewing and troubleshooting endpoints.
 - Real-time log tailing and performance history views.
 - Path and environment helpers for setup validation.
+- Panel self-update checker with one-click download (exe/binary builds).
 
 ### Integrations
 - Discord bot integration and config management.
@@ -86,10 +87,19 @@ It combines RCON, file tools, backup workflows, multi-server control, and an opt
 
 ### Option 2: Development Mode
 1. Install Node.js 18+.
-2. Clone the repo, then run:
-   - `npm install`
-   - `npm run dev`
+2. Clone the repo, then install dependencies and start:
+   ```bash
+   npm run install:all
+   npm run dev
+   ```
 3. Open `http://localhost:5173`.
+
+### Option 3: Docker
+```bash
+docker build -t zomboid-panel .
+docker run -d -p 3001:3001 -v panel-data:/app/data zomboid-panel
+```
+Open `http://localhost:3001`.
 
 ## Launchers
 
@@ -162,22 +172,27 @@ Common runtime settings include:
 
 | Key | Purpose |
 |-----|---------|
-| `PORT` | Panel backend port |
+| `PORT` | Panel backend port (default: 3001) |
 | `RCON_PORT` | PZ RCON port |
 | `RCON_PASSWORD` | RCON password |
-| `SERVER_PATH` | PZ server installation path |
-| `ZOMBOID_DATA_PATH` | Zomboid data folder |
+| `PZ_SERVER_PATH` | PZ server installation path |
+| `PZ_SAVE_PATH` | Zomboid data/saves folder |
+| `PZ_SERVER_BAT` | Custom startup script name |
 | `MOD_CHECK_INTERVAL` | Mod-check interval |
+
+> **Note:** Most settings are configured through the panel UI and stored in `data/db.json`. Environment variables are optional overrides.
 
 ## Project Structure
 
 ```text
 ├── client/               # React + TypeScript frontend
 ├── server/               # Express backend (routes/services/database)
+│   └── tests/            # Vitest unit tests
 ├── pz-mod/PanelBridge/   # Lua bridge mod
 ├── data/                 # LowDB runtime data
 ├── logs/                 # Runtime logs
 ├── build.js              # Build pipeline for client/server/exe
+├── Dockerfile            # Docker support
 ├── deploy*.ps1           # Deployment scripts
 └── release.ps1           # Release automation script
 ```
@@ -186,6 +201,7 @@ Common runtime settings include:
 
 - Build Windows executable: `node build.js`
 - Build Linux binary: `node build.js --linux`
+- Run tests: `npm test`
 - Full release pipeline (version bump/build/deploy/sync/release):
   - `./release.ps1 -Version "0.5.0"`
 
