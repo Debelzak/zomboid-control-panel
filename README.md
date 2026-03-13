@@ -86,7 +86,7 @@ It combines RCON, file tools, backup workflows, multi-server control, and an opt
 
 ### Option 2: Development Mode
 1. Install Node.js 18+.
-2. From `Dev1`, run:
+2. Clone the repo, then run:
    - `npm install`
    - `npm run dev`
 3. Open `http://localhost:5173`.
@@ -169,10 +169,9 @@ Common runtime settings include:
 | `ZOMBOID_DATA_PATH` | Zomboid data folder |
 | `MOD_CHECK_INTERVAL` | Mod-check interval |
 
-## Project Structure (Dev Source)
+## Project Structure
 
 ```text
-Dev1/
 ├── client/               # React + TypeScript frontend
 ├── server/               # Express backend (routes/services/database)
 ├── pz-mod/PanelBridge/   # Lua bridge mod
