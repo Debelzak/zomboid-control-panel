@@ -160,6 +160,9 @@ const io = new Server(httpServer, {
 });
 
 // Security middleware
+// Disable HSTS and upgrade-insecure-requests — panel is typically accessed over
+// plain HTTP on a LAN. Sending these headers forces browsers to require HTTPS
+// and blocks all assets on non-HTTPS setups.
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -171,21 +174,31 @@ app.use(helmet({
       fontSrc: ["'self'", 'https://fonts.gstatic.com'],
       objectSrc: ["'none'"],
       frameAncestors: ["'none'"],
+      upgradeInsecureRequests: null,
     }
   },
+  hsts: false,
   crossOriginEmbedderPolicy: false // Allow loading resources
 }));
 
 app.use(cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (same-origin, curl, mobile apps)
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      // Reject requests from unknown origins
-      log.warn(`CORS blocked request from origin: ${origin}`);
-      callback(new Error('Not allowed by CORS'));
-    }
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    // Allow any request from private/LAN IPs (192.168.x, 10.x, 172.16-31.x, Tailscale 100.x)
+    try {
+      const url = new URL(origin);
+      const host = url.hostname;
+      if (host === 'localhost' || host === '127.0.0.1' || host === '::1' ||
+          host.startsWith('192.168.') || host.startsWith('10.') || host.startsWith('100.') ||
+          /^172\.(1[6-9]|2\d|3[01])\./.test(host)) {
+        addAllowedOrigin(origin);
+        return callback(null, true);
+      }
+    } catch (_) {}
+    log.warn(`CORS blocked request from origin: ${origin}`);
+    callback(new Error('Not allowed by CORS'));
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   credentials: true

@@ -176,7 +176,9 @@ export class ServerManager {
           });
         });
       } else {
-        // Linux/macOS: Use ps + grep to find the PZ server java process
+        // Linux/macOS: Use ps + grep to find the PZ server process
+        // Check both the Java class name (zombie.network.GameServer) and
+        // the native launcher (ProjectZomboid64 / projectzomboid64)
         exec('ps aux', { timeout: 8000 }, (err, stdout) => {
           clearTimeout(timeout);
           if (err || !stdout) {
@@ -186,7 +188,9 @@ export class ServerManager {
           }
           
           const lines = stdout.toLowerCase();
-          const isPZServer = lines.includes('zombie.network.gameserver');
+          const isPZServer = lines.includes('zombie.network.gameserver') ||
+                            lines.includes('projectzomboid64') ||
+                            lines.includes('projectzomboid32');
           this.isRunning = isPZServer;
           resolve(isPZServer);
         });

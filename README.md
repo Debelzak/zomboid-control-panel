@@ -155,8 +155,12 @@ PanelBridge unlocks advanced server actions that are not available through base 
 ### Install
 1. Copy `pz-mod/PanelBridge` into your server mods directory.
 2. Add `PanelBridge` to `Mods=` in server INI.
-3. Restart your PZ server.
-4. Configure bridge path/settings in panel.
+3. Disable Lua checksum in your server INI (required for custom server mods):
+   ```ini
+   DoLuaChecksum=false
+   ```
+4. Restart your PZ server.
+5. Configure bridge path/settings in panel.
 
 ## API/Backend Coverage (Implemented Route Modules)
 
