@@ -1,0 +1,22 @@
+version: "3.8"
+
+services:
+  panel:
+    build: .
+    container_name: zomboid-panel
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./data:/app/data          # Persist database (db.json)
+      - ./logs:/app/logs          # Persist logs
+      - panel-pz-mod:/app/pz-mod  # PanelBridge mod files
+    environment:
+      - NODE_ENV=production
+      # - PORT=3001
+      # - PZ_SERVER_PATH=/path/to/pz/server
+      # - PZ_SAVE_PATH=/path/to/pz/saves
+      # - PZ_SERVER_BAT=StartServer64.bat
+
+volumes:
+  panel-pz-mod:

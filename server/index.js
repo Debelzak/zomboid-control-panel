@@ -73,6 +73,11 @@ async function gracefulShutdown(signal) {
     if (updateChecker) {
       updateChecker.stop();
     }
+
+    // Stop panel update checker
+    if (panelUpdateChecker) {
+      panelUpdateChecker.stop();
+    }
     
     // Stop PanelBridge
     if (panelBridge?.isRunning) {

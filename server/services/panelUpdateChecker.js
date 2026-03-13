@@ -257,13 +257,18 @@ export class PanelUpdateChecker {
    */
   downloadFile(url, destPath, expectedSize) {
     return new Promise((resolve, reject) => {
-      const follow = (downloadUrl) => {
+      const MAX_REDIRECTS = 5;
+      const follow = (downloadUrl, redirectCount = 0) => {
+        if (redirectCount > MAX_REDIRECTS) {
+          return reject(new Error(`Too many redirects (max ${MAX_REDIRECTS})`));
+        }
         https.get(downloadUrl, { headers: { 'User-Agent': `ZomboidControlPanel/${this.currentVersion}` } }, (res) => {
           // Follow redirects (GitHub uses them for asset downloads)
           if (res.statusCode === 301 || res.statusCode === 302) {
             const location = res.headers.location;
             if (!location) return reject(new Error('Redirect without location'));
-            follow(location);
+            if (!location.startsWith('https://')) return reject(new Error('Redirect to non-HTTPS URL rejected'));
+            follow(location, redirectCount + 1);
             return;
           }
 
@@ -275,12 +280,15 @@ export class PanelUpdateChecker {
           let receivedBytes = 0;
           const file = fs.createWriteStream(destPath);
 
+          let lastEmittedProgress = -1;
           res.on('data', (chunk) => {
             receivedBytes += chunk.length;
             if (totalBytes > 0) {
               this.downloadProgress = Math.round((receivedBytes / totalBytes) * 100);
-              // Throttle progress updates to every 5%
-              if (this.downloadProgress % 5 === 0) {
+              // Throttle progress updates to every 5% increment
+              const bucket = Math.floor(this.downloadProgress / 5) * 5;
+              if (bucket > lastEmittedProgress) {
+                lastEmittedProgress = bucket;
                 this.io?.emit('panel:downloadProgress', {
                   progress: this.downloadProgress,
                   status: 'downloading',
