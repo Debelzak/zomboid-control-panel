@@ -8,7 +8,7 @@ Use one interface to manage server state, players, mods, backups, config files, 
 
 ## Why This Exists
 
-Built out of spite. Every existing PZ server tool did one or two things — nothing did it all in one place. No unified server control, no working mod update tracking, no PanelBridge-style in-game bridge, no proper backup management, no Discord integration, no chunk cleaner, no multi-server support. Just a pile of disconnected scripts and half-broken panels.
+Built from frustration that no existing PZ server tool covered everything in one place. Most options handled one or two parts, but not a full workflow: unified server control, reliable mod update tracking, an in-game bridge like PanelBridge, proper backup management, Discord integration, chunk cleanup, and multi-server support.
 
 So I built it. The whole thing. Background story in this video: [https://www.youtube.com/watch?v=P2k0VFX1FUw](https://www.youtube.com/watch?v=P2k0VFX1FUw)
 
