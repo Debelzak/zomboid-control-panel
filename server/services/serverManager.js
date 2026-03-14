@@ -294,8 +294,9 @@ export class ServerManager {
           });
         });
       } else {
-        // Linux: Find and kill the PZ server java process by command line
-        exec("ps aux | grep '[z]ombie.network.GameServer' | awk '{print $2}'", (err, stdout) => {
+        // Linux: Find and kill the PZ server process
+        // Check both Java class name and native launcher (projectzomboid64)
+        exec("ps aux | grep -iE '[z]ombie.network.GameServer|[p]rojectzomboid64|[p]rojectzomboid32' | awk '{print $2}'", (err, stdout) => {
           const pids = (stdout || '').trim().split('\n').filter(Boolean);
           
           if (pids.length === 0) {

@@ -151,9 +151,33 @@ function addAllowedOrigin(origin) {
   }
 }
 
+// CORS origin checker — shared between Express and Socket.IO
+// Allows localhost + any private/LAN IP (192.168.x, 10.x, 100.x Tailscale, 172.16-31.x)
+function isAllowedOrigin(origin) {
+  if (!origin) return true;
+  if (allowedOrigins.includes(origin)) return true;
+  try {
+    const url = new URL(origin);
+    const host = url.hostname;
+    if (host === 'localhost' || host === '127.0.0.1' || host === '::1' ||
+        host.startsWith('192.168.') || host.startsWith('10.') || host.startsWith('100.') ||
+        /^172\.(1[6-9]|2\d|3[01])\./.test(host)) {
+      addAllowedOrigin(origin);
+      return true;
+    }
+  } catch (_) {}
+  return false;
+}
+
 const io = new Server(httpServer, {
   cors: {
-    origin: allowedOrigins,
+    origin: (origin, callback) => {
+      if (isAllowedOrigin(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
     methods: ['GET', 'POST'],
     credentials: true
   }
@@ -183,22 +207,12 @@ app.use(helmet({
 
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (same-origin, curl, mobile apps)
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.includes(origin)) return callback(null, true);
-    // Allow any request from private/LAN IPs (192.168.x, 10.x, 172.16-31.x, Tailscale 100.x)
-    try {
-      const url = new URL(origin);
-      const host = url.hostname;
-      if (host === 'localhost' || host === '127.0.0.1' || host === '::1' ||
-          host.startsWith('192.168.') || host.startsWith('10.') || host.startsWith('100.') ||
-          /^172\.(1[6-9]|2\d|3[01])\./.test(host)) {
-        addAllowedOrigin(origin);
-        return callback(null, true);
-      }
-    } catch (_) {}
-    log.warn(`CORS blocked request from origin: ${origin}`);
-    callback(new Error('Not allowed by CORS'));
+    if (isAllowedOrigin(origin)) {
+      callback(null, true);
+    } else {
+      log.warn(`CORS blocked request from origin: ${origin}`);
+      callback(new Error('Not allowed by CORS'));
+    }
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   credentials: true
@@ -925,7 +939,13 @@ async function start() {
         // Attach Socket.IO to HTTPS server too
         const httpsIo = new Server(httpsServer, {
           cors: {
-            origin: allowedOrigins,
+            origin: (origin, callback) => {
+              if (isAllowedOrigin(origin)) {
+                callback(null, true);
+              } else {
+                callback(new Error('Not allowed by CORS'));
+              }
+            },
             methods: ['GET', 'POST'],
             credentials: true
           }
