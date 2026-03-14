@@ -188,6 +188,7 @@ const bridgeOperationTemplates: Record<string, { label: string; description: str
 
 const BRIDGE_ARGS_MAX_CHARS = 12000
 const BRIDGE_OUTPUT_MAX_CHARS = 100000
+const BRIDGE_RESULT_PLACEHOLDER = 'Run a command to view response output.'
 
 export default function Events() {
   const [loading, setLoading] = useState<string | null>(null)
@@ -247,8 +248,9 @@ export default function Events() {
   const [bridgeOperationDrafts, setBridgeOperationDrafts] = useState<Record<string, string>>(
     () => Object.fromEntries(Object.entries(bridgeOperationTemplates).map(([key, value]) => [key, value.args]))
   )
-  const [bridgeOperationResult, setBridgeOperationResult] = useState<string>('Run a command to view response output.')
+  const [bridgeOperationResult, setBridgeOperationResult] = useState<string>(BRIDGE_RESULT_PLACEHOLDER)
   const [bridgeArgsError, setBridgeArgsError] = useState<string | null>(null)
+  const [bridgeLastRunAt, setBridgeLastRunAt] = useState<string | null>(null)
   
   // Utilities status
   const [utilitiesStatus, setUtilitiesStatus] = useState<{
@@ -519,6 +521,32 @@ export default function Events() {
     setBridgeArgsError(null)
   }
 
+  const copyBridgeOutput = async () => {
+    try {
+      if (bridgeOperationResult === BRIDGE_RESULT_PLACEHOLDER) {
+        toast({
+          title: 'Nothing to copy',
+          description: 'Run an operation first to generate output.',
+          variant: 'destructive',
+        })
+        return
+      }
+
+      await navigator.clipboard.writeText(bridgeOperationResult)
+      toast({
+        title: 'Output copied',
+        description: 'Bridge response copied to clipboard.',
+        variant: 'success' as const,
+      })
+    } catch {
+      toast({
+        title: 'Copy failed',
+        description: 'Clipboard is not available in this context.',
+        variant: 'destructive',
+      })
+    }
+  }
+
   const formatBridgeResult = (response: unknown): string => {
     const rendered = typeof response === 'string' ? response : JSON.stringify(response, null, 2)
     if (!rendered) return 'No response content.'
@@ -557,6 +585,7 @@ export default function Events() {
     try {
       const response = await panelBridgeApi.sendCommand(bridgeOperation, parsedArgs)
       setBridgeOperationResult(formatBridgeResult(response))
+      setBridgeLastRunAt(new Date().toLocaleString())
       toast({
         title: `${bridgeOperationTemplates[bridgeOperation]?.label || bridgeOperation} executed`,
         description: 'Command sent successfully. See output panel for details.',
@@ -565,6 +594,7 @@ export default function Events() {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error'
       setBridgeOperationResult(JSON.stringify({ success: false, error: message }, null, 2))
+      setBridgeLastRunAt(new Date().toLocaleString())
       toast({
         title: 'Bridge operation failed',
         description: message,
@@ -1939,7 +1969,7 @@ export default function Events() {
                           setBridgeOperation(value)
                           setBridgeOperationArgs(bridgeOperationDrafts[value] ?? bridgeOperationTemplates[value].args)
                           setBridgeArgsError(null)
-                          setBridgeOperationResult('Run a command to view response output.')
+                          setBridgeOperationResult(BRIDGE_RESULT_PLACEHOLDER)
                         }}
                       >
                         <SelectTrigger id="bridge-operation-select" aria-label="Bridge operation selector" disabled={bridgeLoading !== null}>
@@ -1975,19 +2005,29 @@ export default function Events() {
                             setBridgeArgsError(error instanceof Error ? error.message : 'Invalid JSON.')
                           }
                         }}
+                        onKeyDown={(e) => {
+                          if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                            e.preventDefault()
+                            if (bridgeLoading === null && bridgeConnected && !bridgeArgsError) {
+                              void runBridgeOperation()
+                            }
+                          }
+                        }}
                         className="min-h-[140px] font-mono text-xs"
                         aria-describedby="bridge-args-help"
+                        aria-invalid={bridgeArgsError ? true : undefined}
+                        aria-errormessage={bridgeArgsError ? 'bridge-args-error' : undefined}
                         maxLength={BRIDGE_ARGS_MAX_CHARS + 500}
                         spellCheck={false}
                       />
                       <p id="bridge-args-help" className="text-xs text-muted-foreground">
-                        Use a JSON object only. Example: {`{ "key": "value" }`}
+                        Use a JSON object only. Example: {`{ "key": "value" }`} Press Ctrl/Cmd+Enter to run.
                       </p>
-                      <p className="text-xs text-muted-foreground">
+                      <p className={cn('text-xs', bridgeOperationArgs.length > BRIDGE_ARGS_MAX_CHARS ? 'text-destructive' : 'text-muted-foreground')}>
                         {bridgeOperationArgs.length.toLocaleString()} / {BRIDGE_ARGS_MAX_CHARS.toLocaleString()} recommended characters
                       </p>
                       {bridgeArgsError && (
-                        <p className="text-xs text-destructive">{bridgeArgsError}</p>
+                        <p id="bridge-args-error" className="text-xs text-destructive">{bridgeArgsError}</p>
                       )}
                     </div>
                   </div>
@@ -2014,6 +2054,7 @@ export default function Events() {
                     <Button
                       variant="outline"
                       onClick={formatBridgeArgs}
+                      disabled={bridgeLoading !== null}
                       className="h-11"
                     >
                       Format JSON
@@ -2021,21 +2062,39 @@ export default function Events() {
                     <Button
                       variant="outline"
                       onClick={resetBridgeArgsToTemplate}
+                      disabled={bridgeLoading !== null}
                       className="h-11"
                     >
                       Reset Args
                     </Button>
                     <Button
                       variant="outline"
-                      onClick={() => setBridgeOperationResult('Run a command to view response output.')}
+                      onClick={() => {
+                        setBridgeOperationResult(BRIDGE_RESULT_PLACEHOLDER)
+                        setBridgeLastRunAt(null)
+                      }}
+                      disabled={bridgeLoading !== null}
                       className="h-11"
                     >
                       Clear Output
                     </Button>
+                    <Button
+                      variant="outline"
+                      onClick={copyBridgeOutput}
+                      disabled={bridgeLoading !== null || bridgeOperationResult === BRIDGE_RESULT_PLACEHOLDER}
+                      className="h-11"
+                    >
+                      Copy Output
+                    </Button>
                   </div>
 
                   <div className="space-y-2">
-                    <Label>Response Output</Label>
+                    <div className="flex items-center justify-between gap-3">
+                      <Label>Response Output</Label>
+                      <span className="text-xs text-muted-foreground" aria-live="polite">
+                        {bridgeLastRunAt ? `Last run: ${bridgeLastRunAt}` : 'No run yet'}
+                      </span>
+                    </div>
                     <pre
                       className="max-h-72 overflow-auto rounded-md border bg-muted/30 p-3 text-xs font-mono whitespace-pre-wrap break-words"
                       aria-live="polite"
