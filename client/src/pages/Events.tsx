@@ -39,6 +39,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Slider } from '@/components/ui/slider'
@@ -157,6 +158,34 @@ const vehicles = [
   { id: 'Base.Taxi', name: 'Taxi' },
 ]
 
+const bridgeOperationTemplates: Record<string, { label: string; description: string; args: string }> = {
+  getSafehouses: { label: 'List Safehouses', description: 'Get all safehouses and metadata.', args: '{}' },
+  safehouseAddPlayer: { label: 'Safehouse Add Player', description: 'Add a player to a safehouse.', args: '{\n  "safehouseRef": "SafehouseIdOrTitle",\n  "username": "PlayerName"\n}' },
+  safehouseRemovePlayer: { label: 'Safehouse Remove Player', description: 'Remove a player from a safehouse.', args: '{\n  "safehouseRef": "SafehouseIdOrTitle",\n  "username": "PlayerName"\n}' },
+  safehouseSetOwner: { label: 'Safehouse Set Owner', description: 'Transfer safehouse ownership.', args: '{\n  "safehouseRef": "SafehouseIdOrTitle",\n  "owner": "PlayerName"\n}' },
+  safehouseSetRespawn: { label: 'Safehouse Respawn Toggle', description: 'Enable/disable respawn in safehouse for player.', args: '{\n  "safehouseRef": "SafehouseIdOrTitle",\n  "username": "PlayerName",\n  "enabled": true\n}' },
+  getFactions: { label: 'List Factions', description: 'Get all factions and members.', args: '{}' },
+  createFaction: { label: 'Create Faction', description: 'Create a new faction.', args: '{\n  "name": "FactionName",\n  "owner": "PlayerName"\n}' },
+  factionAddPlayer: { label: 'Faction Add Player', description: 'Add player to faction.', args: '{\n  "factionName": "FactionName",\n  "username": "PlayerName"\n}' },
+  factionRemovePlayer: { label: 'Faction Remove Player', description: 'Remove player from faction.', args: '{\n  "factionName": "FactionName",\n  "username": "PlayerName"\n}' },
+  factionSetTag: { label: 'Faction Set Tag', description: 'Set short faction tag.', args: '{\n  "factionName": "FactionName",\n  "tag": "TAG"\n}' },
+  removeFaction: { label: 'Remove Faction', description: 'Delete faction.', args: '{\n  "factionName": "FactionName"\n}' },
+  getVehiclesDetailed: { label: 'List Vehicles', description: 'List loaded vehicles with telemetry.', args: '{}' },
+  vehicleRepair: { label: 'Vehicle Repair', description: 'Repair vehicle by id.', args: '{\n  "vehicleId": 123\n}' },
+  vehicleSetAlarm: { label: 'Vehicle Alarm', description: 'Enable/disable and trigger alarm state.', args: '{\n  "vehicleId": 123,\n  "enabled": true\n}' },
+  vehicleSetSiren: { label: 'Vehicle Siren', description: 'Set siren mode.', args: '{\n  "vehicleId": 123,\n  "mode": 1\n}' },
+  vehicleSetTrunkLocked: { label: 'Vehicle Trunk Lock', description: 'Lock/unlock trunk.', args: '{\n  "vehicleId": 123,\n  "locked": true\n}' },
+  triggerSwarmEvent: { label: 'Trigger Swarm Event', description: 'Spawn zombies in rectangular area.', args: '{\n  "count": 25,\n  "x1": 10500,\n  "y1": 9800,\n  "x2": 10600,\n  "y2": 9900\n}' },
+  runEventSequence: { label: 'Run Event Sequence', description: 'Run chained chat/weather/swarm/utilities/noise sequence.', args: '{\n  "steps": [\n    { "kind": "chat", "message": "Event incoming", "channel": "general" },\n    { "kind": "weather", "weatherType": "storm", "duration": 2 }\n  ]\n}' },
+  getInfrastructureSnapshot: { label: 'Infrastructure Snapshot', description: 'Read hydro/weather state and optional sample point.', args: '{\n  "x": 10500,\n  "y": 9800,\n  "z": 0\n}' },
+  addLamppost: { label: 'Add Lamppost', description: 'Add temporary light source.', args: '{\n  "x": 10500,\n  "y": 9800,\n  "z": 0,\n  "r": 1.0,\n  "g": 0.85,\n  "b": 0.6,\n  "radius": 8\n}' },
+  removeLamppost: { label: 'Remove Lamppost', description: 'Remove temporary light source.', args: '{\n  "x": 10500,\n  "y": 9800,\n  "z": 0\n}' },
+  moderationKickUser: { label: 'Kick User', description: 'Kick player via BanSystem.', args: '{\n  "username": "PlayerName",\n  "reason": "Rule violation"\n}' },
+  moderationBanUser: { label: 'Ban User', description: 'Ban or unban player.', args: '{\n  "username": "PlayerName",\n  "reason": "Rule violation",\n  "ban": true\n}' },
+  moderationBanIP: { label: 'Ban IP', description: 'Ban or unban IP address.', args: '{\n  "ip": "127.0.0.1",\n  "reason": "Abuse",\n  "ban": true\n}' },
+  moderationBanSteamID: { label: 'Ban SteamID', description: 'Ban or unban SteamID.', args: '{\n  "steamId": "76561198000000000",\n  "reason": "Abuse",\n  "ban": true\n}' },
+}
+
 export default function Events() {
   const [loading, setLoading] = useState<string | null>(null)
   const [players, setPlayers] = useState<Player[]>([])
@@ -208,6 +237,11 @@ export default function Events() {
   const [soundVolume, setSoundVolume] = useState(100)
   const [soundX, setSoundX] = useState('')
   const [soundY, setSoundY] = useState('')
+
+  // Bridge operations (new Lua handlers)
+  const [bridgeOperation, setBridgeOperation] = useState<string>('getSafehouses')
+  const [bridgeOperationArgs, setBridgeOperationArgs] = useState<string>(bridgeOperationTemplates.getSafehouses.args)
+  const [bridgeOperationResult, setBridgeOperationResult] = useState<string>('Run a command to view response output.')
   
   // Utilities status
   const [utilitiesStatus, setUtilitiesStatus] = useState<{
@@ -226,6 +260,7 @@ export default function Events() {
     environment: false,
     sound: false,
     world: false,
+    bridgeOps: false,
   })
   const toggleSection = (id: string) => setOpenSections((prev) => ({ ...prev, [id]: !prev[id] }))
 
@@ -443,6 +478,54 @@ export default function Events() {
   
   // Announcement
   const sendAnnouncement = () => serverApi.sendMessage(announcement)
+
+  const runBridgeOperation = async () => {
+    if (!bridgeConnected) {
+      toast({
+        title: 'Bridge not connected',
+        description: 'Connect PanelBridge in Settings before running advanced operations.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    let parsedArgs: Record<string, unknown> = {}
+    try {
+      const trimmed = bridgeOperationArgs.trim()
+      parsedArgs = trimmed ? JSON.parse(trimmed) : {}
+      if (typeof parsedArgs !== 'object' || parsedArgs === null || Array.isArray(parsedArgs)) {
+        throw new Error('Args must be a JSON object')
+      }
+    } catch (error) {
+      toast({
+        title: 'Invalid JSON args',
+        description: error instanceof Error ? error.message : 'Please provide valid JSON.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    setBridgeLoading(bridgeOperation)
+    try {
+      const response = await panelBridgeApi.sendCommand(bridgeOperation, parsedArgs)
+      setBridgeOperationResult(JSON.stringify(response, null, 2))
+      toast({
+        title: `${bridgeOperationTemplates[bridgeOperation]?.label || bridgeOperation} executed`,
+        description: 'Command sent successfully. See output panel for details.',
+        variant: 'success' as const,
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error'
+      setBridgeOperationResult(JSON.stringify({ success: false, error: message }, null, 2))
+      toast({
+        title: 'Bridge operation failed',
+        description: message,
+        variant: 'destructive',
+      })
+    } finally {
+      setBridgeLoading(null)
+    }
+  }
 
   return (
     <div className="space-y-6 page-transition">
@@ -1775,6 +1858,101 @@ export default function Events() {
             </div>
           </CardContent>
         </Card>
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
+
+        {/* ── Bridge Operations Section ── */}
+        <Collapsible open={openSections.bridgeOps} onOpenChange={() => toggleSection('bridgeOps')} className="md:col-span-2">
+          <CollapsibleTrigger className="flex items-center gap-2 w-full py-2 text-left group rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
+            <ChevronDown className={cn("w-4 h-4 text-muted-foreground transition-transform", openSections.bridgeOps && "rotate-180")} />
+            <span className="text-sm font-medium text-muted-foreground uppercase tracking-wide">Bridge Operations</span>
+            <div className="flex-1 border-t border-border/40 ml-2" />
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="pt-4">
+              <Card className={!bridgeConnected ? 'opacity-80' : ''}>
+                <CardHeader className="pb-4">
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Zap className="w-4 h-4 text-primary" />
+                    New PanelBridge Functions
+                  </CardTitle>
+                  <CardDescription>
+                    Access safehouse, faction, vehicle, swarm, infrastructure, and moderation handlers from the GUI.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Operation</Label>
+                      <Select
+                        value={bridgeOperation}
+                        onValueChange={(value) => {
+                          setBridgeOperation(value)
+                          setBridgeOperationArgs(bridgeOperationTemplates[value].args)
+                        }}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select operation" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Object.entries(bridgeOperationTemplates).map(([action, meta]) => (
+                            <SelectItem key={action} value={action}>{meta.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        {bridgeOperationTemplates[bridgeOperation]?.description}
+                      </p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>JSON Args</Label>
+                      <Textarea
+                        value={bridgeOperationArgs}
+                        onChange={(e) => setBridgeOperationArgs(e.target.value)}
+                        className="min-h-[140px] font-mono text-xs"
+                        spellCheck={false}
+                      />
+                    </div>
+                  </div>
+
+                  {!bridgeConnected && (
+                    <Alert className="border-warning/40 bg-warning/10">
+                      <AlertTriangle className="h-4 w-4 text-warning" />
+                      <AlertTitle className="text-warning">Bridge connection required</AlertTitle>
+                      <AlertDescription>
+                        These operations require a live PanelBridge connection. Configure it in Settings first.
+                      </AlertDescription>
+                    </Alert>
+                  )}
+
+                  <div className="flex items-center gap-2">
+                    <Button
+                      onClick={runBridgeOperation}
+                      disabled={bridgeLoading !== null || !bridgeConnected}
+                      className="h-11 gap-2"
+                    >
+                      {bridgeLoading === bridgeOperation ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+                      Run Operation
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => setBridgeOperationResult('Run a command to view response output.')}
+                      className="h-11"
+                    >
+                      Clear Output
+                    </Button>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Response Output</Label>
+                    <pre className="max-h-72 overflow-auto rounded-md border bg-muted/30 p-3 text-xs font-mono whitespace-pre-wrap break-words">
+{bridgeOperationResult}
+                    </pre>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
           </CollapsibleContent>
         </Collapsible>
