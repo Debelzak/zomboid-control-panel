@@ -44,7 +44,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
 import { useToast } from '@/components/ui/use-toast'
-import { rconApi, playersApi, panelBridgeApi } from '@/lib/api'
+import { rconApi, serverApi, playersApi, panelBridgeApi } from '@/lib/api'
 import { Link } from 'react-router-dom'
 import { PageHeader } from '@/components/PageHeader'
 import { BridgeStatusBadge } from '@/components/BridgeStatusBadge'
@@ -322,9 +322,10 @@ export default function Events() {
         variant: 'success' as const,
       })
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error'
       toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Action failed',
+        title: `${action} failed`,
+        description: `${message}. Check bridge/server connection and try again.`,
         variant: 'destructive',
       })
     } finally {
@@ -367,9 +368,10 @@ export default function Events() {
         variant: 'success' as const,
       })
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error'
       toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Action failed',
+        title: `${action} failed`,
+        description: `${message}. Verify command settings and try again.`,
         variant: 'destructive',
       })
     } finally {
@@ -378,32 +380,45 @@ export default function Events() {
   }
 
   const getTargetPlayer = () => targetAll ? undefined : selectedPlayer || undefined
+  const parseCoord = (value: string): number | null => {
+    const n = Number(value)
+    return Number.isFinite(n) ? Math.floor(n) : null
+  }
+
+  const soundCoordX = parseCoord(soundX)
+  const soundCoordY = parseCoord(soundY)
+  const hasValidSoundCoords = soundCoordX !== null && soundCoordY !== null
+
+  const teleportCoordX = parseCoord(teleportX)
+  const teleportCoordY = parseCoord(teleportY)
+  const teleportCoordZ = parseCoord(teleportZ)
+  const hasValidTeleportCoords = teleportCoordX !== null && teleportCoordY !== null && teleportCoordZ !== null
 
   // Weather commands
-  const startRain = () => executeCommand(`startrain ${rainIntensity}`)
-  const stopRain = () => executeCommand('stoprain')
-  const startStorm = () => executeCommand(`startstorm ${stormDuration}`)
-  const stopWeather = () => executeCommand('stopweather')
+  const startRain = () => serverApi.startRain(rainIntensity)
+  const stopRain = () => serverApi.stopRain()
+  const startStorm = () => serverApi.startStorm(stormDuration)
+  const stopWeather = () => serverApi.stopWeather()
   
   // Sound/Event commands
   // Note: chopper and gunshot target a RANDOM online player, not the selected player
-  const triggerChopper = () => executeCommand('chopper')
-  const triggerGunshot = () => executeCommand('gunshot')
-  const triggerLightning = (username?: string) => executeCommand(username ? `lightning "${username}"` : 'lightning')
-  const triggerThunder = (username?: string) => executeCommand(username ? `thunder "${username}"` : 'thunder')
+  const triggerChopper = () => serverApi.triggerChopper()
+  const triggerGunshot = () => serverApi.triggerGunshot()
+  const triggerLightning = (username?: string) => serverApi.triggerLightning(username)
+  const triggerThunder = (username?: string) => serverApi.triggerThunder(username)
   // Alarm triggers at admin's in-game position (admin must be online)
-  const triggerAlarm = () => executeCommand('alarm')
+  const triggerAlarm = () => serverApi.alarm()
   
   // Zombie commands
   const createHorde = (count: number, username?: string) => 
-    executeCommand(username ? `createhorde ${count} "${username}"` : `createhorde ${count}`)
+    serverApi.createHorde(count, username)
   
   // createhorde2: spawns zombies behind the player (more cinematic)
   const createHorde2 = (count: number, username?: string) => 
     executeCommand(username ? `createhorde2 ${count} "${username}"` : `createhorde2 ${count}`)
   
   // removezombies: clears all zombies from the map
-  const removeZombies = () => executeCommand('removezombies')
+  const removeZombies = () => serverApi.removeZombies()
   
   // Time commands
   const setGameTimeSpeed = () => executeCommand(`setTimeSpeed ${timeSpeed}`)
@@ -411,13 +426,13 @@ export default function Events() {
   // Teleport commands
   // teleportto only works if admin is in-game and teleports themselves
   // For teleporting other players, use teleport command with player name and coordinates
-  const teleportToCoords = (targetPlayer?: string) => {
+  const teleportToCoords = (x: number, y: number, z: number, targetPlayer?: string) => {
     if (targetPlayer) {
       // Teleport specific player to coordinates
-      return executeCommand(`teleport "${targetPlayer}" ${teleportX},${teleportY},${teleportZ}`)
+      return executeCommand(`teleport "${targetPlayer}" ${x},${y},${z}`)
     }
     // Self-teleport (requires admin to be in-game)
-    return executeCommand(`teleportto ${teleportX},${teleportY},${teleportZ}`)
+    return executeCommand(`teleportto ${x},${y},${z}`)
   }
   const teleportPlayerToPlayer = (player1: string, player2: string) =>
     executeCommand(`teleport "${player1}" "${player2}"`)
@@ -427,13 +442,13 @@ export default function Events() {
     executeCommand(`addvehicle "${vehicleId}" "${username}"`)
   
   // Announcement
-  const sendAnnouncement = () => executeCommand(`servermsg "${announcement}"`)
+  const sendAnnouncement = () => serverApi.sendMessage(announcement)
 
   return (
     <div className="space-y-6 page-transition">
       <PageHeader
         title="Events"
-        description="Trigger in-game events and world effects"
+        description="Run live world events, weather, and admin actions"
         icon={<Zap className="w-5 h-5 text-primary" />}
         actions={
           <div className="flex items-center gap-2">
@@ -452,7 +467,7 @@ export default function Events() {
           <AlertTriangle className="h-4 w-4 text-warning" />
           <AlertTitle className="text-warning">Panel Bridge Required</AlertTitle>
           <AlertDescription className="space-y-2">
-            <p>Advanced features (weather, climate, time, infrastructure, sound) need <strong className="text-foreground">PanelBridge.lua</strong> installed and connected. Basic RCON weather and sound controls still work.</p>
+            <p>Advanced controls for weather, climate, time, infrastructure, and precision sound require <strong className="text-foreground">PanelBridge.lua</strong>. Basic RCON actions still work without it.</p>
             <Link to="/settings" className="inline-flex text-sm text-primary underline hover:text-foreground">Open Bridge Setup</Link>
           </AlertDescription>
         </Alert>
@@ -465,7 +480,7 @@ export default function Events() {
             <Target className="w-4 h-4 text-primary" />
             Event Target
           </CardTitle>
-          <CardDescription>Choose whether events affect all players or a specific player</CardDescription>
+          <CardDescription>Choose a global/random target or a specific online player</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center gap-4">
@@ -477,7 +492,7 @@ export default function Events() {
               />
               <Label htmlFor="target-all" className="flex items-center gap-2">
                 <Users className="w-4 h-4" />
-                Target All Players
+                Use Global/Random Target
               </Label>
             </div>
           </div>
@@ -490,7 +505,7 @@ export default function Events() {
               </Label>
               <Select value={selectedPlayer} onValueChange={setSelectedPlayer}>
                 <SelectTrigger className="w-full max-w-xs">
-                  <SelectValue placeholder="Choose a player..." />
+                  <SelectValue placeholder="Select an online player" />
                 </SelectTrigger>
                 <SelectContent>
                   {players.length === 0 ? (
@@ -531,7 +546,7 @@ export default function Events() {
               <Cloud className="w-4 h-4 text-primary" />
               Weather Controls
             </CardTitle>
-            <CardDescription>Control the in-game weather</CardDescription>
+            <CardDescription>Quick weather controls through RCON</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             {/* Rain */}
@@ -613,7 +628,7 @@ export default function Events() {
               <Snowflake className="w-4 h-4 text-primary" />
               Advanced Weather
             </CardTitle>
-            <CardDescription>Control blizzards, tropical storms, and snow</CardDescription>
+            <CardDescription>Panel Bridge controls for blizzards, tropical storms, and snow state</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
                 {/* Blizzard */}
@@ -674,7 +689,7 @@ export default function Events() {
                 <div className="space-y-3 pt-3 border-t">
                   <Label className="flex items-center gap-2">
                       <Thermometer className="w-4 h-4 text-primary" />
-                    Quick Actions
+                    Quick Weather Toggles
                   </Label>
                   <div className="grid grid-cols-2 gap-2">
                     <Button
@@ -684,7 +699,7 @@ export default function Events() {
                       className="h-11 gap-2"
                     >
                       {bridgeLoading === 'Enable Snow' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Snowflake className="w-4 h-4" />}
-                      Snow On
+                      Enable Snow
                     </Button>
                     <Button
                       variant="outline"
@@ -693,7 +708,7 @@ export default function Events() {
                       className="h-11 gap-2"
                     >
                       {bridgeLoading === 'Disable Snow' ? <Loader2 className="w-4 h-4 animate-spin" /> : <CloudRain className="w-4 h-4" />}
-                      Snow Off
+                      Disable Snow
                     </Button>
                     <Button
                       variant="outline"
@@ -718,7 +733,7 @@ export default function Events() {
                   <Gauge className="w-4 h-4 text-primary" />
                   Climate Controls
                 </CardTitle>
-                <CardDescription>Fine-tune weather parameters: fog, wind, temperature, clouds, and more</CardDescription>
+                <CardDescription>Apply world-wide climate overrides. Use Reset to return to sandbox behavior.</CardDescription>
               </div>
               {bridgeConnected && (
                 <Button
@@ -793,7 +808,7 @@ export default function Events() {
                   <div className="flex items-center justify-between">
                     <Label className="flex items-center gap-2">
                       <Thermometer className="w-4 h-4 text-primary" />
-                      Temp: {temperature}°C
+                      Temperature: {temperature}°C
                     </Label>
                   </div>
                   <Slider
@@ -911,13 +926,16 @@ export default function Events() {
                   className="w-full h-11 gap-2"
                 >
                   {bridgeLoading === 'Apply All Climate' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Gauge className="w-4 h-4" />}
-                  Apply All Climate Settings
+                  Apply All Climate Values
                 </Button>
                 <div className="pt-4 border-t">
                 <Label className="flex items-center gap-2 mb-3">
                   <Zap className="w-4 h-4 text-primary" />
                   Rain & Lightning
                 </Label>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Rain buttons use Panel Bridge. Lightning and thunder buttons use RCON and follow target rules.
+                </p>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                   <Button
                     variant="outline"
@@ -939,7 +957,7 @@ export default function Events() {
                   </Button>
                   <Button
                     variant="outline"
-                    onClick={() => handleAction('Lightning', () => triggerLightning())}
+                    onClick={() => handleAction('Lightning', () => triggerLightning(getTargetPlayer()))}
                     disabled={loading !== null}
                     className="h-11 gap-2"
                   >
@@ -948,7 +966,7 @@ export default function Events() {
                   </Button>
                   <Button
                     variant="outline"
-                    onClick={() => handleAction('Thunder', () => triggerThunder())}
+                    onClick={() => handleAction('Thunder', () => triggerThunder(getTargetPlayer()))}
                     disabled={loading !== null}
                     className="h-11 gap-2"
                   >
@@ -982,7 +1000,7 @@ export default function Events() {
               <Calendar className="w-4 h-4 text-primary" />
               Game Time
             </CardTitle>
-            <CardDescription>Control in-game time and date</CardDescription>
+            <CardDescription>Set server-wide in-game hour, day, and month</CardDescription>
           </CardHeader>
           <CardContent>
               <div className="space-y-4">
@@ -1033,7 +1051,14 @@ export default function Events() {
                       min={1}
                       max={31}
                       value={gameDay}
-                      onChange={(e) => setGameDay(parseInt(e.target.value) || 1)}
+                      onChange={(e) => {
+                        const parsed = parseInt(e.target.value, 10)
+                        if (Number.isNaN(parsed)) {
+                          setGameDay(1)
+                          return
+                        }
+                        setGameDay(Math.min(31, Math.max(1, parsed)))
+                      }}
                     />
                   </div>
                   <div className="space-y-1">
@@ -1069,6 +1094,9 @@ export default function Events() {
                   {bridgeLoading === 'Set Time' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Clock className="w-4 h-4" />}
                   Apply Time & Date
                 </Button>
+                <p className="text-xs text-muted-foreground">
+                  This updates world time for all players immediately.
+                </p>
               </div>
           </CardContent>
         </Card>
@@ -1080,7 +1108,7 @@ export default function Events() {
               <Zap className="w-4 h-4 text-primary" />
               Infrastructure
             </CardTitle>
-            <CardDescription>Control power and water utilities</CardDescription>
+            <CardDescription>Panel Bridge controls for global power and water state</CardDescription>
           </CardHeader>
           <CardContent>
               <div className="space-y-4">
@@ -1090,7 +1118,7 @@ export default function Events() {
                     <Zap className={`w-5 h-5 ${utilitiesStatus?.powerOn ? 'text-primary' : 'text-muted-foreground'}`} />
                     <span className="text-sm font-medium">Power:</span>
                     <span className={`text-sm font-bold ${utilitiesStatus === null ? 'text-muted-foreground' : utilitiesStatus.powerOn ? 'text-primary' : 'text-destructive'}`}>
-                      {utilitiesStatus === null ? 'Checking' : utilitiesStatus.powerOn ? 'ON' : 'OFF'}
+                      {utilitiesStatus === null ? 'Checking...' : utilitiesStatus.powerOn ? 'On' : 'Off'}
                     </span>
                   </div>
                   <div className="w-px h-6 bg-border" />
@@ -1098,13 +1126,13 @@ export default function Events() {
                     <Droplets className={`w-5 h-5 ${utilitiesStatus?.waterOn ? 'text-primary' : 'text-muted-foreground'}`} />
                     <span className="text-sm font-medium">Water:</span>
                     <span className={`text-sm font-bold ${utilitiesStatus === null ? 'text-muted-foreground' : utilitiesStatus.waterOn ? 'text-primary' : 'text-destructive'}`}>
-                      {utilitiesStatus === null ? 'Checking' : utilitiesStatus.waterOn ? 'ON' : 'OFF'}
+                      {utilitiesStatus === null ? 'Checking...' : utilitiesStatus.waterOn ? 'On' : 'Off'}
                     </span>
                   </div>
                 </div>
                 
                 <p className="text-sm text-muted-foreground">
-                  Restore or shut off power and water for the entire world. This affects all players instantly.
+                  These actions apply instantly to the full world and affect every player.
                 </p>
                 
                 <div className="grid grid-cols-2 gap-3">
@@ -1115,7 +1143,7 @@ export default function Events() {
                     className="h-11 gap-2"
                   >
                     {bridgeLoading === 'Restore Utilities' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
-                    Restore All
+                    Restore Power + Water
                   </Button>
                   <Button
                     variant="outline"
@@ -1124,7 +1152,7 @@ export default function Events() {
                     className="h-11 gap-2"
                   >
                     {bridgeLoading === 'Shut Off Utilities' ? <Loader2 className="w-4 h-4 animate-spin" /> : <CloudOff className="w-4 h-4" />}
-                    Shut Off All
+                    Cut Power + Water
                   </Button>
                 </div>
                 
@@ -1136,7 +1164,7 @@ export default function Events() {
                     className="h-11 gap-2"
                   >
                     {bridgeLoading === 'Restore Power' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
-                    Restore Power Only
+                    Restore Power
                   </Button>
                   <Button
                     variant="outline"
@@ -1145,7 +1173,7 @@ export default function Events() {
                     className="h-11 gap-2"
                   >
                     {bridgeLoading === 'Restore Water' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Droplets className="w-4 h-4" />}
-                    Restore Water Only
+                    Restore Water
                   </Button>
                 </div>
               </div>
@@ -1172,11 +1200,11 @@ export default function Events() {
               <Volume2 className="w-4 h-4 text-primary" />
               Sound Events
             </CardTitle>
-            <CardDescription>Trigger sound effects that attract zombies</CardDescription>
+            <CardDescription>Trigger world sounds that pull zombie movement</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Helicopter and Gunshot target a random online player. Lightning and Thunder respect the player selection above.
+              Helicopter and gunshot use a random online player. Lightning and thunder follow your target selection above.
             </p>
             <div className="grid grid-cols-3 gap-3">
               <Button
@@ -1236,7 +1264,7 @@ export default function Events() {
               <Megaphone className="w-4 h-4 text-primary" />
               Advanced Sound Controls
             </CardTitle>
-            <CardDescription>Create sounds at specific locations to attract zombies</CardDescription>
+            <CardDescription>Panel Bridge sound lures at player location or exact world coordinates</CardDescription>
           </CardHeader>
           <CardContent>
               <div className="space-y-6">
@@ -1282,8 +1310,8 @@ export default function Events() {
                   </Label>
                   <p className="text-xs text-muted-foreground">
                     {targetAll 
-                      ? 'Select a specific player above to trigger sounds at their location'
-                      : `Sounds will trigger at ${selectedPlayer || 'selected player'}'s location`
+                      ? 'Select a specific player above before using these controls'
+                      : `Sounds will play at ${selectedPlayer || 'the selected player'}'s location`
                     }
                   </p>
                   <div className="grid grid-cols-3 gap-2">
@@ -1321,7 +1349,7 @@ export default function Events() {
                       className="h-11 gap-2"
                     >
                       {bridgeLoading === 'Custom Noise' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Megaphone className="w-4 h-4" />}
-                      Custom
+                      Custom Noise
                     </Button>
                   </div>
                 </div>
@@ -1334,7 +1362,7 @@ export default function Events() {
                   </Label>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1">
-                      <Label className="text-xs">X Coordinate</Label>
+                      <Label className="text-xs">World X</Label>
                       <Input
                         type="number"
                         placeholder="e.g. 10500"
@@ -1343,7 +1371,7 @@ export default function Events() {
                       />
                     </div>
                     <div className="space-y-1">
-                      <Label className="text-xs">Y Coordinate</Label>
+                      <Label className="text-xs">World Y</Label>
                       <Input
                         type="number"
                         placeholder="e.g. 9800"
@@ -1352,13 +1380,16 @@ export default function Events() {
                       />
                     </div>
                   </div>
+                  <p className="text-xs text-muted-foreground">
+                    Enter valid numeric coordinates (examples: 10500 and 9800).
+                  </p>
                   <div className="grid grid-cols-3 gap-2">
                     <Button
                       variant="outline"
                       onClick={() => handleBridgeAction('Gunshot at Coords', () => 
-                        panelBridgeApi.triggerGunshotBridge({ x: parseInt(soundX), y: parseInt(soundY) })
+                          panelBridgeApi.triggerGunshotBridge({ x: soundCoordX as number, y: soundCoordY as number })
                       )}
-                      disabled={bridgeLoading !== null || !soundX || !soundY}
+                        disabled={bridgeLoading !== null || !hasValidSoundCoords}
                       className="h-11 gap-2"
                     >
                       {bridgeLoading === 'Gunshot at Coords' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Volume2 className="w-4 h-4" />}
@@ -1367,9 +1398,9 @@ export default function Events() {
                     <Button
                       variant="outline"
                       onClick={() => handleBridgeAction('Alarm at Coords', () => 
-                        panelBridgeApi.triggerAlarmBridge({ x: parseInt(soundX), y: parseInt(soundY) })
+                          panelBridgeApi.triggerAlarmBridge({ x: soundCoordX as number, y: soundCoordY as number })
                       )}
-                      disabled={bridgeLoading !== null || !soundX || !soundY}
+                        disabled={bridgeLoading !== null || !hasValidSoundCoords}
                       className="h-11 gap-2"
                     >
                       {bridgeLoading === 'Alarm at Coords' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Bell className="w-4 h-4" />}
@@ -1378,13 +1409,13 @@ export default function Events() {
                     <Button
                       variant="outline"
                       onClick={() => handleBridgeAction('Noise at Coords', () => 
-                        panelBridgeApi.createNoise({ x: parseInt(soundX), y: parseInt(soundY), radius: soundRadius, volume: soundVolume })
+                          panelBridgeApi.createNoise({ x: soundCoordX as number, y: soundCoordY as number, radius: soundRadius, volume: soundVolume })
                       )}
-                      disabled={bridgeLoading !== null || !soundX || !soundY}
+                        disabled={bridgeLoading !== null || !hasValidSoundCoords}
                       className="h-11 gap-2"
                     >
                       {bridgeLoading === 'Noise at Coords' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Megaphone className="w-4 h-4" />}
-                      Custom
+                      Custom Noise
                     </Button>
                   </div>
                 </div>
@@ -1412,7 +1443,7 @@ export default function Events() {
               <Skull className="w-4 h-4 text-primary" />
               Zombie Events
             </CardTitle>
-            <CardDescription>Spawn zombie hordes</CardDescription>
+            <CardDescription>Spawn, redirect, or clear zombies in loaded areas</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             {/* Horde */}
@@ -1453,7 +1484,7 @@ export default function Events() {
                 className="w-full h-11 gap-2"
               >
                 {loading === 'Remove all zombies' ? <Loader2 className="w-4 h-4 animate-spin" /> : <AlertTriangle className="w-4 h-4" />}
-                Remove All Zombies
+                Clear Loaded Zombies
               </Button>
             </div>
           </CardContent>
@@ -1546,7 +1577,7 @@ export default function Events() {
                   Teleport Player to Player
                 </h4>
                 <div className="space-y-2">
-                  <Label>Select Player to Teleport</Label>
+                  <Label>Player to move</Label>
                   <Select value={selectedPlayer} onValueChange={setSelectedPlayer}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select player..." />
@@ -1566,7 +1597,7 @@ export default function Events() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Teleport To</Label>
+                  <Label>Move to player</Label>
                   <div className="flex flex-wrap gap-2">
                     {players.filter(p => p.name !== selectedPlayer).map((player) => (
                       <Button
@@ -1625,8 +1656,8 @@ export default function Events() {
                 <div className="grid grid-cols-2 gap-2">
                   <Button
                     variant="outline"
-                    onClick={() => handleAction('Teleport self', () => teleportToCoords())}
-                    disabled={loading !== null || !teleportX || !teleportY}
+                    onClick={() => handleAction('Teleport self', () => teleportToCoords(teleportCoordX as number, teleportCoordY as number, teleportCoordZ as number))}
+                    disabled={loading !== null || !hasValidTeleportCoords}
                     className="h-11 gap-2"
                     title="Teleport yourself (admin must be in-game)"
                   >
@@ -1635,8 +1666,8 @@ export default function Events() {
                   </Button>
                   <Button
                     variant="outline"
-                    onClick={() => handleAction('Teleport player', () => teleportToCoords(getTargetPlayer()))}
-                    disabled={loading !== null || !teleportX || !teleportY || targetAll || !selectedPlayer}
+                    onClick={() => handleAction('Teleport player', () => teleportToCoords(teleportCoordX as number, teleportCoordY as number, teleportCoordZ as number, getTargetPlayer()))}
+                    disabled={loading !== null || !hasValidTeleportCoords || targetAll || !selectedPlayer}
                     className="h-11 gap-2"
                     title="Teleport selected player to coordinates"
                   >
@@ -1708,7 +1739,7 @@ export default function Events() {
           <CardHeader className="pb-4">
             <CardTitle className="flex items-center gap-2 text-base">
               <Megaphone className="w-4 h-4 text-primary" />
-              GM Announcement
+              Server Announcement
             </CardTitle>
             <CardDescription>Broadcast messages to all players</CardDescription>
           </CardHeader>
@@ -1733,13 +1764,13 @@ export default function Events() {
             </Button>
             <div className="flex flex-wrap gap-2">
               <Button variant="ghost" size="sm" onClick={() => setAnnouncement('WARNING: Event incoming!')} className="h-10 gap-2">
-                <AlertTriangle className="h-4 w-4 text-warning" /> Warning
+                <AlertTriangle className="h-4 w-4 text-warning" /> Event Warning
               </Button>
               <Button variant="ghost" size="sm" onClick={() => setAnnouncement('Check your inventory for a surprise!')} className="h-10 gap-2">
-                <Bell className="h-4 w-4 text-primary" /> Surprise
+                <Bell className="h-4 w-4 text-primary" /> Loot Notice
               </Button>
               <Button variant="ghost" size="sm" onClick={() => setAnnouncement('Run! The horde is coming!')} className="h-10 gap-2">
-                <Navigation className="h-4 w-4 text-primary" /> Run!
+                <Navigation className="h-4 w-4 text-primary" /> Horde Alert
               </Button>
             </div>
           </CardContent>

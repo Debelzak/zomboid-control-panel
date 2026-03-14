@@ -176,11 +176,12 @@ Optional environment variables:
 
 ## Build, Test, and Release
 
-- Build Windows executable: `node build.js`
+- Build Windows executable: `node build.js --windows`
 - Build Linux binary: `node build.js --linux`
+- Build Docker image: `docker build -t zomboid-control-panel:0.6.0 .`
 - Run tests: `npm test`
 - Full release pipeline:
-  - `./release.ps1 -Version "0.5.2"`
+   - `./release.ps1 -Version "0.6.0"`
 
 ## Project Structure
 
