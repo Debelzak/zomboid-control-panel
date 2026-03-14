@@ -5,6 +5,13 @@ It combines RCON, file tools, backup workflows, multi-server control, and an opt
 
 ![Zomboid Control Panel Dashboard](Screenshots/Main_Dashboard.png)
 
+## Live Demo (UI Preview)
+
+- Main demo: https://fpsacha.github.io/zomboid-control-panel/
+- Direct Server Config preview: https://fpsacha.github.io/zomboid-control-panel/#/server-config
+
+This demo runs the real frontend shell and pages on GitHub Pages, but it is intentionally disconnected from live backend/server actions.
+
 ## Why this panel
 
 - I couldn't find one tool that covered everything I wanted for PZ server administration, so I built my own all-in-one panel.
