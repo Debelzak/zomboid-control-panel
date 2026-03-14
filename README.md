@@ -1,103 +1,83 @@
 # Zomboid Control Panel
 
 Web-based admin panel for **Project Zomboid dedicated servers** on **Windows** and **Linux/Ubuntu**.
-It combines RCON, file tools, backup workflows, multi-server control, and an optional Lua bridge for advanced in-game actions.
+
+Use one interface to manage server state, players, mods, backups, config files, diagnostics, and optional advanced in-game actions through PanelBridge.
 
 ![Zomboid Control Panel Dashboard](Screenshots/Main_Dashboard.png)
 
-## Live Demo (Frontend Preview)
+## Live Demo
 
 - Dashboard (default): https://fpsacha.github.io/zomboid-control-panel/
 - Direct Server Config page: https://fpsacha.github.io/zomboid-control-panel/#/server-config
 
-The demo uses the real app shell and real routes on GitHub Pages.
+The demo runs the real frontend shell and real routes on GitHub Pages.
 
-- You can browse pages and navigation.
-- Server actions are intentionally offline in demo mode (no live backend, no RCON, no real server writes).
+- Navigation and page browsing are enabled.
+- Server actions are intentionally offline in demo mode.
+- No live backend, no RCON, and no real server writes happen in the demo.
 
-## Why this panel
+## What You Can Do
 
-- I couldn't find one tool that covered everything I wanted for PZ server administration, so I built my own all-in-one panel.
-- Manage your server from one UI: start/stop, players, mods, backups, config files, logs, and diagnostics.
-- Use **RCON** for standard commands and **PanelBridge** for advanced operations (teleport, weather, character data, and more).
-- Run as a standalone executable (no Node.js required) or in dev mode.
-- **Cross-platform**: runs on Windows (`.exe`) and Linux/Ubuntu (native binary).
-
-## Full Feature Overview
-
-### Server Operations
+### Server Control
 - Start, stop, restart, force-stop, and save world.
-- Live server status and runtime monitoring.
-- Server update check + one-click update flow.
-- Multi-server support with active-server switching.
+- Monitor live server status and uptime.
+- Check for updates and run update flows.
+- Manage multiple server profiles and switch active server.
 
-### Player & Admin Tools
-- Online player list, kick/ban/unban/access-level controls.
-- Teleport, heal, god mode, invisibility (via PanelBridge).
-- Character export/import workflows (skills, perks, recipes, inventory metadata).
-- Player notes and historical player activity tracking.
+### Players and Admin Actions
+- View online players and player activity history.
+- Kick, ban, unban, and manage access levels.
+- Use advanced actions through PanelBridge (teleport, heal, god mode, invisibility).
+- Export and import character data (skills, perks, recipes, inventory metadata).
 
-### World, Events, and Chat
-- Event triggers (helicopter, horde/noise style triggers).
-- Weather and climate controls (rain, storms, fog, temperature, overrides).
-- Game time controls and world utilities toggles where supported.
-- Global/admin/general chat messaging and chat tooling.
+### World and Events
+- Trigger events and weather actions.
+- Control climate settings and game time.
+- Use chat/admin messaging tools where supported.
 
-### Mods, Scheduling, and Automation
-- Steam Workshop mod tracking and update detection.
-- Auto-restart integration for update/maintenance flows.
-- Task scheduler for recurring maintenance actions.
-- Schedule execution history and visibility.
+### Mods, Scheduling, and Maintenance
+- Track Workshop mods and detect updates.
+- Schedule recurring tasks.
+- Run backups and restores.
+- Use chunk cleanup workflows for map maintenance.
 
-### Backups and File Management
-- Backup create/list/restore/delete flows from panel UI.
-- Server file editor for INI/sandbox/spawn-related files.
-- Config template/backup safeguards around file operations.
-- Chunk cleaner workflow for save cleanup operations.
-
-### Security and Access
-- Login + first-run setup experience.
-- JWT auth with refresh tokens and remember-me support.
-- Hardened endpoint protection, safer input/path handling, and route throttling.
-- Auth-aware UI calls and improved session reliability.
-
-### Diagnostics and Observability
-- Debug page with service/system health visibility.
-- Crash/log viewing and troubleshooting endpoints.
-- Real-time log tailing and performance history views.
-- Path and environment helpers for setup validation.
-- Panel self-update checker with one-click download (exe/binary builds).
+### Security and Reliability
+- First-run setup with login.
+- JWT auth with refresh token support.
+- Input/path safety and route throttling.
+- Better session and error handling across UI and backend.
 
 ### Integrations
-- Discord bot integration and config management.
-- PanelBridge Lua mod for direct in-game command execution.
-- RCON command console for low-latency admin control.
+- RCON command console.
+- Discord bot configuration and management.
+- PanelBridge Lua mod for advanced in-game commands.
 
 ## Quick Start
 
-### Option 1: Standalone Executable (recommended)
+### Option 1: Standalone Build (recommended)
 
-**Windows:**
-1. Run `ZomboidControlPanel.exe` (or double-click `Start.bat`).
-2. Complete setup/login flow.
-3. Configure server paths + RCON settings.
-4. Start managing your server from the panel.
+#### Windows
+1. Run `ZomboidControlPanel.exe` (or `Start.bat`).
+2. Complete setup/login.
+3. Configure server paths and RCON in Settings.
+4. Start managing your server.
 
-**Linux/Ubuntu:**
+#### Linux/Ubuntu
 1. Download the `ZomboidControlPanel` binary.
-2. Extract and make it executable:
+2. Make files executable and start:
    ```bash
    chmod +x ZomboidControlPanel start.sh
    ./start.sh
    ```
-3. Open `http://localhost:3001` in your browser.
-4. Complete setup/login, configure server paths + RCON settings.
+3. Open `http://localhost:3001`.
+4. Complete setup/login and configure paths + RCON.
 
-> **Note:** On Linux, optional folder browsing in the UI requires `zenity` (GNOME) or `kdialog` (KDE). You can always type paths manually.
+> On Linux, optional folder browsing in the UI requires `zenity` (GNOME) or `kdialog` (KDE). You can always type paths manually.
 
 ### Option 2: Development Mode
 1. Install Node.js 18+.
-2. Clone the repo, then install dependencies and start:
+2. Install dependencies and run:
    ```bash
    npm run install:all
    npm run dev
@@ -109,21 +89,13 @@ The demo uses the real app shell and real routes on GitHub Pages.
 docker build -t zomboid-panel .
 docker run -d -p 3001:3001 -v panel-data:/app/data zomboid-panel
 ```
-Open `http://localhost:3001`.
 
-## Launchers
-
-| File | Platform | Purpose |
-|------|----------|---------|
-| `ZomboidControlPanel.exe` | Windows | Standalone build (no Node runtime needed) |
-| `ZomboidControlPanel` | Linux | Standalone build (no Node runtime needed) |
-| `Start.bat` | Windows | Startup helper |
-| `start.sh` | Linux | Startup helper |
+Then open `http://localhost:3001`.
 
 ## Requirements
 
 ### Runtime
-- **Windows** 10/11 or **Linux** (Ubuntu 20.04+, Debian, etc.)
+- Windows 10/11 or Linux (Ubuntu 20.04+, Debian, and similar)
 - Project Zomboid dedicated server
 - RCON enabled in server config
 
@@ -131,117 +103,128 @@ Open `http://localhost:3001`.
 - Node.js 18+
 - npm
 
-## First-Time Server Setup
+## First-Time Setup Checklist
 
 1. Open the panel and complete setup/login.
-2. Go to **Settings** and configure:
+2. In **Settings**, set:
    - Server install path
    - Zomboid data/config path
-   - RCON host/port/password
-3. Save settings and test connectivity.
-4. (Optional but recommended) install PanelBridge for advanced features.
+   - RCON host, port, and password
+3. Save settings and test connection.
+4. Optional: install PanelBridge for advanced actions.
 
-## RCON Configuration
+## RCON Setup
 
-In your server `.ini` (usually in `Zomboid/Server`), set:
+In your server `.ini` (usually under `Zomboid/Server`):
 
 ```ini
 RCONPassword=your_password
 RCONPort=27015
 ```
 
-Restart the server after changes.
+Restart the server after saving.
 
-## PanelBridge (Optional, Recommended)
+## PanelBridge Setup (Optional, Recommended)
 
-PanelBridge unlocks advanced server actions that are not available through base RCON.
+PanelBridge enables advanced actions that base RCON does not support.
 
-### High-value capabilities
-- Advanced player controls (teleport/heal/detailed stats).
-- Character export/import operations.
-- Rich weather/climate/time actions.
-- Utility/world state controls and deeper diagnostics.
+### Common Uses
+- Advanced player controls
+- Character export/import
+- Rich weather/climate commands
+- Extended world and diagnostics actions
 
-### Install
+### Install Steps
 1. Copy `pz-mod/PanelBridge` into your server mods directory.
 2. Add `PanelBridge` to `Mods=` in server INI.
-3. Disable Lua checksum in your server INI (required for custom server mods):
+3. Disable Lua checksum in server INI:
    ```ini
    DoLuaChecksum=false
    ```
-4. Restart your PZ server.
-5. Configure bridge path/settings in panel.
+4. Restart the PZ server.
+5. Configure bridge path/settings in the panel.
 
-## API/Backend Coverage (Implemented Route Modules)
+## Launchers
 
-`auth`, `server`, `players`, `rcon`, `panelBridge`, `mods`, `scheduler`, `backup`, `chunks`, `config`, `discord`, `servers`, `serverFinder`, `serverFiles`, `debug`.
+| File | Platform | Purpose |
+|------|----------|---------|
+| `ZomboidControlPanel.exe` | Windows | Standalone app (no Node runtime required) |
+| `ZomboidControlPanel` | Linux | Standalone app (no Node runtime required) |
+| `Start.bat` | Windows | Startup helper |
+| `start.sh` | Linux | Startup helper |
 
-## Main Services (Implemented)
+## Configuration and Environment
 
-`auth`, `serverManager`, `rcon`, `panelBridge`, `modChecker`, `scheduler`, `backupService`, `discordBot`, `logTailer`, `updateChecker`.
+Most settings are managed in the UI and stored in `data/db.json`.
 
-## Environment Notes
-
-Common runtime settings include:
+Optional environment variables:
 
 | Key | Purpose |
 |-----|---------|
 | `PORT` | Panel backend port (default: 3001) |
 | `RCON_PORT` | PZ RCON port |
 | `RCON_PASSWORD` | RCON password |
-| `PZ_SERVER_PATH` | PZ server installation path |
-| `PZ_SAVE_PATH` | Zomboid data/saves folder |
+| `PZ_SERVER_PATH` | PZ server install path |
+| `PZ_SAVE_PATH` | Zomboid data/saves path |
 | `PZ_SERVER_BAT` | Custom startup script name |
-| `MOD_CHECK_INTERVAL` | Mod-check interval |
+| `MOD_CHECK_INTERVAL` | Mod checker interval |
 
-> **Note:** Most settings are configured through the panel UI and stored in `data/db.json`. Environment variables are optional overrides.
+## Build, Test, and Release
+
+- Build Windows executable: `node build.js`
+- Build Linux binary: `node build.js --linux`
+- Run tests: `npm test`
+- Full release pipeline:
+  - `./release.ps1 -Version "0.5.2"`
 
 ## Project Structure
 
 ```text
 ├── client/               # React + TypeScript frontend
 ├── server/               # Express backend (routes/services/database)
-│   └── tests/            # Vitest unit tests
+│   └── tests/            # Vitest tests
 ├── pz-mod/PanelBridge/   # Lua bridge mod
 ├── data/                 # LowDB runtime data
 ├── logs/                 # Runtime logs
-├── build.js              # Build pipeline for client/server/exe
+├── build.js              # Build pipeline (client/server/exe)
 ├── Dockerfile            # Docker support
-├── deploy*.ps1           # Deployment scripts
-└── release.ps1           # Release automation script
+├── deploy*.ps1           # Deploy scripts
+└── release.ps1           # Release automation
 ```
-
-## Build and Release
-
-- Build Windows executable: `node build.js`
-- Build Linux binary: `node build.js --linux`
-- Run tests: `npm test`
-- Full release pipeline (version bump/build/deploy/sync/release):
-  - `./release.ps1 -Version "0.5.0"`
 
 ## Troubleshooting
 
-### RCON fails to connect
+### RCON not connecting
 1. Confirm PZ server is running.
-2. Verify `RCONPassword`/`RCONPort` in INI.
-3. Ensure firewall allows chosen RCON port.
-4. Re-test from panel Settings.
+2. Verify `RCONPassword` and `RCONPort` in server INI.
+3. Confirm firewall rules allow the RCON port.
+4. Retest from panel Settings.
 
-### PanelBridge commands fail
-1. Verify `PanelBridge` is enabled in server `Mods=`.
-2. Check bridge folder path/config in panel.
-3. Restart panel + server after install/config changes.
-4. Inspect Debug/log pages for command errors.
+### PanelBridge commands failing
+1. Confirm `PanelBridge` is in `Mods=`.
+2. Confirm `DoLuaChecksum=false`.
+3. Verify bridge path in panel Settings.
+4. Restart panel and server, then check Debug/log pages.
 
-### Server start/stop actions fail
-1. Verify server path points to folder containing `StartServer64.bat` (Windows) or `start-server.sh` (Linux).
-2. Check for stale zombie server processes.
-3. Run panel with elevated permissions when required.
+### Server start/stop failing
+1. Verify server path points to startup scripts (`StartServer64.bat` on Windows or `start-server.sh` on Linux).
+2. Check for stale server processes.
+3. Run panel with elevated permissions if needed.
 
 ### Mod updates not detected
-1. Validate workshop IDs in config.
-2. Confirm mod tracking list is populated.
-3. Check mod checker interval/settings.
+1. Verify Workshop IDs.
+2. Confirm tracked mod list is populated.
+3. Check mod checker interval settings.
+
+## Backend Coverage
+
+Implemented route modules:
+
+`auth`, `server`, `players`, `rcon`, `panelBridge`, `mods`, `scheduler`, `backup`, `chunks`, `config`, `discord`, `servers`, `serverFinder`, `serverFiles`, `debug`.
+
+Main services:
+
+`auth`, `serverManager`, `rcon`, `panelBridge`, `modChecker`, `scheduler`, `backupService`, `discordBot`, `logTailer`, `updateChecker`.
 
 ## License
 
