@@ -1,4 +1,4 @@
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, Navigate } from 'react-router-dom'
 import { useEffect, useState, useCallback, lazy, Suspense } from 'react'
 import type { Socket } from 'socket.io-client'
 import Layout from './components/Layout'
@@ -16,7 +16,6 @@ import { PageSkeleton } from './components/PageSkeleton'
 import { ScrollToTop } from './components/ScrollToTop'
 import { Shield } from 'lucide-react'
 import { isDemoMode } from './lib/demo'
-import DemoMenuPreview from './pages/DemoMenuPreview'
 
 const AUTH_LOADING_MESSAGES = [
   'Verifying credentials and restoring your post.',
@@ -89,6 +88,7 @@ function AuthScreenLoader() {
 }
 
 function AppContent() {
+  const demoMode = isDemoMode()
   const [socket, setSocket] = useState<Socket | null>(null)
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>({
     connected: false,
@@ -109,6 +109,7 @@ function AppContent() {
 
   useEffect(() => {
     // Don't connect socket until auth is resolved
+    if (demoMode) return
     if (isLoading) return
     // If auth is enabled and user is not authenticated, don't connect
     if (authEnabled && !isAuthenticated && !needsSetup) return
@@ -221,7 +222,7 @@ function AppContent() {
       cancelled = true
       createdSocket?.close()
     }
-  }, [toast, handleReconnectSuccess, isLoading, isAuthenticated, authEnabled, needsSetup, getToken])
+  }, [toast, handleReconnectSuccess, isLoading, isAuthenticated, authEnabled, needsSetup, getToken, demoMode])
 
   // Auth gate — show loading, setup, or login screens before main app
   if (isLoading) {
@@ -264,7 +265,10 @@ function AppContent() {
           <ScrollToTop />
           <Suspense fallback={<PageLoader />}>
             <Routes>
-              <Route path="/" element={<FeatureErrorBoundary featureName="Dashboard"><Dashboard /></FeatureErrorBoundary>} />
+              <Route path="/" element={demoMode
+                ? <Navigate to="/server-config" replace />
+                : <FeatureErrorBoundary featureName="Dashboard"><Dashboard /></FeatureErrorBoundary>
+              } />
               <Route path="/players" element={<FeatureErrorBoundary featureName="Player Management"><Players /></FeatureErrorBoundary>} />
               <Route path="/console" element={<FeatureErrorBoundary featureName="Console"><Console /></FeatureErrorBoundary>} />
               <Route path="/scheduler" element={<FeatureErrorBoundary featureName="Scheduler"><Scheduler /></FeatureErrorBoundary>} />
@@ -290,19 +294,6 @@ function AppContent() {
 }
 
 function App() {
-  if (isDemoMode()) {
-    return (
-      <ErrorBoundary>
-        <ThemeProvider>
-          <TooltipProvider>
-            <DemoMenuPreview />
-            <Toaster />
-          </TooltipProvider>
-        </ThemeProvider>
-      </ErrorBoundary>
-    )
-  }
-
   return (
     <ErrorBoundary>
       <ThemeProvider>
