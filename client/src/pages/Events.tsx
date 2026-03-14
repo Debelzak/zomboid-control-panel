@@ -186,6 +186,9 @@ const bridgeOperationTemplates: Record<string, { label: string; description: str
   moderationBanSteamID: { label: 'Ban SteamID', description: 'Ban or unban SteamID.', args: '{\n  "steamId": "76561198000000000",\n  "reason": "Abuse",\n  "ban": true\n}' },
 }
 
+const BRIDGE_ARGS_MAX_CHARS = 12000
+const BRIDGE_OUTPUT_MAX_CHARS = 100000
+
 export default function Events() {
   const [loading, setLoading] = useState<string | null>(null)
   const [players, setPlayers] = useState<Player[]>([])
@@ -241,7 +244,11 @@ export default function Events() {
   // Bridge operations (new Lua handlers)
   const [bridgeOperation, setBridgeOperation] = useState<string>('getSafehouses')
   const [bridgeOperationArgs, setBridgeOperationArgs] = useState<string>(bridgeOperationTemplates.getSafehouses.args)
+  const [bridgeOperationDrafts, setBridgeOperationDrafts] = useState<Record<string, string>>(
+    () => Object.fromEntries(Object.entries(bridgeOperationTemplates).map(([key, value]) => [key, value.args]))
+  )
   const [bridgeOperationResult, setBridgeOperationResult] = useState<string>('Run a command to view response output.')
+  const [bridgeArgsError, setBridgeArgsError] = useState<string | null>(null)
   
   // Utilities status
   const [utilitiesStatus, setUtilitiesStatus] = useState<{
@@ -479,6 +486,47 @@ export default function Events() {
   // Announcement
   const sendAnnouncement = () => serverApi.sendMessage(announcement)
 
+  const parseBridgeArgs = (raw: string): Record<string, unknown> => {
+    const trimmed = raw.trim()
+    if (!trimmed) return {}
+
+    if (trimmed.length > BRIDGE_ARGS_MAX_CHARS) {
+      throw new Error(`Args too large. Maximum ${BRIDGE_ARGS_MAX_CHARS.toLocaleString()} characters.`)
+    }
+
+    const parsed = JSON.parse(trimmed)
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      throw new Error('Args must be a JSON object (example: { "key": "value" }).')
+    }
+
+    return parsed as Record<string, unknown>
+  }
+
+  const formatBridgeArgs = () => {
+    try {
+      const parsed = parseBridgeArgs(bridgeOperationArgs)
+      setBridgeOperationArgs(JSON.stringify(parsed, null, 2))
+      setBridgeArgsError(null)
+    } catch (error) {
+      setBridgeArgsError(error instanceof Error ? error.message : 'Invalid JSON.')
+    }
+  }
+
+  const resetBridgeArgsToTemplate = () => {
+    const template = bridgeOperationTemplates[bridgeOperation]?.args ?? '{}'
+    setBridgeOperationArgs(template)
+    setBridgeOperationDrafts((prev) => ({ ...prev, [bridgeOperation]: template }))
+    setBridgeArgsError(null)
+  }
+
+  const formatBridgeResult = (response: unknown): string => {
+    const rendered = typeof response === 'string' ? response : JSON.stringify(response, null, 2)
+    if (!rendered) return 'No response content.'
+    if (rendered.length <= BRIDGE_OUTPUT_MAX_CHARS) return rendered
+
+    return `${rendered.slice(0, BRIDGE_OUTPUT_MAX_CHARS)}\n\n[output truncated: ${rendered.length - BRIDGE_OUTPUT_MAX_CHARS} characters omitted]`
+  }
+
   const runBridgeOperation = async () => {
     if (!bridgeConnected) {
       toast({
@@ -491,24 +539,24 @@ export default function Events() {
 
     let parsedArgs: Record<string, unknown> = {}
     try {
-      const trimmed = bridgeOperationArgs.trim()
-      parsedArgs = trimmed ? JSON.parse(trimmed) : {}
-      if (typeof parsedArgs !== 'object' || parsedArgs === null || Array.isArray(parsedArgs)) {
-        throw new Error('Args must be a JSON object')
-      }
+      parsedArgs = parseBridgeArgs(bridgeOperationArgs)
+      setBridgeArgsError(null)
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'Please provide valid JSON.'
+      setBridgeArgsError(message)
       toast({
         title: 'Invalid JSON args',
-        description: error instanceof Error ? error.message : 'Please provide valid JSON.',
+        description: message,
         variant: 'destructive',
       })
       return
     }
 
     setBridgeLoading(bridgeOperation)
+    setBridgeArgsError(null)
     try {
       const response = await panelBridgeApi.sendCommand(bridgeOperation, parsedArgs)
-      setBridgeOperationResult(JSON.stringify(response, null, 2))
+      setBridgeOperationResult(formatBridgeResult(response))
       toast({
         title: `${bridgeOperationTemplates[bridgeOperation]?.label || bridgeOperation} executed`,
         description: 'Command sent successfully. See output panel for details.',
@@ -1889,10 +1937,12 @@ export default function Events() {
                         value={bridgeOperation}
                         onValueChange={(value) => {
                           setBridgeOperation(value)
-                          setBridgeOperationArgs(bridgeOperationTemplates[value].args)
+                          setBridgeOperationArgs(bridgeOperationDrafts[value] ?? bridgeOperationTemplates[value].args)
+                          setBridgeArgsError(null)
+                          setBridgeOperationResult('Run a command to view response output.')
                         }}
                       >
-                        <SelectTrigger>
+                        <SelectTrigger id="bridge-operation-select" aria-label="Bridge operation selector" disabled={bridgeLoading !== null}>
                           <SelectValue placeholder="Select operation" />
                         </SelectTrigger>
                         <SelectContent>
@@ -1907,13 +1957,38 @@ export default function Events() {
                     </div>
 
                     <div className="space-y-2">
-                      <Label>JSON Args</Label>
+                      <Label htmlFor="bridge-operation-args">JSON Args</Label>
                       <Textarea
+                        id="bridge-operation-args"
                         value={bridgeOperationArgs}
-                        onChange={(e) => setBridgeOperationArgs(e.target.value)}
+                        onChange={(e) => {
+                          const nextValue = e.target.value
+                          setBridgeOperationArgs(nextValue)
+                          setBridgeOperationDrafts((prev) => ({ ...prev, [bridgeOperation]: nextValue }))
+                          if (bridgeArgsError) setBridgeArgsError(null)
+                        }}
+                        onBlur={() => {
+                          try {
+                            parseBridgeArgs(bridgeOperationArgs)
+                            setBridgeArgsError(null)
+                          } catch (error) {
+                            setBridgeArgsError(error instanceof Error ? error.message : 'Invalid JSON.')
+                          }
+                        }}
                         className="min-h-[140px] font-mono text-xs"
+                        aria-describedby="bridge-args-help"
+                        maxLength={BRIDGE_ARGS_MAX_CHARS + 500}
                         spellCheck={false}
                       />
+                      <p id="bridge-args-help" className="text-xs text-muted-foreground">
+                        Use a JSON object only. Example: {`{ "key": "value" }`}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {bridgeOperationArgs.length.toLocaleString()} / {BRIDGE_ARGS_MAX_CHARS.toLocaleString()} recommended characters
+                      </p>
+                      {bridgeArgsError && (
+                        <p className="text-xs text-destructive">{bridgeArgsError}</p>
+                      )}
                     </div>
                   </div>
 
@@ -1927,14 +2002,28 @@ export default function Events() {
                     </Alert>
                   )}
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <Button
                       onClick={runBridgeOperation}
-                      disabled={bridgeLoading !== null || !bridgeConnected}
+                      disabled={bridgeLoading !== null || !bridgeConnected || !!bridgeArgsError}
                       className="h-11 gap-2"
                     >
                       {bridgeLoading === bridgeOperation ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
                       Run Operation
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={formatBridgeArgs}
+                      className="h-11"
+                    >
+                      Format JSON
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={resetBridgeArgsToTemplate}
+                      className="h-11"
+                    >
+                      Reset Args
                     </Button>
                     <Button
                       variant="outline"
@@ -1947,7 +2036,10 @@ export default function Events() {
 
                   <div className="space-y-2">
                     <Label>Response Output</Label>
-                    <pre className="max-h-72 overflow-auto rounded-md border bg-muted/30 p-3 text-xs font-mono whitespace-pre-wrap break-words">
+                    <pre
+                      className="max-h-72 overflow-auto rounded-md border bg-muted/30 p-3 text-xs font-mono whitespace-pre-wrap break-words"
+                      aria-live="polite"
+                    >
 {bridgeOperationResult}
                     </pre>
                   </div>
