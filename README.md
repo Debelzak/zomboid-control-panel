@@ -65,10 +65,10 @@ The demo runs the real frontend shell and real routes on GitHub Pages.
 
 #### Linux/Ubuntu
 1. Download the `ZomboidControlPanel` binary.
-2. Make files executable and start:
+2. Make it executable and run:
    ```bash
-   chmod +x ZomboidControlPanel start.sh
-   ./start.sh
+   chmod +x ZomboidControlPanel
+   ./ZomboidControlPanel
    ```
 3. Open `http://localhost:3001`.
 4. Complete setup/login and configure paths + RCON.
@@ -149,8 +149,8 @@ PanelBridge enables advanced actions that base RCON does not support.
 |------|----------|---------|
 | `ZomboidControlPanel.exe` | Windows | Standalone app (no Node runtime required) |
 | `ZomboidControlPanel` | Linux | Standalone app (no Node runtime required) |
-| `Start.bat` | Windows | Startup helper |
-| `start.sh` | Linux | Startup helper |
+| `Start.bat` | Windows | Startup helper (included in full release package) |
+| `start.sh` | Linux | Startup helper (included in full release package) |
 
 ## Configuration and Environment
 
