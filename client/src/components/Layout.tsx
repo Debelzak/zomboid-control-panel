@@ -213,7 +213,7 @@ function PanelBrand({ compact = false }: { compact?: boolean }) {
   return (
     <div className={cn("flex items-center", compact ? "gap-2" : "gap-3")}>
       <img
-        src="/spiffo.png"
+        src={`${import.meta.env.BASE_URL}spiffo.png`}
         alt="Spiffo"
         className={cn(
           compact ? "h-10 w-8" : "h-12 w-10",

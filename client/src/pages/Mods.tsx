@@ -1351,7 +1351,7 @@ export default function Mods() {
                                 <Button
                                   size="icon"
                                   variant="ghost"
-                                  className="h-7 w-7"
+                                  className="h-8 w-8"
                                   onClick={() => openWorkshopPage(mod.workshopId)}
                                   aria-label="Open workshop page"
                                 >
@@ -2079,7 +2079,7 @@ export default function Mods() {
                                     <Button
                                       variant="ghost"
                                       size="icon"
-                                      className="h-7 w-7"
+                                      className="h-8 w-8"
                                       onClick={() => moveModUp(index)}
                                       disabled={index === 0}
                                       aria-label="Move mod up"
@@ -2089,7 +2089,7 @@ export default function Mods() {
                                     <Button
                                       variant="ghost"
                                       size="icon"
-                                      className="h-7 w-7"
+                                      className="h-8 w-8"
                                       onClick={() => moveModDown(index)}
                                       disabled={index === orderedModIds.length - 1}
                                       aria-label="Move mod down"

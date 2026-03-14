@@ -42,6 +42,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { Link } from 'react-router-dom'
 import { useToast } from '@/components/ui/use-toast'
 import { apiFetch } from '@/lib/api'
 
@@ -365,7 +366,7 @@ export default function ServerFinder() {
               </p>
               <ol className="text-sm text-muted-foreground list-decimal list-inside space-y-1 mt-2">
                 <li>Go to <a href="https://steamcommunity.com/dev/apikey" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Steam API Key page</a> and register for a key</li>
-                <li>Go to <a href="/settings" className="text-primary hover:underline">Settings</a> and paste your API key in the "Steam Web API Key" field</li>
+                <li>Go to <Link to="/settings" className="text-primary hover:underline">Settings</Link> and paste your API key in the "Steam Web API Key" field</li>
                 <li>Click "Save Settings" and refresh this page</li>
               </ol>
             </div>
