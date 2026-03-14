@@ -136,13 +136,12 @@ PanelBridge enables advanced actions that base RCON does not support.
 
 ### Install Steps
 1. Copy `pz-mod/PanelBridge` into your server mods directory.
-2. Add `PanelBridge` to `Mods=` in server INI.
-3. Disable Lua checksum in server INI:
+2. Disable Lua checksum in server INI:
    ```ini
    DoLuaChecksum=false
    ```
-4. Restart the PZ server.
-5. Configure bridge path/settings in the panel.
+3. Restart the PZ server.
+4. Configure bridge path/settings in the panel.
 
 ## Launchers
 
