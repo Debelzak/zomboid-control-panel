@@ -86,7 +86,7 @@ export function installDemoFetchShim(): void {
       return jsonResponse({ needsSetup: false, authEnabled: false })
     }
     if (path === '/api/health') {
-      return jsonResponse({ version: '0.5.2-demo' })
+      return jsonResponse({ version: '0.6.0-demo' })
     }
     if (path === '/api/servers') {
       return jsonResponse({ servers: [demoServer()] })
@@ -101,7 +101,7 @@ export function installDemoFetchShim(): void {
       return jsonResponse({
         updateAvailable: {
           updateAvailable: false,
-          currentVersion: '0.5.2-demo',
+          currentVersion: '0.6.0-demo',
         },
       })
     }
