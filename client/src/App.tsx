@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route } from 'react-router-dom'
 import { useEffect, useState, useCallback, lazy, Suspense } from 'react'
 import type { Socket } from 'socket.io-client'
 import Layout from './components/Layout'
@@ -265,10 +265,7 @@ function AppContent() {
           <ScrollToTop />
           <Suspense fallback={<PageLoader />}>
             <Routes>
-              <Route path="/" element={demoMode
-                ? <Navigate to="/server-config" replace />
-                : <FeatureErrorBoundary featureName="Dashboard"><Dashboard /></FeatureErrorBoundary>
-              } />
+              <Route path="/" element={<FeatureErrorBoundary featureName="Dashboard"><Dashboard /></FeatureErrorBoundary>} />
               <Route path="/players" element={<FeatureErrorBoundary featureName="Player Management"><Players /></FeatureErrorBoundary>} />
               <Route path="/console" element={<FeatureErrorBoundary featureName="Console"><Console /></FeatureErrorBoundary>} />
               <Route path="/scheduler" element={<FeatureErrorBoundary featureName="Scheduler"><Scheduler /></FeatureErrorBoundary>} />

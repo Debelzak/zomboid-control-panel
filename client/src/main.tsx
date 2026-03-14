@@ -10,7 +10,7 @@ const Router = isDemoMode() ? HashRouter : BrowserRouter
 if (isDemoMode()) {
   installDemoFetchShim()
   if (!window.location.hash) {
-    window.location.hash = '#/server-config'
+    window.location.hash = '#/'
   }
 }
 
