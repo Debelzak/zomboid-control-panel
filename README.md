@@ -6,6 +6,12 @@ Use one interface to manage server state, players, mods, backups, config files, 
 
 ![Zomboid Control Panel Dashboard](Screenshots/Main_Dashboard.png)
 
+## Why This Exists
+
+Built out of spite. Every existing PZ server tool did one or two things — nothing did it all in one place. No unified server control, no working mod update tracking, no PanelBridge-style in-game bridge, no proper backup management, no Discord integration, no chunk cleaner, no multi-server support. Just a pile of disconnected scripts and half-broken panels.
+
+So I built it. The whole thing. Background story in this video: [https://www.youtube.com/watch?v=P2k0VFX1FUw](https://www.youtube.com/watch?v=P2k0VFX1FUw)
+
 ## Live Demo
 
 - Dashboard (default): https://fpsacha.github.io/zomboid-control-panel/
