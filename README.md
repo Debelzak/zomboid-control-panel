@@ -5,12 +5,15 @@ It combines RCON, file tools, backup workflows, multi-server control, and an opt
 
 ![Zomboid Control Panel Dashboard](Screenshots/Main_Dashboard.png)
 
-## Live Demo (UI Preview)
+## Live Demo (Frontend Preview)
 
-- Main demo: https://fpsacha.github.io/zomboid-control-panel/
-- Direct Server Config preview: https://fpsacha.github.io/zomboid-control-panel/#/server-config
+- Dashboard (default): https://fpsacha.github.io/zomboid-control-panel/
+- Direct Server Config page: https://fpsacha.github.io/zomboid-control-panel/#/server-config
 
-This demo runs the real frontend shell and pages on GitHub Pages, but it is intentionally disconnected from live backend/server actions.
+The demo uses the real app shell and real routes on GitHub Pages.
+
+- You can browse pages and navigation.
+- Server actions are intentionally offline in demo mode (no live backend, no RCON, no real server writes).
 
 ## Why this panel
 
