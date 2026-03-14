@@ -504,10 +504,14 @@ export default function Events() {
     return parsed as Record<string, unknown>
   }
 
+  const bridgeArgsTooLong = bridgeOperationArgs.trim().length > BRIDGE_ARGS_MAX_CHARS
+
   const formatBridgeArgs = () => {
     try {
       const parsed = parseBridgeArgs(bridgeOperationArgs)
-      setBridgeOperationArgs(JSON.stringify(parsed, null, 2))
+      const formatted = JSON.stringify(parsed, null, 2)
+      setBridgeOperationArgs(formatted)
+      setBridgeOperationDrafts((prev) => ({ ...prev, [bridgeOperation]: formatted }))
       setBridgeArgsError(null)
     } catch (error) {
       setBridgeArgsError(error instanceof Error ? error.message : 'Invalid JSON.')
@@ -1970,6 +1974,7 @@ export default function Events() {
                           setBridgeOperationArgs(bridgeOperationDrafts[value] ?? bridgeOperationTemplates[value].args)
                           setBridgeArgsError(null)
                           setBridgeOperationResult(BRIDGE_RESULT_PLACEHOLDER)
+                          setBridgeLastRunAt(null)
                         }}
                       >
                         <SelectTrigger id="bridge-operation-select" aria-label="Bridge operation selector" disabled={bridgeLoading !== null}>
@@ -2017,14 +2022,14 @@ export default function Events() {
                         aria-describedby="bridge-args-help"
                         aria-invalid={bridgeArgsError ? true : undefined}
                         aria-errormessage={bridgeArgsError ? 'bridge-args-error' : undefined}
-                        maxLength={BRIDGE_ARGS_MAX_CHARS + 500}
+                        maxLength={BRIDGE_ARGS_MAX_CHARS}
                         spellCheck={false}
                       />
                       <p id="bridge-args-help" className="text-xs text-muted-foreground">
                         Use a JSON object only. Example: {`{ "key": "value" }`} Press Ctrl/Cmd+Enter to run.
                       </p>
-                      <p className={cn('text-xs', bridgeOperationArgs.length > BRIDGE_ARGS_MAX_CHARS ? 'text-destructive' : 'text-muted-foreground')}>
-                        {bridgeOperationArgs.length.toLocaleString()} / {BRIDGE_ARGS_MAX_CHARS.toLocaleString()} recommended characters
+                      <p className={cn('text-xs', bridgeArgsTooLong ? 'text-destructive' : 'text-muted-foreground')}>
+                        {bridgeOperationArgs.length.toLocaleString()} / {BRIDGE_ARGS_MAX_CHARS.toLocaleString()} max characters
                       </p>
                       {bridgeArgsError && (
                         <p id="bridge-args-error" className="text-xs text-destructive">{bridgeArgsError}</p>
@@ -2045,7 +2050,7 @@ export default function Events() {
                   <div className="flex flex-wrap items-center gap-2">
                     <Button
                       onClick={runBridgeOperation}
-                      disabled={bridgeLoading !== null || !bridgeConnected || !!bridgeArgsError}
+                      disabled={bridgeLoading !== null || !bridgeConnected || !!bridgeArgsError || bridgeArgsTooLong}
                       className="h-11 gap-2"
                     >
                       {bridgeLoading === bridgeOperation ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
