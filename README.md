@@ -216,16 +216,6 @@ Optional environment variables:
 2. Confirm tracked mod list is populated.
 3. Check mod checker interval settings.
 
-## Backend Coverage
-
-Implemented route modules:
-
-`auth`, `server`, `players`, `rcon`, `panelBridge`, `mods`, `scheduler`, `backup`, `chunks`, `config`, `discord`, `servers`, `serverFinder`, `serverFiles`, `debug`.
-
-Main services:
-
-`auth`, `serverManager`, `rcon`, `panelBridge`, `modChecker`, `scheduler`, `backupService`, `discordBot`, `logTailer`, `updateChecker`.
-
 ## License
 
 MIT License.
