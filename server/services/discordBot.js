@@ -103,6 +103,9 @@ export class DiscordBot {
       message = message.replace(new RegExp(`\\{${key}\\}`, 'g'), value);
     }
     
+     // Prevent @everyone / @here Discord pings triggered by player-supplied variable values
+     message = message.replace(/@everyone/g, '(everyone)').replace(/@here/g, '(here)');
+
     await this.sendNotification(message);
   }
 
@@ -567,12 +570,6 @@ export class DiscordBot {
       ]
     });
 
-    this.client.once('ready', async () => {
-      log.info(`bot logged in as ${this.client.user.tag}`);
-      await this.registerCommands();
-      this.isRunning = true;
-    });
-
     // Two-way Chat Bridge: Discord -> Server
     this.client.on('messageCreate', async (message) => {
         // Ignore stats from bots (including self) or if bot is stopped
@@ -588,12 +585,12 @@ export class DiscordBot {
                     let content = message.content;
                     if (!content) return; // Ignore empty messages (images etc)
 
-                    const safeContent = content.replace(/"/g, "'").replace(/[\r\n]+/g, " ");
-                    
-                    // Broadcast to server
-                    // Format: [Discord] User: Message
-                    await this.rconService.serverMessage(`[Discord] ${user}: ${safeContent}`);
-                }
+                     // serverMessage() sanitizes control chars internally; we cap lengths here
+                     // to prevent overlong RCON messages from high-entropy Discord usernames/content
+                     const safeUser = user.slice(0, 50);
+                     const safeMsg  = content.replace(/[\r\n]+/g, ' ').slice(0, 200);
+                     await this.rconService.serverMessage(`[Discord] ${safeUser}: ${safeMsg}`);
+                   }
             } catch (e) {
                 log.warn(`Failed to bridge message to server: ${e.message}`);
             }
@@ -612,21 +609,47 @@ export class DiscordBot {
       log.error(`client error: ${error.message}`);
     });
 
-    try {
-      await this.client.login(this.token);
-      return true;
-    } catch (error) {
-      log.error(`Failed to start Discord bot: ${error.message}`);
-      return false;
-    }
+     try {
+       // Await the 'ready' event so that isRunning === true before start() returns.
+       // client.login() resolves when the WebSocket authenticates; 'ready' fires after.
+       await new Promise((resolve, reject) => {
+         const timeout = setTimeout(
+           () => reject(new Error('Bot ready timeout after 30s')),
+           30000
+         );
+         this.client.once('ready', async () => {
+           clearTimeout(timeout);
+           log.info(`bot logged in as ${this.client.user.tag}`);
+           try {
+             await this.registerCommands();
+           } catch (e) {
+             log.warn(`Failed to register slash commands: ${e.message}`);
+           }
+           this.isRunning = true;
+           resolve();
+         });
+         this.client.login(this.token).catch((err) => {
+           clearTimeout(timeout);
+           reject(err);
+         });
+       });
+       return true;
+     } catch (error) {
+       log.error(`Failed to start Discord bot: ${error.message}`);
+       if (this.client) {
+         this.client.destroy().catch(() => {});
+         this.client = null;
+       }
+       this.isRunning = false;
+       return false;
+     }
   }
-
   async stop() {
     if (this.client) {
-      await this.client.destroy();
-      this.client = null;
-      this.isRunning = false;
-      log.info('bot stopped');
+       await this.client.destroy();
+       this.client = null;
+       this.isRunning = false;
+       log.info('bot stopped');
     }
   }
 

@@ -183,6 +183,8 @@ export default function Console() {
   const [serverLogPath, setServerLogPath] = useState('')
   const [serverLogExists, setServerLogExists] = useState(false)
   const [serverLogLoading, setServerLogLoading] = useState(false)
+  const [serverLogError, setServerLogError] = useState<string | null>(null)
+  const serverLogErrorCountRef = useRef(0)
   const [serverLogAutoScroll, setServerLogAutoScroll] = useState(true)
   const [serverLogPaused, setServerLogPaused] = useState(false)
   const [serverLogFiltered, setServerLogFiltered] = useState(true) // Filter out noise by default
@@ -215,8 +217,12 @@ export default function Console() {
       const data = await rconApi.getHistory(50)
       setHistory(data.history || [])
       setCommandCache(data.history?.map((h: CommandEntry) => h.command).reverse() || [])
-    } catch (error) {
-      console.error('Failed to fetch history:', error)
+    } catch {
+      toast({
+        title: 'History unavailable',
+        description: 'Recent RCON command history could not be loaded.',
+        variant: 'destructive',
+      })
     }
   }, [])
 
@@ -239,6 +245,8 @@ export default function Console() {
     try {
       if (initial) {
         setServerLogLoading(true)
+        setServerLogError(null)
+        serverLogErrorCountRef.current = 0
         const data = await serverApi.getConsoleLog(1000)
         setServerLogLines(data.lines || [])
         setServerLogSize(data.size || 0)
@@ -257,9 +265,17 @@ export default function Console() {
         }
         setServerLogSize(data.currentSize || serverLogSizeRef.current)
         serverLogSizeRef.current = data.currentSize || serverLogSizeRef.current
+        // Clear error state on any successful poll
+        if (serverLogErrorCountRef.current > 0) {
+          serverLogErrorCountRef.current = 0
+          setServerLogError(null)
+        }
       }
-    } catch (error) {
-      console.error('Failed to fetch server log:', error)
+    } catch {
+      serverLogErrorCountRef.current += 1
+      if (serverLogErrorCountRef.current >= 3) {
+        setServerLogError('Log stream unavailable — server may be offline')
+      }
     } finally {
       setServerLogLoading(false)
     }
@@ -580,6 +596,16 @@ export default function Console() {
               </Button>
             </div>
           </div>
+
+          {/* Error banner when log polling fails repeatedly */}
+          {serverLogError && (
+            <div className="mb-2 flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              <span className="flex-1">{serverLogError}</span>
+              <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => fetchServerLog(true)}>
+                Retry
+              </Button>
+            </div>
+          )}
 
           {/* Terminal pane */}
           {!serverLogExists ? (

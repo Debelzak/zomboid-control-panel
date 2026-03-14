@@ -28,7 +28,7 @@ function normalizeMemoryGb(value, fallback) {
 // Helper: Parse INI file
 function parseIni(content) {
   const result = {};
-  const lines = content.split('\n');
+  const lines = content.split(/\r?\n/);
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith(';')) continue;
@@ -179,7 +179,7 @@ router.post('/auto-scan', async (req, res) => {
         const iniPath = path.join(serverConfigPath, iniFile);
         
         try {
-          const content = fs.readFileSync(iniPath, 'utf-8');
+          const content = fs.readFileSync(iniPath, 'utf-8').replace(/\r\n/g, '\n');
           const settings = parseIni(content);
           
           // Try to find a matching custom bat file for this server
@@ -289,7 +289,7 @@ router.post('/detect', async (req, res) => {
         const iniPath = path.join(serverConfigPath, iniFile);
         
         try {
-          const content = fs.readFileSync(iniPath, 'utf-8');
+          const content = fs.readFileSync(iniPath, 'utf-8').replace(/\r\n/g, '\n');
           const settings = parseIni(content);
           
           detectedServers.push({

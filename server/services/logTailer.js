@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import { EventEmitter } from 'events';
 import { createLogger } from '../utils/logger.js';
 const log = createLogger('LogTailer');
@@ -27,7 +28,7 @@ export class LogTailer extends EventEmitter {
     try {
         const activeServer = await getActiveServer();
         // Default Zomboid path logic
-        const homeDir = process.env.USERPROFILE || process.env.HOME || '';
+        const homeDir = os.homedir();
         let basePath = homeDir ? path.join(homeDir, 'Zomboid') : '';
         
         // Use explicitly configured Zomboid path if available

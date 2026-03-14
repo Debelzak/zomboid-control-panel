@@ -33,6 +33,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useToast } from '@/components/ui/use-toast'
+import { reportClientError, reportClientWarning } from '@/lib/client-errors'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -213,7 +214,7 @@ export default function Servers() {
       const data = await serversApi.getAll()
       setServers(data.servers || [])
     } catch (error) {
-      console.error('Failed to fetch servers:', error)
+      reportClientError('Failed to fetch servers.', error)
       toast({ title: 'Error', description: 'Failed to load servers', variant: 'destructive' })
     } finally {
       setLoading(false)
@@ -228,13 +229,13 @@ export default function Servers() {
       if (data.settings?.steamcmdPath) {
         setSteamcmdPath(data.settings.steamcmdPath)
       }
-    }).catch(e => console.warn('Failed to load settings:', e.message))
+    }).catch(e => reportClientWarning('Failed to load settings.', e))
     // Load update status
     updateApi.getStatus().then(status => {
       if (status.updateAvailable?.updateAvailable) {
         setUpdateInfo(status.updateAvailable)
       }
-    }).catch(e => console.warn('Failed to load update status:', e.message))
+    }).catch(e => reportClientWarning('Failed to load update status.', e))
   }, [])
 
   // Listen for update status changes (clears banner after successful update)
@@ -268,7 +269,7 @@ export default function Servers() {
           setAvailableBranches(data.branches)
         }
       } catch (error) {
-        console.error('Failed to fetch branches:', error)
+        reportClientError('Failed to fetch branches.', error)
         // Keep default branches on error
       } finally {
         setLoadingBranches(false)
@@ -621,8 +622,8 @@ export default function Servers() {
   // Get clean install path (folder only, not batch file)
   const getInstallFolder = (installPath: string | undefined): string => {
     if (!installPath) return ''
-    // If path ends with .bat, get the parent folder
-    if (installPath.toLowerCase().endsWith('.bat')) {
+    // If path ends with a script/executable, get the parent folder
+    if (/\.(bat|sh|exe)$/i.test(installPath)) {
       const lastSlash = Math.max(installPath.lastIndexOf('\\'), installPath.lastIndexOf('/'))
       return lastSlash > 0 ? installPath.substring(0, lastSlash) : installPath
     }

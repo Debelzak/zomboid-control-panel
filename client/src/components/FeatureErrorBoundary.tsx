@@ -3,6 +3,7 @@ import { AlertTriangle, RefreshCw, Home } from 'lucide-react'
 import { Button } from './ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card'
 import { Link } from 'react-router-dom'
+import { reportClientError } from '@/lib/client-errors'
 
 // ============================================================================
 // Base Error Boundary with customizable props
@@ -36,7 +37,7 @@ export class FeatureErrorBoundary extends React.Component<FeatureErrorBoundaryPr
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    console.error(`[${this.props.featureName || 'Feature'}] Error:`, error, errorInfo)
+    reportClientError(`[${this.props.featureName || 'Feature'}] Error.`, { error, errorInfo })
     this.props.onError?.(error, errorInfo)
   }
 

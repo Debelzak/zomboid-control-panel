@@ -36,6 +36,7 @@ import { Switch } from '@/components/ui/switch'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { reportClientError, reportClientWarning } from '@/lib/client-errors'
 import {
   Dialog,
   DialogContent,
@@ -301,11 +302,11 @@ export default function Mods() {
       // Log any failures for debugging
       results.forEach((result, index) => {
         if (result.status === 'rejected') {
-          console.error(`Failed to fetch mods data (index ${index}):`, result.reason)
+          reportClientError(`Failed to fetch mods data (index ${index}).`, result.reason)
         }
       })
     } catch (error) {
-      console.error('Failed to fetch mods data:', error)
+      reportClientError('Failed to fetch mods data.', error)
     }
   }, [])
 
@@ -316,7 +317,7 @@ export default function Mods() {
       const data = await modsApi.getPresets()
       setPresets(data.presets || [])
     } catch (error) {
-      console.error('Failed to fetch presets:', error)
+      reportClientError('Failed to fetch presets.', error)
     } finally {
       setPresetsLoading(false)
     }
@@ -329,7 +330,7 @@ export default function Mods() {
       try {
         await modsApi.syncFromServer()
       } catch (error) {
-        console.error('Auto-sync from server failed:', error)
+        reportClientError('Auto-sync from server failed.', error)
       }
       // Then fetch all data
       fetchData()
@@ -655,7 +656,7 @@ export default function Mods() {
       try {
         await modsApi.removeFromIni(workshopId)
       } catch (iniError) {
-        console.warn('Could not remove mod from INI:', iniError)
+        reportClientWarning('Could not remove mod from INI.', iniError)
       }
       
       toast({
@@ -689,12 +690,12 @@ export default function Mods() {
           try {
             await modsApi.removeFromIni(workshopId)
           } catch (iniError) {
-            console.warn('Could not remove mod from INI:', iniError)
+            reportClientWarning('Could not remove mod from INI.', iniError)
           }
           successes.push(workshopId)
         } catch (error) {
           failures.push(workshopId)
-          console.error(`Failed to remove mod ${workshopId}:`, error)
+          reportClientError(`Failed to remove mod ${workshopId}.`, error)
         }
       }
       
@@ -856,7 +857,7 @@ export default function Mods() {
           await modsApi.trackMod(mod.workshopId)
           added++
         } catch {
-          console.warn(`Failed to add mod ${mod.workshopId}`)
+          reportClientWarning(`Failed to add mod ${mod.workshopId}.`)
         }
       }
 

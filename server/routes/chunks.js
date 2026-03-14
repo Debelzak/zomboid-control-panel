@@ -21,25 +21,86 @@ async function getZomboidDataPath() {
   return legacyPath || null;
 }
 
+function resolveSavesPath(zomboidDataPath) {
+  let savesPath = path.join(zomboidDataPath, 'Saves', 'Multiplayer');
+
+  if (!fs.existsSync(savesPath)) {
+    const basename = path.basename(zomboidDataPath);
+    const parentBase = path.basename(path.dirname(zomboidDataPath));
+    if (basename === 'Multiplayer' && parentBase === 'Saves') {
+      savesPath = zomboidDataPath;
+    } else if (basename === 'Saves') {
+      savesPath = path.join(zomboidDataPath, 'Multiplayer');
+    }
+  }
+
+  return savesPath;
+}
+
+function resolveCustomOrDefaultDataPath(customPath) {
+  if (!customPath) return null;
+  const normalized = path.resolve(customPath);
+  if (!fs.existsSync(normalized)) {
+    const error = new Error(`Custom path does not exist: ${normalized}`);
+    error.statusCode = 400;
+    throw error;
+  }
+  return normalized;
+}
+
 // Get list of available saves
 router.get('/saves', async (req, res) => {
   try {
-    // Use zomboidDataPath (the parent folder containing Saves, Server, Logs, etc.)
-    const zomboidDataPath = await getZomboidDataPath();
+    // Support custom path override from query parameter
+    const customPath = req.query.customPath ? String(req.query.customPath) : null;
+    
+    let zomboidDataPath;
+    if (customPath) {
+      // Validate custom path exists and is a directory
+      const normalized = resolveCustomOrDefaultDataPath(customPath);
+      zomboidDataPath = normalized;
+      log.info(`[ChunkCleaner] Using custom path: ${normalized}`);
+    } else {
+      zomboidDataPath = await getZomboidDataPath();
+    }
+    
     if (!zomboidDataPath) {
       return res.status(400).json({ error: 'Zomboid data path not set. Configure a server first.' });
     }
     
-    const savesPath = path.join(zomboidDataPath, 'Saves', 'Multiplayer');
+    // Try the standard path first, then check if the path IS a Saves/Multiplayer dir directly
+    let savesPath = resolveSavesPath(zomboidDataPath);
     
     if (!fs.existsSync(savesPath)) {
-      return res.json({ saves: [] });
+      // Maybe the user pointed directly to Saves/Multiplayer
+      const basename = path.basename(zomboidDataPath);
+      const parentBase = path.basename(path.dirname(zomboidDataPath));
+      if (basename === 'Multiplayer' && parentBase === 'Saves') {
+        savesPath = zomboidDataPath;
+        log.info(`[ChunkCleaner] Path points directly to Saves/Multiplayer`);
+      } else if (basename === 'Saves') {
+        savesPath = path.join(zomboidDataPath, 'Multiplayer');
+        log.info(`[ChunkCleaner] Path points directly to Saves dir`);
+      } else {
+        log.warn(`[ChunkCleaner] Saves path not found: ${savesPath}`);
+        log.info(`[ChunkCleaner] zomboidDataPath: ${zomboidDataPath}`);
+        return res.json({ saves: [], debug: { zomboidDataPath, savesPath, exists: false } });
+      }
     }
     
-    const entries = await fs.promises.readdir(savesPath, { withFileTypes: true });
+    if (!fs.existsSync(savesPath)) {
+      log.warn(`[ChunkCleaner] Resolved saves path does not exist: ${savesPath}`);
+      return res.json({ saves: [], debug: { zomboidDataPath, savesPath, exists: false } });
+    }
     
-    const saves = await Promise.all(entries
-      .filter(d => d.isDirectory())
+    log.info(`[ChunkCleaner] Listing saves from: ${savesPath}`);
+    
+    const entries = await fs.promises.readdir(savesPath, { withFileTypes: true });
+    const directories = entries.filter(d => d.isDirectory());
+    
+    log.info(`[ChunkCleaner] Found ${directories.length} save directories: ${directories.map(d => d.name).join(', ')}`);
+    
+    const saves = await Promise.all(directories
       .map(async d => {
         const savePath = path.join(savesPath, d.name);
         const stats = await fs.promises.stat(savePath);
@@ -63,10 +124,10 @@ router.get('/saves', async (req, res) => {
         };
       }));
     
-    res.json({ saves });
+    res.json({ saves, debug: { zomboidDataPath, savesPath, exists: true } });
   } catch (error) {
     log.error(`Failed to get saves: ${error.message}`);
-    res.status(500).json({ error: sanitizeError(error.message) });
+    res.status(error.statusCode || 500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -74,6 +135,7 @@ router.get('/saves', async (req, res) => {
 router.get('/chunks/:saveName', async (req, res) => {
   try {
     const { saveName } = req.params;
+    const customPath = req.query.customPath ? String(req.query.customPath) : null;
     
     // Sanitize saveName to prevent path traversal
     const sanitizedSaveName = path.basename(saveName);
@@ -81,16 +143,34 @@ router.get('/chunks/:saveName', async (req, res) => {
       return res.status(400).json({ error: 'Invalid save name' });
     }
     
-    const zomboidDataPath = await getZomboidDataPath();
+    let zomboidDataPath;
+    if (customPath) {
+      zomboidDataPath = path.resolve(customPath);
+    } else {
+      zomboidDataPath = await getZomboidDataPath();
+    }
     
     if (!zomboidDataPath) {
       return res.status(400).json({ error: 'Zomboid data path not set' });
     }
     
-    const savePath = path.join(zomboidDataPath, 'Saves', 'Multiplayer', sanitizedSaveName);
+    // Resolve the saves path the same way as /saves
+    let savesPath = resolveSavesPath(zomboidDataPath);
+    
+    const savePath = path.join(savesPath, sanitizedSaveName);
     const mapPath = path.join(savePath, 'map');
     
+    log.info(`[ChunkCleaner] Loading chunks for "${sanitizedSaveName}" from: ${mapPath}`);
+    
     if (!fs.existsSync(mapPath)) {
+      log.warn(`[ChunkCleaner] Map folder not found: ${mapPath}`);
+      // List what IS in the save directory for debugging
+      if (fs.existsSync(savePath)) {
+        const contents = await fs.promises.readdir(savePath);
+        log.info(`[ChunkCleaner] Save directory contents: ${contents.join(', ')}`);
+      } else {
+        log.warn(`[ChunkCleaner] Save directory not found: ${savePath}`);
+      }
       return res.json({ chunks: [], bounds: null });
     }
     
@@ -102,6 +182,9 @@ router.get('/chunks/:saveName', async (req, res) => {
     // First try the new B42 directory-based structure
     const mapContents = await fs.promises.readdir(mapPath, { withFileTypes: true });
     const xDirs = mapContents.filter(d => d.isDirectory() && /^\d+$/.test(d.name));
+    const flatBinFiles = mapContents.filter(f => f.isFile() && f.name.endsWith('.bin'));
+    
+    log.info(`[ChunkCleaner] Map contents: ${mapContents.length} entries, ${xDirs.length} numeric dirs (B42), ${flatBinFiles.length} flat .bin files (B41)`);
     
     // Limit maximum chunks to prevent memory issues with very large maps
     const MAX_CHUNKS = 50000;
@@ -261,7 +344,7 @@ router.get('/chunks/:saveName', async (req, res) => {
 // Delete selected chunks
 router.post('/delete-chunks', async (req, res) => {
   try {
-    const { saveName, chunks, createBackup = true } = req.body;
+    const { saveName, chunks, createBackup = true, customPath = null } = req.body;
     
     if (!saveName || !chunks || !Array.isArray(chunks) || chunks.length === 0) {
       return res.status(400).json({ error: 'Save name and chunks array required' });
@@ -305,12 +388,15 @@ router.post('/delete-chunks', async (req, res) => {
       }
     }
     
-    const zomboidDataPath = await getZomboidDataPath();
+    const zomboidDataPath = customPath
+      ? resolveCustomOrDefaultDataPath(String(customPath))
+      : await getZomboidDataPath();
     if (!zomboidDataPath) {
       return res.status(400).json({ error: 'Zomboid data path not set' });
     }
-    
-    const savePath = path.join(zomboidDataPath, 'Saves', 'Multiplayer', sanitizedSaveName);
+
+    const savesPath = resolveSavesPath(zomboidDataPath);
+    const savePath = path.join(savesPath, sanitizedSaveName);
     
     if (!fs.existsSync(savePath)) {
       return res.status(404).json({ error: 'Save not found' });
@@ -425,14 +511,14 @@ router.post('/delete-chunks', async (req, res) => {
     });
   } catch (error) {
     log.error(`Failed to delete chunks: ${error.message}`);
-    res.status(500).json({ error: sanitizeError(error.message) });
+    res.status(error.statusCode || 500).json({ error: sanitizeError(error.message) });
   }
 });
 
 // Delete chunks by region (x/y coordinate range)
 router.post('/delete-region', async (req, res) => {
   try {
-    const { saveName, minX, maxX, minY, maxY, createBackup = true, invert = false } = req.body;
+    const { saveName, minX, maxX, minY, maxY, createBackup = true, invert = false, customPath = null } = req.body;
     
     if (!saveName || minX === undefined || maxX === undefined || minY === undefined || maxY === undefined) {
       return res.status(400).json({ error: 'Save name and region bounds required' });
@@ -450,12 +536,15 @@ router.post('/delete-region', async (req, res) => {
       return res.status(400).json({ error: 'Region bounds must be numbers' });
     }
     
-    const zomboidDataPath = await getZomboidDataPath();
+    const zomboidDataPath = customPath
+      ? resolveCustomOrDefaultDataPath(String(customPath))
+      : await getZomboidDataPath();
     if (!zomboidDataPath) {
       return res.status(400).json({ error: 'Zomboid data path not set' });
     }
-    
-    const savePath = path.join(zomboidDataPath, 'Saves', 'Multiplayer', sanitizedSaveName);
+
+    const savesPath = resolveSavesPath(zomboidDataPath);
+    const savePath = path.join(savesPath, sanitizedSaveName);
     const mapPath = path.join(savePath, 'map');
     
     if (!fs.existsSync(mapPath)) {
@@ -606,7 +695,7 @@ router.post('/delete-region', async (req, res) => {
     });
   } catch (error) {
     log.error(`Failed to delete region: ${error.message}`);
-    res.status(500).json({ error: sanitizeError(error.message) });
+    res.status(error.statusCode || 500).json({ error: sanitizeError(error.message) });
   }
 });
 
@@ -614,6 +703,7 @@ router.post('/delete-region', async (req, res) => {
 router.get('/stats/:saveName', async (req, res) => {
   try {
     const { saveName } = req.params;
+    const customPath = req.query.customPath ? String(req.query.customPath) : null;
     
     // Sanitize saveName to prevent path traversal
     const sanitizedSaveName = path.basename(saveName);
@@ -621,13 +711,21 @@ router.get('/stats/:saveName', async (req, res) => {
       return res.status(400).json({ error: 'Invalid save name' });
     }
     
-    const zomboidDataPath = await getZomboidDataPath();
+    let zomboidDataPath;
+    if (customPath) {
+      zomboidDataPath = path.resolve(customPath);
+    } else {
+      zomboidDataPath = await getZomboidDataPath();
+    }
     
     if (!zomboidDataPath) {
       return res.status(400).json({ error: 'Zomboid data path not set' });
     }
     
-    const savePath = path.join(zomboidDataPath, 'Saves', 'Multiplayer', sanitizedSaveName);
+    // Resolve the saves path the same way as /saves
+    let savesPath = resolveSavesPath(zomboidDataPath);
+    
+    const savePath = path.join(savesPath, sanitizedSaveName);
     
     if (!fs.existsSync(savePath)) {
       return res.status(404).json({ error: 'Save not found' });
@@ -732,5 +830,63 @@ function formatBytes(bytes) {
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
+
+// Browse a path — list directories for manual navigation
+router.get('/browse', async (req, res) => {
+  try {
+    const browsePath = req.query.path ? String(req.query.path) : null;
+    
+    if (!browsePath) {
+      // Return the current zomboidDataPath as starting point
+      const zomboidDataPath = await getZomboidDataPath();
+      return res.json({
+        currentPath: zomboidDataPath || '',
+        directories: [],
+        hasSaves: false
+      });
+    }
+    
+    const resolved = path.resolve(browsePath);
+    
+    if (!fs.existsSync(resolved)) {
+      return res.status(400).json({ error: 'Path does not exist' });
+    }
+    
+    const stat = await fs.promises.stat(resolved);
+    if (!stat.isDirectory()) {
+      return res.status(400).json({ error: 'Path is not a directory' });
+    }
+    
+    const entries = await fs.promises.readdir(resolved, { withFileTypes: true });
+    const directories = entries
+      .filter(d => d.isDirectory())
+      .map(d => d.name)
+      .sort();
+    
+    // Check if this path has a Saves/Multiplayer structure
+    const savesMultiplayer = path.join(resolved, 'Saves', 'Multiplayer');
+    const hasSavesMultiplayer = fs.existsSync(savesMultiplayer);
+    
+    // Or if it IS a Saves/Multiplayer path
+    const basename = path.basename(resolved);
+    const parentBase = path.basename(path.dirname(resolved));
+    const isSavesMultiplayer = basename === 'Multiplayer' && parentBase === 'Saves';
+    
+    // Check if any child dirs contain a map/ folder (direct save dirs)
+    const hasMapFolders = directories.some(d => 
+      fs.existsSync(path.join(resolved, d, 'map'))
+    );
+    
+    res.json({
+      currentPath: resolved,
+      directories,
+      hasSaves: hasSavesMultiplayer || isSavesMultiplayer || hasMapFolders,
+      parent: path.dirname(resolved) !== resolved ? path.dirname(resolved) : null
+    });
+  } catch (error) {
+    log.error(`Failed to browse path: ${error.message}`);
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
 
 export default router;

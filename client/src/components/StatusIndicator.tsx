@@ -30,7 +30,7 @@ const stateStyles: Record<StatusState, { dot: string; text: string }> = {
 export function StatusIndicator({ state, label, className }: StatusIndicatorProps) {
   const styles = stateStyles[state]
   return (
-    <div className={cn('flex items-center gap-1.5', className)}>
+    <div role="status" aria-live="polite" className={cn('flex items-center gap-1.5', className)}>
       <div className={cn('h-2 w-2 rounded-full shrink-0', styles.dot)} aria-hidden="true" />
       <span className={cn('text-sm', styles.text)}>{label}</span>
     </div>

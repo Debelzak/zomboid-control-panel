@@ -22,7 +22,9 @@ import { useToast } from '@/components/ui/use-toast'
 import { panelBridgeApi, playersApi, rconApi } from '@/lib/api'
 import { useSocket } from '@/contexts/SocketContext'
 import { EmptyState } from '@/components/EmptyState'
+import { BridgeStatusBadge } from '@/components/BridgeStatusBadge'
 import { cn } from '@/lib/utils'
+import { reportClientError } from '@/lib/client-errors'
 
 interface ChatMessage {
   id: string
@@ -91,7 +93,7 @@ export default function Chat() {
         setPlayers(data.players)
       }
     } catch (error) {
-      console.error('Failed to fetch players:', error)
+      reportClientError('Failed to fetch players.', error)
     }
   }, [])
 
@@ -285,21 +287,7 @@ export default function Chat() {
         icon={<MessagesSquare className="w-5 h-5" />}
         actions={
           <div className="flex items-center gap-2">
-            <div
-              className={cn(
-                'flex items-center gap-2 rounded-lg border px-3 py-1.5',
-                bridgeConnected ? 'border-primary/15 bg-primary/8 text-foreground' : 'border-destructive/20 bg-destructive/8 text-foreground'
-              )}
-            >
-              {bridgeLoading ? (
-                <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-              ) : (
-                <div className={cn('w-2 h-2 rounded-full', bridgeConnected ? 'bg-primary' : 'bg-destructive')} aria-hidden="true" />
-              )}
-              <span className={cn('text-sm font-medium', bridgeConnected ? 'text-foreground' : 'text-destructive')}>
-                {bridgeConnected ? 'Bridge ready' : 'Bridge offline'}
-              </span>
-            </div>
+            <BridgeStatusBadge connected={bridgeConnected} loading={bridgeLoading} />
             <Button variant="outline" size="sm" onClick={() => { fetchPlayers(); checkBridgeStatus() }} className="gap-2">
               <RefreshCw className="w-4 h-4" />
               Refresh
@@ -336,10 +324,10 @@ export default function Chat() {
             </CardHeader>
             <CardContent className="flex-1 flex flex-col p-0 min-h-0">
               {/* Messages Area */}
-              <ScrollArea className="flex-1 px-4">
+              <ScrollArea className="flex-1 px-4" role="log" aria-live="polite" aria-label="Chat messages">
                 <div className="py-4 space-y-3">
                   {chatHistory.length === 0 ? (
-                    <EmptyState type="noMessages" title="No chat messages yet" description="Send a message to test the bridge and start the chat log." compact />
+                    <EmptyState type="noMessages" title="No chat messages yet" description={bridgeConnected ? "Send a message to start the chat log." : "Connect PanelBridge in Settings or send an RCON broadcast below."} compact />
                   ) : (
                     chatHistory.map((msg) => (
                       <div
@@ -353,9 +341,9 @@ export default function Chat() {
                               {msg.type === 'general' && msg.author ? msg.author : getChannelLabel(msg.type)}
                             </span>
                           </div>
-                          <span className="text-xs text-muted-foreground">
+                          <time dateTime={msg.timestamp.toISOString()} className="text-xs text-muted-foreground">
                             {msg.timestamp.toLocaleTimeString()}
-                          </span>
+                          </time>
                         </div>
                         <p className="text-sm break-words [overflow-wrap:anywhere]">{msg.message}</p>
                       </div>
@@ -403,6 +391,7 @@ export default function Chat() {
                   {channel === 'general' && (
                     <Input
                       placeholder="Display name"
+                      aria-label="Display name for custom chat messages"
                       value={authorName}
                       onChange={(e) => setAuthorName(e.target.value)}
                       maxLength={32}
@@ -413,7 +402,8 @@ export default function Chat() {
 
                 <div className="flex gap-2">
                   <Input
-                    placeholder="Write a message to players..."
+                    placeholder="Write a message... (Enter to send)"
+                    aria-label="Chat message"
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
                     onKeyDown={handleKeyDown}

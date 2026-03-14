@@ -15,6 +15,7 @@ export class Scheduler {
     this.rconService = rconService;
     this.serverManager = serverManager;
     this.backupService = null;
+    this.discordBot = null;
     this.jobs = new Map();
     this.autoRestartJob = null;
     this.backupJob = null;
@@ -27,6 +28,10 @@ export class Scheduler {
   setBackupService(backupService) {
     this.backupService = backupService;
   }
+
+    setDiscordBot(discordBot) {
+      this.discordBot = discordBot;
+    }
 
   async init() {
     // Load saved scheduled tasks
@@ -369,6 +374,11 @@ export class Scheduler {
       
       log.info('Auto-restart: RCON verified, sending warnings...');
       
+       // Notify Discord at the start of the restart sequence
+       if (this.discordBot) {
+         this.discordBot.sendEventNotification('scheduledRestart', { minutes: warningMinutes }).catch(() => {});
+       }
+
       if (warningMinutes > 0) {
         // Send countdown warnings - skip logging for automated restart messages
         for (let i = warningMinutes; i > 0; i--) {
@@ -432,6 +442,10 @@ export class Scheduler {
         await this.sleep(5000);
       }
 
+      // Extra delay after stop — give OS time to fully reap the process
+      // (zombie processes on Linux, WMI cache on Windows)
+      await this.sleep(3000);
+
       // Set flag to prevent RCON auto-reconnect from interfering during startup
       // Use setServerStarting which has a 5-minute failsafe timeout
       if (this.rconService.setServerStarting) {
@@ -440,9 +454,9 @@ export class Scheduler {
         this.rconService.serverStarting = true;
       }
 
-      // Start server
+      // Start server — skip the running check since we just confirmed the server stopped
       log.info('Auto-restart: Starting server...');
-      await this.serverManager.startServer();
+      await this.serverManager.startServer({ skipRunningCheck: true });
       
       // Wait for server process to be running (up to 60 seconds)
       let serverStarted = false;

@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { Link } from 'react-router-dom'
+import { reportClientError } from '@/lib/client-errors'
 import { 
   Users, 
   UserX, 
@@ -80,8 +81,9 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { useToast } from '@/components/ui/use-toast'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { EmptyState } from '@/components/EmptyState'
-import { playersApi } from '@/lib/api'
+import { playersApi, panelBridgeApi } from '@/lib/api'
 import { PageHeader } from '@/components/PageHeader'
+import { cn } from '@/lib/utils'
 
 interface Player {
   name: string
@@ -219,6 +221,9 @@ export default function Players() {
   const [importing, setImporting] = useState(false)
   const [copied, setCopied] = useState(false)
   
+  // Bridge status for character export/import
+  const [bridgeConnected, setBridgeConnected] = useState(false)
+  
   // Ref for copy timeout cleanup
   const copiedTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   
@@ -296,7 +301,7 @@ export default function Players() {
       }
       setPlayersLoadError(null)
     } catch (error) {
-      console.error('Failed to fetch players:', error)
+      reportClientError('Failed to fetch players.', error)
       setPlayersLoadError(getErrorMessage(error, 'Failed to load players.'))
     }
   }, [])
@@ -310,7 +315,7 @@ export default function Players() {
       }
       setLogsError(null)
     } catch (error) {
-      console.error('Failed to fetch activity logs:', error)
+      reportClientError('Failed to fetch activity logs.', error)
       setLogsError(getErrorMessage(error, 'Failed to load activity logs.'))
     } finally {
       setLogsLoading(false)
@@ -337,7 +342,7 @@ export default function Players() {
       setPlayerStats(statsMap)
       setNotesError(null)
     } catch (error) {
-      console.error('Failed to fetch notes/stats:', error)
+      reportClientError('Failed to fetch notes and stats.', error)
       setNotesError(getErrorMessage(error, 'Failed to load player notes and stats.'))
     } finally {
       setNotesLoading(false)
@@ -437,7 +442,7 @@ export default function Players() {
       setPerks(perksData.perks || [])
       setToolsLoadError(null)
     } catch (error) {
-      console.error('Failed to fetch data:', error)
+      reportClientError('Failed to fetch player data.', error)
       setToolsLoadError(getErrorMessage(error, 'Failed to load player tools and reference data.'))
     } finally {
       setInitialLoading(false)
@@ -446,8 +451,12 @@ export default function Players() {
 
   useEffect(() => {
     Promise.all([fetchPlayers(), fetchData(), fetchNotesAndStats()]).catch(err => {
-      console.error('Failed to load initial data:', err)
+      reportClientError('Failed to load initial player data.', err)
     })
+    // Check bridge status for character export/import
+    panelBridgeApi.getStatus().then(status => {
+      setBridgeConnected(Boolean(status.modConnected && status.isRunning))
+    }).catch(() => setBridgeConnected(false))
     const interval = setInterval(fetchPlayers, 15000)
     return () => clearInterval(interval)
   }, [fetchPlayers, fetchData, fetchNotesAndStats])
@@ -1569,7 +1578,17 @@ export default function Players() {
 
               {/* Import/Export Tab */}
               <TabsContent value="import-export" className="space-y-4 mt-4">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {!bridgeConnected && (
+                  <Alert className="border-warning/40 bg-warning/10">
+                    <AlertTriangle className="h-4 w-4 text-warning" />
+                    <AlertTitle className="text-warning">Bridge Offline</AlertTitle>
+                    <AlertDescription>
+                      Character export and import require PanelBridge to be connected.{' '}
+                      <Link to="/settings" className="text-primary underline hover:text-foreground">Open Bridge Setup</Link>
+                    </AlertDescription>
+                  </Alert>
+                )}
+                <div className={cn("grid grid-cols-1 lg:grid-cols-2 gap-4", !bridgeConnected && 'opacity-60 pointer-events-none')}>
                   {/* Export */}
                   <Card>
                     <CardHeader className="pb-3">
@@ -1751,10 +1770,7 @@ export default function Players() {
                           />
                         </label>
                       </div>
-                      <div className="space-y-1 text-xs text-muted-foreground">
-                        <p>Player must be online. Character import and export run through PanelBridge inside the live server.</p>
-                        <Link to="/settings" className="inline-flex text-primary underline hover:text-foreground">Open Bridge Setup</Link>
-                      </div>
+                      <p className="text-xs text-muted-foreground">Player must be online.</p>
                     </CardContent>
                   </Card>
                 </div>

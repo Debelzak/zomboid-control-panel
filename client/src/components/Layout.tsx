@@ -32,6 +32,7 @@ import { serversApi, ServerInstance, updateApi, UpdateStatus } from '@/lib/api'
 import { SocketContext } from '@/contexts/SocketContext'
 import { useTheme } from '@/contexts/ThemeContext'
 import { useAuth } from '@/contexts/AuthContext'
+import { useToast } from '@/components/ui/use-toast'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -123,6 +124,63 @@ const navSections = [
   },
 ]
 
+const sectionToneStyles = {
+  emerald: {
+    triggerActive: 'bg-[hsl(86_30%_15%/0.52)] border-[hsl(86_34%_34%/0.38)]',
+    iconActive: 'border-[hsl(86_34%_34%/0.48)] bg-[hsl(86_28%_16%/0.62)] text-[hsl(86_44%_70%)]',
+    iconIdle: 'text-foreground/86 group-hover:text-[hsl(86_40%_74%)]',
+    labelActive: 'text-[hsl(82_36%_80%)]',
+    childActive: 'border-[hsl(86_34%_34%/0.48)] bg-[hsl(86_28%_16%/0.36)]',
+    childDot: 'bg-[hsl(86_44%_62%)]',
+    childBorder: 'border-[hsl(86_32%_34%/0.42)]',
+  },
+  amber: {
+    triggerActive: 'bg-[hsl(34_44%_15%/0.5)] border-[hsl(34_50%_36%/0.4)]',
+    iconActive: 'border-[hsl(34_50%_36%/0.5)] bg-[hsl(32_40%_14%/0.62)] text-[hsl(36_70%_72%)]',
+    iconIdle: 'text-foreground/86 group-hover:text-[hsl(36_64%_76%)]',
+    labelActive: 'text-[hsl(35_58%_82%)]',
+    childActive: 'border-[hsl(34_50%_36%/0.48)] bg-[hsl(34_40%_15%/0.36)]',
+    childDot: 'bg-[hsl(36_72%_62%)]',
+    childBorder: 'border-[hsl(34_46%_36%/0.4)]',
+  },
+  blue: {
+    triggerActive: 'bg-[hsl(198_24%_16%/0.48)] border-[hsl(198_30%_34%/0.38)]',
+    iconActive: 'border-[hsl(198_30%_34%/0.48)] bg-[hsl(198_24%_14%/0.6)] text-[hsl(198_42%_70%)]',
+    iconIdle: 'text-foreground/86 group-hover:text-[hsl(198_40%_74%)]',
+    labelActive: 'text-[hsl(198_34%_78%)]',
+    childActive: 'border-[hsl(198_30%_34%/0.46)] bg-[hsl(198_24%_16%/0.36)]',
+    childDot: 'bg-[hsl(198_46%_62%)]',
+    childBorder: 'border-[hsl(198_30%_34%/0.38)]',
+  },
+  purple: {
+    triggerActive: 'bg-[hsl(16_34%_16%/0.48)] border-[hsl(16_38%_34%/0.38)]',
+    iconActive: 'border-[hsl(16_38%_34%/0.48)] bg-[hsl(14_32%_14%/0.6)] text-[hsl(20_52%_72%)]',
+    iconIdle: 'text-foreground/86 group-hover:text-[hsl(20_50%_76%)]',
+    labelActive: 'text-[hsl(20_44%_80%)]',
+    childActive: 'border-[hsl(16_38%_34%/0.46)] bg-[hsl(14_32%_15%/0.36)]',
+    childDot: 'bg-[hsl(20_54%_64%)]',
+    childBorder: 'border-[hsl(16_36%_34%/0.38)]',
+  },
+  cyan: {
+    triggerActive: 'bg-[hsl(90_24%_16%/0.46)] border-[hsl(90_30%_34%/0.36)]',
+    iconActive: 'border-[hsl(90_30%_34%/0.46)] bg-[hsl(90_24%_15%/0.58)] text-[hsl(92_40%_70%)]',
+    iconIdle: 'text-foreground/86 group-hover:text-[hsl(92_40%_76%)]',
+    labelActive: 'text-[hsl(92_36%_78%)]',
+    childActive: 'border-[hsl(90_30%_34%/0.44)] bg-[hsl(90_24%_15%/0.34)]',
+    childDot: 'bg-[hsl(92_48%_62%)]',
+    childBorder: 'border-[hsl(90_30%_34%/0.36)]',
+  },
+  slate: {
+    triggerActive: 'bg-[hsl(44_16%_16%/0.5)] border-[hsl(42_20%_34%/0.38)]',
+    iconActive: 'border-[hsl(42_20%_34%/0.48)] bg-[hsl(44_16%_14%/0.62)] text-[hsl(42_28%_80%)]',
+    iconIdle: 'text-foreground/86 group-hover:text-[hsl(42_30%_82%)]',
+    labelActive: 'text-[hsl(42_24%_84%)]',
+    childActive: 'border-[hsl(42_20%_34%/0.46)] bg-[hsl(44_16%_14%/0.36)]',
+    childDot: 'bg-[hsl(42_30%_72%)]',
+    childBorder: 'border-[hsl(42_20%_34%/0.38)]',
+  },
+} as const
+
 // Auth footer — shows logged-in user and logout button
 function AuthFooter() {
   const { user, authEnabled, logout } = useAuth()
@@ -199,6 +257,7 @@ export default function Layout({ children }: LayoutProps) {
   const [playerCount, setPlayerCount] = useState<number>(0)
   const [panelVersion, setPanelVersion] = useState('0.0.0')
   const socket = useContext(SocketContext)
+  const { toast } = useToast()
 
   // Fetch panel version
   useEffect(() => {
@@ -210,7 +269,7 @@ export default function Layout({ children }: LayoutProps) {
     return () => { cancelled = true }
   }, [])
 
-  // Listen for player updates globaly
+  // Listen for player updates globally
   useEffect(() => {
     if (!socket) return
 
@@ -264,12 +323,16 @@ export default function Layout({ children }: LayoutProps) {
         setServers(data.servers || [])
         const active = data.servers?.find((s: ServerInstance) => s.isActive) || null
         setActiveServer(active)
-      } catch (error) {
-        console.error('Failed to fetch servers:', error)
+      } catch {
+        toast({
+          title: 'Server list unavailable',
+          description: 'The panel could not load server profiles.',
+          variant: 'destructive',
+        })
       }
     }
     fetchServers()
-  }, [])
+  }, [toast])
 
   // Listen for server changes
   useEffect(() => {
@@ -281,8 +344,12 @@ export default function Layout({ children }: LayoutProps) {
         setServers(data.servers || [])
         const active = data.servers?.find((s: ServerInstance) => s.isActive) || null
         setActiveServer(active)
-      } catch (error) {
-        console.error('Failed to refresh servers:', error)
+      } catch {
+        toast({
+          title: 'Server refresh failed',
+          description: 'The active server list could not be refreshed.',
+          variant: 'destructive',
+        })
       }
     }
     
@@ -290,7 +357,7 @@ export default function Layout({ children }: LayoutProps) {
     return () => {
       socket.off('activeServerChanged', handleActiveServerChanged)
     }
-  }, [socket])
+  }, [socket, toast])
 
   // Listen for update notifications
   useEffect(() => {
@@ -330,8 +397,12 @@ export default function Layout({ children }: LayoutProps) {
     try {
       await serversApi.activate(server.id)
       // Socket event will refresh the list
-    } catch (error) {
-      console.error('Failed to switch server:', error)
+    } catch {
+      toast({
+        title: 'Switch failed',
+        description: `Could not make ${server.name} the active server.`,
+        variant: 'destructive',
+      })
     }
   }
 
@@ -472,6 +543,7 @@ export default function Layout({ children }: LayoutProps) {
             {navSections.map((section) => {
               const isOpen = openSections.has(section.id)
               const hasActiveChild = section.items.some(item => location.pathname === item.to)
+              const tone = sectionToneStyles[section.color as keyof typeof sectionToneStyles] || sectionToneStyles.slate
 
               return (
                 <Collapsible
@@ -480,34 +552,35 @@ export default function Layout({ children }: LayoutProps) {
                   onOpenChange={() => toggleSection(section.id)}
                 >
                   <CollapsibleTrigger className={cn(
-                    "flex items-center justify-between w-full px-3 py-2 rounded-lg transition-all duration-200 group",
+                    "flex min-h-11 items-center justify-between w-full px-3 py-2.5 rounded-lg border border-transparent transition-all duration-200 group",
                     isOpen ? "mb-0.5" : "",
-                    hasActiveChild && !isOpen ? "bg-primary/6" : "hover:bg-accent/25"
+                    hasActiveChild && !isOpen ? tone.triggerActive : "hover:bg-accent/25"
                   )}>
                     <div className="flex items-center gap-2.5">
                       <span className={cn(
                         "flex items-center justify-center w-6 h-6 rounded-md transition-colors",
                         isOpen || hasActiveChild
-                          ? "border border-primary/15 bg-primary/8 text-primary"
-                          : "bg-transparent text-muted-foreground/60 group-hover:bg-accent/20 group-hover:text-muted-foreground"
+                          ? tone.iconActive
+                          : "bg-transparent group-hover:bg-accent/20",
+                        !(isOpen || hasActiveChild) && tone.iconIdle
                       )}>
                         <section.icon className={cn(
                           "w-3.5 h-3.5 transition-colors",
-                          isOpen || hasActiveChild ? "text-primary" : "text-muted-foreground/60 group-hover:text-muted-foreground"
+                          isOpen || hasActiveChild ? "text-current" : "text-current"
                         )} />
                       </span>
                       <span className={cn(
-                        "text-xs font-semibold uppercase tracking-widest transition-colors font-display",
-                        isOpen || hasActiveChild ? "text-foreground/80" : "text-muted-foreground/60 group-hover:text-muted-foreground"
+                        "text-[0.86rem] leading-none font-semibold uppercase tracking-[0.08em] transition-colors",
+                        isOpen || hasActiveChild ? tone.labelActive : "text-foreground/88 group-hover:text-foreground"
                       )}>
                         {section.label}
                       </span>
                       {hasActiveChild && !isOpen && (
-                        <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+                        <span className={cn("h-1.5 w-1.5 rounded-full", tone.childDot)} />
                       )}
                     </div>
                     <ChevronDown className={cn(
-                      "w-3.5 h-3.5 text-muted-foreground/50 transition-transform duration-200",
+                      "w-3.5 h-3.5 text-foreground/78 group-hover:text-foreground transition-transform duration-200",
                       isOpen ? "" : "-rotate-90"
                     )} />
                   </CollapsibleTrigger>
@@ -515,7 +588,7 @@ export default function Layout({ children }: LayoutProps) {
                     <div className={cn(
                       "ml-[18px] pl-3 space-y-0.5 py-0.5",
                       "border-l-[2px] transition-colors",
-                      hasActiveChild ? "border-primary/30" : "border-border/40"
+                      hasActiveChild ? tone.childBorder : "border-border/40"
                     )}>
                       {section.items.map((item) => {
                         const isDisabledByRemote = !!(item as any).requiresLocal && activeServer?.isRemote
@@ -546,7 +619,7 @@ export default function Layout({ children }: LayoutProps) {
                             cn(
                               'nav-item flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-200 group relative',
                               isActive
-                                ? 'nav-item-active bg-primary/8 text-foreground font-medium'
+                                ? cn('nav-item-active text-foreground font-medium', tone.childActive)
                                 : 'text-muted-foreground hover:bg-accent/30 hover:text-foreground'
                             )
                           }
@@ -555,7 +628,7 @@ export default function Layout({ children }: LayoutProps) {
                             <>
                               <item.icon className={cn(
                                 "w-4 h-4 transition-all duration-200 shrink-0",
-                                isActive ? "text-primary" : "text-muted-foreground/70 group-hover:text-foreground"
+                                isActive ? tone.labelActive : "text-muted-foreground/70 group-hover:text-foreground"
                               )} />
                               <span className="truncate">{item.label}</span>
                               {item.to === '/players' && playerCount > 0 && (

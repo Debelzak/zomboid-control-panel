@@ -2,6 +2,7 @@ import React from 'react'
 import { AlertTriangle, RefreshCw } from 'lucide-react'
 import { Button } from './ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
+import { reportClientError } from '@/lib/client-errors'
 
 interface Props {
   children: React.ReactNode
@@ -23,7 +24,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    console.error('ErrorBoundary caught an error:', error, errorInfo)
+    reportClientError('ErrorBoundary caught an error.', { error, errorInfo })
   }
 
   handleReset = () => {

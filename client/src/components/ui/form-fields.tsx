@@ -2,6 +2,7 @@ import * as React from 'react'
 import { useFormContext, Controller, ControllerProps, FieldPath, FieldValues } from 'react-hook-form'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
 // ============================================================================
@@ -20,6 +21,11 @@ interface FormFieldProps<
     onBlur: () => void
     name: TName
     ref: React.Ref<unknown>
+    inputProps: {
+      id: string
+      'aria-invalid': boolean
+      'aria-describedby'?: string
+    }
   }) => React.ReactNode
 }
 
@@ -28,6 +34,10 @@ export function FormField<
   TName extends FieldPath<TFieldValues> = FieldPath<TFieldValues>
 >({ name, label, description, children, ...props }: FormFieldProps<TFieldValues, TName>) {
   const { control, formState: { errors } } = useFormContext<TFieldValues>()
+  const generatedId = React.useId()
+  const inputId = `${String(name).replace(/\./g, '-')}-${generatedId}`
+  const descriptionId = description ? `${inputId}-description` : undefined
+  const errorId = `${inputId}-error`
   
   // Get nested error
   const error = name.split('.').reduce((acc: unknown, key) => {
@@ -37,10 +47,14 @@ export function FormField<
     return undefined
   }, errors) as { message?: string } | undefined
 
+  const describedBy = [error?.message ? errorId : undefined, !error?.message ? descriptionId : undefined]
+    .filter(Boolean)
+    .join(' ') || undefined
+
   return (
     <div className="space-y-2">
       {label && (
-        <Label htmlFor={name} className={cn(error && 'text-destructive')}>
+        <Label htmlFor={inputId} className={cn(error && 'text-destructive')}>
           {label}
         </Label>
       )}
@@ -48,13 +62,20 @@ export function FormField<
         name={name}
         control={control}
         {...props}
-        render={({ field }) => <>{children(field)}</>}
+        render={({ field }) => <>{children({
+          ...field,
+          inputProps: {
+            id: inputId,
+            'aria-invalid': Boolean(error),
+            'aria-describedby': describedBy,
+          },
+        })}</>}
       />
       {description && !error && (
-        <p className="text-sm text-muted-foreground">{description}</p>
+        <p id={descriptionId} className="text-sm text-muted-foreground">{description}</p>
       )}
       {error?.message && (
-        <p className="text-sm text-destructive">{error.message}</p>
+        <p id={errorId} aria-live="polite" className="text-sm text-destructive">{error.message}</p>
       )}
     </div>
   )
@@ -84,6 +105,10 @@ export function FormInput({
   disabled 
 }: FormInputProps) {
   const { register, formState: { errors } } = useFormContext()
+  const generatedId = React.useId()
+  const inputId = `${name.replace(/\./g, '-')}-${generatedId}`
+  const descriptionId = description ? `${inputId}-description` : undefined
+  const errorId = `${inputId}-error`
   
   const error = name.split('.').reduce((acc: unknown, key) => {
     if (acc && typeof acc === 'object' && key in acc) {
@@ -92,26 +117,32 @@ export function FormInput({
     return undefined
   }, errors) as { message?: string } | undefined
 
+  const describedBy = [error?.message ? errorId : undefined, !error?.message ? descriptionId : undefined]
+    .filter(Boolean)
+    .join(' ') || undefined
+
   return (
     <div className="space-y-2">
       {label && (
-        <Label htmlFor={name} className={cn(error && 'text-destructive')}>
+        <Label htmlFor={inputId} className={cn(error && 'text-destructive')}>
           {label}
         </Label>
       )}
       <Input
-        id={name}
+        id={inputId}
         type={type}
         placeholder={placeholder}
         disabled={disabled}
         className={cn(error && 'border-destructive', className)}
+        aria-invalid={Boolean(error)}
+        aria-describedby={describedBy}
         {...register(name, { valueAsNumber: type === 'number' })}
       />
       {description && !error && (
-        <p className="text-sm text-muted-foreground">{description}</p>
+        <p id={descriptionId} className="text-sm text-muted-foreground">{description}</p>
       )}
       {error?.message && (
-        <p className="text-sm text-destructive">{error.message}</p>
+        <p id={errorId} aria-live="polite" className="text-sm text-destructive">{error.message}</p>
       )}
     </div>
   )
@@ -140,21 +171,13 @@ export function FormSubmitButton({
   const loading = isLoading ?? isSubmitting
 
   return (
-    <button
+    <Button
       type="submit"
       disabled={loading || disabled}
-      className={cn(
-        'inline-flex items-center justify-center rounded-md text-sm font-medium',
-        'ring-offset-background transition-colors',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-        'disabled:pointer-events-none disabled:opacity-50',
-        'bg-primary text-primary-foreground hover:bg-primary/90',
-        'h-10 px-4 py-2',
-        className
-      )}
+      className={className}
     >
       {loading ? loadingText : children}
-    </button>
+    </Button>
   )
 }
 

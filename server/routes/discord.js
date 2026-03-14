@@ -74,6 +74,11 @@ router.put('/config', async (req, res) => {
       return res.status(400).json({ error: 'Token and Guild ID are required' });
     }
     
+     // Snapshot current auth credentials before overwriting them so we know
+     // whether a full Discord reconnection is actually needed.
+     const prevToken   = discordBot.token;
+     const prevGuildId = discordBot.guildId;
+
     await discordBot.updateConfig(finalToken, guildId, adminRoleId, channelId, modRoleId);
     
     // Save auto-start preference
@@ -82,12 +87,15 @@ router.put('/config', async (req, res) => {
       await setSetting('discordAutoStart', autoStart);
     }
     
-    // Restart bot if it was running
-    if (discordBot.isRunning) {
-      await discordBot.stop();
-      await discordBot.start();
-    }
-    
+    // Only reconnect if authentication-relevant credentials (token or guild ID)
+     // changed. channelId, role IDs, and autoStart are hot-applied by updateConfig()
+     // and do not require tearing down the Discord WebSocket connection.
+     const credentialsChanged = prevToken !== finalToken || prevGuildId !== (guildId || null);
+     if (discordBot.isRunning && credentialsChanged) {
+       await discordBot.stop();
+       await discordBot.start();
+     }
+
     res.json({ 
       success: true, 
       message: 'Discord bot configuration updated' 

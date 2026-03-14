@@ -14,11 +14,13 @@ import {
   FileBox,
   Maximize,
   Image,
-  ImageOff
+  ImageOff,
+  FolderOpen
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { PageHeader } from '@/components/PageHeader'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
@@ -113,8 +115,14 @@ export default function ChunkCleaner() {
   const [bounds, setBounds] = useState<ChunkBounds | null>(null)
   const [stats, setStats] = useState<SaveStats | null>(null)
   const [loading, setLoading] = useState(false)
+  const [loadingSaves, setLoadingSaves] = useState(false)
   const [selectedChunks, setSelectedChunks] = useState<Set<string>>(new Set())
   const { toast } = useToast()
+  
+  // Custom path override for manual folder navigation
+  const [customPath, setCustomPath] = useState<string>('')
+  const [customPathInput, setCustomPathInput] = useState<string>('')
+  const [debugInfo, setDebugInfo] = useState<{ zomboidDataPath?: string; savesPath?: string; exists?: boolean } | null>(null)
   
   // Canvas refs  
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -167,6 +175,8 @@ export default function ChunkCleaner() {
 
   // Whether the canvas container is in the DOM
   const hasCanvas = !!selectedSave && !loading && chunks.length > 0
+  const hasSaves = saves.length > 0
+  const activePathLabel = customPath || debugInfo?.zomboidDataPath || 'Active server data path'
 
   // ─── Coordinate transforms ───
   const screenToWorld = useCallback((sx: number, sy: number) => ({
@@ -182,16 +192,25 @@ export default function ChunkCleaner() {
   }, [])
 
   // ─── Data loading ───
-  const fetchSaves = useCallback(async () => {
+  const fetchSaves = useCallback(async (pathOverride?: string) => {
+    setLoadingSaves(true)
     try {
-      const result = await chunksApi.getSaves()
+      const pathToUse = pathOverride ?? (customPath || undefined)
+      const result = await chunksApi.getSaves(pathToUse)
       setSaves(result.saves || [])
+      if (result.debug) setDebugInfo(result.debug)
       return result.saves || []
     } catch (error) {
-      console.error('Failed to fetch saves:', error)
+      toast({
+        title: 'Could not load saves',
+        description: error instanceof Error ? error.message : 'Failed to load save folders.',
+        variant: 'destructive',
+      })
       return []
+    } finally {
+      setLoadingSaves(false)
     }
-  }, [])
+  }, [customPath, toast])
 
   // On mount: fetch saves and auto-select the active server's save
   useEffect(() => {
@@ -210,6 +229,22 @@ export default function ChunkCleaner() {
     })()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  const applyCustomPath = useCallback(async () => {
+    const nextPath = customPathInput.trim()
+    if (!nextPath) return
+    setCustomPath(nextPath)
+    setSelectedSave('')
+    await fetchSaves(nextPath)
+  }, [customPathInput, fetchSaves])
+
+  const resetToDefaultPath = useCallback(async () => {
+    setCustomPath('')
+    setCustomPathInput('')
+    setSelectedSave('')
+    setDebugInfo(null)
+    await fetchSaves('')
+  }, [fetchSaves])
+
   const loadChunks = useCallback(async () => {
     if (!selectedSave) return
     setLoading(true)
@@ -220,9 +255,10 @@ export default function ChunkCleaner() {
     setLimitReached(false)
     
     try {
+      const pathToUse = customPath || undefined
       const [chunksResult, statsResult] = await Promise.all([
-        chunksApi.getChunks(selectedSave),
-        chunksApi.getStats(selectedSave)
+        chunksApi.getChunks(selectedSave, pathToUse),
+        chunksApi.getStats(selectedSave, pathToUse)
       ])
       // B42 saves use map/{X}/{Y}.bin with 8×8 tile chunks.
       // B41 saves use flat files with 10×10 tile chunks.
@@ -261,7 +297,7 @@ export default function ChunkCleaner() {
     } finally {
       setLoading(false)
     }
-  }, [selectedSave, toast])
+  }, [selectedSave, customPath, toast])
 
   useEffect(() => {
     if (selectedSave) loadChunks()
@@ -879,7 +915,7 @@ export default function ChunkCleaner() {
         .filter(c => selectedChunks.has(`${c.x}_${c.y}`))
         .map(c => ({ file: c.file, x: c.x, y: c.y, source: c.source }))
       
-      const result = await chunksApi.deleteChunks(selectedSave, chunksToDelete, createBackup)
+      const result = await chunksApi.deleteChunks(selectedSave, chunksToDelete, createBackup, customPath || undefined)
       
       toast({
         title: 'Chunks Deleted',
@@ -888,7 +924,7 @@ export default function ChunkCleaner() {
       
       setDeleteDialogOpen(false)
       setSelectedChunks(new Set())
-      loadChunks()
+      await loadChunks()
     } catch (error) {
       toast({
         title: 'Error',
@@ -917,7 +953,7 @@ export default function ChunkCleaner() {
         {/* Header */}
         <PageHeader
           title="Chunk Cleaner"
-          description="Reset map areas to regenerate loot and buildings"
+          description="Reset damaged or over-looted map areas so the world can regenerate cleanly"
           icon={<Map className="w-5 h-5" />}
         />
 
@@ -960,8 +996,8 @@ export default function ChunkCleaner() {
               </CardHeader>
               <CardContent className="space-y-3">
                 <Select value={selectedSave} onValueChange={setSelectedSave}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Choose a save..." />
+                  <SelectTrigger disabled={loadingSaves}>
+                    <SelectValue placeholder={loadingSaves ? 'Loading saves...' : 'Choose a save...'} />
                   </SelectTrigger>
                   <SelectContent>
                     {saves.map(save => (
@@ -981,11 +1017,65 @@ export default function ChunkCleaner() {
                   variant="outline" 
                   size="sm" 
                   className="w-full"
-                  onClick={fetchSaves}
+                  onClick={() => fetchSaves()}
+                  disabled={loadingSaves}
                 >
-                  <RefreshCw className="w-4 h-4 mr-2" />
-                  Refresh
+                  <RefreshCw className={`w-4 h-4 mr-2 ${loadingSaves ? 'animate-spin' : ''}`} />
+                  {loadingSaves ? 'Refreshing...' : 'Refresh Saves'}
                 </Button>
+                
+                {/* Custom path override */}
+                <Separator />
+                <div className="space-y-2">
+                  <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <FolderOpen className="w-3.5 h-3.5" />
+                    Custom Data Path
+                  </Label>
+                  <div className="flex gap-1.5">
+                    <Input
+                      value={customPathInput}
+                      onChange={(e) => setCustomPathInput(e.target.value)}
+                      placeholder="e.g. /home/user/Zomboid"
+                      className="text-xs h-8"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && customPathInput.trim()) {
+                          void applyCustomPath()
+                        }
+                      }}
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 px-2 shrink-0"
+                      onClick={() => void applyCustomPath()}
+                      disabled={!customPathInput.trim() || loadingSaves}
+                    >
+                      Load
+                    </Button>
+                  </div>
+                  {customPath && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full h-7 text-xs text-muted-foreground"
+                      onClick={() => void resetToDefaultPath()}
+                      disabled={loadingSaves}
+                    >
+                      Reset to default path
+                    </Button>
+                  )}
+                  <div className="rounded-md border border-border/60 bg-muted/30 px-2.5 py-2 text-[11px] text-muted-foreground">
+                    <p className="font-medium text-foreground/90">Active path</p>
+                    <p className="break-all">{activePathLabel}</p>
+                  </div>
+                  {debugInfo && (
+                    <div className="text-[10px] text-muted-foreground/70 space-y-0.5 break-all">
+                      <p>Data: {debugInfo.zomboidDataPath || '(not set)'}</p>
+                      <p>Saves: {debugInfo.savesPath || '(not set)'}</p>
+                      <p>Found: {debugInfo.exists ? 'Yes' : 'No'}</p>
+                    </div>
+                  )}
+                </div>
               </CardContent>
             </Card>
 
@@ -1027,6 +1117,7 @@ export default function ChunkCleaner() {
                         variant={tool === 'select' ? 'default' : 'outline'}
                         size="icon"
                         onClick={() => setTool('select')}
+                        aria-label="Select tool"
                       >
                         <Square className="w-4 h-4" />
                       </Button>
@@ -1040,6 +1131,7 @@ export default function ChunkCleaner() {
                         variant={tool === 'pan' ? 'default' : 'outline'}
                         size="icon"
                         onClick={() => setTool('pan')}
+                        aria-label="Pan tool"
                       >
                         <Move className="w-4 h-4" />
                       </Button>
@@ -1120,7 +1212,12 @@ export default function ChunkCleaner() {
                 <Separator />
                 
                 <div className="space-y-2">
-                  <Label className="text-xs">Selection ({selectedChunks.size} chunks{selectedChunks.size > 0 ? ` — ${formatSize(selectedSize)}` : ''})</Label>
+                  <div className="flex items-center justify-between gap-2">
+                    <Label className="text-xs">Selection</Label>
+                    <Badge variant={selectedChunks.size > 0 ? 'secondary' : 'outline'} className="text-[10px]">
+                      {selectedChunks.size} chunk{selectedChunks.size === 1 ? '' : 's'}{selectedChunks.size > 0 ? ` • ${formatSize(selectedSize)}` : ''}
+                    </Badge>
+                  </div>
                   <div className="flex flex-wrap gap-2">
                     <Button variant="outline" size="sm" onClick={selectAll} disabled={chunks.length === 0}>
                       Select All
@@ -1144,7 +1241,7 @@ export default function ChunkCleaner() {
                 onClick={() => setDeleteDialogOpen(true)}
               >
                 <Trash2 className="w-4 h-4 mr-2" />
-                Delete {selectedChunks.size} Chunks
+                Delete {selectedChunks.size} Selected Chunk{selectedChunks.size === 1 ? '' : 's'}
               </Button>
             )}
           </div>
@@ -1171,21 +1268,30 @@ export default function ChunkCleaner() {
               <CardContent className="p-2">
                 {!selectedSave ? (
                   <div className="h-[520px] flex items-center justify-center text-muted-foreground">
-                    <div className="text-center">
+                    <div className="text-center max-w-sm">
                       <FileBox className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                      <p>Select a save to view chunks</p>
+                      <p className="font-medium text-foreground">Select a save to inspect chunk data</p>
+                      {hasSaves ? (
+                        <p className="text-sm mt-2 opacity-80">Choose a multiplayer save from the left panel to review chunk density, select regions, and prepare a cleanup.</p>
+                      ) : (
+                        <p className="text-xs mt-2 opacity-70">No saves were found yet. Use the custom data path field to point at your Zomboid user data folder.</p>
+                      )}
                     </div>
                   </div>
                 ) : loading ? (
                   <div className="h-[520px] flex items-center justify-center">
-                    <RefreshCw className="w-8 h-8 animate-spin text-muted-foreground" />
+                    <div className="text-center text-muted-foreground">
+                      <RefreshCw className="w-8 h-8 mx-auto animate-spin" />
+                      <p className="mt-3 text-sm">Loading chunk map...</p>
+                    </div>
                   </div>
                 ) : chunks.length === 0 ? (
                   <div className="h-[520px] flex items-center justify-center text-muted-foreground">
-                    <div className="text-center">
+                    <div className="text-center max-w-sm">
                       <Map className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                      <p>No chunk data found in this save</p>
-                      <p className="text-sm">The map folder may be empty</p>
+                      <p className="font-medium text-foreground">No chunk data found in this save</p>
+                      <p className="text-sm mt-1">The map folder may be empty, the save may never have been explored, or the data path may be incorrect.</p>
+                      <p className="text-xs mt-2 opacity-70">Point the custom data path at the folder that contains Saves/Multiplayer if this save should already have world data.</p>
                     </div>
                   </div>
                 ) : (

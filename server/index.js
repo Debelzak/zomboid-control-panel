@@ -262,6 +262,10 @@ app.use('/api/chunks/delete-region', strictLimiter);
 app.use('/api/server-files/raw', strictLimiter);
 app.use('/api/server-files/restore', strictLimiter);
 app.use('/api/server-files/save-and-reload', strictLimiter);
+app.use('/api/panel-bridge/install-mod', strictLimiter);
+app.use('/api/panel/update-check', strictLimiter);
+app.use('/api/panel/update-download', strictLimiter);
+app.use('/api/panel/restart', strictLimiter);
 
 // Mid-tier rate limit for RCON commands (higher than strict, lower than general)
 const rconLimiter = rateLimit({
@@ -295,6 +299,12 @@ const backupService = new BackupService();
 // Connect services for cross-communication
 rconService.setServerManager(serverManager);
 scheduler.setBackupService(backupService);
+
+ // Give scheduler and backupService a reference to discordBot so they can
+ // fire event notifications (scheduledRestart, backupComplete) without
+ // needing req.app access.
+ scheduler.setDiscordBot(discordBot);
+ backupService.setDiscordBot(discordBot);
 
 // Start RCON auto-reconnect for automatic recovery
 rconService.startAutoReconnect();
@@ -690,10 +700,28 @@ function startPlayerPolling() {
         const lastNames = lastPlayerList.map(p => p.name).sort().join(',');
         
         if (currentNames !== lastNames) {
+          // Detect joins and leaves before updating the baseline
+          const currentSet = new Set(result.players.map(p => p.name));
+          const lastSet = new Set(lastPlayerList.map(p => p.name));
+          const joined = result.players.filter(p => !lastSet.has(p.name));
+          const left = lastPlayerList.filter(p => !currentSet.has(p.name));
+
           lastPlayerList = result.players;
           // Broadcast to all clients in the 'players' room
           io.to('players').emit('players:update', result.players);
           log.debug(`Player list updated: ${result.players.length} players online`);
+
+          // Notify Discord — only after we have an established baseline (skip on
+          // the very first poll so we don't fire spurious join events for players
+          // who were already online before the panel started).
+          if (lastSet.size > 0) {
+            for (const p of joined) {
+              discordBot.sendEventNotification('playerJoin', { player: p.name }).catch(() => {});
+            }
+            for (const p of left) {
+              discordBot.sendEventNotification('playerLeave', { player: p.name }).catch(() => {});
+            }
+          }
         }
       }
     } catch (error) {
@@ -992,14 +1020,21 @@ async function start() {
         const protocol = httpsServer ? 'https' : 'http';
         const port = httpsServer ? httpsPort : PORT;
         const url = `${protocol}://localhost:${port}`;
-        const openCmd = process.platform === 'win32' 
-          ? `start "" "${url}"` 
-          : process.platform === 'darwin' 
-            ? `open "${url}"` 
-            : `xdg-open "${url}"`;
-        exec(openCmd, (err) => {
-          if (err) log.error('Failed to open browser:', err);
-        });
+
+        // Skip auto-open on headless Linux (no display server)
+        if (process.platform !== 'win32' && process.platform !== 'darwin' &&
+            !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY) {
+          log.info(`Panel running at ${url} (no display detected — skipping browser open)`);
+        } else {
+          const openCmd = process.platform === 'win32' 
+            ? `start "" "${url}"` 
+            : process.platform === 'darwin' 
+              ? `open "${url}"` 
+              : `xdg-open "${url}"`;
+          exec(openCmd, (err) => {
+            if (err) log.error('Failed to open browser:', err);
+          });
+        }
       }
     });
   } catch (error) {

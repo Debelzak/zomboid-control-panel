@@ -160,6 +160,11 @@ router.get('/logs/download', async (req, res) => {
     res.setHeader('Content-Disposition', 'attachment; filename=combined.log');
     
     const readStream = fs.createReadStream(logsPath);
+    readStream.on('error', (err) => {
+      log.error(`Log file read error: ${err.message}`);
+      if (!res.headersSent) res.status(500).json({ error: 'Failed to read log file' });
+      else res.destroy();
+    });
     readStream.pipe(res);
   } catch (error) {
     log.error(`Failed to download logs: ${error.message}`);
@@ -189,6 +194,11 @@ router.get('/logs/download/:filename', async (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}"`);
     
     const readStream = fs.createReadStream(logsPath);
+    readStream.on('error', (err) => {
+      log.error(`Log file read error: ${err.message}`);
+      if (!res.headersSent) res.status(500).json({ error: 'Failed to read log file' });
+      else res.destroy();
+    });
     readStream.pipe(res);
   } catch (error) {
     log.error(`Failed to download log file: ${error.message}`);

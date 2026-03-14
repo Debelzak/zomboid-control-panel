@@ -4,6 +4,8 @@ import path from 'path';
 import fs from 'fs';
 import { randomUUID } from 'crypto';
 import { getDataPaths } from '../utils/paths.js';
+import { createLogger } from '../utils/logger.js';
+const log = createLogger('DB');
 
 // ============================================
 // Database Configuration
@@ -101,7 +103,7 @@ async function flushWrites() {
     try {
       await db.write();
     } catch (err) {
-      console.error('[DB] Write error:', err.message);
+      log.error(`Write error: ${err.message}`);
       _dirty = true; // Re-mark dirty so next scheduleWrite retries
     }
   })();
@@ -126,7 +128,7 @@ function createBackup(label = '') {
     pruneBackups();
     return backupFile;
   } catch (err) {
-    console.error('[DB] Backup failed:', err.message);
+    log.error(`Backup failed: ${err.message}`);
     return null;
   }
 }
@@ -173,7 +175,7 @@ function registerShutdownHandlers() {
   _shutdownRegistered = true;
 
   const shutdown = async (signal) => {
-    console.log(`[DB] ${signal} received — flushing writes...`);
+    log.info(`${signal} received — flushing writes...`);
     if (_writeTimer) { clearTimeout(_writeTimer); _writeTimer = null; }
     if (_backupTimer) { clearInterval(_backupTimer); _backupTimer = null; }
     await flushWrites();
@@ -286,8 +288,7 @@ export async function getDb() {
     registerShutdownHandlers();
 
     const stats = getDatabaseStatsSync();
-    const dbLog = (await import('../utils/logger.js')).createLogger('DB');
-    dbLog.info(`Loaded — ${stats.totalRecords} records, ${stats.fileSizeKB}KB, ${stats.backupCount} backups`);
+    log.info(`Loaded — ${stats.totalRecords} records, ${stats.fileSizeKB}KB, ${stats.backupCount} backups`);
   }
   return db;
 }

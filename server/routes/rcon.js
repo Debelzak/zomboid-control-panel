@@ -26,7 +26,7 @@ router.post('/execute', async (req, res) => {
     
     // Emit to connected clients
     const io = req.app.get('io');
-    io.to('logs').emit('rcon:response', {
+    if (io) io.to('logs').emit('rcon:response', {
       command,
       response: result.response || result.error,
       success: result.success,

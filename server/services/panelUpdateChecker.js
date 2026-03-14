@@ -18,17 +18,24 @@ const log = createLogger('PanelUpdater');
 const GITHUB_OWNER = 'fpsacha';
 const GITHUB_REPO = 'zomboid-control-panel';
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000; // Check every 6 hours
+const GITHUB_API_TIMEOUT_MS = 15000;
+const DOWNLOAD_TIMEOUT_MS = 60000;
+const MAX_GITHUB_RETRIES = 3;
+const MAX_DOWNLOAD_REDIRECTS = 5;
 
 export class PanelUpdateChecker {
   constructor(io) {
     this.io = io;
     this.checkInterval = null;
+    this.initialTimeout = null;
     this.latestRelease = null;
     this.currentVersion = null;
     this.updateAvailable = false;
     this.isChecking = false;
     this.isDownloading = false;
     this.downloadProgress = 0;
+    this.lastCheck = null;
+    this.lastError = null;
   }
 
   /**
@@ -39,7 +46,7 @@ export class PanelUpdateChecker {
     log.info(`Panel update checker started (current: v${this.currentVersion})`);
 
     // Initial check after 30 seconds
-    setTimeout(() => this.checkForUpdate(), 30000);
+    this.initialTimeout = setTimeout(() => this.checkForUpdate(), 30000);
 
     // Periodic checks
     this.checkInterval = setInterval(() => this.checkForUpdate(), CHECK_INTERVAL_MS);
@@ -49,6 +56,10 @@ export class PanelUpdateChecker {
    * Stop the checker
    */
   stop() {
+    if (this.initialTimeout) {
+      clearTimeout(this.initialTimeout);
+      this.initialTimeout = null;
+    }
     if (this.checkInterval) {
       clearInterval(this.checkInterval);
       this.checkInterval = null;
@@ -61,21 +72,28 @@ export class PanelUpdateChecker {
   async checkForUpdate() {
     if (this.isChecking) return this.getStatus();
     this.isChecking = true;
+    this.lastCheck = new Date().toISOString();
 
     try {
       const release = await this.fetchLatestRelease();
       if (!release) {
+        this.lastError = null;
         this.isChecking = false;
         return this.getStatus();
       }
 
+      const releaseVersion = this.extractVersion(release.tag_name);
+      if (!releaseVersion) {
+        throw new Error('Latest GitHub release is missing a valid version tag.');
+      }
+
       this.latestRelease = {
-        version: release.tag_name.replace(/^v/, ''),
+        version: releaseVersion,
         tag: release.tag_name,
-        name: release.name,
-        body: release.body,
-        publishedAt: release.published_at,
-        htmlUrl: release.html_url,
+        name: typeof release.name === 'string' ? release.name : release.tag_name,
+        body: typeof release.body === 'string' ? release.body : '',
+        publishedAt: release.published_at || null,
+        htmlUrl: release.html_url || null,
         assets: (release.assets || []).map(a => ({
           name: a.name,
           size: a.size,
@@ -84,6 +102,7 @@ export class PanelUpdateChecker {
       };
 
       this.updateAvailable = this.isNewer(this.latestRelease.version, this.currentVersion);
+      this.lastError = null;
 
       if (this.updateAvailable) {
         log.info(`Panel update available: v${this.currentVersion} → v${this.latestRelease.version}`);
@@ -96,6 +115,7 @@ export class PanelUpdateChecker {
         log.debug(`Panel is up to date (v${this.currentVersion})`);
       }
     } catch (error) {
+      this.lastError = error.message;
       log.warn(`Panel update check failed: ${error.message}`);
     } finally {
       this.isChecking = false;
@@ -108,6 +128,31 @@ export class PanelUpdateChecker {
    * Fetch the latest release from GitHub API
    */
   fetchLatestRelease() {
+    return this.requestGitHubReleaseWithRetry();
+  }
+
+  async requestGitHubReleaseWithRetry() {
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= MAX_GITHUB_RETRIES; attempt += 1) {
+      try {
+        return await this.fetchLatestReleaseOnce();
+      } catch (error) {
+        lastError = error;
+        if (!this.isRetryableGitHubError(error) || attempt === MAX_GITHUB_RETRIES) {
+          break;
+        }
+
+        const backoffMs = attempt * 1000;
+        log.warn(`Panel update check attempt ${attempt} failed (${error.message}). Retrying in ${backoffMs}ms...`);
+        await new Promise(resolve => setTimeout(resolve, backoffMs));
+      }
+    }
+
+    throw lastError || new Error('Unknown GitHub update check failure');
+  }
+
+  fetchLatestReleaseOnce() {
     return new Promise((resolve, reject) => {
       const options = {
         hostname: 'api.github.com',
@@ -119,36 +164,70 @@ export class PanelUpdateChecker {
       };
 
       const req = https.get(options, (res) => {
-        if (res.statusCode === 404) {
+        const statusCode = res.statusCode || 0;
+
+        if (statusCode === 404) {
+          res.resume();
           resolve(null);
           return;
         }
-        if (res.statusCode === 403) {
-          reject(new Error('GitHub API rate limited'));
-          return;
-        }
-        if (res.statusCode !== 200) {
-          reject(new Error(`GitHub API returned ${res.statusCode}`));
+
+        if (statusCode !== 200) {
+          let body = '';
+          res.on('data', (chunk) => {
+            body += chunk.toString();
+            if (body.length > 4096) body = body.slice(0, 4096);
+          });
+          res.on('end', () => {
+            const err = new Error(statusCode === 403 ? 'GitHub API rate limited' : `GitHub API returned ${statusCode}`);
+            err.statusCode = statusCode;
+            if (body.includes('rate limit')) {
+              err.rateLimited = true;
+            }
+            reject(err);
+          });
           return;
         }
 
         let data = '';
-        res.on('data', chunk => data += chunk);
+        res.on('data', (chunk) => {
+          data += chunk.toString();
+        });
         res.on('end', () => {
           try {
-            resolve(JSON.parse(data));
-          } catch (e) {
+            const parsed = JSON.parse(data);
+            if (!parsed || typeof parsed !== 'object') {
+              throw new Error('Invalid GitHub release payload');
+            }
+            resolve(parsed);
+          } catch (_) {
             reject(new Error('Failed to parse GitHub response'));
           }
         });
       });
 
       req.on('error', reject);
-      req.setTimeout(15000, () => {
-        req.destroy();
-        reject(new Error('GitHub API timeout'));
+      req.setTimeout(GITHUB_API_TIMEOUT_MS, () => {
+        const timeoutError = new Error('GitHub API timeout');
+        timeoutError.code = 'ETIMEDOUT';
+        req.destroy(timeoutError);
       });
     });
+  }
+
+  isRetryableGitHubError(error) {
+    const statusCode = error?.statusCode;
+    const code = error?.code;
+    if ([408, 429, 500, 502, 503, 504].includes(statusCode)) return true;
+    if (code && ['ETIMEDOUT', 'ECONNRESET', 'EAI_AGAIN', 'ENOTFOUND'].includes(code)) return true;
+    return Boolean(error?.rateLimited);
+  }
+
+  extractVersion(tag) {
+    if (typeof tag !== 'string') return null;
+    const match = tag.match(/(\d+)\.(\d+)\.(\d+)/);
+    if (!match) return null;
+    return `${match[1]}.${match[2]}.${match[3]}`;
   }
 
   /**
@@ -201,11 +280,12 @@ export class PanelUpdateChecker {
 
     this.isDownloading = true;
     this.downloadProgress = 0;
+    this.lastError = null;
 
     try {
       const exePath = process.execPath;
       const exeDir = path.dirname(exePath);
-      const updatePath = path.join(exeDir, `${assetName}.update`);
+      const updatePath = path.join(exeDir, `${assetName}.update.${Date.now()}.${process.pid}`);
       const backupPath = path.join(exeDir, `${assetName}.backup`);
 
       log.info(`Downloading update: ${asset.name} (${(asset.size / 1024 / 1024).toFixed(1)} MB)`);
@@ -230,7 +310,19 @@ export class PanelUpdateChecker {
         const oldPath = exePath + '.old';
         try { if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath); } catch (_) {}
         fs.renameSync(exePath, oldPath);
-        fs.renameSync(updatePath, exePath);
+        try {
+          fs.renameSync(updatePath, exePath);
+        } catch (replaceError) {
+          // Best-effort rollback if replacement fails
+          if (!fs.existsSync(exePath) && fs.existsSync(oldPath)) {
+            try {
+              fs.renameSync(oldPath, exePath);
+            } catch (_) {
+              // If rollback fails, bubble the original replacement error
+            }
+          }
+          throw replaceError;
+        }
       } else {
         // Linux: can replace running binary (new process will use new binary)
         fs.renameSync(updatePath, exePath);
@@ -245,9 +337,20 @@ export class PanelUpdateChecker {
 
       return { success: true, message: `Update to v${this.latestRelease.version} downloaded. Restart the panel to apply.` };
     } catch (error) {
+      this.lastError = error.message;
       log.error(`Update download failed: ${error.message}`);
       return { success: false, error: error.message };
     } finally {
+      // Best-effort cleanup of temp update binaries
+      try {
+        const exeDir = path.dirname(process.execPath);
+        const staleTempPrefix = `${isWindows ? 'ZomboidControlPanel.exe' : 'ZomboidControlPanel'}.update.`;
+        const staleFiles = fs.readdirSync(exeDir).filter(name => name.startsWith(staleTempPrefix));
+        for (const name of staleFiles) {
+          try { fs.unlinkSync(path.join(exeDir, name)); } catch (_) {}
+        }
+      } catch (_) {}
+
       this.isDownloading = false;
     }
   }
@@ -257,23 +360,64 @@ export class PanelUpdateChecker {
    */
   downloadFile(url, destPath, expectedSize) {
     return new Promise((resolve, reject) => {
-      const MAX_REDIRECTS = 5;
-      const follow = (downloadUrl, redirectCount = 0) => {
-        if (redirectCount > MAX_REDIRECTS) {
-          return reject(new Error(`Too many redirects (max ${MAX_REDIRECTS})`));
+      let settled = false;
+
+      const fail = (error) => {
+        if (settled) return;
+        settled = true;
+        fs.unlink(destPath, () => {});
+        reject(error);
+      };
+
+      const succeed = () => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
+
+      const isAllowedRedirectHost = (downloadUrl) => {
+        try {
+          const parsed = new URL(downloadUrl);
+          const host = parsed.hostname.toLowerCase();
+          return (
+            host === 'github.com' ||
+            host === 'api.github.com' ||
+            host === 'objects.githubusercontent.com' ||
+            host === 'github-releases.githubusercontent.com' ||
+            host.endsWith('.githubusercontent.com')
+          );
+        } catch {
+          return false;
         }
-        https.get(downloadUrl, { headers: { 'User-Agent': `ZomboidControlPanel/${this.currentVersion}` } }, (res) => {
+      };
+
+      const follow = (downloadUrl, redirectCount = 0) => {
+        if (redirectCount > MAX_DOWNLOAD_REDIRECTS) {
+          return fail(new Error(`Too many redirects (max ${MAX_DOWNLOAD_REDIRECTS})`));
+        }
+
+        if (!downloadUrl.startsWith('https://')) {
+          return fail(new Error('Download URL must use HTTPS'));
+        }
+
+        if (!isAllowedRedirectHost(downloadUrl)) {
+          return fail(new Error('Download host is not trusted'));
+        }
+
+        const req = https.get(downloadUrl, { headers: { 'User-Agent': `ZomboidControlPanel/${this.currentVersion}` } }, (res) => {
           // Follow redirects (GitHub uses them for asset downloads)
-          if (res.statusCode === 301 || res.statusCode === 302) {
+          if (res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 307 || res.statusCode === 308) {
             const location = res.headers.location;
-            if (!location) return reject(new Error('Redirect without location'));
-            if (!location.startsWith('https://')) return reject(new Error('Redirect to non-HTTPS URL rejected'));
+            if (!location) return fail(new Error('Redirect without location'));
+            if (!location.startsWith('https://')) return fail(new Error('Redirect to non-HTTPS URL rejected'));
+            res.resume();
             follow(location, redirectCount + 1);
             return;
           }
 
           if (res.statusCode !== 200) {
-            return reject(new Error(`Download failed: HTTP ${res.statusCode}`));
+            res.resume();
+            return fail(new Error(`Download failed: HTTP ${res.statusCode}`));
           }
 
           const totalBytes = parseInt(res.headers['content-length'] || expectedSize, 10);
@@ -299,16 +443,27 @@ export class PanelUpdateChecker {
             }
           });
 
+          res.on('error', fail);
           res.pipe(file);
           file.on('finish', () => {
-            file.close();
-            resolve();
+            file.close(() => {
+              if (expectedSize > 0 && receivedBytes !== expectedSize) {
+                return fail(new Error(`Downloaded file size mismatch (expected ${expectedSize}, got ${receivedBytes})`));
+              }
+              succeed();
+            });
           });
           file.on('error', (err) => {
-            fs.unlink(destPath, () => {});
-            reject(err);
+            fail(err);
           });
-        }).on('error', reject);
+        });
+
+        req.on('error', fail);
+        req.setTimeout(DOWNLOAD_TIMEOUT_MS, () => {
+          const timeoutError = new Error('Download timed out');
+          timeoutError.code = 'ETIMEDOUT';
+          req.destroy(timeoutError);
+        });
       };
 
       follow(url);
@@ -328,7 +483,9 @@ export class PanelUpdateChecker {
       publishedAt: this.latestRelease?.publishedAt || null,
       isChecking: this.isChecking,
       isDownloading: this.isDownloading,
-      downloadProgress: this.downloadProgress
+      downloadProgress: this.downloadProgress,
+      lastCheck: this.lastCheck,
+      lastError: this.lastError
     };
   }
 }

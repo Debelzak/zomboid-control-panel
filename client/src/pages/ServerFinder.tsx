@@ -217,9 +217,22 @@ export default function ServerFinder() {
     })
 
     setFilteredServers(result)
-    // Reset to page 1 when filters change
-    setCurrentPage(1)
-  }, [servers, debouncedSearch, hideEmpty, hideFull, hidePrivate, showVacOnly, versionFilter, sortField, sortDirection, serverPings])
+    // Only reset to page 1 when actual filters/sort change, not when pings update
+  }, [servers, debouncedSearch, hideEmpty, hideFull, hidePrivate, showVacOnly, versionFilter, sortField, sortDirection])
+
+  // Re-sort when pings arrive without resetting the current page
+  useEffect(() => {
+    if (sortField !== 'ping') return
+    setFilteredServers(prev => {
+      const sorted = [...prev]
+      sorted.sort((a, b) => {
+        const aVal = serverPings[`${a.ip}:${a.port}`] ?? 9999
+        const bVal = serverPings[`${b.ip}:${b.port}`] ?? 9999
+        return sortDirection === 'asc' ? aVal - bVal : bVal - aVal
+      })
+      return sorted
+    })
+  }, [serverPings, sortField, sortDirection])
 
   // Compute available versions from servers
   const availableVersions = useMemo(() => {

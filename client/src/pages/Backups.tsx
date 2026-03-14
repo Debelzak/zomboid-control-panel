@@ -44,6 +44,7 @@ import { backupApi, BackupStatus, BackupFile } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { PageHeader } from '@/components/PageHeader'
 import { EmptyState } from '@/components/EmptyState'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 
 interface BackupProgress {
   phase: 'preparing' | 'archiving' | 'finalizing' | 'complete' | 'error'
@@ -65,6 +66,7 @@ export default function Backups() {
   const [backupStatus, setBackupStatus] = useState<BackupStatus | null>(null)
   const [backups, setBackups] = useState<BackupFile[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [creatingBackup, setCreatingBackup] = useState(false)
   const [restoringBackup, setRestoringBackup] = useState<string | null>(null)
   const [deletingBackups, setDeletingBackups] = useState(false)
@@ -99,8 +101,9 @@ export default function Backups() {
       setBackupStatus(status)
       setBackupSchedule(status.schedule)
       setBackupMaxCount(status.maxBackups)
-    } catch (error) {
-      console.error('Failed to fetch backup status:', error)
+      setLoadError(null)
+    } catch {
+      setLoadError('Failed to load backup status.')
     }
   }, [])
 
@@ -108,6 +111,7 @@ export default function Backups() {
     try {
       const data = await backupApi.listBackups()
       setBackups(data.backups || [])
+      setLoadError(null)
       // Clear selection for backups that no longer exist
       setSelectedBackups(prev => {
         const backupNames = new Set((data.backups || []).map(b => b.name))
@@ -119,8 +123,8 @@ export default function Backups() {
         })
         return newSelection
       })
-    } catch (error) {
-      console.error('Failed to fetch backups:', error)
+    } catch {
+      setLoadError('Failed to load backups.')
     }
   }, [])
 
@@ -432,6 +436,20 @@ export default function Backups() {
           </div>
         }
       />
+
+      {loadError && (
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Backup data unavailable</AlertTitle>
+          <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <span>{loadError}</span>
+            <Button variant="outline" size="sm" onClick={refreshAll} className="self-start sm:self-auto">
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Retry
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
 
       {/* Status Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 stagger-in">

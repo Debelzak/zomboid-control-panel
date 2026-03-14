@@ -44,8 +44,6 @@ interface DiscordStatus {
   running: boolean
   configured: boolean
   connected?: boolean
-  guildName?: string
-  channelName?: string
   username?: string
   error?: string
 }
@@ -73,6 +71,7 @@ interface WebhookEvent {
 }
 
 type WebhookEvents = Record<string, WebhookEvent>
+type FlashMessage = { type: 'success' | 'error', text: string }
 
 // Small helper to copy text to clipboard
 function CopyButton({ text, label }: { text: string; label?: string }) {
@@ -90,6 +89,18 @@ function CopyButton({ text, label }: { text: string; label?: string }) {
       {copied ? <Check className="w-3.5 h-3.5 text-primary" /> : <Copy className="w-3.5 h-3.5" />}
       {label || (copied ? 'Copied!' : 'Copy')}
     </Button>
+  )
+}
+
+function InlineFeedback({ message, className }: { message: FlashMessage | null; className?: string }) {
+  if (!message) return null
+
+  return (
+    <Alert variant={message.type === 'error' ? 'destructive' : 'default'} className={className}>
+      {message.type === 'error' ? <AlertCircle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
+      <AlertTitle>{message.type === 'error' ? 'Error' : 'Success'}</AlertTitle>
+      <AlertDescription>{message.text}</AlertDescription>
+    </Alert>
   )
 }
 
@@ -134,9 +145,11 @@ export default function Discord() {
   const [modRoleId, setModRoleId] = useState('')
   const [channelId, setChannelId] = useState('')
   
-  const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
-
   // Setup wizard state
+  const [configMessage, setConfigMessage] = useState<FlashMessage | null>(null)
+  const [eventsMessage, setEventsMessage] = useState<FlashMessage | null>(null)
+  const [permissionsMessage, setPermissionsMessage] = useState<FlashMessage | null>(null)
+
   const [setupStep, setSetupStep] = useState(0)
 
   const loadData = useCallback(async () => {
@@ -161,8 +174,8 @@ export default function Discord() {
         setChannelId(configData.channelId || '')
         setAutoStart(configData.autoStart !== false)
       }
-    } catch (error) {
-      console.error('Failed to load Discord data:', error)
+    } catch {
+      setConfigMessage({ type: 'error', text: 'Failed to load Discord configuration. Refresh and try again.' })
     } finally {
       setLoading(false)
     }
@@ -172,44 +185,66 @@ export default function Discord() {
     loadData()
   }, [loadData])
 
+  // Poll for bot status every 20s to catch silent disconnects without a full reload.
+  useEffect(() => {
+    const pollId = setInterval(async () => {
+      try {
+        const nextStatus = await discordApi.getStatus().catch(() => null)
+        if (nextStatus) setStatus(nextStatus as DiscordStatus)
+      } catch {
+        // Ignore transient polling failures and keep the last known status visible.
+      }
+    }, 20000)
+
+    return () => clearInterval(pollId)
+  }, [])
+
+
   // Discord ID validation (snowflake format - 17-19 digit number)
   const isValidDiscordId = (id: string): boolean => {
     if (!id) return true // Empty is allowed for optional fields
     return /^\d{17,19}$/.test(id)
   }
 
+  const hasGuildIdError = Boolean(guildId && !isValidDiscordId(guildId))
+  const hasChannelIdError = Boolean(channelId && !isValidDiscordId(channelId))
+  const hasAdminRoleIdError = Boolean(adminRoleId && !isValidDiscordId(adminRoleId))
+  const hasModRoleIdError = Boolean(modRoleId && !isValidDiscordId(modRoleId))
+  const hasConfigValidationError = hasGuildIdError || hasChannelIdError || hasAdminRoleIdError || hasModRoleIdError
+  const canSaveConfig = Boolean(guildId && (token || config?.hasToken) && !hasConfigValidationError)
+
   const handleSaveConfig = async (andStart = false) => {
     try {
       setSaving(true)
-      setMessage(null)
+      setConfigMessage(null)
       
       if (!token && !config?.hasToken) {
-        setMessage({ type: 'error', text: 'Bot token is required' })
+        setConfigMessage({ type: 'error', text: 'Bot token is required' })
         return
       }
       
       if (!guildId) {
-        setMessage({ type: 'error', text: 'Guild ID is required' })
+        setConfigMessage({ type: 'error', text: 'Guild ID is required' })
         return
       }
       
       if (!isValidDiscordId(guildId)) {
-        setMessage({ type: 'error', text: 'Invalid Guild ID format (should be 17-19 digit number)' })
+        setConfigMessage({ type: 'error', text: 'Invalid Guild ID format (should be 17-19 digit number)' })
         return
       }
       
       if (channelId && !isValidDiscordId(channelId)) {
-        setMessage({ type: 'error', text: 'Invalid Channel ID format (should be 17-19 digit number)' })
+        setConfigMessage({ type: 'error', text: 'Invalid Channel ID format (should be 17-19 digit number)' })
         return
       }
       
       if (adminRoleId && !isValidDiscordId(adminRoleId)) {
-        setMessage({ type: 'error', text: 'Invalid Admin Role ID format (should be 17-19 digit number)' })
+        setConfigMessage({ type: 'error', text: 'Invalid Admin Role ID format (should be 17-19 digit number)' })
         return
       }
       
       if (modRoleId && !isValidDiscordId(modRoleId)) {
-        setMessage({ type: 'error', text: 'Invalid Moderator Role ID format (should be 17-19 digit number)' })
+        setConfigMessage({ type: 'error', text: 'Invalid Moderator Role ID format (should be 17-19 digit number)' })
         return
       }
       
@@ -226,14 +261,14 @@ export default function Discord() {
       
       if (andStart) {
         await discordApi.start()
-        setMessage({ type: 'success', text: 'Configuration saved and bot started!' })
+        setConfigMessage({ type: 'success', text: 'Configuration saved and bot started!' })
       } else {
-        setMessage({ type: 'success', text: 'Discord configuration saved successfully' })
+        setConfigMessage({ type: 'success', text: 'Discord configuration saved successfully' })
       }
       setToken('')
       await loadData()
     } catch (error: any) {
-      setMessage({ type: 'error', text: error.message || 'Failed to save configuration' })
+      setConfigMessage({ type: 'error', text: error.message || 'Failed to save configuration' })
     } finally {
       setSaving(false)
     }
@@ -242,21 +277,21 @@ export default function Discord() {
   const handleTestToken = async () => {
     try {
       setTesting(true)
-      setMessage(null)
+      setConfigMessage(null)
       setBotInfo(null)
       setInviteUrl(null)
       
       if (!token) {
-        setMessage({ type: 'error', text: 'Enter a token to test' })
+        setConfigMessage({ type: 'error', text: 'Enter a token to test' })
         return
       }
       
       const result = await discordApi.testToken(token)
       setBotInfo(result.bot)
       setInviteUrl(result.inviteUrl || null)
-      setMessage({ type: 'success', text: `Token valid! Bot: ${result.bot.username}` })
+      setConfigMessage({ type: 'success', text: `Token valid! Bot: ${result.bot.username}` })
     } catch (error: any) {
-      setMessage({ type: 'error', text: error.message || 'Invalid token' })
+      setConfigMessage({ type: 'error', text: error.message || 'Invalid token' })
     } finally {
       setTesting(false)
     }
@@ -270,12 +305,12 @@ export default function Discord() {
     if (starting) return
     try {
       setStarting(true)
-      setMessage(null)
+      setConfigMessage(null)
       await discordApi.start()
-      setMessage({ type: 'success', text: 'Discord bot started' })
+      setConfigMessage({ type: 'success', text: 'Discord bot started' })
       await loadData()
     } catch (error: any) {
-      setMessage({ type: 'error', text: error.message || 'Failed to start bot' })
+      setConfigMessage({ type: 'error', text: error.message || 'Failed to start bot' })
     } finally {
       setStarting(false)
     }
@@ -285,12 +320,12 @@ export default function Discord() {
     if (stopping) return
     try {
       setStopping(true)
-      setMessage(null)
+      setConfigMessage(null)
       await discordApi.stop()
-      setMessage({ type: 'success', text: 'Discord bot stopped' })
+      setConfigMessage({ type: 'success', text: 'Discord bot stopped' })
       await loadData()
     } catch (error: any) {
-      setMessage({ type: 'error', text: error.message || 'Failed to stop bot' })
+      setConfigMessage({ type: 'error', text: error.message || 'Failed to stop bot' })
     } finally {
       setStopping(false)
     }
@@ -300,11 +335,11 @@ export default function Discord() {
     if (sendingTest) return
     try {
       setSendingTest(true)
-      setMessage(null)
+      setConfigMessage(null)
       await discordApi.sendTestMessage()
-      setMessage({ type: 'success', text: 'Test message sent to Discord channel' })
+      setConfigMessage({ type: 'success', text: 'Test message sent to Discord channel' })
     } catch (error: any) {
-      setMessage({ type: 'error', text: error.message || 'Failed to send test message' })
+      setConfigMessage({ type: 'error', text: error.message || 'Failed to send test message' })
     } finally {
       setSendingTest(false)
     }
@@ -328,9 +363,10 @@ export default function Discord() {
     try {
       setSavingEvents(true)
       await discordApi.updateWebhookEvents(webhookEvents)
-      setMessage({ type: 'success', text: 'Webhook events saved' })
+      setEventsMessage({ type: 'success', text: 'Webhook events saved' })
+      await loadData()
     } catch (error: any) {
-      setMessage({ type: 'error', text: error.message || 'Failed to save webhook events' })
+      setEventsMessage({ type: 'error', text: error.message || 'Failed to save webhook events' })
     } finally {
       setSavingEvents(false)
     }
@@ -363,13 +399,7 @@ export default function Discord() {
         />
 
         {/* Status Message */}
-        {message && (
-          <Alert variant={message.type === 'error' ? 'destructive' : 'default'}>
-            {message.type === 'error' ? <AlertCircle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
-            <AlertTitle>{message.type === 'error' ? 'Error' : 'Success'}</AlertTitle>
-            <AlertDescription>{message.text}</AlertDescription>
-          </Alert>
-        )}
+        <InlineFeedback message={configMessage} />
 
         {/* Stepper */}
         <div className="flex items-center justify-between">
@@ -535,7 +565,7 @@ export default function Discord() {
                   <Button variant="outline" onClick={() => setSetupStep(0)}>
                     <ChevronLeft className="w-4 h-4 mr-1" /> Back
                   </Button>
-                  <Button onClick={() => setSetupStep(2)} disabled={!token && !botInfo}>
+                   <Button onClick={() => setSetupStep(2)} disabled={!botInfo}>
                     Next: Enable Intents <ChevronRight className="w-4 h-4 ml-1" />
                   </Button>
                 </div>
@@ -620,8 +650,8 @@ export default function Discord() {
                           <UserPlus className="w-5 h-5 mr-2" /> Invite Bot to Server
                         </a>
                       </Button>
-                      <div className="flex items-center justify-center gap-2">
-                        <p className="text-xs text-muted-foreground font-mono truncate max-w-md">{inviteUrl}</p>
+                      <div className="flex w-full flex-col items-center justify-center gap-2 sm:flex-row">
+                        <p className="max-w-md break-all text-left font-mono text-xs text-muted-foreground sm:text-center">{inviteUrl}</p>
                         <CopyButton text={inviteUrl} label="Copy URL" />
                       </div>
                     </div>
@@ -709,7 +739,7 @@ export default function Discord() {
                     <p className="text-xs text-muted-foreground">
                       Right-click your Discord server name → <strong>Copy Server ID</strong>
                     </p>
-                    {guildId && !isValidDiscordId(guildId) && (
+                    {hasGuildIdError && (
                       <p className="text-xs text-destructive">Invalid format — should be a 17-19 digit number</p>
                     )}
                   </div>
@@ -733,6 +763,9 @@ export default function Discord() {
                       <p className="text-xs text-muted-foreground">
                         Right-click a text channel → <strong>Copy Channel ID</strong>. Used for notifications and two-way chat bridge.
                       </p>
+                      {hasChannelIdError && (
+                        <p className="text-xs text-destructive">Invalid format — should be a 17-19 digit number</p>
+                      )}
                     </div>
 
                     {/* Admin Role ID */}
@@ -753,6 +786,9 @@ export default function Discord() {
                       <p className="text-xs text-muted-foreground">
                         Right-click a role → <strong>Copy Role ID</strong>. Only users with this role can use bot commands. Leave blank to allow everyone.
                       </p>
+                      {hasAdminRoleIdError && (
+                        <p className="text-xs text-destructive">Invalid format — should be a 17-19 digit number</p>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -761,7 +797,7 @@ export default function Discord() {
                   <Button variant="outline" onClick={() => setSetupStep(3)}>
                     <ChevronLeft className="w-4 h-4 mr-1" /> Back
                   </Button>
-                  <Button onClick={() => setSetupStep(5)} disabled={!guildId || !isValidDiscordId(guildId)}>
+                  <Button onClick={() => setSetupStep(5)} disabled={!guildId || hasGuildIdError || hasChannelIdError || hasAdminRoleIdError}>
                     Next: Launch <ChevronRight className="w-4 h-4 ml-1" />
                   </Button>
                 </div>
@@ -784,21 +820,21 @@ export default function Discord() {
                 {/* Review */}
                 <div className="space-y-3">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div className="p-3 rounded-lg bg-muted/50 space-y-1">
+                    <div className="space-y-1 rounded-lg border border-border/60 bg-muted/30 p-3">
                       <p className="text-xs text-muted-foreground">Bot Token</p>
-                      <p className="font-mono text-sm">{token ? '••••••••' + token.slice(-4) : '(not set — will fail)'}</p>
+                      <p className="break-all font-mono text-sm">{token ? '••••••••' + token.slice(-4) : '(not set — will fail)'}</p>
                     </div>
-                    <div className="p-3 rounded-lg bg-muted/50 space-y-1">
+                    <div className="space-y-1 rounded-lg border border-border/60 bg-muted/30 p-3">
                       <p className="text-xs text-muted-foreground">Guild ID</p>
-                      <p className="font-mono text-sm">{guildId || '(not set — required)'}</p>
+                      <p className="break-all font-mono text-sm">{guildId || '(not set — required)'}</p>
                     </div>
-                    <div className="p-3 rounded-lg bg-muted/50 space-y-1">
+                    <div className="space-y-1 rounded-lg border border-border/60 bg-muted/30 p-3">
                       <p className="text-xs text-muted-foreground">Channel ID</p>
-                      <p className="font-mono text-sm">{channelId || '(none)'}</p>
+                      <p className="break-all font-mono text-sm">{channelId || '(none)'}</p>
                     </div>
-                    <div className="p-3 rounded-lg bg-muted/50 space-y-1">
+                    <div className="space-y-1 rounded-lg border border-border/60 bg-muted/30 p-3">
                       <p className="text-xs text-muted-foreground">Admin Role ID</p>
-                      <p className="font-mono text-sm">{adminRoleId || '(none — all users can use commands)'}</p>
+                      <p className="break-all font-mono text-sm">{adminRoleId || '(none — all users can use commands)'}</p>
                     </div>
                   </div>
                   {botInfo && (
@@ -823,11 +859,11 @@ export default function Discord() {
                     <ChevronLeft className="w-4 h-4 mr-1" /> Back
                   </Button>
                   <div className="flex gap-2">
-                    <Button variant="outline" onClick={() => handleSaveConfig(false)} disabled={saving || !guildId || (!token && !config?.hasToken)}>
+                    <Button variant="outline" onClick={() => handleSaveConfig(false)} disabled={saving || !canSaveConfig}>
                       {saving ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Settings className="w-4 h-4 mr-2" />}
-                      Save Only
+                      Save Draft
                     </Button>
-                    <Button onClick={() => handleSaveConfig(true)} disabled={saving || !guildId || (!token && !config?.hasToken)}>
+                    <Button onClick={() => handleSaveConfig(true)} disabled={saving || !canSaveConfig}>
                       {saving ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />}
                       Save & Start Bot
                     </Button>
@@ -844,30 +880,27 @@ export default function Discord() {
             <CardTitle className="text-base">What does the bot do?</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-              <div className="p-4 rounded-lg bg-muted/30 space-y-2">
-                <div className="flex items-center gap-2 font-medium">
-                  <ArrowRight className="w-4 h-4 text-primary" /> Slash Commands
+            <div className="divide-y divide-border/60 text-sm">
+              <div className="flex gap-3 py-3 first:pt-0">
+                <ArrowRight className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                <div className="space-y-1">
+                  <p className="font-medium">Slash Commands</p>
+                  <p className="text-muted-foreground">Control your PZ server from Discord with /status, /players, /start, /stop, /restart, /broadcast, /kick, and /rcon.</p>
                 </div>
-                <p className="text-muted-foreground">
-                  Control your PZ server from Discord: /status, /players, /start, /stop, /restart, /broadcast, /kick, /rcon
-                </p>
               </div>
-              <div className="p-4 rounded-lg bg-muted/30 space-y-2">
-                <div className="flex items-center gap-2 font-medium">
-                  <MessagesSquare className="w-4 h-4 text-primary" /> Two-Way Chat Bridge
+              <div className="flex gap-3 py-3">
+                <MessagesSquare className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                <div className="space-y-1">
+                  <p className="font-medium">Two-Way Chat Bridge</p>
+                  <p className="text-muted-foreground">Keep Discord and in-game chat in the same loop without switching tools during live admin work.</p>
                 </div>
-                <p className="text-muted-foreground">
-                  Messages sent in the bot's channel appear in-game, and in-game chat shows up in Discord. Keeps your community connected.
-                </p>
               </div>
-              <div className="p-4 rounded-lg bg-muted/30 space-y-2">
-                <div className="flex items-center gap-2 font-medium">
-                  <Bell className="w-4 h-4 text-primary" /> Event Notifications
+              <div className="flex gap-3 py-3 last:pb-0">
+                <Bell className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                <div className="space-y-1">
+                  <p className="font-medium">Event Notifications</p>
+                  <p className="text-muted-foreground">Send join/leave, start/stop, restart, death, and backup events straight to the channel your admins already watch.</p>
                 </div>
-                <p className="text-muted-foreground">
-                  Server start/stop, player join/leave, deaths, restarts, and backups — all posted to your Discord channel automatically.
-                </p>
               </div>
             </div>
           </CardContent>
@@ -895,7 +928,7 @@ export default function Discord() {
                 <><AlertCircle className="w-3 h-3 mr-1" /> Stopped</>
               )}
             </Badge>
-            <Button variant="outline" size="icon" onClick={loadData} aria-label="Refresh status">
+            <Button variant="outline" size="icon" onClick={loadData} aria-label="Refresh status" className="h-10 w-10">
               <RefreshCw className="w-4 h-4" />
             </Button>
           </div>
@@ -903,13 +936,7 @@ export default function Discord() {
       />
 
       {/* Status Message */}
-      {message && (
-        <Alert variant={message.type === 'error' ? 'destructive' : 'default'}>
-          {message.type === 'error' ? <AlertCircle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
-          <AlertTitle>{message.type === 'error' ? 'Error' : 'Success'}</AlertTitle>
-          <AlertDescription>{message.text}</AlertDescription>
-        </Alert>
-      )}
+      <InlineFeedback message={configMessage} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Bot Status */}
@@ -921,20 +948,23 @@ export default function Discord() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="p-4 bg-muted rounded-lg">
-                <p className="text-sm text-muted-foreground">Status</p>
-                <p className={`text-lg font-semibold ${status?.running ? 'text-primary' : ''}`}>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div className={`rounded-lg border px-4 py-3 ${status?.running ? 'border-primary/30 bg-primary/5' : 'border-border/60 bg-muted/40'}`}>
+                <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Runtime</p>
+                <p className={`mt-1 text-lg font-semibold ${status?.running ? 'text-primary' : ''}`}>
                   {status?.running ? 'Online' : 'Offline'}
                 </p>
               </div>
-              <div className="p-4 bg-muted rounded-lg">
-                <p className="text-sm text-muted-foreground">Bot User</p>
-                <p className="text-lg font-semibold truncate">
-                  {status?.username || '—'}
-                </p>
+              <div className="min-w-0 rounded-lg border border-border/60 bg-muted/30 px-4 py-3">
+                <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Bot User</p>
+                <p className="mt-1 truncate text-lg font-semibold">{status?.username || 'Waiting for login'}</p>
+              </div>
+              <div className="min-w-0 rounded-lg border border-border/60 bg-muted/30 px-4 py-3">
+                <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Channel</p>
+                <p className="mt-1 truncate text-lg font-semibold">{config?.channelId ? 'Linked' : 'Not set'}</p>
               </div>
             </div>
+            <p className="text-sm text-muted-foreground">Notifications, slash commands, and the chat bridge all depend on the bot staying connected to the configured channel.</p>
             
             {status?.error && (
               <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
@@ -959,7 +989,7 @@ export default function Discord() {
               {status?.running && config?.channelId && (
                 <Button variant="outline" onClick={handleSendTestMessage} disabled={sendingTest}>
                   {sendingTest ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}
-                  {sendingTest ? 'Sending...' : 'Test Message'}
+                  {sendingTest ? 'Sending...' : 'Send Test'}
                 </Button>
               )}
             </div>
@@ -1011,7 +1041,7 @@ export default function Discord() {
               ].map(c => {
                 const level = commandPermissions[c.cmd] || 'admin'
                 return (
-                  <div key={c.cmd} className="flex items-center justify-between p-2.5 bg-muted rounded-lg">
+                  <div key={c.cmd} className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/30 p-2.5">
                     <div className="flex items-center gap-3 min-w-0">
                       <code className="text-sm font-semibold shrink-0">{c.label}</code>
                       <span className="text-sm text-muted-foreground truncate hidden sm:inline">{c.desc}</span>
@@ -1055,10 +1085,10 @@ export default function Discord() {
                 onClick={async () => {
                   try {
                     setSavingPermissions(true)
-                    await discordApi.updatePermissions(commandPermissions)
-                    setMessage({ type: 'success', text: 'Command permissions saved. Slash commands re-registered.' })
+                      await discordApi.updatePermissions(commandPermissions)
+                      setPermissionsMessage({ type: 'success', text: 'Command permissions saved. Slash commands re-registered.' })
                   } catch (error: any) {
-                    setMessage({ type: 'error', text: error.message || 'Failed to save permissions' })
+                      setPermissionsMessage({ type: 'error', text: error.message || 'Failed to save permissions' })
                   } finally {
                     setSavingPermissions(false)
                   }
@@ -1068,6 +1098,7 @@ export default function Discord() {
                 {savingPermissions ? <><RefreshCw className="w-4 h-4 mr-2 animate-spin" /> Saving...</> : 'Save Permissions'}
               </Button>
             </div>
+            <InlineFeedback message={permissionsMessage} className="mt-3" />
           </CardContent>
         </Card>
       </div>
@@ -1116,7 +1147,7 @@ export default function Discord() {
                 </Button>
               </div>
               <Button variant="outline" onClick={handleTestToken} disabled={testing || !token}>
-                {testing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <><Zap className="w-4 h-4 mr-1.5" /> Test</>}
+                {testing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <><Zap className="w-4 h-4 mr-1.5" /> Verify Token</>}
               </Button>
             </div>
             {botInfo && (
@@ -1142,8 +1173,8 @@ export default function Discord() {
                 maxLength={20}
               />
               <p className="text-xs text-muted-foreground">Right-click server → Copy Server ID</p>
-              {guildId && !isValidDiscordId(guildId) && (
-                <p className="text-xs text-destructive">Invalid format</p>
+              {hasGuildIdError && (
+                <p className="text-xs text-destructive">Invalid format — use a 17-19 digit server ID</p>
               )}
             </div>
 
@@ -1161,6 +1192,9 @@ export default function Discord() {
                 maxLength={20}
               />
               <p className="text-xs text-muted-foreground">For notifications & chat bridge</p>
+              {hasChannelIdError && (
+                <p className="text-xs text-destructive">Invalid format — use a 17-19 digit channel ID</p>
+              )}
             </div>
 
             {/* Admin Role ID */}
@@ -1177,6 +1211,9 @@ export default function Discord() {
                 maxLength={20}
               />
               <p className="text-xs text-muted-foreground">Full access — can use all commands</p>
+              {hasAdminRoleIdError && (
+                <p className="text-xs text-destructive">Invalid format — use a 17-19 digit role ID</p>
+              )}
             </div>
 
             {/* Moderator Role ID */}
@@ -1193,8 +1230,8 @@ export default function Discord() {
                 maxLength={20}
               />
               <p className="text-xs text-muted-foreground">Can use "moderator" tier commands</p>
-              {modRoleId && !isValidDiscordId(modRoleId) && (
-                <p className="text-xs text-destructive">Invalid format</p>
+              {hasModRoleIdError && (
+                <p className="text-xs text-destructive">Invalid format — use a 17-19 digit role ID</p>
               )}
             </div>
           </div>
@@ -1210,8 +1247,8 @@ export default function Discord() {
 
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={loadData}>Cancel</Button>
-            <Button onClick={() => handleSaveConfig(false)} disabled={saving}>
-              {saving ? <><RefreshCw className="w-4 h-4 mr-2 animate-spin" /> Saving...</> : 'Save Configuration'}
+            <Button onClick={() => handleSaveConfig(false)} disabled={saving || !canSaveConfig}>
+              {saving ? <><RefreshCw className="w-4 h-4 mr-2 animate-spin" /> Saving...</> : 'Save Changes'}
             </Button>
           </div>
         </CardContent>
@@ -1250,7 +1287,7 @@ export default function Discord() {
                       value={event.template}
                       onChange={(e) => handleUpdateTemplate(eventKey, e.target.value)}
                       placeholder="Enter notification message..."
-                      rows={2}
+                      rows={3}
                     />
                     <p className="text-xs text-muted-foreground">
                       Available variables: {variables}
@@ -1265,6 +1302,7 @@ export default function Discord() {
               {savingEvents ? <><RefreshCw className="w-4 h-4 mr-2 animate-spin" /> Saving...</> : 'Save Events'}
             </Button>
           </div>
+          <InlineFeedback message={eventsMessage} className="mt-3" />
         </CardContent>
       </Card>
     </div>

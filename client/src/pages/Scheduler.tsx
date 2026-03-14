@@ -28,6 +28,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
+import { reportClientError } from '@/lib/client-errors'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -115,7 +116,7 @@ export default function Scheduler() {
       setStatus(statusData)
       setHistory(historyData.history || [])
     } catch (error) {
-      console.error('Failed to fetch scheduler data:', error)
+      reportClientError('Failed to fetch scheduler data.', error)
     }
   }, [])
 

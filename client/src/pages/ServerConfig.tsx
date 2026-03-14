@@ -33,6 +33,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { reportClientError } from '@/lib/client-errors'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
@@ -455,7 +456,7 @@ export default function ServerConfig() {
       }
       setLoadError(null)
     } catch (error) {
-      console.error('Failed to load config:', error)
+      reportClientError('Failed to load config.', error)
       setLoadError(error instanceof Error ? error.message : 'Failed to load server config.')
       toast({
         title: 'Error',

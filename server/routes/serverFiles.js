@@ -1,6 +1,7 @@
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import { createLogger } from '../utils/logger.js';
 const log = createLogger('API:Files');
 import { getActiveServer, getAllSettings } from '../database/init.js';
@@ -15,8 +16,8 @@ function escapeRegExp(str) {
 
 // Escape strings for safe interpolation into Lua source code
 function escapeLuaString(str) {
-  return String(str).replace(/[\\"'\n\r\t\0]/g, (c) => {
-    const escapes = { '\\': '\\\\', '"': '\\"', "'": "\\'", '\n': '\\n', '\r': '\\r', '\t': '\\t', '\0': '\\0' };
+  return String(str).replace(/[\\"'\n\r\t\0\[\]]/g, (c) => {
+    const escapes = { '\\': '\\\\', '"': '\\"', "'": "\\'", '\n': '\\n', '\r': '\\r', '\t': '\\t', '\0': '\\0', '[': '\\[', ']': '\\]' };
     return escapes[c] || c;
   });
 }
@@ -45,8 +46,7 @@ async function getServerConfigPath() {
   }
   
   // Default path: ~/Zomboid/Server
-  const userProfile = process.env.USERPROFILE || process.env.HOME || '';
-  return path.join(userProfile, 'Zomboid', 'Server');
+  return path.join(os.homedir(), 'Zomboid', 'Server');
 }
 
 // Get server name from active server
@@ -116,7 +116,7 @@ async function createBackup(filename) {
 // Parse INI file to object
 function parseIni(content) {
   const result = {};
-  const lines = content.split('\n');
+  const lines = content.split(/\r?\n/);
   
   for (const line of lines) {
     const trimmed = line.trim();
@@ -139,7 +139,7 @@ function parseIni(content) {
 function toIni(obj, originalContent = '') {
   // Preserve comments and order from original
   if (originalContent) {
-    const lines = originalContent.split('\n');
+    const lines = originalContent.split(/\r?\n/);
     const result = [];
     const written = new Set();
     
@@ -496,7 +496,7 @@ function parseSpawnRegions(content) {
   try {
     // Match patterns like { name = "Muldraugh, KY", file = "path" } or { name = "...", serverfile = "..." }
     // Handle both 'file' and 'serverfile' keys
-    const lines = content.split('\n');
+    const lines = content.split(/\r?\n/);
     for (const line of lines) {
       // Skip comments
       if (line.trim().startsWith('--')) continue;
@@ -976,21 +976,25 @@ router.get('/templates', async (req, res) => {
     const files = fs.readdirSync(templatesPath)
       .filter(f => f.endsWith('.json'))
       .map(f => {
-        const filePath = path.join(templatesPath, f);
-        const stats = fs.statSync(filePath);
-        const content = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-        
-        return {
-          id: f.replace('.json', ''),
-          name: content.name || f.replace('.json', ''),
-          description: content.description || '',
-          type: content.type || 'both', // 'ini', 'sandbox', or 'both'
-          created: content.created || stats.birthtime.toISOString(),
-          modified: stats.mtime.toISOString(),
-          hasIni: !!content.ini,
-          hasSandbox: !!content.sandbox
-        };
+        try {
+          const filePath = path.join(templatesPath, f);
+          const stats = fs.statSync(filePath);
+          const content = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+          return {
+            id: f.replace('.json', ''),
+            name: content.name || f.replace('.json', ''),
+            description: content.description || '',
+            type: content.type || 'both', // 'ini', 'sandbox', or 'both'
+            created: content.created || stats.birthtime.toISOString(),
+            modified: stats.mtime.toISOString(),
+            hasIni: !!content.ini,
+            hasSandbox: !!content.sandbox
+          };
+        } catch {
+          return null; // Skip files deleted or unreadable between readdir and read
+        }
       })
+      .filter(Boolean)
       .sort((a, b) => new Date(b.modified) - new Date(a.modified));
     
     res.json({ templates: files });

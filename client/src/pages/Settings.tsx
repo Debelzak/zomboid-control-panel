@@ -24,9 +24,11 @@ import {
   Globe,
   RotateCw,
   Lock,
-  User
+  User,
+  ExternalLink
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { reportClientError } from '@/lib/client-errors'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { PageHeader } from '@/components/PageHeader'
 import { Button } from '@/components/ui/button'
@@ -46,9 +48,22 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 import { useToast } from '@/components/ui/use-toast'
-import { configApi, panelBridgeApi, backupApi, authApi, serversApi, serverApi, BackupStatus, BackupFile, ServerInstance } from '@/lib/api'
+import {
+  configApi,
+  panelBridgeApi,
+  backupApi,
+  authApi,
+  serversApi,
+  serverApi,
+  panelUpdateApi,
+  BackupStatus,
+  BackupFile,
+  PanelUpdateStatus,
+  ServerInstance
+} from '@/lib/api'
 import { useSocket } from '@/contexts/SocketContext'
 import { useAuth } from '@/contexts/AuthContext'
+import { BridgeStatusBadge } from '@/components/BridgeStatusBadge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   Select,
@@ -105,6 +120,11 @@ export default function Settings() {
   const [testingRcon, setTestingRcon] = useState(false)
   const [restarting, setRestarting] = useState(false)
   const restartTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [panelUpdateStatus, setPanelUpdateStatus] = useState<PanelUpdateStatus | null>(null)
+  const [panelUpdateStatusError, setPanelUpdateStatusError] = useState<string | null>(null)
+  const [checkingPanelUpdate, setCheckingPanelUpdate] = useState(false)
+  const [downloadingPanelUpdate, setDownloadingPanelUpdate] = useState(false)
+  const [panelUpdateReady, setPanelUpdateReady] = useState(false)
   const { toast } = useToast()
   const { user, authEnabled } = useAuth()
   
@@ -250,7 +270,7 @@ export default function Settings() {
         })
       }
     } catch (error) {
-      console.error('Failed to fetch settings:', error)
+      reportClientError('Failed to fetch settings.', error)
     } finally {
       setLoading(false)
     }
@@ -274,20 +294,47 @@ export default function Settings() {
     }
   }, [socket, fetchSettings])
 
+  const fetchPanelUpdateStatus = useCallback(async () => {
+    try {
+      const status = await panelUpdateApi.getStatus()
+      setPanelUpdateStatus(status)
+      setPanelUpdateStatusError(null)
+      if (!status.updateAvailable) {
+        setPanelUpdateReady(false)
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not load updater status'
+      setPanelUpdateStatusError(message)
+      reportClientError('Failed to fetch panel update status.', error)
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchPanelUpdateStatus()
+  }, [fetchPanelUpdateStatus])
+
+  const normalizePort = (value: string): string => {
+    const parsed = Number.parseInt(value, 10)
+    if (Number.isFinite(parsed) && parsed >= 1 && parsed <= 65535) {
+      return String(parsed)
+    }
+    return '3001'
+  }
+
   const handleSave = async () => {
     setSaving(true)
     try {
       await configApi.updateAppSettings(settings as unknown as Record<string, string>)
       setOriginalSettings(settings) // Reset dirty state after save
       toast({
-        title: 'Success',
-        description: 'Settings saved successfully',
+        title: 'Settings Saved',
+        description: 'Your panel settings were saved.',
         variant: 'success' as const,
       })
     } catch (error) {
       toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to save settings',
+        title: 'Could Not Save Settings',
+        description: error instanceof Error ? error.message : 'The panel could not save your settings. Try again.',
         variant: 'destructive',
       })
     } finally {
@@ -295,19 +342,197 @@ export default function Settings() {
     }
   }
 
+  const restartPanelWithReconnect = useCallback(async (description: string) => {
+    setRestarting(true)
+    try {
+      await serverApi.restartPanel()
+      toast({
+        title: 'Restarting Panel',
+        description,
+      })
+
+      if (restartTimeoutRef.current) clearTimeout(restartTimeoutRef.current)
+      restartTimeoutRef.current = setTimeout(() => {
+        const newPort = normalizePort(settings.panelPort)
+        const newUrl = `${window.location.protocol}//${window.location.hostname}:${newPort}${window.location.pathname}${window.location.search}${window.location.hash}`
+        window.location.href = newUrl
+      }, 3000)
+    } catch {
+      setRestarting(false)
+      toast({
+        title: 'Restart Failed',
+        description: 'Could not restart the panel. You may need to restart it manually.',
+        variant: 'destructive',
+      })
+    }
+  }, [settings.panelPort, toast])
+
+  const handleCheckPanelUpdate = async () => {
+    setCheckingPanelUpdate(true)
+    setPanelUpdateStatusError(null)
+    try {
+      const status = await panelUpdateApi.check()
+      setPanelUpdateStatus(status)
+
+      if (status.updateAvailable) {
+        toast({
+          title: 'Update Available',
+          description: `A newer panel version is available: v${status.latestVersion} (installed: v${status.currentVersion}).`,
+        })
+      } else {
+        setPanelUpdateReady(false)
+        toast({
+          title: 'Up to Date',
+          description: `You are running the latest panel release (v${status.currentVersion}).`,
+          variant: 'success' as const,
+        })
+      }
+    } catch (error) {
+      toast({
+        title: 'Update Check Failed',
+        description: error instanceof Error ? error.message : 'The panel could not reach GitHub. Check your connection and try again.',
+        variant: 'destructive',
+      })
+    } finally {
+      setCheckingPanelUpdate(false)
+    }
+  }
+
+  const handleDownloadPanelUpdate = async () => {
+    if (!panelUpdateStatus?.updateAvailable) {
+      toast({
+        title: 'No Update Available',
+        description: 'No newer release was found. Run Check for Updates to refresh status.',
+      })
+      return
+    }
+
+    setDownloadingPanelUpdate(true)
+    setPanelUpdateStatusError(null)
+    try {
+      const result = await panelUpdateApi.download()
+      if (!result.success) {
+        throw new Error(result.error || result.message || 'Update download failed')
+      }
+
+      setPanelUpdateReady(true)
+      toast({
+        title: 'Update Downloaded',
+        description: result.message || 'The update files are ready. Restart the panel to apply this version.',
+        variant: 'success' as const,
+      })
+      await fetchPanelUpdateStatus()
+    } catch (error) {
+      toast({
+        title: 'Download Failed',
+        description: error instanceof Error ? error.message : 'The panel could not download the update. Check network access, disk space, and permissions.',
+        variant: 'destructive',
+      })
+    } finally {
+      setDownloadingPanelUpdate(false)
+    }
+  }
+
+  const formatTimestamp = (value: string | null): string => {
+    if (!value) return 'Never'
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return 'Unknown'
+    return new Intl.DateTimeFormat(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    }).format(date)
+  }
+
+  useEffect(() => {
+    if (!socket) return
+
+    const handlePanelUpdateAvailable = (data: { latestVersion?: string; currentVersion?: string; releaseUrl?: string }) => {
+      setPanelUpdateStatus(prev => {
+        const base: PanelUpdateStatus = prev || {
+          currentVersion: data.currentVersion || 'Unknown',
+          updateAvailable: true,
+          latestVersion: data.latestVersion || null,
+          releaseUrl: data.releaseUrl || null,
+          releaseNotes: null,
+          publishedAt: null,
+          isChecking: false,
+          isDownloading: false,
+          downloadProgress: 0,
+          lastCheck: new Date().toISOString(),
+          lastError: null,
+        }
+        return {
+          ...base,
+          updateAvailable: true,
+          latestVersion: data.latestVersion || base.latestVersion,
+          currentVersion: data.currentVersion || base.currentVersion,
+          releaseUrl: data.releaseUrl || base.releaseUrl,
+          lastError: null,
+        }
+      })
+    }
+
+    const handlePanelDownloadProgress = (data: { progress?: number; status?: string }) => {
+      setPanelUpdateStatus(prev => {
+        const base: PanelUpdateStatus = prev || {
+          currentVersion: 'Unknown',
+          updateAvailable: true,
+          latestVersion: null,
+          releaseUrl: null,
+          releaseNotes: null,
+          publishedAt: null,
+          isChecking: false,
+          isDownloading: false,
+          downloadProgress: 0,
+          lastCheck: null,
+          lastError: null,
+        }
+        const bounded = Math.max(0, Math.min(100, data.progress ?? base.downloadProgress))
+        return {
+          ...base,
+          isDownloading: data.status === 'downloading' || data.status === 'preparing',
+          downloadProgress: bounded,
+        }
+      })
+    }
+
+    const handlePanelUpdateReady = (data: { version?: string }) => {
+      setPanelUpdateReady(true)
+      toast({
+        title: 'Update Ready',
+        description: data.version
+          ? `Panel v${data.version} is downloaded. Restart the panel to switch to the new version.`
+          : 'The update is downloaded. Restart the panel to switch to the new version.',
+        variant: 'success' as const,
+      })
+      setPanelUpdateStatusError(null)
+      fetchPanelUpdateStatus()
+    }
+
+    socket.on('panel:updateAvailable', handlePanelUpdateAvailable)
+    socket.on('panel:downloadProgress', handlePanelDownloadProgress)
+    socket.on('panel:updateReady', handlePanelUpdateReady)
+
+    return () => {
+      socket.off('panel:updateAvailable', handlePanelUpdateAvailable)
+      socket.off('panel:downloadProgress', handlePanelDownloadProgress)
+      socket.off('panel:updateReady', handlePanelUpdateReady)
+    }
+  }, [socket, toast, fetchPanelUpdateStatus])
+
   const handleTestRcon = async () => {
     setTestingRcon(true)
     try {
       await configApi.testRcon()
       toast({
-        title: 'Success',
-        description: 'RCON connection successful',
+        title: 'RCON Connected',
+        description: 'The panel connected to your server over RCON.',
         variant: 'success' as const,
       })
     } catch (error) {
       toast({
-        title: 'Connection Failed',
-        description: error instanceof Error ? error.message : 'Could not connect to RCON',
+        title: 'RCON Connection Failed',
+        description: error instanceof Error ? error.message : 'The panel could not connect to RCON. Verify host, port, password, and firewall rules.',
         variant: 'destructive',
       })
     } finally {
@@ -322,7 +547,7 @@ export default function Settings() {
       setBridgeStatus(status)
       setBridgeError(null)
     } catch (error) {
-      console.error('Failed to fetch bridge status:', error)
+      reportClientError('Failed to fetch bridge status.', error)
     }
   }, [])
   
@@ -337,7 +562,7 @@ export default function Settings() {
         setSelectedInstallServerId(String(activeServer.id))
       }
     } catch (error) {
-      console.error('Failed to fetch servers:', error)
+      reportClientError('Failed to fetch servers.', error)
     }
   }, [selectedInstallServerId])
   
@@ -345,8 +570,8 @@ export default function Settings() {
   const handleInstallMod = async () => {
     if (!selectedInstallServerId) {
       toast({
-        title: 'Error',
-        description: 'Please select a server to install to',
+        title: 'Select a Server',
+        description: 'Choose the server where you want to install PanelBridge.lua.',
         variant: 'destructive',
       })
       return
@@ -356,14 +581,14 @@ export default function Settings() {
     try {
       const result = await panelBridgeApi.installModAuto(selectedInstallServerId)
       toast({
-        title: 'Success',
-        description: `PanelBridge.lua installed to ${result.serverName || 'server'}`,
+        title: 'PanelBridge Installed',
+        description: `PanelBridge.lua was copied to ${result.serverName || 'the selected server'}.`,
         variant: 'success' as const,
       })
     } catch (error) {
       toast({
         title: 'Installation Failed',
-        description: error instanceof Error ? error.message : 'Failed to install mod',
+        description: error instanceof Error ? error.message : 'The panel could not copy PanelBridge.lua. Verify the server path and permissions, then try again.',
         variant: 'destructive',
       })
     } finally {
@@ -420,7 +645,7 @@ export default function Settings() {
       setBackupSchedule(status.schedule)
       setBackupMaxCount(status.maxBackups)
     } catch (error) {
-      console.error('Failed to fetch backup status:', error)
+      reportClientError('Failed to fetch backup status.', error)
     }
   }, [])
 
@@ -429,7 +654,7 @@ export default function Settings() {
       const data = await backupApi.listBackups()
       setBackups(data.backups || [])
     } catch (error) {
-      console.error('Failed to fetch backups:', error)
+      reportClientError('Failed to fetch backups.', error)
     }
   }, [])
 
@@ -549,13 +774,13 @@ export default function Settings() {
       await fetchBackupStatus()
       toast({
         title: 'Backup Settings Saved',
-        description: 'Backup schedule has been updated',
+        description: 'Backup schedule and retention settings were updated.',
         variant: 'success' as const,
       })
     } catch (error) {
       toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to save backup settings',
+        title: 'Could Not Save Backup Settings',
+        description: error instanceof Error ? error.message : 'The panel could not save backup schedule settings. Try again.',
         variant: 'destructive',
       })
     } finally {
@@ -570,12 +795,15 @@ export default function Settings() {
       await fetchBackupStatus()
       toast({
         title: enabled ? 'Scheduled Backups Enabled' : 'Scheduled Backups Disabled',
+        description: enabled
+          ? 'The panel will create backups on the configured schedule.'
+          : 'Automatic backups are off. Manual backups are still available.',
         variant: 'success' as const,
       })
     } catch (error) {
       toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to update backup settings',
+        title: 'Could Not Update Backups',
+        description: error instanceof Error ? error.message : 'The panel could not update scheduled backup status. Try again.',
         variant: 'destructive',
       })
     } finally {
@@ -681,7 +909,7 @@ export default function Settings() {
     } catch (error) {
       toast({
         title: 'Failed to Stop',
-        description: error instanceof Error ? error.message : 'Unknown error',
+        description: error instanceof Error ? error.message : 'The panel could not stop Panel Bridge. Try again.',
         variant: 'destructive',
       })
     } finally {
@@ -700,15 +928,15 @@ export default function Settings() {
         })
       } else {
         toast({
-          title: 'No Response',
-          description: result.error || 'Mod did not respond',
+          title: 'Mod Did Not Respond',
+          description: result.error || 'No response from PanelBridge.lua. Make sure the game server is running and the mod is enabled.',
           variant: 'destructive',
         })
       }
     } catch (error) {
       toast({
         title: 'Ping Failed',
-        description: error instanceof Error ? error.message : 'Unknown error',
+        description: error instanceof Error ? error.message : 'The panel could not ping the mod. Confirm the server is running with PanelBridge enabled.',
         variant: 'destructive',
       })
     }
@@ -726,12 +954,30 @@ export default function Settings() {
   }
 
   const selectedInstallServer = servers.find((server) => String(server.id) === selectedInstallServerId) || null
+  const trimmedHttpsKeyPath = settings.httpsKeyPath.trim()
+  const trimmedHttpsCertPath = settings.httpsCertPath.trim()
+  const hasPartialHttpsCertPath = Boolean(trimmedHttpsKeyPath) !== Boolean(trimmedHttpsCertPath)
+  const usingAutoGeneratedHttpsCert = settings.httpsEnabled && !trimmedHttpsKeyPath && !trimmedHttpsCertPath
+  const httpsPortPreview = normalizePort(settings.httpsPort || '3443')
+  const httpPortPreview = normalizePort(settings.panelPort || '3001')
+  const httpsPreviewUrl = `https://${window.location.hostname}:${httpsPortPreview}`
+  const httpPreviewUrl = `http://${window.location.hostname}:${httpPortPreview}`
+
+  const applyRecommendedHttpsDefaults = () => {
+    updateSetting('httpsEnabled', true)
+    updateSetting('httpsPort', '3443')
+    updateSetting('httpsKeyPath', '')
+    updateSetting('httpsCertPath', '')
+  }
+
+  // Detect path separator from install path; default to '/' (works on all platforms)
+  const sep = selectedInstallServer?.installPath?.includes('\\') ? '\\' : '/'
   const selectedInstallTarget = selectedInstallServer
-    ? `${selectedInstallServer.installPath}\\media\\lua\\server\\PanelBridge.lua`
+    ? `${selectedInstallServer.installPath}${sep}media${sep}lua${sep}server${sep}PanelBridge.lua`
     : null
   const watchedBridgeFolder = bridgeStatus?.bridgePath
     || (selectedInstallServer?.zomboidDataPath
-      ? `${selectedInstallServer.zomboidDataPath}\\panelbridge\\${selectedInstallServer.serverName}`
+      ? `${selectedInstallServer.zomboidDataPath}${sep}panelbridge${sep}${selectedInstallServer.serverName}`
       : null)
 
   const handleChangePassword = async () => {
@@ -754,7 +1000,7 @@ export default function Settings() {
     } catch (error) {
       toast({
         title: 'Change Password Failed',
-        description: error instanceof Error ? error.message : 'Unknown error',
+        description: error instanceof Error ? error.message : 'The panel could not change your password. Check your current password and try again.',
         variant: 'destructive',
       })
     } finally {
@@ -779,11 +1025,11 @@ export default function Settings() {
           <AlertTitle className="text-warning">Unsaved Changes</AlertTitle>
           <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <span className="text-sm text-muted-foreground">
-              You have unsaved changes. Click Save Settings to apply them.
+              You have unsaved settings. Save changes to apply them.
             </span>
             <Button onClick={handleSave} disabled={saving} size="sm" variant="warning" className="self-start gap-2">
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              Save Now
+              Save Changes
             </Button>
           </AlertDescription>
         </Alert>
@@ -791,12 +1037,12 @@ export default function Settings() {
       
       <PageHeader
         title="Settings"
-        description="Configure the server management panel"
+        description="Manage panel network, updates, integrations, backups, and security."
         icon={<Settings2 className="w-5 h-5" />}
         actions={
           <Button onClick={handleSave} disabled={saving || !isDirty} size="lg" className="w-full sm:w-auto gap-2">
             {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
-            {saving ? 'Saving...' : isDirty ? 'Save Settings' : 'Saved'}
+            {saving ? 'Saving...' : isDirty ? 'Save Settings' : 'No Unsaved Changes'}
           </Button>
         }
       />
@@ -852,7 +1098,7 @@ export default function Settings() {
               placeholder="3001"
             />
             <p className="text-xs text-muted-foreground mt-1">
-              The port this panel listens on (default: 3001)
+              Choose the port players and admins use to open this panel (default: 3001).
             </p>
           </div>
           {originalSettings && settings.panelPort !== originalSettings.panelPort && (
@@ -867,30 +1113,7 @@ export default function Settings() {
           <div className="flex items-center gap-3">
             <Button 
               variant="outline" 
-              onClick={async () => {
-                setRestarting(true)
-                try {
-                  await serverApi.restartPanel()
-                  toast({
-                    title: 'Restarting Panel',
-                    description: `Panel is restarting on port ${settings.panelPort}. Reconnecting...`,
-                  })
-                  // Wait then redirect to the (potentially new) port
-                  if (restartTimeoutRef.current) clearTimeout(restartTimeoutRef.current)
-                  restartTimeoutRef.current = setTimeout(() => {
-                    const newPort = settings.panelPort || '3001'
-                    const newUrl = `${window.location.protocol}//${window.location.hostname}:${newPort}${window.location.pathname}`
-                    window.location.href = newUrl
-                  }, 3000)
-                } catch {
-                  setRestarting(false)
-                  toast({
-                    title: 'Restart Failed',
-                    description: 'Could not restart the panel. You may need to restart it manually.',
-                    variant: 'destructive',
-                  })
-                }
-              }}
+              onClick={() => restartPanelWithReconnect(`Panel is restarting on port ${settings.panelPort}. Reconnecting...`)}
               disabled={restarting || isDirty}
               className="gap-2"
             >
@@ -900,6 +1123,157 @@ export default function Settings() {
             {isDirty && (
               <p className="text-xs text-muted-foreground">Save settings before restarting</p>
             )}
+          </div>
+
+          <div className="rounded-xl border border-border/70 bg-muted/30 p-4 space-y-4">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className="text-sm font-medium">Panel Auto Update</p>
+                <p className="text-xs text-muted-foreground">
+                  The panel checks GitHub releases, downloads a newer version, then applies it after restart.
+                </p>
+              </div>
+              {(checkingPanelUpdate || panelUpdateStatus?.isChecking) ? (
+                <span className="inline-flex items-center rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-semibold text-foreground/85">
+                  Checking...
+                </span>
+              ) : (downloadingPanelUpdate || panelUpdateStatus?.isDownloading) ? (
+                <span className="inline-flex items-center rounded-full border border-primary/35 bg-primary/12 px-2.5 py-0.5 text-xs font-semibold text-primary">
+                  Downloading...
+                </span>
+              ) : panelUpdateStatus?.updateAvailable ? (
+                <span className="inline-flex items-center rounded-full border border-warning/35 bg-warning/12 px-2.5 py-0.5 text-xs font-semibold text-warning">
+                  Update available
+                </span>
+              ) : panelUpdateStatusError ? (
+                <span className="inline-flex items-center rounded-full border border-destructive/35 bg-destructive/12 px-2.5 py-0.5 text-xs font-semibold text-destructive">
+                  Cannot reach updater
+                </span>
+              ) : !panelUpdateStatus ? (
+                <span className="inline-flex items-center rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-semibold text-foreground/80">
+                  Not checked
+                </span>
+              ) : (
+                <span className="inline-flex items-center rounded-full border border-primary/30 bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
+                  Up to date
+                </span>
+              )}
+            </div>
+
+            {panelUpdateStatusError && (
+              <Alert variant="destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertTitle>Updater Status Error</AlertTitle>
+                <AlertDescription className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <span className="break-words">{panelUpdateStatusError}</span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={fetchPanelUpdateStatus}
+                    disabled={checkingPanelUpdate || downloadingPanelUpdate || restarting}
+                    className="self-start"
+                  >
+                    Retry
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            )}
+
+            <div className="grid gap-3 text-xs sm:grid-cols-2">
+              <div className="rounded-lg border border-border/60 bg-background/60 px-3 py-2">
+                <p className="text-muted-foreground">Installed</p>
+                <p className="mt-1 font-medium text-foreground">v{panelUpdateStatus?.currentVersion || 'Unknown'}</p>
+              </div>
+              <div className="rounded-lg border border-border/60 bg-background/60 px-3 py-2">
+                <p className="text-muted-foreground">Latest</p>
+                <p className="mt-1 font-medium text-foreground">{panelUpdateStatus?.latestVersion ? `v${panelUpdateStatus.latestVersion}` : 'Not checked yet'}</p>
+              </div>
+              <div className="rounded-lg border border-border/60 bg-background/60 px-3 py-2">
+                <p className="text-muted-foreground">Last Check</p>
+                <p className="mt-1 font-medium text-foreground">{formatTimestamp(panelUpdateStatus?.lastCheck || null)}</p>
+              </div>
+              <div className="rounded-lg border border-border/60 bg-background/60 px-3 py-2">
+                <p className="text-muted-foreground">Release Published</p>
+                <p className="mt-1 font-medium text-foreground">{formatTimestamp(panelUpdateStatus?.publishedAt || null)}</p>
+              </div>
+            </div>
+
+            {(downloadingPanelUpdate || panelUpdateStatus?.isDownloading) && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>Downloading update</span>
+                  <span>{panelUpdateStatus?.downloadProgress ?? 0}%</span>
+                </div>
+                <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full bg-primary transition-[width] duration-200 ease-out"
+                    style={{ width: `${panelUpdateStatus?.downloadProgress ?? 0}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {panelUpdateStatus?.lastError && (
+              <Alert variant="destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertTitle>Last Update Error</AlertTitle>
+                <AlertDescription className="break-words whitespace-pre-wrap">{panelUpdateStatus.lastError}</AlertDescription>
+              </Alert>
+            )}
+
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                onClick={handleCheckPanelUpdate}
+                disabled={checkingPanelUpdate || downloadingPanelUpdate || restarting}
+                className="gap-2"
+              >
+                {checkingPanelUpdate ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                {checkingPanelUpdate ? 'Checking...' : 'Check for Updates'}
+              </Button>
+
+              <Button
+                onClick={handleDownloadPanelUpdate}
+                disabled={!panelUpdateStatus?.updateAvailable || checkingPanelUpdate || downloadingPanelUpdate || restarting}
+                className="gap-2"
+              >
+                {downloadingPanelUpdate ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                {downloadingPanelUpdate ? 'Downloading...' : 'Download Update'}
+              </Button>
+
+              <Button
+                variant="warning"
+                onClick={() => restartPanelWithReconnect('Applying downloaded update. Restarting panel...')}
+                disabled={!panelUpdateReady || restarting || isDirty || downloadingPanelUpdate || Boolean(panelUpdateStatus?.isDownloading)}
+                className="gap-2"
+              >
+                {restarting ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCw className="w-4 h-4" />}
+                Restart and Apply Update
+              </Button>
+
+              {panelUpdateStatus?.releaseUrl && (
+                <Button asChild variant="ghost" className="gap-2">
+                  <a href={panelUpdateStatus.releaseUrl} target="_blank" rel="noopener noreferrer" className="max-w-full truncate" title={panelUpdateStatus.releaseUrl}>
+                    <ExternalLink className="h-4 w-4" />
+                    View Release Notes
+                  </a>
+                </Button>
+              )}
+            </div>
+
+            <p className="text-xs text-muted-foreground">
+              {isDirty
+                ? 'Save settings before applying an update.'
+                : panelUpdateReady
+                ? 'Update files are ready. Restart to switch to the new version.'
+                : panelUpdateStatus?.updateAvailable
+                ? 'Download the update, then restart to apply it.'
+                : 'No update is ready to install.'}
+            </p>
+
+            <p className="text-xs text-muted-foreground">
+              Auto-update works only in packaged panel builds. In development mode, update from git.
+            </p>
           </div>
         </CardContent>
       </Card>
@@ -911,9 +1285,23 @@ export default function Settings() {
             <Lock className="w-4 h-4 text-primary" />
             HTTPS
           </CardTitle>
-          <CardDescription>Enable encrypted connections with SSL/TLS certificates</CardDescription>
+          <CardDescription>Secure panel access with TLS. Recommended for LAN and remote administration.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <Alert className="border-border/60 bg-muted/40">
+            <Lock className="h-4 w-4 text-primary" />
+            <AlertTitle>Recommended Setup (Most Servers)</AlertTitle>
+            <AlertDescription className="space-y-2 text-sm text-muted-foreground">
+              <p>Turn on HTTPS, keep custom certificate paths empty, save settings, then restart the panel.</p>
+              <p>The panel will generate a local self-signed certificate automatically. Your browser may show a one-time security warning until you trust it.</p>
+              <div className="flex flex-wrap gap-2 pt-1">
+                <Button type="button" variant="outline" size="sm" onClick={applyRecommendedHttpsDefaults}>
+                  Use Recommended Defaults
+                </Button>
+              </div>
+            </AlertDescription>
+          </Alert>
+
           <div className="flex items-center gap-3 p-4 rounded-xl bg-muted/50">
             <Switch
               checked={settings.httpsEnabled}
@@ -922,10 +1310,16 @@ export default function Settings() {
             <div>
               <Label className="text-base">Enable HTTPS</Label>
               <p className="text-sm text-muted-foreground">
-                Serve the panel over HTTPS. A self-signed certificate is generated automatically if no custom paths are set.
+                Serve the panel over HTTPS with encryption in transit.
               </p>
             </div>
           </div>
+
+          <div className="rounded-xl border border-border/60 bg-background/50 p-3 text-xs text-muted-foreground space-y-1">
+            <p><strong className="text-foreground">HTTP URL:</strong> <code className="break-all">{httpPreviewUrl}</code></p>
+            <p><strong className="text-foreground">HTTPS URL:</strong> <code className="break-all">{httpsPreviewUrl}</code></p>
+          </div>
+
           {settings.httpsEnabled && (
             <div className="ml-2 space-y-4 border-l-2 border-primary/20 pl-2">
               <div className="max-w-xs">
@@ -939,7 +1333,7 @@ export default function Settings() {
                   placeholder="3443"
                 />
                 <p className="text-xs text-muted-foreground mt-1">
-                  Port for HTTPS connections (default: 3443)
+                  HTTPS listener port (recommended: 3443).
                 </p>
               </div>
               <div className="max-w-md">
@@ -947,25 +1341,56 @@ export default function Settings() {
                 <Input
                   value={settings.httpsCertPath}
                   onChange={(e) => updateSetting('httpsCertPath', e.target.value)}
-                  placeholder="Leave empty to use auto-generated self-signed cert"
+                  placeholder="Example: C:\\certs\\panel.fullchain.pem"
                   maxLength={260}
                 />
+                <p className="text-xs text-muted-foreground mt-1">Set both certificate and key paths, or leave both empty.</p>
               </div>
               <div className="max-w-md">
                 <Label>Custom Key Path <span className="text-muted-foreground font-normal">(optional)</span></Label>
                 <Input
                   value={settings.httpsKeyPath}
                   onChange={(e) => updateSetting('httpsKeyPath', e.target.value)}
-                  placeholder="Leave empty to use auto-generated self-signed key"
+                  placeholder="Example: C:\\certs\\panel.privkey.pem"
                   maxLength={260}
                 />
+                <p className="text-xs text-muted-foreground mt-1">Supports PEM key files that Node.js can read.</p>
               </div>
+
+              {hasPartialHttpsCertPath && (
+                <Alert className="border-warning/40 bg-warning/10">
+                  <AlertTriangle className="h-4 w-4 text-warning" />
+                  <AlertTitle className="text-warning">Provide Both Certificate Files</AlertTitle>
+                  <AlertDescription>
+                    Set both the certificate and key path, or clear both fields to use the auto-generated certificate.
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              {usingAutoGeneratedHttpsCert && (
+                <Alert className="border-primary/30 bg-primary/10">
+                  <Lock className="h-4 w-4 text-primary" />
+                  <AlertTitle className="text-primary">Auto-Generated Certificate Mode</AlertTitle>
+                  <AlertDescription>
+                    The panel will create and reuse a local self-signed certificate. This is the easiest setup for most home and LAN servers.
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              <Alert className="border-border/60 bg-muted/35">
+                <Lock className="h-4 w-4 text-muted-foreground" />
+                <AlertTitle>Reverse Proxy Note</AlertTitle>
+                <AlertDescription>
+                  If TLS is terminated by Nginx, Caddy, or Cloudflare Tunnel, keep panel HTTPS off and proxy to the local HTTP URL.
+                </AlertDescription>
+              </Alert>
+
               {originalSettings && settings.httpsEnabled !== originalSettings.httpsEnabled && (
                 <Alert className="border-warning/40 bg-warning/10">
                   <AlertTriangle className="h-4 w-4 text-warning" />
                   <AlertTitle className="text-warning">Restart Required</AlertTitle>
                   <AlertDescription>
-                    HTTPS changes require a panel restart to take effect.
+                    HTTPS changes require a panel restart. Save settings first, then restart from Panel Settings.
                   </AlertDescription>
                 </Alert>
               )}
@@ -1032,24 +1457,11 @@ export default function Settings() {
               <CardDescription>Connects this panel to the live game for weather, utilities, richer chat, and other in-world actions</CardDescription>
             </div>
             {bridgeStatus && (
-              <div className="flex items-center gap-2">
-                {bridgeStatus.modConnected ? (
-                  <div className="flex items-center gap-2 text-primary">
-                    <CheckCircle2 className="w-5 h-5" />
-                    <span className="text-sm font-medium">Connected</span>
-                  </div>
-                ) : bridgeStatus.isRunning ? (
-                  <div className="flex items-center gap-2 text-warning">
-                    <Cloud className="w-5 h-5" />
-                    <span className="text-sm font-medium">Waiting for mod...</span>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <XCircle className="w-5 h-5" />
-                    <span className="text-sm font-medium">Not running</span>
-                  </div>
-                )}
-              </div>
+              <BridgeStatusBadge
+                connected={bridgeStatus.modConnected}
+                running={bridgeStatus.isRunning}
+                loading={bridgeLoading}
+              />
             )}
           </div>
         </CardHeader>
@@ -1060,6 +1472,9 @@ export default function Settings() {
             <AlertDescription className="space-y-3 text-sm text-muted-foreground">
               <p>
                 Panel Bridge has two pieces that must meet in the middle: the panel runs a local watcher, and your Project Zomboid server runs <strong className="text-foreground">PanelBridge.lua</strong> inside the game.
+              </p>
+              <p className="rounded-lg border border-warning/35 bg-warning/10 px-3 py-2 text-warning-foreground">
+                Before starting the server, set <strong className="text-foreground">LuaChecksum=false</strong> in your server INI. PanelBridge commands can fail when Lua checksum is enabled.
               </p>
               <div className="grid gap-3 md:grid-cols-3">
                 <div className="rounded-xl border border-border/60 bg-background/60 p-3">
@@ -1154,9 +1569,10 @@ export default function Settings() {
               <AlertTitle className="text-warning">Waiting for PZ mod to respond</AlertTitle>
               <AlertDescription className="space-y-2">
                 <p>The panel side is ready. Now start the Project Zomboid server with PanelBridge.lua installed and enabled in the server mod list.</p>
+                <p>Make sure <strong className="text-foreground">LuaChecksum=false</strong> is set in the server INI before startup.</p>
                 {bridgeStatus?.bridgePath && (
-                  <p className="text-xs text-muted-foreground">
-                    Watching folder: <code className="rounded bg-background px-1">{bridgeStatus.bridgePath}</code>
+                  <p className="text-xs text-muted-foreground break-words">
+                    Watching folder: <code className="rounded bg-background px-1 break-all">{bridgeStatus.bridgePath}</code>
                   </p>
                 )}
               </AlertDescription>
@@ -1632,6 +2048,7 @@ export default function Settings() {
                     type="button"
                     onClick={() => setShowCurrentPassword(!showCurrentPassword)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    aria-label={showCurrentPassword ? 'Hide password' : 'Show password'}
                   >
                     {showCurrentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -1649,6 +2066,7 @@ export default function Settings() {
                     type="button"
                     onClick={() => setShowNewPassword(!showNewPassword)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    aria-label={showNewPassword ? 'Hide password' : 'Show password'}
                   >
                     {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>

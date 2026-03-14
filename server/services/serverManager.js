@@ -1,4 +1,4 @@
-import { spawn, exec } from 'child_process';
+import { spawn, exec, execFile } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
@@ -179,7 +179,7 @@ export class ServerManager {
         // Linux/macOS: Use ps + grep to find the PZ server process
         // Check both the Java class name (zombie.network.GameServer) and
         // the native launcher (ProjectZomboid64 / projectzomboid64)
-        exec('ps aux', { timeout: 8000 }, (err, stdout) => {
+        exec('ps aux -ww', { timeout: 8000 }, (err, stdout) => {
           clearTimeout(timeout);
           if (err || !stdout) {
             this.isRunning = false;
@@ -198,7 +198,7 @@ export class ServerManager {
     });
   }
 
-  async startServer() {
+  async startServer({ skipRunningCheck = false } = {}) {
     // Force reload config from database before starting (settings may have changed)
     this.configLoaded = false;
     await this.loadConfig();
@@ -207,9 +207,11 @@ export class ServerManager {
       throw new Error('Server path not configured');
     }
 
-    const isRunning = await this.checkServerRunning();
-    if (isRunning) {
-      throw new Error('Server is already running');
+    if (!skipRunningCheck) {
+      const isRunning = await this.checkServerRunning();
+      if (isRunning) {
+        throw new Error('Server is already running');
+      }
     }
 
     const batPath = path.join(this.serverPath, this.serverBat);
@@ -230,7 +232,7 @@ export class ServerManager {
     } else {
       // Ensure the script is executable
       try {
-        fs.chmodSync(batPath, 0o755);
+        fs.chmodSync(batPath, 0o750);
       } catch (e) {
         log.warn(`Could not chmod startup script: ${e.message}`);
       }
@@ -296,17 +298,16 @@ export class ServerManager {
       } else {
         // Linux: Find and kill the PZ server process
         // Check both Java class name and native launcher (projectzomboid64)
-        exec("ps aux | grep -iE '[z]ombie.network.GameServer|[p]rojectzomboid64|[p]rojectzomboid32' | awk '{print $2}'", (err, stdout) => {
-          const pids = (stdout || '').trim().split('\n').filter(Boolean);
+        exec("ps aux -ww | grep -iE '[z]ombie.network.GameServer|[p]rojectzomboid64|[p]rojectzomboid32' | awk '{print $2}'", (err, stdout) => {
+          const pids = (stdout || '').trim().split('\n').filter(p => /^\d+$/.test(p));
           
           if (pids.length === 0) {
             resolve({ success: true, message: 'Server was not running' });
             return;
           }
           
-          // Kill each matching PID
-          const killCmd = `kill -9 ${pids.join(' ')}`;
-          exec(killCmd, (killErr) => {
+          // Kill each matching PID using execFile to avoid shell injection
+          execFile('kill', ['-9', ...pids], (killErr) => {
             this.isRunning = false;
             this.serverProcess = null;
             this.startTime = null;
@@ -392,8 +393,11 @@ export class ServerManager {
         await this.sleep(5000);
       }
 
-      // Start the server
-      await this.startServer();
+      // Extra delay to let OS reap the process
+      await this.sleep(3000);
+
+      // Start the server — skip running check, we just confirmed it stopped
+      await this.startServer({ skipRunningCheck: true });
 
       await logServerEvent('server_restart', 'Server restarted');
       return { success: true, message: 'Server restarted successfully' };

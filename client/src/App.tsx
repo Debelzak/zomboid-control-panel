@@ -15,6 +15,8 @@ import { useToast } from './components/ui/use-toast'
 import { PageSkeleton } from './components/PageSkeleton'
 import { ScrollToTop } from './components/ScrollToTop'
 import { Shield } from 'lucide-react'
+import { isDemoMode } from './lib/demo'
+import DemoMenuPreview from './pages/DemoMenuPreview'
 
 const AUTH_LOADING_MESSAGES = [
   'Verifying credentials and restoring your post.',
@@ -67,7 +69,7 @@ function AuthScreenLoader() {
         className="absolute inset-0 opacity-60"
         style={{
           backgroundImage:
-            'radial-gradient(circle at top, hsl(var(--primary) / 0.1), transparent 34%), linear-gradient(180deg, hsl(var(--background)), hsl(var(--background)))',
+            'radial-gradient(circle at 82% -10%, hsl(var(--primary) / 0.2), transparent 36%), radial-gradient(circle at 14% 108%, hsl(var(--destructive) / 0.16), transparent 42%), linear-gradient(180deg, hsl(var(--background)), hsl(var(--background)))',
         }}
       />
       <div aria-hidden="true" className="control-room-sweep absolute inset-0 opacity-60" />
@@ -167,7 +169,6 @@ function AppContent() {
 
       // Connection error with detailed logging (from Socket.IO best practices)
       newSocket.on('connect_error', (err) => {
-        console.error('Connection error:', err.message)
         if (newSocket.active) {
           // Temporary failure, socket will automatically reconnect
           setConnectionStatus(prev => ({
@@ -198,7 +199,6 @@ function AppContent() {
       })
 
       newSocket.io.on('reconnect_failed', () => {
-        console.error('All reconnection attempts failed')
         setConnectionStatus({
           connected: false,
           reconnecting: false,
@@ -290,6 +290,19 @@ function AppContent() {
 }
 
 function App() {
+  if (isDemoMode()) {
+    return (
+      <ErrorBoundary>
+        <ThemeProvider>
+          <TooltipProvider>
+            <DemoMenuPreview />
+            <Toaster />
+          </TooltipProvider>
+        </ThemeProvider>
+      </ErrorBoundary>
+    )
+  }
+
   return (
     <ErrorBoundary>
       <ThemeProvider>

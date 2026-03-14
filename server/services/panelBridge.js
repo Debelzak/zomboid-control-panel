@@ -7,6 +7,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import { v4 as uuidv4 } from 'uuid';
 import { EventEmitter } from 'events';
 import { logPlayerAction, recordPlayerSession } from '../database/init.js';
@@ -72,13 +73,15 @@ class PanelBridge extends EventEmitter {
    * @param {string} zomboidUserFolder - Path to Zomboid user folder (optional)
    */
   autoDetect(serverName, zomboidUserFolder = null) {
+    // Validate serverName to prevent path traversal
+    if (!serverName || typeof serverName !== 'string' || !/^[a-zA-Z0-9_\- ]{1,64}$/.test(serverName)) {
+      throw new Error('Invalid server name — use only letters, numbers, spaces, hyphens, and underscores (max 64 chars)');
+    }
+
     // Default Zomboid folder locations
     const possibleBases = zomboidUserFolder 
       ? [zomboidUserFolder]
-      : [
-          process.env.USERPROFILE ? path.join(process.env.USERPROFILE, 'Zomboid') : null,
-          process.env.HOME ? path.join(process.env.HOME, 'Zomboid') : null,
-        ].filter(Boolean);
+      : [path.join(os.homedir(), 'Zomboid')];
 
     for (const base of possibleBases) {
       // The Lua mod writes to: {base}/Lua/panelbridge/{serverName}/
@@ -269,6 +272,10 @@ class PanelBridge extends EventEmitter {
     if (!this.isRunning) {
       throw new Error('Bridge not running');
     }
+    // Fail fast if the mod hasn't responded recently (avoids 15s timeout wait)
+    if (this.modStatus && !this.modStatus.alive && action !== 'ping') {
+      throw new Error('Mod is not responding — check the PZ server is running with PanelBridge enabled');
+    }
 
     const commandsFile = this.getCommandsFile();
     const id = uuidv4();
@@ -329,13 +336,13 @@ class PanelBridge extends EventEmitter {
     });
 
     const tempFile = commandsFile + '.tmp';
-    fs.writeFileSync(tempFile, JSON.stringify(commands, null, 2));
+    fs.writeFileSync(tempFile, JSON.stringify(commands, null, 2), { mode: 0o600 });
     try {
       fs.renameSync(tempFile, commandsFile);
     } catch (err) {
       // If rename fails (file locked), try direct write as fallback
       log.warn(`renameSync failed, using direct write: ${err.message}`);
-      fs.writeFileSync(commandsFile, JSON.stringify(commands, null, 2));
+      fs.writeFileSync(commandsFile, JSON.stringify(commands, null, 2), { mode: 0o600 });
       try { fs.unlinkSync(tempFile); } catch (_) { /* ignore */ }
     }
   }
@@ -379,8 +386,10 @@ class PanelBridge extends EventEmitter {
         }
       }
 
-      // Cleanup old processed IDs (keep last 100)
-      if (this.processedResults.size > 100) {
+      // Cleanup old processed IDs (keep last 100, hard cap at 500)
+      if (this.processedResults.size > 500) {
+          this.processedResults.clear();
+      } else if (this.processedResults.size > 100) {
           // Map iterates in insertion order, so the first items are the oldest
           let count = 0;
           for (const [key, _] of this.processedResults) {

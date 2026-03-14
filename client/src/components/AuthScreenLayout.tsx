@@ -29,7 +29,7 @@ export function AuthScreenLayout({
         className="absolute inset-0 opacity-70"
         style={{
           backgroundImage:
-            'radial-gradient(circle at top, hsl(var(--primary) / 0.12), transparent 34%), linear-gradient(180deg, hsl(var(--background)), hsl(var(--background)))',
+            'radial-gradient(circle at 84% -12%, hsl(var(--primary) / 0.22), transparent 38%), radial-gradient(circle at 12% 108%, hsl(var(--destructive) / 0.16), transparent 42%), linear-gradient(180deg, hsl(var(--background)), hsl(var(--background)))',
         }}
       />
       <div

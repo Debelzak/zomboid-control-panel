@@ -33,6 +33,7 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { reportClientError } from '@/lib/client-errors'
 import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
@@ -205,7 +206,7 @@ export default function Debug() {
         setSystemInfo(null)
       }
     } catch (error) {
-      console.error('Failed to fetch system info:', error)
+      reportClientError('Failed to fetch system info.', error)
     }
   }
 
@@ -221,7 +222,7 @@ export default function Debug() {
         setHealthStatus(null)
       }
     } catch (error) {
-      console.error('Failed to fetch health status:', error)
+      reportClientError('Failed to fetch health status.', error)
     }
   }
 
@@ -303,7 +304,7 @@ export default function Debug() {
         })))
       }
     } catch (error) {
-      console.error('Failed to fetch logs:', error)
+      reportClientError('Failed to fetch logs.', error)
     }
   }
 

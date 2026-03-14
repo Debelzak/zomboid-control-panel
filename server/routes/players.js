@@ -58,7 +58,7 @@ router.get('/', async (req, res) => {
     const result = await rconService.getPlayers();
     
     const io = req.app.get('io');
-    if (result.success) {
+    if (io && result.success) {
       io.to('players').emit('players:update', result.players);
     }
     

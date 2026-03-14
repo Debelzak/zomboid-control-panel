@@ -10,12 +10,12 @@ export interface BadgeProps extends React.HTMLAttributes<HTMLDivElement> {
 
 function Badge({ className, variant = 'default', ...props }: BadgeProps) {
   const variants = {
-    default: "bg-primary text-primary-foreground hover:bg-primary/80",
-    secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
-    destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/80",
-    outline: "text-foreground border border-input",
-    success: "bg-[hsl(var(--success))] text-[hsl(var(--success-foreground))] hover:bg-[hsl(var(--success)/0.85)]",
-    warning: "bg-[hsl(var(--warning))] text-[hsl(var(--warning-foreground))] hover:bg-[hsl(var(--warning)/0.85)]"
+    default: "border border-primary/20 bg-primary/12 text-primary",
+    secondary: "border border-border/70 bg-secondary/70 text-secondary-foreground",
+    destructive: "border border-destructive/25 bg-destructive/12 text-destructive",
+    outline: "border border-input bg-transparent text-foreground",
+    success: "border border-[hsl(var(--success)/0.28)] bg-[hsl(var(--success)/0.12)] text-[hsl(var(--success))]",
+    warning: "border border-[hsl(var(--warning)/0.28)] bg-[hsl(var(--warning)/0.14)] text-[hsl(var(--warning))]"
   }
 
   return (

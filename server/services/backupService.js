@@ -24,14 +24,26 @@ export class BackupService {
     this.restoreInProgress = false;
     this.lastBackup = null;
     this.backupHistory = [];
+     this.discordBot = null;
   }
 
   /**
    * Get the saves folder path for the current server
+  */
+
+  setDiscordBot(discordBot) {
+    this.discordBot = discordBot;
+  }
+
+  /**
+  * Get the saves folder path for the current server
    */
   async getSavesPath() {
-    try {
-      const activeServer = await getActiveServer();
+   /**
+    * (getSavesPath starts here)
+    */
+   try {
+     const activeServer = await getActiveServer();
       
       if (activeServer?.zomboidDataPath && activeServer?.serverName) {
         const savesPath = path.join(activeServer.zomboidDataPath, 'Saves', 'Multiplayer', activeServer.serverName);
@@ -294,6 +306,11 @@ export class BackupService {
           
           emitProgress('complete', 100, `Backup complete! (${sizeMB} MB in ${duration}s)`);
           
+           // Notify Discord of completed backup
+           if (this.discordBot) {
+             this.discordBot.sendEventNotification('backupComplete', {}).catch(() => {});
+           }
+
           resolve({
             success: true,
             backup: this.lastBackup,

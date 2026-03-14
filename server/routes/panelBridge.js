@@ -12,6 +12,8 @@ import { fileURLToPath } from 'url';
 import bridge from '../services/panelBridge.js';
 import { getActiveServer, getServer, getAllSettings } from '../database/init.js';
 import { sanitizeError } from '../utils/sanitize.js';
+import { createLogger } from '../utils/logger.js';
+const log = createLogger('API:PanelBridge');
 
 // ES Module __dirname equivalent
 const __filename = fileURLToPath(import.meta.url);
@@ -135,8 +137,12 @@ router.post('/auto-configure', async (req, res) => {
     if (targetServer.zomboidDataPath) {
       addPath(path.join(targetServer.zomboidDataPath, 'Lua', 'panelbridge', serverName), 'zomboidDataPath/Lua (cachedir)', 1);
     }
-    
-    // PRIORITY 2: Look for Server_files* folders at the parent level (runtime data location)
+
+    // PRIORITY 2 (fallback): default ~/Zomboid folder — works on both Windows and Linux when
+    // the server runs without a custom -cachedir (e.g., most Linux dedicated server setups)
+    addPath(path.join(os.homedir(), 'Zomboid', 'Lua', 'panelbridge', serverName), 'default Zomboid folder', 2);
+
+    // PRIORITY 3: Look for Server_files* folders at the parent level (runtime data location)
     // This is where -cachedir typically points for dedicated servers with separate data folders
     if (targetServer.installPath) {
       const parentDir = path.dirname(targetServer.installPath);
@@ -145,24 +151,24 @@ router.post('/auto-configure', async (req, res) => {
         // Match Server_files* patterns (e.g., Server_files_B42, Server_files_B42_Beta1)
         if (item.startsWith('Server_files') || item.match(/Server.*files/i)) {
           const luaPath = path.join(parentDir, item, 'Lua', 'panelbridge', serverName);
-          addPath(luaPath, `${item}/Lua`, 2);
+          addPath(luaPath, `${item}/Lua`, 3);
         }
       }
-      
-      // PRIORITY 3: Also check grandparent directory (for nested setups)
+
+      // PRIORITY 4: Also check grandparent directory (for nested setups)
       const grandParentDir = path.dirname(parentDir);
       if (grandParentDir !== parentDir) {
         const grandParentContents = safeReadDir(grandParentDir);
         for (const item of grandParentContents) {
           if (item.startsWith('Server_files') || item.match(/Server.*files/i)) {
             const luaPath = path.join(grandParentDir, item, 'Lua', 'panelbridge', serverName);
-            addPath(luaPath, `${item}/Lua`, 3);
+            addPath(luaPath, `${item}/Lua`, 4);
           }
         }
       }
-      
-      // PRIORITY 4: Lua folder directly in install path (fallback)
-      addPath(path.join(targetServer.installPath, 'Lua', 'panelbridge', serverName), 'installPath/Lua', 4);
+
+      // PRIORITY 5: Lua folder directly in install path (fallback)
+      addPath(path.join(targetServer.installPath, 'Lua', 'panelbridge', serverName), 'installPath/Lua', 5);
     }
     
     // Sort by priority, then by whether it has status.json
@@ -251,7 +257,7 @@ router.post('/auto-configure', async (req, res) => {
       }
     } catch (modError) {
       // Non-fatal - mod install is optional
-      console.warn('Auto-install mod failed:', modError.message);
+      log.warn(`Auto-install mod failed: ${modError.message}`);
     }
     
     res.json({ 
@@ -1270,9 +1276,29 @@ router.post('/install-mod', (req, res) => {
     return res.status(400).json({ error: 'Must be an absolute path' });
   }
   
+  // Resolve symlinks to prevent traversal via symlink chains
+  let realTarget;
+  try {
+    // If target doesn't exist yet, resolve the parent and join
+    if (fs.existsSync(resolvedTarget)) {
+      realTarget = fs.realpathSync(resolvedTarget);
+    } else {
+      const parent = path.dirname(resolvedTarget);
+      if (fs.existsSync(parent)) {
+        realTarget = path.join(fs.realpathSync(parent), path.basename(resolvedTarget));
+      } else {
+        realTarget = resolvedTarget;
+      }
+    }
+  } catch {
+    realTarget = resolvedTarget;
+  }
+  
   // Path must end with expected PZ Lua server directory pattern
-  const normalizedTarget = resolvedTarget.replace(/\\/g, '/').toLowerCase();
-  if (!normalizedTarget.endsWith('/media/lua/server') && !normalizedTarget.endsWith('/media/lua/server/')) {
+  // Use forward slashes for comparison but preserve original case on Linux (case-sensitive FS)
+  const normalizedTarget = realTarget.replace(/\\/g, '/');
+  const targetLower = normalizedTarget.toLowerCase();
+  if (!targetLower.endsWith('/media/lua/server') && !targetLower.endsWith('/media/lua/server/')) {
     return res.status(400).json({ error: 'Path must point to a media/lua/server/ directory' });
   }
   
@@ -1303,13 +1329,13 @@ router.post('/install-mod', (req, res) => {
       return res.status(404).json({ error: `Source Lua file not found at: ${sourceLuaFile}` });
     }
     
-    // Ensure target directory exists
-    if (!fs.existsSync(targetPath)) {
-      fs.mkdirSync(targetPath, { recursive: true });
+    // Ensure target directory exists (use realTarget for safety)
+    if (!fs.existsSync(realTarget)) {
+      fs.mkdirSync(realTarget, { recursive: true, mode: 0o755 });
     }
     
     // Copy the Lua file
-    const destPath = path.join(targetPath, 'PanelBridge.lua');
+    const destPath = path.join(realTarget, 'PanelBridge.lua');
     fs.copyFileSync(sourceLuaFile, destPath);
     
     res.json({ 

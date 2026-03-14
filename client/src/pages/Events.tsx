@@ -23,7 +23,6 @@ import {
   Wind,
   Thermometer,
   AlertTriangle,
-  Settings,
   Droplets,
   Sun,
   Moon,
@@ -41,7 +40,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
@@ -49,6 +47,7 @@ import { useToast } from '@/components/ui/use-toast'
 import { rconApi, playersApi, panelBridgeApi } from '@/lib/api'
 import { Link } from 'react-router-dom'
 import { PageHeader } from '@/components/PageHeader'
+import { BridgeStatusBadge } from '@/components/BridgeStatusBadge'
 import { cn } from '@/lib/utils'
 
 interface Player {
@@ -137,6 +136,8 @@ function getEventSuccessCopy(action: string) {
       return { title: 'Vehicle Spawned', description: 'Vehicle delivered to the target player.' }
     case 'Send announcement':
       return { title: 'Announcement Sent', description: 'Message broadcast to all players.' }
+    case 'Apply All Climate':
+      return { title: 'Climate Applied', description: 'All climate parameters updated.' }
     default:
       return { title: 'Action Complete', description: `${action} completed successfully.` }
   }
@@ -435,12 +436,27 @@ export default function Events() {
         description="Trigger in-game events and world effects"
         icon={<Zap className="w-5 h-5 text-primary" />}
         actions={
-          <Button variant="outline" onClick={fetchPlayers} className="gap-2">
-            <RefreshCw className="w-4 h-4" />
-            Refresh Players
-          </Button>
+          <div className="flex items-center gap-2">
+            <BridgeStatusBadge connected={bridgeConnected} />
+            <Button variant="outline" onClick={fetchPlayers} className="gap-2">
+              <RefreshCw className="w-4 h-4" />
+              Refresh Players
+            </Button>
+          </div>
         }
       />
+
+      {/* Single top-level bridge warning — shown once, not per-card */}
+      {!bridgeConnected && (
+        <Alert className="border-warning/40 bg-warning/10">
+          <AlertTriangle className="h-4 w-4 text-warning" />
+          <AlertTitle className="text-warning">Panel Bridge Required</AlertTitle>
+          <AlertDescription className="space-y-2">
+            <p>Advanced features (weather, climate, time, infrastructure, sound) need <strong className="text-foreground">PanelBridge.lua</strong> installed and connected. Basic RCON weather and sound controls still work.</p>
+            <Link to="/settings" className="inline-flex text-sm text-primary underline hover:text-foreground">Open Bridge Setup</Link>
+          </AlertDescription>
+        </Alert>
+      )}
 
       {/* Target Selection */}
       <Card>
@@ -501,7 +517,7 @@ export default function Events() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 stagger-in">
         {/* ── Weather Section ── */}
         <Collapsible open={openSections.weather} onOpenChange={() => toggleSection('weather')} className="md:col-span-2">
-          <CollapsibleTrigger className="flex items-center gap-2 w-full py-2 text-left group">
+          <CollapsibleTrigger className="flex items-center gap-2 w-full py-2 text-left group rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
             <ChevronDown className={cn("w-4 h-4 text-muted-foreground transition-transform", openSections.weather && "rotate-180")} />
             <span className="text-sm font-medium text-muted-foreground uppercase tracking-wide">Weather</span>
             <div className="flex-1 border-t border-border/40 ml-2" />
@@ -591,41 +607,15 @@ export default function Events() {
         </Card>
 
         {/* Advanced Weather Controls (via Panel Bridge) */}
-        <Card className={!bridgeConnected ? 'opacity-60' : ''}>
+        <Card className={!bridgeConnected ? 'opacity-60 pointer-events-none' : ''}>
           <CardHeader className="pb-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Snowflake className="w-4 h-4 text-primary" />
-                  Advanced Weather
-                </CardTitle>
-                <CardDescription>Control blizzards, tropical storms, and snow</CardDescription>
-              </div>
-              {bridgeConnected ? (
-                <Badge variant="outline" className="gap-1 text-xs">
-                  <div className="h-2 w-2 rounded-full bg-primary animate-pulse" />
-                  Connected
-                </Badge>
-              ) : (
-                <Link to="/settings" className="flex items-center gap-1 text-sm text-warning hover:underline">
-                  <Settings className="w-3 h-3" />
-                  Setup Required
-                </Link>
-              )}
-            </div>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Snowflake className="w-4 h-4 text-primary" />
+              Advanced Weather
+            </CardTitle>
+            <CardDescription>Control blizzards, tropical storms, and snow</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            {!bridgeConnected ? (
-              <Alert className="border-warning/40 bg-warning/10">
-                <AlertTriangle className="h-4 w-4 text-warning" />
-                <AlertTitle className="text-warning">Panel Bridge Required</AlertTitle>
-                <AlertDescription className="space-y-2">
-                  <p>Install <strong className="text-foreground">PanelBridge.lua</strong> and run <strong className="text-foreground">Auto Setup</strong> in Settings, then start the PZ server.</p>
-                  <Link to="/settings" className="inline-flex text-sm text-primary underline hover:text-foreground">Open Bridge Setup</Link>
-                </AlertDescription>
-              </Alert>
-            ) : (
-              <>
                 {/* Blizzard */}
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
@@ -716,8 +706,6 @@ export default function Events() {
                     </Button>
                   </div>
                 </div>
-              </>
-            )}
           </CardContent>
         </Card>
 
@@ -746,17 +734,7 @@ export default function Events() {
               )}
             </div>
           </CardHeader>
-          <CardContent>
-            {!bridgeConnected ? (
-              <Alert className="border-warning/40 bg-warning/10">
-                <AlertTriangle className="h-4 w-4 text-warning" />
-                <AlertTitle className="text-warning">Panel Bridge Required</AlertTitle>
-                <AlertDescription className="space-y-2">
-                  <p>Install <strong className="text-foreground">PanelBridge.lua</strong> and run <strong className="text-foreground">Auto Setup</strong> in Settings, then start the PZ server.</p>
-                  <Link to="/settings" className="inline-flex text-sm text-primary underline hover:text-foreground">Open Bridge Setup</Link>
-                </AlertDescription>
-              </Alert>
-            ) : (
+          <CardContent className={!bridgeConnected ? 'pointer-events-none' : ''}>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {/* Fog */}
                 <div className="space-y-3">
@@ -914,11 +892,28 @@ export default function Events() {
                   </Button>
                 </div>
               </div>
-            )}
             
-            {/* Rain & Lightning Quick Actions */}
+            {/* Apply All Climate + Rain & Lightning Quick Actions */}
             {bridgeConnected && (
-              <div className="mt-6 pt-4 border-t">
+              <div className="mt-6 space-y-4">
+                <Button
+                  onClick={() => handleBridgeAction('Apply All Climate', async () => {
+                    await Promise.all([
+                      panelBridgeApi.setClimateFloat(5, fogIntensity / 100),
+                      panelBridgeApi.setClimateFloat(6, windIntensity / 100),
+                      panelBridgeApi.setClimateFloat(4, temperature),
+                      panelBridgeApi.setClimateFloat(8, cloudIntensity / 100),
+                      panelBridgeApi.setClimateFloat(12, humidity / 100),
+                      panelBridgeApi.setClimateFloat(3, precipitationIntensity / 100),
+                    ])
+                  })}
+                  disabled={bridgeLoading !== null}
+                  className="w-full h-11 gap-2"
+                >
+                  {bridgeLoading === 'Apply All Climate' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Gauge className="w-4 h-4" />}
+                  Apply All Climate Settings
+                </Button>
+                <div className="pt-4 border-t">
                 <Label className="flex items-center gap-2 mb-3">
                   <Zap className="w-4 h-4 text-primary" />
                   Rain & Lightning
@@ -961,6 +956,7 @@ export default function Events() {
                     Thunder Only
                   </Button>
                 </div>
+                </div>
               </div>
             )}
           </CardContent>
@@ -971,7 +967,7 @@ export default function Events() {
 
         {/* ── Time & Environment Section ── */}
         <Collapsible open={openSections.environment} onOpenChange={() => toggleSection('environment')} className="md:col-span-2">
-          <CollapsibleTrigger className="flex items-center gap-2 w-full py-2 text-left group">
+          <CollapsibleTrigger className="flex items-center gap-2 w-full py-2 text-left group rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
             <ChevronDown className={cn("w-4 h-4 text-muted-foreground transition-transform", openSections.environment && "rotate-180")} />
             <span className="text-sm font-medium text-muted-foreground uppercase tracking-wide">Time & Environment</span>
             <div className="flex-1 border-t border-border/40 ml-2" />
@@ -980,7 +976,7 @@ export default function Events() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
 
         {/* Game Time Control (v1.1.0) */}
-        <Card className={!bridgeConnected ? 'opacity-60' : ''}>
+        <Card className={!bridgeConnected ? 'opacity-60 pointer-events-none' : ''}>
           <CardHeader className="pb-4">
             <CardTitle className="flex items-center gap-2 text-base">
               <Calendar className="w-4 h-4 text-primary" />
@@ -989,16 +985,6 @@ export default function Events() {
             <CardDescription>Control in-game time and date</CardDescription>
           </CardHeader>
           <CardContent>
-            {!bridgeConnected ? (
-              <Alert className="border-warning/40 bg-warning/10">
-                <AlertTriangle className="h-4 w-4 text-warning" />
-                <AlertTitle className="text-warning">Panel Bridge Required</AlertTitle>
-                <AlertDescription className="space-y-2">
-                  <p>Install <strong className="text-foreground">PanelBridge.lua</strong> and run <strong className="text-foreground">Auto Setup</strong> in Settings, then start the PZ server.</p>
-                  <Link to="/settings" className="inline-flex text-sm text-primary underline hover:text-foreground">Open Bridge Setup</Link>
-                </AlertDescription>
-              </Alert>
-            ) : (
               <div className="space-y-4">
                 {/* Hour */}
                 <div className="space-y-2">
@@ -1084,12 +1070,11 @@ export default function Events() {
                   Apply Time & Date
                 </Button>
               </div>
-            )}
           </CardContent>
         </Card>
 
         {/* Infrastructure (Power/Water) Control */}
-        <Card className={!bridgeConnected ? 'opacity-60' : ''}>
+        <Card className={!bridgeConnected ? 'opacity-60 pointer-events-none' : ''}>
           <CardHeader className="pb-4">
             <CardTitle className="flex items-center gap-2 text-base">
               <Zap className="w-4 h-4 text-primary" />
@@ -1098,16 +1083,6 @@ export default function Events() {
             <CardDescription>Control power and water utilities</CardDescription>
           </CardHeader>
           <CardContent>
-            {!bridgeConnected ? (
-              <Alert className="border-warning/40 bg-warning/10">
-                <AlertTriangle className="h-4 w-4 text-warning" />
-                <AlertTitle className="text-warning">Panel Bridge Required</AlertTitle>
-                <AlertDescription className="space-y-2">
-                  <p>Install <strong className="text-foreground">PanelBridge.lua</strong> and run <strong className="text-foreground">Auto Setup</strong> in Settings, then start the PZ server.</p>
-                  <Link to="/settings" className="inline-flex text-sm text-primary underline hover:text-foreground">Open Bridge Setup</Link>
-                </AlertDescription>
-              </Alert>
-            ) : (
               <div className="space-y-4">
                 {/* Current Status Display - Always visible */}
                 <div className="flex items-center justify-center gap-6 p-3 bg-muted/30 rounded-lg">
@@ -1115,7 +1090,7 @@ export default function Events() {
                     <Zap className={`w-5 h-5 ${utilitiesStatus?.powerOn ? 'text-primary' : 'text-muted-foreground'}`} />
                     <span className="text-sm font-medium">Power:</span>
                     <span className={`text-sm font-bold ${utilitiesStatus === null ? 'text-muted-foreground' : utilitiesStatus.powerOn ? 'text-primary' : 'text-destructive'}`}>
-                      {utilitiesStatus === null ? '...' : utilitiesStatus.powerOn ? 'ON' : 'OFF'}
+                      {utilitiesStatus === null ? 'Checking' : utilitiesStatus.powerOn ? 'ON' : 'OFF'}
                     </span>
                   </div>
                   <div className="w-px h-6 bg-border" />
@@ -1123,7 +1098,7 @@ export default function Events() {
                     <Droplets className={`w-5 h-5 ${utilitiesStatus?.waterOn ? 'text-primary' : 'text-muted-foreground'}`} />
                     <span className="text-sm font-medium">Water:</span>
                     <span className={`text-sm font-bold ${utilitiesStatus === null ? 'text-muted-foreground' : utilitiesStatus.waterOn ? 'text-primary' : 'text-destructive'}`}>
-                      {utilitiesStatus === null ? '...' : utilitiesStatus.waterOn ? 'ON' : 'OFF'}
+                      {utilitiesStatus === null ? 'Checking' : utilitiesStatus.waterOn ? 'ON' : 'OFF'}
                     </span>
                   </div>
                 </div>
@@ -1174,7 +1149,6 @@ export default function Events() {
                   </Button>
                 </div>
               </div>
-            )}
           </CardContent>
         </Card>
             </div>
@@ -1183,7 +1157,7 @@ export default function Events() {
 
         {/* ── Sound Section ── */}
         <Collapsible open={openSections.sound} onOpenChange={() => toggleSection('sound')} className="md:col-span-2">
-          <CollapsibleTrigger className="flex items-center gap-2 w-full py-2 text-left group">
+          <CollapsibleTrigger className="flex items-center gap-2 w-full py-2 text-left group rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
             <ChevronDown className={cn("w-4 h-4 text-muted-foreground transition-transform", openSections.sound && "rotate-180")} />
             <span className="text-sm font-medium text-muted-foreground uppercase tracking-wide">Sound</span>
             <div className="flex-1 border-t border-border/40 ml-2" />
@@ -1256,32 +1230,18 @@ export default function Events() {
         </Card>
 
         {/* Advanced Sound Controls (Panel Bridge v1.2.0) */}
-        <Card className={!bridgeConnected ? 'opacity-60' : ''}>
+        <Card className={!bridgeConnected ? 'opacity-60 pointer-events-none' : ''}>
           <CardHeader className="pb-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Megaphone className="w-4 h-4 text-primary" />
-                  Advanced Sound Controls
-                </CardTitle>
-                <CardDescription>Create sounds at specific locations to attract zombies</CardDescription>
-              </div>
-            </div>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Megaphone className="w-4 h-4 text-primary" />
+              Advanced Sound Controls
+            </CardTitle>
+            <CardDescription>Create sounds at specific locations to attract zombies</CardDescription>
           </CardHeader>
           <CardContent>
-            {!bridgeConnected ? (
-              <Alert className="border-warning/40 bg-warning/10">
-                <AlertTriangle className="h-4 w-4 text-warning" />
-                <AlertTitle className="text-warning">Panel Bridge Required</AlertTitle>
-                <AlertDescription className="space-y-2">
-                  <p>Install <strong className="text-foreground">PanelBridge.lua</strong> and run <strong className="text-foreground">Auto Setup</strong> in Settings, then start the PZ server.</p>
-                  <Link to="/settings" className="inline-flex text-sm text-primary underline hover:text-foreground">Open Bridge Setup</Link>
-                </AlertDescription>
-              </Alert>
-            ) : (
               <div className="space-y-6">
                 {/* Sound Parameters */}
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label className="flex items-center gap-2">
                       <Target className="w-4 h-4 text-primary" />
@@ -1333,6 +1293,7 @@ export default function Events() {
                         panelBridgeApi.triggerGunshotBridge({ username: selectedPlayer || undefined })
                       )}
                       disabled={bridgeLoading !== null || (targetAll || !selectedPlayer)}
+                      title={targetAll ? 'Select a specific player target first' : !selectedPlayer ? 'Select a player first' : undefined}
                       className="h-11 gap-2"
                     >
                       {bridgeLoading === 'Gunshot Sound' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Volume2 className="w-4 h-4" />}
@@ -1344,6 +1305,7 @@ export default function Events() {
                         panelBridgeApi.triggerAlarmBridge({ username: selectedPlayer || undefined })
                       )}
                       disabled={bridgeLoading !== null || (targetAll || !selectedPlayer)}
+                      title={targetAll ? 'Select a specific player target first' : !selectedPlayer ? 'Select a player first' : undefined}
                       className="h-11 gap-2"
                     >
                       {bridgeLoading === 'Alarm Sound' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Bell className="w-4 h-4" />}
@@ -1355,6 +1317,7 @@ export default function Events() {
                         panelBridgeApi.createNoise({ username: selectedPlayer, radius: soundRadius, volume: soundVolume })
                       )}
                       disabled={bridgeLoading !== null || (targetAll || !selectedPlayer)}
+                      title={targetAll ? 'Select a specific player target first' : !selectedPlayer ? 'Select a player first' : undefined}
                       className="h-11 gap-2"
                     >
                       {bridgeLoading === 'Custom Noise' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Megaphone className="w-4 h-4" />}
@@ -1426,7 +1389,6 @@ export default function Events() {
                   </div>
                 </div>
               </div>
-            )}
           </CardContent>
         </Card>
             </div>
@@ -1435,7 +1397,7 @@ export default function Events() {
 
         {/* ── Combat & World Section ── */}
         <Collapsible open={openSections.world} onOpenChange={() => toggleSection('world')} className="md:col-span-2">
-          <CollapsibleTrigger className="flex items-center gap-2 w-full py-2 text-left group">
+          <CollapsibleTrigger className="flex items-center gap-2 w-full py-2 text-left group rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
             <ChevronDown className={cn("w-4 h-4 text-muted-foreground transition-transform", openSections.world && "rotate-180")} />
             <span className="text-sm font-medium text-muted-foreground uppercase tracking-wide">Combat & World</span>
             <div className="flex-1 border-t border-border/40 ml-2" />
@@ -1524,7 +1486,7 @@ export default function Events() {
                   size="sm"
                   onClick={() => setTimeSpeed(1)}
                   variant={timeSpeed === 1 ? 'secondary' : 'outline'}
-                  className="h-10"
+                  className="h-11"
                 >
                   1x
                 </Button>
@@ -1532,7 +1494,7 @@ export default function Events() {
                   size="sm"
                   onClick={() => setTimeSpeed(5)}
                   variant={timeSpeed === 5 ? 'secondary' : 'outline'}
-                  className="h-10"
+                  className="h-11"
                 >
                   5x
                 </Button>
@@ -1540,7 +1502,7 @@ export default function Events() {
                   size="sm"
                   onClick={() => setTimeSpeed(10)}
                   variant={timeSpeed === 10 ? 'secondary' : 'outline'}
-                  className="h-10"
+                  className="h-11"
                 >
                   10x
                 </Button>
@@ -1548,7 +1510,7 @@ export default function Events() {
                   size="sm"
                   onClick={() => setTimeSpeed(24)}
                   variant={timeSpeed === 24 ? 'secondary' : 'outline'}
-                  className="h-10"
+                  className="h-11"
                 >
                   24x
                 </Button>

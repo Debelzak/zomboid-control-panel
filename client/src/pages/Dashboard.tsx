@@ -221,8 +221,7 @@ export default function Dashboard() {
       setStatus(data)
       setFetchError(null)
       setLastUpdated(new Date())
-    } catch (error) {
-      console.error('Failed to fetch status:', error)
+    } catch {
       setFetchError('Failed to connect to server')
     }
   }, [])
@@ -233,8 +232,8 @@ export default function Dashboard() {
       if (data.players) {
         setPlayers(data.players)
       }
-    } catch (error) {
-      console.error('Failed to fetch players:', error)
+    } catch {
+      setPlayers([])
     }
   }, [])
 
@@ -242,8 +241,8 @@ export default function Dashboard() {
     try {
       const data = await panelBridgeApi.getStatus()
       setBridgeStatus(data)
-    } catch (error) {
-      console.error('Failed to fetch bridge status:', error)
+    } catch {
+      setBridgeStatus(null)
     }
   }, [])
 
@@ -254,8 +253,8 @@ export default function Dashboard() {
         // Show all event types for timeline
         setPlayerActivity(data.logs.slice(0, 10))
       }
-    } catch (error) {
-      console.error('Failed to fetch player activity:', error)
+    } catch {
+      setPlayerActivity([])
     }
   }, [])
 
@@ -324,11 +323,11 @@ export default function Dashboard() {
           fetchBridgeStatus(), 
           fetchPlayerActivity(), 
           fetchAutoStartSetting(),
-          serverApi.getPanelInfo().then(setPanelInfo).catch(e => console.warn('Failed to load panel info:', e.message)),
+          serverApi.getPanelInfo().then(setPanelInfo).catch(() => setPanelInfo(null)),
           fetchActiveServer()
         ])
-      } catch (error) {
-        console.error('Failed to load initial data:', error)
+      } catch {
+        setFetchError('Failed to load dashboard status.')
       } finally {
         setInitialLoading(false)
       }
@@ -338,7 +337,7 @@ export default function Dashboard() {
     // Safety timeout to force exit loading state after 10 seconds
     const loadingTimeout = setTimeout(() => {
       if (initialLoadingRef.current) {
-        console.warn('Loading timeout reached, forcing exit from loading state')
+        setFetchError((current) => current ?? 'The dashboard is taking longer than expected to respond.')
         setInitialLoading(false)
       }
     }, 10000)
@@ -719,11 +718,11 @@ export default function Dashboard() {
               </div>
               <div className="flex items-center gap-1.5">
                 <StatusIndicator
-                  state={bridgeStatus?.modConnected ? 'online' : 'offline'}
+                  state={bridgeStatus?.modConnected ? 'online' : bridgeStatus?.isRunning ? 'connecting' : 'offline'}
                   label="Bridge"
                 />
                 {bridgeStatus?.modConnected && bridgeStatus.modStatus?.version && (
-                  <span className="text-xs text-muted-foreground">v{bridgeStatus.modStatus.version}</span>
+                  <span className="text-xs text-muted-foreground">v{bridgeStatus.modStatus.version.replace(/^v/, '')}</span>
                 )}
                 {!bridgeStatus?.modConnected && !bridgeStatus?.configured && (
                   <Link to="/settings" className="text-xs text-primary hover:underline">Setup</Link>
@@ -846,7 +845,7 @@ export default function Dashboard() {
             {/* Overflow menu for less-frequent actions */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="icon" className="shrink-0">
+                <Button variant="outline" size="icon" className="shrink-0" aria-label="Open more server actions">
                   <MoreHorizontal className="w-4 h-4" />
                   <span className="sr-only">More actions</span>
                 </Button>

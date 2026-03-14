@@ -1,6 +1,7 @@
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import { createLogger } from '../utils/logger.js';
 const log = createLogger('API:Mods');
 import { getTrackedMods, addTrackedMod, removeTrackedMod, clearModUpdates, getSetting, getActiveServer, getModPresets, createModPreset, updateModPreset, deleteModPreset } from '../database/init.js';
@@ -354,8 +355,8 @@ router.post('/sync-from-server', async (req, res) => {
       });
     }
     
-    // Read and parse the INI file
-    const content = fs.readFileSync(iniPath, 'utf-8');
+    // Read and parse the INI file (normalize CRLF for cross-platform compatibility)
+    const content = fs.readFileSync(iniPath, 'utf-8').replace(/\r\n/g, '\n');
     const modsMatch = content.match(/^Mods=(.*)$/m);
     const workshopMatch = content.match(/^WorkshopItems=(.*)$/m);
     
@@ -678,8 +679,8 @@ router.post('/write-to-ini', async (req, res) => {
       mapList = `${sanitizeIniList(detectedMapFolders)};Muldraugh, KY`;
     }
     
-    // Read and update the ini file
-    let content = fs.readFileSync(iniPath, 'utf-8');
+    // Read and update the ini file (normalize CRLF for cross-platform compatibility)
+    let content = fs.readFileSync(iniPath, 'utf-8').replace(/\r\n/g, '\n');
     
     // Update or add Mods= (mod IDs like NeatUI_Framework)
     if (content.includes('Mods=')) {
@@ -753,7 +754,7 @@ router.get('/current-config', async (req, res) => {
       });
     }
     
-    const content = fs.readFileSync(iniPath, 'utf-8');
+    const content = fs.readFileSync(iniPath, 'utf-8').replace(/\r\n/g, '\n');
     
     // Extract mod-related settings
     const modsMatch = content.match(/^Mods=(.*)$/m);
@@ -815,8 +816,8 @@ router.post('/add-to-ini', async (req, res) => {
       });
     }
     
-    // Read current config
-    let content = fs.readFileSync(iniPath, 'utf-8');
+    // Read current config (normalize CRLF for cross-platform compatibility)
+    let content = fs.readFileSync(iniPath, 'utf-8').replace(/\r\n/g, '\n');
     
     // Get current workshop items
     const workshopMatch = content.match(/^WorkshopItems=(.*)$/m);
@@ -1027,14 +1028,23 @@ async function fetchModIdFromWorkshop(workshopId) {
 
 // Helper to get workshop paths for a mod
 function getWorkshopPaths(workshopId, serverPath) {
-  return [
+  const home = os.homedir();
+  const paths = [
     // Server's steamapps folder
     path.join(serverPath, 'steamapps', 'workshop', 'content', '108600', workshopId),
     // Alternative location
     path.join(serverPath, '..', 'steamapps', 'workshop', 'content', '108600', workshopId),
-    // User's Steam folder (less common for dedicated servers)
-    path.join(process.env.USERPROFILE || process.env.HOME || '', 'Steam', 'steamapps', 'workshop', 'content', '108600', workshopId),
+    // User's Steam folder — platform-specific
+    path.join(home, 'Steam', 'steamapps', 'workshop', 'content', '108600', workshopId),
   ];
+  // Add Linux-specific Steam paths
+  if (process.platform !== 'win32') {
+    paths.push(
+      path.join(home, '.local', 'share', 'Steam', 'steamapps', 'workshop', 'content', '108600', workshopId),
+      path.join(home, '.steam', 'steam', 'steamapps', 'workshop', 'content', '108600', workshopId)
+    );
+  }
+  return paths;
 }
 
 // Helper function to find map folders from a workshop mod
@@ -1234,7 +1244,7 @@ router.post('/remove-from-ini', async (req, res) => {
       return res.status(400).json({ error: 'Server config file not found' });
     }
     
-    let content = fs.readFileSync(iniPath, 'utf-8');
+    let content = fs.readFileSync(iniPath, 'utf-8').replace(/\r\n/g, '\n');
     
     // Get current workshop items
     const workshopMatch = content.match(/^WorkshopItems=(.*)$/m);
@@ -1352,7 +1362,7 @@ router.post('/sync-mod-ids', async (req, res) => {
       return res.status(400).json({ error: 'Server config file not found. Start the server once first.' });
     }
     
-    let content = fs.readFileSync(iniPath, 'utf-8');
+    let content = fs.readFileSync(iniPath, 'utf-8').replace(/\r\n/g, '\n');
     
     // Get current workshop items
     const workshopMatch = content.match(/^WorkshopItems=(.*)$/m);
@@ -1468,7 +1478,7 @@ router.get('/validate-config', async (req, res) => {
       return res.status(400).json({ error: 'Server config file not found' });
     }
     
-    const content = fs.readFileSync(iniPath, 'utf-8');
+    const content = fs.readFileSync(iniPath, 'utf-8').replace(/\r\n/g, '\n');
     const workshopMatch = content.match(/^WorkshopItems=(.*)$/m);
     const modsMatch = content.match(/^Mods=(.*)$/m);
     
@@ -1579,7 +1589,7 @@ router.post('/presets', async (req, res) => {
       return res.status(400).json({ error: 'Server INI not found' });
     }
     
-    const content = fs.readFileSync(iniPath, 'utf-8');
+    const content = fs.readFileSync(iniPath, 'utf-8').replace(/\r\n/g, '\n');
     const workshopMatch = content.match(/^WorkshopItems=(.*)$/m);
     const modsMatch = content.match(/^Mods=(.*)$/m);
     
@@ -1660,7 +1670,7 @@ router.post('/presets/:id/apply', async (req, res) => {
       return res.status(400).json({ error: 'Server INI not found' });
     }
     
-    let content = fs.readFileSync(iniPath, 'utf-8');
+    let content = fs.readFileSync(iniPath, 'utf-8').replace(/\r\n/g, '\n');
     
     // Update WorkshopItems
     const workshopLine = `WorkshopItems=${sanitizeIniList(preset.workshop_ids || [])}`;
@@ -1709,7 +1719,7 @@ router.post('/save-order', async (req, res) => {
       return res.status(400).json({ error: 'Server INI not found' });
     }
     
-    let content = fs.readFileSync(iniPath, 'utf-8');
+    let content = fs.readFileSync(iniPath, 'utf-8').replace(/\r\n/g, '\n');
     
     // Update Mods line with new order
     const modsLine = `Mods=${sanitizeIniList(modIds)}`;
@@ -1907,8 +1917,8 @@ router.post('/add-mod-advanced', async (req, res) => {
       });
     }
     
-    // Read current config
-    let content = fs.readFileSync(iniPath, 'utf-8');
+    // Read current config (normalize CRLF for cross-platform compatibility)
+    let content = fs.readFileSync(iniPath, 'utf-8').replace(/\r\n/g, '\n');
     
     // Get current workshop items
     const workshopMatch = content.match(/^WorkshopItems=(.*)$/m);

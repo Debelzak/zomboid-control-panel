@@ -53,7 +53,10 @@ router.post('/settings', async (req, res) => {
     const allowed = {};
     if (req.body.enabled !== undefined) allowed.enabled = !!req.body.enabled;
     if (req.body.schedule !== undefined) allowed.schedule = String(req.body.schedule);
-    if (req.body.maxBackups !== undefined) allowed.maxBackups = parseInt(req.body.maxBackups, 10);
+    if (req.body.maxBackups !== undefined) {
+      const parsed = parseInt(req.body.maxBackups, 10);
+      allowed.maxBackups = isNaN(parsed) ? 5 : Math.min(Math.max(parsed, 1), 100);
+    }
     if (req.body.includeDb !== undefined) allowed.includeDb = !!req.body.includeDb;
     
     const settings = await backupService.updateSettings(allowed);

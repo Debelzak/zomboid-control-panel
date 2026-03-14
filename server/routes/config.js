@@ -157,15 +157,28 @@ router.put('/app-settings', async (req, res) => {
     // Reload serverManager and rconService configs after settings change
     const serverManager = req.app.get('serverManager');
     const rconService = req.app.get('rconService');
+    const reloadWarnings = [];
     if (serverManager?.reloadConfig) {
-      await serverManager.reloadConfig();
+      try {
+        await serverManager.reloadConfig();
+      } catch (reloadErr) {
+        log.warn(`serverManager reload failed after settings save: ${reloadErr.message}`);
+        reloadWarnings.push('Server manager failed to reload — restart may be required');
+      }
     }
     if (rconService?.loadConfig) {
-      rconService.configLoaded = false;
-      await rconService.loadConfig();
+      try {
+        rconService.configLoaded = false;
+        await rconService.loadConfig();
+      } catch (reloadErr) {
+        log.warn(`rconService reload failed after settings save: ${reloadErr.message}`);
+        reloadWarnings.push('RCON service failed to reload — reconnect may be required');
+      }
     }
     
-    res.json({ success: true, message: 'Settings saved' });
+    const response = { success: true, message: 'Settings saved' };
+    if (reloadWarnings.length) response.warnings = reloadWarnings;
+    res.json(response);
   } catch (error) {
     log.error(`Failed to save app settings: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });

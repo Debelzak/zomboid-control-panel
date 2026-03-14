@@ -20,7 +20,7 @@ export function ConnectionStatus({ className, showLabel = false }: ConnectionSta
       return {
         icon: Wifi,
         color: 'text-primary',
-        surface: 'border-primary/25 bg-primary/12',
+        surface: 'border-primary/20 bg-primary/10',
         label: 'Connected',
         description: 'Real-time updates active',
       }
@@ -29,7 +29,7 @@ export function ConnectionStatus({ className, showLabel = false }: ConnectionSta
       return {
         icon: Loader2,
         color: 'text-warning',
-        surface: 'border-warning/30 bg-warning/12',
+        surface: 'border-warning/24 bg-warning/10',
         label: 'Reconnecting...',
         description: `Attempt ${reconnectAttempt}/10`,
         animate: true,
@@ -38,7 +38,7 @@ export function ConnectionStatus({ className, showLabel = false }: ConnectionSta
     return {
       icon: WifiOff,
       color: 'text-destructive',
-      surface: 'border-destructive/30 bg-destructive/12',
+      surface: 'border-destructive/24 bg-destructive/10',
       label: 'Disconnected',
       description: error || 'Connection lost',
     }
@@ -66,7 +66,7 @@ export function ConnectionStatus({ className, showLabel = false }: ConnectionSta
             aria-hidden="true"
           />
           {showLabel && (
-            <span className={cn('text-sm font-medium text-foreground', status.color)}>
+            <span className="text-sm font-medium text-foreground">
               {status.label}
             </span>
           )}

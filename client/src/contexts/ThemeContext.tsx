@@ -32,7 +32,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     localStorage.setItem('pz-theme', 'survival')
     ensureSurvivalFontsLoaded()
-    
+
     // Update document class for theme
     document.documentElement.classList.remove('theme-clean', 'theme-survival')
     document.documentElement.classList.add('theme-survival')

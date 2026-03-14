@@ -1,3 +1,5 @@
+import { reportClientWarning } from './client-errors'
+
 const API_BASE = '/api'
 const TOKEN_KEY = 'pz_access_token'
 
@@ -270,7 +272,7 @@ async function fetchWithRetry(
         throw lastError
       }
       
-      console.warn(`Request failed, retrying (${attempt + 1}/${retries})...`, lastError)
+      reportClientWarning(`Request failed, retrying (${attempt + 1}/${retries})...`, lastError)
       await new Promise(resolve => setTimeout(resolve, getRetryDelay(attempt)))
     }
   }
@@ -656,13 +658,26 @@ export const modsApi = {
 
 // Chunks API (Chunk Cleaner)
 export const chunksApi = {
-  getSaves: () => apiGet('/chunks/saves'),
-  getChunks: (saveName: string) => apiGet(`/chunks/chunks/${encodeURIComponent(saveName)}`),
-  getStats: (saveName: string) => apiGet(`/chunks/stats/${encodeURIComponent(saveName)}`),
-  deleteChunks: (saveName: string, chunks: Array<{ file: string; x: number; y: number; source?: string }>, createBackup: boolean = true) =>
-    apiPost('/chunks/delete-chunks', { saveName, chunks, createBackup }),
-  deleteRegion: (saveName: string, minX: number, maxX: number, minY: number, maxY: number, createBackup: boolean = true, invert: boolean = false) =>
-    apiPost('/chunks/delete-region', { saveName, minX, maxX, minY, maxY, createBackup, invert }),
+  getSaves: (customPath?: string) => apiGet(`/chunks/saves${customPath ? `?customPath=${encodeURIComponent(customPath)}` : ''}`),
+  getChunks: (saveName: string, customPath?: string) => apiGet(`/chunks/chunks/${encodeURIComponent(saveName)}${customPath ? `?customPath=${encodeURIComponent(customPath)}` : ''}`),
+  getStats: (saveName: string, customPath?: string) => apiGet(`/chunks/stats/${encodeURIComponent(saveName)}${customPath ? `?customPath=${encodeURIComponent(customPath)}` : ''}`),
+  deleteChunks: (
+    saveName: string,
+    chunks: Array<{ file: string; x: number; y: number; source?: string }>,
+    createBackup: boolean = true,
+    customPath?: string,
+  ) => apiPost('/chunks/delete-chunks', { saveName, chunks, createBackup, customPath }),
+  deleteRegion: (
+    saveName: string,
+    minX: number,
+    maxX: number,
+    minY: number,
+    maxY: number,
+    createBackup: boolean = true,
+    invert: boolean = false,
+    customPath?: string,
+  ) => apiPost('/chunks/delete-region', { saveName, minX, maxX, minY, maxY, createBackup, invert, customPath }),
+  browse: (browsePath?: string) => apiGet(`/chunks/browse${browsePath ? `?path=${encodeURIComponent(browsePath)}` : ''}`),
 }
 
 // Config API
@@ -1308,6 +1323,32 @@ export interface UpdateCheckerStatus {
   isChecking: boolean
 }
 
+export interface PanelUpdateAsset {
+  name: string
+  size?: number
+  downloadUrl?: string
+}
+
+export interface PanelUpdateStatus {
+  currentVersion: string
+  updateAvailable: boolean
+  latestVersion: string | null
+  releaseUrl: string | null
+  releaseNotes: string | null
+  publishedAt: string | null
+  isChecking: boolean
+  isDownloading: boolean
+  downloadProgress: number
+  lastCheck: string | null
+  lastError: string | null
+}
+
+export interface PanelUpdateActionResult {
+  success: boolean
+  message?: string
+  error?: string
+}
+
 export const updateApi = {
   // Check for updates (force = true to refresh from Steam)
   check: (force: boolean = false): Promise<UpdateStatus | UpdateCheckerStatus> =>
@@ -1320,4 +1361,10 @@ export const updateApi = {
   // Set check interval in minutes
   setInterval: (minutes: number): Promise<{ success: boolean; intervalMinutes: number }> =>
     apiPost('/server/update-check/interval', { minutes }),
+}
+
+export const panelUpdateApi = {
+  check: (): Promise<PanelUpdateStatus> => apiGet('/panel/update-check'),
+  getStatus: (): Promise<PanelUpdateStatus> => apiGet('/panel/update-status'),
+  download: (): Promise<PanelUpdateActionResult> => apiPost('/panel/update-download'),
 }

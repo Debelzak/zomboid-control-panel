@@ -91,8 +91,14 @@ router.post('/tasks', async (req, res) => {
       enabled: 1
     };
     
-    // Schedule the task
-    scheduler.scheduleTask(task);
+    // Schedule the task — rollback DB entry if scheduling fails
+    try {
+      scheduler.scheduleTask(task);
+    } catch (schedErr) {
+      log.error(`Failed to schedule task, rolling back DB entry: ${schedErr.message}`);
+      await deleteScheduledTask(result.id);
+      return res.status(500).json({ error: 'Failed to schedule task: ' + sanitizeError(schedErr.message) });
+    }
     
     res.json({ success: true, task });
   } catch (error) {
@@ -128,15 +134,22 @@ router.put('/tasks/:id', async (req, res) => {
     
     await updateScheduledTask(taskId, name, cronExpression, command, enabled);
     
-    // Reschedule or cancel the task
+    // Reschedule or cancel the task — rollback DB entry if scheduling fails
     if (enabled) {
-      scheduler.scheduleTask({
-        id: taskId,
-        name,
-        cron_expression: cronExpression,
-        command,
-        enabled: 1
-      });
+      try {
+        scheduler.scheduleTask({
+          id: taskId,
+          name,
+          cron_expression: cronExpression,
+          command,
+          enabled: 1
+        });
+      } catch (schedErr) {
+        log.error(`Failed to reschedule task ${taskId}, reverting DB: ${schedErr.message}`);
+        // Revert: re-save the old enabled state to avoid phantom active task in DB
+        await updateScheduledTask(taskId, name, cronExpression, command, 0).catch(() => {});
+        return res.status(500).json({ error: 'Failed to reschedule task: ' + sanitizeError(schedErr.message) });
+      }
     } else {
       scheduler.cancelTask(taskId);
     }

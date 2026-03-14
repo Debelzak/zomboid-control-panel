@@ -72,7 +72,7 @@ export function EmptyState({
   const padding = compact ? 'py-8' : 'py-16'
 
   return (
-    <div className={`flex flex-col items-center justify-center ${padding} px-4 text-center ${className}`}>
+    <div className={`flex flex-col items-center justify-center ${padding} px-4 text-center ${className}`} aria-live="polite" aria-atomic="true">
       <div className="relative mb-4">
         <div className={`${containerSize} empty-state-aura rounded-2xl border border-border/50 bg-muted/50 flex items-center justify-center empty-state-icon`} aria-hidden="true">
           {icon || <IconComponent className={`${iconSize} text-muted-foreground/40`} />}
