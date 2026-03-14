@@ -58,7 +58,7 @@ The demo runs the real frontend shell and real routes on GitHub Pages.
 ### Option 1: Standalone Build (recommended)
 
 #### Windows
-1. Run `ZomboidControlPanel.exe` (or `Start.bat`).
+1. Run `ZomboidControlPanel.exe`.
 2. Complete setup/login.
 3. Configure server paths and RCON in Settings.
 4. Start managing your server.
