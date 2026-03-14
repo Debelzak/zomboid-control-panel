@@ -200,10 +200,9 @@ Optional environment variables:
 4. Retest from panel Settings.
 
 ### PanelBridge commands failing
-1. If you want PanelBridge features, confirm the mod is installed and enabled in `Mods=` for that server.
-2. Confirm `DoLuaChecksum=false`.
-3. Verify bridge path in panel Settings.
-4. Restart panel and server, then check Debug/log pages.
+1. Confirm `DoLuaChecksum=false`.
+2. Verify bridge path in panel Settings.
+3. Restart panel and server, then check Debug/log pages.
 
 ### Server start/stop failing
 1. Verify server path points to startup scripts (`StartServer64.bat` on Windows or `start-server.sh` on Linux).
