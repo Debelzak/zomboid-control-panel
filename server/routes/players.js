@@ -17,12 +17,15 @@ import { sanitizeError } from '../utils/sanitize.js';
 const router = express.Router();
 
 // Validation helpers to prevent RCON command injection
-const USERNAME_REGEX = /^[a-zA-Z0-9_-]{1,64}$/;
+// Allow normal in-game names (spaces/symbols) but block control chars and quote/backslash.
+const USERNAME_REGEX = /^[^\x00-\x1F\x7F"\\]{1,64}$/;
 const SAFE_TEXT_REGEX = /^[a-zA-Z0-9\s.,!?_-]{0,256}$/;
 const ITEM_REGEX = /^[a-zA-Z0-9_.]{1,128}$/;
 
 function isValidUsername(username) {
-  return typeof username === 'string' && USERNAME_REGEX.test(username);
+  if (typeof username !== 'string') return false;
+  const trimmed = username.trim();
+  return trimmed.length > 0 && USERNAME_REGEX.test(trimmed);
 }
 
 function isValidText(text) {
