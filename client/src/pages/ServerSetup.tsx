@@ -699,6 +699,7 @@ export default function ServerSetup() {
                 <button
                   onClick={() => isClickable && setCurrentStep(step.id)}
                   disabled={!isClickable}
+                  aria-current={isActive ? 'step' : undefined}
                   className={cn(
                     "flex items-center gap-2 px-3 py-2 sm:px-4 sm:py-2.5 rounded-full transition-colors",
                     isActive && "bg-primary text-primary-foreground shadow-md",
@@ -1045,7 +1046,7 @@ export default function ServerSetup() {
                     type="button"
                     variant="ghost"
                     size="sm"
-                    className="absolute right-1 top-1 h-7 w-7 p-0"
+                    className="absolute right-1 top-1 h-9 w-9 p-0"
                     onClick={() => setShowRconPassword(!showRconPassword)}
                     aria-label={showRconPassword ? 'Hide RCON password' : 'Show RCON password'}
                   >
@@ -1186,7 +1187,7 @@ export default function ServerSetup() {
                     type="button"
                     variant="ghost"
                     size="sm"
-                    className="absolute right-1 top-1 h-7 w-7 p-0"
+                    className="absolute right-1 top-1 h-9 w-9 p-0"
                     onClick={() => setShowAdminPassword(!showAdminPassword)}
                     aria-label={showAdminPassword ? 'Hide admin password' : 'Show admin password'}
                   >
@@ -1524,7 +1525,7 @@ export default function ServerSetup() {
                       type="button"
                       variant="ghost"
                       size="sm"
-                      className="absolute right-1 top-1 h-7 w-7 p-0"
+                      className="absolute right-1 top-1 h-9 w-9 p-0"
                       onClick={() => setShowRconPassword(!showRconPassword)}
                       aria-label={showRconPassword ? 'Hide RCON password' : 'Show RCON password'}
                     >
@@ -1685,7 +1686,7 @@ export default function ServerSetup() {
                       type="button"
                       variant="ghost"
                       size="sm"
-                      className="absolute right-1 top-1 h-7 w-7 p-0"
+                      className="absolute right-1 top-1 h-9 w-9 p-0"
                       onClick={() => setShowAdminPassword(!showAdminPassword)}
                       aria-label={showAdminPassword ? 'Hide admin password' : 'Show admin password'}
                     >

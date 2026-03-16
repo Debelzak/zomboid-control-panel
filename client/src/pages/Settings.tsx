@@ -37,6 +37,7 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -207,6 +208,7 @@ export default function Settings() {
   } | null>(null)
   const [bridgeLoading, setBridgeLoading] = useState(false)
   const [bridgeError, setBridgeError] = useState<string | null>(null)
+  const [pinging, setPinging] = useState(false)
   
   // Server list for install dropdown
   const [servers, setServers] = useState<ServerInstance[]>([])
@@ -226,7 +228,7 @@ export default function Settings() {
   // Track if there are unsaved changes
   const isDirty = originalSettings !== null && JSON.stringify(settings) !== JSON.stringify(originalSettings)
 
-  // Section navigation
+  // Section navigation via tabs
   const settingsSections = [
     { id: 'panel', label: 'Panel', icon: Globe },
     { id: 'https', label: 'HTTPS', icon: Lock },
@@ -239,31 +241,6 @@ export default function Settings() {
     { id: 'about', label: 'About', icon: Server },
   ]
   const [activeSection, setActiveSection] = useState('panel')
-
-  // Track visible section via IntersectionObserver
-  useEffect(() => {
-    const ids = settingsSections.map((s) => s.id)
-    const elements = ids.map((id) => document.getElementById(`settings-${id}`)).filter(Boolean) as HTMLElement[]
-    if (elements.length === 0) return
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        // Find the topmost visible section
-        const visible = entries
-          .filter((e) => e.isIntersecting)
-          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)
-        if (visible.length > 0) {
-          const id = visible[0].target.id.replace('settings-', '')
-          setActiveSection(id)
-        }
-      },
-      { rootMargin: '-80px 0px -60% 0px', threshold: 0 }
-    )
-
-    elements.forEach((el) => observer.observe(el))
-    return () => observer.disconnect()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading])
   
   // Warn before leaving with unsaved changes
   useEffect(() => {
@@ -1053,6 +1030,7 @@ export default function Settings() {
   }
 
   const handlePingMod = async () => {
+    setPinging(true)
     try {
       const result = await panelBridgeApi.ping()
       if (result.success) {
@@ -1074,6 +1052,8 @@ export default function Settings() {
         description: error instanceof Error ? error.message : 'The panel could not ping the mod. Confirm the server is running with PanelBridge enabled.',
         variant: 'destructive',
       })
+    } finally {
+      setPinging(false)
     }
   }
 
@@ -1172,7 +1152,7 @@ export default function Settings() {
       
       <PageHeader
         title="Settings"
-        description="Manage panel network, updates, integrations, backups, and security."
+        description="Panel port, remote access, server integrations, backups, and security."
         eyebrow="Configuration"
         tone="config"
         icon={<Settings2 className="w-5 h-5" />}
@@ -1184,35 +1164,27 @@ export default function Settings() {
         }
       />
 
-      <div className="mt-6 flex gap-8">
-        {/* Sidebar nav — hidden on small screens */}
-        <nav className="hidden lg:block w-44 shrink-0">
-          <div className="sticky top-20 space-y-0.5">
-            {settingsSections.map((section) => {
-              const Icon = section.icon
-              return (
-                <button
-                  key={section.id}
-                  onClick={() => {
-                    document.getElementById(`settings-${section.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                  }}
-                  className={cn(
-                    'flex items-center gap-2.5 w-full rounded-lg px-3 py-2 text-sm transition-colors text-left',
-                    activeSection === section.id
-                      ? 'bg-primary/10 text-primary font-medium'
-                      : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-                  )}
-                >
-                  <Icon className="w-3.5 h-3.5 shrink-0" />
-                  {section.label}
-                </button>
-              )
-            })}
-          </div>
-        </nav>
+      <Tabs value={activeSection} onValueChange={setActiveSection} className="mt-6">
+        <TabsList className="flex h-auto flex-wrap gap-1 bg-muted/40 p-1 rounded-xl w-full">
+          {settingsSections.map((section) => {
+            const Icon = section.icon
+            return (
+              <TabsTrigger
+                key={section.id}
+                value={section.id}
+                className="flex items-center gap-1.5 px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-sm"
+              >
+                <Icon className="w-3.5 h-3.5 shrink-0" />
+                <span className="hidden sm:inline">{section.label}</span>
+              </TabsTrigger>
+            )
+          })}
+        </TabsList>
 
-        {/* Content */}
-        <div className="flex-1 min-w-0 space-y-5">
+        {/* Tab Content */}
+        <div className="mt-5 space-y-5">
+
+        <TabsContent value="panel" className="mt-0">
 
       {/* Panel Settings */}
       <Card id="settings-panel">
@@ -1221,7 +1193,7 @@ export default function Settings() {
             <Globe className="w-4 h-4 text-primary" />
             Panel Settings
           </CardTitle>
-          <CardDescription>Configure core panel behavior.</CardDescription>
+          <CardDescription>Port, remote access, and panel updates.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="max-w-xs">
@@ -1266,7 +1238,7 @@ export default function Settings() {
             <div className="space-y-1">
               <p className="text-sm font-medium">Remote Access (CORS)</p>
               <p className="text-xs text-muted-foreground">
-                If you open the panel from another machine or public hostname, add that origin here.
+                Allow browsers on other machines or public hostnames to reach this panel.
               </p>
             </div>
 
@@ -1283,7 +1255,7 @@ export default function Settings() {
             <div className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/25 p-3">
               <div>
                 <Label className="text-sm font-medium">Allow Private/LAN Origins</Label>
-                <p className="text-xs text-muted-foreground">Accept localhost, 192.168.x.x, 10.x.x.x, 100.x.x.x, and 172.16-31.x.x origins automatically.</p>
+                <p className="text-xs text-muted-foreground">Automatically allow connections from localhost and private/LAN IP ranges.</p>
               </div>
               <Switch
                 checked={settings.corsAllowPrivateNetworks}
@@ -1300,7 +1272,7 @@ export default function Settings() {
                 rows={4}
               />
               <p className="text-xs text-muted-foreground">
-                Enter full origins only (scheme + host + optional port). One origin per line.
+                One address per line, including http:// or https:// and port if needed.
               </p>
               {corsOriginValidationError && (
                 <p className="text-xs text-destructive">{corsOriginValidationError}</p>
@@ -1310,7 +1282,7 @@ export default function Settings() {
             <div className="flex items-center justify-between rounded-lg border border-warning/40 bg-warning/10 p-3">
               <div>
                 <Label className="text-sm font-medium text-warning">Allow All Origins (Debug Only)</Label>
-                <p className="text-xs text-muted-foreground">Temporarily disable origin checks to confirm whether CORS is the blocker.</p>
+                <p className="text-xs text-muted-foreground">Skip all origin checks — useful for diagnosing connection problems.</p>
               </div>
               <Switch
                 checked={settings.corsAllowAll}
@@ -1321,7 +1293,7 @@ export default function Settings() {
             <div className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/25 p-3">
               <div>
                 <Label className="text-sm font-medium">Enable CORS Debug Logging</Label>
-                <p className="text-xs text-muted-foreground">Store recent blocked origins so you can see exactly what the browser sent.</p>
+                <p className="text-xs text-muted-foreground">Log blocked connection attempts for troubleshooting.</p>
               </div>
               <Switch
                 checked={settings.corsDebug}
@@ -1559,7 +1531,9 @@ export default function Settings() {
           </div>
         </CardContent>
       </Card>
+        </TabsContent>
 
+        <TabsContent value="https" className="mt-0">
       {/* HTTPS Settings */}
       <Card id="settings-https">
         <CardHeader className="pb-4">
@@ -1567,7 +1541,7 @@ export default function Settings() {
             <Lock className="w-4 h-4 text-primary" />
             HTTPS
           </CardTitle>
-          <CardDescription>Secure panel access with TLS.</CardDescription>
+          <CardDescription>Encrypt panel traffic with a TLS certificate.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <Alert className="border-border/60 bg-muted/40">
@@ -1680,7 +1654,9 @@ export default function Settings() {
           )}
         </CardContent>
       </Card>
+        </TabsContent>
 
+        <TabsContent value="rcon" className="mt-0">
       {/* RCON Settings */}
       <Card id="settings-rcon">
         <CardHeader className="pb-4">
@@ -1688,7 +1664,7 @@ export default function Settings() {
             <Link className="w-4 h-4 text-primary" />
             RCON Connection
           </CardTitle>
-          <CardDescription>RCON settings are configured per-server in the Servers page</CardDescription>
+          <CardDescription>Test the connection and set reconnect behavior. Host, port, and password are configured per-server on the Servers page.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
@@ -1726,7 +1702,9 @@ export default function Settings() {
           </div>
         </CardContent>
       </Card>
+        </TabsContent>
 
+        <TabsContent value="bridge" className="mt-0">
       {/* Panel Bridge - Advanced Features */}
       <Card id="settings-bridge">
         <CardHeader className="pb-4">
@@ -1888,10 +1866,10 @@ export default function Settings() {
                 variant="outline"
                 size="sm"
                 className="gap-2"
-                disabled={!bridgeStatus?.modConnected}
+                disabled={!bridgeStatus?.modConnected || pinging}
               >
-                <RefreshCw className="w-4 h-4" />
-                Ping Mod
+                {pinging ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                {pinging ? 'Pinging...' : 'Ping Mod'}
               </Button>
               <Button 
                 onClick={fetchBridgeStatus}
@@ -1919,11 +1897,15 @@ export default function Settings() {
                   <SelectValue placeholder="Select server..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {servers.map((server) => (
-                    <SelectItem key={String(server.id)} value={String(server.id)}>
-                      {server.name} {server.isActive ? '(Active)' : ''}
-                    </SelectItem>
-                  ))}
+                  {servers.length === 0 ? (
+                    <div className="px-2 py-1.5 text-sm text-muted-foreground">No servers configured</div>
+                  ) : (
+                    servers.map((server) => (
+                      <SelectItem key={String(server.id)} value={String(server.id)}>
+                        {server.name} {server.isActive ? '(Active)' : ''}
+                      </SelectItem>
+                    ))
+                  )}
                 </SelectContent>
               </Select>
               <Button
@@ -1950,7 +1932,9 @@ export default function Settings() {
           </div>
         </CardContent>
       </Card>
+        </TabsContent>
 
+        <TabsContent value="mods" className="mt-0">
       {/* Mod Update Settings */}
       <Card id="settings-mods">
         <CardHeader className="pb-4">
@@ -1960,7 +1944,7 @@ export default function Settings() {
               Mod Update Settings
             </CardTitle>
           </div>
-          <CardDescription>Configure automatic mod update checking and server restarts</CardDescription>
+          <CardDescription>How often to check for Workshop updates and whether to auto-restart when updates arrive.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="max-w-xs space-y-2">
@@ -1974,7 +1958,7 @@ export default function Settings() {
               className="h-11"
             />
             <p className="text-sm text-muted-foreground">
-              How often to check Steam Workshop for mod updates
+              Minutes between Steam Workshop checks.
             </p>
           </div>
           <div className="flex items-center gap-3 p-4 rounded-xl bg-muted/50">
@@ -1999,13 +1983,15 @@ export default function Settings() {
                 className="h-11"
               />
               <p className="text-sm text-muted-foreground">
-                Warning time before restart (players will be notified)
+                Players are warned before the restart happens.
               </p>
             </div>
           )}
         </CardContent>
       </Card>
+        </TabsContent>
 
+        <TabsContent value="api-keys" className="mt-0">
       {/* API Keys */}
       <Card id="settings-api-keys">
         <CardHeader className="pb-4">
@@ -2013,7 +1999,7 @@ export default function Settings() {
             <Key className="w-4 h-4 text-primary" />
             API Keys
           </CardTitle>
-          <CardDescription>Configure API keys for external services</CardDescription>
+          <CardDescription>Keys used for Steam Workshop lookups and the server finder.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="space-y-2">
@@ -2051,7 +2037,9 @@ export default function Settings() {
           </div>
         </CardContent>
       </Card>
+        </TabsContent>
 
+        <TabsContent value="backups" className="mt-0">
       {/* World Backups */}
       <Card id="settings-backups">
         <CardHeader className="pb-4">
@@ -2061,7 +2049,7 @@ export default function Settings() {
                 <Archive className="w-4 h-4 text-primary" />
                 World Backups
               </CardTitle>
-              <CardDescription>Backup your server world data on a schedule</CardDescription>
+              <CardDescription>Save and restore your server's world, map, and player data.</CardDescription>
             </div>
             <Button 
               onClick={handleCreateBackup} 
@@ -2127,7 +2115,7 @@ export default function Settings() {
             {backupStatus?.enabled && (
               <div className="grid grid-cols-1 gap-4 border-l-2 border-primary/20 pl-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="backup-schedule">Schedule (Cron)</Label>
+                  <Label htmlFor="backup-schedule">Schedule</Label>
                   <Input
                     id="backup-schedule"
                     value={backupSchedule}
@@ -2137,7 +2125,7 @@ export default function Settings() {
                     maxLength={100}
                   />
                   <p className="text-xs text-muted-foreground">
-                    Default: Every 6 hours. Format: minute hour day month weekday
+                    Default: every 6 hours. Uses cron format: minute hour day month weekday.
                   </p>
                 </div>
                 <div className="space-y-2">
@@ -2152,7 +2140,7 @@ export default function Settings() {
                     className="max-w-24"
                   />
                   <p className="text-xs text-muted-foreground">
-                    Oldest backups will be deleted when limit is reached
+                    The panel deletes the oldest backups when this limit is reached.
                   </p>
                 </div>
                 <div className="sm:col-span-2">
@@ -2171,9 +2159,11 @@ export default function Settings() {
           </div>
 
           {/* Backup List */}
-          {backups.length > 0 && (
-            <div className="space-y-2">
-              <Label className="text-base">Existing Backups</Label>
+          <div className="space-y-2">
+            <p className="text-base font-medium">Existing Backups</p>
+            {backups.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-6 text-center">No backups yet. Click "Backup Now" to create one.</p>
+            ) : (
               <ScrollArea className="h-[200px] rounded-lg border">
                 <div className="p-2 space-y-2">
                   {backups.map((backup) => (
@@ -2274,8 +2264,8 @@ export default function Settings() {
                   ))}
                 </div>
               </ScrollArea>
-            </div>
-          )}
+            )}
+          </div>
 
           {/* Path Info */}
           {backupStatus?.savesPath && (
@@ -2286,7 +2276,9 @@ export default function Settings() {
           )}
         </CardContent>
       </Card>
+        </TabsContent>
 
+        <TabsContent value="security" className="mt-0">
       {/* Security & Authentication */}
       <Card id="settings-security">
         <CardHeader className="pb-4">
@@ -2294,7 +2286,7 @@ export default function Settings() {
             <Shield className="w-4 h-4 text-primary" />
             Security & Authentication
           </CardTitle>
-          <CardDescription>Manage your account and view security information</CardDescription>
+          <CardDescription>Change your password and review access details.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           {/* Account Info */}
@@ -2315,7 +2307,7 @@ export default function Settings() {
           {/* Change Password */}
           {authEnabled && (
             <div className="space-y-4">
-              <Label className="text-base font-medium">Change Password</Label>
+              <p className="text-base font-medium">Change Password</p>
               <div className="max-w-sm space-y-3">
                 <div className="relative">
                   <Input
@@ -2362,12 +2354,12 @@ export default function Settings() {
                   maxLength={128}
                 />
                 {newPassword && confirmPassword && newPassword !== confirmPassword && (
-                  <p className="text-xs text-destructive flex items-center gap-1">
+                  <p className="text-xs text-destructive flex items-center gap-1" role="alert">
                     <XCircle className="w-3 h-3" /> Passwords do not match
                   </p>
                 )}
-                {newPassword && newPassword.length > 0 && newPassword.length < 6 && (
-                  <p className="text-xs text-destructive flex items-center gap-1">
+                {newPassword && newPassword.length < 6 && (
+                  <p className="text-xs text-destructive flex items-center gap-1" role="alert">
                     <XCircle className="w-3 h-3" /> Password must be at least 6 characters
                   </p>
                 )}
@@ -2403,13 +2395,15 @@ export default function Settings() {
           </div>
         </CardContent>
       </Card>
+        </TabsContent>
 
+        <TabsContent value="about" className="mt-0">
       {/* About */}
       <Card id="settings-about">
         <CardHeader className="pb-4">
           <CardTitle className="flex items-center gap-2 text-base">
             <Server className="w-4 h-4 text-primary" />
-            About PZ Server Panel
+            About
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -2427,8 +2421,10 @@ export default function Settings() {
           </div>
         </CardContent>
       </Card>
+        </TabsContent>
+
         </div>
-      </div>
+      </Tabs>
     </div>
   )
 }

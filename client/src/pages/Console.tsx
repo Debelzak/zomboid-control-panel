@@ -590,7 +590,7 @@ export default function Console() {
               >
                 <RefreshCw className="w-4 h-4" />
               </Button>
-              <Button variant="ghost" size="sm" onClick={clearServerLog}>
+              <Button variant="destructive" size="sm" onClick={clearServerLog}>
                 <Trash2 className="w-4 h-4 mr-2" />
                 Clear
               </Button>
@@ -804,7 +804,7 @@ export default function Console() {
             <TerminalIcon className="w-4 h-4" />
             Console Output
           </div>
-          <Button variant="ghost" size="sm" onClick={clearLog}>
+          <Button variant="destructive" size="sm" onClick={clearLog}>
             <Trash2 className="w-4 h-4 mr-2" />
             Clear
           </Button>

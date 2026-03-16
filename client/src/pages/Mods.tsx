@@ -6,6 +6,7 @@ import {
   Trash2, 
   ExternalLink,
   AlertTriangle,
+  AlertCircle,
   CheckCircle,
   Clock,
   Download,
@@ -57,6 +58,7 @@ import { Separator } from '@/components/ui/separator'
 import { useToast } from '@/components/ui/use-toast'
 import { modsApi } from '@/lib/api'
 import { EmptyState } from '@/components/EmptyState'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 
 interface TrackedMod {
   id: number
@@ -190,6 +192,7 @@ export default function Mods() {
   }
   const [presets, setPresets] = useState<ModPreset[]>([])
   const [presetsLoading, setPresetsLoading] = useState(false)
+  const [fetchError, setFetchError] = useState<string | null>(null)
   const [savePresetOpen, setSavePresetOpen] = useState(false)
   const [presetName, setPresetName] = useState('')
   const [presetDescription, setPresetDescription] = useState('')
@@ -271,6 +274,7 @@ export default function Mods() {
   }, [])
 
   const fetchData = useCallback(async () => {
+    setFetchError(null)
     try {
       // Use allSettled so one failure doesn't break everything
       const results = await Promise.allSettled([
@@ -301,14 +305,19 @@ export default function Mods() {
         }
       }
       
-      // Log any failures for debugging
-      results.forEach((result, index) => {
-        if (result.status === 'rejected') {
-          reportClientError(`Failed to fetch mods data (index ${index}).`, result.reason)
+      // Check for failures and show persistent error
+      const failures = results.filter(r => r.status === 'rejected')
+      if (failures.length > 0) {
+        failures.forEach((result, index) => {
+          reportClientError(`Failed to fetch mods data (index ${index}).`, (result as PromiseRejectedResult).reason)
+        })
+        if (failures.length === results.length) {
+          setFetchError('Failed to load mod data. The backend may be unreachable.')
         }
-      })
+      }
     } catch (error) {
       reportClientError('Failed to fetch mods data.', error)
+      setFetchError('Failed to load mod data. The backend may be unreachable.')
     }
   }, [])
 
@@ -1123,6 +1132,18 @@ export default function Mods() {
   return (
     <TooltipProvider>
       <div className="space-y-6 page-transition">
+        {fetchError && (
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Mod data could not be loaded</AlertTitle>
+            <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <span className="min-w-0 break-words" dir="auto">{fetchError}</span>
+              <Button variant="outline" size="sm" onClick={fetchData} className="self-start">
+                <RefreshCw className="mr-2 h-4 w-4" /> Retry
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
         {/* Header */}
         <PageHeader
           title="Mod Manager"
@@ -2141,7 +2162,7 @@ export default function Mods() {
                       {showModOrderEditor && (
                         <div className="space-y-2 ml-6">
                           <p className="text-xs text-muted-foreground mb-2">
-                            Drag and drop to reorder mods. Mods higher in the list load first.
+                            Drag to reorder, or use the arrow buttons. Mods higher in the list load first.
                           </p>
                           <ScrollArea className="h-[min(48vh,20rem)] border rounded-lg p-2 sm:h-[min(52vh,24rem)]">
                             <div className="space-y-1">

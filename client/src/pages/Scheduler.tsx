@@ -10,7 +10,8 @@ import {
   XCircle,
   RefreshCw,
   Play,
-  Loader2
+  Loader2,
+  AlertCircle
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { PageHeader } from '@/components/PageHeader'
@@ -51,6 +52,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { useToast } from '@/components/ui/use-toast'
 import { schedulerApi, rconApi, ScheduleHistoryEntry } from '@/lib/api'
 import { EmptyState } from '@/components/EmptyState'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 
 interface ScheduledTask {
   id: number
@@ -85,6 +87,7 @@ export default function Scheduler() {
   } | null>(null)
   const [loading, setLoading] = useState(false)
   const [runningTaskId, setRunningTaskId] = useState<number | null>(null)
+  const [fetchError, setFetchError] = useState<string | null>(null)
   const { toast } = useToast()
 
   // New task form
@@ -104,6 +107,7 @@ export default function Scheduler() {
   const [restartMinutes, setRestartMinutes] = useState(5)
 
   const fetchData = useCallback(async () => {
+    setFetchError(null)
     try {
       const [tasksData, presetsData, statusData, historyData] = await Promise.all([
         schedulerApi.getTasks(),
@@ -117,6 +121,7 @@ export default function Scheduler() {
       setHistory(historyData.history || [])
     } catch (error) {
       reportClientError('Failed to fetch scheduler data.', error)
+      setFetchError('Failed to load scheduler data. The backend may be unreachable.')
     }
   }, [])
 
@@ -352,6 +357,18 @@ export default function Scheduler() {
 
   return (
     <div className="space-y-6 page-transition">
+      {fetchError && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Scheduler data could not be loaded</AlertTitle>
+          <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <span className="min-w-0 break-words" dir="auto">{fetchError}</span>
+            <Button variant="outline" size="sm" onClick={fetchData} className="self-start">
+              <RefreshCw className="mr-2 h-4 w-4" /> Retry
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <PageHeader
           title="Scheduler"
@@ -387,7 +404,7 @@ export default function Scheduler() {
               </div>
               <div>
                 <Label className="mb-2 block">Schedule Type</Label>
-                <Tabs value={scheduleMode} onValueChange={(v: any) => setScheduleMode(v)} className="w-full">
+                <Tabs value={scheduleMode} onValueChange={(v: string) => setScheduleMode(v as 'simple' | 'advanced')} className="w-full">
                   <TabsList className="grid w-full grid-cols-2">
                     <TabsTrigger value="simple">Simple Builder</TabsTrigger>
                     <TabsTrigger value="advanced">Advanced (Cron)</TabsTrigger>
@@ -396,7 +413,7 @@ export default function Scheduler() {
                   <TabsContent value="simple" className="space-y-4 pt-4 border rounded-md p-4 mt-0 border-t-0 rounded-t-none">
                     <div className="space-y-2">
                       <Label>Frequency</Label>
-                      <Select value={simpleIntervalType} onValueChange={(v: any) => setSimpleIntervalType(v)}>
+                      <Select value={simpleIntervalType} onValueChange={(v) => setSimpleIntervalType(v as 'hourly' | 'daily' | 'interval')}>
                         <SelectTrigger>
                           <SelectValue />
                         </SelectTrigger>

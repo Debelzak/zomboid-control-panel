@@ -212,7 +212,7 @@ function AuthFooter() {
         variant="ghost"
         size="sm"
         onClick={logout}
-        className="h-7 px-2 text-xs"
+        className="h-9 px-2 text-xs"
         title="Sign out"
       >
         <LogOut className="w-3 h-3" />

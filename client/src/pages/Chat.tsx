@@ -134,15 +134,17 @@ export default function Chat() {
         setBridgeConnected(prev => Boolean(prev && data.alive))
       }
 
-      const handleSocketMessage = (data: any) => {
+      const handleSocketMessage = (data: { id?: string; author?: string; message?: string; timestamp?: string }) => {
+        const msg = data.message
+        if (!msg) return
         setChatHistory(prev => {
              // Deduplication: Check if we have a message with same content/author in last 2 seconds
              // This prevents echoing our own messages if we optimistically added them
              const recent = prev.slice(-5);
              const isDuplicate = recent.some(m => 
-                 m.message === data.message && 
+                 m.message === msg && 
                  m.author === data.author &&
-                 Math.abs(new Date(m.timestamp).getTime() - new Date(data.timestamp).getTime()) < 2000
+                 Math.abs(m.timestamp.getTime() - new Date(data.timestamp || Date.now()).getTime()) < 2000
              );
              if (isDuplicate) return prev;
 
@@ -150,7 +152,7 @@ export default function Chat() {
                 id: data.id || Date.now().toString(),
                 type: 'general',
                 author: data.author,
-                message: data.message,
+                message: msg,
                 timestamp: new Date(data.timestamp || Date.now())
              };
 
@@ -438,7 +440,7 @@ export default function Chat() {
             </CardHeader>
             <CardContent>
               {players.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No players are online right now.</p>
+                <EmptyState type="noPlayers" compact title="No players online" description="No players are online right now." />
               ) : (
                 <div className="space-y-2">
                   {players.map((player) => (

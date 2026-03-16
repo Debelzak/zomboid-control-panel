@@ -267,8 +267,9 @@ export default function Discord() {
       }
       setToken('')
       await loadData()
-    } catch (error: any) {
-      setConfigMessage({ type: 'error', text: error.message || 'Failed to save configuration' })
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Failed to save configuration'
+      setConfigMessage({ type: 'error', text: msg })
     } finally {
       setSaving(false)
     }
@@ -290,8 +291,9 @@ export default function Discord() {
       setBotInfo(result.bot)
       setInviteUrl(result.inviteUrl || null)
       setConfigMessage({ type: 'success', text: `Token valid! Bot: ${result.bot.username}` })
-    } catch (error: any) {
-      setConfigMessage({ type: 'error', text: error.message || 'Invalid token' })
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Invalid token'
+      setConfigMessage({ type: 'error', text: msg })
     } finally {
       setTesting(false)
     }
@@ -309,8 +311,9 @@ export default function Discord() {
       await discordApi.start()
       setConfigMessage({ type: 'success', text: 'Discord bot started' })
       await loadData()
-    } catch (error: any) {
-      setConfigMessage({ type: 'error', text: error.message || 'Failed to start bot' })
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Failed to start bot'
+      setConfigMessage({ type: 'error', text: msg })
     } finally {
       setStarting(false)
     }
@@ -324,8 +327,9 @@ export default function Discord() {
       await discordApi.stop()
       setConfigMessage({ type: 'success', text: 'Discord bot stopped' })
       await loadData()
-    } catch (error: any) {
-      setConfigMessage({ type: 'error', text: error.message || 'Failed to stop bot' })
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Failed to stop bot'
+      setConfigMessage({ type: 'error', text: msg })
     } finally {
       setStopping(false)
     }
@@ -338,8 +342,9 @@ export default function Discord() {
       setConfigMessage(null)
       await discordApi.sendTestMessage()
       setConfigMessage({ type: 'success', text: 'Test message sent to Discord channel' })
-    } catch (error: any) {
-      setConfigMessage({ type: 'error', text: error.message || 'Failed to send test message' })
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Failed to send test message'
+      setConfigMessage({ type: 'error', text: msg })
     } finally {
       setSendingTest(false)
     }
@@ -365,8 +370,9 @@ export default function Discord() {
       await discordApi.updateWebhookEvents(webhookEvents)
       setEventsMessage({ type: 'success', text: 'Webhook events saved' })
       await loadData()
-    } catch (error: any) {
-      setEventsMessage({ type: 'error', text: error.message || 'Failed to save webhook events' })
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Failed to save webhook events'
+      setEventsMessage({ type: 'error', text: msg })
     } finally {
       setSavingEvents(false)
     }
@@ -548,7 +554,7 @@ export default function Discord() {
                 {botInfo && (
                   <Alert className="border-primary/30 bg-primary/10">
                     {botInfo.avatar && (
-                      <img src={botInfo.avatar} alt={`${botInfo.username} avatar`} className="w-12 h-12 rounded-full" />
+                      <img src={botInfo.avatar} alt={`${botInfo.username} avatar`} className="w-12 h-12 rounded-full" width={48} height={48} />
                     )}
                     <div>
                       <p className="flex items-center gap-2 font-semibold text-primary">
@@ -839,7 +845,7 @@ export default function Discord() {
                   </div>
                   {botInfo && (
                     <Alert className="border-primary/30 bg-primary/10 py-3">
-                      {botInfo.avatar && <img src={botInfo.avatar} alt={`${botInfo.username} avatar`} className="w-8 h-8 rounded-full" />}
+                      {botInfo.avatar && <img src={botInfo.avatar} alt={`${botInfo.username} avatar`} className="w-8 h-8 rounded-full" width={32} height={32} />}
                       <p className="text-sm"><span className="font-medium text-primary">Token verified</span> — {botInfo.username}</p>
                     </Alert>
                   )}
@@ -1087,8 +1093,9 @@ export default function Discord() {
                     setSavingPermissions(true)
                       await discordApi.updatePermissions(commandPermissions)
                       setPermissionsMessage({ type: 'success', text: 'Command permissions saved. Slash commands re-registered.' })
-                  } catch (error: any) {
-                      setPermissionsMessage({ type: 'error', text: error.message || 'Failed to save permissions' })
+                  } catch (error: unknown) {
+                      const msg = error instanceof Error ? error.message : 'Failed to save permissions'
+                      setPermissionsMessage({ type: 'error', text: msg })
                   } finally {
                     setSavingPermissions(false)
                   }
@@ -1152,7 +1159,7 @@ export default function Discord() {
             </div>
             {botInfo && (
               <div className="flex items-center gap-2 text-sm text-primary">
-                {botInfo.avatar && <img src={botInfo.avatar} alt={`${botInfo.username} avatar`} className="w-5 h-5 rounded-full" />}
+                {botInfo.avatar && <img src={botInfo.avatar} alt={`${botInfo.username} avatar`} className="w-5 h-5 rounded-full" width={20} height={20} />}
                 <CheckCircle2 className="w-3.5 h-3.5" /> Valid token — {botInfo.username}
               </div>
             )}

@@ -750,6 +750,7 @@ export default function ServerFinder() {
                 size="sm"
                 onClick={() => goToPage(1)}
                 disabled={currentPage <= 1}
+                aria-label="Go to first page"
               >
                 <ChevronsLeft className="h-4 w-4" />
                 First
@@ -759,6 +760,7 @@ export default function ServerFinder() {
                 size="sm"
                 onClick={() => goToPage(currentPage - 1)}
                 disabled={currentPage <= 1}
+                aria-label="Go to previous page"
               >
                 <ChevronLeft className="h-4 w-4" />
                 Prev
@@ -771,6 +773,7 @@ export default function ServerFinder() {
                 size="sm"
                 onClick={() => goToPage(currentPage + 1)}
                 disabled={currentPage >= totalPages}
+                aria-label="Go to next page"
               >
                 Next
                 <ChevronRight className="h-4 w-4" />
@@ -780,6 +783,7 @@ export default function ServerFinder() {
                 size="sm"
                 onClick={() => goToPage(totalPages)}
                 disabled={currentPage >= totalPages}
+                aria-label="Go to last page"
               >
                 Last
                 <ChevronsRight className="h-4 w-4" />

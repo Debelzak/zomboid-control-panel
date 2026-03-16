@@ -967,7 +967,7 @@ export default function Players() {
                         </div>
                       </div>
                       <DialogFooter>
-                        <Button onClick={handleKick} disabled={loading}>
+                        <Button variant="destructive" onClick={handleKick} disabled={loading}>
                           {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
                           Kick Player
                         </Button>

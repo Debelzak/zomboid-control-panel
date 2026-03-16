@@ -423,7 +423,7 @@ export default function ChunkCleaner() {
       const warningVar = cssVar('--warning') || '28 80% 55%'
       const hsl = (v: string, a: number) => `hsl(${v} / ${a})`
 
-      const canvasBg = bgVar ? `hsl(${bgVar})` : '#0f1117'
+      const canvasBg = bgVar ? `hsl(${bgVar})` : 'hsl(228 30% 7%)'
       
       // Dark background
       ctx.fillStyle = canvasBg
@@ -517,7 +517,7 @@ export default function ChunkCleaner() {
           
           // Label with shadow
           const labelX = sx + half + 4
-          ctx.fillStyle = 'rgba(0, 0, 0, 0.6)'
+          ctx.fillStyle = hsl(bgVar || '0 0% 0%', 0.6)
           ctx.fillText(lm.name, labelX + 1, sy + 1)
           ctx.fillStyle = hsl(foregroundVar, 0.95)
           ctx.fillText(lm.name, labelX, sy)
@@ -701,7 +701,7 @@ export default function ChunkCleaner() {
         }
         
         const metrics = ctx.measureText(label)
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)'
+        ctx.fillStyle = hsl(bgVar || '0 0% 0%', 0.85)
         ctx.fillRect(6, H - 22, metrics.width + 12, 18)
         ctx.fillStyle = hsl(foregroundVar, 0.85)
         ctx.fillText(label, 12, H - 8)
@@ -710,7 +710,7 @@ export default function ChunkCleaner() {
       ctx.textAlign = 'right'
       const zLabel = `${scale.toFixed(1)} px/chunk`
       const zm = ctx.measureText(zLabel)
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
+      ctx.fillStyle = hsl(bgVar || '0 0% 0%', 0.7)
       ctx.fillRect(W - zm.width - 16, H - 22, zm.width + 12, 18)
       ctx.fillStyle = hsl(mutedFgVar, 0.7)
       ctx.fillText(zLabel, W - 10, H - 8)
@@ -724,7 +724,7 @@ export default function ChunkCleaner() {
       const cellMaxY = Math.floor(bounds.maxY / 30)
       const boundsLabel = `Chunks ${bounds.minX}–${bounds.maxX}, ${bounds.minY}–${bounds.maxY}  (${chunks.length})  |  Cells ${cellMinX}–${cellMaxX}, ${cellMinY}–${cellMaxY}`
       const bm = ctx.measureText(boundsLabel)
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
+      ctx.fillStyle = hsl(bgVar || '0 0% 0%', 0.7)
       ctx.fillRect(6, 6, bm.width + 12, 18)
       ctx.fillStyle = hsl(mutedFgVar, 0.7)
       ctx.fillText(boundsLabel, 12, 9)

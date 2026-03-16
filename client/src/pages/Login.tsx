@@ -89,7 +89,7 @@ export default function Login() {
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-2 min-h-[44px] min-w-[44px] flex items-center justify-center text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               aria-label={showPassword ? 'Hide password' : 'Show password'}
               aria-pressed={showPassword}
             >

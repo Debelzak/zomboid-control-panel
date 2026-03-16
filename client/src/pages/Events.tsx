@@ -31,11 +31,10 @@ import {
   RotateCcw,
   Calendar,
   Sunrise,
-  Sunset,
-  ChevronDown
+  Sunset
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -580,35 +579,7 @@ export default function Events() {
 
   type EventSectionKey = 'weather' | 'environment' | 'sound' | 'world' | 'bridgeOps'
 
-  const sectionAnchorIds: Record<EventSectionKey, string> = {
-    weather: 'events-section-weather',
-    environment: 'events-section-environment',
-    sound: 'events-section-sound',
-    world: 'events-section-world',
-    bridgeOps: 'events-section-bridgeops',
-  }
-
-  // Keep heavy sections collapsed by default for faster first scan.
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>({
-    weather: false,
-    environment: false,
-    sound: false,
-    world: false,
-    bridgeOps: false,
-  })
   const [activeIntent, setActiveIntent] = useState<EventSectionKey>('weather')
-  const toggleSection = (id: string) => setOpenSections((prev) => ({ ...prev, [id]: !prev[id] }))
-
-  const openAndFocusSection = (section: EventSectionKey) => {
-    setActiveIntent(section)
-    setOpenSections((prev) => ({ ...prev, [section]: true }))
-
-    window.requestAnimationFrame(() => {
-      const anchorId = sectionAnchorIds[section]
-      const sectionElement = document.getElementById(anchorId)
-      sectionElement?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    })
-  }
 
   const fetchPlayers = useCallback(async () => {
     try {
@@ -1157,7 +1128,7 @@ export default function Events() {
     <div className="space-y-6 page-transition">
       <PageHeader
         title="Events"
-        description="Run live world events, weather, and admin actions"
+        description="Trigger weather, sounds, zombies, and world actions on your live server"
         eyebrow="World Control"
         tone="world"
         icon={<Zap className="w-5 h-5 text-primary" />}
@@ -1191,7 +1162,7 @@ export default function Events() {
             <Target className="w-4 h-4 text-primary" />
             Event Target
           </CardTitle>
-          <CardDescription>Choose a global/random target or a specific online player</CardDescription>
+          <CardDescription>Choose a target player or target all. Pick an action below.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center gap-4">
@@ -1240,105 +1211,29 @@ export default function Events() {
         </CardContent>
       </Card>
 
-      {/* Intent-first lane */}
-      <section className="rounded-xl border border-border/60 bg-background/40 px-4 py-4 sm:px-5" aria-label="Intent first controls">
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-1">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-foreground/80">Choose intent first</p>
-            <p className="text-sm text-foreground">Pick what you need to do, then run a quick preset or jump directly to the matching control section.</p>
-          </div>
+      {/* Tab Navigation */}
+      <Tabs value={activeIntent} onValueChange={(v) => setActiveIntent(v as EventSectionKey)}>
+        <TabsList className="flex h-auto flex-wrap gap-1 bg-muted/40 p-1 rounded-xl w-full">
+          <TabsTrigger value="weather" className="flex items-center gap-1.5 px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-sm">
+            <CloudRain className="w-3.5 h-3.5 shrink-0" />Weather
+          </TabsTrigger>
+          <TabsTrigger value="environment" className="flex items-center gap-1.5 px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-sm">
+            <Clock className="w-3.5 h-3.5 shrink-0" />Time
+          </TabsTrigger>
+          <TabsTrigger value="sound" className="flex items-center gap-1.5 px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-sm">
+            <Volume2 className="w-3.5 h-3.5 shrink-0" />Sound
+          </TabsTrigger>
+          <TabsTrigger value="world" className="flex items-center gap-1.5 px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-sm">
+            <Skull className="w-3.5 h-3.5 shrink-0" />Combat & World
+          </TabsTrigger>
+          <TabsTrigger value="bridgeOps" className="flex items-center gap-1.5 px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-sm">
+            <Crosshair className="w-3.5 h-3.5 shrink-0" />Admin Ops
+          </TabsTrigger>
+        </TabsList>
 
-          <div className="flex flex-wrap gap-2">
-            <Button variant={activeIntent === 'weather' ? 'default' : 'outline'} className="h-10" onClick={() => openAndFocusSection('weather')}>Weather</Button>
-            <Button variant={activeIntent === 'environment' ? 'default' : 'outline'} className="h-10" onClick={() => openAndFocusSection('environment')}>Time</Button>
-            <Button variant={activeIntent === 'sound' ? 'default' : 'outline'} className="h-10" onClick={() => openAndFocusSection('sound')}>Sound</Button>
-            <Button variant={activeIntent === 'world' ? 'default' : 'outline'} className="h-10" onClick={() => openAndFocusSection('world')}>Zombie Control</Button>
-            <Button variant={activeIntent === 'bridgeOps' ? 'default' : 'outline'} className="h-10" onClick={() => openAndFocusSection('bridgeOps')}>Admin Ops</Button>
-          </div>
-
-          <div className="rounded-lg border border-border/50 bg-muted/20 p-3">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-foreground/80">Quick presets</p>
-
-            {activeIntent === 'weather' && (
-              <div className="flex flex-wrap gap-2">
-                <Button variant="outline" className="h-10" onClick={() => handleAction('Start storm', startStorm)} disabled={loading !== null}>Storm Now</Button>
-                <Button variant="outline" className="h-10" onClick={() => handleAction('Stop weather', stopWeather)} disabled={loading !== null}>Clear Weather</Button>
-              </div>
-            )}
-
-            {activeIntent === 'environment' && (
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  variant="outline"
-                  className="h-10"
-                  onClick={() => {
-                    setGameHour(6)
-                    void handleBridgeAction('Set Time', () => panelBridgeApi.setGameTime({ hour: 6, day: gameDay, month: gameMonth }))
-                  }}
-                  disabled={bridgeLoading !== null || !bridgeConnected}
-                >
-                  Set Dawn
-                </Button>
-                <Button
-                  variant="outline"
-                  className="h-10"
-                  onClick={() => {
-                    setGameHour(0)
-                    void handleBridgeAction('Set Time', () => panelBridgeApi.setGameTime({ hour: 0, day: gameDay, month: gameMonth }))
-                  }}
-                  disabled={bridgeLoading !== null || !bridgeConnected}
-                >
-                  Set Midnight
-                </Button>
-              </div>
-            )}
-
-            {activeIntent === 'sound' && (
-              <div className="flex flex-wrap gap-2">
-                <Button variant="outline" className="h-10" onClick={() => handleAction('Helicopter', triggerChopper)} disabled={loading !== null}>Helicopter</Button>
-                <Button variant="outline" className="h-10" onClick={() => handleAction('Gunshot', triggerGunshot)} disabled={loading !== null}>Gunshot</Button>
-              </div>
-            )}
-
-            {activeIntent === 'world' && (
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  variant="outline"
-                  className="h-10"
-                  onClick={() => handleAction('Create horde', () => createHorde(hordeCount, getTargetPlayer()))}
-                  disabled={loading !== null || (!targetAll && !selectedPlayer)}
-                >
-                  Spawn Horde
-                </Button>
-                <Button variant="destructive" className="h-10" onClick={() => handleAction('Remove all zombies', removeZombies)} disabled={loading !== null}>
-                  Clear Loaded Zombies
-                </Button>
-              </div>
-            )}
-
-            {activeIntent === 'bridgeOps' && (
-              <div className="flex flex-wrap gap-2">
-                <Button variant="outline" className="h-10" onClick={() => openAndFocusSection('bridgeOps')}>Open Bridge Console</Button>
-                <Link to="/settings" className="inline-flex h-10 items-center rounded-md border border-input bg-background px-4 text-sm font-medium text-foreground hover:bg-accent hover:text-accent-foreground">
-                  Open Bridge Setup
-                </Link>
-              </div>
-            )}
-          </div>
-        </div>
-      </section>
-
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-        {/* ── Weather Section ── */}
-        <Collapsible id={sectionAnchorIds.weather} open={openSections.weather} onOpenChange={() => toggleSection('weather')} className="md:col-span-2">
-          <CollapsibleTrigger className="flex items-center gap-2 w-full py-2 text-left group rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
-            <ChevronDown className={cn("w-4 h-4 text-muted-foreground transition-transform", openSections.weather && "rotate-180")} />
-            <span className="text-sm font-medium text-foreground/85 uppercase tracking-wide">Weather</span>
-            <div className="flex-1 border-t border-border/40 ml-2" />
-          </CollapsibleTrigger>
-          <CollapsibleContent>
-            {openSections.weather && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
+        {/* ── Weather Tab ── */}
+        <TabsContent value="weather" className="mt-5">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Weather Controls */}
         <Card>
           <CardHeader className="pb-4">
@@ -1346,7 +1241,7 @@ export default function Events() {
               <Cloud className="w-4 h-4 text-primary" />
               Weather Controls
             </CardTitle>
-            <CardDescription>Quick weather controls through RCON</CardDescription>
+            <CardDescription>Rain, storms, and clear sky controls.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             {/* Rain */}
@@ -1428,7 +1323,7 @@ export default function Events() {
               <Snowflake className="w-4 h-4 text-primary" />
               Advanced Weather
             </CardTitle>
-            <CardDescription>Panel Bridge controls for blizzards, tropical storms, and snow state</CardDescription>
+            <CardDescription>Blizzards, tropical storms, and snow toggles. Requires Bridge.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
                 {/* Blizzard */}
@@ -1487,10 +1382,10 @@ export default function Events() {
 
                 {/* Quick Actions */}
                 <div className="space-y-3 pt-3 border-t">
-                  <Label className="flex items-center gap-2">
+                  <p className="text-sm font-medium flex items-center gap-2">
                       <Thermometer className="w-4 h-4 text-primary" />
                     Quick Weather Toggles
-                  </Label>
+                  </p>
                   <div className="grid grid-cols-2 gap-2">
                     <Button
                       variant="outline"
@@ -1533,7 +1428,7 @@ export default function Events() {
                   <Gauge className="w-4 h-4 text-primary" />
                   Climate Controls
                 </CardTitle>
-                <CardDescription>Apply world-wide climate overrides. Use Reset to return to sandbox behavior.</CardDescription>
+                <CardDescription>Set fog, wind, temperature, clouds, and more across the whole map.</CardDescription>
               </div>
               {bridgeConnected && (
                 <Button
@@ -1729,10 +1624,10 @@ export default function Events() {
                   Apply All Climate Values
                 </Button>
                 <div className="pt-4 border-t">
-                <Label className="flex items-center gap-2 mb-3">
+                <p className="text-sm font-medium flex items-center gap-2 mb-3">
                   <Zap className="w-4 h-4 text-primary" />
                   Rain & Lightning
-                </Label>
+                </p>
                 <p className="text-xs text-muted-foreground mb-3">
                   Rain buttons use Panel Bridge. Lightning and thunder buttons use RCON and follow target rules.
                 </p>
@@ -1780,20 +1675,11 @@ export default function Events() {
           </CardContent>
         </Card>
             </div>
-            )}
-          </CollapsibleContent>
-        </Collapsible>
+        </TabsContent>
 
-        {/* ── Time & Environment Section ── */}
-        <Collapsible id={sectionAnchorIds.environment} open={openSections.environment} onOpenChange={() => toggleSection('environment')} className="md:col-span-2">
-          <CollapsibleTrigger className="flex items-center gap-2 w-full py-2 text-left group rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
-            <ChevronDown className={cn("w-4 h-4 text-muted-foreground transition-transform", openSections.environment && "rotate-180")} />
-            <span className="text-sm font-medium text-foreground/85 uppercase tracking-wide">Time & Environment</span>
-            <div className="flex-1 border-t border-border/40 ml-2" />
-          </CollapsibleTrigger>
-          <CollapsibleContent>
-            {openSections.environment && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
+        {/* ── Time & Environment Tab ── */}
+        <TabsContent value="environment" className="mt-5">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
         {/* Game Time Control (v1.1.0) */}
         <Card className={!bridgeConnected ? 'opacity-60 pointer-events-none' : ''}>
@@ -1802,7 +1688,7 @@ export default function Events() {
               <Calendar className="w-4 h-4 text-primary" />
               Game Time
             </CardTitle>
-            <CardDescription>Set server-wide in-game hour, day, and month</CardDescription>
+            <CardDescription>Set the in-game clock, day, and month for all players.</CardDescription>
           </CardHeader>
           <CardContent>
               <div className="space-y-4">
@@ -1912,7 +1798,7 @@ export default function Events() {
               <Zap className="w-4 h-4 text-primary" />
               Infrastructure
             </CardTitle>
-            <CardDescription>Panel Bridge controls for global power and water state</CardDescription>
+            <CardDescription>Toggle power and water for the whole world. Requires Bridge.</CardDescription>
           </CardHeader>
           <CardContent>
               <div className="space-y-4">
@@ -1984,20 +1870,11 @@ export default function Events() {
           </CardContent>
         </Card>
             </div>
-            )}
-          </CollapsibleContent>
-        </Collapsible>
+        </TabsContent>
 
-        {/* ── Sound Section ── */}
-        <Collapsible id={sectionAnchorIds.sound} open={openSections.sound} onOpenChange={() => toggleSection('sound')} className="md:col-span-2">
-          <CollapsibleTrigger className="flex items-center gap-2 w-full py-2 text-left group rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
-            <ChevronDown className={cn("w-4 h-4 text-muted-foreground transition-transform", openSections.sound && "rotate-180")} />
-            <span className="text-sm font-medium text-foreground/85 uppercase tracking-wide">Sound</span>
-            <div className="flex-1 border-t border-border/40 ml-2" />
-          </CollapsibleTrigger>
-          <CollapsibleContent>
-            {openSections.sound && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
+        {/* ── Sound Tab ── */}
+        <TabsContent value="sound" className="mt-5">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
         {/* Sound Events */}
         <Card>
@@ -2006,7 +1883,7 @@ export default function Events() {
               <Volume2 className="w-4 h-4 text-primary" />
               Sound Events
             </CardTitle>
-            <CardDescription>Trigger world sounds that pull zombie movement</CardDescription>
+            <CardDescription>Attract zombies with gunshots, alarms, and custom noise.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-sm text-muted-foreground">
@@ -2070,7 +1947,7 @@ export default function Events() {
               <Megaphone className="w-4 h-4 text-primary" />
               Advanced Sound Controls
             </CardTitle>
-            <CardDescription>Panel Bridge sound lures at player location or exact world coordinates</CardDescription>
+            <CardDescription>Place sounds at a player or at exact map coordinates. Requires Bridge.</CardDescription>
           </CardHeader>
           <CardContent>
               <div className="space-y-6">
@@ -2110,10 +1987,10 @@ export default function Events() {
 
                 {/* Quick Sound Triggers (at player location) */}
                 <div className="space-y-3 pt-3 border-t">
-                  <Label className="flex items-center gap-2">
+                  <p className="text-sm font-medium flex items-center gap-2">
                     <User className="w-4 h-4" />
                     Sound at Player Location
-                  </Label>
+                  </p>
                   <p className="text-xs text-muted-foreground">
                     {targetAll 
                       ? 'Select a specific player above before using these controls'
@@ -2162,10 +2039,10 @@ export default function Events() {
 
                 {/* Sound at Coordinates */}
                 <div className="space-y-3 pt-3 border-t">
-                  <Label className="flex items-center gap-2">
+                  <p className="text-sm font-medium flex items-center gap-2">
                     <MapPin className="w-4 h-4" />
                     Sound at World Coordinates
-                  </Label>
+                  </p>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1">
                         <Label htmlFor="sound-world-x" className="text-xs">World X</Label>
@@ -2233,20 +2110,11 @@ export default function Events() {
           </CardContent>
         </Card>
             </div>
-            )}
-          </CollapsibleContent>
-        </Collapsible>
+        </TabsContent>
 
-        {/* ── Combat & World Section ── */}
-        <Collapsible id={sectionAnchorIds.world} open={openSections.world} onOpenChange={() => toggleSection('world')} className="md:col-span-2">
-          <CollapsibleTrigger className="flex items-center gap-2 w-full py-2 text-left group rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
-            <ChevronDown className={cn("w-4 h-4 text-muted-foreground transition-transform", openSections.world && "rotate-180")} />
-            <span className="text-sm font-medium text-foreground/85 uppercase tracking-wide">Combat & World</span>
-            <div className="flex-1 border-t border-border/40 ml-2" />
-          </CollapsibleTrigger>
-          <CollapsibleContent>
-            {openSections.world && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
+        {/* ── Combat & World Tab ── */}
+        <TabsContent value="world" className="mt-5">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
         {/* Zombie Events */}
         <Card>
@@ -2255,7 +2123,7 @@ export default function Events() {
               <Skull className="w-4 h-4 text-primary" />
               Zombie Events
             </CardTitle>
-            <CardDescription>Spawn, redirect, or clear zombies in loaded areas</CardDescription>
+            <CardDescription>Spawn, clear, or redirect zombies in currently loaded areas.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             {/* Horde */}
@@ -2309,7 +2177,7 @@ export default function Events() {
               <Clock className="w-4 h-4 text-primary" />
               Time Speed
             </CardTitle>
-            <CardDescription>Control the game time multiplier</CardDescription>
+            <CardDescription>Speed up or slow down the in-game clock.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-3">
@@ -2378,16 +2246,16 @@ export default function Events() {
               <MapPin className="w-4 h-4 text-primary" />
               Teleport
             </CardTitle>
-            <CardDescription>Teleport players to locations or other players</CardDescription>
+            <CardDescription>Move players to coordinates or to another player.</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Teleport to Player */}
               <div className="space-y-4">
-                <h3 className="text-base font-semibold flex items-center gap-2">
+                <p className="text-sm font-medium flex items-center gap-2">
                   <Users className="w-4 h-4" />
                   Teleport Player to Player
-                </h3>
+                </p>
                 <div className="space-y-2">
                   <Label htmlFor="teleport-player-select">Player to move</Label>
                   <Select value={selectedPlayer} onValueChange={setSelectedPlayer}>
@@ -2432,10 +2300,10 @@ export default function Events() {
 
               {/* Teleport to Coordinates */}
               <div className="space-y-4">
-                <h3 className="text-base font-semibold flex items-center gap-2">
+                <p className="text-sm font-medium flex items-center gap-2">
                   <Navigation className="w-4 h-4" />
                   Teleport to Coordinates
-                </h3>
+                </p>
                 <div className="grid grid-cols-3 gap-2">
                   <div className="space-y-1">
                     <Label htmlFor="teleport-x" className="text-xs">X</Label>
@@ -2508,7 +2376,7 @@ export default function Events() {
               <Car className="w-4 h-4 text-primary" />
               Vehicle Spawn
             </CardTitle>
-            <CardDescription>Summon vehicles for players</CardDescription>
+            <CardDescription>Spawn a vehicle near a player.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
@@ -2559,7 +2427,7 @@ export default function Events() {
               <Megaphone className="w-4 h-4 text-primary" />
               Server Announcement
             </CardTitle>
-            <CardDescription>Broadcast messages to all players</CardDescription>
+            <CardDescription>Send a message to every online player.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
@@ -2596,20 +2464,11 @@ export default function Events() {
           </CardContent>
         </Card>
             </div>
-            )}
-          </CollapsibleContent>
-        </Collapsible>
+        </TabsContent>
 
-        {/* ── Bridge Operations Section ── */}
-        <Collapsible id={sectionAnchorIds.bridgeOps} open={openSections.bridgeOps} onOpenChange={() => toggleSection('bridgeOps')} className="md:col-span-2">
-          <CollapsibleTrigger className="flex items-center gap-2 w-full py-2 text-left group rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
-            <ChevronDown className={cn("w-4 h-4 text-muted-foreground transition-transform", openSections.bridgeOps && "rotate-180")} />
-            <span className="text-sm font-medium text-foreground/85 uppercase tracking-wide">Bridge Operations</span>
-            <div className="flex-1 border-t border-border/40 ml-2" />
-          </CollapsibleTrigger>
-          <CollapsibleContent>
-            {openSections.bridgeOps && (
-            <div className="pt-4">
+        {/* ── Bridge Operations Tab ── */}
+        <TabsContent value="bridgeOps" className="mt-5">
+            <div>
               <Card className={!bridgeConnected ? 'opacity-80' : ''}>
                 <CardHeader className="pb-4">
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -2619,7 +2478,7 @@ export default function Events() {
                           Bridge Operations Console
                         </CardTitle>
                         <CardDescription>
-                          Run advanced PanelBridge handlers with the same control-room patterns used across the admin panel.
+                          Run safehouses, vehicles, moderation, and other Bridge commands directly.
                         </CardDescription>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
@@ -2638,14 +2497,14 @@ export default function Events() {
                           <div className="space-y-2">
                             <Label htmlFor="bridge-operation-select">Operation</Label>
                             <p className="text-xs leading-5 text-muted-foreground">
-                              Pick a handler, review the template payload, then run it against the live bridge connection.
+                              Choose an operation, fill in the required fields, and run it.
                             </p>
                           </div>
                       <Select
                         value={bridgeOperation}
                         onValueChange={selectBridgeOperation}
                       >
-                        <SelectTrigger id="bridge-operation-select" aria-label="Bridge operation selector" disabled={bridgeLoading !== null} className="mt-3">
+                        <SelectTrigger id="bridge-operation-select" aria-label="Select operation" disabled={bridgeLoading !== null} className="mt-3">
                           <SelectValue placeholder="Select operation" />
                         </SelectTrigger>
                         <SelectContent>
@@ -2669,9 +2528,9 @@ export default function Events() {
                       <div className="rounded-lg border border-border/70 bg-muted/20 p-4">
                         <div className="flex items-center justify-between gap-3">
                           <div>
-                            <p className="text-sm font-medium text-foreground">Operation families</p>
+                            <p className="text-sm font-medium text-foreground">Operation Groups</p>
                             <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                              Match the panel's operational grouping: territory, vehicles, event sequencing, and moderation.
+                              Browse by category: territory, vehicles, events, and moderation.
                             </p>
                           </div>
                         </div>
@@ -2737,7 +2596,7 @@ export default function Events() {
                           <div>
                             <Label>Operation Inputs</Label>
                             <p id="bridge-args-help" className="mt-1 text-xs leading-5 text-muted-foreground">
-                              Complete required fields first. The panel builds and validates the payload automatically.
+                              Fill in the required fields. The panel validates your inputs before sending.
                             </p>
                           </div>
                           <Badge variant={bridgeFormError ? 'destructive' : 'outline'}>
@@ -2857,6 +2716,7 @@ export default function Events() {
                                       value={value}
                                       onChange={(e) => setBridgeFieldValue(field.key, e.target.value)}
                                       placeholder={field.placeholder || 'Type value manually'}
+                                      aria-label={`${field.label} (manual entry)`}
                                     />
                                   )}
                                   <p className="text-xs text-muted-foreground">
@@ -2945,10 +2805,10 @@ export default function Events() {
 
                         <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
                           <p className="text-xs text-muted-foreground">
-                            Guided mode is active: payload is generated from your inputs.
+                            Fields are pre-filled from your inputs.
                           </p>
                           <span className="text-xs text-muted-foreground">
-                            {bridgeLastRunAt ? `Last dispatch: ${bridgeLastRunAt}` : 'No dispatch yet'}
+                            {bridgeLastRunAt ? `Last run: ${bridgeLastRunAt}` : 'Not run yet'}
                           </span>
                         </div>
                       {bridgeConnectionSummary && (
@@ -3012,7 +2872,7 @@ export default function Events() {
                   </div>
 
                   <p className="text-xs text-muted-foreground" aria-live="polite">
-                    {bridgeRunDisabledReason || 'Ready to dispatch. Review output after each run.'}
+                    {bridgeRunDisabledReason || 'Ready. Review the output after each run.'}
                   </p>
 
                   <div className="rounded-lg border border-border/70 bg-muted/20 p-4">
@@ -3020,7 +2880,7 @@ export default function Events() {
                       <div>
                         <Label>Response Output</Label>
                         <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                          Review the raw bridge response after each dispatch. Large payloads are truncated automatically.
+                          The raw response from the Bridge. Large results are truncated.
                         </p>
                       </div>
                       <Badge variant={bridgeResultReady ? 'secondary' : 'outline'}>
@@ -3042,10 +2902,8 @@ export default function Events() {
                 </CardContent>
               </Card>
             </div>
-            )}
-          </CollapsibleContent>
-        </Collapsible>
-      </div>
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }
