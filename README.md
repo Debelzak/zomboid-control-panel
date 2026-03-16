@@ -22,6 +22,17 @@ So I built the whole thing. [Background story →](https://www.youtube.com/watch
 
 ---
 
+<p align="center">
+   <img src="Screenshots/screenshot-dashboard.png" width="49%" alt="Dashboard" />
+   <img src="Screenshots/screenshot-players.png" width="49%" alt="Players" />
+</p>
+<p align="center">
+   <img src="Screenshots/screenshot-events.png" width="49%" alt="Events &amp; Weather" />
+   <img src="Screenshots/screenshot-serverconfig.png" width="49%" alt="Server Config" />
+</p>
+
+---
+
 ## Quick Start
 
 ### Windows
