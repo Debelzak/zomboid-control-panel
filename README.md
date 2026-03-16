@@ -138,24 +138,6 @@ PanelBridge is a Lua server mod that opens up commands RCON can't reach: charact
 
 ---
 
-## Environment Variables
-
-Most config lives in the UI and is stored in `data/db.json`. Env vars override it at startup:
-
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `PORT` | `3001` | Panel backend port |
-| `RCON_PORT` | — | PZ RCON port |
-| `RCON_PASSWORD` | — | RCON password |
-| `PZ_SERVER_PATH` | — | PZ server install path |
-| `PZ_SAVE_PATH` | — | Zomboid data/saves path |
-| `PZ_SERVER_BAT` | — | Custom startup script name |
-| `MOD_CHECK_INTERVAL` | — | Mod checker polling interval |
-
-> **Never commit `data/db.json`** — it contains your server credentials.
-
----
-
 ## Release Packages
 
 Each release ships two complete packages (binary + web UI + launch scripts + PanelBridge mod):
