@@ -77,31 +77,34 @@ function writeReleaseReadme() {
 ## Quick Start
 
 ### Windows
-1. Run Start.bat (or double-click ZomboidControlPanel.exe)
-2. Open your browser to http://localhost:3001
-3. Configure your server paths in Settings
+1. Extract ZomboidControlPanel-windows.zip
+2. Run Start.bat (or double-click ZomboidControlPanel.exe)
+3. Open your browser to http://localhost:3001
+4. Configure your server paths in Settings
 
-### Linux (Ubuntu)
-1. chmod +x start.sh ZomboidControlPanel
-2. ./start.sh (or ./ZomboidControlPanel)
+### Linux (Ubuntu / Debian)
+1. Extract: tar xzf ZomboidControlPanel-linux.tar.gz
+   (Execute permissions are preserved in the archive)
+2. Run: ./start.sh  (or ./ZomboidControlPanel directly)
 3. Open your browser to http://localhost:3001
 4. Configure your server paths in Settings
 
 ## Linux Troubleshooting
-- If launch fails with "Permission denied", run: chmod +x ZomboidControlPanel start.sh
-- If launch fails with missing runtime or glibc errors, run on a newer distro base or use Docker mode.
-- If browser file pickers do not open, install zenity (GNOME) or kdialog (KDE).
-- If your startup script fails, confirm the configured Linux script path is executable.
+- If you see "Permission denied": chmod +x ZomboidControlPanel start.sh
+- If launch fails with glibc errors, run on Ubuntu 20.04+ or use Docker.
+- The binary is self-contained — Node.js is NOT required.
 
 ## Folder Structure
 - ZomboidControlPanel.exe - Windows standalone binary
-- ZomboidControlPanel - Linux standalone binary
-- client/dist/ - Web interface files
-- data/db.json - Configuration database
-- logs/ - Application logs
-- pz-mod/ - PanelBridge mod for advanced features
-- checksums.txt - SHA256 hashes for release binaries
-- release-manifest.json - Build metadata for this package
+- ZomboidControlPanel      - Linux standalone binary
+- Start.bat                - Windows launch script
+- start.sh                 - Linux launch script
+- client/dist/             - Web interface (required, must stay alongside binary)
+- data/db.json             - Configuration database (created on first run)
+- logs/                    - Application logs
+- pz-mod/                  - PanelBridge mod for advanced in-game features
+- checksums.txt            - SHA256 hashes for release archives
+- release-manifest.json    - Build metadata for this package
 
 ## Panel Bridge Setup (Optional)
 The PanelBridge mod enables advanced features like weather control:
@@ -111,7 +114,7 @@ The PanelBridge mod enables advanced features like weather control:
 4. Go to Settings in the panel and configure the Panel Bridge section
 
 ## Notes
-- Keep all files in the same folder structure.
+- Keep all files in the same folder structure — the binary needs client/dist/.
 - The app runs on port 3001 by default.
 - First run: go to Settings to configure your PZ server path.
 `;
@@ -259,29 +262,29 @@ async function main() {
   }
 
   const startBat = `@echo off
- echo Starting Zomboid Control Panel...
- echo.
- echo Open your browser to: http://localhost:3001
- echo.
- if exist ZomboidControlPanel.exe (
-   ZomboidControlPanel.exe
- ) else (
-   echo ERROR: ZomboidControlPanel.exe not found in this folder.
- )
- pause
+echo Starting Zomboid Control Panel...
+echo.
+echo Open your browser to: http://localhost:3001
+echo.
+if exist ZomboidControlPanel.exe (
+  ZomboidControlPanel.exe
+) else (
+  echo ERROR: ZomboidControlPanel.exe not found in this folder.
+)
+pause
 `;
   fs.writeFileSync('./release/Start.bat', startBat);
 
   const startSh = `#!/bin/bash
- echo "Starting Zomboid Control Panel..."
- echo ""
- echo "Open your browser to: http://localhost:3001"
- echo ""
- if [ ! -f "./ZomboidControlPanel" ]; then
-   echo "ERROR: ./ZomboidControlPanel was not found in this folder."
-   exit 1
- fi
- ./ZomboidControlPanel
+echo "Starting Zomboid Control Panel..."
+echo ""
+echo "Open your browser to: http://localhost:3001"
+echo ""
+if [ ! -f "./ZomboidControlPanel" ]; then
+  echo "ERROR: ./ZomboidControlPanel was not found in this folder."
+  exit 1
+fi
+./ZomboidControlPanel
 `;
   fs.writeFileSync('./release/start.sh', startSh.replace(/\r\n/g, '\n'), { mode: 0o755 });
 

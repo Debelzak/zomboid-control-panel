@@ -16,10 +16,12 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            artifact_name: ZomboidControlPanel.exe
+            artifact_name: windows-zip
+            archive_file: ZomboidControlPanel-windows.zip
             build_arg: --windows
           - os: ubuntu-latest
-            artifact_name: ZomboidControlPanel
+            artifact_name: linux-tarball
+            archive_file: ZomboidControlPanel-linux.tar.gz
             build_arg: --linux
     runs-on: ${{ matrix.os }}
 
@@ -40,14 +42,25 @@ jobs:
         run: npm ci
         working-directory: client
 
-      - name: Build platform artifact
+      - name: Build
         run: node build.js ${{ matrix.build_arg }}
 
-      - name: Upload platform artifact
+      - name: Package Windows archive
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path release\* -DestinationPath ${{ matrix.archive_file }}
+
+      - name: Package Linux archive
+        if: runner.os == 'Linux'
+        run: |
+          chmod +x release/ZomboidControlPanel release/start.sh
+          tar -czf ${{ matrix.archive_file }} -C release .
+
+      - name: Upload archive
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: release/${{ matrix.artifact_name }}
+          path: ${{ matrix.archive_file }}
           if-no-files-found: error
 
   publish:
@@ -56,36 +69,43 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Download Windows artifact
+      - name: Download Windows archive
         uses: actions/download-artifact@v4
         with:
-          name: ZomboidControlPanel.exe
-          path: release
+          name: windows-zip
+          path: .
 
-      - name: Download Linux artifact
+      - name: Download Linux archive
         uses: actions/download-artifact@v4
         with:
-          name: ZomboidControlPanel
-          path: release
+          name: linux-tarball
+          path: .
 
       - name: Generate checksums
-        run: |
-          cd release
-          sha256sum ZomboidControlPanel.exe ZomboidControlPanel > checksums.txt
+        run: sha256sum ZomboidControlPanel-windows.zip ZomboidControlPanel-linux.tar.gz > checksums.txt
 
       - name: Create release manifest
         run: |
-          node -e "const fs=require('fs'); const manifest={version:process.env.GITHUB_REF_NAME,builtAt:new Date().toISOString(),artifacts:[{platform:'win',file:'ZomboidControlPanel.exe'},{platform:'linux',file:'ZomboidControlPanel'}]}; fs.writeFileSync('release/release-manifest.json', JSON.stringify(manifest, null, 2));"
+          node -e "
+            const fs = require('fs');
+            const manifest = {
+              version: process.env.GITHUB_REF_NAME,
+              builtAt: new Date().toISOString(),
+              platform: 'ci',
+              artifacts: [
+                { platform: 'win',   file: 'ZomboidControlPanel-windows.zip' },
+                { platform: 'linux', file: 'ZomboidControlPanel-linux.tar.gz' }
+              ]
+            };
+            fs.writeFileSync('release-manifest.json', JSON.stringify(manifest, null, 2));
+          "
 
-      - name: Publish GitHub release assets
+      - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            release/ZomboidControlPanel.exe
-            release/ZomboidControlPanel
-            release/checksums.txt
-            release/release-manifest.json
+            ZomboidControlPanel-windows.zip
+            ZomboidControlPanel-linux.tar.gz
+            checksums.txt
+            release-manifest.json
           fail_on_unmatched_files: true
