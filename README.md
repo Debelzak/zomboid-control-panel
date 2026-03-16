@@ -70,12 +70,13 @@ The demo runs the real frontend shell and real routes on GitHub Pages.
 4. Start managing your server.
 
 #### Linux/Ubuntu
-1. Download the `ZomboidControlPanel` binary.
-2. Make it executable and run:
+1. Download `ZomboidControlPanel-linux.tar.gz`.
+2. Extract and run:
    ```bash
-   chmod +x ZomboidControlPanel
-   ./ZomboidControlPanel
+   tar xzf ZomboidControlPanel-linux.tar.gz
+   ./start.sh
    ```
+   (Execute permissions are preserved inside the archive — no `chmod` needed.)
 3. Open `http://localhost:3001`.
 4. Complete setup/login and configure paths + RCON.
 
@@ -153,10 +154,10 @@ PanelBridge enables advanced actions that base RCON does not support.
 
 | File | Platform | Purpose |
 |------|----------|---------|
-| `ZomboidControlPanel.exe` | Windows | Standalone app (no Node runtime required) |
-| `ZomboidControlPanel` | Linux | Standalone app (no Node runtime required) |
-| `Start.bat` | Windows | Startup helper (included in full release package) |
-| `start.sh` | Linux | Startup helper (included in full release package) |
+| `ZomboidControlPanel-windows.zip` | Windows | Full release package (extract and run `Start.bat`) |
+| `ZomboidControlPanel-linux.tar.gz` | Linux | Full release package (extract and run `./start.sh`) |
+| `Start.bat` | Windows | Startup helper (included inside the Windows zip) |
+| `start.sh` | Linux | Startup helper (included inside the Linux tarball) |
 
 ## Configuration and Environment
 
@@ -186,15 +187,18 @@ Optional environment variables:
 
 ### Release Assets (GitHub)
 
-Each release is expected to include:
-- `ZomboidControlPanel.exe` (Windows standalone binary)
-- `ZomboidControlPanel` (Linux standalone binary)
-- `checksums.txt` (SHA256 hashes)
-- `release-manifest.json` (build metadata)
+Each release includes two full packages (binary + web UI + scripts + mod):
+
+| File | Platform | Notes |
+|------|----------|-------|
+| `ZomboidControlPanel-windows.zip` | Windows | Extract and run `Start.bat` |
+| `ZomboidControlPanel-linux.tar.gz` | Linux | Extract and run `./start.sh` — execute bits preserved |
+| `checksums.txt` | Both | SHA256 hashes for integrity verification |
+| `release-manifest.json` | Both | Build metadata |
 
 Quick integrity verification:
 - Linux/macOS: `sha256sum -c checksums.txt`
-- Windows (PowerShell): `Get-FileHash .\ZomboidControlPanel.exe -Algorithm SHA256`
+- Windows (PowerShell): `Get-FileHash .\ZomboidControlPanel-windows.zip -Algorithm SHA256`
 
 ## Project Structure
 
