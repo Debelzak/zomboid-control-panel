@@ -142,30 +142,148 @@ let httpsServer = null;
 
 // CORS — restrict to known development and production origins
 // Must be declared before Socket.IO or Express CORS middleware reference it
-const allowedOrigins = ['http://localhost:5173', 'http://localhost:3001'];
+const defaultAllowedOrigins = ['http://localhost:5173', 'http://localhost:3001'];
+const allowedOrigins = new Set(defaultAllowedOrigins);
+const MAX_CORS_BLOCK_EVENTS = 50;
+const MAX_CORS_CUSTOM_ORIGINS = 100;
+const MAX_CORS_ORIGIN_LENGTH = 256;
+const corsState = {
+  allowAll: false,
+  allowPrivateNetworks: true,
+  debug: false,
+  customOrigins: new Set(),
+  blocked: [],
+  lastLoadedAt: null
+};
+
+function normalizeOrigin(origin) {
+  if (typeof origin !== 'string') return null;
+  const trimmed = origin.trim();
+  if (trimmed.length > MAX_CORS_ORIGIN_LENGTH) return null;
+  if (!trimmed) return null;
+  try {
+    return new URL(trimmed).origin;
+  } catch (_) {
+    return null;
+  }
+}
+
+function parseOriginList(rawOrigins) {
+  if (typeof rawOrigins !== 'string') return [];
+  const parsed = rawOrigins
+    .split(/[\n,;]+/)
+    .map((origin) => normalizeOrigin(origin))
+    .filter(Boolean);
+  return [...new Set(parsed)].slice(0, MAX_CORS_CUSTOM_ORIGINS);
+}
+
+function isPrivateNetworkHost(host) {
+  if (!host) return false;
+  return (
+    host === 'localhost' ||
+    host === '127.0.0.1' ||
+    host === '::1' ||
+    host.startsWith('192.168.') ||
+    host.startsWith('10.') ||
+    host.startsWith('100.') ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(host)
+  );
+}
+
+function recordCorsBlock(origin, source) {
+  if (!corsState.debug) return;
+  const normalizedOrigin = typeof origin === 'string' ? origin.trim() : '';
+  const safeOrigin = normalizedOrigin
+    ? normalizedOrigin.slice(0, MAX_CORS_ORIGIN_LENGTH)
+    : 'null';
+  const entry = {
+    id: Date.now() + Math.floor(Math.random() * 1000),
+    origin: safeOrigin,
+    source,
+    blockedAt: new Date().toISOString()
+  };
+  corsState.blocked.unshift(entry);
+  if (corsState.blocked.length > MAX_CORS_BLOCK_EVENTS) {
+    corsState.blocked = corsState.blocked.slice(0, MAX_CORS_BLOCK_EVENTS);
+  }
+}
 
 // Allow dynamic HTTPS origins (will be populated at startup if HTTPS is enabled)
 function addAllowedOrigin(origin) {
-  if (origin && !allowedOrigins.includes(origin)) {
-    allowedOrigins.push(origin);
+  const normalized = normalizeOrigin(origin);
+  if (!normalized) return;
+  allowedOrigins.add(normalized);
+}
+
+function rebuildAllowedOriginsFromSettings(settings = {}) {
+  allowedOrigins.clear();
+  for (const origin of defaultAllowedOrigins) {
+    addAllowedOrigin(origin);
   }
+
+  const customOrigins = parseOriginList(settings.corsAllowedOrigins || '');
+  corsState.customOrigins = new Set(customOrigins);
+  for (const origin of customOrigins) {
+    addAllowedOrigin(origin);
+  }
+
+  const httpsEnabled = settings.httpsEnabled === true;
+  const httpsPort = parseInt(settings.httpsPort, 10);
+  if (httpsEnabled) {
+    addAllowedOrigin(`https://localhost:${Number.isNaN(httpsPort) ? 3443 : httpsPort}`);
+  }
+}
+
+function getCorsDebugSnapshot() {
+  return {
+    allowAll: corsState.allowAll,
+    allowPrivateNetworks: corsState.allowPrivateNetworks,
+    debug: corsState.debug,
+    customOrigins: [...corsState.customOrigins],
+    effectiveAllowedOrigins: [...allowedOrigins].sort(),
+    blocked: corsState.blocked,
+    blockedCount: corsState.blocked.length,
+    lastLoadedAt: corsState.lastLoadedAt
+  };
+}
+
+function clearCorsBlockedOrigins() {
+  corsState.blocked = [];
+}
+
+async function refreshCorsConfig() {
+  const settings = await getAllSettings();
+  corsState.allowAll = settings?.corsAllowAll === true;
+  corsState.allowPrivateNetworks = settings?.corsAllowPrivateNetworks !== false;
+  corsState.debug = settings?.corsDebug === true;
+  rebuildAllowedOriginsFromSettings(settings || {});
+  corsState.lastLoadedAt = new Date().toISOString();
+
+  log.info(
+    `CORS config loaded: allowAll=${corsState.allowAll}, privateNetworks=${corsState.allowPrivateNetworks}, customOrigins=${corsState.customOrigins.size}, debug=${corsState.debug}`
+  );
+
+  return getCorsDebugSnapshot();
 }
 
 // CORS origin checker — shared between Express and Socket.IO
 // Allows localhost + any private/LAN IP (192.168.x, 10.x, 100.x Tailscale, 172.16-31.x)
 function isAllowedOrigin(origin) {
   if (!origin) return true;
-  if (allowedOrigins.includes(origin)) return true;
+  if (corsState.allowAll) return true;
+
+  const normalized = normalizeOrigin(origin);
+  if (!normalized) return false;
+  if (allowedOrigins.has(normalized)) return true;
+
   try {
-    const url = new URL(origin);
-    const host = url.hostname;
-    if (host === 'localhost' || host === '127.0.0.1' || host === '::1' ||
-        host.startsWith('192.168.') || host.startsWith('10.') || host.startsWith('100.') ||
-        /^172\.(1[6-9]|2\d|3[01])\./.test(host)) {
-      addAllowedOrigin(origin);
+    const url = new URL(normalized);
+    if (corsState.allowPrivateNetworks && isPrivateNetworkHost(url.hostname)) {
+      addAllowedOrigin(normalized);
       return true;
     }
   } catch (_) {}
+
   return false;
 }
 
@@ -175,6 +293,7 @@ const io = new Server(httpServer, {
       if (isAllowedOrigin(origin)) {
         callback(null, true);
       } else {
+        recordCorsBlock(origin, 'socket');
         callback(new Error('Not allowed by CORS'));
       }
     },
@@ -210,6 +329,7 @@ app.use(cors({
     if (isAllowedOrigin(origin)) {
       callback(null, true);
     } else {
+      recordCorsBlock(origin, 'http');
       log.warn(`CORS blocked request from origin: ${origin}`);
       callback(new Error('Not allowed by CORS'));
     }
@@ -472,6 +592,9 @@ app.set('scheduler', scheduler);
 app.set('discordBot', discordBot);
 app.set('backupService', backupService);
 app.set('io', io);
+app.set('refreshCorsConfig', refreshCorsConfig);
+app.set('getCorsDebugSnapshot', getCorsDebugSnapshot);
+app.set('clearCorsBlockedOrigins', clearCorsBlockedOrigins);
 
 // Initialize update checker (needs io for socket events)
 const updateChecker = new UpdateChecker(io);
@@ -754,6 +877,7 @@ async function start() {
     // ── Database ──
     logSection('Database');
     await initDatabase();
+    await refreshCorsConfig();
     log.info('Database ready');
 
     // ── Authentication ──

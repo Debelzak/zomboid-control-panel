@@ -16,11 +16,16 @@ const VALID_SETTINGS_KEYS = [
   'discordEnabled', 'discordToken', 'discordGuildId', 'discordAdminRole',
   'autoStartServer',
   'panelPort',
-  'httpsEnabled', 'httpsPort', 'httpsKeyPath', 'httpsCertPath'
+  'httpsEnabled', 'httpsPort', 'httpsKeyPath', 'httpsCertPath',
+  'corsAllowedOrigins', 'corsAllowAll', 'corsAllowPrivateNetworks', 'corsDebug'
 ];
 
 const OPTION_NAME_REGEX = /^[a-zA-Z0-9_]{1,64}$/;
 const OPTION_VALUE_REGEX = /^[a-zA-Z0-9_.,:;\/ -]{0,256}$/;
+const ORIGIN_DELIMITER_REGEX = /[\n,;]+/;
+const MAX_CORS_ALLOWED_ORIGINS_LENGTH = 5000;
+const MAX_CORS_ALLOWED_ORIGINS = 100;
+const MAX_CORS_ORIGIN_LENGTH = 256;
 
 function isValidOptionName(name) {
   return typeof name === 'string' && OPTION_NAME_REGEX.test(name);
@@ -29,6 +34,41 @@ function isValidOptionName(name) {
 function isValidOptionValue(value) {
   const strVal = String(value);
   return OPTION_VALUE_REGEX.test(strVal);
+}
+
+function validateCorsAllowedOrigins(value) {
+  if (typeof value !== 'string') {
+    return 'CORS allowed origins must be a string list';
+  }
+
+  if (value.length > MAX_CORS_ALLOWED_ORIGINS_LENGTH) {
+    return `CORS allowed origins list is too long (max ${MAX_CORS_ALLOWED_ORIGINS_LENGTH} characters)`;
+  }
+
+  const rawOrigins = value
+    .split(ORIGIN_DELIMITER_REGEX)
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  if (rawOrigins.length > MAX_CORS_ALLOWED_ORIGINS) {
+    return `Too many CORS origins (max ${MAX_CORS_ALLOWED_ORIGINS})`;
+  }
+
+  for (const origin of rawOrigins) {
+    if (origin.length > MAX_CORS_ORIGIN_LENGTH) {
+      return `Origin is too long (max ${MAX_CORS_ORIGIN_LENGTH} chars): ${origin.slice(0, 40)}...`;
+    }
+    try {
+      const url = new URL(origin);
+      if (!['http:', 'https:'].includes(url.protocol)) {
+        return `Only http/https origins are allowed: ${origin}`;
+      }
+    } catch {
+      return `Invalid origin format: ${origin}`;
+    }
+  }
+
+  return null;
 }
 
 // Get server configuration
@@ -146,11 +186,28 @@ router.put('/app-settings', async (req, res) => {
     }
     
     // Only allow valid setting keys to prevent prototype pollution
+    const validEntries = [];
     for (const [key, value] of Object.entries(settings)) {
       if (!VALID_SETTINGS_KEYS.includes(key)) {
         log.warn(`Invalid setting key rejected: ${key}`);
         continue;
       }
+
+      if (key === 'corsAllowedOrigins') {
+        const corsValidationError = validateCorsAllowedOrigins(value);
+        if (corsValidationError) {
+          return res.status(400).json({ error: corsValidationError });
+        }
+      }
+
+      if (['corsAllowAll', 'corsAllowPrivateNetworks', 'corsDebug'].includes(key) && typeof value !== 'boolean') {
+        return res.status(400).json({ error: `${key} must be true or false` });
+      }
+
+      validEntries.push([key, value]);
+    }
+
+    for (const [key, value] of validEntries) {
       await setSetting(key, value);
     }
     
@@ -175,12 +232,65 @@ router.put('/app-settings', async (req, res) => {
         reloadWarnings.push('RCON service failed to reload — reconnect may be required');
       }
     }
+    const refreshCorsConfig = req.app.get('refreshCorsConfig');
+    if (typeof refreshCorsConfig === 'function') {
+      try {
+        await refreshCorsConfig();
+      } catch (reloadErr) {
+        log.warn(`CORS config reload failed after settings save: ${reloadErr.message}`);
+        reloadWarnings.push('CORS settings could not be reloaded — panel restart may be required');
+      }
+    }
     
     const response = { success: true, message: 'Settings saved' };
     if (reloadWarnings.length) response.warnings = reloadWarnings;
     res.json(response);
   } catch (error) {
     log.error(`Failed to save app settings: ${error.message}`);
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
+// CORS diagnostics for remote access troubleshooting
+router.get('/cors-debug', async (req, res) => {
+  try {
+    const getCorsDebugSnapshot = req.app.get('getCorsDebugSnapshot');
+    if (typeof getCorsDebugSnapshot !== 'function') {
+      return res.status(500).json({ error: 'CORS diagnostics are not available' });
+    }
+    res.json({ diagnostics: getCorsDebugSnapshot() });
+  } catch (error) {
+    log.error(`Failed to get CORS diagnostics: ${error.message}`);
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
+router.post('/cors-debug/reload', async (req, res) => {
+  try {
+    const refreshCorsConfig = req.app.get('refreshCorsConfig');
+    if (typeof refreshCorsConfig !== 'function') {
+      return res.status(500).json({ error: 'CORS config reload is not available' });
+    }
+    const diagnostics = await refreshCorsConfig();
+    res.json({ success: true, diagnostics });
+  } catch (error) {
+    log.error(`Failed to reload CORS config: ${error.message}`);
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
+router.delete('/cors-debug/blocked', async (req, res) => {
+  try {
+    const clearCorsBlockedOrigins = req.app.get('clearCorsBlockedOrigins');
+    const getCorsDebugSnapshot = req.app.get('getCorsDebugSnapshot');
+    if (typeof clearCorsBlockedOrigins !== 'function' || typeof getCorsDebugSnapshot !== 'function') {
+      return res.status(500).json({ error: 'CORS diagnostics are not available' });
+    }
+
+    clearCorsBlockedOrigins();
+    res.json({ success: true, diagnostics: getCorsDebugSnapshot() });
+  } catch (error) {
+    log.error(`Failed to clear blocked CORS origins: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });
   }
 });

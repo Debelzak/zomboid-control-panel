@@ -300,6 +300,7 @@ export default function Layout({ children }: LayoutProps) {
   const navigate = useNavigate()
   const location = useLocation()
   const { theme } = useTheme()
+  const playerCountLabel = playerCount > 99 ? '99+' : String(playerCount)
 
   // Toggle section open/closed
   const toggleSection = (sectionId: string) => {
@@ -329,6 +330,33 @@ export default function Layout({ children }: LayoutProps) {
   useEffect(() => {
     setMobileMenuOpen(false)
   }, [location.pathname])
+
+  // Close mobile menu with Escape for keyboard users
+  useEffect(() => {
+    if (!mobileMenuOpen) return
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setMobileMenuOpen(false)
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [mobileMenuOpen])
+
+  // Prevent background scroll while mobile menu is open
+  useEffect(() => {
+    const { body } = document
+    const previousOverflow = body.style.overflow
+    if (mobileMenuOpen) {
+      body.style.overflow = 'hidden'
+    }
+
+    return () => {
+      body.style.overflow = previousOverflow
+    }
+  }, [mobileMenuOpen])
 
   // Fetch servers and active server
   useEffect(() => {
@@ -432,6 +460,7 @@ export default function Layout({ children }: LayoutProps) {
             size="icon"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             aria-label={mobileMenuOpen ? "Close menu" : "Open menu"}
+            className="h-11 w-11 rounded-lg border border-transparent hover:border-border/70 focus-visible:ring-2 focus-visible:ring-primary/60 focus-visible:ring-offset-2"
           >
             {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
           </Button>
@@ -441,14 +470,15 @@ export default function Layout({ children }: LayoutProps) {
       {/* Mobile Menu Overlay */}
       {mobileMenuOpen && (
         <div 
-          className="fixed inset-0 z-40 bg-black/50 lg:hidden"
+          className="fixed inset-0 z-40 bg-black/50 backdrop-blur-[1px] lg:hidden"
           onClick={() => setMobileMenuOpen(false)}
+          aria-hidden="true"
         />
       )}
 
       {/* Sidebar - Desktop always visible, Mobile as slide-out */}
       <aside className={cn(
-        "fixed inset-y-0 left-0 z-40 flex w-72 flex-col border-r bg-card transform transition-transform duration-300 ease-in-out lg:relative lg:w-64",
+        "fixed inset-y-0 left-0 z-40 flex w-72 flex-col border-r bg-card transform transition-transform duration-300 ease-out will-change-transform motion-reduce:transition-none lg:relative lg:w-64",
         "lg:translate-x-0",
         mobileMenuOpen ? "translate-x-0" : "-translate-x-full",
         "pt-16 lg:pt-0" // Add padding for mobile header
@@ -528,7 +558,7 @@ export default function Layout({ children }: LayoutProps) {
               onClick={() => setMobileMenuOpen(false)}
               className={({ isActive }) =>
                 cn(
-                  'nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors duration-200 group relative',
+                  'nav-item flex min-h-11 items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors duration-200 group relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 focus-visible:ring-offset-1',
                   isActive
                     ? 'nav-item-active bg-primary/10 text-foreground font-semibold'
                     : 'text-muted-foreground hover:text-foreground hover:bg-accent/30'
@@ -567,7 +597,7 @@ export default function Layout({ children }: LayoutProps) {
                   onOpenChange={() => toggleSection(section.id)}
                 >
                   <CollapsibleTrigger className={cn(
-                    "flex min-h-11 items-center justify-between w-full px-3 py-2.5 rounded-lg border border-transparent transition-[background-color,border-color,color] duration-200 group",
+                    "flex min-h-11 items-center justify-between w-full px-3 py-2.5 rounded-lg border border-transparent transition-[background-color,border-color,color] duration-200 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 focus-visible:ring-offset-1",
                     isOpen ? "mb-0.5" : "",
                     hasActiveChild && !isOpen ? tone.triggerActive : "hover:bg-accent/25"
                   )}>
@@ -632,7 +662,7 @@ export default function Layout({ children }: LayoutProps) {
                           onClick={() => setMobileMenuOpen(false)}
                           className={({ isActive }) =>
                             cn(
-                              'nav-item flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors duration-200 group relative',
+                              'nav-item flex min-h-10 items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors duration-200 group relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 focus-visible:ring-offset-1',
                               isActive
                                 ? cn('nav-item-active text-foreground font-medium', tone.childActive)
                                 : 'text-muted-foreground hover:bg-accent/30 hover:text-foreground'
@@ -649,9 +679,9 @@ export default function Layout({ children }: LayoutProps) {
                               {item.to === '/players' && playerCount > 0 && (
                                 <Badge
                                   variant={isActive ? 'secondary' : 'success'}
-                                  className="ml-auto min-w-[24px] justify-center px-1.5 py-0.5 text-xs leading-none"
+                                  className="ml-auto min-w-[26px] justify-center px-1.5 py-0.5 text-xs leading-none"
                                 >
-                                  {playerCount}
+                                  {playerCountLabel}
                                 </Badge>
                               )}
                             </>

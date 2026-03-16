@@ -686,7 +686,45 @@ export const configApi = {
   updateServerConfig: (config: Record<string, string>) => apiPut('/config', { config }),
   reloadOptions: () => apiPost('/config/reload'),
   getAppSettings: () => apiGet('/config/app-settings'),
-  updateAppSettings: (settings: Record<string, string>) => apiPut('/config/app-settings', { settings }),
+  updateAppSettings: (settings: Record<string, unknown>) => apiPut('/config/app-settings', { settings }),
+  getCorsDiagnostics: () => apiGet('/config/cors-debug') as Promise<{
+    diagnostics: {
+      allowAll: boolean
+      allowPrivateNetworks: boolean
+      debug: boolean
+      customOrigins: string[]
+      effectiveAllowedOrigins: string[]
+      blocked: Array<{ id: number; origin: string; source: string; blockedAt: string }>
+      blockedCount: number
+      lastLoadedAt: string | null
+    }
+  }>,
+  reloadCorsDiagnostics: () => apiPost('/config/cors-debug/reload') as Promise<{
+    success: boolean
+    diagnostics: {
+      allowAll: boolean
+      allowPrivateNetworks: boolean
+      debug: boolean
+      customOrigins: string[]
+      effectiveAllowedOrigins: string[]
+      blocked: Array<{ id: number; origin: string; source: string; blockedAt: string }>
+      blockedCount: number
+      lastLoadedAt: string | null
+    }
+  }>,
+  clearCorsBlockedOrigins: () => apiDelete('/config/cors-debug/blocked') as Promise<{
+    success: boolean
+    diagnostics: {
+      allowAll: boolean
+      allowPrivateNetworks: boolean
+      debug: boolean
+      customOrigins: string[]
+      effectiveAllowedOrigins: string[]
+      blocked: Array<{ id: number; origin: string; source: string; blockedAt: string }>
+      blockedCount: number
+      lastLoadedAt: string | null
+    }
+  }>,
   getPaths: () => apiGet('/config/paths'),
   updatePaths: (serverPath: string, savePath: string) => apiPut('/config/paths', { serverPath, savePath }),
   getRconConfig: () => apiGet('/config/rcon'),

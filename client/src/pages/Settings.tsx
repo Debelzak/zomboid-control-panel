@@ -35,6 +35,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import {
   AlertDialog,
@@ -95,7 +96,27 @@ interface AppSettings {
   httpsPort: string
   httpsKeyPath: string
   httpsCertPath: string
+
+  // CORS Settings
+  corsAllowedOrigins: string
+  corsAllowAll: boolean
+  corsAllowPrivateNetworks: boolean
+  corsDebug: boolean
 }
+
+interface CorsDiagnostics {
+  allowAll: boolean
+  allowPrivateNetworks: boolean
+  debug: boolean
+  customOrigins: string[]
+  effectiveAllowedOrigins: string[]
+  blocked: Array<{ id: number; origin: string; source: string; blockedAt: string }>
+  blockedCount: number
+  lastLoadedAt: string | null
+}
+
+const MAX_CORS_ALLOWED_ORIGINS = 100
+const MAX_CORS_ORIGIN_LENGTH = 256
 
 export default function Settings() {
   const socket = useSocket()
@@ -112,11 +133,19 @@ export default function Settings() {
     httpsPort: '3443',
     httpsKeyPath: '',
     httpsCertPath: '',
+    corsAllowedOrigins: '',
+    corsAllowAll: false,
+    corsAllowPrivateNetworks: true,
+    corsDebug: false,
   })
   const [originalSettings, setOriginalSettings] = useState<AppSettings | null>(null)
   const [loading, setLoading] = useState(false)
   const [showSteamApiKey, setShowSteamApiKey] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [corsOriginValidationError, setCorsOriginValidationError] = useState<string | null>(null)
+  const [corsDiagnostics, setCorsDiagnostics] = useState<CorsDiagnostics | null>(null)
+  const [corsLoading, setCorsLoading] = useState(false)
+  const [corsUpdating, setCorsUpdating] = useState(false)
   const [testingRcon, setTestingRcon] = useState(false)
   const [restarting, setRestarting] = useState(false)
   const restartTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -280,6 +309,22 @@ export default function Settings() {
     fetchSettings()
   }, [fetchSettings])
 
+  const fetchCorsDiagnostics = useCallback(async () => {
+    setCorsLoading(true)
+    try {
+      const data = await configApi.getCorsDiagnostics()
+      setCorsDiagnostics(data.diagnostics)
+    } catch (error) {
+      reportClientError('Failed to fetch CORS diagnostics.', error)
+    } finally {
+      setCorsLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchCorsDiagnostics()
+  }, [fetchCorsDiagnostics])
+
   // Reload settings when active server changes
   useEffect(() => {
     if (!socket) return
@@ -321,11 +366,59 @@ export default function Settings() {
     return '3001'
   }
 
+  const validateCorsOriginsInput = useCallback((rawInput: string): string | null => {
+    const origins = rawInput
+      .split(/[\n,;]+/)
+      .map((origin) => origin.trim())
+      .filter(Boolean)
+
+    if (origins.length > MAX_CORS_ALLOWED_ORIGINS) {
+      return `Too many origins. Maximum is ${MAX_CORS_ALLOWED_ORIGINS}.`
+    }
+
+    for (const origin of origins) {
+      if (origin.length > MAX_CORS_ORIGIN_LENGTH) {
+        return `Origin too long (${origin.length} chars). Maximum is ${MAX_CORS_ORIGIN_LENGTH}.`
+      }
+
+      try {
+        const parsed = new URL(origin)
+        if (!['http:', 'https:'].includes(parsed.protocol)) {
+          return `Only http/https origins are allowed: ${origin}`
+        }
+      } catch {
+        return `Invalid origin format: ${origin}`
+      }
+    }
+
+    return null
+  }, [])
+
+  useEffect(() => {
+    setCorsOriginValidationError(validateCorsOriginsInput(settings.corsAllowedOrigins))
+  }, [settings.corsAllowedOrigins, validateCorsOriginsInput])
+
   const handleSave = async () => {
+    const validationError = validateCorsOriginsInput(settings.corsAllowedOrigins)
+    if (validationError) {
+      setCorsOriginValidationError(validationError)
+      toast({
+        title: 'Invalid CORS Origins',
+        description: validationError,
+        variant: 'destructive',
+      })
+      return
+    }
+
     setSaving(true)
     try {
-      await configApi.updateAppSettings(settings as unknown as Record<string, string>)
+      await configApi.updateAppSettings(settings as unknown as Record<string, unknown>)
       setOriginalSettings(settings) // Reset dirty state after save
+      try {
+        await fetchCorsDiagnostics()
+      } catch {
+        // Settings are already saved; diagnostics refresh is best-effort.
+      }
       toast({
         title: 'Settings Saved',
         description: 'Your panel settings were saved.',
@@ -339,6 +432,48 @@ export default function Settings() {
       })
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handleReloadCorsRules = async () => {
+    setCorsUpdating(true)
+    try {
+      const data = await configApi.reloadCorsDiagnostics()
+      setCorsDiagnostics(data.diagnostics)
+      toast({
+        title: 'CORS Rules Reloaded',
+        description: 'The backend reloaded CORS settings from the database.',
+        variant: 'success' as const,
+      })
+    } catch (error) {
+      toast({
+        title: 'Could Not Reload CORS Rules',
+        description: error instanceof Error ? error.message : 'Failed to reload CORS rules.',
+        variant: 'destructive',
+      })
+    } finally {
+      setCorsUpdating(false)
+    }
+  }
+
+  const handleClearCorsBlocked = async () => {
+    setCorsUpdating(true)
+    try {
+      const data = await configApi.clearCorsBlockedOrigins()
+      setCorsDiagnostics(data.diagnostics)
+      toast({
+        title: 'Blocked Origin Log Cleared',
+        description: 'Recent blocked CORS origins were removed from diagnostics.',
+        variant: 'success' as const,
+      })
+    } catch (error) {
+      toast({
+        title: 'Could Not Clear Log',
+        description: error instanceof Error ? error.message : 'Failed to clear blocked CORS origins.',
+        variant: 'destructive',
+      })
+    } finally {
+      setCorsUpdating(false)
     }
   }
 
@@ -1027,7 +1162,7 @@ export default function Settings() {
             <span className="text-sm text-muted-foreground">
               You have unsaved settings. Save changes to apply them.
             </span>
-            <Button onClick={handleSave} disabled={saving} size="sm" variant="warning" className="self-start gap-2">
+            <Button onClick={handleSave} disabled={saving || Boolean(corsOriginValidationError)} size="sm" variant="warning" className="self-start gap-2">
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
               Save Changes
             </Button>
@@ -1042,7 +1177,7 @@ export default function Settings() {
         tone="config"
         icon={<Settings2 className="w-5 h-5" />}
         actions={
-          <Button variant="command" onClick={handleSave} disabled={saving || !isDirty} size="lg" className="w-full sm:w-auto gap-2">
+          <Button variant="command" onClick={handleSave} disabled={saving || !isDirty || Boolean(corsOriginValidationError)} size="lg" className="w-full sm:w-auto gap-2">
             {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
             {saving ? 'Saving...' : isDirty ? 'Save Settings' : 'No Unsaved Changes'}
           </Button>
@@ -1124,6 +1259,151 @@ export default function Settings() {
             </Button>
             {isDirty && (
               <p className="text-xs text-muted-foreground">Save settings before restarting</p>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-border/70 bg-background/40 p-4 space-y-4">
+            <div className="space-y-1">
+              <p className="text-sm font-medium">Remote Access (CORS)</p>
+              <p className="text-xs text-muted-foreground">
+                If you open the panel from another machine or public hostname, add that origin here.
+              </p>
+            </div>
+
+            <Alert className="border-border/60 bg-muted/40">
+              <Globe className="h-4 w-4 text-primary" />
+              <AlertTitle>Quick Start for VPS Remote Access</AlertTitle>
+              <AlertDescription className="space-y-1 text-sm text-muted-foreground">
+                <p>1. Keep <strong className="text-foreground">Allow private/LAN origins</strong> on.</p>
+                <p>2. Add one origin per line in the list below (example: <code>http://YOUR_PUBLIC_IP:3001</code>).</p>
+                <p>3. Save settings, then click <strong className="text-foreground">Reload CORS Rules</strong>.</p>
+              </AlertDescription>
+            </Alert>
+
+            <div className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/25 p-3">
+              <div>
+                <Label className="text-sm font-medium">Allow Private/LAN Origins</Label>
+                <p className="text-xs text-muted-foreground">Accept localhost, 192.168.x.x, 10.x.x.x, 100.x.x.x, and 172.16-31.x.x origins automatically.</p>
+              </div>
+              <Switch
+                checked={settings.corsAllowPrivateNetworks}
+                onCheckedChange={(value) => updateSetting('corsAllowPrivateNetworks', value)}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Additional Allowed Origins</Label>
+              <Textarea
+                value={settings.corsAllowedOrigins}
+                onChange={(e) => updateSetting('corsAllowedOrigins', e.target.value)}
+                placeholder={'http://123.45.67.89:3001\nhttps://panel.example.com'}
+                rows={4}
+              />
+              <p className="text-xs text-muted-foreground">
+                Enter full origins only (scheme + host + optional port). One origin per line.
+              </p>
+              {corsOriginValidationError && (
+                <p className="text-xs text-destructive">{corsOriginValidationError}</p>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between rounded-lg border border-warning/40 bg-warning/10 p-3">
+              <div>
+                <Label className="text-sm font-medium text-warning">Allow All Origins (Debug Only)</Label>
+                <p className="text-xs text-muted-foreground">Temporarily disable origin checks to confirm whether CORS is the blocker.</p>
+              </div>
+              <Switch
+                checked={settings.corsAllowAll}
+                onCheckedChange={(value) => updateSetting('corsAllowAll', value)}
+              />
+            </div>
+
+            <div className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/25 p-3">
+              <div>
+                <Label className="text-sm font-medium">Enable CORS Debug Logging</Label>
+                <p className="text-xs text-muted-foreground">Store recent blocked origins so you can see exactly what the browser sent.</p>
+              </div>
+              <Switch
+                checked={settings.corsDebug}
+                onCheckedChange={(value) => updateSetting('corsDebug', value)}
+              />
+            </div>
+
+            {settings.corsAllowAll && (
+              <Alert className="border-warning/40 bg-warning/10">
+                <AlertTriangle className="h-4 w-4 text-warning" />
+                <AlertTitle className="text-warning">Security Warning</AlertTitle>
+                <AlertDescription>
+                  Allowing all origins removes browser-origin protection. Use this only for short troubleshooting windows.
+                </AlertDescription>
+              </Alert>
+            )}
+
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleReloadCorsRules}
+                disabled={corsUpdating || saving || Boolean(corsOriginValidationError)}
+                className="gap-2"
+              >
+                {corsUpdating ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                Reload CORS Rules
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={fetchCorsDiagnostics}
+                disabled={corsLoading || corsUpdating}
+                className="gap-2"
+              >
+                <RefreshCw className={cn('w-4 h-4', corsLoading && 'animate-spin')} />
+                Refresh Diagnostics
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={handleClearCorsBlocked}
+                disabled={corsUpdating || !corsDiagnostics?.blockedCount}
+                className="gap-2 text-muted-foreground"
+              >
+                <Trash2 className="w-4 h-4" />
+                Clear Blocked Log
+              </Button>
+            </div>
+
+            <div className="grid gap-3 text-xs sm:grid-cols-3">
+              <div className="rounded-lg border border-border/60 bg-muted/20 px-3 py-2">
+                <p className="text-muted-foreground">Blocked Origins</p>
+                <p className="mt-1 font-medium text-foreground">{corsDiagnostics?.blockedCount ?? 0}</p>
+              </div>
+              <div className="rounded-lg border border-border/60 bg-muted/20 px-3 py-2">
+                <p className="text-muted-foreground">Effective Allowlist</p>
+                <p className="mt-1 font-medium text-foreground">{corsDiagnostics?.effectiveAllowedOrigins.length ?? 0}</p>
+              </div>
+              <div className="rounded-lg border border-border/60 bg-muted/20 px-3 py-2">
+                <p className="text-muted-foreground">Last Reload</p>
+                <p className="mt-1 font-medium text-foreground">{formatTimestamp(corsDiagnostics?.lastLoadedAt || null)}</p>
+              </div>
+            </div>
+
+            {!!corsDiagnostics?.blocked.length && (
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-foreground">Recent Blocked Origins</p>
+                <ScrollArea className="h-[150px] rounded-lg border border-border/60 bg-muted/20 p-2">
+                  <div className="space-y-2 pr-2">
+                    {corsDiagnostics.blocked.slice(0, 12).map((entry) => (
+                      <div key={entry.id} className="rounded-md border border-border/50 bg-background/60 px-2 py-1.5 text-xs">
+                        <p className="font-mono break-all text-foreground">{entry.origin}</p>
+                        <p className="text-muted-foreground">{entry.source.toUpperCase()} • {formatTimestamp(entry.blockedAt)}</p>
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              </div>
             )}
           </div>
 
