@@ -1,6 +1,29 @@
+# Zomboid Control Panel — Docker Compose
+#
+# Quick start:
+#   docker compose up -d
+#
+# Custom UID (match your host user to avoid bind-mount permission issues):
+#   docker compose build --build-arg UID=$(id -u) --build-arg GID=$(id -g)
+#   Windows cmd.exe users: replace $(id -u) with your UID (typically 1000)
+#
+# Volume paths below are relative to this file.
+# On Linux, ensure the host directories exist and are writable by the UID above:
+#   mkdir -p ./data ./logs && chown $(id -u):$(id -g) ./data ./logs
+#
+# To give the panel access to the PZ server and Zomboid user data, bind-mount
+# the relevant host paths. Examples (uncomment and adjust):
+#   - /home/you/pz-server:/pz-server:ro        # PZ dedicated server install
+#   - /home/you/Zomboid:/zomboid                # Zomboid user data (saves, config, Lua)
+# Then set PZ_SERVER_PATH and PZ_SAVE_PATH in the environment section below.
+
 services:
   panel:
-    build: .
+    build:
+      context: .
+      args:
+        UID: 1000
+        GID: 1000
     container_name: zomboid-panel
     restart: unless-stopped
     ports:
@@ -11,6 +34,6 @@ services:
     environment:
       - NODE_ENV=production
       # - PORT=3001
-      # - PZ_SERVER_PATH=/path/to/pz/server
-      # - PZ_SAVE_PATH=/path/to/pz/saves
-      # - PZ_SERVER_BAT=StartServer64.bat
+      # - PZ_SERVER_PATH=/pz-server
+      # - PZ_SAVE_PATH=/zomboid
+      # - PZ_SERVER_BAT=start-server.sh
