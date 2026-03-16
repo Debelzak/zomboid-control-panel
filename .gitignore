@@ -41,3 +41,8 @@ release/
 
 # Backup files
 *.bak
+
+# Stray dev files
+*.ipynb
+lh-*.json
+_artifacts/
