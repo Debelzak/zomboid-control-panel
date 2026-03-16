@@ -945,7 +945,7 @@ export default function Players() {
                   {/* Kick */}
                   <Dialog open={kickDialogOpen} onOpenChange={setKickDialogOpen}>
                     <DialogTrigger asChild>
-                      <Button variant="ghost" disabled={!selectedPlayer} className="h-auto w-full whitespace-normal p-0 hover:bg-transparent">
+                      <Button variant="ghost" disabled={!selectedPlayer} className="!block h-auto w-full whitespace-normal p-0 text-left hover:bg-transparent">
                         <ActionTile icon={<UserX className="w-5 h-5" />} label="Kick" disabled={!selectedPlayer} />
                       </Button>
                     </DialogTrigger>
@@ -978,7 +978,7 @@ export default function Players() {
                   {/* Ban */}
                   <Dialog open={banDialogOpen} onOpenChange={setBanDialogOpen}>
                     <DialogTrigger asChild>
-                      <Button variant="ghost" disabled={!selectedPlayer} className="h-auto w-full whitespace-normal p-0 hover:bg-transparent">
+                      <Button variant="ghost" disabled={!selectedPlayer} className="!block h-auto w-full whitespace-normal p-0 text-left hover:bg-transparent">
                         <ActionTile icon={<Ban className="w-5 h-5" />} label="Ban" disabled={!selectedPlayer} emphasis="danger" />
                       </Button>
                     </DialogTrigger>
@@ -1048,7 +1048,7 @@ export default function Players() {
                   {/* Unban */}
                   <Dialog open={unbanDialogOpen} onOpenChange={setUnbanDialogOpen}>
                     <DialogTrigger asChild>
-                      <Button variant="ghost" className="h-auto w-full whitespace-normal p-0 hover:bg-transparent">
+                      <Button variant="ghost" className="!block h-auto w-full whitespace-normal p-0 text-left hover:bg-transparent">
                         <ActionTile icon={<UserPlus className="w-5 h-5" />} label="Unban" />
                       </Button>
                     </DialogTrigger>
@@ -1075,7 +1075,7 @@ export default function Players() {
                   {/* Access Level */}
                   <Dialog>
                     <DialogTrigger asChild>
-                      <Button variant="ghost" disabled={!selectedPlayer} className="h-auto w-full whitespace-normal p-0 hover:bg-transparent">
+                      <Button variant="ghost" disabled={!selectedPlayer} className="!block h-auto w-full whitespace-normal p-0 text-left hover:bg-transparent">
                         <ActionTile icon={<Shield className="w-5 h-5" />} label="Access Level" disabled={!selectedPlayer} />
                       </Button>
                     </DialogTrigger>
@@ -1112,7 +1112,7 @@ export default function Players() {
                   {/* Teleport */}
                   <Dialog open={teleportDialogOpen} onOpenChange={setTeleportDialogOpen}>
                     <DialogTrigger asChild>
-                      <Button variant="ghost" disabled={!selectedPlayer} className="h-auto w-full whitespace-normal p-0 hover:bg-transparent">
+                      <Button variant="ghost" disabled={!selectedPlayer} className="!block h-auto w-full whitespace-normal p-0 text-left hover:bg-transparent">
                         <ActionTile icon={<MapPin className="w-5 h-5" />} label="Teleport" disabled={!selectedPlayer} />
                       </Button>
                     </DialogTrigger>
@@ -1209,7 +1209,7 @@ export default function Players() {
                   {/* Voice Ban */}
                   <Dialog open={voiceBanDialogOpen} onOpenChange={setVoiceBanDialogOpen}>
                     <DialogTrigger asChild>
-                      <Button variant="ghost" className="h-auto w-full whitespace-normal p-0 hover:bg-transparent">
+                      <Button variant="ghost" className="!block h-auto w-full whitespace-normal p-0 text-left hover:bg-transparent">
                         <ActionTile icon={<MicOff className="w-5 h-5" />} label="Voice Ban" />
                       </Button>
                     </DialogTrigger>
@@ -1262,7 +1262,7 @@ export default function Players() {
                   {/* SteamID Ban */}
                   <Dialog open={steamIdBanDialogOpen} onOpenChange={setSteamIdBanDialogOpen}>
                     <DialogTrigger asChild>
-                      <Button variant="ghost" className="h-auto w-full whitespace-normal p-0 hover:bg-transparent">
+                      <Button variant="ghost" className="!block h-auto w-full whitespace-normal p-0 text-left hover:bg-transparent">
                         <ActionTile icon={<Ban className="w-5 h-5" />} label="SteamID Ban" emphasis="danger" />
                       </Button>
                     </DialogTrigger>
@@ -1313,7 +1313,7 @@ export default function Players() {
                   {/* Add User */}
                   <Dialog open={addUserDialogOpen} onOpenChange={setAddUserDialogOpen}>
                     <DialogTrigger asChild>
-                      <Button variant="ghost" className="h-auto w-full whitespace-normal p-0 hover:bg-transparent">
+                      <Button variant="ghost" className="!block h-auto w-full whitespace-normal p-0 text-left hover:bg-transparent">
                         <ActionTile icon={<UserPlus className="w-5 h-5" />} label="Add User" />
                       </Button>
                     </DialogTrigger>
