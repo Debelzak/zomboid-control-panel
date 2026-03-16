@@ -15,7 +15,6 @@ dist-exe/
 server.cjs
 
 # Build & deploy scripts (internal tooling)
-build.js
 bundle-server.js
 deploy*.ps1
 release.ps1
