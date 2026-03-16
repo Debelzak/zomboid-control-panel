@@ -28,16 +28,16 @@ const emptyStateIcons = {
 } as const
 
 const emptyStateEyebrows = {
-  noData: 'Quiet Sector',
+  noData: 'No Data',
   noResults: 'Nothing Matched',
-  serverOffline: 'Cold Server',
-  noPlayers: 'No Survivors Online',
-  noFile: 'Missing Record',
-  disconnected: 'Radio Silence',
+  serverOffline: 'Server Offline',
+  noPlayers: 'No Players Online',
+  noFile: 'Missing File',
+  disconnected: 'Disconnected',
   noSchedule: 'No Tasks Armed',
-  noMods: 'Loadout Empty',
-  noMessages: 'Comms Quiet',
-  empty: 'Ready Space',
+  noMods: 'No Mods Tracked',
+  noMessages: 'No Messages',
+  empty: 'Empty',
 } as const
 
 export type EmptyStateType = keyof typeof emptyStateIcons

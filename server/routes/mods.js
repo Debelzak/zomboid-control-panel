@@ -19,6 +19,19 @@ function sanitizeIniList(values) {
   return values.map(v => sanitizeIniValue(v)).filter(Boolean).join(';');
 }
 
+function getSanitizedIniPath(serverConfigPath, serverName) {
+  if (!serverConfigPath || typeof serverName !== 'string') {
+    return null;
+  }
+
+  const sanitizedServerName = path.basename(serverName);
+  if (!sanitizedServerName || sanitizedServerName !== serverName || serverName.includes('..')) {
+    return null;
+  }
+
+  return path.join(serverConfigPath, `${sanitizedServerName}.ini`);
+}
+
 // Helper functions for multi-server support
 async function getServerConfigPath() {
   const activeServer = await getActiveServer();
@@ -433,14 +446,28 @@ router.post('/import-collection', async (req, res) => {
     log.info(`Fetching collection details for ID: ${collectionId}`);
     
     // Use Steam API to get collection details
-    const collectionResponse = await fetch('https://api.steampowered.com/ISteamRemoteStorage/GetCollectionDetails/v1/', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        'collectioncount': '1',
-        'publishedfileids[0]': collectionId
-      })
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+
+    let collectionResponse;
+    try {
+      collectionResponse = await fetch('https://api.steampowered.com/ISteamRemoteStorage/GetCollectionDetails/v1/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          'collectioncount': '1',
+          'publishedfileids[0]': collectionId
+        }),
+        signal: controller.signal
+      });
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        return res.status(504).json({ error: 'Steam collection lookup timed out. Please try again.' });
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
     
     if (!collectionResponse.ok) {
       throw new Error(`Steam API returned ${collectionResponse.status}`);
@@ -1583,7 +1610,11 @@ router.post('/presets', async (req, res) => {
     // Read current mods from INI
     const serverConfigPath = await getServerConfigPath();
     const serverName = await getServerName();
-    const iniPath = path.join(serverConfigPath, `${serverName}.ini`);
+    const iniPath = getSanitizedIniPath(serverConfigPath, serverName);
+
+    if (!iniPath) {
+      return res.status(400).json({ error: 'Invalid server name' });
+    }
     
     if (!fs.existsSync(iniPath)) {
       return res.status(400).json({ error: 'Server INI not found' });
@@ -1664,7 +1695,11 @@ router.post('/presets/:id/apply', async (req, res) => {
     
     const serverConfigPath = await getServerConfigPath();
     const serverName = await getServerName();
-    const iniPath = path.join(serverConfigPath, `${serverName}.ini`);
+    const iniPath = getSanitizedIniPath(serverConfigPath, serverName);
+
+    if (!iniPath) {
+      return res.status(400).json({ error: 'Invalid server name' });
+    }
     
     if (!fs.existsSync(iniPath)) {
       return res.status(400).json({ error: 'Server INI not found' });
@@ -1713,7 +1748,11 @@ router.post('/save-order', async (req, res) => {
     
     const serverConfigPath = await getServerConfigPath();
     const serverName = await getServerName();
-    const iniPath = path.join(serverConfigPath, `${serverName}.ini`);
+    const iniPath = getSanitizedIniPath(serverConfigPath, serverName);
+
+    if (!iniPath) {
+      return res.status(400).json({ error: 'Invalid server name' });
+    }
     
     if (!fs.existsSync(iniPath)) {
       return res.status(400).json({ error: 'Server INI not found' });

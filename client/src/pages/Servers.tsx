@@ -720,6 +720,8 @@ export default function Servers() {
       <PageHeader
         title="Managed Servers"
         description="Manage multiple Project Zomboid servers from one panel"
+        eyebrow="Fleet"
+        tone="servers"
         icon={<Server className="w-5 h-5 text-primary" />}
         actions={
           <div className="flex items-center gap-2">
@@ -729,7 +731,7 @@ export default function Servers() {
             <Button variant="outline" onClick={() => { setAddMode('local'); setShowAddDialog(true) }}>
               <FolderOpen className="w-4 h-4 mr-2" /> Add Existing Server
             </Button>
-            <Button onClick={() => navigate('/server-setup')}>
+            <Button variant="command" onClick={() => navigate('/server-setup')}>
               <Download className="w-4 h-4 mr-2" /> Install New Server
             </Button>
           </div>
@@ -747,7 +749,7 @@ export default function Servers() {
                 </div>
                 <h3 className="text-xl font-semibold text-foreground">No Servers Configured</h3>
                 <p className="mx-auto mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-                  Start with one server. Once one server is added and marked active, the rest of the panel starts paying off: status, players, backups, mods, and remote actions.
+                  Start with one server. After it is active, dashboard, players, backups, mods, and remote actions come online.
                 </p>
               </div>
 
@@ -758,7 +760,7 @@ export default function Servers() {
                   </div>
                   <p className="text-sm font-semibold text-foreground">Add an existing local server</p>
                   <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                    Best when the server already exists on this machine and you just need the panel to detect paths and credentials.
+                    Use this when server files already exist on this machine.
                   </p>
                   <Button variant="outline" className="onboarding-cta mt-4 w-full" onClick={() => { setAddMode('local'); setShowAddDialog(true) }}>
                     <FolderOpen className="mr-2 h-4 w-4" />
@@ -772,7 +774,7 @@ export default function Servers() {
                   </div>
                   <p className="text-sm font-semibold text-foreground">Install a new local server</p>
                   <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                    Use the guided installer when you need SteamCMD, server files, passwords, ports, and memory settings handled in one flow.
+                    Use the installer when you need files, ports, passwords, and memory setup in one flow.
                   </p>
                   <Button className="onboarding-cta mt-4 w-full" onClick={() => navigate('/server-setup')}>
                     <Download className="mr-2 h-4 w-4" />
@@ -786,7 +788,7 @@ export default function Servers() {
                   </div>
                   <p className="text-sm font-semibold text-foreground">Connect a remote server</p>
                   <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                    Use this when the panel should manage a server running elsewhere through RCON instead of local start and stop scripts.
+                    Use this for servers running on another machine through RCON.
                   </p>
                   <Button variant="secondary" className="onboarding-cta mt-4 w-full" onClick={() => { setAddMode('remote'); setShowAddDialog(true) }}>
                     <Globe className="mr-2 h-4 w-4" />
@@ -857,7 +859,7 @@ export default function Servers() {
                   
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" aria-label="Server options">
+                      <Button variant="ghost" size="iconDense" className="shrink-0" aria-label="Server options">
                         <MoreVertical className="w-4 h-4" />
                       </Button>
                     </DropdownMenuTrigger>
@@ -1023,7 +1025,7 @@ export default function Servers() {
           <div className="grid grid-cols-2 gap-3">
             <button
               onClick={() => { setAddMode('local'); setNewServer(defaultNewServer); setDetectResult(null); setDetectError(null); setSelectedServerConfig('') }}
-              className={`flex items-center gap-3 p-3 rounded-lg border-2 transition-all ${
+              className={`flex items-center gap-3 p-3 rounded-lg border-2 transition-[background-color,border-color,color] ${
                 addMode === 'local' 
                   ? 'border-primary bg-primary/5' 
                   : 'border-border hover:border-muted-foreground/30'
@@ -1037,7 +1039,7 @@ export default function Servers() {
             </button>
             <button
               onClick={() => { setAddMode('remote'); setNewServer({ ...defaultNewServer, isRemote: true, rconHost: '' }); setDetectResult(null); setDetectError(null); setSelectedServerConfig('') }}
-              className={`flex items-center gap-3 p-3 rounded-lg border-2 transition-all ${
+              className={`flex items-center gap-3 p-3 rounded-lg border-2 transition-[background-color,border-color,color] ${
                 addMode === 'remote' 
                   ? 'border-primary bg-primary/5' 
                   : 'border-border hover:border-muted-foreground/30'

@@ -1,7 +1,7 @@
 import { reportClientWarning } from './client-errors'
+import { clearAccessToken, getAccessToken, setAccessToken } from './authToken'
 
 const API_BASE = '/api'
-const TOKEN_KEY = 'pz_access_token'
 
 export class ApiError extends Error {
   status?: number
@@ -32,7 +32,7 @@ export class ApiError extends Error {
 
 // Get stored auth token
 function getAuthToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY)
+  return getAccessToken()
 }
 
 // Add auth headers to request options
@@ -58,14 +58,14 @@ async function tryRefreshToken(): Promise<boolean> {
       const res = await fetch('/api/auth/refresh', { method: 'POST', credentials: 'include' })
       if (res.ok) {
         const data = await res.json()
-        localStorage.setItem(TOKEN_KEY, data.accessToken)
+        setAccessToken(data.accessToken)
         return true
       }
       // Refresh failed — clear token and redirect to login
-      localStorage.removeItem(TOKEN_KEY)
+      clearAccessToken()
       return false
     } catch {
-      localStorage.removeItem(TOKEN_KEY)
+      clearAccessToken()
       return false
     } finally {
       isRefreshing = false
@@ -897,6 +897,26 @@ export const panelBridgeApi = {
       age?: number
       ageSeconds?: number
       error?: string
+    }
+    connection?: {
+      healthy: boolean
+      canSendCommands: boolean
+      summary: string
+      issues: string[]
+      checks: {
+        bridgePathConfigured: boolean
+        bridgePathExists: boolean
+        bridgePathReadable: boolean
+        bridgePathWritable: boolean
+        commandsFilePresent: boolean
+        commandsFileReadable: boolean
+        resultsFilePresent: boolean
+        resultsFileReadable: boolean
+        statusFilePresent: boolean
+        statusFileReadable: boolean
+        statusFresh: boolean
+        statusAgeMs: number | null
+      }
     }
     modStatus: {
       alive: boolean

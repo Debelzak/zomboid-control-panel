@@ -632,7 +632,7 @@ io.use(async (socket, next) => {
       return next(new Error('Authentication required'));
     }
 
-    const payload = authService.verifyAccessToken(token);
+    const payload = await authService.authenticateAccessToken(token);
     if (!payload) {
       return next(new Error('Invalid or expired token'));
     }
@@ -987,7 +987,7 @@ async function start() {
             if (!authEnabled) return next();
             const token = socket.handshake.auth?.token || socket.handshake.query?.token;
             if (!token) return next(new Error('Authentication required'));
-            const payload = authService.verifyAccessToken(token);
+            const payload = await authService.authenticateAccessToken(token);
             if (!payload) return next(new Error('Invalid or expired token'));
             socket.user = payload;
             next();

@@ -1038,9 +1038,11 @@ export default function Settings() {
       <PageHeader
         title="Settings"
         description="Manage panel network, updates, integrations, backups, and security."
+        eyebrow="Configuration"
+        tone="config"
         icon={<Settings2 className="w-5 h-5" />}
         actions={
-          <Button onClick={handleSave} disabled={saving || !isDirty} size="lg" className="w-full sm:w-auto gap-2">
+          <Button variant="command" onClick={handleSave} disabled={saving || !isDirty} size="lg" className="w-full sm:w-auto gap-2">
             {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
             {saving ? 'Saving...' : isDirty ? 'Save Settings' : 'No Unsaved Changes'}
           </Button>
@@ -1084,7 +1086,7 @@ export default function Settings() {
             <Globe className="w-4 h-4 text-primary" />
             Panel Settings
           </CardTitle>
-          <CardDescription>Configure how the control panel runs</CardDescription>
+          <CardDescription>Configure core panel behavior.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="max-w-xs">
@@ -1098,7 +1100,7 @@ export default function Settings() {
               placeholder="3001"
             />
             <p className="text-xs text-muted-foreground mt-1">
-              Choose the port players and admins use to open this panel (default: 3001).
+              Port used to access the panel (default: 3001).
             </p>
           </div>
           {originalSettings && settings.panelPort !== originalSettings.panelPort && (
@@ -1106,7 +1108,7 @@ export default function Settings() {
               <AlertTriangle className="h-4 w-4 text-warning" />
               <AlertTitle className="text-warning">Restart Required</AlertTitle>
               <AlertDescription>
-                Changing the port requires a panel restart to take effect. Save your settings first, then restart.
+                Port changes require a restart. Save first, then restart.
               </AlertDescription>
             </Alert>
           )}
@@ -1130,7 +1132,7 @@ export default function Settings() {
               <div>
                 <p className="text-sm font-medium">Panel Auto Update</p>
                 <p className="text-xs text-muted-foreground">
-                  The panel checks GitHub releases, downloads a newer version, then applies it after restart.
+                  Check for a new release, download it, then apply on restart.
                 </p>
               </div>
               {(checkingPanelUpdate || panelUpdateStatus?.isChecking) ? (
@@ -1163,7 +1165,7 @@ export default function Settings() {
             {panelUpdateStatusError && (
               <Alert variant="destructive">
                 <AlertTriangle className="h-4 w-4" />
-                <AlertTitle>Updater Status Error</AlertTitle>
+                <AlertTitle>Updater Error</AlertTitle>
                 <AlertDescription className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <span className="break-words">{panelUpdateStatusError}</span>
                   <Button
@@ -1206,8 +1208,8 @@ export default function Settings() {
                 </div>
                 <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
                   <div
-                    className="h-full bg-primary transition-[width] duration-200 ease-out"
-                    style={{ width: `${panelUpdateStatus?.downloadProgress ?? 0}%` }}
+                    className="h-full w-full bg-primary transition-transform duration-200 ease-out"
+                    style={{ transform: `translateX(-${100 - (panelUpdateStatus?.downloadProgress ?? 0)}%)` }}
                   />
                 </div>
               </div>
@@ -1272,7 +1274,7 @@ export default function Settings() {
             </p>
 
             <p className="text-xs text-muted-foreground">
-              Auto-update works only in packaged panel builds. In development mode, update from git.
+              Auto-update works in packaged builds only. In dev mode, update from git.
             </p>
           </div>
         </CardContent>
@@ -1285,15 +1287,15 @@ export default function Settings() {
             <Lock className="w-4 h-4 text-primary" />
             HTTPS
           </CardTitle>
-          <CardDescription>Secure panel access with TLS. Recommended for LAN and remote administration.</CardDescription>
+          <CardDescription>Secure panel access with TLS.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <Alert className="border-border/60 bg-muted/40">
             <Lock className="h-4 w-4 text-primary" />
             <AlertTitle>Recommended Setup (Most Servers)</AlertTitle>
             <AlertDescription className="space-y-2 text-sm text-muted-foreground">
-              <p>Turn on HTTPS, keep custom certificate paths empty, save settings, then restart the panel.</p>
-              <p>The panel will generate a local self-signed certificate automatically. Your browser may show a one-time security warning until you trust it.</p>
+              <p>Enable HTTPS, leave certificate paths empty, save, then restart.</p>
+              <p>The panel creates a local self-signed certificate automatically.</p>
               <div className="flex flex-wrap gap-2 pt-1">
                 <Button type="button" variant="outline" size="sm" onClick={applyRecommendedHttpsDefaults}>
                   Use Recommended Defaults
@@ -1310,7 +1312,7 @@ export default function Settings() {
             <div>
               <Label className="text-base">Enable HTTPS</Label>
               <p className="text-sm text-muted-foreground">
-                Serve the panel over HTTPS with encryption in transit.
+                Serve the panel over HTTPS.
               </p>
             </div>
           </div>
@@ -1333,7 +1335,7 @@ export default function Settings() {
                   placeholder="3443"
                 />
                 <p className="text-xs text-muted-foreground mt-1">
-                  HTTPS listener port (recommended: 3443).
+                  HTTPS listener port (recommended 3443).
                 </p>
               </div>
               <div className="max-w-md">
@@ -1362,7 +1364,7 @@ export default function Settings() {
                   <AlertTriangle className="h-4 w-4 text-warning" />
                   <AlertTitle className="text-warning">Provide Both Certificate Files</AlertTitle>
                   <AlertDescription>
-                    Set both the certificate and key path, or clear both fields to use the auto-generated certificate.
+                    Set both certificate and key paths, or clear both to use auto-generated certs.
                   </AlertDescription>
                 </Alert>
               )}
@@ -1372,7 +1374,7 @@ export default function Settings() {
                   <Lock className="h-4 w-4 text-primary" />
                   <AlertTitle className="text-primary">Auto-Generated Certificate Mode</AlertTitle>
                   <AlertDescription>
-                    The panel will create and reuse a local self-signed certificate. This is the easiest setup for most home and LAN servers.
+                    The panel will create and reuse a local self-signed certificate.
                   </AlertDescription>
                 </Alert>
               )}
@@ -1381,7 +1383,7 @@ export default function Settings() {
                 <Lock className="h-4 w-4 text-muted-foreground" />
                 <AlertTitle>Reverse Proxy Note</AlertTitle>
                 <AlertDescription>
-                  If TLS is terminated by Nginx, Caddy, or Cloudflare Tunnel, keep panel HTTPS off and proxy to the local HTTP URL.
+                  If TLS is terminated by Nginx, Caddy, or Cloudflare Tunnel, keep panel HTTPS off and proxy local HTTP.
                 </AlertDescription>
               </Alert>
 
@@ -1390,7 +1392,7 @@ export default function Settings() {
                   <AlertTriangle className="h-4 w-4 text-warning" />
                   <AlertTitle className="text-warning">Restart Required</AlertTitle>
                   <AlertDescription>
-                    HTTPS changes require a panel restart. Save settings first, then restart from Panel Settings.
+                    HTTPS changes require restart. Save first, then restart from Panel Settings.
                   </AlertDescription>
                 </Alert>
               )}
@@ -1473,26 +1475,26 @@ export default function Settings() {
               <p>
                 Panel Bridge has two pieces that must meet in the middle: the panel runs a local watcher, and your Project Zomboid server runs <strong className="text-foreground">PanelBridge.lua</strong> inside the game.
               </p>
-              <p className="rounded-lg border border-warning/35 bg-warning/10 px-3 py-2 text-warning-foreground">
+              <p className="rounded-lg border border-warning/35 bg-warning/10 px-3 py-2 text-foreground">
                 Before starting the server, set <strong className="text-foreground">LuaChecksum=false</strong> in your server INI. PanelBridge commands can fail when Lua checksum is enabled.
               </p>
               <div className="grid gap-3 md:grid-cols-3">
                 <div className="rounded-xl border border-border/60 bg-background/60 p-3">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">1. Install The Lua File</p>
+                  <p className="text-sm font-semibold text-foreground">1. Install the Lua file</p>
                   <p className="mt-2 text-sm text-foreground">Copy <strong>PanelBridge.lua</strong> into the server install folder.</p>
                   <p className="mt-2 break-all text-xs text-muted-foreground">
                     {selectedInstallTarget || 'Select a server below to see the exact install path.'}
                   </p>
                 </div>
                 <div className="rounded-xl border border-border/60 bg-background/60 p-3">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">2. Run Auto Setup</p>
+                  <p className="text-sm font-semibold text-foreground">2. Run Auto Setup</p>
                   <p className="mt-2 text-sm text-foreground">Tell the panel which server data folder to watch.</p>
                   <p className="mt-2 break-all text-xs text-muted-foreground">
                     {watchedBridgeFolder || 'When configured, the panel watches the panelbridge folder for your selected server.'}
                   </p>
                 </div>
                 <div className="rounded-xl border border-border/60 bg-background/60 p-3">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">3. Start The Server</p>
+                  <p className="text-sm font-semibold text-foreground">3. Start the server</p>
                   <p className="mt-2 text-sm text-foreground">When the game loads the mod, the status changes from Waiting to Connected.</p>
                   <p className="mt-2 text-xs text-muted-foreground">Connected means the Lua mod is alive in-game and ready to answer advanced commands.</p>
                 </div>
@@ -1502,15 +1504,15 @@ export default function Settings() {
 
           <div className="grid gap-3 md:grid-cols-3">
             <div className="rounded-xl border border-border/60 bg-muted/25 p-3">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Not Running</p>
+              <p className="text-sm font-semibold text-foreground">Not running</p>
               <p className="mt-2 text-sm text-foreground">The panel watcher is not started yet.</p>
             </div>
             <div className="rounded-xl border border-warning/30 bg-warning/8 p-3">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-warning">Waiting</p>
+              <p className="text-sm font-semibold text-warning">Waiting</p>
               <p className="mt-2 text-sm text-foreground">The panel is watching the folder, but the PZ server has not loaded the mod yet.</p>
             </div>
             <div className="rounded-xl border border-primary/30 bg-primary/8 p-3">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Connected</p>
+              <p className="text-sm font-semibold text-primary">Connected</p>
               <p className="mt-2 text-sm text-foreground">The panel watcher and the in-game Lua mod can now exchange commands and status.</p>
             </div>
           </div>

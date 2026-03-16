@@ -38,11 +38,18 @@ const VALID_ACTIONS = new Set([
   'getUtilitiesStatus', 'restoreUtilities', 'shutOffUtilities',
   'saveWorld', 'getSandboxOptions',
   'getZombieCount', 'clearZombiesNearPlayer',
+  'getSafehouses', 'safehouseAddPlayer', 'safehouseRemovePlayer', 'safehouseSetOwner', 'safehouseSetRespawn',
+  'getFactions', 'createFaction', 'factionAddPlayer', 'factionRemovePlayer', 'factionSetTag', 'removeFaction',
+  'getVehiclesDetailed', 'vehicleRepair', 'vehicleSetAlarm', 'vehicleSetSiren', 'vehicleSetTrunkLocked',
+  'triggerSwarmEvent', 'runEventSequence',
+  'getInfrastructureSnapshot', 'addLamppost', 'removeLamppost',
+  'moderationKickUser', 'moderationBanUser', 'moderationBanIP', 'moderationBanSteamID',
   'getDebugLog', 'setDebugMode', 'getStats', 'checkAPI', 'getAvailableHandlers', 'clearErrors'
 ]);
 
-// Username validation for PanelBridge player endpoints
-const BRIDGE_USERNAME_REGEX = /^[a-zA-Z0-9_-]{1,64}$/;
+// Username validation for PanelBridge player endpoints.
+// Allow normal in-game names (spaces/symbols) while blocking control chars and quote/backslash.
+const BRIDGE_USERNAME_REGEX = /^(?=.*\S)[^\x00-\x1F\x7F"\\]{1,64}$/;
 
 // Get bridge status
 router.get('/status', async (req, res) => {
@@ -641,7 +648,19 @@ router.post('/command', async (req, res) => {
     const result = await bridge.sendCommand(action, args || {});
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: sanitizeError(error.message) });
+    const message = sanitizeError(error?.message || 'Bridge command failed');
+
+    if (/timeout/i.test(message)) {
+      return res.status(504).json({ error: message, category: 'timeout' });
+    }
+    if (/not configured|not running|unhealthy|not responding|stale|missing/i.test(message)) {
+      return res.status(503).json({ error: message, category: 'bridge-unavailable' });
+    }
+    if (/invalid|required/i.test(message)) {
+      return res.status(400).json({ error: message, category: 'validation' });
+    }
+
+    return res.status(500).json({ error: message, category: 'unknown' });
   }
 });
 
@@ -1109,6 +1128,43 @@ router.get('/commands', (req, res) => {
       // === Zombies ===
       { action: 'getZombieCount', description: 'Get zombie count in loaded cells', args: {} },
       { action: 'clearZombiesNearPlayer', description: 'Remove zombies near a player', args: { username: 'string (required)', radius: 'number (default: 50)' } },
+
+      // === Safehouses ===
+      { action: 'getSafehouses', description: 'List all safehouses and key metadata', args: {} },
+      { action: 'safehouseAddPlayer', description: 'Add player to safehouse members', args: { safehouseRef: 'string id/title (required)', username: 'string (required)' } },
+      { action: 'safehouseRemovePlayer', description: 'Remove player from safehouse members', args: { safehouseRef: 'string id/title (required)', username: 'string (required)' } },
+      { action: 'safehouseSetOwner', description: 'Transfer safehouse ownership', args: { safehouseRef: 'string id/title (required)', owner: 'string (required)' } },
+      { action: 'safehouseSetRespawn', description: 'Enable/disable respawn in safehouse for user', args: { safehouseRef: 'string id/title (required)', username: 'string (required)', enabled: 'boolean (required)' } },
+
+      // === Factions ===
+      { action: 'getFactions', description: 'List all factions with members', args: {} },
+      { action: 'createFaction', description: 'Create a faction', args: { name: 'string (required)', owner: 'string (required)' } },
+      { action: 'factionAddPlayer', description: 'Add player to faction', args: { factionName: 'string (required)', username: 'string (required)' } },
+      { action: 'factionRemovePlayer', description: 'Remove player from faction', args: { factionName: 'string (required)', username: 'string (required)' } },
+      { action: 'factionSetTag', description: 'Set faction tag', args: { factionName: 'string (required)', tag: 'string (required, max 8)' } },
+      { action: 'removeFaction', description: 'Remove faction entirely', args: { factionName: 'string (required)' } },
+
+      // === Vehicles ===
+      { action: 'getVehiclesDetailed', description: 'List loaded vehicles with telemetry', args: {} },
+      { action: 'vehicleRepair', description: 'Repair a vehicle', args: { vehicleId: 'number (required)' } },
+      { action: 'vehicleSetAlarm', description: 'Toggle vehicle alarm and optionally trigger', args: { vehicleId: 'number (required)', enabled: 'boolean (required)' } },
+      { action: 'vehicleSetSiren', description: 'Set vehicle siren mode', args: { vehicleId: 'number (required)', mode: 'number (optional)', enabled: 'boolean (optional fallback)' } },
+      { action: 'vehicleSetTrunkLocked', description: 'Lock/unlock vehicle trunk', args: { vehicleId: 'number (required)', locked: 'boolean (required)' } },
+
+      // === AI Director ===
+      { action: 'triggerSwarmEvent', description: 'Spawn a zombie swarm in rectangular area', args: { count: 'number 1-500 (default: 25)', x1: 'number (required)', y1: 'number (required)', x2: 'number (required)', y2: 'number (required)' } },
+      { action: 'runEventSequence', description: 'Execute chained operation steps (chat/weather/swarm/utilities/noise)', args: { steps: 'array (required)', maxSteps: 'number 1-50 (optional default: 20)' } },
+
+      // === Infrastructure Map ===
+      { action: 'getInfrastructureSnapshot', description: 'Get hydro/weather/temperature and optional sampled point data', args: { x: 'number (optional)', y: 'number (optional)', z: 'number (optional default: 0)' } },
+      { action: 'addLamppost', description: 'Add temporary light source', args: { x: 'number (required)', y: 'number (required)', z: 'number (optional default: 0)', r: 'number 0-1', g: 'number 0-1', b: 'number 0-1', radius: 'number 1-30' } },
+      { action: 'removeLamppost', description: 'Remove temporary light source', args: { x: 'number (required)', y: 'number (required)', z: 'number (optional default: 0)' } },
+
+      // === Moderation Automation ===
+      { action: 'moderationKickUser', description: 'Kick a user through BanSystem', args: { username: 'string (required)', reason: 'string (optional)', description: 'string (optional)' } },
+      { action: 'moderationBanUser', description: 'Ban/unban user through BanSystem', args: { username: 'string (required)', reason: 'string (optional)', ban: 'boolean (default: true)' } },
+      { action: 'moderationBanIP', description: 'Ban/unban IP through BanSystem', args: { ip: 'string (required)', reason: 'string (optional)', ban: 'boolean (default: true)' } },
+      { action: 'moderationBanSteamID', description: 'Ban/unban SteamID through BanSystem', args: { steamId: 'string (required)', reason: 'string (optional)', ban: 'boolean (default: true)' } },
       
       // === Debug ===
       { action: 'getDebugLog', description: 'Get mod debug log entries', args: { limit: 'number (default: 50)', minLevel: 'string: DEBUG|INFO|WARN|ERROR (default: DEBUG)' } },

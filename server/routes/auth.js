@@ -12,6 +12,25 @@ import { sanitizeError } from '../utils/sanitize.js';
 const log = createLogger('Auth');
 const router = Router();
 
+function getRefreshCookieOptions(req, includeMaxAge = true) {
+  return {
+    httpOnly: true,
+    secure: req.secure || req.headers['x-forwarded-proto'] === 'https',
+    sameSite: 'strict',
+    path: '/api/auth',
+    ...(includeMaxAge ? { maxAge: 30 * 24 * 60 * 60 * 1000 } : {}),
+  };
+}
+
+async function getAuthenticatedUser(req) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return null;
+  }
+
+  return authService.authenticateAccessToken(authHeader.substring(7));
+}
+
 // Strict rate limit on login attempts — 5 per minute per IP
 const loginLimiter = rateLimit({
   windowMs: 1 * 60 * 1000,
@@ -56,13 +75,7 @@ router.post('/setup', async (req, res) => {
 
     // Set refresh token as httpOnly cookie
     if (result.refreshToken) {
-      res.cookie('refreshToken', result.refreshToken, {
-        httpOnly: true,
-        secure: req.secure || req.headers['x-forwarded-proto'] === 'https',
-        sameSite: 'strict',
-        maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
-        path: '/api/auth',
-      });
+      res.cookie('refreshToken', result.refreshToken, getRefreshCookieOptions(req));
     }
 
     log.info(`Setup complete — admin account created: ${username}`);
@@ -88,13 +101,7 @@ router.post('/login', loginLimiter, async (req, res) => {
 
     // Set refresh token as httpOnly cookie for auto-login
     if (result.refreshToken) {
-      res.cookie('refreshToken', result.refreshToken, {
-        httpOnly: true,
-        secure: req.secure || req.headers['x-forwarded-proto'] === 'https',
-        sameSite: 'strict',
-        maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
-        path: '/api/auth',
-      });
+      res.cookie('refreshToken', result.refreshToken, getRefreshCookieOptions(req));
     }
 
     res.json({
@@ -123,19 +130,13 @@ router.post('/refresh', async (req, res) => {
     const result = await authService.refreshAccessToken(refreshToken);
     if (!result) {
       // Clear invalid cookie
-      res.clearCookie('refreshToken', { path: '/api/auth' });
+      res.clearCookie('refreshToken', getRefreshCookieOptions(req, false));
       return res.status(401).json({ error: 'Invalid refresh token', code: 'INVALID_REFRESH_TOKEN' });
     }
 
     // Rotate the refresh token — set updated cookie
     if (result.refreshToken) {
-      res.cookie('refreshToken', result.refreshToken, {
-        httpOnly: true,
-        secure: req.secure || req.headers['x-forwarded-proto'] === 'https',
-        sameSite: 'strict',
-        path: '/api/auth',
-        maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
-      });
+      res.cookie('refreshToken', result.refreshToken, getRefreshCookieOptions(req));
     }
 
     res.json({
@@ -153,8 +154,9 @@ router.post('/refresh', async (req, res) => {
  * POST /api/auth/logout
  * Clear refresh token cookie.
  */
-router.post('/logout', (req, res) => {
-  res.clearCookie('refreshToken', { path: '/api/auth' });
+router.post('/logout', async (req, res) => {
+  await authService.logout(req.cookies?.refreshToken);
+  res.clearCookie('refreshToken', getRefreshCookieOptions(req, false));
   res.json({ success: true });
 });
 
@@ -164,18 +166,12 @@ router.post('/logout', (req, res) => {
  */
 router.get('/me', async (req, res) => {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    const user = await getAuthenticatedUser(req);
+    if (!user) {
       return res.status(401).json({ error: 'Not authenticated' });
     }
 
-    const token = authHeader.substring(7);
-    const payload = authService.verifyAccessToken(token);
-    if (!payload) {
-      return res.status(401).json({ error: 'Invalid token' });
-    }
-
-    res.json({ user: { id: payload.userId, username: payload.username, role: payload.role } });
+    res.json({ user: { id: user.userId, username: user.username, role: user.role } });
   } catch (error) {
     res.status(401).json({ error: 'Authentication error' });
   }
@@ -187,19 +183,14 @@ router.get('/me', async (req, res) => {
  */
 router.post('/change-password', async (req, res) => {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    const user = await getAuthenticatedUser(req);
+    if (!user) {
       return res.status(401).json({ error: 'Not authenticated' });
     }
 
-    const token = authHeader.substring(7);
-    const payload = authService.verifyAccessToken(token);
-    if (!payload) {
-      return res.status(401).json({ error: 'Invalid token' });
-    }
-
     const { currentPassword, newPassword } = req.body;
-    await authService.changePassword(payload.userId, currentPassword, newPassword);
+    await authService.changePassword(user.userId, currentPassword, newPassword);
+    res.clearCookie('refreshToken', getRefreshCookieOptions(req, false));
 
     res.json({ success: true, message: 'Password changed successfully' });
   } catch (error) {

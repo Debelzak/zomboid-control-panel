@@ -25,7 +25,7 @@ import {
   FolderOpen,
   X,
   MoreHorizontal,
-  Zap
+  Zap,
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -56,6 +56,7 @@ import { Label } from '@/components/ui/label'
 import { PageHeader } from '@/components/PageHeader'
 import { StatusIndicator } from '@/components/StatusIndicator'
 import { cn } from '@/lib/utils'
+import { getUserErrorMessage } from '@/lib/errorMessage'
 
 interface PlayerActivity {
   id: number
@@ -222,7 +223,7 @@ export default function Dashboard() {
       setFetchError(null)
       setLastUpdated(new Date())
     } catch {
-      setFetchError('Failed to connect to server')
+      setFetchError('Failed to connect to server.')
     }
   }, [])
 
@@ -317,30 +318,36 @@ export default function Dashboard() {
   useEffect(() => {
     const loadInitialData = async () => {
       try {
-        await Promise.all([
-          fetchStatus(), 
-          fetchPlayers(), 
-          fetchBridgeStatus(), 
-          fetchPlayerActivity(), 
+        // Critical data for above-the-fold dashboard state.
+        await Promise.allSettled([
+          fetchStatus(),
+          fetchPlayers(),
+          fetchBridgeStatus(),
+        ])
+
+        setInitialLoading(false)
+
+        // Secondary data can load after first paint.
+        void Promise.allSettled([
+          fetchPlayerActivity(),
           fetchAutoStartSetting(),
           serverApi.getPanelInfo().then(setPanelInfo).catch(() => setPanelInfo(null)),
-          fetchActiveServer()
+          fetchActiveServer(),
         ])
       } catch {
         setFetchError('Failed to load dashboard status.')
-      } finally {
         setInitialLoading(false)
       }
     }
     loadInitialData()
     
-    // Safety timeout to force exit loading state after 10 seconds
+    // Safety timeout to force exit loading state if critical requests stall.
     const loadingTimeout = setTimeout(() => {
       if (initialLoadingRef.current) {
         setFetchError((current) => current ?? 'The dashboard is taking longer than expected to respond.')
         setInitialLoading(false)
       }
-    }, 10000)
+    }, 5000)
     
     const interval = setInterval(() => {
       // Skip polling when tab is hidden to save resources
@@ -525,7 +532,7 @@ export default function Dashboard() {
     } catch (error) {
       toast({
         title: 'Error',
-        description: error instanceof Error ? error.message : 'Action failed',
+        description: getUserErrorMessage(error, 'Action failed. Please try again.'),
         variant: 'destructive',
       })
     } finally {
@@ -574,10 +581,12 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="space-y-6 page-transition">
+    <div className="space-y-6">
       <PageHeader
         title="Dashboard"
         description="Monitor and control your Project Zomboid server"
+        eyebrow="Live Ops"
+        tone="ops"
         actions={
           <div className="flex items-center gap-3">
             {lastUpdated && (
@@ -629,10 +638,10 @@ export default function Dashboard() {
                   First server quick start
                 </CardTitle>
                 <CardDescription className="max-w-2xl text-sm leading-6">
-                  The panel becomes useful as soon as one server is connected, active, and reachable over RCON. You do not need to configure every feature first.
+                  Start with one active server and working RCON. You can configure the rest later.
                 </CardDescription>
               </div>
-              <Button variant="ghost" size="icon" onClick={dismissQuickStart} className="shrink-0" aria-label="Dismiss quick start guide">
+              <Button variant="ghost" size="icon" onClick={dismissQuickStart} className="h-11 w-11 shrink-0 sm:h-10 sm:w-10" aria-label="Dismiss quick start guide">
                 <X className="h-4 w-4" />
               </Button>
             </div>
@@ -644,8 +653,8 @@ export default function Dashboard() {
                   <span className="mr-2 inline-flex h-5 w-5 items-center justify-center rounded text-xs font-bold bg-primary/15 text-primary">1</span>
                   Bring in a server
                 </p>
-                <p className="mt-1.5 text-xs leading-5 text-muted-foreground pl-7">
-                  Add an existing install, a remote RCON target, or create a new server.
+                <p className="mt-1.5 pl-7 text-sm leading-6 text-muted-foreground">
+                  Add an existing install, connect remote RCON, or create a new server.
                 </p>
               </div>
               <div className="rounded-lg border border-border/60 bg-background/45 p-4">
@@ -653,8 +662,8 @@ export default function Dashboard() {
                   <span className="mr-2 inline-flex h-5 w-5 items-center justify-center rounded text-xs font-bold bg-primary/15 text-primary">2</span>
                   Verify connectivity
                 </p>
-                <p className="mt-1.5 text-xs leading-5 text-muted-foreground pl-7">
-                  Confirm server paths, RCON credentials, and the active server selection.
+                <p className="mt-1.5 pl-7 text-sm leading-6 text-muted-foreground">
+                  Confirm paths, RCON credentials, and active server.
                 </p>
               </div>
               <div className="rounded-lg border border-border/60 bg-background/45 p-4">
@@ -662,8 +671,8 @@ export default function Dashboard() {
                   <span className="mr-2 inline-flex h-5 w-5 items-center justify-center rounded text-xs font-bold bg-primary/15 text-primary">3</span>
                   Reach live control
                 </p>
-                <p className="mt-1.5 text-xs leading-5 text-muted-foreground pl-7">
-                  Once status, players, and chat start updating, the core admin loop is working.
+                <p className="mt-1.5 pl-7 text-sm leading-6 text-muted-foreground">
+                  When status, players, and chat update, live control is ready.
                 </p>
               </div>
             </div>
@@ -695,7 +704,7 @@ export default function Dashboard() {
               <div className={cn(
                 "h-3 w-3 rounded-full shrink-0",
                 status?.running
-                  ? "bg-[hsl(var(--success))] shadow-[0_0_6px_hsl(var(--success)/0.5)]"
+                  ? "bg-[hsl(var(--success))]"
                   : "bg-destructive"
               )} aria-hidden="true" />
               <div>
@@ -724,9 +733,6 @@ export default function Dashboard() {
                 {bridgeStatus?.modConnected && bridgeStatus.modStatus?.version && (
                   <span className="text-xs text-muted-foreground">v{bridgeStatus.modStatus.version.replace(/^v/, '')}</span>
                 )}
-                {!bridgeStatus?.modConnected && !bridgeStatus?.configured && (
-                  <Link to="/settings" className="text-xs text-primary hover:underline">Setup</Link>
-                )}
               </div>
               <Link to="/players" className="flex items-center gap-1.5 hover:text-primary transition-colors">
                 <Users className="h-3.5 w-3.5" />
@@ -742,7 +748,7 @@ export default function Dashboard() {
               {status?.publicIp && (
                 <button
                   onClick={() => copyToClipboard(status.publicIp!, "Public IP")}
-                  className="flex items-center gap-1.5 text-muted-foreground hover:text-primary transition-colors font-mono text-xs"
+                  className="flex min-h-11 items-center gap-1.5 rounded-md px-2 py-1 font-mono text-xs text-muted-foreground transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 sm:min-h-8"
                   title="Copy public IP"
                 >
                   <span className="font-sans font-medium text-muted-foreground/70 uppercase tracking-wide text-xs">pub</span>
@@ -753,7 +759,7 @@ export default function Dashboard() {
               {status?.localIp && (
                 <button
                   onClick={() => copyToClipboard(status.localIp!, "Local IP")}
-                  className="flex items-center gap-1.5 text-muted-foreground hover:text-primary transition-colors font-mono text-xs"
+                  className="flex min-h-11 items-center gap-1.5 rounded-md px-2 py-1 font-mono text-xs text-muted-foreground transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 sm:min-h-8"
                   title="Copy local IP"
                 >
                   <span className="font-sans font-medium text-muted-foreground/70 uppercase tracking-wide text-xs">lan</span>
@@ -764,7 +770,7 @@ export default function Dashboard() {
               {status?.publicIp && status?.port && (
                 <a
                   href={`steam://connect/${status.publicIp}:${status.port}`}
-                  className="flex items-center gap-1.5 text-muted-foreground hover:text-primary transition-colors text-xs"
+                  className="flex min-h-11 items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 sm:min-h-8"
                   title="Connect with Steam"
                 >
                   <Gamepad2 className="w-3.5 h-3.5" />
@@ -774,7 +780,7 @@ export default function Dashboard() {
               {panelInfo && (
                 <button
                   onClick={() => copyToClipboard(panelInfo.url, "Panel address")}
-                  className="flex items-center gap-1.5 text-muted-foreground hover:text-primary transition-colors font-mono text-xs"
+                  className="flex min-h-11 items-center gap-1.5 rounded-md px-2 py-1 font-mono text-xs text-muted-foreground transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 sm:min-h-8"
                   title="Copy panel address"
                 >
                   <Globe className="w-3 h-3" />
@@ -789,7 +795,6 @@ export default function Dashboard() {
         {/* Controls toolbar */}
         <div className="border-t border-border/40 px-5 py-4 bg-muted/10">
           <div className="flex flex-wrap items-center gap-2">
-            {/* Primary lifecycle controls */}
             <Button
               onClick={() => handleAction('Start server', serverApi.start)}
               disabled={status?.running || loading !== null || activeServer?.isRemote}
@@ -800,6 +805,7 @@ export default function Dashboard() {
               {loading === 'Start server' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
               Start
             </Button>
+
             <Button
               onClick={() => setConfirmAction({
                 title: 'Stop Server',
@@ -814,6 +820,7 @@ export default function Dashboard() {
               {loading === 'Stop server' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Square className="w-4 h-4" />}
               Stop
             </Button>
+
             <Button
               onClick={() => setConfirmAction({
                 title: 'Restart Server',
@@ -831,7 +838,7 @@ export default function Dashboard() {
 
             <div className="flex-1" />
 
-            {/* Secondary actions */}
+            {/* Frequent utility action */}
             <Button
               onClick={() => handleAction('Save world', serverApi.save)}
               disabled={!status?.running || loading !== null}
@@ -845,7 +852,7 @@ export default function Dashboard() {
             {/* Overflow menu for less-frequent actions */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="icon" className="shrink-0" aria-label="Open more server actions">
+                <Button variant="outline" size="icon" className="h-11 w-11 shrink-0 sm:h-10 sm:w-10" aria-label="Open more server actions">
                   <MoreHorizontal className="w-4 h-4" />
                   <span className="sr-only">More actions</span>
                 </Button>
@@ -857,6 +864,12 @@ export default function Dashboard() {
                 >
                   <Archive className="w-4 h-4 mr-2" />
                   Create Backup
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link to="/settings" className="flex items-center">
+                    <Server className="w-4 h-4 mr-2" />
+                    Bridge Settings
+                  </Link>
                 </DropdownMenuItem>
                 {!status?.rcon?.connected && (
                   <DropdownMenuItem
@@ -896,6 +909,15 @@ export default function Dashboard() {
               </Label>
             </div>
           )}
+          {bridgeStatus && !bridgeStatus.configured && (
+            <div className="mt-3 border-t border-border/30 pt-3 text-xs text-muted-foreground">
+              Advanced world controls require PanelBridge.
+              {' '}
+              <Link to="/settings" className="text-primary hover:underline">Configure bridge</Link>
+              {' '}
+              when needed.
+            </div>
+          )}
         </div>
       </div>
 
@@ -923,43 +945,39 @@ export default function Dashboard() {
       )}
 
       {/* Player Activity */}
-      <Card>
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-base font-semibold">Player Activity</CardTitle>
-            <Link to="/players">
-              <Button variant="ghost" size="sm" className="text-xs text-muted-foreground">
-                View all
-              </Button>
-            </Link>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {playerActivity.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-6 text-center">No recent activity. Events appear as players connect and interact.</p>
-          ) : (
-            <div className="space-y-1">
-              {playerActivity.map((activity) => {
-                const style = getEventStyle(activity.action)
+      <section className="rounded-xl border border-border/60 bg-background/25 px-5 py-4">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-base font-semibold text-foreground">Player Activity</h2>
+          <Link to="/players">
+            <Button variant="ghost" size="sm" className="text-xs text-muted-foreground">
+              View all
+            </Button>
+          </Link>
+        </div>
+        {playerActivity.length === 0 ? (
+          <p className="py-6 text-center text-sm text-muted-foreground">No recent activity. Events appear as players connect and interact.</p>
+        ) : (
+          <div className="space-y-1">
+            {playerActivity.map((activity) => {
+              const style = getEventStyle(activity.action)
 
-                return (
-                  <div key={activity.id} className="flex items-center gap-3 rounded-md px-2 py-1.5 hover:bg-muted/30 transition-colors">
-                    <span className={cn("shrink-0", style.color)} aria-hidden="true">{style.icon}</span>
-                    <span className="font-medium text-sm">{activity.player_name}</span>
-                    <span className="text-sm text-muted-foreground">{style.label}</span>
-                    {activity.details && (
-                      <span className="text-sm text-muted-foreground">— {activity.details}</span>
-                    )}
-                    <span className="ml-auto text-xs text-muted-foreground/70 tabular-nums whitespace-nowrap">
-                      {new Date(activity.logged_at).toLocaleString()}
-                    </span>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+              return (
+                <div key={activity.id} className="flex min-w-0 items-center gap-3 rounded-md px-2 py-1.5 transition-colors hover:bg-muted/30">
+                  <span className={cn("shrink-0", style.color)} aria-hidden="true">{style.icon}</span>
+                  <span className="max-w-[14rem] truncate text-sm font-medium" dir="auto" title={activity.player_name}>{activity.player_name}</span>
+                  <span className="text-sm text-muted-foreground">{style.label}</span>
+                  {activity.details && (
+                    <span className="min-w-0 max-w-[24rem] truncate text-sm text-muted-foreground" dir="auto" title={activity.details}>— {activity.details}</span>
+                  )}
+                  <span className="ml-auto whitespace-nowrap text-xs tabular-nums text-muted-foreground/70">
+                    {new Date(activity.logged_at).toLocaleString()}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </section>
 
       {/* Confirmation Dialog */}
       <AlertDialog open={!!confirmAction} onOpenChange={(open) => !open && setConfirmAction(null)}>

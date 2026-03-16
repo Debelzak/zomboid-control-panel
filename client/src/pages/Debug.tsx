@@ -736,7 +736,7 @@ export default function Debug() {
                       else if (v === 'filtered-txt') downloadLogs('txt', true)
                       else if (v === 'filtered-json') downloadLogs('json', true)
                     }}>
-                      <SelectTrigger className="w-[130px] h-9">
+                      <SelectTrigger className="w-full sm:w-[160px]">
                         <Download className="w-4 h-4 mr-2" />
                         Export
                       </SelectTrigger>
@@ -764,7 +764,7 @@ export default function Debug() {
                 {/* Filters Row */}
                 <div className="flex flex-wrap items-center gap-3">
                   {/* Search */}
-                  <div className="relative flex-1 min-w-[200px] max-w-md">
+                  <div className="relative flex-1 min-w-0 w-full sm:max-w-md">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <Input
                       ref={searchInputRef}
@@ -778,6 +778,7 @@ export default function Debug() {
                     {searchQuery && (
                       <button
                         onClick={() => setSearchQuery('')}
+                        aria-label="Clear debug log search"
                         className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                       >
                         <X className="w-4 h-4" />
@@ -787,7 +788,7 @@ export default function Debug() {
 
                   {/* Level Filter */}
                   <Select value={levelFilter} onValueChange={(v) => setLevelFilter(v as typeof levelFilter)}>
-                    <SelectTrigger className="w-[120px]">
+                    <SelectTrigger className="w-full sm:w-[120px]">
                       <SelectValue placeholder="Level" />
                     </SelectTrigger>
                     <SelectContent>
@@ -801,7 +802,7 @@ export default function Debug() {
 
                   {/* Source Filter */}
                   <Select value={sourceFilter} onValueChange={setSourceFilter}>
-                    <SelectTrigger className="w-[140px]">
+                    <SelectTrigger className="w-full sm:w-[160px]">
                       <SelectValue placeholder="Source" />
                     </SelectTrigger>
                     <SelectContent>
@@ -814,7 +815,7 @@ export default function Debug() {
 
                   {/* Time Format */}
                   <Select value={timeFormat} onValueChange={(v) => setTimeFormat(v as TimeFormat)}>
-                    <SelectTrigger className="w-[130px]">
+                    <SelectTrigger className="w-full sm:w-[140px]">
                       <Clock className="w-4 h-4 mr-2" />
                       <SelectValue />
                     </SelectTrigger>
@@ -1146,9 +1147,9 @@ export default function Debug() {
                     </div>
                     <div className="w-full bg-muted rounded-full h-2 mt-2">
                       <div 
-                        className="bg-primary h-2 rounded-full transition-all"
+                        className="bg-primary h-2 w-full rounded-full transition-transform"
                         style={{ 
-                          width: `${Math.min(100, (healthStatus.memory.heapUsed / healthStatus.memory.heapTotal) * 100)}%` 
+                          transform: `translateX(-${100 - Math.min(100, (healthStatus.memory.heapUsed / healthStatus.memory.heapTotal) * 100)}%)` 
                         }}
                       />
                     </div>

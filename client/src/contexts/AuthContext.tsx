@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, useMemo, type ReactNode } from 'react'
+import { clearAccessToken, getAccessToken, setAccessToken } from '../lib/authToken'
 
 interface User {
   id: string
@@ -23,8 +24,6 @@ interface AuthContextType extends AuthState {
 
 const AuthContext = createContext<AuthContextType | null>(null)
 
-const TOKEN_KEY = 'pz_access_token'
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>({
     user: null,
@@ -36,7 +35,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Get stored token
   const getToken = useCallback((): string | null => {
-    return localStorage.getItem(TOKEN_KEY)
+    return getAccessToken()
   }, [])
 
   // Check auth status and try auto-login
@@ -89,14 +88,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return
         }
         // Token expired — try refresh
-        localStorage.removeItem(TOKEN_KEY)
+        clearAccessToken()
       }
 
       // Step 3: Try refresh token (httpOnly cookie sent automatically)
       const refreshRes = await fetch('/api/auth/refresh', { method: 'POST', credentials: 'include' })
       if (refreshRes.ok) {
         const data = await refreshRes.json()
-        localStorage.setItem(TOKEN_KEY, data.accessToken)
+        setAccessToken(data.accessToken)
         setState({
           user: data.user,
           isAuthenticated: true,
@@ -138,7 +137,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     const data = await res.json()
-    localStorage.setItem(TOKEN_KEY, data.accessToken)
+    setAccessToken(data.accessToken)
     setState({
       user: data.user,
       isAuthenticated: true,
@@ -162,7 +161,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     const data = await res.json()
-    localStorage.setItem(TOKEN_KEY, data.accessToken)
+    setAccessToken(data.accessToken)
     setState({
       user: data.user,
       isAuthenticated: true,
@@ -178,7 +177,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       // Ignore logout errors
     }
-    localStorage.removeItem(TOKEN_KEY)
+    clearAccessToken()
     setState(prev => ({
       ...prev,
       user: null,

@@ -49,12 +49,12 @@ export default {
   				foreground: 'hsl(var(--card-foreground))'
   			},
   			success: {
-  				DEFAULT: 'hsl(142, 76%, 36%)',
-  				foreground: 'hsl(0, 0%, 100%)'
+					DEFAULT: 'hsl(var(--success))',
+					foreground: 'hsl(var(--success-foreground))'
   			},
   			warning: {
-  				DEFAULT: 'hsl(38, 92%, 50%)',
-  				foreground: 'hsl(0, 0%, 0%)'
+					DEFAULT: 'hsl(var(--warning))',
+					foreground: 'hsl(var(--warning-foreground))'
   			},
   			chart: {
   				'1': 'hsl(var(--chart-1))',

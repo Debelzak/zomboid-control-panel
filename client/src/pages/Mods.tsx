@@ -131,6 +131,7 @@ export default function Mods() {
   const [advancedAddOpen, setAdvancedAddOpen] = useState(false)
   const [advancedModInput, setAdvancedModInput] = useState('')
   const [discoveringMod, setDiscoveringMod] = useState(false)
+  const [showAdvancedIdSelection, setShowAdvancedIdSelection] = useState(false)
   const [discoveredMod, setDiscoveredMod] = useState<{
     workshopId: string
     name: string
@@ -151,6 +152,7 @@ export default function Mods() {
   const [collectionDialogOpen, setCollectionDialogOpen] = useState(false)
   const [collectionMods, setCollectionMods] = useState<CollectionMod[]>([])
   const [importingCollection, setImportingCollection] = useState(false)
+  const [showCollectionAdvanced, setShowCollectionAdvanced] = useState(false)
   
   // INI configuration
   const [iniConfig, setIniConfig] = useState<IniConfig | null>(null)
@@ -326,15 +328,7 @@ export default function Mods() {
   // Initial data fetch + auto sync from server
   useEffect(() => {
     const initializeData = async () => {
-      // First sync from server silently to ensure mod list is up to date
-      try {
-        await modsApi.syncFromServer()
-      } catch (error) {
-        reportClientError('Auto-sync from server failed.', error)
-      }
-      // Then fetch all data
-      fetchData()
-      fetchPresets()
+      await Promise.allSettled([fetchData(), fetchPresets()])
     }
     initializeData()
   }, [fetchData, fetchPresets])
@@ -463,44 +457,7 @@ export default function Mods() {
     return null
   }
 
-  // Auto-discover on paste (debounced)
-  const handleModInputChange = useCallback((value: string) => {
-    setAdvancedModInput(value)
-    
-    // Clear any pending auto-discover
-    if (autoDiscoverTimeoutRef.current) {
-      clearTimeout(autoDiscoverTimeoutRef.current)
-      autoDiscoverTimeoutRef.current = null
-    }
-    
-    // Auto-discover if user pastes a valid URL
-    if (value.includes('steamcommunity.com') && value.includes('id=')) {
-      const workshopId = parseWorkshopId(value)
-      
-      // Debounce and prevent duplicate triggers
-      if (workshopId && workshopId !== lastAutoDiscoverIdRef.current) {
-        lastAutoDiscoverIdRef.current = workshopId
-        autoDiscoverTimeoutRef.current = setTimeout(() => {
-          // Trigger the discovery function
-          document.getElementById('discover-mod-btn')?.click()
-        }, 200)
-      }
-    }
-  }, [])
-
-  // Discover mod IDs from workshop URL/ID
-  const handleDiscoverMod = async () => {
-    const workshopId = parseWorkshopId(advancedModInput)
-    
-    if (!workshopId) {
-      toast({
-        title: 'Invalid Input',
-        description: 'Please enter a valid Workshop URL or numeric ID (e.g., 3616536783)',
-        variant: 'destructive',
-      })
-      return
-    }
-    
+  const discoverWorkshopMod = useCallback(async (workshopId: string) => {
     // Prevent double-triggering
     if (discoveringMod) return
     
@@ -577,6 +534,43 @@ export default function Mods() {
     } finally {
       setDiscoveringMod(false)
     }
+  }, [discoveringMod, iniConfig?.modIds, iniConfig?.workshopIds, toast])
+
+  // Auto-discover on paste (debounced)
+  const handleModInputChange = useCallback((value: string) => {
+    setAdvancedModInput(value)
+    
+    if (autoDiscoverTimeoutRef.current) {
+      clearTimeout(autoDiscoverTimeoutRef.current)
+      autoDiscoverTimeoutRef.current = null
+    }
+    
+    if (value.includes('steamcommunity.com') && value.includes('id=')) {
+      const workshopId = parseWorkshopId(value)
+      
+      if (workshopId && workshopId !== lastAutoDiscoverIdRef.current) {
+        lastAutoDiscoverIdRef.current = workshopId
+        autoDiscoverTimeoutRef.current = setTimeout(() => {
+          void discoverWorkshopMod(workshopId)
+        }, 200)
+      }
+    }
+  }, [discoverWorkshopMod])
+
+  // Discover mod IDs from workshop URL/ID
+  const handleDiscoverMod = async () => {
+    const workshopId = parseWorkshopId(advancedModInput)
+    
+    if (!workshopId) {
+      toast({
+        title: 'Invalid Input',
+        description: 'Please enter a valid Workshop URL or numeric ID (e.g., 3616536783)',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    await discoverWorkshopMod(workshopId)
   }
   
   // Add mod with selected mod IDs
@@ -679,25 +673,29 @@ export default function Mods() {
     if (selectedMods.size === 0) return
     
     setLoading(true)
-    const successes: string[] = []
-    const failures: string[] = []
+    const workshopIds = Array.from(selectedMods)
     
     try {
-      for (const workshopId of selectedMods) {
+      const results = await Promise.allSettled(workshopIds.map(async (workshopId) => {
+        await modsApi.untrackMod(workshopId)
         try {
-          await modsApi.untrackMod(workshopId)
-          // Also remove from server .ini file
-          try {
-            await modsApi.removeFromIni(workshopId)
-          } catch (iniError) {
-            reportClientWarning('Could not remove mod from INI.', iniError)
-          }
-          successes.push(workshopId)
-        } catch (error) {
-          failures.push(workshopId)
-          reportClientError(`Failed to remove mod ${workshopId}.`, error)
+          await modsApi.removeFromIni(workshopId)
+        } catch (iniError) {
+          reportClientWarning('Could not remove mod from INI.', iniError)
         }
-      }
+        return workshopId
+      }))
+
+      const successes = results
+        .filter((result): result is PromiseFulfilledResult<string> => result.status === 'fulfilled')
+        .map(result => result.value)
+      const failures = results
+        .map((result, index) => ({ result, workshopId: workshopIds[index] }))
+        .filter((entry): entry is { result: PromiseRejectedResult; workshopId: string } => entry.result.status === 'rejected')
+        .map((entry) => {
+          reportClientError(`Failed to remove mod ${entry.workshopId}.`, entry.result.reason)
+          return entry.workshopId
+        })
       
       if (failures.length > 0) {
         toast({
@@ -851,15 +849,19 @@ export default function Mods() {
 
     setLoading(true)
     try {
-      let added = 0
-      for (const mod of selectedModsList) {
-        try {
+      const results = await Promise.allSettled(
+        selectedModsList.map(async (mod) => {
           await modsApi.trackMod(mod.workshopId)
-          added++
-        } catch {
-          reportClientWarning(`Failed to add mod ${mod.workshopId}.`)
+          return mod.workshopId
+        })
+      )
+
+      const added = results.filter(result => result.status === 'fulfilled').length
+      results.forEach((result, index) => {
+        if (result.status === 'rejected') {
+          reportClientWarning(`Failed to add mod ${selectedModsList[index].workshopId}.`, result.reason)
         }
-      }
+      })
 
       setModsToInstall(prev => {
         const existing = new Set(prev.map(m => m.workshopId))
@@ -1116,6 +1118,7 @@ export default function Mods() {
 
   // Memoized list of mods with updates available
   const modsWithUpdates = useMemo(() => mods.filter(m => m.update_available), [mods])
+  const configuredWorkshopIds = useMemo(() => new Set(iniConfig?.workshopIds || []), [iniConfig?.workshopIds])
 
   return (
     <TooltipProvider>
@@ -1124,16 +1127,18 @@ export default function Mods() {
         <PageHeader
           title="Mod Manager"
           description="Track, update, and configure Steam Workshop mods"
+          eyebrow="Workshop"
+          tone="maintain"
           icon={<Package className="w-5 h-5" />}
           actions={
-            <Button onClick={() => setAdvancedAddOpen(true)} className="gap-2">
+            <Button onClick={() => setAdvancedAddOpen(true)} className="gap-2" variant="command">
               <Plus className="w-4 h-4" />
               Add Mod
             </Button>
           }
         />
 
-        {/* Quick Stats Bar */}
+        {/* Status Bar */}
         <div className="flex items-center gap-4 rounded-xl border border-border/70 bg-gradient-to-r from-secondary/80 via-card to-accent/25 p-3 shadow-sm flex-wrap">
           <div className="flex items-center gap-2">
             <Package className="w-4 h-4 text-muted-foreground" />
@@ -1157,7 +1162,7 @@ export default function Mods() {
           <div className="flex items-center gap-2">
             <Clock className="w-4 h-4 text-muted-foreground" />
             <span className="text-xs text-muted-foreground">
-              {status?.lastCheck ? `Checked: ${new Date(status.lastCheck).toLocaleTimeString()}` : 'Never checked'}
+              {status?.lastCheck ? `Last check ${new Date(status.lastCheck).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'Never checked'}
             </span>
           </div>
           
@@ -1180,33 +1185,51 @@ export default function Mods() {
             </>
           )}
           
-          <div className="flex-1" />
-          
-          {/* Restart Settings Button */}
-          <Button 
-            variant="ghost" 
-            size="sm" 
-            onClick={() => setRestartSettingsOpen(true)}
-            className="h-8"
-          >
-            <Settings2 className="w-4 h-4 mr-2" />
-            Restart Settings
-          </Button>
-          
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">Auto-restart:</span>
-            <Switch
-              checked={status?.autoRestartEnabled || false}
-              onCheckedChange={handleToggleAutoRestart}
-              disabled={loading}
-            />
+        </div>
+
+        {/* Operations Bar */}
+        <div className="flex flex-col items-stretch justify-between gap-3 rounded-xl border border-border/70 bg-card/92 p-3 shadow-sm lg:flex-row lg:items-center">
+          <div className="space-y-0.5 min-w-0">
+            <p className="text-sm font-medium">Mod Operations</p>
+            <p className="text-xs text-muted-foreground">Run checks, import collections, and manage restart behavior.</p>
+          </div>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:flex xl:flex-wrap xl:justify-end">
+            <Button variant="outline" size="sm" onClick={handleSyncFromServer} disabled={loading} className="w-full xl:w-auto">
+              <Download className="w-4 h-4 mr-2" />
+              Sync from Server
+            </Button>
+            <Button variant="outline" size="sm" onClick={handleCheckUpdates} disabled={checking} className="w-full xl:w-auto">
+              <RefreshCw className={`w-4 h-4 mr-2 ${checking ? 'animate-spin' : ''}`} />
+              Check Updates
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => setCollectionDialogOpen(true)} className="w-full xl:w-auto">
+              <Library className="w-4 h-4 mr-2" />
+              Import Collection
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setRestartSettingsOpen(true)}
+              className="h-11 w-full xl:h-9 xl:w-auto"
+            >
+              <Settings2 className="w-4 h-4 mr-2" />
+              Restart Settings
+            </Button>
+            <div className="flex min-h-11 items-center justify-between gap-2 rounded-md border border-border/70 bg-secondary/55 px-3 py-2 xl:min-h-9 xl:justify-start xl:px-2 xl:py-1.5">
+              <span className="text-xs text-muted-foreground">Auto-restart</span>
+              <Switch
+                checked={status?.autoRestartEnabled || false}
+                onCheckedChange={handleToggleAutoRestart}
+                disabled={loading}
+              />
+            </div>
           </div>
         </div>
 
         {/* Pending Restart Alert */}
         {status?.pendingRestart && (
-          <div className="flex items-center justify-between rounded-xl border border-warning/40 bg-warning/10 p-3 shadow-sm">
-            <div className="flex items-center gap-3">
+          <div className="flex flex-col gap-3 rounded-xl border border-warning/40 bg-warning/10 p-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3 sm:items-center">
               <Clock className="w-5 h-5 animate-pulse text-warning" />
               <div>
                 <p className="font-medium text-warning">Restart Pending</p>
@@ -1223,36 +1246,28 @@ export default function Mods() {
 
         <Tabs defaultValue="mods" className="space-y-4">
           <div className="flex items-center justify-between flex-wrap gap-2">
-            <TabsList>
-              <TabsTrigger value="mods">
+            <TabsList className="grid w-full grid-cols-2 sm:w-auto">
+              <TabsTrigger value="mods" className="w-full">
                 <Package className="w-4 h-4 mr-2" />
                 Tracked Mods
               </TabsTrigger>
-              <TabsTrigger value="config">
+              <TabsTrigger value="config" className="w-full">
                 <Settings2 className="w-4 h-4 mr-2" />
                 Server Config
               </TabsTrigger>
             </TabsList>
 
-            <div className="flex items-center gap-2 flex-wrap">
-              <Button variant="outline" size="sm" onClick={handleSyncFromServer} disabled={loading}>
-                <Download className="w-4 h-4 mr-2" />
-                Sync from Server
-              </Button>
-              <Button variant="outline" size="sm" onClick={handleCheckUpdates} disabled={checking}>
-                <RefreshCw className={`w-4 h-4 mr-2 ${checking ? 'animate-spin' : ''}`} />
-                Check Updates
-              </Button>
-              
-              {/* Import Collection Dialog */}
-              <Dialog open={collectionDialogOpen} onOpenChange={setCollectionDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button variant="secondary" size="sm">
-                    <Library className="w-4 h-4 mr-2" />
-                    Import Collection
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="max-w-2xl max-h-[80vh]">
+            {/* Import Collection Dialog */}
+            <Dialog
+              open={collectionDialogOpen}
+              onOpenChange={(open) => {
+                setCollectionDialogOpen(open)
+                if (!open) {
+                  setShowCollectionAdvanced(false)
+                }
+              }}
+            >
+                <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto sm:max-h-[80vh]">
                   <DialogHeader>
                     <DialogTitle>Import Steam Workshop Collection</DialogTitle>
                     <DialogDescription>
@@ -1261,14 +1276,15 @@ export default function Mods() {
                   </DialogHeader>
                   <div className="space-y-4">
                     <div>
-                      <Label>Collection URL or ID</Label>
-                      <div className="flex gap-2">
+                      <Label htmlFor="collection-url-input">Collection URL or ID</Label>
+                      <div className="flex flex-col gap-2 sm:flex-row">
                         <Input
+                          id="collection-url-input"
                           value={collectionUrl}
                           onChange={(e) => setCollectionUrl(e.target.value)}
                           placeholder="https://steamcommunity.com/sharedfiles/filedetails/?id=..."
                         />
-                        <Button onClick={handleImportCollection} disabled={importingCollection}>
+                        <Button onClick={handleImportCollection} disabled={importingCollection} className="w-full sm:w-auto">
                           {importingCollection ? (
                             <RefreshCw className="w-4 h-4 animate-spin" />
                           ) : (
@@ -1280,9 +1296,16 @@ export default function Mods() {
                     
                     {collectionMods.length > 0 && (
                       <div className="space-y-2">
-                        <div className="flex items-center justify-between">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                           <Label>Found {collectionMods.length} mods</Label>
-                          <div className="flex gap-2">
+                          <div className="flex gap-2 flex-wrap justify-end">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => setShowCollectionAdvanced(!showCollectionAdvanced)}
+                            >
+                              {showCollectionAdvanced ? 'Hide Advanced Fields' : 'Edit IDs and Maps'}
+                            </Button>
                             <Button
                               size="sm"
                               variant="outline"
@@ -1299,7 +1322,7 @@ export default function Mods() {
                             </Button>
                           </div>
                         </div>
-                        <ScrollArea className="h-[300px] border rounded-md p-2">
+                        <ScrollArea className="h-[min(48vh,22rem)] border rounded-md p-2 sm:h-[min(52vh,24rem)]">
                           <div className="space-y-2">
                             {collectionMods.map((mod) => (
                               <div 
@@ -1323,11 +1346,12 @@ export default function Mods() {
                                   <p className="text-xs text-muted-foreground">
                                     ID: {mod.workshopId}
                                   </p>
-                                  {mod.selected && (
-                                    <div className="grid grid-cols-2 gap-2 mt-2">
+                                  {mod.selected && showCollectionAdvanced && (
+                                    <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
                                       <div>
-                                        <Label className="text-xs">Mod ID</Label>
+                                        <Label className="text-xs" htmlFor={`collection-mod-id-${mod.workshopId}`}>Mod ID</Label>
                                         <Input
+                                          id={`collection-mod-id-${mod.workshopId}`}
                                           value={mod.modId || ''}
                                           onChange={(e) => updateModId(mod.workshopId, e.target.value)}
                                           placeholder="From info.txt"
@@ -1336,8 +1360,9 @@ export default function Mods() {
                                       </div>
                                       {mod.isMap && (
                                         <div>
-                                          <Label className="text-xs">Map Folder</Label>
+                                          <Label className="text-xs" htmlFor={`collection-map-folder-${mod.workshopId}`}>Map Folder</Label>
                                           <Input
+                                            id={`collection-map-folder-${mod.workshopId}`}
                                             value={mod.mapFolder || ''}
                                             onChange={(e) => updateMapFolder(mod.workshopId, e.target.value)}
                                             placeholder="MapFolderName"
@@ -1349,9 +1374,9 @@ export default function Mods() {
                                   )}
                                 </div>
                                 <Button
-                                  size="icon"
+                                  size="iconDense"
                                   variant="ghost"
-                                  className="h-8 w-8"
+                                  className="h-10 w-10 sm:h-10 sm:w-10"
                                   onClick={() => openWorkshopPage(mod.workshopId)}
                                   aria-label="Open workshop page"
                                 >
@@ -1376,24 +1401,19 @@ export default function Mods() {
                     </Button>
                   </DialogFooter>
                 </DialogContent>
-              </Dialog>
-              
-              {/* Add Single Mod Dialog - Improved with Multi-ID support */}
-              <Dialog open={advancedAddOpen} onOpenChange={(open) => {
+            </Dialog>
+
+            {/* Add Single Mod Dialog - Improved with Multi-ID support */}
+            <Dialog open={advancedAddOpen} onOpenChange={(open) => {
                 setAdvancedAddOpen(open)
                 if (!open) {
                   setAdvancedModInput('')
                   setDiscoveredMod(null)
                   setSelectedModIds(new Set())
+                  setShowAdvancedIdSelection(false)
                 }
               }}>
-                <DialogTrigger asChild>
-                  <Button size="sm">
-                    <Plus className="w-4 h-4 mr-2" />
-                    Add Mod
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="max-w-lg">
+                <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto sm:max-h-[80vh]">
                   <DialogHeader>
                     <DialogTitle>Add Workshop Mod</DialogTitle>
                     <DialogDescription>
@@ -1403,8 +1423,10 @@ export default function Mods() {
                   <div className="space-y-4">
                     {/* Input section */}
                     <div className="space-y-2">
-                      <div className="flex gap-2">
+                      <Label htmlFor="advanced-mod-input" className="sr-only">Workshop URL or ID</Label>
+                      <div className="flex flex-col gap-2 sm:flex-row">
                         <Input
+                          id="advanced-mod-input"
                           value={advancedModInput}
                           onChange={(e) => handleModInputChange(e.target.value)}
                           placeholder="Paste Workshop URL or enter ID..."
@@ -1416,7 +1438,7 @@ export default function Mods() {
                           onClick={handleDiscoverMod} 
                           disabled={discoveringMod || !advancedModInput.trim()}
                           variant="secondary"
-                          className="shrink-0"
+                          className="w-full shrink-0 sm:w-auto"
                         >
                           {discoveringMod ? (
                             <RefreshCw className="w-4 h-4 animate-spin" />
@@ -1504,75 +1526,104 @@ export default function Mods() {
                         {/* Mod IDs selection */}
                         {discoveredMod.modIds.length > 0 ? (
                           <div className="space-y-2">
-                            <div className="flex items-center justify-between">
-                              <Label className="text-xs font-medium">
-                                {discoveredMod.hasMultipleModIds 
-                                  ? `Mod IDs (${selectedModIds.size} of ${discoveredMod.modIds.length} selected)`
-                                  : 'Mod ID'}
-                              </Label>
-                              {discoveredMod.hasMultipleModIds && (
-                                <div className="flex gap-1">
+                            <div className="rounded-md border border-border/70 bg-background/70 p-2.5">
+                              <div className="flex items-center justify-between gap-2">
+                                <Label className="text-xs font-medium">
+                                  {discoveredMod.hasMultipleModIds
+                                    ? `Mod IDs (${selectedModIds.size} of ${discoveredMod.modIds.length} selected)`
+                                    : 'Mod ID'}
+                                </Label>
+                                {discoveredMod.hasMultipleModIds && (
                                   <Button
                                     size="sm"
                                     variant="ghost"
                                     className="h-7 text-xs px-2"
-                                    onClick={() => {
-                                      // Select only new (not already configured) mod IDs
-                                      const newIds = discoveredMod.modIds.filter(
-                                        id => !discoveredMod.alreadyConfigured?.includes(id)
+                                    onClick={() => setShowAdvancedIdSelection(!showAdvancedIdSelection)}
+                                  >
+                                    {showAdvancedIdSelection ? 'Hide Selection' : 'Review IDs'}
+                                  </Button>
+                                )}
+                              </div>
+
+                              {discoveredMod.hasMultipleModIds && !showAdvancedIdSelection ? (
+                                <p className="text-xs text-muted-foreground mt-1.5">
+                                  New IDs are pre-selected automatically. Open Review IDs to manually adjust selection.
+                                </p>
+                              ) : (
+                                <>
+                                  {discoveredMod.hasMultipleModIds && (
+                                    <div className="mt-2 mb-2 flex flex-wrap gap-1">
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        className="h-7 text-xs px-2"
+                                        onClick={() => {
+                                          const newIds = discoveredMod.modIds.filter(
+                                            id => !discoveredMod.alreadyConfigured?.includes(id)
+                                          )
+                                          setSelectedModIds(new Set(newIds))
+                                        }}
+                                      >
+                                        Select New
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        className="h-7 text-xs px-2"
+                                        onClick={() => {
+                                          if (selectedModIds.size === discoveredMod.modIds.length) {
+                                            setSelectedModIds(new Set())
+                                          } else {
+                                            setSelectedModIds(new Set(discoveredMod.modIds))
+                                          }
+                                        }}
+                                      >
+                                        {selectedModIds.size === discoveredMod.modIds.length ? 'None' : 'All'}
+                                      </Button>
+                                    </div>
+                                  )}
+                                  <div className="space-y-1 max-h-40 overflow-y-auto rounded border bg-background p-1">
+                                    {discoveredMod.modIds.map((modId) => {
+                                      const isConfigured = discoveredMod.alreadyConfigured?.includes(modId)
+                                      return (
+                                        <div
+                                          key={modId}
+                                          role="button"
+                                          tabIndex={0}
+                                          aria-pressed={selectedModIds.has(modId)}
+                                          className={`flex items-center gap-2 p-2 rounded cursor-pointer transition-colors ${
+                                            selectedModIds.has(modId)
+                                              ? 'bg-primary/10 border border-primary'
+                                              : isConfigured
+                                                ? 'bg-muted/50 border border-transparent'
+                                                : 'hover:bg-muted/50 border border-transparent'
+                                          }`}
+                                          onClick={() => toggleModIdSelection(modId)}
+                                          onKeyDown={(event) => {
+                                            if (event.key === 'Enter' || event.key === ' ') {
+                                              event.preventDefault()
+                                              toggleModIdSelection(modId)
+                                            }
+                                          }}
+                                        >
+                                          <Checkbox
+                                            checked={selectedModIds.has(modId)}
+                                            onCheckedChange={() => toggleModIdSelection(modId)}
+                                          />
+                                          <code className="text-xs font-mono flex-1 truncate" title={modId}>
+                                            {modId}
+                                          </code>
+                                          {isConfigured && (
+                                            <Badge variant="outline" className="text-xs h-5 shrink-0 text-muted-foreground">
+                                              Exists
+                                            </Badge>
+                                          )}
+                                        </div>
                                       )
-                                      setSelectedModIds(new Set(newIds))
-                                    }}
-                                  >
-                                    Select New
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    className="h-7 text-xs px-2"
-                                    onClick={() => {
-                                      if (selectedModIds.size === discoveredMod.modIds.length) {
-                                        setSelectedModIds(new Set())
-                                      } else {
-                                        setSelectedModIds(new Set(discoveredMod.modIds))
-                                      }
-                                    }}
-                                  >
-                                    {selectedModIds.size === discoveredMod.modIds.length ? 'None' : 'All'}
-                                  </Button>
-                                </div>
-                              )}
-                            </div>
-                            <div className="space-y-1 max-h-40 overflow-y-auto rounded border bg-background p-1">
-                              {discoveredMod.modIds.map((modId) => {
-                                const isConfigured = discoveredMod.alreadyConfigured?.includes(modId)
-                                return (
-                                  <div 
-                                    key={modId}
-                                    className={`flex items-center gap-2 p-2 rounded cursor-pointer transition-colors ${
-                                      selectedModIds.has(modId) 
-                                        ? 'bg-primary/10 border border-primary' 
-                                        : isConfigured
-                                          ? 'bg-muted/50 border border-transparent'
-                                          : 'hover:bg-muted/50 border border-transparent'
-                                    }`}
-                                    onClick={() => toggleModIdSelection(modId)}
-                                  >
-                                    <Checkbox 
-                                      checked={selectedModIds.has(modId)} 
-                                      onCheckedChange={() => toggleModIdSelection(modId)}
-                                    />
-                                    <code className="text-xs font-mono flex-1 truncate" title={modId}>
-                                      {modId}
-                                    </code>
-                                    {isConfigured && (
-                                      <Badge variant="outline" className="text-xs h-5 shrink-0 text-muted-foreground">
-                                        Exists
-                                      </Badge>
-                                    )}
+                                    })}
                                   </div>
-                                )
-                              })}
+                                </>
+                              )}
                             </div>
                           </div>
                         ) : (
@@ -1612,14 +1663,14 @@ export default function Mods() {
                     <Button 
                       variant="outline" 
                       onClick={() => setAdvancedAddOpen(false)}
-                      className="sm:order-1"
+                      className="w-full sm:order-1 sm:w-auto"
                     >
                       Cancel
                     </Button>
                     <Button 
                       onClick={handleAddModAdvanced} 
                       disabled={loading || !discoveredMod || discoveringMod}
-                      className="sm:order-2"
+                      className="w-full sm:order-2 sm:w-auto"
                     >
                       {loading ? (
                         <>
@@ -1638,10 +1689,10 @@ export default function Mods() {
                     </Button>
                   </DialogFooter>
                 </DialogContent>
-              </Dialog>
-              
-              {/* Restart Settings Dialog */}
-              <Dialog open={restartSettingsOpen} onOpenChange={setRestartSettingsOpen}>
+            </Dialog>
+
+            {/* Restart Settings Dialog */}
+            <Dialog open={restartSettingsOpen} onOpenChange={setRestartSettingsOpen}>
                 <DialogContent>
                   <DialogHeader>
                     <DialogTitle>Auto-Restart Settings</DialogTitle>
@@ -1651,8 +1702,9 @@ export default function Mods() {
                   </DialogHeader>
                   <div className="space-y-4">
                     <div>
-                      <Label>Warning Time (minutes)</Label>
+                      <Label htmlFor="restart-warning-minutes">Warning Time (minutes)</Label>
                       <Input
+                        id="restart-warning-minutes"
                         type="number"
                         min="0"
                         max="30"
@@ -1679,8 +1731,9 @@ export default function Mods() {
                     
                     {delayIfPlayersOnline && (
                       <div>
-                        <Label>Maximum Delay (minutes)</Label>
+                        <Label htmlFor="restart-max-delay">Maximum Delay (minutes)</Label>
                         <Input
+                          id="restart-max-delay"
                           type="number"
                           min="5"
                           max="120"
@@ -1702,32 +1755,31 @@ export default function Mods() {
                       </div>
                     </div>
                   </div>
-                  <DialogFooter>
-                    <Button variant="outline" onClick={() => setRestartSettingsOpen(false)}>
+                  <DialogFooter className="flex-col sm:flex-row gap-2">
+                    <Button variant="outline" onClick={() => setRestartSettingsOpen(false)} className="w-full sm:w-auto">
                       Cancel
                     </Button>
-                    <Button onClick={handleSaveRestartSettings} disabled={loading}>
+                    <Button onClick={handleSaveRestartSettings} disabled={loading} className="w-full sm:w-auto">
                       {loading ? 'Saving...' : 'Save Settings'}
                     </Button>
                   </DialogFooter>
                 </DialogContent>
-              </Dialog>
-            </div>
+            </Dialog>
           </div>
 
           {/* Tracked Mods Tab */}
           <TabsContent value="mods" className="space-y-4">
             {/* Updates Alert */}
             {modsWithUpdates.length > 0 && (
-              <div className="flex items-center justify-between rounded-xl border border-warning/40 bg-warning/10 p-3 shadow-sm">
-                <div className="flex items-center gap-3">
+              <div className="flex flex-col gap-3 rounded-xl border border-warning/40 bg-warning/10 p-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-start gap-3 sm:items-center">
                   <AlertTriangle className="w-5 h-5 text-warning" />
                   <div>
                     <p className="font-medium text-warning">
                       {modsWithUpdates.length} mod{modsWithUpdates.length > 1 ? 's have' : ' has'} updates available
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      Restart the server to apply updates
+                        Restart the server when you are ready to apply them
                     </p>
                   </div>
                 </div>
@@ -1739,7 +1791,7 @@ export default function Mods() {
 
             {/* Search and Filters */}
             <div className="flex items-center gap-4 flex-wrap">
-              <div className="relative flex-1 max-w-sm">
+              <div className="relative min-w-0 basis-full sm:basis-auto sm:flex-1 sm:max-w-sm">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
                   value={searchQuery}
@@ -1755,14 +1807,14 @@ export default function Mods() {
                 variant={showUpdatesOnly ? "secondary" : "outline"}
                 size="sm"
                 onClick={() => setShowUpdatesOnly(!showUpdatesOnly)}
-                className={showUpdatesOnly ? "border-primary/20 bg-primary/12 text-primary" : undefined}
+                className={showUpdatesOnly ? "w-full border-primary/20 bg-primary/12 text-primary sm:w-auto" : "w-full sm:w-auto"}
               >
                 <Filter className="w-4 h-4 mr-2" />
                 Updates Only
               </Button>
 
               {selectedMods.size > 0 && (
-                <div className="flex items-center gap-2 ml-auto">
+                <div className="ml-auto flex w-full flex-wrap items-center gap-2 sm:w-auto">
                   <span className="text-sm text-muted-foreground">
                     {selectedMods.size} selected
                   </span>
@@ -1777,7 +1829,7 @@ export default function Mods() {
               )}
 
               {selectedMods.size === 0 && filteredMods.length > 0 && (
-                <Button variant="ghost" size="sm" onClick={selectAllVisible} className="ml-auto">
+                <Button variant="ghost" size="sm" onClick={selectAllVisible} className="ml-auto w-full sm:w-auto">
                   Select All ({filteredMods.length})
                 </Button>
               )}
@@ -1786,7 +1838,7 @@ export default function Mods() {
             {/* Mods List */}
             <Card>
               <CardContent className="p-0">
-                <ScrollArea className="h-[350px] sm:h-[500px]">
+                <ScrollArea className="h-[min(52vh,24rem)] sm:h-[min(60vh,31rem)]">
                   {filteredMods.length === 0 ? (
                     <EmptyState
                       type={searchQuery ? 'noResults' : 'noMods'}
@@ -1823,13 +1875,19 @@ export default function Mods() {
                                   Update
                                 </Badge>
                               ) : null}
+                              <Badge variant={configuredWorkshopIds.has(mod.workshop_id) ? 'success' : 'secondary'} className="text-xs">
+                                {configuredWorkshopIds.has(mod.workshop_id) ? 'Configured' : 'Tracked Only'}
+                              </Badge>
                             </div>
-                            <p className="text-xs text-muted-foreground">
-                              ID: {mod.workshop_id} • {mod.last_checked 
-                                ? `Checked ${new Date(mod.last_checked).toLocaleDateString()}`
-                                : 'Never checked'
-                              }
-                            </p>
+                            <div className="flex items-center gap-2 flex-wrap mt-1">
+                              <span className="text-xs text-muted-foreground font-mono">{mod.workshop_id}</span>
+                              <span className="text-xs text-muted-foreground">•</span>
+                              <span className="text-xs text-muted-foreground">
+                                {mod.last_checked
+                                  ? `Checked ${new Date(mod.last_checked).toLocaleDateString()}`
+                                  : 'Never checked'}
+                              </span>
+                            </div>
                           </div>
                           
                           <Tooltip>
@@ -1842,8 +1900,8 @@ export default function Mods() {
                               >
                                 <Button
                                   variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8 text-muted-foreground hover:text-primary"
+                                  size="iconDense"
+                                  className="h-10 w-10 text-muted-foreground hover:text-primary sm:h-10 sm:w-10"
                                   aria-label="Open workshop page"
                                 >
                                   <ExternalLink className="w-4 h-4" />
@@ -1857,8 +1915,8 @@ export default function Mods() {
                             <TooltipTrigger asChild>
                               <Button
                                 variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 text-destructive hover:text-destructive"
+                                size="iconDense"
+                                className="h-10 w-10 text-destructive hover:text-destructive sm:h-10 sm:w-10"
                                 onClick={() => handleRemoveMod(mod.workshop_id)}
                                 disabled={loading}
                                 aria-label={`Remove mod ${mod.name || mod.workshop_id}`}
@@ -1907,6 +1965,11 @@ export default function Mods() {
                         <div className="text-xs text-muted-foreground">Maps</div>
                       </div>
                     </div>
+
+                    <div className="space-y-1">
+                      <p className="text-sm font-semibold">Step 1: Detect and Sync</p>
+                      <p className="text-xs text-muted-foreground">Resolve warnings and sync discovered mod IDs before applying changes.</p>
+                    </div>
                     
                     {/* Conflict Warnings */}
                     {detectedConflicts.length > 0 && (
@@ -1944,8 +2007,8 @@ export default function Mods() {
                     )}
 
                     {/* Sync Mod IDs Button */}
-                    <div className="flex items-center justify-between rounded-lg border border-border/70 bg-gradient-to-r from-secondary/85 to-accent/18 p-3 shadow-sm">
-                      <div>
+                    <div className="flex flex-col gap-3 rounded-lg border border-border/70 bg-gradient-to-r from-secondary/85 to-accent/18 p-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+                      <div className="min-w-0">
                         <p className="text-sm font-medium">Sync Mod IDs from Downloads</p>
                         <p className="text-xs text-muted-foreground">
                           Reads mod.info from downloaded mods and adds their IDs to Mods= in the INI
@@ -1964,6 +2027,13 @@ export default function Mods() {
                         )}
                         Sync Mod IDs
                       </Button>
+                    </div>
+
+                    <Separator />
+
+                    <div className="space-y-1">
+                      <p className="text-sm font-semibold">Step 2: Review Maps</p>
+                      <p className="text-xs text-muted-foreground">Verify map folders before changing identifiers or load order.</p>
                     </div>
 
                     {/* Maps List */}
@@ -1985,6 +2055,13 @@ export default function Mods() {
                           ))}
                         </div>
                       )}
+                    </div>
+
+                    <Separator />
+
+                    <div className="space-y-1">
+                      <p className="text-sm font-semibold">Step 3: Review IDs</p>
+                      <p className="text-xs text-muted-foreground">Inspect Workshop items and resolved Mod IDs currently defined in the INI.</p>
                     </div>
 
                     {/* Workshop IDs List */}
@@ -2011,6 +2088,13 @@ export default function Mods() {
                           </div>
                         </div>
                       )}
+                    </div>
+
+                    <Separator />
+
+                    <div className="space-y-1">
+                      <p className="text-sm font-semibold">Step 4: Tune Load Order</p>
+                      <p className="text-xs text-muted-foreground">Reorder mods so dependencies load correctly, then save the load order.</p>
                     </div>
 
                     {/* Mod IDs List */}
@@ -2059,7 +2143,7 @@ export default function Mods() {
                           <p className="text-xs text-muted-foreground mb-2">
                             Drag and drop to reorder mods. Mods higher in the list load first.
                           </p>
-                          <ScrollArea className="h-[300px] border rounded-lg p-2">
+                          <ScrollArea className="h-[min(48vh,20rem)] border rounded-lg p-2 sm:h-[min(52vh,24rem)]">
                             <div className="space-y-1">
                               {orderedModIds.map((modId, index) => (
                                 <div
@@ -2078,8 +2162,8 @@ export default function Mods() {
                                   <div className="flex gap-1">
                                     <Button
                                       variant="ghost"
-                                      size="icon"
-                                      className="h-8 w-8"
+                                      size="iconDense"
+                                      className="h-10 w-10 sm:h-10 sm:w-10"
                                       onClick={() => moveModUp(index)}
                                       disabled={index === 0}
                                       aria-label="Move mod up"
@@ -2088,8 +2172,8 @@ export default function Mods() {
                                     </Button>
                                     <Button
                                       variant="ghost"
-                                      size="icon"
-                                      className="h-8 w-8"
+                                      size="iconDense"
+                                      className="h-10 w-10 sm:h-10 sm:w-10"
                                       onClick={() => moveModDown(index)}
                                       disabled={index === orderedModIds.length - 1}
                                       aria-label="Move mod down"
@@ -2133,11 +2217,19 @@ export default function Mods() {
                       )}
                     </div>
 
+                    <Separator />
+
+                    <div className="space-y-1">
+                      <p className="text-sm font-semibold">Step 5: Export or Apply</p>
+                      <p className="text-xs text-muted-foreground">Copy the current config strings or write pending mod selections to the server INI.</p>
+                    </div>
+
                     {/* Copy Buttons */}
-                    <div className="flex gap-2">
+                    <div className="flex flex-col gap-2 sm:flex-row">
                       <Button
                         variant="outline"
                         size="sm"
+                        className="w-full sm:w-auto"
                         onClick={() => {
                           const text = orderedModIds.length > 0 ? orderedModIds.join(';') : (iniConfig?.modIds?.join(';') || '');
                           if (text) copyToClipboard(text, 'mods');
@@ -2149,6 +2241,7 @@ export default function Mods() {
                       <Button
                         variant="outline"
                         size="sm"
+                        className="w-full sm:w-auto"
                         onClick={() => {
                           const text = iniConfig?.workshopIds?.join(';') || '';
                           if (text) copyToClipboard(text, 'workshop');
@@ -2162,7 +2255,7 @@ export default function Mods() {
                     {/* Pending Mods to Install */}
                     {modsToInstall.length > 0 && (
                       <div className="space-y-3 rounded-lg border border-border/70 bg-gradient-to-r from-secondary/80 to-accent/18 p-3">
-                        <div className="flex items-center justify-between">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                           <Label className="flex items-center gap-2">
                             <Plus className="w-4 h-4" />
                             {modsToInstall.length} mods pending configuration
@@ -2177,10 +2270,12 @@ export default function Mods() {
                         </div>
                         <div className="flex flex-wrap gap-1">
                           {modsToInstall.map(mod => (
-                            <Badge key={mod.workshopId} variant="outline" className="text-xs max-w-[200px]">
+                            <Badge key={mod.workshopId} variant="outline" className="max-w-full text-xs sm:max-w-[200px]">
                               <span className="truncate">{mod.name}</span>
                               {mod.isMap && <Map className="w-3 h-3 ml-1" />}
                               <button
+                                type="button"
+                                aria-label={`Remove ${mod.name} from pending configuration`}
                                 onClick={() => removeFromInstallList(mod.workshopId)}
                                 className="ml-1 hover:text-destructive"
                               >
@@ -2209,8 +2304,9 @@ export default function Mods() {
             {/* Mod Presets */}
             <Card className="border-border/70 bg-card/92 shadow-sm">
               <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
+                    <div className="text-xs font-semibold text-muted-foreground mb-1">Step 6: Save and Reuse</div>
                     <CardTitle className="text-lg flex items-center gap-2">
                       <FolderOpen className="w-5 h-5" />
                       Mod Presets
@@ -2221,7 +2317,7 @@ export default function Mods() {
                   </div>
                   <Dialog open={savePresetOpen} onOpenChange={setSavePresetOpen}>
                     <DialogTrigger asChild>
-                      <Button size="sm" disabled={!iniConfig?.configured}>
+                      <Button size="sm" disabled={!iniConfig?.configured} className="w-full sm:w-auto">
                         <Save className="w-4 h-4 mr-2" />
                         Save Current
                       </Button>
@@ -2258,11 +2354,11 @@ export default function Mods() {
                           </div>
                         )}
                       </div>
-                      <DialogFooter>
-                        <Button variant="outline" onClick={() => setSavePresetOpen(false)}>
+                      <DialogFooter className="flex-col sm:flex-row gap-2">
+                        <Button variant="outline" onClick={() => setSavePresetOpen(false)} className="w-full sm:w-auto">
                           Cancel
                         </Button>
-                        <Button onClick={handleSavePreset} disabled={savingPreset || !presetName.trim()}>
+                        <Button onClick={handleSavePreset} disabled={savingPreset || !presetName.trim()} className="w-full sm:w-auto">
                           {savingPreset && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                           Save Preset
                         </Button>
@@ -2287,7 +2383,7 @@ export default function Mods() {
                     {presets.map((preset) => (
                       <div
                         key={preset.id}
-                        className="flex items-center justify-between p-3 rounded-lg border border-border/70 bg-card/70 hover:bg-accent/22 transition-colors"
+                        className="flex flex-col gap-3 rounded-lg border border-border/70 bg-card/70 p-3 transition-colors hover:bg-accent/22 sm:flex-row sm:items-center sm:justify-between"
                       >
                         <div className="flex-1 min-w-0">
                           <div className="font-medium">{preset.name}</div>
@@ -2298,7 +2394,7 @@ export default function Mods() {
                             Saved {new Date(preset.created_at).toLocaleDateString()}
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 self-start sm:self-auto">
                           <Button
                             size="sm"
                             variant="outline"
@@ -2333,29 +2429,36 @@ export default function Mods() {
               <CardHeader className="pb-3">
                 <CardTitle className="text-lg flex items-center gap-2">
                   <Info className="w-5 h-5" />
-                  How Mod Management Works
+                  Operator Safety Notes
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3 text-sm text-muted-foreground">
                 <div className="flex items-start gap-3">
-                  <Download className="w-4 h-4 mt-0.5 text-primary" />
+                  <AlertTriangle className="w-4 h-4 mt-0.5 text-warning" />
                   <div>
-                    <p className="font-medium text-foreground">Sync from Server</p>
-                    <p>Import all mods currently configured in your server's INI file</p>
+                    <p className="font-medium text-foreground">Load Order Is Operationally Critical</p>
+                    <p>Keep frameworks and dependencies above content mods. Incorrect order can cause silent failures.</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <Map className="w-4 h-4 mt-0.5 text-primary" />
+                  <div>
+                    <p className="font-medium text-foreground">Map Mods Need Extra Attention</p>
+                    <p>Always verify map folders and related IDs after imports so spawns and cells load correctly.</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
                   <RefreshCw className="w-4 h-4 mt-0.5 text-primary" />
                   <div>
-                    <p className="font-medium text-foreground">Update Detection</p>
-                    <p>Periodically checks Steam Workshop for mod updates</p>
+                    <p className="font-medium text-foreground">Run Sync Mod IDs After New Downloads</p>
+                    <p>Workshop items without matching Mod IDs usually indicate mods are not fully downloaded yet.</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
                   <Power className="w-4 h-4 mt-0.5 text-primary" />
                   <div>
-                    <p className="font-medium text-foreground">Auto-Restart</p>
-                    <p>When enabled, server restarts automatically when updates are detected</p>
+                    <p className="font-medium text-foreground">Auto-Restart Can Impact Active Players</p>
+                    <p>Use warning and delay settings to avoid hard interruptions during high-pop sessions.</p>
                   </div>
                 </div>
               </CardContent>

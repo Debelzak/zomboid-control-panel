@@ -1,3 +1,4 @@
+---@diagnostic disable: undefined-global, deprecated
 --[[
     PanelBridge - Server-side mod for Zomboid Control Panel
     Version: 1.4.3
@@ -74,6 +75,7 @@ local json
 
 local PanelBridge = {
     VERSION = "1.4.3",
+    PROTOCOL_VERSION = "queue-v1",
     CHECK_INTERVAL = 1000, -- milliseconds
     lastCheck = 0,
     lastStatusUpdate = 0,
@@ -87,6 +89,9 @@ local PanelBridge = {
     DEBUG_MODE = false, -- Set to true to enable verbose logging
     debugLog = {},      -- Recent debug entries (ring buffer)
     MAX_DEBUG_ENTRIES = 200,
+    MAX_PENDING_RESULTS = 500,
+    MAX_COMMANDS_PER_TICK = 200,
+    QUEUE_SEQUENCE_WIDTH = 10,
     
     -- API detection
     detectedVersion = nil,
@@ -104,6 +109,12 @@ local PanelBridge = {
     
     -- Pending results buffer (avoids read-modify-write race on results.json)
     pendingResults = {},
+
+    -- Queue state persisted to disk for crash-safe resume
+    queueState = {
+        lastCommandSeq = 0,
+        nextResultSeq = 1,
+    },
 }
 
 -- ============================================
@@ -123,7 +134,14 @@ local unpack = unpack or table.unpack
 
 -- Internal logging function
 function PanelBridge.log(level, message, context)
-    local timestamp = getTimestampMs and getTimestampMs() or os.time() * 1000
+    local timestamp = nil
+    if getTimestampMs then
+        timestamp = getTimestampMs()
+    elseif os and os.time then
+        timestamp = os.time() * 1000
+    else
+        timestamp = 0
+    end
     local levelName = "INFO"
     for name, val in pairs(LOG_LEVEL) do
         if val == level then levelName = name break end
@@ -481,10 +499,17 @@ function PanelBridge.getBasePath()
     -- Files will be created in: {ServerInstall}/Lua/panelbridge/{serverName}/
     -- This is within the allowed write path for getFileWriter
     local serverName = getServerName()
-    
+    local safeServerName = nil
     if serverName and serverName ~= "" then
+        safeServerName = tostring(serverName)
+        safeServerName = safeServerName:gsub("[/\\:%*%?\"<>|]", "_")
+        safeServerName = safeServerName:gsub("%s+", "_")
+        if safeServerName == "" then safeServerName = nil end
+    end
+    
+    if safeServerName then
         -- Simple path within allowed Lua folder
-        PanelBridge.basePath = "panelbridge/" .. serverName .. "/"
+        PanelBridge.basePath = "panelbridge/" .. safeServerName .. "/"
     else
         -- Fallback
         PanelBridge.basePath = "panelbridge/"
@@ -500,7 +525,14 @@ function PanelBridge.ensureDirectory()
     local initPath = path .. ".init"
     local writer = getFileWriter(initPath, true, false)
     if writer then
-        writer:write("PanelBridge initialized at " .. os.date())
+        local stamp = "unknown"
+        if os and os.date then
+            local ok, val = pcall(function() return os.date() end)
+            if ok and val then stamp = tostring(val) end
+        elseif getTimestampMs then
+            stamp = tostring(getTimestampMs())
+        end
+        writer:write("PanelBridge initialized at " .. stamp)
         writer:close()
         return true
     end
@@ -555,33 +587,108 @@ function PanelBridge.clearFile(filename)
     return PanelBridge.writeFile(filename, "")
 end
 
+function PanelBridge.formatSeq(seq)
+    local n = tonumber(seq) or 0
+    if n < 0 then n = 0 end
+    return string.format("%0" .. tostring(PanelBridge.QUEUE_SEQUENCE_WIDTH) .. "d", math.floor(n))
+end
+
+function PanelBridge.readQueueState()
+    local state = PanelBridge.readJSON("queue-state-lua.json")
+    if type(state) == "table" then
+        local lastCommandSeq = tonumber(state.lastCommandSeq)
+        local nextResultSeq = tonumber(state.nextResultSeq)
+        if lastCommandSeq and lastCommandSeq >= 0 then
+            PanelBridge.queueState.lastCommandSeq = math.floor(lastCommandSeq)
+        end
+        if nextResultSeq and nextResultSeq >= 1 then
+            PanelBridge.queueState.nextResultSeq = math.floor(nextResultSeq)
+        end
+    end
+end
+
+function PanelBridge.writeQueueState()
+    return PanelBridge.writeJSON("queue-state-lua.json", {
+        protocolVersion = PanelBridge.PROTOCOL_VERSION,
+        lastCommandSeq = PanelBridge.queueState.lastCommandSeq,
+        nextResultSeq = PanelBridge.queueState.nextResultSeq,
+        updatedAt = getTimestampMs()
+    })
+end
+
+function PanelBridge.writeInboxCursor(lastSeq)
+    return PanelBridge.writeJSON("inbox/cursor.json", {
+        protocolVersion = PanelBridge.PROTOCOL_VERSION,
+        lastProcessedSeq = tonumber(lastSeq) or 0,
+        updatedAt = getTimestampMs()
+    })
+end
+
 -- ============================================
 -- RESULT HANDLING
 -- ============================================
 
 function PanelBridge.sendResult(id, success, data, errorMsg)
+    if #PanelBridge.pendingResults >= PanelBridge.MAX_PENDING_RESULTS then
+        table.remove(PanelBridge.pendingResults, 1)
+        PanelBridge.warn("Pending result buffer full, dropping oldest result", {
+            max = PanelBridge.MAX_PENDING_RESULTS
+        })
+    end
+
     -- Buffer results in memory; they're flushed to disk once per tick in flushResults()
     -- This avoids the read-modify-write race where the Node side reads results.json
     -- between our read and our write, or two sendResult calls in the same tick
     -- overwrite each other.
     table.insert(PanelBridge.pendingResults, {
+        protocolVersion = PanelBridge.PROTOCOL_VERSION,
+        seq = PanelBridge.queueState.nextResultSeq,
         id = id,
         success = success,
         data = data,
         error = errorMsg,
         timestamp = getTimestampMs()
     })
+    PanelBridge.queueState.nextResultSeq = PanelBridge.queueState.nextResultSeq + 1
+    PanelBridge.writeQueueState()
 end
 
 function PanelBridge.flushResults()
     if #PanelBridge.pendingResults == 0 then return end
+
+    local writtenCount = 0
+    for idx, r in ipairs(PanelBridge.pendingResults) do
+        local seq = tonumber(r.seq) or 0
+        local outFile = "outbox/res-" .. PanelBridge.formatSeq(seq) .. ".json"
+        local ok = PanelBridge.writeJSON(outFile, {
+            protocolVersion = PanelBridge.PROTOCOL_VERSION,
+            seq = seq,
+            result = {
+                id = r.id,
+                success = r.success,
+                data = r.data,
+                error = r.error,
+                timestamp = r.timestamp,
+            }
+        })
+        if not ok then
+            PanelBridge.warn("Queue result write failed; will retry", { file = outFile, seq = seq })
+            break
+        end
+        writtenCount = idx
+    end
+
+    if writtenCount <= 0 then
+        return
+    end
     
     -- Read existing results from disk (Node may not have consumed them yet)
     local results = PanelBridge.readJSON("results.json") or { results = {} }
     if not results.results then results.results = {} end
     
     -- Append all buffered results at once
-    for _, r in ipairs(PanelBridge.pendingResults) do
+    for i = 1, writtenCount do
+        local r = PanelBridge.pendingResults[i]
         table.insert(results.results, r)
     end
     
@@ -592,11 +699,15 @@ function PanelBridge.flushResults()
     
     -- Write BEFORE clearing the buffer so results aren't lost if write fails
     local ok = PanelBridge.writeJSON("results.json", results)
-    if ok then
-        PanelBridge.pendingResults = {}
-    else
-        PanelBridge.warn("flushResults write failed, will retry next tick")
+    if not ok then
+        PanelBridge.warn("Legacy results.json write failed (queue files still written)")
     end
+
+    local remaining = {}
+    for i = writtenCount + 1, #PanelBridge.pendingResults do
+        table.insert(remaining, PanelBridge.pendingResults[i])
+    end
+    PanelBridge.pendingResults = remaining
 end
 
 -- ============================================
@@ -605,14 +716,162 @@ end
 
 local handlers = {}
 
+local function processSingleCommand(cmd)
+    if type(cmd) ~= "table" then
+        PanelBridge.stats.commandsFailed = PanelBridge.stats.commandsFailed + 1
+        PanelBridge.warn("Skipping malformed command entry", { entryType = type(cmd) })
+        return false
+    end
+
+    if cmd.id == nil and cmd.commandId ~= nil then
+        cmd.id = cmd.commandId
+    end
+    if cmd.args == nil and type(cmd.payload) == "table" then
+        cmd.args = cmd.payload
+    end
+
+    if not cmd.id then
+        PanelBridge.stats.commandsFailed = PanelBridge.stats.commandsFailed + 1
+        PanelBridge.warn("Skipping command without id", { action = tostring(cmd.action) })
+        return false
+    end
+
+    if PanelBridge.processedIds[cmd.id] then
+        return false
+    end
+
+    PanelBridge.processedIds[cmd.id] = true
+    PanelBridge.processedIdCount = PanelBridge.processedIdCount + 1
+    PanelBridge.stats.commandsProcessed = PanelBridge.stats.commandsProcessed + 1
+
+    PanelBridge.info("Processing command: " .. tostring(cmd.action), { id = cmd.id })
+
+    local handler = handlers[cmd.action]
+    if handler then
+        local handlerArgs = {}
+        if type(cmd.args) == "table" then
+            handlerArgs = cmd.args
+        elseif cmd.args ~= nil then
+            PanelBridge.warn("Command args must be a table; defaulting to empty args", {
+                id = cmd.id,
+                action = tostring(cmd.action),
+                argsType = type(cmd.args)
+            })
+        end
+
+        local startTime = getTimestampMs()
+        local pcallOk, success, data, errorMsg = pcall(handler, handlerArgs)
+        local duration = getTimestampMs() - startTime
+
+        if not pcallOk then
+            PanelBridge.stats.commandsFailed = PanelBridge.stats.commandsFailed + 1
+            local crashMsg = "Handler crashed: " .. tostring(success)
+            PanelBridge.error("Command crashed: " .. tostring(cmd.action), {
+                error = crashMsg,
+                duration = duration .. "ms"
+            })
+            PanelBridge.sendResult(cmd.id, false, nil, crashMsg)
+        elseif success then
+            PanelBridge.stats.commandsSucceeded = PanelBridge.stats.commandsSucceeded + 1
+            PanelBridge.debug("Command succeeded: " .. tostring(cmd.action), {
+                duration = duration .. "ms"
+            })
+            PanelBridge.sendResult(cmd.id, success, data, errorMsg)
+        else
+            PanelBridge.stats.commandsFailed = PanelBridge.stats.commandsFailed + 1
+            PanelBridge.warn("Command failed: " .. tostring(cmd.action), {
+                error = errorMsg,
+                duration = duration .. "ms"
+            })
+            PanelBridge.sendResult(cmd.id, success, data, errorMsg)
+        end
+    else
+        PanelBridge.stats.commandsFailed = PanelBridge.stats.commandsFailed + 1
+        local errorMsg = "Unknown command: " .. tostring(cmd.action)
+        PanelBridge.warn(errorMsg)
+        PanelBridge.sendResult(cmd.id, false, nil, errorMsg)
+    end
+
+    return true
+end
+
+local function processQueuedCommands(budget)
+    local processed = 0
+    if budget <= 0 then return processed end
+
+    local nextSeq = (PanelBridge.queueState.lastCommandSeq or 0) + 1
+    local advanced = false
+
+    while processed < budget do
+        local fileName = "inbox/cmd-" .. PanelBridge.formatSeq(nextSeq) .. ".json"
+        local raw = PanelBridge.readFile(fileName)
+        if raw == nil then
+            break
+        end
+        local shouldAdvance = false
+
+        if raw == "" then
+            shouldAdvance = true
+        else
+            local queued = json.decode(raw)
+            if not queued then
+                PanelBridge.warn("Skipping malformed queued command file", { file = fileName, seq = nextSeq })
+                PanelBridge.clearFile(fileName)
+                shouldAdvance = true
+            else
+                PanelBridge.queueState.lastCommandSeq = nextSeq
+                PanelBridge.writeInboxCursor(nextSeq)
+                advanced = true
+
+                local cmd = queued.command or queued
+                if processSingleCommand(cmd) then
+                    processed = processed + 1
+                end
+
+                -- Keep files compact after consumption.
+                PanelBridge.clearFile(fileName)
+                shouldAdvance = true
+            end
+        end
+
+        if shouldAdvance then
+            PanelBridge.queueState.lastCommandSeq = nextSeq
+            PanelBridge.writeInboxCursor(nextSeq)
+            advanced = true
+            nextSeq = nextSeq + 1
+        end
+    end
+
+    if advanced then
+        PanelBridge.writeQueueState()
+    end
+
+    return processed
+end
+
+local function normalizeMessage(value, maxLen)
+    if value == nil then return nil end
+    local message = tostring(value)
+    if message == "" then return nil end
+    if maxLen and #message > maxLen then
+        message = message:sub(1, maxLen)
+    end
+    return message
+end
+
 -- ============================================
 -- DEBUG & UTILITY HANDLERS
 -- ============================================
 
 -- Get debug log entries
 handlers.getDebugLog = function(args)
-    local limit = args.limit or 50
-    local minLevel = args.minLevel or "DEBUG"
+    local limit = tonumber(args.limit) or 50
+    limit = math.floor(limit)
+    if limit < 1 then limit = 1 end
+    if limit > 200 then limit = 200 end
+
+    local minLevel = tostring(args.minLevel or "DEBUG")
+    minLevel = string.upper(minLevel)
     
     local entries = {}
     local levelMap = { DEBUG = 1, INFO = 2, WARN = 3, ERROR = 4 }
@@ -693,14 +952,20 @@ handlers.checkAPI = function(args)
         else
             -- List available methods (limited)
             result.methods = {}
-            local count = 0
-            for k, v in pairs(obj) do
-                if type(v) == "function" and count < 50 then
-                    table.insert(result.methods, k)
-                    count = count + 1
+            local ok = pcall(function()
+                local count = 0
+                for k, v in pairs(obj) do
+                    if type(v) == "function" and count < 50 then
+                        table.insert(result.methods, k)
+                        count = count + 1
+                    end
                 end
+                table.sort(result.methods)
+            end)
+            if not ok then
+                result.methods = nil
+                result.methodsError = "Method enumeration not supported for this object type"
             end
-            table.sort(result.methods)
         end
     end
     
@@ -2248,7 +2513,7 @@ end
 
 -- Send a server message (to all players)
 handlers.sendServerMessage = function(args)
-    local message = args.message
+    local message = normalizeMessage(args.message, 1000)
     
     if not message then
         return false, nil, "Message required"
@@ -2308,15 +2573,12 @@ end
 
 -- Send message to server chat (appears to all players)
 handlers.sendToServerChat = function(args)
-    local message = args.message
+    local message = normalizeMessage(args.message, 1000)
     local isAlert = args.alert or args.isAlert or false
     
     if not message then
         return false, nil, "Message required"
     end
-    
-    -- Clamp message length to prevent abuse
-    if #message > 1000 then message = message:sub(1, 1000) end
     
     -- Try ChatServer (primary method)
     local success, err = pcall(function()
@@ -2346,14 +2608,11 @@ end
 
 -- Send message to admin chat (only admins see it)
 handlers.sendToAdminChat = function(args)
-    local message = args.message
+    local message = normalizeMessage(args.message, 1000)
     
     if not message then
         return false, nil, "Message required"
     end
-    
-    -- Clamp message length to prevent abuse
-    if #message > 1000 then message = message:sub(1, 1000) end
     
     local success, err = pcall(function()
         local chatServer = ChatServer.getInstance()
@@ -2373,15 +2632,12 @@ end
 
 -- Send message to general chat (with custom author name)
 handlers.sendToGeneralChat = function(args)
-    local message = args.message
-    local author = args.author or "[Panel]"
+    local message = normalizeMessage(args.message, 1000)
+    local author = normalizeMessage(args.author, 80) or "[Panel]"
     
     if not message then
         return false, nil, "Message required"
     end
-    
-    -- Clamp message length to prevent abuse
-    if #message > 1000 then message = message:sub(1, 1000) end
     
     local success, err = pcall(function()
         local chatServer = ChatServer.getInstance()
@@ -2752,12 +3008,14 @@ handlers.restoreUtilities = function(args)
                 for i = 0, players:size() - 1 do
                     local player = players:get(i)
                     if player then
-                        sendServerCommand(player, "PanelBridge", "refreshPowerState", {powerOn = true, elecShutModifier = restoreDays})
-                        -- Also send a visible message so players know to reconnect if power doesn't work
-                        sendServerCommand(player, "chat", "addMessage", {
-                            message = "[Server] Power has been restored. If lights don't work, reconnect to the server.",
-                            type = "server"
-                        })
+                        if sendServerCommand then
+                            sendServerCommand(player, "PanelBridge", "refreshPowerState", {powerOn = true, elecShutModifier = restoreDays})
+                            -- Also send a visible message so players know to reconnect if power doesn't work
+                            sendServerCommand(player, "chat", "addMessage", {
+                                message = "[Server] Power has been restored. If lights don't work, reconnect to the server.",
+                                type = "server"
+                            })
+                        end
                     end
                 end
                 table.insert(debugInfo, "Sent refreshPowerState to " .. tostring(players:size()) .. " players")
@@ -2930,12 +3188,14 @@ handlers.shutOffUtilities = function(args)
                 for i = 0, players:size() - 1 do
                     local player = players:get(i)
                     if player then
-                        sendServerCommand(player, "PanelBridge", "refreshPowerState", {powerOn = false, elecShutModifier = 0})
-                        -- Also send a visible message
-                        sendServerCommand(player, "chat", "addMessage", {
-                            message = "[Server] Power has been shut off.",
-                            type = "server"
-                        })
+                        if sendServerCommand then
+                            sendServerCommand(player, "PanelBridge", "refreshPowerState", {powerOn = false, elecShutModifier = 0})
+                            -- Also send a visible message
+                            sendServerCommand(player, "chat", "addMessage", {
+                                message = "[Server] Power has been shut off.",
+                                type = "server"
+                            })
+                        end
                     end
                 end
             end
@@ -3273,16 +3533,702 @@ handlers.clearZombiesNearPlayer = function(args)
 end
 
 -- ============================================
+-- SAFEHOUSE MANAGEMENT HANDLERS
+-- ============================================
+
+local function findSafehouseByRef(ref)
+    if not ref then return nil, "safehouseRef required" end
+    if not SafeHouse or not SafeHouse.getSafehouseList then
+        return nil, "SafeHouse API not available"
+    end
+
+    local list = SafeHouse.getSafehouseList()
+    if not list then return nil, "No safehouses found" end
+
+    local refStr = tostring(ref)
+    for i = 0, list:size() - 1 do
+        local sh = list:get(i)
+        if sh then
+            local sid = sh.getId and sh:getId() or nil
+            local title = sh.getTitle and sh:getTitle() or nil
+            if tostring(sid) == refStr or tostring(title) == refStr then
+                return sh
+            end
+        end
+    end
+
+    return nil, "Safehouse not found: " .. refStr
+end
+
+handlers.getSafehouses = function(args)
+    if not SafeHouse or not SafeHouse.getSafehouseList then
+        return false, nil, "SafeHouse API not available"
+    end
+
+    local list = SafeHouse.getSafehouseList()
+    local out = {}
+    if list then
+        for i = 0, list:size() - 1 do
+            local sh = list:get(i)
+            if sh then
+                table.insert(out, {
+                    id = sh.getId and sh:getId() or nil,
+                    title = sh.getTitle and sh:getTitle() or nil,
+                    owner = sh.getOwner and sh:getOwner() or nil,
+                    x = sh.getX and sh:getX() or nil,
+                    y = sh.getY and sh:getY() or nil,
+                    w = sh.getW and sh:getW() or nil,
+                    h = sh.getH and sh:getH() or nil,
+                    playerConnected = sh.getPlayerConnected and sh:getPlayerConnected() or 0,
+                    lastVisited = sh.getLastVisited and sh:getLastVisited() or nil
+                })
+            end
+        end
+    end
+
+    return true, { safehouses = out, count = #out }
+end
+
+handlers.safehouseAddPlayer = function(args)
+    local sh, err = findSafehouseByRef(args.safehouseRef)
+    if not sh then return false, nil, err end
+
+    local username = normalizeMessage(args.username, 64)
+    if not username then return false, nil, "Username required" end
+
+    local ok, addErr = pcall(function()
+        sh:addPlayer(username)
+    end)
+    if not ok then
+        return false, nil, "Failed to add player to safehouse: " .. tostring(addErr)
+    end
+
+    return true, { message = "Player added to safehouse", safehouseRef = args.safehouseRef, username = username }
+end
+
+handlers.safehouseRemovePlayer = function(args)
+    local sh, err = findSafehouseByRef(args.safehouseRef)
+    if not sh then return false, nil, err end
+
+    local username = normalizeMessage(args.username, 64)
+    if not username then return false, nil, "Username required" end
+
+    local ok, removeErr = pcall(function()
+        sh:removePlayer(username)
+    end)
+    if not ok then
+        return false, nil, "Failed to remove player from safehouse: " .. tostring(removeErr)
+    end
+
+    return true, { message = "Player removed from safehouse", safehouseRef = args.safehouseRef, username = username }
+end
+
+handlers.safehouseSetOwner = function(args)
+    local sh, err = findSafehouseByRef(args.safehouseRef)
+    if not sh then return false, nil, err end
+
+    local owner = normalizeMessage(args.owner, 64)
+    if not owner then return false, nil, "Owner username required" end
+
+    local ok, setErr = pcall(function()
+        sh:setOwner(owner)
+    end)
+    if not ok then
+        return false, nil, "Failed to set safehouse owner: " .. tostring(setErr)
+    end
+
+    return true, { message = "Safehouse owner updated", safehouseRef = args.safehouseRef, owner = owner }
+end
+
+handlers.safehouseSetRespawn = function(args)
+    local sh, err = findSafehouseByRef(args.safehouseRef)
+    if not sh then return false, nil, err end
+
+    local username = normalizeMessage(args.username, 64)
+    if not username then return false, nil, "Username required" end
+    local enabled = args.enabled == true
+
+    local ok, setErr = pcall(function()
+        sh:setRespawnInSafehouse(enabled, username)
+    end)
+    if not ok then
+        return false, nil, "Failed to set safehouse respawn: " .. tostring(setErr)
+    end
+
+    return true, {
+        message = "Safehouse respawn updated",
+        safehouseRef = args.safehouseRef,
+        username = username,
+        enabled = enabled
+    }
+end
+
+-- ============================================
+-- FACTION MANAGEMENT HANDLERS
+-- ============================================
+
+handlers.getFactions = function(args)
+    if not Faction or not Faction.getFactions then
+        return false, nil, "Faction API not available"
+    end
+
+    local factions = Faction.getFactions()
+    local out = {}
+    if factions then
+        for i = 0, factions:size() - 1 do
+            local f = factions:get(i)
+            if f then
+                local players = {}
+                local fPlayers = f.getPlayers and f:getPlayers() or nil
+                if fPlayers then
+                    for j = 0, fPlayers:size() - 1 do
+                        table.insert(players, tostring(fPlayers:get(j)))
+                    end
+                end
+                table.insert(out, {
+                    name = f.getName and f:getName() or nil,
+                    owner = f.getOwner and f:getOwner() or nil,
+                    tag = f.getTag and f:getTag() or nil,
+                    players = players,
+                    playerCount = #players
+                })
+            end
+        end
+    end
+
+    return true, { factions = out, count = #out }
+end
+
+handlers.createFaction = function(args)
+    if not Faction or not Faction.createFaction then
+        return false, nil, "Faction API not available"
+    end
+
+    local name = normalizeMessage(args.name, 64)
+    local owner = normalizeMessage(args.owner, 64)
+    if not name then return false, nil, "Faction name required" end
+    if not owner then return false, nil, "Faction owner required" end
+
+    local ok, factionOrErr = pcall(function()
+        return Faction.createFaction(name, owner)
+    end)
+    if not ok then
+        return false, nil, "Failed to create faction: " .. tostring(factionOrErr)
+    end
+
+    local created = factionOrErr ~= nil
+    return true, { message = created and "Faction created" or "Faction creation returned nil", name = name, owner = owner }
+end
+
+handlers.factionAddPlayer = function(args)
+    if not Faction or not Faction.getFaction then
+        return false, nil, "Faction API not available"
+    end
+
+    local factionName = normalizeMessage(args.factionName, 64)
+    local username = normalizeMessage(args.username, 64)
+    if not factionName then return false, nil, "factionName required" end
+    if not username then return false, nil, "username required" end
+
+    local faction = Faction.getFaction(factionName)
+    if not faction then return false, nil, "Faction not found: " .. factionName end
+
+    local ok, err = pcall(function()
+        faction:addPlayer(username)
+        if faction.syncFaction then faction:syncFaction() end
+    end)
+    if not ok then
+        return false, nil, "Failed to add player to faction: " .. tostring(err)
+    end
+
+    return true, { message = "Player added to faction", factionName = factionName, username = username }
+end
+
+handlers.factionRemovePlayer = function(args)
+    if not Faction or not Faction.getFaction then
+        return false, nil, "Faction API not available"
+    end
+
+    local factionName = normalizeMessage(args.factionName, 64)
+    local username = normalizeMessage(args.username, 64)
+    if not factionName then return false, nil, "factionName required" end
+    if not username then return false, nil, "username required" end
+
+    local faction = Faction.getFaction(factionName)
+    if not faction then return false, nil, "Faction not found: " .. factionName end
+
+    local ok, err = pcall(function()
+        faction:removePlayer(username)
+        if faction.syncFaction then faction:syncFaction() end
+    end)
+    if not ok then
+        return false, nil, "Failed to remove player from faction: " .. tostring(err)
+    end
+
+    return true, { message = "Player removed from faction", factionName = factionName, username = username }
+end
+
+handlers.factionSetTag = function(args)
+    if not Faction or not Faction.getFaction then
+        return false, nil, "Faction API not available"
+    end
+
+    local factionName = normalizeMessage(args.factionName, 64)
+    local tag = normalizeMessage(args.tag, 8)
+    if not factionName then return false, nil, "factionName required" end
+    if not tag then return false, nil, "tag required" end
+
+    local faction = Faction.getFaction(factionName)
+    if not faction then return false, nil, "Faction not found: " .. factionName end
+
+    local ok, err = pcall(function()
+        faction:setTag(tag)
+        if faction.syncFaction then faction:syncFaction() end
+    end)
+    if not ok then
+        return false, nil, "Failed to set faction tag: " .. tostring(err)
+    end
+
+    return true, { message = "Faction tag updated", factionName = factionName, tag = tag }
+end
+
+handlers.removeFaction = function(args)
+    if not Faction or not Faction.getFaction then
+        return false, nil, "Faction API not available"
+    end
+
+    local factionName = normalizeMessage(args.factionName, 64)
+    if not factionName then return false, nil, "factionName required" end
+
+    local faction = Faction.getFaction(factionName)
+    if not faction then return false, nil, "Faction not found: " .. factionName end
+
+    local ok, err = pcall(function()
+        faction:removeFaction()
+    end)
+    if not ok then
+        return false, nil, "Failed to remove faction: " .. tostring(err)
+    end
+
+    return true, { message = "Faction removed", factionName = factionName }
+end
+
+-- ============================================
+-- VEHICLE TRIAGE & RECOVERY HANDLERS
+-- ============================================
+
+local function getVehiclesList()
+    local world = getWorld()
+    local cell = world and world.getCell and world:getCell() or nil
+    if not cell then return nil end
+    if cell.getVehicles then
+        return cell:getVehicles()
+    end
+    return nil
+end
+
+local function findVehicleById(vehicleId)
+    local vehicles = getVehiclesList()
+    if not vehicles then return nil end
+
+    local targetId = tonumber(vehicleId)
+    if not targetId then return nil end
+
+    for i = 0, vehicles:size() - 1 do
+        local v = vehicles:get(i)
+        if v and v.getId and tonumber(v:getId()) == targetId then
+            return v
+        end
+    end
+    return nil
+end
+
+handlers.getVehiclesDetailed = function(args)
+    local vehicles = getVehiclesList()
+    if not vehicles then
+        return false, nil, "Vehicle list not available"
+    end
+
+    local out = {}
+    for i = 0, vehicles:size() - 1 do
+        local v = vehicles:get(i)
+        if v then
+            table.insert(out, {
+                id = v.getId and v:getId() or nil,
+                x = v.getX and v:getX() or nil,
+                y = v.getY and v:getY() or nil,
+                z = v.getZ and v:getZ() or nil,
+                scriptName = v.getScriptName and v:getScriptName() or nil,
+                type = v.getVehicleType and v:getVehicleType() or nil,
+                speedKmh = v.getCurrentAbsoluteSpeedKmHour and v:getCurrentAbsoluteSpeedKmHour() or 0,
+                batteryCharge = v.getBatteryCharge and v:getBatteryCharge() or nil,
+                fuelPct = v.getRemainingFuelPercentage and v:getRemainingFuelPercentage() or nil,
+                alarmed = v.isAlarmed and v:isAlarmed() or false,
+                sirening = v.isSirening and v:isSirening() or false,
+                trunkLocked = v.isTrunkLocked and v:isTrunkLocked() or false,
+                inTrafficJam = v.isInTrafficJam and v:isInTrafficJam() or false
+            })
+        end
+    end
+
+    return true, { vehicles = out, count = #out }
+end
+
+handlers.vehicleRepair = function(args)
+    local vehicle = findVehicleById(args.vehicleId)
+    if not vehicle then return false, nil, "Vehicle not found" end
+
+    local ok, err = pcall(function()
+        if vehicle.repair then vehicle:repair() end
+        if vehicle.updatePartStats then vehicle:updatePartStats() end
+    end)
+    if not ok then return false, nil, "Vehicle repair failed: " .. tostring(err) end
+
+    return true, { message = "Vehicle repaired", vehicleId = tonumber(args.vehicleId) }
+end
+
+handlers.vehicleSetAlarm = function(args)
+    local vehicle = findVehicleById(args.vehicleId)
+    if not vehicle then return false, nil, "Vehicle not found" end
+    local enabled = args.enabled == true
+
+    local ok, err = pcall(function()
+        if vehicle.setAlarmed then vehicle:setAlarmed(enabled) end
+        if enabled and vehicle.triggerAlarm then vehicle:triggerAlarm() end
+    end)
+    if not ok then return false, nil, "Failed to update vehicle alarm: " .. tostring(err) end
+
+    return true, { message = "Vehicle alarm updated", vehicleId = tonumber(args.vehicleId), enabled = enabled }
+end
+
+handlers.vehicleSetSiren = function(args)
+    local vehicle = findVehicleById(args.vehicleId)
+    if not vehicle then return false, nil, "Vehicle not found" end
+
+    local mode = tonumber(args.mode)
+    if not mode then mode = (args.enabled == false and 0 or 1) end
+
+    local ok, err = pcall(function()
+        if vehicle.setLightbarSirenMode then
+            vehicle:setLightbarSirenMode(mode)
+        else
+            error("setLightbarSirenMode not available")
+        end
+    end)
+    if not ok then return false, nil, "Failed to set vehicle siren mode: " .. tostring(err) end
+
+    return true, { message = "Vehicle siren mode updated", vehicleId = tonumber(args.vehicleId), mode = mode }
+end
+
+handlers.vehicleSetTrunkLocked = function(args)
+    local vehicle = findVehicleById(args.vehicleId)
+    if not vehicle then return false, nil, "Vehicle not found" end
+    local locked = args.locked == true
+
+    local ok, err = pcall(function()
+        if vehicle.setTrunkLocked then
+            vehicle:setTrunkLocked(locked)
+        else
+            error("setTrunkLocked not available")
+        end
+    end)
+    if not ok then return false, nil, "Failed to set trunk lock state: " .. tostring(err) end
+
+    return true, { message = "Vehicle trunk lock updated", vehicleId = tonumber(args.vehicleId), locked = locked }
+end
+
+-- ============================================
+-- AI DIRECTOR EVENT HANDLERS
+-- ============================================
+
+handlers.triggerSwarmEvent = function(args)
+    local world = getWorld()
+    if not world then return false, nil, "World not available" end
+
+    local count = math.floor(tonumber(args.count) or 25)
+    local x1 = math.floor(tonumber(args.x1) or 0)
+    local y1 = math.floor(tonumber(args.y1) or 0)
+    local x2 = math.floor(tonumber(args.x2) or x1)
+    local y2 = math.floor(tonumber(args.y2) or y1)
+
+    count = math.min(math.max(count, 1), 500)
+    if x2 < x1 then x1, x2 = x2, x1 end
+    if y2 < y1 then y1, y2 = y2, y1 end
+
+    local ok, err = pcall(function()
+        if world.CreateSwarm then
+            world:CreateSwarm(count, x1, y1, x2, y2)
+        else
+            error("CreateSwarm API not available")
+        end
+    end)
+    if not ok then return false, nil, "Failed to trigger swarm: " .. tostring(err) end
+
+    return true, { message = "Swarm event triggered", count = count, area = { x1 = x1, y1 = y1, x2 = x2, y2 = y2 } }
+end
+
+handlers.runEventSequence = function(args)
+    local steps = args.steps
+    if type(steps) ~= "table" then
+        return false, nil, "steps array required"
+    end
+
+    local maxSteps = math.min(math.max(tonumber(args.maxSteps) or 20, 1), 50)
+    local results = {}
+    local executed = 0
+
+    for i, step in ipairs(steps) do
+        if executed >= maxSteps then break end
+        if type(step) == "table" then
+            local kind = tostring(step.kind or "")
+            local ok, handlerSuccess, handlerData, handlerError = pcall(function()
+                if kind == "chat" then
+                    local msg = normalizeMessage(step.message, 1000)
+                    if not msg then error("chat.message required") end
+                    if step.channel == "admin" then
+                        return handlers.sendToAdminChat({ message = msg })
+                    elseif step.channel == "general" then
+                        return handlers.sendToGeneralChat({ message = msg, author = step.author })
+                    end
+                    return handlers.sendToServerChat({ message = msg, isAlert = step.alert == true })
+                elseif kind == "swarm" then
+                    return handlers.triggerSwarmEvent(step)
+                elseif kind == "weather" then
+                    local weatherType = tostring(step.weatherType or "storm")
+                    if weatherType == "blizzard" then
+                        return handlers.triggerBlizzard({ duration = step.duration })
+                    elseif weatherType == "tropical" then
+                        return handlers.triggerTropicalStorm({ duration = step.duration })
+                    elseif weatherType == "stop" then
+                        return handlers.stopWeather({})
+                    end
+                    return handlers.triggerStorm({ duration = step.duration })
+                elseif kind == "utilities" then
+                    if step.mode == "off" then
+                        return handlers.shutOffUtilities({ power = step.power, water = step.water })
+                    end
+                    return handlers.restoreUtilities({ power = step.power, water = step.water })
+                elseif kind == "noise" then
+                    return handlers.createNoise(step)
+                else
+                    error("Unsupported sequence step kind: " .. kind)
+                end
+            end)
+
+            executed = executed + 1
+            if not ok then
+                table.insert(results, { index = i, kind = kind, success = false, error = tostring(handlerSuccess) })
+            elseif handlerSuccess then
+                table.insert(results, { index = i, kind = kind, success = true, data = handlerData })
+            else
+                table.insert(results, { index = i, kind = kind, success = false, error = tostring(handlerError) })
+            end
+        end
+    end
+
+    return true, {
+        message = "Event sequence executed",
+        executed = executed,
+        maxSteps = maxSteps,
+        results = results
+    }
+end
+
+-- ============================================
+-- INFRASTRUCTURE MAP HANDLERS
+-- ============================================
+
+handlers.getInfrastructureSnapshot = function(args)
+    local world = getWorld()
+    local cell = getCell and getCell() or (world and world.getCell and world:getCell() or nil)
+    if not world then return false, nil, "World not available" end
+
+    local snapshot = {
+        hydroPowerOn = world.isHydroPowerOn and world:isHydroPowerOn() or nil,
+        globalTemperature = world.getGlobalTemperature and world:getGlobalTemperature() or nil,
+        weather = world.getWeather and world:getWeather() or nil,
+        sample = nil
+    }
+
+    local sx = tonumber(args.x)
+    local sy = tonumber(args.y)
+    local sz = tonumber(args.z) or 0
+    if cell and sx and sy then
+        local sample = { x = sx, y = sy, z = sz }
+        pcall(function()
+            if cell.getDangerScore then sample.dangerScore = cell:getDangerScore(math.floor(sx), math.floor(sy)) end
+            if cell.getHeatSourceTemperature then sample.heatSourceTemperature = cell:getHeatSourceTemperature(math.floor(sx), math.floor(sy), math.floor(sz)) end
+            if cell.getHeatSourceHighestTemperature then
+                sample.heatSourceHighestTemperature = cell:getHeatSourceHighestTemperature(
+                    snapshot.globalTemperature or 0,
+                    math.floor(sx), math.floor(sy), math.floor(sz)
+                )
+            end
+            if cell.getLightSourceAt then sample.hasLamppost = cell:getLightSourceAt(math.floor(sx), math.floor(sy), math.floor(sz)) ~= nil end
+        end)
+        snapshot.sample = sample
+    end
+
+    return true, snapshot
+end
+
+handlers.addLamppost = function(args)
+    local world = getWorld and getWorld() or nil
+    local cell = (getCell and getCell()) or (world and world.getCell and world:getCell()) or nil
+    if not cell then return false, nil, "Cell not available" end
+
+    local x = math.floor(tonumber(args.x) or 0)
+    local y = math.floor(tonumber(args.y) or 0)
+    local z = math.floor(tonumber(args.z) or 0)
+    local r = tonumber(args.r) or 1.0
+    local g = tonumber(args.g) or 0.85
+    local b = tonumber(args.b) or 0.6
+    local rad = math.floor(tonumber(args.radius) or 8)
+
+    r = math.min(math.max(r, 0), 1)
+    g = math.min(math.max(g, 0), 1)
+    b = math.min(math.max(b, 0), 1)
+    rad = math.min(math.max(rad, 1), 30)
+
+    local ok, err = pcall(function()
+        if cell.addLamppost then
+            cell:addLamppost(x, y, z, r, g, b, rad)
+        else
+            error("addLamppost API not available")
+        end
+    end)
+    if not ok then return false, nil, "Failed to add lamppost: " .. tostring(err) end
+
+    return true, { message = "Lamppost added", x = x, y = y, z = z, color = { r = r, g = g, b = b }, radius = rad }
+end
+
+handlers.removeLamppost = function(args)
+    local world = getWorld and getWorld() or nil
+    local cell = (getCell and getCell()) or (world and world.getCell and world:getCell()) or nil
+    if not cell then return false, nil, "Cell not available" end
+
+    local x = math.floor(tonumber(args.x) or 0)
+    local y = math.floor(tonumber(args.y) or 0)
+    local z = math.floor(tonumber(args.z) or 0)
+
+    local ok, err = pcall(function()
+        if cell.removeLamppost then
+            cell:removeLamppost(x, y, z)
+        else
+            error("removeLamppost API not available")
+        end
+    end)
+    if not ok then return false, nil, "Failed to remove lamppost: " .. tostring(err) end
+
+    return true, { message = "Lamppost removed", x = x, y = y, z = z }
+end
+
+-- ============================================
+-- MODERATION AUTOMATION HANDLERS
+-- ============================================
+
+handlers.moderationKickUser = function(args)
+    local username = normalizeMessage(args.username, 64)
+    local reason = normalizeMessage(args.reason, 120) or "Kicked by admin panel"
+    local description = normalizeMessage(args.description, 240) or reason
+
+    if not username then return false, nil, "Username required" end
+
+    local ok, err = pcall(function()
+        if BanSystem and BanSystem.KickUser then
+            BanSystem.KickUser(username, reason, description)
+        else
+            error("BanSystem.KickUser not available")
+        end
+    end)
+    if not ok then return false, nil, "Kick failed: " .. tostring(err) end
+
+    return true, { message = "User kicked", username = username, reason = reason }
+end
+
+handlers.moderationBanUser = function(args)
+    local username = normalizeMessage(args.username, 64)
+    local reason = normalizeMessage(args.reason, 120) or "Banned by admin panel"
+    local ban = args.ban ~= false
+
+    if not username then return false, nil, "Username required" end
+
+    local ok, resultOrErr = pcall(function()
+        if BanSystem and BanSystem.BanUser then
+            return BanSystem.BanUser(username, nil, reason, ban)
+        end
+        error("BanSystem.BanUser not available")
+    end)
+    if not ok then return false, nil, "Ban user failed: " .. tostring(resultOrErr) end
+
+    return true, {
+        message = ban and "User banned" or "User unbanned",
+        username = username,
+        details = resultOrErr
+    }
+end
+
+handlers.moderationBanIP = function(args)
+    local ip = normalizeMessage(args.ip, 64)
+    local reason = normalizeMessage(args.reason, 120) or "IP ban from admin panel"
+    local ban = args.ban ~= false
+
+    if not ip then return false, nil, "IP required" end
+
+    local ok, resultOrErr = pcall(function()
+        if BanSystem and BanSystem.BanIP then
+            return BanSystem.BanIP(ip, nil, reason, ban)
+        end
+        error("BanSystem.BanIP not available")
+    end)
+    if not ok then return false, nil, "Ban IP failed: " .. tostring(resultOrErr) end
+
+    return true, {
+        message = ban and "IP banned" or "IP unbanned",
+        ip = ip,
+        details = resultOrErr
+    }
+end
+
+handlers.moderationBanSteamID = function(args)
+    local steamId = normalizeMessage(args.steamId, 32)
+    local reason = normalizeMessage(args.reason, 120) or "SteamID ban from admin panel"
+    local ban = args.ban ~= false
+
+    if not steamId then return false, nil, "steamId required" end
+
+    local ok, resultOrErr = pcall(function()
+        if BanSystem and BanSystem.BanUserBySteamID then
+            return BanSystem.BanUserBySteamID(steamId, nil, reason, ban)
+        end
+        error("BanSystem.BanUserBySteamID not available")
+    end)
+    if not ok then return false, nil, "Ban SteamID failed: " .. tostring(resultOrErr) end
+
+    return true, {
+        message = ban and "SteamID banned" or "SteamID unbanned",
+        steamId = steamId,
+        details = resultOrErr
+    }
+end
+
+-- ============================================
 -- MAIN PROCESSING
 -- ============================================
 
 function PanelBridge.processCommands()
+    local processedCount = 0
+    processedCount = processedCount + processQueuedCommands(PanelBridge.MAX_COMMANDS_PER_TICK)
+
     local commands = PanelBridge.readJSON("commands.json")
     if not commands or not commands.commands then
+        if processedCount > 0 then
+            PanelBridge.debug("Processed " .. processedCount .. " commands")
+        end
         return
     end
-    
-    local processedCount = 0
+
+    local deferredCommands = nil
     
     -- Clear commands file immediately after reading to minimise the race window
     -- where Node writes a new command between our read and our (old) post-loop clear.
@@ -3290,56 +4236,49 @@ function PanelBridge.processCommands()
     -- mod re-reads a file that Node repopulated in the gap.
     PanelBridge.clearFile("commands.json")
     
-    for _, cmd in ipairs(commands.commands) do
-        if cmd.id and not PanelBridge.processedIds[cmd.id] then
-            PanelBridge.processedIds[cmd.id] = true
-            PanelBridge.processedIdCount = PanelBridge.processedIdCount + 1
-            processedCount = processedCount + 1
-            
-            PanelBridge.stats.commandsProcessed = PanelBridge.stats.commandsProcessed + 1
-            PanelBridge.info("Processing command: " .. tostring(cmd.action), { id = cmd.id })
-            
-            local handler = handlers[cmd.action]
-            if handler then
-                -- Wrap execution for timing and error catching with pcall
-                local startTime = getTimestampMs()
-                local pcallOk, success, data, errorMsg = pcall(handler, cmd.args or {})
-                local duration = getTimestampMs() - startTime
-                
-                if not pcallOk then
-                    -- pcall itself failed - handler threw an unrecoverable error
-                    PanelBridge.stats.commandsFailed = PanelBridge.stats.commandsFailed + 1
-                    local crashMsg = "Handler crashed: " .. tostring(success) -- success contains error when pcall fails
-                    PanelBridge.error("Command crashed: " .. tostring(cmd.action), {
-                        error = crashMsg,
-                        duration = duration .. "ms"
-                    })
-                    PanelBridge.sendResult(cmd.id, false, nil, crashMsg)
-                elseif success then
-                    PanelBridge.stats.commandsSucceeded = PanelBridge.stats.commandsSucceeded + 1
-                    PanelBridge.debug("Command succeeded: " .. tostring(cmd.action), { 
-                        duration = duration .. "ms" 
-                    })
-                    PanelBridge.sendResult(cmd.id, success, data, errorMsg)
-                else
-                    PanelBridge.stats.commandsFailed = PanelBridge.stats.commandsFailed + 1
-                    PanelBridge.warn("Command failed: " .. tostring(cmd.action), { 
-                        error = errorMsg,
-                        duration = duration .. "ms"
-                    })
-                    PanelBridge.sendResult(cmd.id, success, data, errorMsg)
-                end
-            else
-                PanelBridge.stats.commandsFailed = PanelBridge.stats.commandsFailed + 1
-                local errorMsg = "Unknown command: " .. tostring(cmd.action)
-                PanelBridge.warn(errorMsg)
-                PanelBridge.sendResult(cmd.id, false, nil, errorMsg)
+    for idx, cmd in ipairs(commands.commands) do
+        if processedCount >= PanelBridge.MAX_COMMANDS_PER_TICK then
+            deferredCommands = {}
+            for j = idx, #commands.commands do
+                table.insert(deferredCommands, commands.commands[j])
             end
+            PanelBridge.warn("Command batch limit reached; deferring remaining commands", {
+                processed = processedCount,
+                maxPerTick = PanelBridge.MAX_COMMANDS_PER_TICK,
+                totalInFile = #commands.commands,
+                deferredCount = #deferredCommands
+            })
+            break
+        end
+
+        if processSingleCommand(cmd) then
+            processedCount = processedCount + 1
         end
     end
     
     if processedCount > 0 then
         PanelBridge.debug("Processed " .. processedCount .. " commands")
+    end
+
+    if deferredCommands and #deferredCommands > 0 then
+        -- Merge deferred commands with any new commands that arrived while we were processing.
+        local existing = PanelBridge.readJSON("commands.json") or { commands = {} }
+        local merged = { commands = {} }
+
+        for _, cmd in ipairs(deferredCommands) do
+            table.insert(merged.commands, cmd)
+        end
+
+        if existing.commands then
+            for _, cmd in ipairs(existing.commands) do
+                table.insert(merged.commands, cmd)
+            end
+        end
+
+        local requeueOk = PanelBridge.writeJSON("commands.json", merged)
+        if not requeueOk then
+            PanelBridge.error("Failed to requeue deferred commands", { count = #deferredCommands })
+        end
     end
     
     -- Cleanup old processed IDs (keep manageable size)
@@ -3370,6 +4309,7 @@ function PanelBridge.updateStatus()
         local status = {
             alive = true,
             version = PanelBridge.VERSION,
+            protocolVersion = PanelBridge.PROTOCOL_VERSION,
             timestamp = getTimestampMs(),
             serverName = getServerName(),
             playerCount = onlinePlayers and onlinePlayers:size() or 0,
@@ -3380,6 +4320,10 @@ function PanelBridge.updateStatus()
                 processed = PanelBridge.stats.commandsProcessed,
                 succeeded = PanelBridge.stats.commandsSucceeded,
                 failed = PanelBridge.stats.commandsFailed
+            },
+            queue = {
+                lastCommandSeq = PanelBridge.queueState.lastCommandSeq,
+                nextResultSeq = PanelBridge.queueState.nextResultSeq
             }
         }
         
@@ -3438,6 +4382,15 @@ function PanelBridge.onServerStarted()
         print("[PanelBridge] ERROR: Could not create directory")
         return
     end
+
+    -- Ensure queue folders exist.
+    PanelBridge.writeFile("inbox/.init", "PanelBridge inbox")
+    PanelBridge.writeFile("outbox/.init", "PanelBridge outbox")
+
+    -- Restore queue state from previous run.
+    PanelBridge.readQueueState()
+    PanelBridge.writeQueueState()
+    PanelBridge.writeInboxCursor(PanelBridge.queueState.lastCommandSeq)
     
     -- Detect version and available APIs
     PanelBridge.detectVersion()

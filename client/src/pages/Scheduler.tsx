@@ -356,10 +356,12 @@ export default function Scheduler() {
         <PageHeader
           title="Scheduler"
           description="Automate server tasks and restarts"
+          eyebrow="Maintenance"
+          tone="maintain"
           icon={<Clock className="w-5 h-5" />}
           actions={
             <DialogTrigger asChild>
-              <Button>
+              <Button variant="command">
                 <Plus className="w-4 h-4 mr-2" />
                 New Task
               </Button>
@@ -370,7 +372,7 @@ export default function Scheduler() {
             <DialogHeader>
               <DialogTitle>Create Scheduled Task</DialogTitle>
               <DialogDescription>
-                Schedule a command to run automatically
+                Run a command on a schedule.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
@@ -578,7 +580,7 @@ export default function Scheduler() {
         <CardHeader>
           <CardTitle>Manual Restart</CardTitle>
           <CardDescription>
-            Trigger a server restart with warning messages
+            Restart with warning messages.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -644,7 +646,7 @@ export default function Scheduler() {
             </Button>
           </div>
           <p className="text-sm text-muted-foreground">
-            Players will receive countdown warnings at 15m, 10m, 5m, and 1m before restart.
+            Players get countdown warnings at 15m, 10m, 5m, and 1m.
           </p>
         </CardContent>
       </Card>
@@ -654,7 +656,7 @@ export default function Scheduler() {
         <CardHeader>
           <CardTitle>Quick Broadcasts</CardTitle>
           <CardDescription>
-            Send common server announcements to all players
+            Send common announcements to all players.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -700,13 +702,13 @@ export default function Scheduler() {
         <CardHeader>
           <CardTitle>Scheduled Tasks</CardTitle>
           <CardDescription>
-            Manage your automated tasks
+            Manage automated commands.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <ScrollArea className="h-[300px] sm:h-[400px]">
             {tasks.length === 0 ? (
-              <EmptyState type="noSchedule" title="No scheduled tasks" description="Create a task to automate server commands" />
+              <EmptyState type="noSchedule" title="No scheduled tasks" description="Create a task to run commands automatically." />
             ) : (
               <div className="space-y-3">
                 {tasks.map((task) => (
@@ -801,7 +803,7 @@ export default function Scheduler() {
                 Execution History
               </CardTitle>
               <CardDescription>
-                Log of all scheduled task executions
+                Recent task execution log.
               </CardDescription>
             </div>
             <div className="flex gap-2">
@@ -853,7 +855,7 @@ export default function Scheduler() {
                 <History className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
                 <p className="text-muted-foreground">No execution history</p>
                 <p className="text-sm text-muted-foreground">
-                  Task executions will appear here
+                  Executions will appear here.
                 </p>
               </div>
             ) : (

@@ -21,11 +21,95 @@ const log = createLogger('Auth');
 const BCRYPT_ROUNDS = 12;
 const ACCESS_TOKEN_EXPIRY = '24h';
 const REFRESH_TOKEN_EXPIRY = '30d';
+const REFRESH_TOKEN_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000;
+const MAX_REFRESH_SESSIONS = 5;
 
 class AuthService {
   constructor() {
     this.jwtSecret = null;
     this.initialized = false;
+  }
+
+  ensureUserAuthState(user) {
+    if (!Number.isInteger(user.tokenGen)) {
+      user.tokenGen = 0;
+    }
+
+    if (!Array.isArray(user.refreshSessions)) {
+      user.refreshSessions = [];
+    }
+
+    const now = Date.now();
+    user.refreshSessions = user.refreshSessions
+      .filter((session) => session && typeof session.id === 'string')
+      .filter((session) => {
+        const expiresAt = Date.parse(session.expiresAt || '');
+        return Number.isNaN(expiresAt) || expiresAt > now;
+      })
+      .slice(-MAX_REFRESH_SESSIONS);
+  }
+
+  createRefreshSession(user) {
+    this.ensureUserAuthState(user);
+
+    const timestamp = new Date().toISOString();
+    const session = {
+      id: crypto.randomUUID(),
+      createdAt: timestamp,
+      lastUsedAt: timestamp,
+      expiresAt: new Date(Date.now() + REFRESH_TOKEN_LIFETIME_MS).toISOString(),
+    };
+
+    user.refreshSessions.push(session);
+    if (user.refreshSessions.length > MAX_REFRESH_SESSIONS) {
+      user.refreshSessions = user.refreshSessions.slice(-MAX_REFRESH_SESSIONS);
+    }
+
+    return session;
+  }
+
+  findRefreshSession(user, sessionId) {
+    this.ensureUserAuthState(user);
+    return user.refreshSessions.find((session) => session.id === sessionId) || null;
+  }
+
+  revokeRefreshSession(user, sessionId) {
+    this.ensureUserAuthState(user);
+    const initialLength = user.refreshSessions.length;
+    user.refreshSessions = user.refreshSessions.filter((session) => session.id !== sessionId);
+    return user.refreshSessions.length !== initialLength;
+  }
+
+  async authenticateAccessToken(token) {
+    try {
+      const payload = jwt.verify(token, this.jwtSecret);
+      if (payload.type === 'refresh') {
+        return null;
+      }
+
+      const db = await getDb();
+      const users = db.data.users || [];
+      const user = users.find((entry) => entry.id === payload.userId);
+      if (!user) {
+        return null;
+      }
+
+      this.ensureUserAuthState(user);
+      const currentGen = user.tokenGen || 0;
+      const tokenGen = payload.tokenGen ?? 0;
+      if (tokenGen !== currentGen) {
+        return null;
+      }
+
+      return {
+        userId: user.id,
+        username: user.username,
+        role: user.role,
+        tokenGen: currentGen,
+      };
+    } catch (error) {
+      return null;
+    }
   }
 
   /**
@@ -141,13 +225,16 @@ class AuthService {
       throw new Error('Invalid username or password');
     }
 
+    this.ensureUserAuthState(user);
+
     // Update last login
     user.lastLogin = new Date().toISOString();
+    const refreshSession = rememberMe ? this.createRefreshSession(user) : null;
     await db.write();
 
     // Generate tokens
     const accessToken = this.generateAccessToken(user);
-    const refreshToken = rememberMe ? this.generateRefreshToken(user) : null;
+    const refreshToken = refreshSession ? this.generateRefreshToken(user, refreshSession.id) : null;
 
     log.info(`User logged in: ${username}`);
     return {
@@ -162,7 +249,7 @@ class AuthService {
    */
   generateAccessToken(user) {
     return jwt.sign(
-      { userId: user.id, username: user.username, role: user.role },
+      { userId: user.id, username: user.username, role: user.role, tokenGen: user.tokenGen || 0 },
       this.jwtSecret,
       { expiresIn: ACCESS_TOKEN_EXPIRY }
     );
@@ -172,9 +259,9 @@ class AuthService {
    * Generate a long-lived refresh token (for auto-login / remember me)
    * Includes tokenGen counter so tokens can be invalidated by incrementing the counter.
    */
-  generateRefreshToken(user) {
+  generateRefreshToken(user, sessionId) {
     return jwt.sign(
-      { userId: user.id, type: 'refresh', tokenGen: user.tokenGen || 0 },
+      { userId: user.id, type: 'refresh', tokenGen: user.tokenGen || 0, sessionId },
       this.jwtSecret,
       { expiresIn: REFRESH_TOKEN_EXPIRY }
     );
@@ -213,15 +300,29 @@ class AuthService {
         throw new Error('User not found');
       }
 
+      this.ensureUserAuthState(user);
+
       // Validate tokenGen — reject tokens from before a password change or logout-all
       const currentGen = user.tokenGen || 0;
       const tokenGen = payload.tokenGen ?? 0;
-      if (tokenGen < currentGen) {
+      if (tokenGen !== currentGen) {
         throw new Error('Refresh token has been revoked');
       }
 
+      if (!payload.sessionId) {
+        throw new Error('Refresh token session is missing');
+      }
+
+      if (!this.findRefreshSession(user, payload.sessionId)) {
+        throw new Error('Refresh token session is no longer active');
+      }
+
+      this.revokeRefreshSession(user, payload.sessionId);
+      const newSession = this.createRefreshSession(user);
+      await db.write();
+
       const accessToken = this.generateAccessToken(user);
-      const newRefreshToken = this.generateRefreshToken(user);
+      const newRefreshToken = this.generateRefreshToken(user, newSession.id);
       return {
         user: { id: user.id, username: user.username, role: user.role },
         accessToken,
@@ -256,6 +357,7 @@ class AuthService {
     user.password = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
     // Bump tokenGen to invalidate all existing refresh tokens
     user.tokenGen = (user.tokenGen || 0) + 1;
+    user.refreshSessions = [];
     await db.write();
 
     log.info(`Password changed for user: ${user.username}`);
@@ -275,6 +377,35 @@ class AuthService {
       createdAt: u.createdAt,
       lastLogin: u.lastLogin,
     }));
+  }
+
+  async logout(refreshToken) {
+    if (!refreshToken) {
+      return false;
+    }
+
+    try {
+      const payload = jwt.verify(refreshToken, this.jwtSecret);
+      if (payload.type !== 'refresh' || !payload.sessionId) {
+        return false;
+      }
+
+      const db = await getDb();
+      const users = db.data.users || [];
+      const user = users.find((entry) => entry.id === payload.userId);
+      if (!user) {
+        return false;
+      }
+
+      const revoked = this.revokeRefreshSession(user, payload.sessionId);
+      if (revoked) {
+        await db.write();
+      }
+
+      return revoked;
+    } catch (error) {
+      return false;
+    }
   }
 
   /**
@@ -318,7 +449,7 @@ class AuthService {
         }
 
         const token = authHeader.substring(7);
-        const payload = this.verifyAccessToken(token);
+        const payload = await this.authenticateAccessToken(token);
 
         if (!payload) {
           return res.status(401).json({ error: 'Invalid or expired token', code: 'TOKEN_EXPIRED' });

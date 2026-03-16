@@ -41,6 +41,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
@@ -50,6 +51,7 @@ import { Link } from 'react-router-dom'
 import { PageHeader } from '@/components/PageHeader'
 import { BridgeStatusBadge } from '@/components/BridgeStatusBadge'
 import { cn } from '@/lib/utils'
+import { getUserErrorMessage } from '@/lib/errorMessage'
 
 interface Player {
   name: string
@@ -186,9 +188,310 @@ const bridgeOperationTemplates: Record<string, { label: string; description: str
   moderationBanSteamID: { label: 'Ban SteamID', description: 'Ban or unban SteamID.', args: '{\n  "steamId": "76561198000000000",\n  "reason": "Abuse",\n  "ban": true\n}' },
 }
 
-const BRIDGE_ARGS_MAX_CHARS = 12000
+type BridgeFieldType = 'text' | 'number' | 'boolean' | 'select' | 'textarea' | 'combo'
+
+interface BridgeFormField {
+  key: string
+  label: string
+  type: BridgeFieldType
+  required?: boolean
+  placeholder?: string
+  help?: string
+  min?: number
+  max?: number
+  step?: number
+  maxLength?: number
+  pattern?: RegExp
+  patternHint?: string
+  castAs?: 'number'
+  options?: Array<{ value: string; label: string }>
+  defaultValue?: string
+}
+
+interface BridgeOperationForm {
+  fields: BridgeFormField[]
+  buildArgs?: (values: Record<string, string>) => Record<string, unknown>
+}
+
+const bridgeOperationForms: Record<string, BridgeOperationForm> = {
+  getSafehouses: { fields: [] },
+  safehouseAddPlayer: {
+    fields: [
+      { key: 'safehouseRef', label: 'Safehouse', type: 'combo', required: true, placeholder: 'Select safehouse' },
+      { key: 'username', label: 'Player Username', type: 'combo', required: true, placeholder: 'Select player' },
+    ],
+  },
+  safehouseRemovePlayer: {
+    fields: [
+      { key: 'safehouseRef', label: 'Safehouse', type: 'combo', required: true, placeholder: 'Select safehouse' },
+      { key: 'username', label: 'Player Username', type: 'combo', required: true, placeholder: 'Select player' },
+    ],
+  },
+  safehouseSetOwner: {
+    fields: [
+      { key: 'safehouseRef', label: 'Safehouse', type: 'combo', required: true, placeholder: 'Select safehouse' },
+      { key: 'owner', label: 'New Owner', type: 'combo', required: true, placeholder: 'Select player' },
+    ],
+  },
+  safehouseSetRespawn: {
+    fields: [
+      { key: 'safehouseRef', label: 'Safehouse', type: 'combo', required: true, placeholder: 'Select safehouse' },
+      { key: 'username', label: 'Player Username', type: 'combo', required: true, placeholder: 'Select player' },
+      { key: 'enabled', label: 'Allow Respawn', type: 'boolean', defaultValue: 'true' },
+    ],
+  },
+  getFactions: { fields: [] },
+  createFaction: {
+    fields: [
+      { key: 'name', label: 'Faction Name', type: 'text', required: true, placeholder: 'FactionName', maxLength: 64 },
+      { key: 'owner', label: 'Owner Username', type: 'combo', required: true, placeholder: 'Select player' },
+    ],
+  },
+  factionAddPlayer: {
+    fields: [
+      { key: 'factionName', label: 'Faction Name', type: 'combo', required: true, placeholder: 'Select faction' },
+      { key: 'username', label: 'Player Username', type: 'combo', required: true, placeholder: 'Select player' },
+    ],
+  },
+  factionRemovePlayer: {
+    fields: [
+      { key: 'factionName', label: 'Faction Name', type: 'combo', required: true, placeholder: 'Select faction' },
+      { key: 'username', label: 'Player Username', type: 'combo', required: true, placeholder: 'Select player' },
+    ],
+  },
+  factionSetTag: {
+    fields: [
+      { key: 'factionName', label: 'Faction Name', type: 'combo', required: true, placeholder: 'Select faction' },
+      {
+        key: 'tag',
+        label: 'Tag',
+        type: 'text',
+        required: true,
+        placeholder: 'TAG',
+        maxLength: 12,
+        pattern: /^[A-Za-z0-9_-]{1,12}$/,
+        patternHint: 'Use 1-12 characters: letters, numbers, underscore, or dash.',
+      },
+    ],
+  },
+  removeFaction: {
+    fields: [
+      { key: 'factionName', label: 'Faction Name', type: 'combo', required: true, placeholder: 'Select faction' },
+    ],
+  },
+  getVehiclesDetailed: { fields: [] },
+  vehicleRepair: {
+    fields: [
+      { key: 'vehicleId', label: 'Vehicle ID', type: 'combo', required: true, placeholder: 'Select vehicle id', castAs: 'number' },
+    ],
+  },
+  vehicleSetAlarm: {
+    fields: [
+      { key: 'vehicleId', label: 'Vehicle ID', type: 'combo', required: true, placeholder: 'Select vehicle id', castAs: 'number' },
+      { key: 'enabled', label: 'Alarm Enabled', type: 'boolean', defaultValue: 'true' },
+    ],
+  },
+  vehicleSetSiren: {
+    fields: [
+      { key: 'vehicleId', label: 'Vehicle ID', type: 'combo', required: true, placeholder: 'Select vehicle id', castAs: 'number' },
+      {
+        key: 'mode',
+        label: 'Siren Mode',
+        type: 'select',
+        required: true,
+        defaultValue: '1',
+        options: [
+          { value: '0', label: 'Off (0)' },
+          { value: '1', label: 'Mode 1' },
+          { value: '2', label: 'Mode 2' },
+          { value: '3', label: 'Mode 3' },
+        ],
+      },
+    ],
+  },
+  vehicleSetTrunkLocked: {
+    fields: [
+      { key: 'vehicleId', label: 'Vehicle ID', type: 'combo', required: true, placeholder: 'Select vehicle id', castAs: 'number' },
+      { key: 'locked', label: 'Lock Trunk', type: 'boolean', defaultValue: 'true' },
+    ],
+  },
+  triggerSwarmEvent: {
+    fields: [
+      { key: 'count', label: 'Zombie Count', type: 'number', required: true, defaultValue: '25', min: 1, max: 500 },
+      { key: 'x1', label: 'X1', type: 'number', required: true, defaultValue: '10500' },
+      { key: 'y1', label: 'Y1', type: 'number', required: true, defaultValue: '9800' },
+      { key: 'x2', label: 'X2', type: 'number', required: true, defaultValue: '10600' },
+      { key: 'y2', label: 'Y2', type: 'number', required: true, defaultValue: '9900' },
+    ],
+  },
+  runEventSequence: {
+    fields: [
+      {
+        key: 'preset',
+        label: 'Sequence Preset',
+        type: 'select',
+        required: true,
+        defaultValue: 'storm_alert',
+        options: [
+          { value: 'storm_alert', label: 'Storm Alert Sequence' },
+          { value: 'panic_noise', label: 'Panic Noise Sequence' },
+          { value: 'utilities_shutdown', label: 'Utilities Shutdown Sequence' },
+        ],
+      },
+      { key: 'message', label: 'Broadcast Message', type: 'text', defaultValue: 'Event incoming', maxLength: 240 },
+    ],
+    buildArgs: (values) => {
+      const preset = values.preset || 'storm_alert'
+      const message = values.message?.trim() || 'Event incoming'
+
+      if (preset === 'panic_noise') {
+        return {
+          steps: [
+            { kind: 'chat', message, channel: 'general' },
+            { kind: 'noise', radius: 120, volume: 100 },
+          ],
+        }
+      }
+
+      if (preset === 'utilities_shutdown') {
+        return {
+          steps: [
+            { kind: 'chat', message, channel: 'general' },
+            { kind: 'utilities', power: false, water: false },
+          ],
+        }
+      }
+
+      return {
+        steps: [
+          { kind: 'chat', message, channel: 'general' },
+          { kind: 'weather', weatherType: 'storm', duration: 2 },
+        ],
+      }
+    },
+  },
+  getInfrastructureSnapshot: {
+    fields: [
+      { key: 'x', label: 'X (optional)', type: 'number', placeholder: '10500' },
+      { key: 'y', label: 'Y (optional)', type: 'number', placeholder: '9800' },
+      { key: 'z', label: 'Z (optional)', type: 'number', defaultValue: '0', placeholder: '0' },
+    ],
+    buildArgs: (values) => {
+      const x = values.x?.trim()
+      const y = values.y?.trim()
+      const z = values.z?.trim()
+      if (!x || !y) return {}
+      return {
+        x: Number(x),
+        y: Number(y),
+        z: z ? Number(z) : 0,
+      }
+    },
+  },
+  addLamppost: {
+    fields: [
+      { key: 'x', label: 'X', type: 'number', required: true, defaultValue: '10500' },
+      { key: 'y', label: 'Y', type: 'number', required: true, defaultValue: '9800' },
+      { key: 'z', label: 'Z', type: 'number', required: true, defaultValue: '0' },
+      { key: 'r', label: 'Red (0-1)', type: 'number', required: true, defaultValue: '1', min: 0, max: 1, step: 0.05 },
+      { key: 'g', label: 'Green (0-1)', type: 'number', required: true, defaultValue: '0.85', min: 0, max: 1, step: 0.05 },
+      { key: 'b', label: 'Blue (0-1)', type: 'number', required: true, defaultValue: '0.6', min: 0, max: 1, step: 0.05 },
+      { key: 'radius', label: 'Radius', type: 'number', required: true, defaultValue: '8', min: 1, max: 50 },
+    ],
+  },
+  removeLamppost: {
+    fields: [
+      { key: 'x', label: 'X', type: 'number', required: true, defaultValue: '10500' },
+      { key: 'y', label: 'Y', type: 'number', required: true, defaultValue: '9800' },
+      { key: 'z', label: 'Z', type: 'number', required: true, defaultValue: '0' },
+    ],
+  },
+  moderationKickUser: {
+    fields: [
+      { key: 'username', label: 'Username', type: 'combo', required: true, placeholder: 'Select player' },
+      { key: 'reason', label: 'Reason', type: 'combo', defaultValue: 'Rule violation' },
+    ],
+  },
+  moderationBanUser: {
+    fields: [
+      { key: 'username', label: 'Username', type: 'combo', required: true, placeholder: 'Select player' },
+      { key: 'reason', label: 'Reason', type: 'combo', defaultValue: 'Rule violation' },
+      { key: 'ban', label: 'Ban User', type: 'boolean', defaultValue: 'true' },
+    ],
+  },
+  moderationBanIP: {
+    fields: [
+      {
+        key: 'ip',
+        label: 'IP Address',
+        type: 'text',
+        required: true,
+        placeholder: '127.0.0.1',
+        pattern: /^(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)$/,
+        patternHint: 'Enter a valid IPv4 address (example: 127.0.0.1).',
+      },
+      { key: 'reason', label: 'Reason', type: 'combo', defaultValue: 'Abuse' },
+      { key: 'ban', label: 'Ban IP', type: 'boolean', defaultValue: 'true' },
+    ],
+  },
+  moderationBanSteamID: {
+    fields: [
+      {
+        key: 'steamId',
+        label: 'Steam ID',
+        type: 'text',
+        required: true,
+        placeholder: '76561198000000000',
+        maxLength: 17,
+        pattern: /^\d{17}$/,
+        patternHint: 'Steam ID must be exactly 17 digits.',
+      },
+      { key: 'reason', label: 'Reason', type: 'combo', defaultValue: 'Abuse' },
+      { key: 'ban', label: 'Ban SteamID', type: 'boolean', defaultValue: 'true' },
+    ],
+  },
+}
+
+const bridgeOperationGroups = [
+  {
+    id: 'territory',
+    label: 'Territory',
+    description: 'Safehouse and faction administration.',
+    operations: ['getSafehouses', 'safehouseAddPlayer', 'safehouseRemovePlayer', 'safehouseSetOwner', 'safehouseSetRespawn', 'getFactions', 'createFaction', 'factionAddPlayer', 'factionRemovePlayer', 'factionSetTag', 'removeFaction'],
+  },
+  {
+    id: 'vehicles',
+    label: 'Vehicles',
+    description: 'Repair, alarms, sirens, and storage locks.',
+    operations: ['getVehiclesDetailed', 'vehicleRepair', 'vehicleSetAlarm', 'vehicleSetSiren', 'vehicleSetTrunkLocked'],
+  },
+  {
+    id: 'events',
+    label: 'Events',
+    description: 'Swarm, infrastructure, and scripted sequences.',
+    operations: ['triggerSwarmEvent', 'runEventSequence', 'getInfrastructureSnapshot', 'addLamppost', 'removeLamppost'],
+  },
+  {
+    id: 'moderation',
+    label: 'Moderation',
+    description: 'Kick and ban actions through BanSystem.',
+    operations: ['moderationKickUser', 'moderationBanUser', 'moderationBanIP', 'moderationBanSteamID'],
+  },
+] as const
+
 const BRIDGE_OUTPUT_MAX_CHARS = 100000
 const BRIDGE_RESULT_PLACEHOLDER = 'Run a command to view response output.'
+
+const formatPanelTimestamp = (date: Date): string => {
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'medium',
+    }).format(date)
+  } catch {
+    return date.toLocaleString()
+  }
+}
 
 export default function Events() {
   const [loading, setLoading] = useState<string | null>(null)
@@ -244,13 +547,25 @@ export default function Events() {
 
   // Bridge operations (new Lua handlers)
   const [bridgeOperation, setBridgeOperation] = useState<string>('getSafehouses')
-  const [bridgeOperationArgs, setBridgeOperationArgs] = useState<string>(bridgeOperationTemplates.getSafehouses.args)
-  const [bridgeOperationDrafts, setBridgeOperationDrafts] = useState<Record<string, string>>(
-    () => Object.fromEntries(Object.entries(bridgeOperationTemplates).map(([key, value]) => [key, value.args]))
-  )
+  const [bridgeOperationFormValues, setBridgeOperationFormValues] = useState<Record<string, Record<string, string>>>(() => {
+    return Object.fromEntries(
+      Object.entries(bridgeOperationForms).map(([operation, form]) => {
+        const seeded = Object.fromEntries(form.fields.map((field) => [field.key, field.defaultValue ?? '']))
+        return [operation, seeded]
+      })
+    )
+  })
   const [bridgeOperationResult, setBridgeOperationResult] = useState<string>(BRIDGE_RESULT_PLACEHOLDER)
-  const [bridgeArgsError, setBridgeArgsError] = useState<string | null>(null)
+  const [bridgeFormError, setBridgeFormError] = useState<string | null>(null)
   const [bridgeLastRunAt, setBridgeLastRunAt] = useState<string | null>(null)
+  const [bridgeSafehouseOptions, setBridgeSafehouseOptions] = useState<Array<{ value: string; label: string }>>([])
+  const [bridgeFactionOptions, setBridgeFactionOptions] = useState<Array<{ value: string; label: string }>>([])
+  const [bridgeVehicleOptions, setBridgeVehicleOptions] = useState<Array<{ value: string; label: string }>>([])
+  const [bridgeOptionsLoading, setBridgeOptionsLoading] = useState(false)
+  const [bridgeOptionsError, setBridgeOptionsError] = useState<string | null>(null)
+  const [bridgeOptionsLastUpdated, setBridgeOptionsLastUpdated] = useState<string | null>(null)
+  const [bridgeOptionsRefreshTick, setBridgeOptionsRefreshTick] = useState(0)
+  const [bridgeConnectionSummary, setBridgeConnectionSummary] = useState<string | null>(null)
   
   // Utilities status
   const [utilitiesStatus, setUtilitiesStatus] = useState<{
@@ -263,15 +578,37 @@ export default function Events() {
   
   const { toast } = useToast()
 
-  // Collapsible section state — weather open by default
+  type EventSectionKey = 'weather' | 'environment' | 'sound' | 'world' | 'bridgeOps'
+
+  const sectionAnchorIds: Record<EventSectionKey, string> = {
+    weather: 'events-section-weather',
+    environment: 'events-section-environment',
+    sound: 'events-section-sound',
+    world: 'events-section-world',
+    bridgeOps: 'events-section-bridgeops',
+  }
+
+  // Keep heavy sections collapsed by default for faster first scan.
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
-    weather: true,
+    weather: false,
     environment: false,
     sound: false,
     world: false,
     bridgeOps: false,
   })
+  const [activeIntent, setActiveIntent] = useState<EventSectionKey>('weather')
   const toggleSection = (id: string) => setOpenSections((prev) => ({ ...prev, [id]: !prev[id] }))
+
+  const openAndFocusSection = (section: EventSectionKey) => {
+    setActiveIntent(section)
+    setOpenSections((prev) => ({ ...prev, [section]: true }))
+
+    window.requestAnimationFrame(() => {
+      const anchorId = sectionAnchorIds[section]
+      const sectionElement = document.getElementById(anchorId)
+      sectionElement?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }
 
   const fetchPlayers = useCallback(async () => {
     try {
@@ -291,6 +628,7 @@ export default function Events() {
       const status = await panelBridgeApi.getStatus()
       if (!mountedRef.current) return
       setBridgeConnected(status.modConnected)
+      setBridgeConnectionSummary(status.connection?.summary || null)
       
       // If connected, fetch climate floats
       if (status.modConnected) {
@@ -337,7 +675,10 @@ export default function Events() {
         }
       }
     } catch (error) {
-      if (mountedRef.current) setBridgeConnected(false)
+      if (mountedRef.current) {
+        setBridgeConnected(false)
+        setBridgeConnectionSummary('Unable to read bridge status from the panel API.')
+      }
     }
   }, [])
 
@@ -354,6 +695,123 @@ export default function Events() {
     }
   }, [fetchPlayers, checkBridgeStatus])
 
+  useEffect(() => {
+    if (!bridgeConnected) {
+      setBridgeSafehouseOptions([])
+      setBridgeFactionOptions([])
+      setBridgeVehicleOptions([])
+      setBridgeOptionsLoading(false)
+      setBridgeOptionsError(null)
+      setBridgeOptionsLastUpdated(null)
+      return
+    }
+
+    let active = true
+    const loadBridgeOptions = async () => {
+      setBridgeOptionsLoading(true)
+      try {
+        const [safehouseResult, factionResult, vehicleResult] = await Promise.allSettled([
+          panelBridgeApi.sendCommand('getSafehouses', {}),
+          panelBridgeApi.sendCommand('getFactions', {}),
+          panelBridgeApi.sendCommand('getVehiclesDetailed', {}),
+        ])
+        if (!active) return
+
+        const failureReasons: string[] = []
+        let updatedAnySource = false
+
+        if (safehouseResult.status === 'fulfilled') {
+          const safehousePayload = (safehouseResult.value as { data?: unknown })?.data ?? safehouseResult.value
+          const safehouses = (safehousePayload as { safehouses?: Array<{ id?: unknown; title?: unknown }> })?.safehouses ?? []
+          const safehouseOptions = safehouses
+            .map((safehouse) => {
+              const id = safehouse.id != null ? String(safehouse.id).trim() : ''
+              const title = safehouse.title != null ? String(safehouse.title).trim() : ''
+              const value = id || title
+              if (!value) return null
+              const label = title ? `${title}${id ? ` (${id})` : ''}` : value
+              return { value, label }
+            })
+            .filter((option): option is { value: string; label: string } => Boolean(option))
+          const dedupedSafehouses = Array.from(new Map(safehouseOptions.map((option) => [option.value, option])).values())
+          setBridgeSafehouseOptions(dedupedSafehouses)
+          updatedAnySource = true
+        } else {
+          failureReasons.push('safehouses')
+        }
+
+        if (factionResult.status === 'fulfilled') {
+          const factionPayload = (factionResult.value as { data?: unknown })?.data ?? factionResult.value
+          const factions = (factionPayload as { factions?: Array<{ name?: unknown; owner?: unknown }> })?.factions ?? []
+          const factionOptions = factions
+            .map((faction) => {
+              const name = faction.name != null ? String(faction.name).trim() : ''
+              if (!name) return null
+              const owner = faction.owner != null ? String(faction.owner).trim() : ''
+              return { value: name, label: owner ? `${name} (owner: ${owner})` : name }
+            })
+            .filter((option): option is { value: string; label: string } => Boolean(option))
+          const dedupedFactions = Array.from(new Map(factionOptions.map((option) => [option.value, option])).values())
+          setBridgeFactionOptions(dedupedFactions)
+          updatedAnySource = true
+        } else {
+          failureReasons.push('factions')
+        }
+
+        if (vehicleResult.status === 'fulfilled') {
+          const vehiclePayload = (vehicleResult.value as { data?: unknown })?.data ?? vehicleResult.value
+          const vehicles = (vehiclePayload as { vehicles?: Array<{ id?: unknown; scriptName?: unknown; x?: unknown; y?: unknown }> })?.vehicles ?? []
+          const vehicleOptions = vehicles
+            .map((vehicle) => {
+              const id = vehicle.id != null ? String(vehicle.id).trim() : ''
+              if (!id) return null
+              const script = vehicle.scriptName != null ? String(vehicle.scriptName).trim() : ''
+              const x = vehicle.x != null ? String(vehicle.x).trim() : ''
+              const y = vehicle.y != null ? String(vehicle.y).trim() : ''
+              const coord = x && y ? ` @ ${x},${y}` : ''
+              const label = `${id}${script ? ` (${script})` : ''}${coord}`
+              return { value: id, label }
+            })
+            .filter((option): option is { value: string; label: string } => Boolean(option))
+          const dedupedVehicles = Array.from(new Map(vehicleOptions.map((option) => [option.value, option])).values())
+          setBridgeVehicleOptions(dedupedVehicles)
+          updatedAnySource = true
+        } else {
+          failureReasons.push('vehicles')
+        }
+
+        if (failureReasons.length > 0) {
+          setBridgeOptionsError(
+            failureReasons.length === 3
+              ? 'Could not refresh bridge lists. Existing options are preserved.'
+              : `Some bridge lists failed to refresh (${failureReasons.join(', ')}).`
+          )
+        } else {
+          setBridgeOptionsError(null)
+        }
+
+        if (updatedAnySource) {
+          setBridgeOptionsLastUpdated(formatPanelTimestamp(new Date()))
+        }
+      } catch {
+        if (!active) return
+        setBridgeOptionsError('Could not refresh bridge lists. Existing options are preserved.')
+      } finally {
+        if (active) setBridgeOptionsLoading(false)
+      }
+    }
+
+    void loadBridgeOptions()
+    const interval = setInterval(() => {
+      void loadBridgeOptions()
+    }, 30000)
+
+    return () => {
+      active = false
+      clearInterval(interval)
+    }
+  }, [bridgeConnected, bridgeOptionsRefreshTick])
+
   // Bridge weather commands
   const handleBridgeAction = async (action: string, fn: () => Promise<unknown>) => {
     setBridgeLoading(action)
@@ -366,7 +824,7 @@ export default function Events() {
         variant: 'success' as const,
       })
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error'
+      const message = getUserErrorMessage(error, 'Bridge command failed.')
       toast({
         title: `${action} failed`,
         description: `${message}. Check bridge/server connection and try again.`,
@@ -412,7 +870,7 @@ export default function Events() {
         variant: 'success' as const,
       })
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error'
+      const message = getUserErrorMessage(error, 'Command failed.')
       toast({
         title: `${action} failed`,
         description: `${message}. Verify command settings and try again.`,
@@ -488,41 +946,127 @@ export default function Events() {
   // Announcement
   const sendAnnouncement = () => serverApi.sendMessage(announcement)
 
-  const parseBridgeArgs = (raw: string): Record<string, unknown> => {
-    const trimmed = raw.trim()
-    if (!trimmed) return {}
+  const getBridgeFieldValue = (fieldKey: string): string => bridgeOperationFormValues[bridgeOperation]?.[fieldKey] ?? ''
 
-    if (trimmed.length > BRIDGE_ARGS_MAX_CHARS) {
-      throw new Error(`Args too large. Maximum ${BRIDGE_ARGS_MAX_CHARS.toLocaleString()} characters.`)
-    }
-
-    const parsed = JSON.parse(trimmed)
-    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-      throw new Error('Args must be a JSON object (example: { "key": "value" }).')
-    }
-
-    return parsed as Record<string, unknown>
+  const setBridgeFieldValue = (fieldKey: string, value: string) => {
+    setBridgeOperationFormValues((prev) => ({
+      ...prev,
+      [bridgeOperation]: {
+        ...(prev[bridgeOperation] ?? {}),
+        [fieldKey]: value,
+      },
+    }))
+    if (bridgeFormError) setBridgeFormError(null)
   }
 
-  const bridgeArgsTooLong = bridgeOperationArgs.trim().length > BRIDGE_ARGS_MAX_CHARS
+  const buildBridgeArgsFromForm = (operation: string): Record<string, unknown> => {
+    const form = bridgeOperationForms[operation]
+    if (!form || form.fields.length === 0) return {}
 
-  const formatBridgeArgs = () => {
-    try {
-      const parsed = parseBridgeArgs(bridgeOperationArgs)
-      const formatted = JSON.stringify(parsed, null, 2)
-      setBridgeOperationArgs(formatted)
-      setBridgeOperationDrafts((prev) => ({ ...prev, [bridgeOperation]: formatted }))
-      setBridgeArgsError(null)
-    } catch (error) {
-      setBridgeArgsError(error instanceof Error ? error.message : 'Invalid JSON.')
+    const values = bridgeOperationFormValues[operation] ?? {}
+    const missingRequired = form.fields.find((field) => field.required && !String(values[field.key] ?? '').trim())
+    if (missingRequired) {
+      throw new Error(`${missingRequired.label} is required.`)
     }
+
+    if (form.buildArgs) {
+      return form.buildArgs(values)
+    }
+
+    const args: Record<string, unknown> = {}
+    for (const field of form.fields) {
+      const raw = values[field.key] ?? ''
+      const trimmed = raw.trim()
+      if (!trimmed && !field.required) continue
+
+      if (field.type === 'number' || field.castAs === 'number') {
+        const n = Number(trimmed)
+        if (!Number.isFinite(n)) {
+          throw new Error(`${field.label} must be a valid number.`)
+        }
+        if (typeof field.min === 'number' && n < field.min) {
+          throw new Error(`${field.label} must be at least ${field.min}.`)
+        }
+        if (typeof field.max === 'number' && n > field.max) {
+          throw new Error(`${field.label} must be at most ${field.max}.`)
+        }
+        args[field.key] = n
+      } else if (field.type === 'boolean') {
+        args[field.key] = trimmed === 'true'
+      } else {
+        if (typeof field.maxLength === 'number' && trimmed.length > field.maxLength) {
+          throw new Error(`${field.label} must be ${field.maxLength} characters or fewer.`)
+        }
+        if (field.pattern && !field.pattern.test(trimmed)) {
+          throw new Error(field.patternHint || `${field.label} is not in the expected format.`)
+        }
+        args[field.key] = trimmed
+      }
+    }
+
+    return args
   }
 
-  const resetBridgeArgsToTemplate = () => {
-    const template = bridgeOperationTemplates[bridgeOperation]?.args ?? '{}'
-    setBridgeOperationArgs(template)
-    setBridgeOperationDrafts((prev) => ({ ...prev, [bridgeOperation]: template }))
-    setBridgeArgsError(null)
+  const bridgeActiveGroup = bridgeOperationGroups.find((group) => (group.operations as readonly string[]).includes(bridgeOperation))
+  const bridgeResultReady = bridgeOperationResult !== BRIDGE_RESULT_PLACEHOLDER
+  const currentBridgeForm = bridgeOperationForms[bridgeOperation]
+  const currentBridgeFields = currentBridgeForm?.fields ?? []
+  const currentBridgeHasComboFields = currentBridgeFields.some((field) => field.type === 'combo')
+  const currentRequiredFieldCount = currentBridgeFields.filter((field) => field.required).length
+  const currentCompletedRequiredFieldCount = currentBridgeFields.filter((field) => {
+    if (!field.required) return false
+    return Boolean(getBridgeFieldValue(field.key).trim())
+  }).length
+  const bridgeRunDisabledReason = !bridgeConnected
+    ? 'Bridge is offline. Open Settings to reconnect PanelBridge.'
+    : bridgeLoading !== null
+      ? 'Operation in progress. Wait for completion before sending another command.'
+      : bridgeFormError
+        ? bridgeFormError
+        : null
+
+  const selectBridgeOperation = (nextOperation: string) => {
+    setBridgeOperation(nextOperation)
+    setBridgeFormError(null)
+    setBridgeOperationResult(BRIDGE_RESULT_PLACEHOLDER)
+    setBridgeLastRunAt(null)
+  }
+
+  const getBridgeComboOptions = (fieldKey: string): Array<{ value: string; label: string }> => {
+    if (fieldKey === 'username' || fieldKey === 'owner') {
+      return players.map((player) => ({ value: player.name, label: player.name }))
+    }
+
+    if (fieldKey === 'safehouseRef') {
+      return bridgeSafehouseOptions
+    }
+
+    if (fieldKey === 'factionName') {
+      return bridgeFactionOptions
+    }
+
+    if (fieldKey === 'vehicleId') {
+      return bridgeVehicleOptions
+    }
+
+    if (fieldKey === 'reason') {
+      return [
+        { value: 'Rule violation', label: 'Rule violation' },
+        { value: 'Abuse', label: 'Abuse' },
+        { value: 'Harassment', label: 'Harassment' },
+        { value: 'Cheating', label: 'Cheating' },
+      ]
+    }
+
+    return []
+  }
+
+  const resetBridgeFormValues = () => {
+    const form = bridgeOperationForms[bridgeOperation]
+    if (!form) return
+    const defaults = Object.fromEntries(form.fields.map((field) => [field.key, field.defaultValue ?? '']))
+    setBridgeOperationFormValues((prev) => ({ ...prev, [bridgeOperation]: defaults }))
+    setBridgeFormError(null)
   }
 
   const copyBridgeOutput = async () => {
@@ -571,13 +1115,13 @@ export default function Events() {
 
     let parsedArgs: Record<string, unknown> = {}
     try {
-      parsedArgs = parseBridgeArgs(bridgeOperationArgs)
-      setBridgeArgsError(null)
+      parsedArgs = buildBridgeArgsFromForm(bridgeOperation)
+      setBridgeFormError(null)
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Please provide valid JSON.'
-      setBridgeArgsError(message)
+      const message = getUserErrorMessage(error, 'Please complete required fields.')
+      setBridgeFormError(message)
       toast({
-        title: 'Invalid JSON args',
+        title: 'Missing or invalid fields',
         description: message,
         variant: 'destructive',
       })
@@ -585,20 +1129,20 @@ export default function Events() {
     }
 
     setBridgeLoading(bridgeOperation)
-    setBridgeArgsError(null)
+  setBridgeFormError(null)
     try {
       const response = await panelBridgeApi.sendCommand(bridgeOperation, parsedArgs)
       setBridgeOperationResult(formatBridgeResult(response))
-      setBridgeLastRunAt(new Date().toLocaleString())
+      setBridgeLastRunAt(formatPanelTimestamp(new Date()))
       toast({
         title: `${bridgeOperationTemplates[bridgeOperation]?.label || bridgeOperation} executed`,
         description: 'Command sent successfully. See output panel for details.',
         variant: 'success' as const,
       })
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error'
+      const message = getUserErrorMessage(error, 'Bridge operation failed.')
       setBridgeOperationResult(JSON.stringify({ success: false, error: message }, null, 2))
-      setBridgeLastRunAt(new Date().toLocaleString())
+      setBridgeLastRunAt(formatPanelTimestamp(new Date()))
       toast({
         title: 'Bridge operation failed',
         description: message,
@@ -614,11 +1158,13 @@ export default function Events() {
       <PageHeader
         title="Events"
         description="Run live world events, weather, and admin actions"
+        eyebrow="World Control"
+        tone="world"
         icon={<Zap className="w-5 h-5 text-primary" />}
         actions={
           <div className="flex items-center gap-2">
             <BridgeStatusBadge connected={bridgeConnected} />
-            <Button variant="outline" onClick={fetchPlayers} className="gap-2">
+            <Button variant="command" onClick={fetchPlayers} className="gap-2">
               <RefreshCw className="w-4 h-4" />
               Refresh Players
             </Button>
@@ -632,7 +1178,7 @@ export default function Events() {
           <AlertTriangle className="h-4 w-4 text-warning" />
           <AlertTitle className="text-warning">Panel Bridge Required</AlertTitle>
           <AlertDescription className="space-y-2">
-            <p>Advanced controls for weather, climate, time, infrastructure, and precision sound require <strong className="text-foreground">PanelBridge.lua</strong>. Basic RCON actions still work without it.</p>
+            <p>Advanced weather, climate, time, infrastructure, and precision sound controls require <strong className="text-foreground">PanelBridge.lua</strong>. Basic RCON actions still work.</p>
             <Link to="/settings" className="inline-flex text-sm text-primary underline hover:text-foreground">Open Bridge Setup</Link>
           </AlertDescription>
         </Alert>
@@ -664,12 +1210,12 @@ export default function Events() {
           
           {!targetAll && (
             <div className="space-y-2">
-              <Label className="flex items-center gap-2">
+              <Label htmlFor="event-target-player" className="flex items-center gap-2">
                 <User className="w-4 h-4" />
                 Select Player
               </Label>
               <Select value={selectedPlayer} onValueChange={setSelectedPlayer}>
-                <SelectTrigger className="w-full max-w-xs">
+                <SelectTrigger id="event-target-player" aria-label="Select player target" className="w-full max-w-xs">
                   <SelectValue placeholder="Select an online player" />
                 </SelectTrigger>
                 <SelectContent>
@@ -678,7 +1224,7 @@ export default function Events() {
                   ) : (
                     players.map((player) => (
                       <SelectItem key={player.name} value={player.name}>
-                        <span className="truncate block max-w-[200px]">{player.name}</span>
+                        <span className="block max-w-[200px] truncate" dir="auto" title={player.name}>{player.name}</span>
                       </SelectItem>
                     ))
                   )}
@@ -694,15 +1240,104 @@ export default function Events() {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 stagger-in">
+      {/* Intent-first lane */}
+      <section className="rounded-xl border border-border/60 bg-background/40 px-4 py-4 sm:px-5" aria-label="Intent first controls">
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-1">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-foreground/80">Choose intent first</p>
+            <p className="text-sm text-foreground">Pick what you need to do, then run a quick preset or jump directly to the matching control section.</p>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Button variant={activeIntent === 'weather' ? 'default' : 'outline'} className="h-10" onClick={() => openAndFocusSection('weather')}>Weather</Button>
+            <Button variant={activeIntent === 'environment' ? 'default' : 'outline'} className="h-10" onClick={() => openAndFocusSection('environment')}>Time</Button>
+            <Button variant={activeIntent === 'sound' ? 'default' : 'outline'} className="h-10" onClick={() => openAndFocusSection('sound')}>Sound</Button>
+            <Button variant={activeIntent === 'world' ? 'default' : 'outline'} className="h-10" onClick={() => openAndFocusSection('world')}>Zombie Control</Button>
+            <Button variant={activeIntent === 'bridgeOps' ? 'default' : 'outline'} className="h-10" onClick={() => openAndFocusSection('bridgeOps')}>Admin Ops</Button>
+          </div>
+
+          <div className="rounded-lg border border-border/50 bg-muted/20 p-3">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-foreground/80">Quick presets</p>
+
+            {activeIntent === 'weather' && (
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" className="h-10" onClick={() => handleAction('Start storm', startStorm)} disabled={loading !== null}>Storm Now</Button>
+                <Button variant="outline" className="h-10" onClick={() => handleAction('Stop weather', stopWeather)} disabled={loading !== null}>Clear Weather</Button>
+              </div>
+            )}
+
+            {activeIntent === 'environment' && (
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  className="h-10"
+                  onClick={() => {
+                    setGameHour(6)
+                    void handleBridgeAction('Set Time', () => panelBridgeApi.setGameTime({ hour: 6, day: gameDay, month: gameMonth }))
+                  }}
+                  disabled={bridgeLoading !== null || !bridgeConnected}
+                >
+                  Set Dawn
+                </Button>
+                <Button
+                  variant="outline"
+                  className="h-10"
+                  onClick={() => {
+                    setGameHour(0)
+                    void handleBridgeAction('Set Time', () => panelBridgeApi.setGameTime({ hour: 0, day: gameDay, month: gameMonth }))
+                  }}
+                  disabled={bridgeLoading !== null || !bridgeConnected}
+                >
+                  Set Midnight
+                </Button>
+              </div>
+            )}
+
+            {activeIntent === 'sound' && (
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" className="h-10" onClick={() => handleAction('Helicopter', triggerChopper)} disabled={loading !== null}>Helicopter</Button>
+                <Button variant="outline" className="h-10" onClick={() => handleAction('Gunshot', triggerGunshot)} disabled={loading !== null}>Gunshot</Button>
+              </div>
+            )}
+
+            {activeIntent === 'world' && (
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  className="h-10"
+                  onClick={() => handleAction('Create horde', () => createHorde(hordeCount, getTargetPlayer()))}
+                  disabled={loading !== null || (!targetAll && !selectedPlayer)}
+                >
+                  Spawn Horde
+                </Button>
+                <Button variant="destructive" className="h-10" onClick={() => handleAction('Remove all zombies', removeZombies)} disabled={loading !== null}>
+                  Clear Loaded Zombies
+                </Button>
+              </div>
+            )}
+
+            {activeIntent === 'bridgeOps' && (
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" className="h-10" onClick={() => openAndFocusSection('bridgeOps')}>Open Bridge Console</Button>
+                <Link to="/settings" className="inline-flex h-10 items-center rounded-md border border-input bg-background px-4 text-sm font-medium text-foreground hover:bg-accent hover:text-accent-foreground">
+                  Open Bridge Setup
+                </Link>
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
         {/* ── Weather Section ── */}
-        <Collapsible open={openSections.weather} onOpenChange={() => toggleSection('weather')} className="md:col-span-2">
+        <Collapsible id={sectionAnchorIds.weather} open={openSections.weather} onOpenChange={() => toggleSection('weather')} className="md:col-span-2">
           <CollapsibleTrigger className="flex items-center gap-2 w-full py-2 text-left group rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
             <ChevronDown className={cn("w-4 h-4 text-muted-foreground transition-transform", openSections.weather && "rotate-180")} />
-            <span className="text-sm font-medium text-muted-foreground uppercase tracking-wide">Weather</span>
+            <span className="text-sm font-medium text-foreground/85 uppercase tracking-wide">Weather</span>
             <div className="flex-1 border-t border-border/40 ml-2" />
           </CollapsibleTrigger>
           <CollapsibleContent>
+            {openSections.weather && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
         {/* Weather Controls */}
         <Card>
@@ -1145,17 +1780,19 @@ export default function Events() {
           </CardContent>
         </Card>
             </div>
+            )}
           </CollapsibleContent>
         </Collapsible>
 
         {/* ── Time & Environment Section ── */}
-        <Collapsible open={openSections.environment} onOpenChange={() => toggleSection('environment')} className="md:col-span-2">
+        <Collapsible id={sectionAnchorIds.environment} open={openSections.environment} onOpenChange={() => toggleSection('environment')} className="md:col-span-2">
           <CollapsibleTrigger className="flex items-center gap-2 w-full py-2 text-left group rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
             <ChevronDown className={cn("w-4 h-4 text-muted-foreground transition-transform", openSections.environment && "rotate-180")} />
-            <span className="text-sm font-medium text-muted-foreground uppercase tracking-wide">Time & Environment</span>
+            <span className="text-sm font-medium text-foreground/85 uppercase tracking-wide">Time & Environment</span>
             <div className="flex-1 border-t border-border/40 ml-2" />
           </CollapsibleTrigger>
           <CollapsibleContent>
+            {openSections.environment && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
 
         {/* Game Time Control (v1.1.0) */}
@@ -1210,8 +1847,10 @@ export default function Events() {
                 {/* Date controls */}
                 <div className="grid grid-cols-2 gap-3 pt-2">
                   <div className="space-y-1">
-                    <Label className="text-xs">Day</Label>
+                    <Label htmlFor="game-day" className="text-xs">Day</Label>
                     <Input
+                      id="game-day"
+                      aria-label="Game day"
                       type="number"
                       min={1}
                       max={31}
@@ -1227,9 +1866,9 @@ export default function Events() {
                     />
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs">Month</Label>
+                    <Label htmlFor="game-month" className="text-xs">Month</Label>
                     <Select value={String(gameMonth)} onValueChange={(v) => setGameMonth(parseInt(v))}>
-                      <SelectTrigger>
+                      <SelectTrigger id="game-month" aria-label="Game month">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -1345,17 +1984,19 @@ export default function Events() {
           </CardContent>
         </Card>
             </div>
+            )}
           </CollapsibleContent>
         </Collapsible>
 
         {/* ── Sound Section ── */}
-        <Collapsible open={openSections.sound} onOpenChange={() => toggleSection('sound')} className="md:col-span-2">
+        <Collapsible id={sectionAnchorIds.sound} open={openSections.sound} onOpenChange={() => toggleSection('sound')} className="md:col-span-2">
           <CollapsibleTrigger className="flex items-center gap-2 w-full py-2 text-left group rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
             <ChevronDown className={cn("w-4 h-4 text-muted-foreground transition-transform", openSections.sound && "rotate-180")} />
-            <span className="text-sm font-medium text-muted-foreground uppercase tracking-wide">Sound</span>
+            <span className="text-sm font-medium text-foreground/85 uppercase tracking-wide">Sound</span>
             <div className="flex-1 border-t border-border/40 ml-2" />
           </CollapsibleTrigger>
           <CollapsibleContent>
+            {openSections.sound && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
 
         {/* Sound Events */}
@@ -1527,8 +2168,10 @@ export default function Events() {
                   </Label>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1">
-                      <Label className="text-xs">World X</Label>
+                        <Label htmlFor="sound-world-x" className="text-xs">World X</Label>
                       <Input
+                          id="sound-world-x"
+                          aria-label="Sound world X coordinate"
                         type="number"
                         placeholder="e.g. 10500"
                         value={soundX}
@@ -1536,8 +2179,10 @@ export default function Events() {
                       />
                     </div>
                     <div className="space-y-1">
-                      <Label className="text-xs">World Y</Label>
+                        <Label htmlFor="sound-world-y" className="text-xs">World Y</Label>
                       <Input
+                          id="sound-world-y"
+                          aria-label="Sound world Y coordinate"
                         type="number"
                         placeholder="e.g. 9800"
                         value={soundY}
@@ -1588,17 +2233,19 @@ export default function Events() {
           </CardContent>
         </Card>
             </div>
+            )}
           </CollapsibleContent>
         </Collapsible>
 
         {/* ── Combat & World Section ── */}
-        <Collapsible open={openSections.world} onOpenChange={() => toggleSection('world')} className="md:col-span-2">
+        <Collapsible id={sectionAnchorIds.world} open={openSections.world} onOpenChange={() => toggleSection('world')} className="md:col-span-2">
           <CollapsibleTrigger className="flex items-center gap-2 w-full py-2 text-left group rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
             <ChevronDown className={cn("w-4 h-4 text-muted-foreground transition-transform", openSections.world && "rotate-180")} />
-            <span className="text-sm font-medium text-muted-foreground uppercase tracking-wide">Combat & World</span>
+            <span className="text-sm font-medium text-foreground/85 uppercase tracking-wide">Combat & World</span>
             <div className="flex-1 border-t border-border/40 ml-2" />
           </CollapsibleTrigger>
           <CollapsibleContent>
+            {openSections.world && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
 
         {/* Zombie Events */}
@@ -1737,14 +2384,14 @@ export default function Events() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Teleport to Player */}
               <div className="space-y-4">
-                <h4 className="font-medium flex items-center gap-2">
+                <h3 className="text-base font-semibold flex items-center gap-2">
                   <Users className="w-4 h-4" />
                   Teleport Player to Player
-                </h4>
+                </h3>
                 <div className="space-y-2">
-                  <Label>Player to move</Label>
+                  <Label htmlFor="teleport-player-select">Player to move</Label>
                   <Select value={selectedPlayer} onValueChange={setSelectedPlayer}>
-                    <SelectTrigger>
+                    <SelectTrigger id="teleport-player-select" aria-label="Player to move">
                       <SelectValue placeholder="Select player..." />
                     </SelectTrigger>
                     <SelectContent>
@@ -1762,7 +2409,7 @@ export default function Events() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Move to player</Label>
+                  <Label id="teleport-target-player-label">Move to player</Label>
                   <div className="flex flex-wrap gap-2">
                     {players.filter(p => p.name !== selectedPlayer).map((player) => (
                       <Button
@@ -1785,14 +2432,16 @@ export default function Events() {
 
               {/* Teleport to Coordinates */}
               <div className="space-y-4">
-                <h4 className="font-medium flex items-center gap-2">
+                <h3 className="text-base font-semibold flex items-center gap-2">
                   <Navigation className="w-4 h-4" />
                   Teleport to Coordinates
-                </h4>
+                </h3>
                 <div className="grid grid-cols-3 gap-2">
                   <div className="space-y-1">
-                    <Label className="text-xs">X</Label>
+                    <Label htmlFor="teleport-x" className="text-xs">X</Label>
                     <Input
+                      id="teleport-x"
+                      aria-label="Teleport X coordinate"
                       type="number"
                       placeholder="10000"
                       value={teleportX}
@@ -1800,8 +2449,10 @@ export default function Events() {
                     />
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs">Y</Label>
+                    <Label htmlFor="teleport-y" className="text-xs">Y</Label>
                     <Input
+                      id="teleport-y"
+                      aria-label="Teleport Y coordinate"
                       type="number"
                       placeholder="11000"
                       value={teleportY}
@@ -1809,8 +2460,10 @@ export default function Events() {
                     />
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs">Z (Level)</Label>
+                    <Label htmlFor="teleport-z" className="text-xs">Z (Level)</Label>
                     <Input
+                      id="teleport-z"
+                      aria-label="Teleport Z level"
                       type="number"
                       placeholder="0"
                       value={teleportZ}
@@ -1859,9 +2512,9 @@ export default function Events() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label>Vehicle Type</Label>
+              <Label htmlFor="vehicle-type-select">Vehicle Type</Label>
               <Select value={selectedVehicle} onValueChange={setSelectedVehicle}>
-                <SelectTrigger>
+                <SelectTrigger id="vehicle-type-select" aria-label="Vehicle type">
                   <SelectValue placeholder="Select vehicle..." />
                 </SelectTrigger>
                 <SelectContent>
@@ -1910,8 +2563,10 @@ export default function Events() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label>Message</Label>
+              <Label htmlFor="announcement-message">Message</Label>
               <Input
+                id="announcement-message"
+                aria-label="Server announcement message"
                 placeholder="Enter your announcement..."
                 value={announcement}
                 onChange={(e) => setAnnouncement(e.target.value)}
@@ -1941,43 +2596,56 @@ export default function Events() {
           </CardContent>
         </Card>
             </div>
+            )}
           </CollapsibleContent>
         </Collapsible>
 
         {/* ── Bridge Operations Section ── */}
-        <Collapsible open={openSections.bridgeOps} onOpenChange={() => toggleSection('bridgeOps')} className="md:col-span-2">
+        <Collapsible id={sectionAnchorIds.bridgeOps} open={openSections.bridgeOps} onOpenChange={() => toggleSection('bridgeOps')} className="md:col-span-2">
           <CollapsibleTrigger className="flex items-center gap-2 w-full py-2 text-left group rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
             <ChevronDown className={cn("w-4 h-4 text-muted-foreground transition-transform", openSections.bridgeOps && "rotate-180")} />
-            <span className="text-sm font-medium text-muted-foreground uppercase tracking-wide">Bridge Operations</span>
+            <span className="text-sm font-medium text-foreground/85 uppercase tracking-wide">Bridge Operations</span>
             <div className="flex-1 border-t border-border/40 ml-2" />
           </CollapsibleTrigger>
           <CollapsibleContent>
+            {openSections.bridgeOps && (
             <div className="pt-4">
               <Card className={!bridgeConnected ? 'opacity-80' : ''}>
                 <CardHeader className="pb-4">
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    <Zap className="w-4 h-4 text-primary" />
-                    New PanelBridge Functions
-                  </CardTitle>
-                  <CardDescription>
-                    Access safehouse, faction, vehicle, swarm, infrastructure, and moderation handlers from the GUI.
-                  </CardDescription>
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                      <div className="space-y-2">
+                        <CardTitle className="flex items-center gap-2 text-base">
+                          <Zap className="w-4 h-4 text-primary" />
+                          Bridge Operations Console
+                        </CardTitle>
+                        <CardDescription>
+                          Run advanced PanelBridge handlers with the same control-room patterns used across the admin panel.
+                        </CardDescription>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant={bridgeConnected ? 'success' : 'warning'}>
+                          {bridgeConnected ? 'Bridge Online' : 'Bridge Offline'}
+                        </Badge>
+                        {bridgeActiveGroup && <Badge variant="secondary">{bridgeActiveGroup.label}</Badge>}
+                        <Badge variant="outline">{Object.keys(bridgeOperationTemplates).length} operations</Badge>
+                      </div>
+                    </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Operation</Label>
+                    <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,1.35fr)]">
+                      <div className="space-y-4">
+                        <div className="rounded-lg border border-border/70 bg-muted/25 p-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="bridge-operation-select">Operation</Label>
+                            <p className="text-xs leading-5 text-muted-foreground">
+                              Pick a handler, review the template payload, then run it against the live bridge connection.
+                            </p>
+                          </div>
                       <Select
                         value={bridgeOperation}
-                        onValueChange={(value) => {
-                          setBridgeOperation(value)
-                          setBridgeOperationArgs(bridgeOperationDrafts[value] ?? bridgeOperationTemplates[value].args)
-                          setBridgeArgsError(null)
-                          setBridgeOperationResult(BRIDGE_RESULT_PLACEHOLDER)
-                          setBridgeLastRunAt(null)
-                        }}
+                        onValueChange={selectBridgeOperation}
                       >
-                        <SelectTrigger id="bridge-operation-select" aria-label="Bridge operation selector" disabled={bridgeLoading !== null}>
+                        <SelectTrigger id="bridge-operation-select" aria-label="Bridge operation selector" disabled={bridgeLoading !== null} className="mt-3">
                           <SelectValue placeholder="Select operation" />
                         </SelectTrigger>
                         <SelectContent>
@@ -1986,54 +2654,312 @@ export default function Events() {
                           ))}
                         </SelectContent>
                       </Select>
-                      <p className="text-xs text-muted-foreground">
-                        {bridgeOperationTemplates[bridgeOperation]?.description}
-                      </p>
+                        <div className="mt-3 rounded-md border border-border/60 bg-background/60 p-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-medium text-foreground">{bridgeOperationTemplates[bridgeOperation]?.label}</p>
+                              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                                {bridgeOperationTemplates[bridgeOperation]?.description}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="rounded-lg border border-border/70 bg-muted/20 p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-medium text-foreground">Operation families</p>
+                            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                              Match the panel's operational grouping: territory, vehicles, event sequencing, and moderation.
+                            </p>
+                          </div>
+                        </div>
+                        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                          {bridgeOperationGroups.map((group) => {
+                            const active = group.id === bridgeActiveGroup?.id
+                            return (
+                              <div
+                                key={group.id}
+                                className={cn(
+                                  'rounded-md border p-3 transition-colors',
+                                  active
+                                    ? 'border-primary/40 bg-primary/10 text-foreground'
+                                    : 'border-border/60 bg-background/40 text-muted-foreground'
+                                )}
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <p className={cn('text-sm font-medium', active ? 'text-foreground' : 'text-foreground/88')}>
+                                    {group.label}
+                                  </p>
+                                  <Badge variant={active ? 'default' : 'outline'}>{group.operations.length}</Badge>
+                                </div>
+                                <p className="mt-2 text-xs leading-5">{group.description}</p>
+                              </div>
+                            )
+                          })}
+                        </div>
+                        {bridgeActiveGroup && (
+                          <div className="mt-4 rounded-md border border-border/60 bg-background/50 p-3">
+                            <div className="mb-2 flex items-center justify-between gap-2">
+                              <p className="text-xs font-medium text-foreground">Quick picks: {bridgeActiveGroup.label}</p>
+                              <Badge variant="outline">{bridgeActiveGroup.operations.length} options</Badge>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {bridgeActiveGroup.operations.map((operationKey) => {
+                                const operationMeta = bridgeOperationTemplates[operationKey]
+                                if (!operationMeta) return null
+
+                                const isActive = operationKey === bridgeOperation
+                                return (
+                                  <Button
+                                    key={operationKey}
+                                    type="button"
+                                    variant={isActive ? 'secondary' : 'outline'}
+                                    size="sm"
+                                    onClick={() => selectBridgeOperation(operationKey)}
+                                    disabled={bridgeLoading !== null}
+                                    className="h-9"
+                                  >
+                                    {operationMeta.label}
+                                  </Button>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
 
-                    <div className="space-y-2">
-                      <Label htmlFor="bridge-operation-args">JSON Args</Label>
-                      <Textarea
-                        id="bridge-operation-args"
-                        value={bridgeOperationArgs}
-                        onChange={(e) => {
-                          const nextValue = e.target.value
-                          setBridgeOperationArgs(nextValue)
-                          setBridgeOperationDrafts((prev) => ({ ...prev, [bridgeOperation]: nextValue }))
-                          if (bridgeArgsError) setBridgeArgsError(null)
-                        }}
-                        onBlur={() => {
-                          try {
-                            parseBridgeArgs(bridgeOperationArgs)
-                            setBridgeArgsError(null)
-                          } catch (error) {
-                            setBridgeArgsError(error instanceof Error ? error.message : 'Invalid JSON.')
-                          }
-                        }}
-                        onKeyDown={(e) => {
-                          if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-                            e.preventDefault()
-                            if (bridgeLoading === null && bridgeConnected && !bridgeArgsError) {
-                              void runBridgeOperation()
+                    <div className="space-y-4">
+                      <div className="rounded-lg border border-border/70 bg-card/60 p-4">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                          <div>
+                            <Label>Operation Inputs</Label>
+                            <p id="bridge-args-help" className="mt-1 text-xs leading-5 text-muted-foreground">
+                              Complete required fields first. The panel builds and validates the payload automatically.
+                            </p>
+                          </div>
+                          <Badge variant={bridgeFormError ? 'destructive' : 'outline'}>
+                            {bridgeFormError ? 'Needs attention' : currentBridgeFields.length === 0 ? 'No inputs required' : 'Ready'}
+                          </Badge>
+                        </div>
+
+                        {currentRequiredFieldCount > 0 && (
+                          <div className="mt-3 rounded-md border border-border/60 bg-background/40 p-3">
+                            <div className="flex items-center justify-between gap-3">
+                              <p className="text-xs text-muted-foreground">Required fields completed</p>
+                              <p className="text-xs font-medium text-foreground">
+                                {currentCompletedRequiredFieldCount}/{currentRequiredFieldCount}
+                              </p>
+                            </div>
+                            <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
+                              <div
+                                className="h-full w-full rounded-full bg-primary transition-transform duration-200 ease-out"
+                                style={{
+                                  transform: `translateX(-${100 - Math.min(
+                                    100,
+                                    Math.round((currentCompletedRequiredFieldCount / currentRequiredFieldCount) * 100)
+                                  )}%)`,
+                                }}
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                          {currentBridgeFields.length === 0 && (
+                            <div className="sm:col-span-2 rounded-md border border-border/60 bg-muted/20 p-3 text-sm text-foreground/85">
+                              This operation runs without additional inputs.
+                            </div>
+                          )}
+
+                          {currentBridgeFields.map((field) => {
+                            const value = getBridgeFieldValue(field.key)
+                            const fieldId = `bridge-field-${field.key}`
+
+                            if (field.type === 'boolean') {
+                              return (
+                                <div key={field.key} className="sm:col-span-2 rounded-md border border-border/60 bg-muted/20 p-3">
+                                  <div className="flex items-center justify-between gap-3">
+                                    <div className="space-y-1">
+                                      <Label htmlFor={fieldId}>{field.label}</Label>
+                                      {field.help && <p className="text-xs text-muted-foreground">{field.help}</p>}
+                                    </div>
+                                    <Switch
+                                      id={fieldId}
+                                      checked={value === 'true'}
+                                      onCheckedChange={(checked) => setBridgeFieldValue(field.key, checked ? 'true' : 'false')}
+                                    />
+                                  </div>
+                                </div>
+                              )
                             }
-                          }
-                        }}
-                        className="min-h-[140px] font-mono text-xs"
-                        aria-describedby="bridge-args-help"
-                        aria-invalid={bridgeArgsError ? true : undefined}
-                        aria-errormessage={bridgeArgsError ? 'bridge-args-error' : undefined}
-                        maxLength={BRIDGE_ARGS_MAX_CHARS}
-                        spellCheck={false}
-                      />
-                      <p id="bridge-args-help" className="text-xs text-muted-foreground">
-                        Use a JSON object only. Example: {`{ "key": "value" }`} Press Ctrl/Cmd+Enter to run.
-                      </p>
-                      <p className={cn('text-xs', bridgeArgsTooLong ? 'text-destructive' : 'text-muted-foreground')}>
-                        {bridgeOperationArgs.length.toLocaleString()} / {BRIDGE_ARGS_MAX_CHARS.toLocaleString()} max characters
-                      </p>
-                      {bridgeArgsError && (
-                        <p id="bridge-args-error" className="text-xs text-destructive">{bridgeArgsError}</p>
+
+                            if (field.type === 'select') {
+                              return (
+                                <div key={field.key} className="space-y-1.5">
+                                  <Label htmlFor={fieldId}>{field.label}{field.required ? ' *' : ''}</Label>
+                                  <Select value={value || field.defaultValue || ''} onValueChange={(next) => setBridgeFieldValue(field.key, next)}>
+                                    <SelectTrigger id={fieldId}>
+                                      <SelectValue placeholder={field.placeholder || 'Select value'} />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {(field.options ?? []).map((option) => (
+                                        <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                              )
+                            }
+
+                            if (field.type === 'combo') {
+                              const options = getBridgeComboOptions(field.key)
+                              const hasOptions = options.length > 0
+                              const showManualFallback = !hasOptions && !bridgeOptionsLoading
+
+                              return (
+                                <div key={field.key} className="space-y-1.5">
+                                  <Label htmlFor={fieldId}>{field.label}{field.required ? ' *' : ''}</Label>
+                                  <Select
+                                    value={hasOptions ? value : ''}
+                                    onValueChange={(next) => setBridgeFieldValue(field.key, next)}
+                                    disabled={bridgeOptionsLoading || !hasOptions}
+                                  >
+                                    <SelectTrigger id={fieldId}>
+                                      <SelectValue
+                                        placeholder={
+                                          bridgeOptionsLoading
+                                            ? 'Loading server options...'
+                                            : hasOptions
+                                              ? (field.placeholder || 'Select value')
+                                              : 'No server options available'
+                                        }
+                                      />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {hasOptions ? (
+                                        options.map((option) => (
+                                          <SelectItem key={option.value} value={option.value} title={option.label}>
+                                            <span className="block truncate" dir="auto" title={option.label}>{option.label}</span>
+                                          </SelectItem>
+                                        ))
+                                      ) : (
+                                        <div className="px-2 py-2 text-xs text-muted-foreground">
+                                          {bridgeOptionsLoading ? 'Loading options from server...' : 'No options loaded from server yet.'}
+                                        </div>
+                                      )}
+                                    </SelectContent>
+                                  </Select>
+                                  {showManualFallback && (
+                                    <Input
+                                      value={value}
+                                      onChange={(e) => setBridgeFieldValue(field.key, e.target.value)}
+                                      placeholder={field.placeholder || 'Type value manually'}
+                                    />
+                                  )}
+                                  <p className="text-xs text-muted-foreground">
+                                    {hasOptions
+                                      ? 'Loaded from server data.'
+                                      : bridgeOptionsLoading
+                                        ? 'Waiting for server/bridge data to populate this combo box.'
+                                        : 'Server list unavailable. Manual entry is enabled for recovery.'}
+                                  </p>
+                                </div>
+                              )
+                            }
+
+                            if (field.type === 'textarea') {
+                              return (
+                                <div key={field.key} className="space-y-1.5 sm:col-span-2">
+                                  <Label htmlFor={fieldId}>{field.label}{field.required ? ' *' : ''}</Label>
+                                  <Textarea
+                                    id={fieldId}
+                                    value={value}
+                                    onChange={(e) => setBridgeFieldValue(field.key, e.target.value)}
+                                    placeholder={field.placeholder}
+                                    className="min-h-[96px]"
+                                  />
+                                </div>
+                              )
+                            }
+
+                            return (
+                              <div key={field.key} className="space-y-1.5">
+                                <Label htmlFor={fieldId}>{field.label}{field.required ? ' *' : ''}</Label>
+                                <Input
+                                  id={fieldId}
+                                  type={field.type === 'number' ? 'number' : 'text'}
+                                  value={value}
+                                  onChange={(e) => setBridgeFieldValue(field.key, e.target.value)}
+                                  placeholder={field.placeholder}
+                                  min={field.min}
+                                  max={field.max}
+                                  step={field.step}
+                                  maxLength={field.maxLength}
+                                />
+                                {(field.help || field.maxLength) && (
+                                  <p className="text-xs text-muted-foreground">
+                                    {field.help ? `${field.help}${field.maxLength ? ' ' : ''}` : ''}
+                                    {field.maxLength ? `${value.length}/${field.maxLength}` : ''}
+                                  </p>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+
+                        {currentBridgeHasComboFields && (
+                          <div className="mt-3 rounded-md border border-border/60 bg-background/40 p-3">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <p className="text-xs text-muted-foreground" aria-live="polite">
+                                {bridgeOptionsLoading
+                                  ? 'Refreshing bridge option lists...'
+                                  : bridgeOptionsError
+                                    ? bridgeOptionsError
+                                    : bridgeOptionsLastUpdated
+                                      ? `Bridge lists updated ${bridgeOptionsLastUpdated}`
+                                      : 'Bridge lists not loaded yet.'}
+                              </p>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  if (bridgeConnected && !bridgeOptionsLoading) {
+                                    setBridgeOptionsLastUpdated(null)
+                                    setBridgeOptionsError(null)
+                                    setBridgeOptionsRefreshTick((prev) => prev + 1)
+                                  }
+                                }}
+                                disabled={!bridgeConnected || bridgeOptionsLoading}
+                                className="h-10 gap-1 sm:h-8"
+                              >
+                                <RefreshCw className={cn('h-3.5 w-3.5', bridgeOptionsLoading && 'animate-spin')} />
+                                Refresh Lists
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-xs text-muted-foreground">
+                            Guided mode is active: payload is generated from your inputs.
+                          </p>
+                          <span className="text-xs text-muted-foreground">
+                            {bridgeLastRunAt ? `Last dispatch: ${bridgeLastRunAt}` : 'No dispatch yet'}
+                          </span>
+                        </div>
+                      {bridgeConnectionSummary && (
+                        <p className="mt-2 text-xs text-muted-foreground" aria-live="polite">
+                          Bridge file link: {bridgeConnectionSummary}
+                        </p>
                       )}
+                      {bridgeFormError && (
+                        <p id="bridge-args-error" className="mt-2 text-xs text-destructive">{bridgeFormError}</p>
+                      )}
+                      </div>
                     </div>
                   </div>
 
@@ -2050,7 +2976,7 @@ export default function Events() {
                   <div className="flex flex-wrap items-center gap-2">
                     <Button
                       onClick={runBridgeOperation}
-                      disabled={bridgeLoading !== null || !bridgeConnected || !!bridgeArgsError || bridgeArgsTooLong}
+                      disabled={bridgeLoading !== null || !bridgeConnected || !!bridgeFormError}
                       className="h-11 gap-2"
                     >
                       {bridgeLoading === bridgeOperation ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
@@ -2058,19 +2984,11 @@ export default function Events() {
                     </Button>
                     <Button
                       variant="outline"
-                      onClick={formatBridgeArgs}
-                      disabled={bridgeLoading !== null}
+                      onClick={resetBridgeFormValues}
+                      disabled={bridgeLoading !== null || currentBridgeFields.length === 0}
                       className="h-11"
                     >
-                      Format JSON
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={resetBridgeArgsToTemplate}
-                      disabled={bridgeLoading !== null}
-                      className="h-11"
-                    >
-                      Reset Args
+                      Reset Fields
                     </Button>
                     <Button
                       variant="outline"
@@ -2093,15 +3011,29 @@ export default function Events() {
                     </Button>
                   </div>
 
-                  <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground" aria-live="polite">
+                    {bridgeRunDisabledReason || 'Ready to dispatch. Review output after each run.'}
+                  </p>
+
+                  <div className="rounded-lg border border-border/70 bg-muted/20 p-4">
+                    <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <Label>Response Output</Label>
+                        <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                          Review the raw bridge response after each dispatch. Large payloads are truncated automatically.
+                        </p>
+                      </div>
+                      <Badge variant={bridgeResultReady ? 'secondary' : 'outline'}>
+                        {bridgeResultReady ? 'Output ready' : 'Awaiting run'}
+                      </Badge>
+                    </div>
                     <div className="flex items-center justify-between gap-3">
-                      <Label>Response Output</Label>
                       <span className="text-xs text-muted-foreground" aria-live="polite">
                         {bridgeLastRunAt ? `Last run: ${bridgeLastRunAt}` : 'No run yet'}
                       </span>
                     </div>
                     <pre
-                      className="max-h-72 overflow-auto rounded-md border bg-muted/30 p-3 text-xs font-mono whitespace-pre-wrap break-words"
+                      className="max-h-72 overflow-auto rounded-md border border-border/70 bg-background/70 p-3 text-xs font-mono whitespace-pre-wrap break-words"
                       aria-live="polite"
                     >
 {bridgeOperationResult}
@@ -2110,6 +3042,7 @@ export default function Events() {
                 </CardContent>
               </Card>
             </div>
+            )}
           </CollapsibleContent>
         </Collapsible>
       </div>

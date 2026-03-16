@@ -1,4 +1,4 @@
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, Link, Navigate } from 'react-router-dom'
 import { useEffect, useState, useCallback, lazy, Suspense } from 'react'
 import type { Socket } from 'socket.io-client'
 import Layout from './components/Layout'
@@ -82,6 +82,27 @@ function AuthScreenLoader() {
         <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-2 border-primary/35 border-t-primary" />
         <p className="text-sm font-medium text-foreground">Checking access</p>
         <p key={messageIndex} className="mt-1 text-sm text-muted-foreground fade-in">{AUTH_LOADING_MESSAGES[messageIndex]}</p>
+      </div>
+    </div>
+  )
+}
+
+function NotFoundRoute() {
+  return (
+    <div className="space-y-6 page-transition">
+      <div className="rounded-xl border border-border/70 bg-card/70 p-6">
+        <h1 className="text-2xl font-semibold tracking-tight">Page Not Found</h1>
+        <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
+          The route you requested does not exist or is no longer available in this panel build.
+        </p>
+        <div className="mt-5 flex flex-wrap items-center gap-2">
+          <Link to="/" className="inline-flex min-h-10 items-center rounded-md border border-border/70 bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90">
+            Go to Dashboard
+          </Link>
+          <Link to="/servers" className="inline-flex min-h-10 items-center rounded-md border border-border/70 bg-background px-4 text-sm font-medium hover:bg-muted/50">
+            Open Servers
+          </Link>
+        </div>
       </div>
     </div>
   )
@@ -266,21 +287,25 @@ function AppContent() {
           <Suspense fallback={<PageLoader />}>
             <Routes>
               <Route path="/" element={<FeatureErrorBoundary featureName="Dashboard"><Dashboard /></FeatureErrorBoundary>} />
+              <Route path="/dashboard" element={<Navigate to="/" replace />} />
               <Route path="/players" element={<FeatureErrorBoundary featureName="Player Management"><Players /></FeatureErrorBoundary>} />
               <Route path="/console" element={<FeatureErrorBoundary featureName="Console"><Console /></FeatureErrorBoundary>} />
               <Route path="/scheduler" element={<FeatureErrorBoundary featureName="Scheduler"><Scheduler /></FeatureErrorBoundary>} />
               <Route path="/mods" element={<FeatureErrorBoundary featureName="Mod Manager"><Mods /></FeatureErrorBoundary>} />
               <Route path="/chunks" element={<FeatureErrorBoundary featureName="Chunk Cleaner"><ChunkCleaner /></FeatureErrorBoundary>} />
+              <Route path="/chunk-cleaner" element={<Navigate to="/chunks" replace />} />
               <Route path="/discord" element={<FeatureErrorBoundary featureName="Discord Integration"><Discord /></FeatureErrorBoundary>} />
               <Route path="/settings" element={<FeatureErrorBoundary featureName="Settings"><Settings /></FeatureErrorBoundary>} />
               <Route path="/server-setup" element={<FeatureErrorBoundary featureName="Server Setup"><ServerSetup /></FeatureErrorBoundary>} />
               <Route path="/servers" element={<FeatureErrorBoundary featureName="Server Manager"><Servers /></FeatureErrorBoundary>} />
               <Route path="/server-config" element={<FeatureErrorBoundary featureName="Server Configuration"><ServerConfig /></FeatureErrorBoundary>} />
+              <Route path="/serverconfig" element={<Navigate to="/server-config" replace />} />
               <Route path="/server-finder" element={<FeatureErrorBoundary featureName="Server Finder"><ServerFinder /></FeatureErrorBoundary>} />
               <Route path="/debug" element={<FeatureErrorBoundary featureName="Debug"><Debug /></FeatureErrorBoundary>} />
               <Route path="/events" element={<FeatureErrorBoundary featureName="Events & Weather"><Events /></FeatureErrorBoundary>} />
               <Route path="/chat" element={<FeatureErrorBoundary featureName="In-Game Chat"><Chat /></FeatureErrorBoundary>} />
               <Route path="/backups" element={<FeatureErrorBoundary featureName="Backups"><Backups /></FeatureErrorBoundary>} />
+              <Route path="*" element={<NotFoundRoute />} />
             </Routes>
           </Suspense>
         </Layout>

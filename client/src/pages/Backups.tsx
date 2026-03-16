@@ -711,7 +711,7 @@ export default function Backups() {
                       <div
                         key={backup.name}
                         className={cn(
-                          'flex items-center gap-3 p-4 rounded-lg border transition-all',
+                          'flex items-center gap-3 p-4 rounded-lg border transition-colors',
                           isSelected
                             ? 'border-primary/25 bg-primary/8'
                             : 'bg-muted/30 border-transparent hover:bg-muted/50'

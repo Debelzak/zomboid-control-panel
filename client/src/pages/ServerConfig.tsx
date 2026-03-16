@@ -67,6 +67,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { PageHeader } from '@/components/PageHeader'
 // DropdownMenu imports available if needed
 import { serverFilesApi, SpawnPointsByProfession, SpawnRegion, SandboxData, ConfigTemplate } from '@/lib/api'
+import { getUserErrorMessage } from '@/lib/errorMessage'
 import { EmptyState } from '@/components/EmptyState'
 import {
   INI_SCHEMA,
@@ -79,6 +80,8 @@ import {
 } from '@/lib/serverConfigSchema'
 
 type EditorMode = 'structured' | 'raw'
+type SandboxScalar = string | number | boolean | null | undefined
+type SandboxRecord = Record<string, SandboxScalar>
 
 // --- Optimized Row Components ---
 
@@ -101,7 +104,7 @@ const IniSettingRow = memo(({
   // Multiline settings
   if (setting.type === 'multiline') {
     return (
-      <div className={`grid gap-2 rounded-md border-b py-3 pr-4 transition-colors last:border-0 ${
+      <div className={`perf-content-auto grid gap-2 rounded-md border-b py-3 pr-4 transition-colors last:border-0 ${
         isModified ? 'border-l-2 border-l-warning bg-warning/5 pl-3' : ''
       }`}>
         <div className="flex items-center justify-between">
@@ -132,7 +135,7 @@ const IniSettingRow = memo(({
 
   // Standard settings
   return (
-    <div className={`grid gap-2 rounded-md border-b py-3 pr-4 transition-colors last:border-0 ${
+    <div className={`perf-content-auto grid gap-2 rounded-md border-b py-3 pr-4 transition-colors last:border-0 ${
       isModified ? 'border-l-2 border-l-warning bg-warning/5 pl-3' : ''
     }`}>
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4">
@@ -150,7 +153,7 @@ const IniSettingRow = memo(({
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-9 w-9 text-warning hover:text-warning" onClick={() => onReset(setting.key)} aria-label={`Reset ${setting.label} to loaded value`}>
+                  <Button variant="ghost" size="icon" className="h-11 w-11 text-warning hover:text-warning sm:h-9 sm:w-9" onClick={() => onReset(setting.key)} aria-label={`Reset ${setting.label} to loaded value`}>
                     <Undo2 className="w-3.5 h-3.5" />
                   </Button>
                 </TooltipTrigger>
@@ -237,16 +240,16 @@ const SandboxSettingRow = memo(({
   onReset
 }: { 
   setting: SandboxSetting; 
-  value: any;
-  originalValue?: any;
-  onChange: (key: string, value: any) => void;
+  value: SandboxScalar;
+  originalValue?: SandboxScalar;
+  onChange: (key: string, value: SandboxScalar) => void;
   onReset?: (key: string) => void;
 }) => {
   const isModified = originalValue !== undefined && JSON.stringify(value) !== JSON.stringify(originalValue)
   const isDifferentFromDefault = setting.default !== undefined && JSON.stringify(value) !== JSON.stringify(setting.default)
 
   return (
-    <div className={`grid gap-2 rounded-md border-b py-3 pr-4 transition-colors last:border-0 ${
+    <div className={`perf-content-auto grid gap-2 rounded-md border-b py-3 pr-4 transition-colors last:border-0 ${
       isModified ? 'border-l-2 border-l-warning bg-warning/5 pl-3' : ''
     }`}>
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4">
@@ -270,7 +273,7 @@ const SandboxSettingRow = memo(({
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-9 w-9 text-warning hover:text-warning" onClick={() => onReset(setting.key)} aria-label={`Reset ${setting.label} to loaded value`}>
+                  <Button variant="ghost" size="icon" className="h-11 w-11 text-warning hover:text-warning sm:h-9 sm:w-9" onClick={() => onReset(setting.key)} aria-label={`Reset ${setting.label} to loaded value`}>
                     <Undo2 className="w-3.5 h-3.5" />
                   </Button>
                 </TooltipTrigger>
@@ -457,10 +460,10 @@ export default function ServerConfig() {
       setLoadError(null)
     } catch (error) {
       reportClientError('Failed to load config.', error)
-      setLoadError(error instanceof Error ? error.message : 'Failed to load server config.')
+      setLoadError(getUserErrorMessage(error, 'Failed to load server config.'))
       toast({
         title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to load server config',
+        description: getUserErrorMessage(error, 'Failed to load server config.'),
         variant: 'destructive'
       })
     } finally {
@@ -482,7 +485,7 @@ export default function ServerConfig() {
     } catch (error) {
       toast({
         title: 'Error',
-        description: 'Failed to load raw content',
+        description: getUserErrorMessage(error, 'Failed to load raw content.'),
         variant: 'destructive'
       })
       // Reset to structured mode on error
@@ -529,7 +532,11 @@ export default function ServerConfig() {
       URL.revokeObjectURL(url)
       toast({ title: 'Downloaded', description: `Backup saved: ${data.filename}` })
     } catch (error) {
-      toast({ title: 'Error', description: 'Failed to download backup', variant: 'destructive' })
+      toast({
+        title: 'Error',
+        description: getUserErrorMessage(error, 'Failed to download backup.'),
+        variant: 'destructive'
+      })
     }
   }
 
@@ -543,8 +550,12 @@ export default function ServerConfig() {
       }
       copiedTimeoutRef.current = setTimeout(() => setCopied(false), 2000)
       toast({ title: 'Copied', description: 'Content copied to clipboard' })
-    } catch {
-      toast({ title: 'Error', description: 'Failed to copy', variant: 'destructive' })
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: getUserErrorMessage(error, 'Failed to copy content to clipboard.'),
+        variant: 'destructive'
+      })
     }
   }
 
@@ -575,7 +586,7 @@ export default function ServerConfig() {
     } catch (error) {
       toast({
         title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to save',
+        description: getUserErrorMessage(error, 'Failed to save settings.'),
         variant: 'destructive'
       })
     } finally {
@@ -598,7 +609,7 @@ export default function ServerConfig() {
           if (setting.type === 'number') {
             const section = (setting.section || 'settings') as keyof SandboxData
             if (cleanData[section]) {
-              const sectionData = cleanData[section] as Record<string, any>
+              const sectionData = cleanData[section] as SandboxRecord
               const raw = sectionData[setting.key]
               if (typeof raw === 'string') {
                 const num = parseFloat(raw)
@@ -629,7 +640,7 @@ export default function ServerConfig() {
     } catch (error) {
       toast({
         title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to save',
+        description: getUserErrorMessage(error, 'Failed to save settings.'),
         variant: 'destructive'
       })
     } finally {
@@ -652,7 +663,7 @@ export default function ServerConfig() {
     } catch (error) {
       toast({
         title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to save',
+        description: getUserErrorMessage(error, 'Failed to save spawn points.'),
         variant: 'destructive'
       })
     } finally {
@@ -675,7 +686,7 @@ export default function ServerConfig() {
     } catch (error) {
       toast({
         title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to save',
+        description: getUserErrorMessage(error, 'Failed to save spawn regions.'),
         variant: 'destructive'
       })
     } finally {
@@ -726,7 +737,11 @@ export default function ServerConfig() {
       setBackups(data.backups)
       setShowBackups(true)
     } catch (error) {
-      toast({ title: 'Error', description: 'Failed to load backups', variant: 'destructive' })
+      toast({
+        title: 'Error',
+        description: getUserErrorMessage(error, 'Failed to load backups.'),
+        variant: 'destructive'
+      })
     }
   }
 
@@ -740,7 +755,7 @@ export default function ServerConfig() {
     } catch (error) {
       toast({
         title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to restore',
+        description: getUserErrorMessage(error, 'Failed to restore backup.'),
         variant: 'destructive'
       })
     }
@@ -754,7 +769,11 @@ export default function ServerConfig() {
       setTemplates(data.templates)
       setShowTemplates(true)
     } catch (error) {
-      toast({ title: 'Error', description: 'Failed to load templates', variant: 'destructive' })
+      toast({
+        title: 'Error',
+        description: getUserErrorMessage(error, 'Failed to load templates.'),
+        variant: 'destructive'
+      })
     } finally {
       setTemplateLoading(false)
     }
@@ -787,7 +806,7 @@ export default function ServerConfig() {
     } catch (error) {
       toast({
         title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to save template',
+        description: getUserErrorMessage(error, 'Failed to save template.'),
         variant: 'destructive'
       })
     } finally {
@@ -809,7 +828,7 @@ export default function ServerConfig() {
     } catch (error) {
       toast({
         title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to apply template',
+        description: getUserErrorMessage(error, 'Failed to apply template.'),
         variant: 'destructive'
       })
     } finally {
@@ -828,7 +847,7 @@ export default function ServerConfig() {
     } catch (error) {
       toast({
         title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to delete template',
+        description: getUserErrorMessage(error, 'Failed to delete template.'),
         variant: 'destructive'
       })
     }
@@ -839,7 +858,7 @@ export default function ServerConfig() {
     setIniSettings(prev => ({ ...prev, [key]: value }))
   }, [])
 
-  const updateSandboxValue = useCallback((key: string, value: any) => {
+  const updateSandboxValue = useCallback((key: string, value: SandboxScalar) => {
     setSandboxData(prev => {
       if (!prev) return prev
       // Determine section - this requires us to know the section, but we only have the key
@@ -880,14 +899,14 @@ export default function ServerConfig() {
     const schemaSetting = SANDBOX_SCHEMA.find(s => s.key === key)
     if (!schemaSetting) return
     const section = (schemaSetting.section || 'settings') as keyof SandboxData
-    const originalSection = originalSandboxData[section] as Record<string, any> | undefined
+    const originalSection = originalSandboxData[section] as SandboxRecord | undefined
     if (originalSection && originalSection[key] !== undefined) {
       setSandboxData(prev => {
         if (!prev) return prev
         return {
           ...prev,
           [section]: {
-            ...(prev[section] as Record<string, any>),
+            ...(prev[section] as SandboxRecord),
             [key]: originalSection[key]
           }
         }
@@ -910,8 +929,8 @@ export default function ServerConfig() {
     let count = 0
     SANDBOX_SCHEMA.forEach(setting => {
       const section = (setting.section || 'settings') as keyof SandboxData
-      const curr = (sandboxData[section] as Record<string, any>)?.[setting.key]
-      const orig = (originalSandboxData[section] as Record<string, any>)?.[setting.key]
+      const curr = (sandboxData[section] as SandboxRecord)?.[setting.key]
+      const orig = (originalSandboxData[section] as SandboxRecord)?.[setting.key]
       if (JSON.stringify(curr) !== JSON.stringify(orig)) count++
     })
     return count
@@ -975,7 +994,7 @@ export default function ServerConfig() {
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>Configuration data could not be fully loaded</AlertTitle>
           <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <span className="min-w-0 break-words">{loadError}</span>
+            <span className="min-w-0 break-words" dir="auto" title={loadError}>{loadError}</span>
             <Button variant="outline" size="sm" onClick={loadData} className="self-start">
               <RefreshCw className="mr-2 h-4 w-4" /> Retry
             </Button>
@@ -1209,7 +1228,7 @@ export default function ServerConfig() {
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Button variant="outline" size="icon" className="h-9 w-9" onClick={() => handleCreateBackup('ini')} aria-label="Download INI backup">
+                        <Button variant="outline" size="icon" className="h-11 w-11 sm:h-9 sm:w-9" onClick={() => handleCreateBackup('ini')} aria-label="Download INI backup">
                           <Download className="w-4 h-4" />
                         </Button>
                       </TooltipTrigger>
@@ -1273,10 +1292,10 @@ export default function ServerConfig() {
                     const isExpanded = expandedCategories.has(category.id)
                     
                     return (
-                      <div key={category.id} className="mb-3">
+                      <div key={category.id} className="mb-3 perf-section-auto">
                         <button
                           onClick={() => toggleCategory(category.id)}
-                          className={`flex items-center gap-3 w-full py-2.5 px-4 rounded-lg transition-all duration-200 ${
+                          className={`flex items-center gap-3 w-full py-2.5 px-4 rounded-lg transition-[background-color,border-color,box-shadow,color] duration-200 ${
                             isExpanded 
                               ? 'border border-primary/30 bg-primary/10 shadow-sm' 
                               : 'bg-muted/50 hover:bg-muted border border-transparent'
@@ -1343,7 +1362,7 @@ export default function ServerConfig() {
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Button variant="outline" size="icon" className="h-9 w-9" onClick={() => handleCreateBackup('sandbox')} aria-label="Download Sandbox backup">
+                        <Button variant="outline" size="icon" className="h-11 w-11 sm:h-9 sm:w-9" onClick={() => handleCreateBackup('sandbox')} aria-label="Download Sandbox backup">
                           <Download className="w-4 h-4" />
                         </Button>
                       </TooltipTrigger>
@@ -1399,10 +1418,10 @@ export default function ServerConfig() {
                     const isExpanded = expandedCategories.has(category.id)
                     
                     return (
-                      <div key={category.id} className="mb-3">
+                      <div key={category.id} className="mb-3 perf-section-auto">
                         <button
                           onClick={() => toggleCategory(category.id)}
-                          className={`flex items-center gap-3 w-full py-2.5 px-4 rounded-lg transition-all duration-200 ${
+                          className={`flex items-center gap-3 w-full py-2.5 px-4 rounded-lg transition-[background-color,border-color,box-shadow,color] duration-200 ${
                             isExpanded 
                               ? 'border border-primary/30 bg-primary/10 shadow-sm' 
                               : 'bg-muted/50 hover:bg-muted border border-transparent'
@@ -1426,8 +1445,8 @@ export default function ServerConfig() {
                               <SandboxSettingRow 
                                 key={setting.key} 
                                 setting={setting} 
-                                value={(sandboxData?.[(setting.section || 'settings') as keyof SandboxData] as Record<string, any>)?.[setting.key]}
-                                originalValue={(originalSandboxData?.[(setting.section || 'settings') as keyof SandboxData] as Record<string, any>)?.[setting.key]}
+                                value={(sandboxData?.[(setting.section || 'settings') as keyof SandboxData] as SandboxRecord)?.[setting.key]}
+                                originalValue={(originalSandboxData?.[(setting.section || 'settings') as keyof SandboxData] as SandboxRecord)?.[setting.key]}
                                 onChange={updateSandboxValue}
                                 onReset={resetSandboxValue}
                               />
@@ -1463,7 +1482,7 @@ export default function ServerConfig() {
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Button variant="outline" size="icon" className="h-9 w-9" onClick={() => handleCreateBackup('spawnpoints')} aria-label="Download Spawn Points backup">
+                        <Button variant="outline" size="icon" className="h-11 w-11 sm:h-9 sm:w-9" onClick={() => handleCreateBackup('spawnpoints')} aria-label="Download Spawn Points backup">
                           <Download className="w-4 h-4" />
                         </Button>
                       </TooltipTrigger>
@@ -1568,7 +1587,7 @@ export default function ServerConfig() {
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Button variant="outline" size="icon" className="h-9 w-9" onClick={() => handleCreateBackup('spawnregions')} aria-label="Download Spawn Regions backup">
+                        <Button variant="outline" size="icon" className="h-11 w-11 sm:h-9 sm:w-9" onClick={() => handleCreateBackup('spawnregions')} aria-label="Download Spawn Regions backup">
                           <Download className="w-4 h-4" />
                         </Button>
                       </TooltipTrigger>
@@ -1652,7 +1671,7 @@ export default function ServerConfig() {
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-9 w-9 self-end text-destructive hover:text-destructive sm:self-center"
+                            className="h-11 w-11 self-end text-destructive hover:text-destructive sm:h-9 sm:w-9 sm:self-center"
                             onClick={() => setSpawnRegions(spawnRegions.filter((_, i) => i !== index))}
                             aria-label={`Delete spawn region ${region.name || index + 1}`}
                           >
@@ -1740,7 +1759,7 @@ export default function ServerConfig() {
                         <div className="flex min-w-0 items-start gap-3 sm:items-center">
                           <Badge className={`${typeColor} text-white text-xs`}>{fileType}</Badge>
                           <div className="min-w-0">
-                            <p className="break-all text-sm font-medium font-mono">{backup.filename}</p>
+                            <p className="break-all text-sm font-medium font-mono" dir="auto" title={backup.filename}>{backup.filename}</p>
                             <p className="text-xs text-muted-foreground">
                               {new Date(backup.created).toLocaleString()} • {Math.round(backup.size / 1024)}KB
                             </p>
@@ -1831,13 +1850,13 @@ export default function ServerConfig() {
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
-                          <h4 className="font-medium">{template.name}</h4>
+                          <h4 className="font-medium break-words" dir="auto" title={template.name}>{template.name}</h4>
                           <Badge variant="secondary" className="text-xs">
                             {template.type === 'both' ? 'INI + Sandbox' : template.type.toUpperCase()}
                           </Badge>
                         </div>
                         {template.description && (
-                          <p className="mt-1 break-words text-sm text-muted-foreground">{template.description}</p>
+                          <p className="mt-1 break-words text-sm text-muted-foreground" dir="auto" title={template.description}>{template.description}</p>
                         )}
                         <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
                           <span>Created: {new Date(template.created).toLocaleDateString()}</span>
@@ -1882,7 +1901,7 @@ export default function ServerConfig() {
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="h-9 w-9 text-destructive hover:text-destructive"
+                                className="h-11 w-11 text-destructive hover:text-destructive sm:h-9 sm:w-9"
                                 onClick={() => handleDeleteTemplate(template.id, template.name)}
                                 aria-label={`Delete template ${template.name}`}
                               >

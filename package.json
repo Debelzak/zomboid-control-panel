@@ -1,6 +1,6 @@
 {
   "name": "pz-server-manager",
-  "version": "0.6.0",
+  "version": "0.6.1-alpha",
   "description": "Project Zomboid Server Manager - Web-based admin panel",
   "main": "server/index.js",
   "type": "module",
@@ -10,6 +10,9 @@
     "client:dev": "cd client && npm run dev",
     "build": "cd client && npm run build",
     "build:exe": "node build.js",
+    "build:exe:windows": "node build.js --windows",
+    "build:exe:linux": "node build.js --linux",
+    "build:exe:all": "node build.js --all",
     "start": "node server/index.js",
     "install:all": "npm install && cd client && npm install",
     "test": "vitest run",

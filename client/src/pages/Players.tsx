@@ -742,7 +742,7 @@ export default function Players() {
                       <button
                         key={player.name}
                         type="button"
-                        className={`group w-full text-left p-3 rounded-lg border cursor-pointer transition-all duration-200 ${
+                        className={`group w-full text-left p-3 rounded-lg border cursor-pointer transition-[background-color,border-color,box-shadow] duration-200 ${
                           isSelected
                             ? 'bg-primary/10 border-primary shadow-sm'
                             : 'hover:bg-muted/50 border-transparent hover:border-border'
@@ -1941,7 +1941,7 @@ export default function Players() {
                     </AlertDescription>
                   </Alert>
                 )}
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <div className="relative flex-1">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <Input
@@ -1960,13 +1960,14 @@ export default function Players() {
                     size="sm"
                     onClick={() => fetchActivityLogs(logPlayerFilter || undefined)}
                     disabled={logsLoading}
+                    className="w-full sm:w-auto"
                   >
                     {logsLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
                   </Button>
                 </div>
                 
                 <div className="rounded-md border max-h-[350px] overflow-auto">
-                  <table className="w-full min-w-[480px] text-sm">
+                  <table className="w-full min-w-[420px] text-sm">
                     <thead className="bg-muted/50 sticky top-0">
                       <tr>
                         <th className="text-left p-2 font-medium text-xs">Time</th>
@@ -2005,7 +2006,7 @@ export default function Players() {
                                 {log.action}
                               </Badge>
                             </td>
-                            <td className="max-w-[280px] p-2 text-xs text-muted-foreground break-words">
+                            <td className="max-w-[220px] p-2 text-xs text-muted-foreground break-words">
                               {log.details || '-'}
                             </td>
                           </tr>

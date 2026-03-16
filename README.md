@@ -178,10 +178,23 @@ Optional environment variables:
 
 - Build Windows executable: `node build.js --windows`
 - Build Linux binary: `node build.js --linux`
+- Build both binaries + checksums + manifest: `node build.js --all`
 - Build Docker image: `docker build -t zomboid-control-panel:0.6.0 .`
 - Run tests: `npm test`
 - Full release pipeline:
    - `./release.ps1 -Version "0.6.0"`
+
+### Release Assets (GitHub)
+
+Each release is expected to include:
+- `ZomboidControlPanel.exe` (Windows standalone binary)
+- `ZomboidControlPanel` (Linux standalone binary)
+- `checksums.txt` (SHA256 hashes)
+- `release-manifest.json` (build metadata)
+
+Quick integrity verification:
+- Linux/macOS: `sha256sum -c checksums.txt`
+- Windows (PowerShell): `Get-FileHash .\ZomboidControlPanel.exe -Algorithm SHA256`
 
 ## Project Structure
 

@@ -57,8 +57,23 @@ import { Separator } from "@/components/ui/separator"
 // Standalone top-level nav item (not collapsible)
 const dashboardItem = { to: '/', icon: LayoutDashboard, label: 'Dashboard' }
 
+interface NavItem {
+  to: string
+  icon: typeof LayoutDashboard
+  label: string
+  requiresLocal?: boolean
+}
+
+interface NavSection {
+  id: string
+  label: string
+  icon: typeof LayoutDashboard
+  color: string
+  items: NavItem[]
+}
+
 // Navigation sections with collapsible groups
-const navSections = [
+const navSections: NavSection[] = [
   {
     id: 'active',
     label: 'Live',
@@ -126,58 +141,58 @@ const navSections = [
 
 const sectionToneStyles = {
   emerald: {
-    triggerActive: 'bg-[hsl(86_30%_15%/0.52)] border-[hsl(86_34%_34%/0.38)]',
-    iconActive: 'border-[hsl(86_34%_34%/0.48)] bg-[hsl(86_28%_16%/0.62)] text-[hsl(86_44%_70%)]',
-    iconIdle: 'text-foreground/86 group-hover:text-[hsl(86_40%_74%)]',
-    labelActive: 'text-[hsl(82_36%_80%)]',
-    childActive: 'border-[hsl(86_34%_34%/0.48)] bg-[hsl(86_28%_16%/0.36)]',
-    childDot: 'bg-[hsl(86_44%_62%)]',
-    childBorder: 'border-[hsl(86_32%_34%/0.42)]',
+    triggerActive: 'bg-success/12 border-success/35',
+    iconActive: 'border-success/45 bg-success/14 text-success',
+    iconIdle: 'text-foreground/86 group-hover:text-success',
+    labelActive: 'text-success',
+    childActive: 'border-success/45 bg-success/10',
+    childDot: 'bg-success',
+    childBorder: 'border-success/35',
   },
   amber: {
-    triggerActive: 'bg-[hsl(34_44%_15%/0.5)] border-[hsl(34_50%_36%/0.4)]',
-    iconActive: 'border-[hsl(34_50%_36%/0.5)] bg-[hsl(32_40%_14%/0.62)] text-[hsl(36_70%_72%)]',
-    iconIdle: 'text-foreground/86 group-hover:text-[hsl(36_64%_76%)]',
-    labelActive: 'text-[hsl(35_58%_82%)]',
-    childActive: 'border-[hsl(34_50%_36%/0.48)] bg-[hsl(34_40%_15%/0.36)]',
-    childDot: 'bg-[hsl(36_72%_62%)]',
-    childBorder: 'border-[hsl(34_46%_36%/0.4)]',
+    triggerActive: 'bg-warning/12 border-warning/35',
+    iconActive: 'border-warning/45 bg-warning/14 text-warning',
+    iconIdle: 'text-foreground/86 group-hover:text-warning',
+    labelActive: 'text-warning',
+    childActive: 'border-warning/45 bg-warning/10',
+    childDot: 'bg-warning',
+    childBorder: 'border-warning/35',
   },
   blue: {
-    triggerActive: 'bg-[hsl(198_24%_16%/0.48)] border-[hsl(198_30%_34%/0.38)]',
-    iconActive: 'border-[hsl(198_30%_34%/0.48)] bg-[hsl(198_24%_14%/0.6)] text-[hsl(198_42%_70%)]',
-    iconIdle: 'text-foreground/86 group-hover:text-[hsl(198_40%_74%)]',
-    labelActive: 'text-[hsl(198_34%_78%)]',
-    childActive: 'border-[hsl(198_30%_34%/0.46)] bg-[hsl(198_24%_16%/0.36)]',
-    childDot: 'bg-[hsl(198_46%_62%)]',
-    childBorder: 'border-[hsl(198_30%_34%/0.38)]',
+    triggerActive: 'bg-info/12 border-info/35',
+    iconActive: 'border-info/45 bg-info/14 text-info',
+    iconIdle: 'text-foreground/86 group-hover:text-info',
+    labelActive: 'text-info',
+    childActive: 'border-info/45 bg-info/10',
+    childDot: 'bg-info',
+    childBorder: 'border-info/35',
   },
   purple: {
-    triggerActive: 'bg-[hsl(16_34%_16%/0.48)] border-[hsl(16_38%_34%/0.38)]',
-    iconActive: 'border-[hsl(16_38%_34%/0.48)] bg-[hsl(14_32%_14%/0.6)] text-[hsl(20_52%_72%)]',
-    iconIdle: 'text-foreground/86 group-hover:text-[hsl(20_50%_76%)]',
-    labelActive: 'text-[hsl(20_44%_80%)]',
-    childActive: 'border-[hsl(16_38%_34%/0.46)] bg-[hsl(14_32%_15%/0.36)]',
-    childDot: 'bg-[hsl(20_54%_64%)]',
-    childBorder: 'border-[hsl(16_36%_34%/0.38)]',
+    triggerActive: 'bg-accent/30 border-accent/50',
+    iconActive: 'border-accent/60 bg-accent/35 text-accent-foreground',
+    iconIdle: 'text-foreground/86 group-hover:text-accent-foreground',
+    labelActive: 'text-accent-foreground',
+    childActive: 'border-accent/60 bg-accent/25',
+    childDot: 'bg-accent-foreground',
+    childBorder: 'border-accent/50',
   },
   cyan: {
-    triggerActive: 'bg-[hsl(90_24%_16%/0.46)] border-[hsl(90_30%_34%/0.36)]',
-    iconActive: 'border-[hsl(90_30%_34%/0.46)] bg-[hsl(90_24%_15%/0.58)] text-[hsl(92_40%_70%)]',
-    iconIdle: 'text-foreground/86 group-hover:text-[hsl(92_40%_76%)]',
-    labelActive: 'text-[hsl(92_36%_78%)]',
-    childActive: 'border-[hsl(90_30%_34%/0.44)] bg-[hsl(90_24%_15%/0.34)]',
-    childDot: 'bg-[hsl(92_48%_62%)]',
-    childBorder: 'border-[hsl(90_30%_34%/0.36)]',
+    triggerActive: 'bg-primary/14 border-primary/35',
+    iconActive: 'border-primary/45 bg-primary/16 text-primary',
+    iconIdle: 'text-foreground/86 group-hover:text-primary',
+    labelActive: 'text-primary',
+    childActive: 'border-primary/45 bg-primary/10',
+    childDot: 'bg-primary',
+    childBorder: 'border-primary/35',
   },
   slate: {
-    triggerActive: 'bg-[hsl(44_16%_16%/0.5)] border-[hsl(42_20%_34%/0.38)]',
-    iconActive: 'border-[hsl(42_20%_34%/0.48)] bg-[hsl(44_16%_14%/0.62)] text-[hsl(42_28%_80%)]',
-    iconIdle: 'text-foreground/86 group-hover:text-[hsl(42_30%_82%)]',
-    labelActive: 'text-[hsl(42_24%_84%)]',
-    childActive: 'border-[hsl(42_20%_34%/0.46)] bg-[hsl(44_16%_14%/0.36)]',
-    childDot: 'bg-[hsl(42_30%_72%)]',
-    childBorder: 'border-[hsl(42_20%_34%/0.38)]',
+    triggerActive: 'bg-muted/45 border-border/70',
+    iconActive: 'border-border/80 bg-muted text-foreground',
+    iconIdle: 'text-foreground/86 group-hover:text-foreground',
+    labelActive: 'text-foreground',
+    childActive: 'border-border/80 bg-muted/60',
+    childDot: 'bg-muted-foreground',
+    childBorder: 'border-border/70',
   },
 } as const
 
@@ -273,8 +288,8 @@ export default function Layout({ children }: LayoutProps) {
   useEffect(() => {
     if (!socket) return
 
-    const handlePlayersUpdate = (players: any[]) => {
-      setPlayerCount(players.length)
+    const handlePlayersUpdate = (players: unknown) => {
+      setPlayerCount(Array.isArray(players) ? players.length : 0)
     }
 
     socket.on('players:update', handlePlayersUpdate)
@@ -457,11 +472,11 @@ export default function Layout({ children }: LayoutProps) {
               <DropdownMenuTrigger asChild>
                 <Button
                   variant="outline"
-                  className="group h-auto w-full items-start justify-between rounded-xl border-border/60 bg-muted/20 px-4 py-3 text-left hover:border-primary/25 hover:bg-accent/35"
+                  className="group h-auto min-h-[3.25rem] w-full items-start justify-between rounded-xl border-border/60 bg-muted/20 px-4 py-3 text-left hover:border-primary/25 hover:bg-accent/35 sm:h-auto"
                 >
-                  <div className="min-w-0 truncate">
-                    <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Active Server</p>
-                    <p className="mt-1 truncate text-sm font-semibold group-hover:text-primary">
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium uppercase leading-none tracking-[0.18em] text-muted-foreground">Active Server</p>
+                    <p className="mt-1 truncate text-sm font-semibold leading-5 group-hover:text-primary">
                       {activeServer?.name || 'No server selected'}
                     </p>
                   </div>
@@ -513,7 +528,7 @@ export default function Layout({ children }: LayoutProps) {
               onClick={() => setMobileMenuOpen(false)}
               className={({ isActive }) =>
                 cn(
-                  'nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 group relative',
+                  'nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors duration-200 group relative',
                   isActive
                     ? 'nav-item-active bg-primary/10 text-foreground font-semibold'
                     : 'text-muted-foreground hover:text-foreground hover:bg-accent/30'
@@ -552,7 +567,7 @@ export default function Layout({ children }: LayoutProps) {
                   onOpenChange={() => toggleSection(section.id)}
                 >
                   <CollapsibleTrigger className={cn(
-                    "flex min-h-11 items-center justify-between w-full px-3 py-2.5 rounded-lg border border-transparent transition-all duration-200 group",
+                    "flex min-h-11 items-center justify-between w-full px-3 py-2.5 rounded-lg border border-transparent transition-[background-color,border-color,color] duration-200 group",
                     isOpen ? "mb-0.5" : "",
                     hasActiveChild && !isOpen ? tone.triggerActive : "hover:bg-accent/25"
                   )}>
@@ -591,7 +606,7 @@ export default function Layout({ children }: LayoutProps) {
                       hasActiveChild ? tone.childBorder : "border-border/40"
                     )}>
                       {section.items.map((item) => {
-                        const isDisabledByRemote = !!(item as any).requiresLocal && activeServer?.isRemote
+                        const isDisabledByRemote = !!item.requiresLocal && activeServer?.isRemote
                         
                         if (isDisabledByRemote) {
                           return (
@@ -617,7 +632,7 @@ export default function Layout({ children }: LayoutProps) {
                           onClick={() => setMobileMenuOpen(false)}
                           className={({ isActive }) =>
                             cn(
-                              'nav-item flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-200 group relative',
+                              'nav-item flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors duration-200 group relative',
                               isActive
                                 ? cn('nav-item-active text-foreground font-medium', tone.childActive)
                                 : 'text-muted-foreground hover:bg-accent/30 hover:text-foreground'
@@ -627,7 +642,7 @@ export default function Layout({ children }: LayoutProps) {
                           {({ isActive }) => (
                             <>
                               <item.icon className={cn(
-                                "w-4 h-4 transition-all duration-200 shrink-0",
+                                "w-4 h-4 transition-colors duration-200 shrink-0",
                                 isActive ? tone.labelActive : "text-muted-foreground/70 group-hover:text-foreground"
                               )} />
                               <span className="truncate">{item.label}</span>

@@ -562,7 +562,7 @@ export default function ServerSetup() {
             role="button"
             tabIndex={0}
             aria-describedby="full-setup-description"
-            className="group relative overflow-hidden cursor-pointer border-border/70 bg-gradient-to-br from-card via-secondary/50 to-accent/12 transition-all hover:border-primary/40 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            className="group relative overflow-hidden cursor-pointer border-border/70 bg-gradient-to-br from-card via-secondary/50 to-accent/12 transition-[border-color,box-shadow,background-color] hover:border-primary/40 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             onClick={activate}
             onKeyDown={(event) => handleCardKeyDown(event, activate)}
           >
@@ -611,7 +611,7 @@ export default function ServerSetup() {
             role="button"
             tabIndex={0}
             aria-describedby="quick-setup-description"
-            className="group relative overflow-hidden cursor-pointer border-border/70 bg-gradient-to-br from-card via-secondary/45 to-primary/10 transition-all hover:border-primary/30 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            className="group relative overflow-hidden cursor-pointer border-border/70 bg-gradient-to-br from-card via-secondary/45 to-primary/10 transition-[border-color,box-shadow,background-color] hover:border-primary/30 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             onClick={activate}
             onKeyDown={(event) => handleCardKeyDown(event, activate)}
           >
@@ -700,7 +700,7 @@ export default function ServerSetup() {
                   onClick={() => isClickable && setCurrentStep(step.id)}
                   disabled={!isClickable}
                   className={cn(
-                    "flex items-center gap-2 px-3 py-2 sm:px-4 sm:py-2.5 rounded-full transition-all",
+                    "flex items-center gap-2 px-3 py-2 sm:px-4 sm:py-2.5 rounded-full transition-colors",
                     isActive && "bg-primary text-primary-foreground shadow-md",
                     !isActive && isComplete && "bg-primary/16 text-primary",
                     !isActive && !isComplete && "bg-muted text-muted-foreground",

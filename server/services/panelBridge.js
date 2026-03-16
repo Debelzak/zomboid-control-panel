@@ -24,6 +24,22 @@ class PanelBridge extends EventEmitter {
     this.fileWatcher = null;
     this.pendingCommands = new Map(); // id -> { resolve, reject, timeout, timestamp }
     this.processedResults = new Map(); // id -> timestamp (for deduplication)
+    this.protocolVersion = 'queue-v1';
+    this.queue = {
+      inboxDir: 'inbox',
+      outboxDir: 'outbox',
+      inboxCursorFile: path.join('inbox', 'cursor.json'),
+      sequenceWidth: 10,
+      maxResultsPerPoll: 100,
+      retainRecentFiles: 200,
+      cleanupIntervalMs: 60000
+    };
+    this.queueState = {
+      initialized: false,
+      nextCommandSeq: 1,
+      lastConsumedResultSeq: 0
+    };
+    this.lastQueueCleanupAt = 0;
     this.modStatus = null;
     this.previousPlayers = new Set(); // Track previous player list for connect/disconnect detection
     this.lastStatusFileCheck = 0;
@@ -109,6 +125,215 @@ class PanelBridge extends EventEmitter {
     return this.bridgePath ? path.join(this.bridgePath, 'status.json') : null;
   }
 
+  getInboxDir() {
+    return this.bridgePath ? path.join(this.bridgePath, this.queue.inboxDir) : null;
+  }
+
+  getOutboxDir() {
+    return this.bridgePath ? path.join(this.bridgePath, this.queue.outboxDir) : null;
+  }
+
+  getQueueStateFile() {
+    return this.bridgePath ? path.join(this.bridgePath, '.queue-state-node.json') : null;
+  }
+
+  getInboxCursorFile() {
+    return this.bridgePath ? path.join(this.bridgePath, this.queue.inboxCursorFile) : null;
+  }
+
+  formatSeq(seq) {
+    return String(seq).padStart(this.queue.sequenceWidth, '0');
+  }
+
+  getCommandFileBySeq(seq) {
+    const inboxDir = this.getInboxDir();
+    if (!inboxDir) return null;
+    return path.join(inboxDir, `cmd-${this.formatSeq(seq)}.json`);
+  }
+
+  getResultFileBySeq(seq) {
+    const outboxDir = this.getOutboxDir();
+    if (!outboxDir) return null;
+    return path.join(outboxDir, `res-${this.formatSeq(seq)}.json`);
+  }
+
+  ensureQueueProtocol() {
+    if (!this.bridgePath) {
+      throw new Error('Bridge path not configured');
+    }
+    if (this.queueState.initialized) {
+      return;
+    }
+
+    const inboxDir = this.getInboxDir();
+    const outboxDir = this.getOutboxDir();
+    fs.mkdirSync(inboxDir, { recursive: true });
+    fs.mkdirSync(outboxDir, { recursive: true });
+
+    const stateFile = this.getQueueStateFile();
+    if (fs.existsSync(stateFile)) {
+      try {
+        const state = JSON.parse(fs.readFileSync(stateFile, 'utf-8') || '{}');
+        const nextSeq = Number(state.nextCommandSeq);
+        const consumed = Number(state.lastConsumedResultSeq);
+        this.queueState.nextCommandSeq = Number.isFinite(nextSeq) && nextSeq > 0 ? Math.floor(nextSeq) : 1;
+        this.queueState.lastConsumedResultSeq = Number.isFinite(consumed) && consumed >= 0 ? Math.floor(consumed) : 0;
+      } catch (error) {
+        log.warn(`Could not parse queue state file: ${error.message}`);
+        this.queueState.nextCommandSeq = 1;
+        this.queueState.lastConsumedResultSeq = 0;
+      }
+    }
+
+    this.queueState.initialized = true;
+    this.persistQueueState();
+  }
+
+  persistQueueState() {
+    const stateFile = this.getQueueStateFile();
+    if (!stateFile) return;
+    const payload = {
+      protocolVersion: this.protocolVersion,
+      nextCommandSeq: this.queueState.nextCommandSeq,
+      lastConsumedResultSeq: this.queueState.lastConsumedResultSeq,
+      updatedAt: Date.now()
+    };
+    const tempFile = `${stateFile}.tmp`;
+    try {
+      fs.writeFileSync(tempFile, JSON.stringify(payload, null, 2), { mode: 0o600 });
+      fs.renameSync(tempFile, stateFile);
+    } catch (error) {
+      try {
+        fs.writeFileSync(stateFile, JSON.stringify(payload, null, 2), { mode: 0o600 });
+      } catch (writeError) {
+        log.warn(`Could not persist queue state: ${writeError.message}`);
+      }
+      try { fs.unlinkSync(tempFile); } catch (_) { /* ignore */ }
+    }
+  }
+
+  /**
+   * Assess file-based IPC health between panel and PanelBridge mod.
+   * Uses fast file-system checks only (no writes).
+   */
+  getConnectionDiagnostics() {
+    const bridgePath = this.bridgePath;
+    const commandsFile = this.getCommandsFile();
+    const resultsFile = this.getResultsFile();
+    const statusFile = this.getStatusFile();
+
+    const issues = [];
+    const checks = {
+      bridgePathConfigured: Boolean(bridgePath),
+      bridgePathExists: false,
+      bridgePathReadable: false,
+      bridgePathWritable: false,
+      inboxDirPresent: false,
+      outboxDirPresent: false,
+      commandsFilePresent: false,
+      commandsFileReadable: false,
+      resultsFilePresent: false,
+      resultsFileReadable: false,
+      statusFilePresent: false,
+      statusFileReadable: false,
+      statusFresh: false,
+      statusAgeMs: null,
+    };
+
+    if (!bridgePath) {
+      issues.push('Bridge path is not configured.');
+      return {
+        healthy: false,
+        canSendCommands: false,
+        checks,
+        issues,
+        summary: 'Bridge path not configured.',
+      };
+    }
+
+    try {
+      checks.bridgePathExists = fs.existsSync(bridgePath);
+      if (!checks.bridgePathExists) {
+        issues.push('Bridge directory does not exist yet.');
+      }
+    } catch (e) {
+      issues.push(`Bridge directory check failed: ${e.message}`);
+    }
+
+    if (checks.bridgePathExists) {
+      try {
+        fs.accessSync(bridgePath, fs.constants.R_OK);
+        checks.bridgePathReadable = true;
+      } catch (e) {
+        issues.push(`Bridge directory is not readable: ${e.message}`);
+      }
+
+      try {
+        fs.accessSync(bridgePath, fs.constants.W_OK);
+        checks.bridgePathWritable = true;
+      } catch (e) {
+        issues.push(`Bridge directory is not writable: ${e.message}`);
+      }
+    }
+
+    const inspectFile = (filePath, presentKey, readableKey) => {
+      if (!filePath) return;
+      try {
+        const exists = fs.existsSync(filePath);
+        checks[presentKey] = exists;
+        if (!exists) return;
+        fs.accessSync(filePath, fs.constants.R_OK);
+        checks[readableKey] = true;
+      } catch (e) {
+        checks[readableKey] = false;
+        issues.push(`${path.basename(filePath)} is not readable: ${e.message}`);
+      }
+    };
+
+    inspectFile(commandsFile, 'commandsFilePresent', 'commandsFileReadable');
+    inspectFile(resultsFile, 'resultsFilePresent', 'resultsFileReadable');
+    inspectFile(statusFile, 'statusFilePresent', 'statusFileReadable');
+
+    const inboxDir = this.getInboxDir();
+    const outboxDir = this.getOutboxDir();
+    if (inboxDir) {
+      checks.inboxDirPresent = fs.existsSync(inboxDir);
+    }
+    if (outboxDir) {
+      checks.outboxDirPresent = fs.existsSync(outboxDir);
+    }
+
+    if (!checks.statusFilePresent) {
+      issues.push('Status file is missing. Start the game server with PanelBridge enabled.');
+    } else {
+      try {
+        const stats = fs.statSync(statusFile);
+        const ageMs = Date.now() - stats.mtimeMs;
+        checks.statusAgeMs = ageMs;
+        checks.statusFresh = ageMs < this.config.statusStaleMs;
+        if (!checks.statusFresh) {
+          issues.push(`Status file is stale (${Math.round(ageMs / 1000)}s old).`);
+        }
+      } catch (e) {
+        issues.push(`Could not read status file metadata: ${e.message}`);
+      }
+    }
+
+    const canSendCommands = checks.bridgePathConfigured
+      && checks.bridgePathExists
+      && checks.bridgePathWritable
+      && checks.statusFilePresent
+      && checks.statusFresh;
+
+    return {
+      healthy: issues.length === 0,
+      canSendCommands,
+      checks,
+      issues,
+      summary: issues[0] || 'Bridge file connection looks healthy.',
+    };
+  }
+
   /**
    * Start the bridge polling
    */
@@ -125,6 +350,8 @@ class PanelBridge extends EventEmitter {
     // Reset failure counter on start
     this.consecutiveFailures = 0;
     this.lastStatusFileCheck = 0;
+    this.queueState.initialized = false;
+    this.ensureQueueProtocol();
 
     // Start polling for results (fast poll)
     this.pollInterval = setInterval(() => this.pollResults(), this.config.pollIntervalMs);
@@ -253,6 +480,7 @@ class PanelBridge extends EventEmitter {
     this.modStatus = null;
     this.consecutiveFailures = 0;
     this.lastStatusFileCheck = 0;
+    this.queueState.initialized = false;
 
     this.isRunning = false;
     log.info('Stopped');
@@ -272,6 +500,12 @@ class PanelBridge extends EventEmitter {
     if (!this.isRunning) {
       throw new Error('Bridge not running');
     }
+
+    const connection = this.getConnectionDiagnostics();
+    if (!connection.canSendCommands) {
+      throw new Error(`Bridge file connection is unhealthy: ${connection.summary}`);
+    }
+
     // Fail fast if the mod hasn't responded recently (avoids 15s timeout wait)
     if (this.modStatus && !this.modStatus.alive && action !== 'ping') {
       throw new Error('Mod is not responding — check the PZ server is running with PanelBridge enabled');
@@ -279,13 +513,18 @@ class PanelBridge extends EventEmitter {
 
     const commandsFile = this.getCommandsFile();
     const id = uuidv4();
+    this.ensureQueueProtocol();
 
     // Serialize file access to prevent TOCTOU race conditions
     if (!this._writeQueue) this._writeQueue = Promise.resolve();
     
     let writeError = null;
     this._writeQueue = this._writeQueue
-      .then(() => this._appendCommand(commandsFile, id, action, args))
+      .then(() => this._enqueueCommand(id, action, args))
+      .catch(async (queueError) => {
+        log.warn(`Queue write failed, falling back to legacy commands.json: ${queueError.message}`);
+        await this._appendCommand(commandsFile, id, action, args);
+      })
       .catch(err => { writeError = err; });
     await this._writeQueue;
 
@@ -347,10 +586,95 @@ class PanelBridge extends EventEmitter {
     }
   }
 
+  _enqueueCommand(id, action, args) {
+    if (!this.queueState.initialized) {
+      this.ensureQueueProtocol();
+    }
+
+    const seq = this.queueState.nextCommandSeq;
+    const commandFile = this.getCommandFileBySeq(seq);
+    const payload = {
+      protocolVersion: this.protocolVersion,
+      seq,
+      id,
+      action,
+      args,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + (this.config.commandTimeoutMs * 2)
+    };
+
+    const tempFile = `${commandFile}.tmp`;
+    fs.writeFileSync(tempFile, JSON.stringify(payload, null, 2), { mode: 0o600 });
+    fs.renameSync(tempFile, commandFile);
+
+    this.queueState.nextCommandSeq = seq + 1;
+    this.persistQueueState();
+  }
+
   /**
    * Poll for results from the mod
    */
   pollResults() {
+    this.pollQueueResults();
+    this.pollLegacyResults();
+    this.cleanupResultTracking();
+    this.cleanupQueueFilesIfNeeded();
+  }
+
+  pollQueueResults() {
+    if (!this.queueState.initialized) {
+      try {
+        this.ensureQueueProtocol();
+      } catch (error) {
+        log.debug(`Queue init not ready during poll: ${error.message}`);
+        return;
+      }
+    }
+
+    const maxToRead = this.queue.maxResultsPerPoll;
+    let consumed = 0;
+    while (consumed < maxToRead) {
+      const seq = this.queueState.lastConsumedResultSeq + 1;
+      const resultFile = this.getResultFileBySeq(seq);
+      if (!resultFile || !fs.existsSync(resultFile)) {
+        break;
+      }
+
+      let parsed = null;
+      try {
+        const raw = fs.readFileSync(resultFile, 'utf-8');
+        if (!raw.trim()) {
+          this.queueState.lastConsumedResultSeq = seq;
+          consumed++;
+          continue;
+        }
+        parsed = JSON.parse(raw);
+      } catch (error) {
+        log.debug(`Queue result parse error for seq ${seq}: ${error.message}`);
+        break;
+      }
+
+      const result = parsed && parsed.result ? parsed.result : parsed;
+      if (result) {
+        this.processResult(result);
+      }
+
+      this.queueState.lastConsumedResultSeq = seq;
+      consumed++;
+
+      try {
+        fs.writeFileSync(resultFile, '', { mode: 0o600 });
+      } catch (_) {
+        // Ignore cleanup write errors.
+      }
+    }
+
+    if (consumed > 0) {
+      this.persistQueueState();
+    }
+  }
+
+  pollLegacyResults() {
     const resultsFile = this.getResultsFile();
     if (!resultsFile || !fs.existsSync(resultsFile)) {
       return;
@@ -364,56 +688,159 @@ class PanelBridge extends EventEmitter {
       
       if (data.results && Array.isArray(data.results)) {
         for (const result of data.results) {
-          // Skip already processed results
-          if (this.processedResults.has(result.id)) continue;
-          this.processedResults.set(result.id, Date.now());
-
-          // Resolve pending command
-          const pending = this.pendingCommands.get(result.id);
-          if (pending) {
-            clearTimeout(pending.timeout);
-            this.pendingCommands.delete(result.id);
-
-            if (result.success) {
-              pending.resolve({ success: true, data: result.data });
-            } else {
-              pending.reject(new Error(result.error || 'Command failed'));
-            }
-          }
-
-          // Emit result event
-          this.emit('result', result);
+          this.processResult(result);
         }
       }
 
-      // Cleanup old processed IDs (keep last 100, hard cap at 500)
-      if (this.processedResults.size > 500) {
-          this.processedResults.clear();
-      } else if (this.processedResults.size > 100) {
-          // Map iterates in insertion order, so the first items are the oldest
-          let count = 0;
-          for (const [key, _] of this.processedResults) {
-              this.processedResults.delete(key);
-              count++;
-              if (count >= 50) break; // Remove oldest 50
-          }
-      }
-
-      // Cleanup stale pendingCommands that somehow missed their timeout (Bug #17)
-      const now = Date.now();
-      const maxPendingAge = (this.config.commandTimeoutMs || 30000) * 2;
-      for (const [id, cmd] of this.pendingCommands) {
-        if (now - cmd.timestamp > maxPendingAge) {
-          clearTimeout(cmd.timeout);
-          this.pendingCommands.delete(id);
-          log.warn(`Cleaned up stale pending command: ${cmd.action} (age: ${Math.round((now - cmd.timestamp) / 1000)}s)`);
-        }
-      }
     } catch (e) {
       // File might be mid-write by the Lua mod — log at debug level so it's
       // visible in verbose mode without spamming normal logs.
       log.debug(`pollResults read error (likely mid-write): ${e.message}`);
     }
+  }
+
+  cleanupResultTracking() {
+    // Cleanup old processed IDs (keep last 100, hard cap at 500)
+    if (this.processedResults.size > 500) {
+      this.processedResults.clear();
+    } else if (this.processedResults.size > 100) {
+      let count = 0;
+      for (const [key] of this.processedResults) {
+        this.processedResults.delete(key);
+        count++;
+        if (count >= 50) break;
+      }
+    }
+
+    // Cleanup stale pending commands that somehow missed their timeout.
+    const now = Date.now();
+    const maxPendingAge = (this.config.commandTimeoutMs || 30000) * 2;
+    for (const [id, cmd] of this.pendingCommands) {
+      if (now - cmd.timestamp > maxPendingAge) {
+        clearTimeout(cmd.timeout);
+        this.pendingCommands.delete(id);
+        log.warn(`Cleaned up stale pending command: ${cmd.action} (age: ${Math.round((now - cmd.timestamp) / 1000)}s)`);
+      }
+    }
+  }
+
+  cleanupQueueFilesIfNeeded() {
+    const now = Date.now();
+    if (now - this.lastQueueCleanupAt < this.queue.cleanupIntervalMs) {
+      return;
+    }
+    this.lastQueueCleanupAt = now;
+
+    try {
+      this.cleanupInboxFiles();
+    } catch (error) {
+      log.debug(`Queue inbox cleanup skipped: ${error.message}`);
+    }
+
+    try {
+      this.cleanupOutboxFiles();
+    } catch (error) {
+      log.debug(`Queue outbox cleanup skipped: ${error.message}`);
+    }
+  }
+
+  cleanupInboxFiles() {
+    const inboxDir = this.getInboxDir();
+    if (!inboxDir || !fs.existsSync(inboxDir)) return;
+
+    const cursorFile = this.getInboxCursorFile();
+    let lastProcessedSeq = 0;
+    if (cursorFile && fs.existsSync(cursorFile)) {
+      try {
+        const cursor = JSON.parse(fs.readFileSync(cursorFile, 'utf-8') || '{}');
+        const parsed = Number(cursor.lastProcessedSeq);
+        if (Number.isFinite(parsed) && parsed > 0) {
+          lastProcessedSeq = Math.floor(parsed);
+        }
+      } catch (error) {
+        log.debug(`Could not parse inbox cursor file: ${error.message}`);
+      }
+    }
+
+    if (lastProcessedSeq <= this.queue.retainRecentFiles) {
+      return;
+    }
+
+    const deleteUpToSeq = lastProcessedSeq - this.queue.retainRecentFiles;
+    const files = fs.readdirSync(inboxDir);
+    let deleted = 0;
+    for (const fileName of files) {
+      const seq = this.extractSeq(fileName, /^cmd-(\d+)\.json$/);
+      if (seq !== null && seq <= deleteUpToSeq) {
+        try {
+          fs.unlinkSync(path.join(inboxDir, fileName));
+          deleted++;
+        } catch (_) {
+          // Ignore cleanup failures.
+        }
+      }
+    }
+
+    if (deleted > 0) {
+      log.debug(`Queue cleanup removed ${deleted} old inbox files (<= seq ${deleteUpToSeq})`);
+    }
+  }
+
+  cleanupOutboxFiles() {
+    const outboxDir = this.getOutboxDir();
+    if (!outboxDir || !fs.existsSync(outboxDir)) return;
+
+    if (this.queueState.lastConsumedResultSeq <= this.queue.retainRecentFiles) {
+      return;
+    }
+
+    const deleteUpToSeq = this.queueState.lastConsumedResultSeq - this.queue.retainRecentFiles;
+    const files = fs.readdirSync(outboxDir);
+    let deleted = 0;
+    for (const fileName of files) {
+      const seq = this.extractSeq(fileName, /^res-(\d+)\.json$/);
+      if (seq !== null && seq <= deleteUpToSeq) {
+        try {
+          fs.unlinkSync(path.join(outboxDir, fileName));
+          deleted++;
+        } catch (_) {
+          // Ignore cleanup failures.
+        }
+      }
+    }
+
+    if (deleted > 0) {
+      log.debug(`Queue cleanup removed ${deleted} old outbox files (<= seq ${deleteUpToSeq})`);
+    }
+  }
+
+  extractSeq(fileName, pattern) {
+    const match = fileName.match(pattern);
+    if (!match) return null;
+    const parsed = Number(match[1]);
+    if (!Number.isFinite(parsed)) return null;
+    return Math.floor(parsed);
+  }
+
+  processResult(result) {
+    if (!result || !result.id) return;
+
+    if (this.processedResults.has(result.id)) return;
+    this.processedResults.set(result.id, Date.now());
+
+    const pending = this.pendingCommands.get(result.id);
+    if (pending) {
+      clearTimeout(pending.timeout);
+      this.pendingCommands.delete(result.id);
+
+      if (result.success) {
+        pending.resolve({ success: true, data: result.data });
+      } else {
+        pending.reject(new Error(result.error || 'Command failed'));
+      }
+    }
+
+    this.emit('result', result);
   }
 
   /**
@@ -589,6 +1016,7 @@ class PanelBridge extends EventEmitter {
       isRunning: this.isRunning,
       pendingCommands: this.pendingCommands.size,
       modStatus: this.modStatus,
+      connection: this.getConnectionDiagnostics(),
       consecutiveFailures: this.consecutiveFailures,
       config: {
         statusStaleMs: this.config.statusStaleMs,

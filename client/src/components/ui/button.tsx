@@ -11,6 +11,8 @@ const buttonVariants = cva(
       variant: {
         default:
           "bg-primary text-primary-foreground shadow-sm hover:bg-primary/92 disabled:bg-primary/40 disabled:text-primary-foreground/70 disabled:shadow-none",
+        command:
+          "bg-[hsl(var(--primary))] text-primary-foreground border border-primary/45 shadow-[0_0_0_1px_hsl(var(--primary)/0.25),0_8px_20px_-12px_hsl(var(--primary)/0.8)] hover:bg-[hsl(var(--primary)/0.9)] hover:shadow-[0_0_0_1px_hsl(var(--primary)/0.35),0_12px_28px_-14px_hsl(var(--primary)/0.9)] disabled:bg-primary/35 disabled:text-primary-foreground/70 disabled:shadow-none",
         destructive:
           "bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90 disabled:bg-destructive/35 disabled:text-destructive-foreground/70 disabled:shadow-none",
         outline:
@@ -23,10 +25,11 @@ const buttonVariants = cva(
         warning: "bg-warning text-warning-foreground shadow-sm hover:bg-warning/90 disabled:bg-warning/35 disabled:text-warning-foreground/75 disabled:shadow-none",
       },
       size: {
-        default: "h-9 px-4 py-2",
-        sm: "h-8 rounded-md px-3 text-xs",
+        default: "h-11 px-4 py-2 sm:h-9",
+        sm: "h-11 rounded-md px-3 text-xs sm:h-8",
         lg: "h-10 rounded-md px-8",
         icon: "h-11 w-11 sm:h-9 sm:w-9",
+        iconDense: "h-11 w-11 sm:h-8 sm:w-8",
       },
     },
     defaultVariants: {
