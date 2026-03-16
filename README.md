@@ -61,13 +61,14 @@ docker run -d -p 3001:3001 -v panel-data:/app/data zomboid-panel
 
 ### Remote Access (VPS)
 
-If you're accessing the panel remotely, run this before first launch to allow your IP:
+Accessing the panel from another machine? Allow your IP before first launch:
 
 ```bash
-echo 'CORS_ORIGINS=http://YOUR_IP:3001' > .env && ./start.sh
+echo 'CORS_ORIGINS=http://YOUR-VPS-IP:3001' > .env
+./start.sh
 ```
 
-Once logged in, go to **Settings → CORS / Remote Access** to save it permanently.
+Replace `YOUR-VPS-IP` with the server's public IP. After login, go to **Settings → CORS / Remote Access** to save it permanently — the `.env` line is only needed for initial access.
 
 ### Development Mode
 ```bash
