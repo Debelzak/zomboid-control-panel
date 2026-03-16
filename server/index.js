@@ -9,6 +9,7 @@ import { Server } from 'socket.io';
 import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import { fileURLToPath } from 'url';
 import { exec, spawn } from 'child_process';
 import cookieParser from 'cookie-parser';
@@ -30,8 +31,16 @@ import authRoutes from './routes/auth.js';
 import { loadOrCreateCerts } from './utils/certs.js';
 import { sanitizeError } from './utils/sanitize.js';
 
+// Prevent EPIPE on stdout/stderr from crashing the process
+// (happens when terminal is closed while the exe keeps running)
+process.stdout?.on?.('error', (err) => { if (err.code !== 'EPIPE') throw err; });
+process.stderr?.on?.('error', (err) => { if (err.code !== 'EPIPE') throw err; });
+
 // Global error handlers to prevent app crashes
 process.on('uncaughtException', (error) => {
+  // EPIPE means stdout/stderr pipe broke (e.g. terminal closed) — silently ignore
+  // to prevent an infinite error → log → error loop
+  if (error && error.code === 'EPIPE') return;
   log.error('Uncaught Exception:', error);
   // Don't exit - keep the app running
 });
@@ -231,6 +240,16 @@ function rebuildAllowedOriginsFromSettings(settings = {}) {
   const httpsPort = parseInt(settings.httpsPort, 10);
   if (httpsEnabled) {
     addAllowedOrigin(`https://localhost:${Number.isNaN(httpsPort) ? 3443 : httpsPort}`);
+  }
+
+  // Support CORS_ORIGINS env var for VPS first-time setup
+  // (solves chicken-and-egg: can't reach Settings page if CORS blocks you)
+  const envOrigins = process.env.CORS_ORIGINS;
+  if (envOrigins) {
+    const parsed = parseOriginList(envOrigins);
+    for (const origin of parsed) {
+      addAllowedOrigin(origin);
+    }
   }
 }
 
@@ -1131,11 +1150,20 @@ async function start() {
     httpServer.listen(PORT, () => {
       logSection('Ready');
       const urls = [
-        { label: 'Web UI:', url: `http://localhost:${PORT}` },
-        { label: 'API:   ', url: `http://localhost:${PORT}/api` },
+        { label: 'Local: ', url: `http://localhost:${PORT}` },
       ];
       if (httpsServer) {
         urls.push({ label: 'HTTPS: ', url: `https://localhost:${httpsPort}` });
+      }
+
+      // Show machine's network IPs so VPS users know their remote URL
+      const nets = os.networkInterfaces();
+      for (const [, addrs] of Object.entries(nets)) {
+        for (const addr of addrs) {
+          if (!addr.internal && addr.family === 'IPv4') {
+            urls.push({ label: 'Network:', url: `http://${addr.address}:${PORT}` });
+          }
+        }
       }
       logReady(urls);
       

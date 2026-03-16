@@ -278,8 +278,8 @@ export default function Debug() {
       const res = await authFetch(`/api/debug/crash-logs/${encodeURIComponent(filename)}`)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
-      if (data.content) {
-        setCrashLogContent(data.content)
+      if (data.content !== undefined && data.content !== null) {
+        setCrashLogContent(data.content || '(empty file)')
       } else {
         setCrashLogContent('Failed to load crash log content')
       }
@@ -1145,11 +1145,11 @@ export default function Debug() {
                       <span className="text-muted-foreground">RSS</span>
                       <span className="font-mono">{formatMemory(healthStatus.memory.rss)}</span>
                     </div>
-                    <div className="w-full bg-muted rounded-full h-2 mt-2">
+                    <div className="w-full bg-muted rounded-full h-2 mt-2 overflow-hidden">
                       <div 
-                        className="bg-primary h-2 w-full rounded-full transition-transform"
+                        className="bg-primary h-2 rounded-full transition-all"
                         style={{ 
-                          transform: `translateX(-${100 - Math.min(100, (healthStatus.memory.heapUsed / healthStatus.memory.heapTotal) * 100)}%)` 
+                          width: `${Math.min(100, (healthStatus.memory.heapUsed / healthStatus.memory.heapTotal) * 100)}%` 
                         }}
                       />
                     </div>

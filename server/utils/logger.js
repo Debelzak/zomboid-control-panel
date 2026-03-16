@@ -81,12 +81,23 @@ const fileFormat = winston.format.combine(
   filePrintf
 );
 
+// Console transport with EPIPE protection — silences itself if the pipe breaks
+// (e.g. terminal closed while the exe keeps running) to prevent an infinite
+// error → log → error loop that floods the error log and can crash the process.
+const consoleTransport = new winston.transports.Console({
+  format: consoleFormat,
+  handleExceptions: false
+});
+consoleTransport.on('error', (err) => {
+  if (err && err.code === 'EPIPE') {
+    consoleTransport.silent = true;
+  }
+});
+
 export const logger = winston.createLogger({
   level: process.env.LOG_LEVEL || 'info',
   transports: [
-    new winston.transports.Console({
-      format: consoleFormat
-    }),
+    consoleTransport,
     new winston.transports.File({ 
       filename: path.join(logsDir, 'error.log'), 
       level: 'error',

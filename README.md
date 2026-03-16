@@ -59,6 +59,16 @@ docker build -t zomboid-panel .
 docker run -d -p 3001:3001 -v panel-data:/app/data zomboid-panel
 ```
 
+### Remote Access (VPS)
+
+If you're running the panel on a remote server and accessing it from another machine, CORS will block requests from your public IP by default. To allow remote access on first launch, set the `CORS_ORIGINS` environment variable:
+
+```bash
+CORS_ORIGINS="http://your-vps-ip:3001" ./ZomboidControlPanel
+```
+
+Once you can reach the panel, go to **Settings → CORS / Remote Access** and save your allowed origins permanently — then you can drop the env var.
+
 ### Development Mode
 ```bash
 npm run install:all
