@@ -33,7 +33,22 @@ So I built the whole thing. [Background story →](https://www.youtube.com/watch
 
 ---
 
+## Features
+
+- **Server control** — Start, stop, restart, force-stop, save world. Live status and uptime. Multiple server profiles.
+- **Player management** — Online players, activity history. Kick, ban, unban, access levels.
+- **PanelBridge extras** — Teleport, heal, god mode, invisibility, character export/import (skills, perks, recipes, inventory).
+- **World & events** — Weather triggers, climate control, game time, sandbox settings. Chat and admin messaging.
+- **Mod tracking** — Workshop mod update detection with configurable polling.
+- **Scheduling** — Recurring tasks: restarts, saves, broadcasts.
+- **Maintenance** — Backups/restores, chunk cleanup, full RCON console.
+- **Integrations** — Discord bot. PanelBridge Lua mod for in-game commands RCON can't reach.
+
+---
+
 ## Quick Start
+
+**Requires:** Windows 10/11 or Linux (Ubuntu 20.04+, Debian, etc.) and a Project Zomboid server with RCON enabled.
 
 ### Windows
 1. Download `ZomboidControlPanel-windows.zip` from [Releases](https://github.com/fpsacha/zomboid-control-panel/releases/latest).
@@ -59,6 +74,11 @@ docker build -t zomboid-panel .
 docker run -d -p 3001:3001 -v panel-data:/app/data zomboid-panel
 ```
 
+For remote/VPS access, pass `CORS_ORIGINS` to allow your IP:
+```bash
+docker run -d -p 3001:3001 -e CORS_ORIGINS=http://YOUR-VPS-IP:3001 -v panel-data:/app/data zomboid-panel
+```
+
 ### Remote Access (VPS)
 
 Accessing the panel from another machine? Allow your IP before first launch:
@@ -70,59 +90,20 @@ echo 'CORS_ORIGINS=http://YOUR-VPS-IP:3001' > .env
 
 Replace `YOUR-VPS-IP` with the server's public IP. After login, go to **Settings → CORS / Remote Access** to save it permanently — the `.env` line is only needed for initial access.
 
-### Development Mode
-```bash
-npm run install:all
-npm run dev
-```
-Frontend at `http://localhost:5173`, backend at `http://localhost:3001`.
-
 ---
 
-## Requirements
+## Setup
 
-- Windows 10/11 or Linux (Ubuntu 20.04+, Debian, and similar)
-- Project Zomboid dedicated server with RCON enabled
+### First Run
 
----
-
-## What It Does
-
-### Server Control
-Start, stop, restart, force-stop, and save world. Monitor live status and uptime. Manage multiple server profiles.
-
-### Player Management
-View online players and activity history. Kick, ban, unban, adjust access levels.
-
-With PanelBridge: teleport, heal, god mode, invisibility, character export/import (skills, perks, recipes, inventory metadata).
-
-### World and Events
-Trigger events and weather. Control climate, game time, and sandbox settings. Chat and admin messaging.
-
-### Mods and Scheduling
-Track Workshop mods and detect updates. Schedule recurring tasks (restarts, saves, messages).
-
-### Maintenance
-Backups and restores, chunk cleanup, and a full RCON command console.
-
-### Integrations
-Discord bot configuration. PanelBridge for advanced in-game commands that RCON can't reach.
-
----
-
-## First-Time Setup
-
-1. Open the panel and complete setup/login on first run.
+1. Open the panel and complete setup/login.
 2. In **Settings**, configure:
    - Server install path
    - Zomboid data/config path (`Zomboid/Server`)
    - RCON host, port (default: `27015`), and password
 3. Save and test the connection.
-4. Optionally install PanelBridge for advanced controls.
 
----
-
-## RCON Setup
+### RCON
 
 In your server `.ini` (under `Zomboid/Server`):
 
@@ -131,11 +112,9 @@ RCONPassword=your_password
 RCONPort=27015
 ```
 
-Restart the server after saving.
+Restart the PZ server after saving.
 
----
-
-## PanelBridge Setup (Optional, Recommended)
+### PanelBridge (Optional, Recommended)
 
 PanelBridge is a Lua server mod that opens up commands RCON can't reach: character data, detailed weather control, extended world actions. Most of the interesting stuff is behind it.
 
@@ -146,64 +125,6 @@ PanelBridge is a Lua server mod that opens up commands RCON can't reach: charact
    ```
 3. Restart the PZ server.
 4. Set the bridge path in panel Settings.
-
----
-
-## Release Packages
-
-Each release ships two complete packages (binary + web UI + launch scripts + PanelBridge mod):
-
-| File | Platform | How to run |
-|------|----------|------------|
-| `ZomboidControlPanel-windows.zip` | Windows | Extract → run `Start.bat` |
-| `ZomboidControlPanel-linux.tar.gz` | Linux | Extract → run `./start.sh` |
-| `checksums.txt` | Both | SHA256 integrity hashes |
-| `release-manifest.json` | Both | Build metadata |
-
-Verify integrity:
-```bash
-# Linux/macOS
-sha256sum -c checksums.txt
-
-# Windows (PowerShell)
-Get-FileHash .\ZomboidControlPanel-windows.zip -Algorithm SHA256
-```
-
----
-
-## Build and Release
-
-```bash
-node build.js --windows    # Windows exe only
-node build.js --linux      # Linux binary only
-node build.js --all        # Both platforms + checksums + manifest
-
-npm test                   # Run tests
-```
-
-Full release pipeline (PowerShell):
-```powershell
-.\release.ps1 -Version "0.6.1"
-.\release.ps1 -Version "0.6.1" -DryRun       # Preview without changes
-.\release.ps1 -Version "0.6.1" -SkipDeploy   # Skip live server deploy
-```
-
----
-
-## Project Structure
-
-```
-├── client/               # React + TypeScript frontend
-├── server/               # Express backend (routes, services, database)
-│   └── tests/            # Vitest tests
-├── pz-mod/PanelBridge/   # Lua bridge mod
-├── data/                 # LowDB runtime data (never commit db.json)
-├── logs/                 # Runtime logs
-├── build.js              # Build pipeline
-├── Dockerfile
-├── deploy*.ps1
-└── release.ps1           # Release automation
-```
 
 ---
 
@@ -226,6 +147,68 @@ Full release pipeline (PowerShell):
 **Mod updates not detected**
 - Confirm Workshop IDs are tracked in the Mods page.
 - Check the mod checker interval in Settings.
+
+---
+
+## Development
+
+### Dev Mode
+```bash
+npm run install:all
+npm run dev
+```
+Frontend at `http://localhost:5173`, backend at `http://localhost:3001`.
+
+### Build
+```bash
+node build.js --windows    # Windows exe only
+node build.js --linux      # Linux binary only
+node build.js --all        # Both platforms + checksums + manifest
+npm test                   # Run tests
+```
+
+### Release Pipeline (PowerShell)
+```powershell
+.\release.ps1 -Version "0.6.2"
+.\release.ps1 -Version "0.6.2" -DryRun       # Preview without changes
+.\release.ps1 -Version "0.6.2" -SkipDeploy   # Skip live server deploy
+```
+
+### Project Structure
+```
+├── client/               # React + TypeScript frontend
+├── server/               # Express backend (routes, services, database)
+│   └── tests/            # Vitest tests
+├── pz-mod/PanelBridge/   # Lua bridge mod
+├── data/                 # LowDB runtime data (never commit db.json)
+├── logs/                 # Runtime logs
+├── build.js              # Build pipeline
+├── Dockerfile
+└── release.ps1           # Release automation
+```
+
+<details>
+<summary>Release package contents</summary>
+
+Each [release](https://github.com/fpsacha/zomboid-control-panel/releases/latest) ships two complete packages (binary + web UI + launch scripts + PanelBridge mod):
+
+| File | Platform | How to run |
+|------|----------|------------|
+| `ZomboidControlPanel-windows.zip` | Windows | Extract → run `Start.bat` |
+| `ZomboidControlPanel-linux.tar.gz` | Linux | Extract → run `./start.sh` |
+| `checksums.txt` | Both | SHA256 integrity hashes |
+| `release-manifest.json` | Both | Build metadata |
+
+Verify integrity:
+```bash
+# Linux/macOS
+sha256sum -c checksums.txt
+
+# Windows (PowerShell)
+Get-FileHash .\ZomboidControlPanel-windows.zip -Algorithm SHA256
+```
+
+</details>
 
 ---
 
