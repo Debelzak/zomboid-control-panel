@@ -709,9 +709,6 @@ export default function Layout({ children }: LayoutProps) {
             </p>
             <p className="mt-1 flex items-center justify-center gap-2 text-xs text-muted-foreground">
               {panelVersion && <span>v{panelVersion}</span>}
-              <Badge variant="warning" className="px-2 py-0.5 text-xs uppercase tracking-wide text-warning-foreground shadow-none">
-                Beta
-              </Badge>
               <a
                 href="https://github.com/fpsacha/zomboid-control-panel"
                 target="_blank"
