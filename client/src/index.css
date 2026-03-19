@@ -2,43 +2,50 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Hide native browser password reveal toggle (Edge/Chrome) */
+input::-ms-reveal,
+input::-ms-clear {
+  display: none;
+}
+
 @layer base {
+  /* Base tokens: PZ-themed dark fallback (matches survival spirit).
+     The app is always dark — :root inherits from .dark when no theme class is set. */
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --success: 142 76% 36%;
-    --success-foreground: 0 0% 100%;
-    --warning: 38 92% 50%;
-    --warning-foreground: 0 0% 0%;
-    --info: 206 85% 54%;
-    --info-foreground: 0 0% 100%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
+    --background: 30 10% 5%;
+    --foreground: 36 16% 85%;
+    --card: 28 8% 11%;
+    --card-foreground: 34 14% 84%;
+    --popover: 28 8% 10%;
+    --popover-foreground: 34 14% 82%;
+    --primary: 82 38% 42%;
+    --primary-foreground: 80 24% 10%;
+    --secondary: 30 8% 13%;
+    --secondary-foreground: 32 12% 78%;
+    --muted: 25 7% 12%;
+    --muted-foreground: 30 10% 58%;
+    --accent: 34 55% 28%;
+    --accent-foreground: 38 48% 86%;
+    --destructive: 6 55% 40%;
+    --destructive-foreground: 10 20% 92%;
+    --success: 145 42% 38%;
+    --success-foreground: 150 18% 92%;
+    --warning: 36 82% 52%;
+    --warning-foreground: 34 40% 9%;
+    --info: 200 42% 48%;
+    --info-foreground: 200 18% 92%;
+    --border: 30 12% 20%;
+    --input: 28 8% 7%;
+    --ring: 36 68% 50%;
     --radius: 0.5rem;
-    --chart-1: 12 76% 61%;
-    --chart-2: 173 58% 39%;
-    --chart-3: 197 37% 24%;
-    --chart-4: 43 74% 66%;
-    --chart-5: 27 87% 67%;
+    --chart-1: 82 38% 42%;
+    --chart-2: 6 55% 40%;
+    --chart-3: 36 82% 52%;
+    --chart-4: 200 36% 42%;
+    --chart-5: 30 18% 56%;
     
     /* PZ-specific font stacks */
     --font-display: 'Arial Narrow', 'Oswald', 'Arial Black', sans-serif;
-    --font-typewriter: 'Courier New', monospace;
     --font-mono: 'Consolas', 'SFMono-Regular', 'Liberation Mono', monospace;
   }
   
@@ -47,125 +54,131 @@
      Grungy, post-apocalyptic, worn aesthetic
      ========================================== */
   .dark.theme-survival {
-    /* Deep infected darkness - like a basement at night */
-    --background: 62 18% 6%;
-    --foreground: 43 24% 84%;
+    /* Near-black warmth — like a room lit by a single candle */
+    --background: 30 10% 5%;
+    --foreground: 36 16% 85%;
     
-    /* Cards - worn paper/military document feel */
-    --card: 54 14% 11%;
-    --card-foreground: 43 20% 84%;
+    /* Cards — dark panels, clearly separated from background */
+    --card: 28 8% 11%;
+    --card-foreground: 34 14% 84%;
     
-    --popover: 54 14% 10%;
-    --popover-foreground: 43 20% 82%;
+    --popover: 28 8% 10%;
+    --popover-foreground: 34 14% 82%;
     
-    /* Primary - muted field green */
-    --primary: 83 34% 42%;
-    --primary-foreground: 43 32% 11%;
+    /* Primary — action green, clean and distinct */
+    --primary: 82 38% 42%;
+    --primary-foreground: 80 24% 10%;
     
-    /* Secondary - Military olive drab */
-    --secondary: 64 16% 12%;
-    --secondary-foreground: 43 18% 78%;
+    /* Secondary — warm dark surface */
+    --secondary: 30 8% 13%;
+    --secondary-foreground: 32 12% 78%;
     
-    /* Muted - Dusty/grimy tones */
-    --muted: 52 13% 11%;
-    --muted-foreground: 42 18% 74%;
+    /* Muted — subtle warm gray */
+    --muted: 25 7% 12%;
+    --muted-foreground: 30 10% 58%;
     
-    /* Accent - Warning amber/rust (emergency broadcast) */
-    --accent: 24 38% 24%;
-    --accent-foreground: 35 54% 82%;
+    /* Accent — amber firelight (the soul of PZ's visual identity) */
+    --accent: 34 55% 28%;
+    --accent-foreground: 38 48% 86%;
     
-    /* Destructive - Dried/old blood */
-    --destructive: 10 44% 34%;
-    --destructive-foreground: 22 30% 90%;
+    /* Destructive — blood red with urgency */
+    --destructive: 6 55% 40%;
+    --destructive-foreground: 10 20% 92%;
     
-    /* Success - Survival green */
-    --success: 86 46% 38%;
-    --success-foreground: 54 24% 92%;
+    /* Success — emerald green, distinct from primary */
+    --success: 145 42% 38%;
+    --success-foreground: 150 18% 92%;
     
-    /* Warning - Emergency amber */
-    --warning: 34 78% 54%;
-    --warning-foreground: 31 36% 10%;
+    /* Warning — emergency amber */
+    --warning: 36 82% 52%;
+    --warning-foreground: 34 40% 9%;
 
-    /* Info - Radio blue */
-    --info: 198 40% 48%;
-    --info-foreground: 43 20% 92%;
+    /* Info — radio/comms blue */
+    --info: 200 42% 48%;
+    --info-foreground: 200 18% 92%;
     
-    /* Borders - Grungy, like tape or duct tape edges */
-    --border: 42 16% 24%;
-    --input: 52 16% 8%;
-    --ring: 35 64% 52%;
+    /* Borders — warm neutral edges */
+    --border: 30 12% 20%;
+    --input: 28 8% 7%;
+    --ring: 36 68% 50%;
     
-    /* Charts - Post-apocalyptic palette */
-    --chart-1: 83 34% 42%;
-    --chart-2: 10 44% 34%;
-    --chart-3: 34 78% 54%;
-    --chart-4: 198 30% 40%;
-    --chart-5: 46 20% 62%;
+    /* Charts — PZ palette spread */
+    --chart-1: 82 38% 42%;
+    --chart-2: 6 55% 40%;
+    --chart-3: 36 82% 52%;
+    --chart-4: 200 36% 42%;
+    --chart-5: 30 18% 56%;
   }
 
+  /* ==========================================
+     THEME: CLEAN (Modern Ops / Control Room)
+     Cooler, sleeker, steel-toned dashboard
+     ========================================== */
   .dark.theme-clean {
-    --background: 72 18% 7%;
-    --foreground: 50 15% 82%;
-    --card: 64 14% 10%;
-    --card-foreground: 50 15% 82%;
-    --popover: 64 14% 10%;
-    --popover-foreground: 50 15% 82%;
-    --primary: 86 34% 42%;
-    --primary-foreground: 44 30% 9%;
-    --secondary: 70 14% 13%;
-    --secondary-foreground: 50 12% 78%;
-    --muted: 66 12% 12%;
-    --muted-foreground: 48 12% 68%;
-    --accent: 34 44% 24%;
-    --accent-foreground: 38 56% 84%;
-    --destructive: 8 48% 36%;
-    --destructive-foreground: 20 26% 90%;
-    --success: 140 50% 40%;
-    --success-foreground: 0 0% 100%;
-    --warning: 38 84% 52%;
-    --warning-foreground: 0 0% 8%;
+    --background: 210 12% 7%;
+    --foreground: 210 10% 84%;
+    --card: 210 10% 10%;
+    --card-foreground: 210 10% 84%;
+    --popover: 210 10% 10%;
+    --popover-foreground: 210 10% 84%;
+    --primary: 152 34% 42%;
+    --primary-foreground: 210 20% 9%;
+    --secondary: 210 10% 13%;
+    --secondary-foreground: 210 8% 78%;
+    --muted: 210 8% 12%;
+    --muted-foreground: 210 8% 68%;
+    --accent: 210 18% 22%;
+    --accent-foreground: 210 16% 84%;
+    --destructive: 0 48% 38%;
+    --destructive-foreground: 0 14% 92%;
+    --success: 152 46% 40%;
+    --success-foreground: 0 0% 98%;
+    --warning: 38 80% 52%;
+    --warning-foreground: 38 30% 8%;
     --info: 201 64% 48%;
-    --info-foreground: 0 0% 100%;
-    --border: 48 14% 22%;
-    --input: 62 14% 9%;
-    --ring: 34 56% 48%;
-    --chart-1: 86 34% 42%;
+    --info-foreground: 200 14% 94%;
+    --border: 210 10% 20%;
+    --input: 210 10% 9%;
+    --ring: 152 36% 46%;
+    --chart-1: 152 34% 42%;
     --chart-2: 201 44% 42%;
-    --chart-3: 34 46% 44%;
-    --chart-4: 12 42% 40%;
-    --chart-5: 154 20% 42%;
+    --chart-3: 38 52% 48%;
+    --chart-4: 0 38% 42%;
+    --chart-5: 270 20% 48%;
   }
   
   /* Fallback: match survival theme when no theme class is applied */
   .dark {
-    --background: 75 25% 4%;
-    --foreground: 55 15% 75%;
-    --card: 60 12% 8%;
-    --card-foreground: 55 15% 75%;
-    --popover: 60 12% 8%;
-    --popover-foreground: 55 15% 75%;
-    --primary: 84 38% 38%;
-    --primary-foreground: 40 28% 10%;
-    --secondary: 75 18% 11%;
-    --secondary-foreground: 55 15% 75%;
-    --muted: 50 14% 10%;
-    --muted-foreground: 45 12% 62%;
-    --accent: 28 42% 22%;
-    --accent-foreground: 36 58% 80%;
-    --destructive: 6 46% 32%;
-    --destructive-foreground: 20 30% 88%;
-    --success: 142 76% 36%;
-    --success-foreground: 0 0% 100%;
-    --warning: 38 92% 50%;
-    --warning-foreground: 0 0% 0%;
-    --border: 45 14% 18%;
-    --input: 50 16% 7%;
-    --ring: 33 58% 47%;
-    --chart-1: 84 38% 38%;
-    --chart-2: 6 42% 34%;
-    --chart-3: 32 52% 42%;
-    --chart-4: 162 16% 28%;
-    --chart-5: 48 18% 58%;
+    --background: 30 10% 5%;
+    --foreground: 36 16% 85%;
+    --card: 28 8% 11%;
+    --card-foreground: 34 14% 84%;
+    --popover: 28 8% 10%;
+    --popover-foreground: 34 14% 82%;
+    --primary: 82 38% 42%;
+    --primary-foreground: 80 24% 10%;
+    --secondary: 30 8% 13%;
+    --secondary-foreground: 32 12% 78%;
+    --muted: 25 7% 12%;
+    --muted-foreground: 30 10% 58%;
+    --accent: 34 55% 28%;
+    --accent-foreground: 38 48% 86%;
+    --destructive: 6 55% 40%;
+    --destructive-foreground: 10 20% 92%;
+    --success: 145 42% 38%;
+    --success-foreground: 150 18% 92%;
+    --warning: 36 82% 52%;
+    --warning-foreground: 34 40% 9%;
+    --info: 200 42% 48%;
+    --info-foreground: 200 18% 92%;
+    --border: 30 12% 20%;
+    --input: 28 8% 7%;
+    --ring: 36 68% 50%;
+    --chart-1: 82 38% 42%;
+    --chart-2: 6 55% 40%;
+    --chart-3: 36 82% 52%;
+    --chart-4: 200 36% 42%;
+    --chart-5: 30 18% 56%;
   }
 }
 
@@ -175,19 +188,19 @@
 
 /* Noise/grain texture overlay for that post-apocalyptic feel */
 .theme-survival {
-  background-color: hsl(60 14% 6%);
+  background-color: hsl(30 10% 5%);
   background-image:
-    url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.035'/%3E%3C/svg%3E"),
-    radial-gradient(circle at 82% -12%, hsl(82 40% 22% / 0.17), transparent 36%),
-    radial-gradient(circle at 18% 108%, hsl(18 46% 24% / 0.12), transparent 40%),
-    linear-gradient(180deg, hsl(62 18% 7%) 0%, hsl(50 16% 8%) 46%, hsl(42 14% 7%) 100%);
+    url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E"),
+    radial-gradient(circle at 85% -8%, hsl(34 60% 20% / 0.15), transparent 38%),
+    radial-gradient(circle at 12% 110%, hsl(8 40% 18% / 0.10), transparent 42%),
+    linear-gradient(180deg, hsl(28 10% 6%) 0%, hsl(25 8% 5%) 50%, hsl(20 6% 4%) 100%);
   background-attachment: fixed;
 }
 
 @media (max-width: 768px) {
   .theme-survival {
     background-image:
-      linear-gradient(180deg, hsl(62 18% 7%) 0%, hsl(50 16% 8%) 46%, hsl(42 14% 7%) 100%);
+      linear-gradient(180deg, hsl(28 10% 6%) 0%, hsl(25 8% 5%) 50%, hsl(20 6% 4%) 100%);
     background-attachment: scroll;
   }
 
@@ -210,38 +223,38 @@
     0deg,
     transparent,
     transparent 2px,
-    rgba(0, 0, 0, 0.005) 2px,
-    rgba(0, 0, 0, 0.005) 4px
+    hsl(var(--background) / 0.04) 2px,
+    hsl(var(--background) / 0.04) 4px
   );
   contain: strict;
 }
 
 .theme-clean {
   background:
-    radial-gradient(circle at 18% -15%, hsl(86 32% 30% / 0.1), transparent 38%),
-    radial-gradient(circle at 86% 0%, hsl(35 45% 40% / 0.08), transparent 34%),
-    linear-gradient(180deg, hsl(72 18% 7%) 0%, hsl(62 14% 9%) 100%);
+    radial-gradient(circle at 18% -15%, hsl(var(--primary) / 0.08), transparent 38%),
+    radial-gradient(circle at 86% 0%, hsl(var(--accent) / 0.06), transparent 34%),
+    linear-gradient(180deg, hsl(var(--background)) 0%, hsl(var(--card)) 100%);
 }
 
 /* Header styling - emergency broadcast feel */
 .theme-survival .sidebar-header {
   background: linear-gradient(180deg, 
-    hsl(34 52% 12%) 0%, 
-    hsl(60 16% 7%) 52%,
-    hsl(75 25% 4%) 100%
+    hsl(var(--accent)) 0%, 
+    hsl(var(--background)) 52%,
+    hsl(var(--background)) 100%
   );
-  border-bottom: 2px solid hsl(34 48% 28%);
+  border-bottom: 2px solid hsl(var(--accent) / 0.7);
   position: relative;
 }
 
 /* Military/tactical active nav item */
 .theme-survival .nav-item-active {
   background: linear-gradient(90deg,
-    hsl(84 34% 18%) 0%,
-    hsl(28 30% 12%) 100%
+    hsl(var(--primary) / 0.28) 0%,
+    hsl(var(--accent) / 0.18) 100%
   );
-  border-left: 2px solid hsl(84 38% 38% / 0.8);
-  box-shadow: inset 0 0 14px rgba(108, 134, 60, 0.06);
+  border-left: 2px solid hsl(var(--primary) / 0.8);
+  box-shadow: inset 0 0 14px hsl(var(--primary) / 0.06);
 }
 
 /* Custom scrollbar for survival theme */
@@ -251,27 +264,27 @@
 }
 
 .theme-survival ::-webkit-scrollbar-track {
-  background: hsl(75 25% 6%);
-  border-left: 1px solid hsl(45 20% 15%);
+  background: hsl(var(--background));
+  border-left: 1px solid hsl(var(--border) / 0.6);
 }
 
 .theme-survival ::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, hsl(75 30% 20%), hsl(45 25% 15%));
+  background: linear-gradient(180deg, hsl(var(--primary) / 0.3), hsl(var(--border) / 0.6));
   border-radius: 2px;
-  border: 1px solid hsl(45 20% 12%);
+  border: 1px solid hsl(var(--border) / 0.5);
 }
 
 .theme-survival ::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, hsl(85 40% 25%), hsl(45 30% 20%));
+  background: linear-gradient(180deg, hsl(var(--primary) / 0.45), hsl(var(--border) / 0.7));
 }
 
 /* Card styling - worn paper/military document */
 .theme-survival .card-zomboid {
   position: relative;
-  border: 1px solid hsl(45 20% 18%);
+  border: 1px solid hsl(var(--border));
   box-shadow: 
-    0 2px 8px rgba(0, 0, 0, 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.02);
+    0 2px 8px hsl(var(--background) / 0.6),
+    inset 0 1px 0 hsl(var(--foreground) / 0.02);
 }
 
 .theme-survival .card-zomboid::before {
@@ -290,8 +303,8 @@
 .theme-survival .danger-stripe {
   background: repeating-linear-gradient(
     -45deg,
-    hsl(40 80% 20%),
-    hsl(40 80% 20%) 10px,
+    hsl(34 70% 20%),
+    hsl(34 70% 20%) 10px,
     hsl(0 0% 10%) 10px,
     hsl(0 0% 10%) 20px
   );
@@ -316,15 +329,87 @@
 /* Infection pulse for status indicators */
 @keyframes infection-pulse {
   0%, 100% {
-    box-shadow: 0 0 4px hsl(82 42% 34% / 0.28), 0 0 10px hsl(82 42% 34% / 0.08);
+    box-shadow: 0 0 4px hsl(var(--primary) / 0.28), 0 0 10px hsl(var(--primary) / 0.08);
   }
   50% {
-    box-shadow: 0 0 7px hsl(82 42% 38% / 0.36), 0 0 14px hsl(82 42% 34% / 0.12);
+    box-shadow: 0 0 7px hsl(var(--primary) / 0.36), 0 0 14px hsl(var(--primary) / 0.12);
+  }
+}
+
+/* ── OVERDRIVE: Radar sweep for main server status ── */
+@property --sweep-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+@keyframes radar-sweep {
+  from { --sweep-angle: 0deg; }
+  to   { --sweep-angle: 360deg; }
+}
+
+.server-status-dot {
+  position: relative;
+}
+
+.server-status-dot--online {
+  background: hsl(var(--success));
+  box-shadow: 0 0 6px hsl(var(--success) / 0.45);
+}
+
+.server-status-dot--offline {
+  background: hsl(var(--destructive));
+  box-shadow: 0 0 4px hsl(var(--destructive) / 0.3);
+}
+
+/* Radar ring that sweeps around the online dot */
+@media (prefers-reduced-motion: no-preference) {
+  .server-status-dot--online::after {
+    content: '';
+    position: absolute;
+    inset: -4px;
+    border-radius: 50%;
+    background: conic-gradient(
+      from var(--sweep-angle),
+      transparent 0deg,
+      hsl(var(--success) / 0.4) 40deg,
+      transparent 80deg
+    );
+    mask: radial-gradient(circle, transparent 55%, black 56%);
+    -webkit-mask: radial-gradient(circle, transparent 55%, black 56%);
+    animation: radar-sweep 3s linear infinite;
+  }
+
+  .server-status-dot--offline::after {
+    content: '';
+    position: absolute;
+    inset: -3px;
+    border-radius: 50%;
+    border: 1px solid hsl(var(--destructive) / 0.25);
+    animation: none;
+  }
+}
+
+/* ── OVERDRIVE: Connection status breathing glow ── */
+@keyframes conn-breathe {
+  0%, 100% {
+    box-shadow: 0 0 0 0 hsl(var(--primary) / 0), inset 0 0 0 0 hsl(var(--primary) / 0);
+    border-color: hsl(var(--primary) / 0.20);
+  }
+  50% {
+    box-shadow: 0 0 8px 0 hsl(var(--primary) / 0.12), inset 0 0 6px 0 hsl(var(--primary) / 0.06);
+    border-color: hsl(var(--primary) / 0.35);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .conn-status-breathing {
+    animation: conn-breathe 4s ease-in-out infinite;
   }
 }
 
 .theme-survival .status-online {
-  background: linear-gradient(135deg, hsl(82 42% 38%), hsl(82 38% 30%));
+  background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary) / 0.7));
 }
 
 /* Warning/alert pulse */
@@ -340,7 +425,7 @@
 
 /* Typewriter text effect class */
 .theme-survival .text-typewriter {
-  font-family: var(--font-typewriter);
+  font-family: 'Courier New', monospace;
   letter-spacing: 0.5px;
 }
 
@@ -355,19 +440,19 @@
 .theme-survival .terminal-output {
   font-family: var(--font-mono);
   background: linear-gradient(180deg, 
-    hsl(75 30% 3%) 0%, 
-    hsl(85 25% 5%) 100%
+    hsl(var(--background)) 0%, 
+    hsl(var(--input)) 100%
   );
-  border: 1px solid hsl(85 40% 15%);
-  box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.5);
+  border: 1px solid hsl(var(--primary) / 0.25);
+  box-shadow: inset 0 0 30px hsl(var(--background) / 0.7);
 }
 
 /* Biohazard warning badge */
 .theme-survival .badge-biohazard {
-  background: linear-gradient(135deg, hsl(85 60% 30%), hsl(85 50% 20%));
-  color: hsl(55 20% 85%);
-  border: 1px solid hsl(85 50% 25%);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  background: linear-gradient(135deg, hsl(var(--primary) / 0.7), hsl(var(--primary) / 0.45));
+  color: hsl(var(--foreground));
+  border: 1px solid hsl(var(--primary) / 0.5);
+  text-shadow: 0 1px 2px hsl(var(--background) / 0.5);
 }
 
 @layer base {
@@ -466,28 +551,65 @@
   line-height: 1.2;
 }
 
+/* ── OVERDRIVE: Scroll-driven sidebar header compression ── */
+@supports (animation-timeline: scroll()) {
+  @media (min-width: 1024px) and (prefers-reduced-motion: no-preference) {
+    .sidebar-header {
+      animation: compressHeader linear both;
+      animation-timeline: scroll(nearest block);
+      animation-range: 0px 120px;
+    }
+
+    @keyframes compressHeader {
+      from {
+        padding-block: 1rem;
+      }
+      to {
+        padding-block: 0.5rem;
+      }
+    }
+
+    .sidebar-header .shell-brand-title {
+      animation: compressBrandText linear both;
+      animation-timeline: scroll(nearest block);
+      animation-range: 0px 120px;
+    }
+
+    @keyframes compressBrandText {
+      from {
+        font-size: 1rem;
+        letter-spacing: 0.14em;
+      }
+      to {
+        font-size: 0.85rem;
+        letter-spacing: 0.10em;
+      }
+    }
+  }
+}
+
 .theme-survival .shell-brand-title {
   font-family: var(--font-display);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 0 8px rgba(140, 115, 60, 0.1);
+  text-shadow: 0 1px 2px hsl(var(--background) / 0.5), 0 0 8px hsl(var(--accent) / 0.1);
 }
 
 .theme-survival .shell-brand-subtitle {
-  font-family: var(--font-typewriter);
+  font-family: 'Courier New', monospace;
   letter-spacing: 0.08em;
 }
 
 .theme-survival .page-title {
-  color: hsl(43 26% 87%);
-  text-shadow: 0 1px 0 hsl(45 22% 8% / 0.85), 0 0 10px hsl(84 26% 22% / 0.2);
+  color: hsl(var(--foreground));
+  text-shadow: 0 1px 0 hsl(var(--background) / 0.85), 0 0 10px hsl(var(--primary) / 0.15);
 }
 
 .theme-survival .page-title-icon {
-  color: hsl(83 40% 52%);
-  filter: drop-shadow(0 0 6px hsl(83 40% 38% / 0.25));
+  color: hsl(var(--primary) / 0.85);
+  filter: drop-shadow(0 0 6px hsl(var(--primary) / 0.25));
 }
 
 .theme-survival .page-description {
-  color: hsl(42 18% 72%);
+  color: hsl(var(--muted-foreground));
 }
 
 .page-header-shell {
@@ -501,42 +623,42 @@
   inset: 0;
   border-radius: inherit;
   pointer-events: none;
-  background: linear-gradient(120deg, hsl(var(--primary) / 0.09), transparent 45%);
+  background: linear-gradient(120deg, hsl(var(--primary) / 0.05), transparent 45%);
 }
 
 .page-header-shell[data-tone='ops']::before {
-  background: linear-gradient(120deg, hsl(var(--primary) / 0.1), transparent 45%);
+  background: linear-gradient(120deg, hsl(var(--primary) / 0.06), transparent 45%);
 }
 
 .page-header-shell[data-tone='world']::before {
-  background: linear-gradient(120deg, hsl(var(--warning) / 0.13), transparent 48%);
+  background: linear-gradient(120deg, hsl(var(--warning) / 0.07), transparent 48%);
 }
 
 .page-header-shell[data-tone='maintain']::before {
-  background: linear-gradient(120deg, hsl(var(--info) / 0.12), transparent 48%);
+  background: linear-gradient(120deg, hsl(var(--info) / 0.06), transparent 48%);
 }
 
 .page-header-shell[data-tone='config']::before {
-  background: linear-gradient(120deg, hsl(var(--accent) / 0.16), transparent 52%);
+  background: linear-gradient(120deg, hsl(var(--accent) / 0.08), transparent 52%);
 }
 
 .page-header-shell[data-tone='servers']::before {
-  background: linear-gradient(120deg, hsl(var(--success) / 0.12), transparent 50%);
+  background: linear-gradient(120deg, hsl(var(--success) / 0.06), transparent 50%);
 }
 
 .theme-survival .page-eyebrow {
-  color: hsl(42 26% 72%);
+  color: hsl(var(--muted-foreground));
 }
 
 /* Status indicators with modern glow effects */
 .status-online {
   background-color: hsl(var(--success));
-  box-shadow: 0 0 4px hsl(var(--success) / 0.18), inset 0 1px 1px rgba(255,255,255,0.12);
+  box-shadow: 0 0 4px hsl(var(--success) / 0.18), inset 0 1px 1px hsl(var(--foreground) / 0.08);
 }
 
 .status-offline {
   background-color: hsl(var(--destructive));
-  box-shadow: 0 0 4px hsl(var(--destructive) / 0.18), inset 0 1px 1px rgba(255,255,255,0.12);
+  box-shadow: 0 0 4px hsl(var(--destructive) / 0.18), inset 0 1px 1px hsl(var(--foreground) / 0.08);
 }
 
 .status-connecting {
@@ -573,7 +695,7 @@
 
 .card-interactive:hover {
   @apply border-primary/30;
-  box-shadow: 0 6px 18px -6px rgba(0,0,0,0.24), 0 0 0 1px hsl(var(--primary) / 0.06);
+  box-shadow: 0 6px 18px -6px hsl(var(--background) / 0.4), 0 0 0 1px hsl(var(--primary) / 0.06);
   transform: translateY(-1px);
 }
 
@@ -611,15 +733,24 @@
 
   .card-interactive:hover {
     transform: none;
-    box-shadow: 0 4px 12px -8px rgba(0,0,0,0.22);
+    box-shadow: 0 4px 12px -8px hsl(var(--background) / 0.35);
   }
 }
 
 @media (pointer: coarse) {
   [data-slot="button"],
-  [role="tab"] {
+  [role="tab"],
+  [role="button"],
+  input,
+  select {
     min-height: 44px;
   }
+}
+
+.auth-bg-gradient {
+  background-image: radial-gradient(circle at 84% -12%, hsl(var(--primary) / 0.22), transparent 38%),
+    radial-gradient(circle at 12% 108%, hsl(var(--destructive) / 0.16), transparent 42%),
+    linear-gradient(180deg, hsl(var(--background)), hsl(var(--background)));
 }
 
 /* Improved focus states for accessibility */
@@ -648,34 +779,46 @@
   @apply bg-accent/50;
 }
 
-/* Stagger animation for lists */
+/* ── OVERDRIVE: Spring-stagger card entrance ── */
 .stagger-in > * {
   animation: none;
 }
 
 @media (min-width: 769px) and (prefers-reduced-motion: no-preference) {
   .stagger-in > * {
-    animation: staggerFadeIn 0.3s ease-out both;
+    animation: springFadeIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
   }
 }
 
 .stagger-in > *:nth-child(1) { animation-delay: 0ms; }
-.stagger-in > *:nth-child(2) { animation-delay: 50ms; }
-.stagger-in > *:nth-child(3) { animation-delay: 100ms; }
-.stagger-in > *:nth-child(4) { animation-delay: 150ms; }
-.stagger-in > *:nth-child(5) { animation-delay: 200ms; }
-.stagger-in > *:nth-child(6) { animation-delay: 250ms; }
-.stagger-in > *:nth-child(7) { animation-delay: 300ms; }
-.stagger-in > *:nth-child(8) { animation-delay: 350ms; }
+.stagger-in > *:nth-child(2) { animation-delay: 60ms; }
+.stagger-in > *:nth-child(3) { animation-delay: 120ms; }
+.stagger-in > *:nth-child(4) { animation-delay: 175ms; }
+.stagger-in > *:nth-child(5) { animation-delay: 225ms; }
+.stagger-in > *:nth-child(6) { animation-delay: 270ms; }
+.stagger-in > *:nth-child(7) { animation-delay: 310ms; }
+.stagger-in > *:nth-child(8) { animation-delay: 345ms; }
 
-@keyframes staggerFadeIn {
+@keyframes springFadeIn {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(14px) scale(0.97);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Keep the old name as alias for any direct references */
+@keyframes staggerFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
   }
 }
 
@@ -869,13 +1012,13 @@
 }
 
 .theme-survival [data-slot="button"][data-variant="outline"] {
-  background: hsl(52 16% 9% / 0.75);
-  border-color: hsl(45 20% 22%);
+  background: hsl(28 10% 9% / 0.75);
+  border-color: hsl(30 14% 22%);
 }
 
 .theme-survival [role="alert"] {
-  border-color: hsl(45 20% 22%);
-  background: linear-gradient(180deg, hsl(56 18% 10% / 0.84), hsl(52 16% 8% / 0.84));
+  border-color: hsl(30 14% 22%);
+  background: linear-gradient(180deg, hsl(28 12% 10% / 0.84), hsl(26 10% 8% / 0.84));
 }
 
 .theme-survival [role="alert"].border-warning\/40 {
@@ -980,15 +1123,15 @@ tr:hover td {
 /* Active nav indicator bar glow */
 .theme-clean .nav-item-active {
   background: linear-gradient(90deg,
-    hsl(84 32% 44% / 0.12) 0%,
+    hsl(var(--primary) / 0.14) 0%,
     transparent 100%
   );
 }
 
 .theme-survival .nav-item-active {
   background: linear-gradient(90deg,
-    hsl(84 36% 34% / 0.22) 0%,
-    hsl(26 40% 22% / 0.14) 56%,
+    hsl(var(--primary) / 0.22) 0%,
+    hsl(var(--accent) / 0.14) 56%,
     transparent 100%
   );
 }
@@ -1269,18 +1412,18 @@ tr:hover td {
 
 /* Survival theme stat numbers - military/tactical look */
 .theme-survival .stat-number {
-  color: hsl(55 15% 75%);
+  color: hsl(34 16% 75%);
   font-family: var(--font-display);
 }
 
 .theme-survival .stat-number-success {
-  color: hsl(85 70% 45%);
+  color: hsl(145 50% 45%);
 }
 
 /* Worn paper card effect for survival theme */
 .theme-survival .card {
   position: relative;
-  border-color: hsl(45 20% 18%);
+  border-color: hsl(30 14% 18%);
 }
 
 .theme-survival .card::after {
@@ -1313,59 +1456,59 @@ tr:hover td {
 
 /* Player count badge */
 .theme-survival .player-count {
-  background: linear-gradient(135deg, hsl(85 60% 30%), hsl(85 50% 22%));
-  color: hsl(55 20% 85%);
-  border: 1px solid hsl(85 50% 25%);
+  background: linear-gradient(135deg, hsl(145 45% 28%), hsl(145 38% 20%));
+  color: hsl(36 20% 85%);
+  border: 1px solid hsl(145 38% 24%);
   font-family: var(--font-display);
   letter-spacing: 1px;
 }
 
 /* Radio/broadcast styling */
 .theme-survival .broadcast-message {
-  background: linear-gradient(180deg, hsl(50 30% 8%), hsl(45 25% 6%));
-  border-left: 3px solid hsl(40 80% 45%);
-  font-family: var(--font-typewriter);
+  background: linear-gradient(180deg, hsl(30 18% 8%), hsl(28 14% 6%));
+  border-left: 3px solid hsl(34 72% 45%);
+  font-family: 'Courier New', monospace;
   letter-spacing: 0.3px;
 }
 
 /* Map/chunk styling */
 .theme-survival .map-grid {
   background: 
-    linear-gradient(90deg, hsl(85 30% 15% / 0.3) 1px, transparent 1px),
-    linear-gradient(hsl(85 30% 15% / 0.3) 1px, transparent 1px),
-    hsl(75 25% 6%);
+    linear-gradient(90deg, hsl(30 16% 15% / 0.3) 1px, transparent 1px),
+    linear-gradient(hsl(30 16% 15% / 0.3) 1px, transparent 1px),
+    hsl(28 12% 6%);
   background-size: 20px 20px;
 }
 
 /* Log entry styling */
 .theme-survival .log-entry {
-  border-bottom: 1px dashed hsl(45 15% 15%);
+  border-bottom: 1px dashed hsl(30 12% 15%);
   font-family: var(--font-mono);
 }
 
 .theme-survival .log-entry:hover {
-  background: hsl(85 30% 8% / 0.5);
+  background: hsl(30 14% 8% / 0.5);
 }
 
 /* Tab styling for survival */
 .theme-survival [data-state="active"][role="tab"] {
-  border-bottom-color: hsl(84 46% 46%);
-  color: hsl(42 24% 88%);
+  border-bottom-color: hsl(82 40% 44%);
+  color: hsl(36 24% 88%);
 }
 
 /* Input fields - worn/tactical look */
 .theme-survival input,
 .theme-survival textarea,
 .theme-survival select {
-  border-color: hsl(45 20% 20%);
-  background: hsl(50 25% 6%);
+  border-color: hsl(30 14% 20%);
+  background: hsl(28 10% 6%);
 }
 
 .theme-survival input:focus,
 .theme-survival textarea:focus,
 .theme-survival select:focus {
-  border-color: hsl(85 50% 35%);
-  box-shadow: 0 0 0 2px hsl(85 50% 35% / 0.2);
+  border-color: hsl(82 42% 35%);
+  box-shadow: 0 0 0 2px hsl(82 42% 35% / 0.2);
 }
 
 /* Improved scrollbar styling */

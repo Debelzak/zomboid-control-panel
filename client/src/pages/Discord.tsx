@@ -397,7 +397,7 @@ export default function Discord() {
   // ═════════════════════════════════════════════════
   if (showSetupWizard) {
     return (
-      <div className="p-6 space-y-6 page-transition">
+      <div className="space-y-6 page-transition">
         <PageHeader
           title="Discord Bot Setup"
           description="Let's get your Discord bot up and running — follow the steps below"
@@ -408,7 +408,7 @@ export default function Discord() {
         <InlineFeedback message={configMessage} />
 
         {/* Stepper */}
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between overflow-x-auto gap-1">
           {SETUP_STEPS.map((step, i) => {
             const Icon = step.icon
             const isActive = i === setupStep
@@ -919,7 +919,7 @@ export default function Discord() {
   // MANAGEMENT VIEW — shown when bot is configured
   // ═════════════════════════════════════════════════
   return (
-    <div className="p-6 space-y-6 page-transition">
+    <div className="space-y-6 page-transition">
       {/* Header */}
       <PageHeader
         title="Discord Bot"

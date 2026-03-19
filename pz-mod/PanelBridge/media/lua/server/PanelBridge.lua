@@ -3444,6 +3444,194 @@ handlers.giveItem = function(args)
 end
 
 -- ============================================
+-- AIRDROP HANDLER
+-- ============================================
+
+-- Airdrop preset item lists
+local AIRDROP_PRESETS = {
+    military = {
+        "Base.AssaultRifle2", "Base.Pistol3", "Base.556Bullets", "Base.9mmClip",
+        "Base.Bullets9mmBox", "Base.556Box", "Base.HolsterSimple",
+        "Base.Helmet_Army", "Base.Vest_BulletArmy", "Base.MilitaryBoots",
+        "Base.WalkieTalkie5", "Base.KnifeHunting"
+    },
+    medical = {
+        "Base.Bandage", "Base.Bandage", "Base.Bandage", "Base.AlcoholBandage",
+        "Base.AlcoholBandage", "Base.SutureNeedle", "Base.Antibiotics",
+        "Base.Disinfectant", "Base.Pills", "Base.PillsVitamins",
+        "Base.FirstAidKit", "Base.Tweezers"
+    },
+    food = {
+        "Base.CannedBeans", "Base.CannedBeans", "Base.CannedChili",
+        "Base.CannedCorn", "Base.CannedTomato2", "Base.TunaTin",
+        "Base.WaterBottleFull", "Base.WaterBottleFull", "Base.Pop3",
+        "Base.CannedSardines", "Base.CannedPeaches", "Base.MRE"
+    },
+    building = {
+        "Base.Plank", "Base.Plank", "Base.Plank", "Base.Plank",
+        "Base.Nails", "Base.Nails", "Base.NailsBox",
+        "Base.Hammer", "Base.Saw", "Base.Screwdriver",
+        "Base.SheetRope", "Base.Axe"
+    },
+    weapons = {
+        "Base.Shotgun", "Base.ShotgunShellsBox", "Base.ShotgunShellsBox",
+        "Base.HuntingRifle", "Base.308Box", "Base.Pistol",
+        "Base.Bullets9mmBox", "Base.BaseballBat", "Base.Crowbar",
+        "Base.Katana", "Base.Machete", "Base.HolsterSimple"
+    },
+    tools = {
+        "Base.Axe", "Base.Hammer", "Base.Saw", "Base.Screwdriver",
+        "Base.Wrench", "Base.WeldingRods", "Base.BlowTorch",
+        "Base.Crowbar", "Base.HandTorch", "Base.Battery",
+        "Base.Rope", "Base.DuctTape"
+    }
+}
+
+handlers.airdrop = function(args)
+    local x = math.floor(tonumber(args.x) or 0)
+    local y = math.floor(tonumber(args.y) or 0)
+    local z = 0 -- always ground level
+    local preset = args.preset -- "military", "medical", etc.
+    local customItems = args.items -- custom item list (array of {itemType, count})
+    local announce = args.announce ~= false -- default true
+    local attractZombies = args.attractZombies ~= false -- default true
+    local soundRadius = math.min(math.max(tonumber(args.soundRadius) or 150, 10), 500)
+
+    -- Validate coordinates are within reasonable PZ world bounds
+    if x < -1000 or x > 100000 or y < -1000 or y > 100000 then
+        return false, nil, "Coordinates out of range (valid: -1000 to 100000)"
+    end
+    if x == 0 and y == 0 then
+        return false, nil, "Valid x and y coordinates are required"
+    end
+
+    -- Validate preset name if provided (whitelist only)
+    if preset and not AIRDROP_PRESETS[preset] then
+        if customItems == nil then
+            return false, nil, "Unknown preset '" .. tostring(preset) .. "'. Valid: military, medical, food, building, weapons, tools"
+        end
+        preset = nil -- ignore invalid preset if custom items provided
+    end
+
+    -- Determine item list
+    local itemsToSpawn = {}
+    if customItems and type(customItems) == "table" then
+        -- Custom item list: [{itemType: "Base.Axe", count: 2}, ...]
+        for _, entry in ipairs(customItems) do
+            if entry.itemType and type(entry.itemType) == "string" then
+                -- Validate item type format: must be "Module.ItemName" pattern
+                if not entry.itemType:match("^%a[%w_]*%.%a[%w_]*$") then
+                    return false, nil, "Invalid item type format: " .. tostring(entry.itemType) .. " (expected Module.ItemName)"
+                end
+                local count = math.min(math.max(tonumber(entry.count) or 1, 1), 20)
+                for i = 1, count do
+                    table.insert(itemsToSpawn, entry.itemType)
+                end
+            end
+        end
+    elseif preset and AIRDROP_PRESETS[preset] then
+        itemsToSpawn = AIRDROP_PRESETS[preset]
+    else
+        return false, nil, "Either 'preset' (military/medical/food/building/weapons/tools) or 'items' array is required"
+    end
+
+    if #itemsToSpawn == 0 then
+        return false, nil, "No items to drop"
+    end
+
+    -- Clamp total items
+    if #itemsToSpawn > 50 then
+        local clamped = {}
+        for i = 1, 50 do
+            clamped[i] = itemsToSpawn[i]
+        end
+        itemsToSpawn = clamped
+    end
+
+    -- Get the grid square at the target location
+    local world = getWorld()
+    if not world then
+        return false, nil, "World not available"
+    end
+
+    local cell = world:getCell()
+    if not cell then
+        return false, nil, "Cell not available"
+    end
+
+    local sq = cell:getGridSquare(x, y, z)
+    if not sq then
+        return false, nil, "Grid square not loaded at " .. x .. "," .. y .. " — a player must be nearby"
+    end
+
+    -- Spawn items on the ground
+    local added = 0
+    local attempted = #itemsToSpawn
+    local failedTypes = {}
+    for _, itemType in ipairs(itemsToSpawn) do
+        local ok, result = pcall(function()
+            if sq.AddWorldInventoryItem then
+                -- B42+ method: place directly on the ground
+                return sq:AddWorldInventoryItem(itemType, 0.5, 0.5, 0)
+            else
+                -- Fallback: use InventoryItemFactory + manual placement
+                local item = InventoryItemFactory.CreateItem(itemType)
+                if item then
+                    sq:AddWorldInventoryItem(item, 0.5, 0.5, 0)
+                    return item
+                end
+                return nil
+            end
+        end)
+        if ok and result then
+            added = added + 1
+        else
+            failedTypes[itemType] = true
+        end
+    end
+
+    if added == 0 then
+        return false, nil, "Failed to spawn any items (" .. attempted .. " attempted). The area may not be loaded or item types may be invalid."
+    end
+
+    -- Attract zombies with a loud sound
+    if attractZombies then
+        pcall(function()
+            addSound(nil, x, y, z, soundRadius, 200)
+        end)
+    end
+
+    -- Announce to all players
+    if announce then
+        pcall(function()
+            local presetName = preset and (preset:sub(1,1):upper() .. preset:sub(2)) or "Custom"
+            local msg = "[AIRDROP] " .. presetName .. " supply drop at coordinates " .. x .. ", " .. y .. "!"
+            if sendServerMessage then
+                sendServerMessage(msg)
+            end
+        end)
+    end
+
+    PanelBridge.info("Airdrop deployed", { x = x, y = y, preset = preset, itemCount = added, attempted = attempted })
+    local failedCount = attempted - added
+    -- Collect unique failed type names for diagnostics
+    local failedList = {}
+    for typeName, _ in pairs(failedTypes) do
+        table.insert(failedList, typeName)
+    end
+    return true, {
+        message = "Airdrop deployed: " .. added .. "/" .. attempted .. " items at " .. x .. ", " .. y,
+        x = x,
+        y = y,
+        itemCount = added,
+        attempted = attempted,
+        failed = failedCount,
+        failedTypes = #failedList > 0 and failedList or nil,
+        preset = preset or "custom"
+    }
+end
+
+-- ============================================
 -- ZOMBIE MANAGEMENT HANDLERS
 -- ============================================
 

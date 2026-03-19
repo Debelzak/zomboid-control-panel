@@ -94,10 +94,17 @@ class PanelBridge extends EventEmitter {
       throw new Error('Invalid server name — use only letters, numbers, spaces, hyphens, and underscores (max 64 chars)');
     }
 
-    // Default Zomboid folder locations
+    // Default Zomboid folder locations (platform-aware)
     const possibleBases = zomboidUserFolder 
       ? [zomboidUserFolder]
-      : [path.join(os.homedir(), 'Zomboid')];
+      : process.platform === 'win32'
+        ? [path.join(os.homedir(), 'Zomboid')]
+        : [
+            path.join(os.homedir(), 'Zomboid'),
+            path.join(os.homedir(), 'pzserver'),
+            '/opt/pz-server',
+            '/srv/zomboid',
+          ];
 
     for (const base of possibleBases) {
       // The Lua mod writes to: {base}/Lua/panelbridge/{serverName}/
@@ -385,7 +392,10 @@ class PanelBridge extends EventEmitter {
 
     // Stop trying if we've failed too many times
     if (this.watcherRetries >= this.maxWatcherRetries) {
-        log.warn(`Gave up on file watcher after ${this.maxWatcherRetries} attempts. Falling back to polling only.`);
+        const hint = process.platform === 'linux'
+          ? ' On Linux, check: sysctl fs.inotify.max_user_watches (increase to 524288 if low).'
+          : '';
+        log.warn(`Gave up on file watcher after ${this.maxWatcherRetries} attempts. Falling back to polling only.${hint}`);
         return;
     }
 
@@ -410,7 +420,10 @@ class PanelBridge extends EventEmitter {
       });
 
       this.fileWatcher.on('error', (err) => {
-        log.warn(`File watcher error: ${err.message}`);
+        const hint = process.platform === 'linux' && (err.code === 'ENOSPC' || err.message.includes('inotify'))
+          ? ' Increase fs.inotify.max_user_watches: sudo sysctl -w fs.inotify.max_user_watches=524288'
+          : '';
+        log.warn(`File watcher error: ${err.message}${hint}`);
         // Try to recover by closing and nullifying
         try {
           this.fileWatcher.close();

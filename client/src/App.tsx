@@ -40,6 +40,7 @@ const ServerFinder = lazy(() => import('./pages/ServerFinder'))
 const Events = lazy(() => import('./pages/Events'))
 const Chat = lazy(() => import('./pages/Chat'))
 const Backups = lazy(() => import('./pages/Backups'))
+const WorldMap = lazy(() => import('./pages/WorldMap'))
 const Login = lazy(() => import('./pages/Login'))
 const Setup = lazy(() => import('./pages/Setup'))
 
@@ -303,6 +304,7 @@ function AppContent() {
               <Route path="/server-finder" element={<FeatureErrorBoundary featureName="Server Finder"><ServerFinder /></FeatureErrorBoundary>} />
               <Route path="/debug" element={<FeatureErrorBoundary featureName="Debug"><Debug /></FeatureErrorBoundary>} />
               <Route path="/events" element={<FeatureErrorBoundary featureName="Events & Weather"><Events /></FeatureErrorBoundary>} />
+              <Route path="/world-map" element={<FeatureErrorBoundary featureName="World Map"><WorldMap /></FeatureErrorBoundary>} />
               <Route path="/chat" element={<FeatureErrorBoundary featureName="In-Game Chat"><Chat /></FeatureErrorBoundary>} />
               <Route path="/backups" element={<FeatureErrorBoundary featureName="Backups"><Backups /></FeatureErrorBoundary>} />
               <Route path="*" element={<NotFoundRoute />} />

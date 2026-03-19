@@ -601,48 +601,34 @@ export default function Events() {
       setBridgeConnected(status.modConnected)
       setBridgeConnectionSummary(status.connection?.summary || null)
       
-      // If connected, fetch climate floats
+      // If connected, fetch secondary data in parallel
       if (status.modConnected) {
-        try {
-          const floatsResult = await panelBridgeApi.getClimateFloats()
-          if (!mountedRef.current) return
-          if (floatsResult.success && floatsResult.data?.floats) {
-            // Update individual state from current values
-            const floats = floatsResult.data.floats
-            const findFloat = (id: number) => floats.find((f: { id: number; value: number }) => f.id === id)?.value
-            setFogIntensity(Math.round((findFloat(5) ?? 0) * 100))
-            setWindIntensity(Math.round((findFloat(6) ?? 0) * 100))
-            setTemperature(Math.round(findFloat(4) ?? 20))
-            setCloudIntensity(Math.round((findFloat(8) ?? 0) * 100))
-            setHumidity(Math.round((findFloat(12) ?? 0.5) * 100))
-            setPrecipitationIntensity(Math.round((findFloat(3) ?? 0) * 100))
-          }
-        } catch {
-          // Secondary fetch — silent fallback to stale data
+        const [floatsRes, timeRes, utilitiesRes] = await Promise.allSettled([
+          panelBridgeApi.getClimateFloats(),
+          panelBridgeApi.getGameTime(),
+          panelBridgeApi.getUtilitiesStatus(),
+        ])
+        if (!mountedRef.current) return
+
+        if (floatsRes.status === 'fulfilled' && floatsRes.value.success && floatsRes.value.data?.floats) {
+          const floats = floatsRes.value.data.floats
+          const findFloat = (id: number) => floats.find((f: { id: number; value: number }) => f.id === id)?.value
+          setFogIntensity(Math.round((findFloat(5) ?? 0) * 100))
+          setWindIntensity(Math.round((findFloat(6) ?? 0) * 100))
+          setTemperature(Math.round(findFloat(4) ?? 20))
+          setCloudIntensity(Math.round((findFloat(8) ?? 0) * 100))
+          setHumidity(Math.round((findFloat(12) ?? 0.5) * 100))
+          setPrecipitationIntensity(Math.round((findFloat(3) ?? 0) * 100))
         }
-        
-        // Also fetch current game time
-        try {
-          const timeResult = await panelBridgeApi.getGameTime()
-          if (!mountedRef.current) return
-          if (timeResult.success && timeResult.data) {
-            setGameHour(Math.floor(timeResult.data.hour))
-            setGameDay(timeResult.data.day)
-            setGameMonth(timeResult.data.month)
-          }
-        } catch {
-          // Secondary fetch — silent fallback to stale data
+
+        if (timeRes.status === 'fulfilled' && timeRes.value.success && timeRes.value.data) {
+          setGameHour(Math.floor(timeRes.value.data.hour))
+          setGameDay(timeRes.value.data.day)
+          setGameMonth(timeRes.value.data.month)
         }
-        
-        // Fetch utilities status
-        try {
-          const utilitiesResult = await panelBridgeApi.getUtilitiesStatus()
-          if (!mountedRef.current) return
-          if (utilitiesResult.success && utilitiesResult.data) {
-            setUtilitiesStatus(utilitiesResult.data)
-          }
-        } catch {
-          // Secondary fetch — silent fallback to stale data
+
+        if (utilitiesRes.status === 'fulfilled' && utilitiesRes.value.success && utilitiesRes.value.data) {
+          setUtilitiesStatus(utilitiesRes.value.data)
         }
       }
     } catch (error) {
@@ -1317,7 +1303,8 @@ export default function Events() {
         </Card>
 
         {/* Advanced Weather Controls (via Panel Bridge) */}
-        <Card className={!bridgeConnected ? 'opacity-60 pointer-events-none' : ''}>
+        {bridgeConnected ? (
+        <Card>
           <CardHeader className="pb-4">
             <CardTitle className="flex items-center gap-2 text-base">
               <Snowflake className="w-4 h-4 text-primary" />
@@ -1418,9 +1405,19 @@ export default function Events() {
                 </div>
           </CardContent>
         </Card>
+        ) : (
+          <Card className="border-dashed border-border/60 bg-card/30">
+            <CardContent className="flex flex-col items-center justify-center py-10 text-center">
+              <Snowflake className="w-6 h-6 text-muted-foreground/50 mb-2" />
+              <p className="text-sm font-medium text-muted-foreground">Advanced Weather</p>
+              <p className="text-xs text-muted-foreground/70 mt-1">Blizzards, tropical storms, and snow require PanelBridge</p>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Climate Controls (v1.1.0) - spans full width */}
-        <Card className={`lg:col-span-2 ${!bridgeConnected ? 'opacity-60' : ''}`}>
+        {bridgeConnected && (
+        <Card className="lg:col-span-2">
           <CardHeader className="pb-4">
             <div className="flex items-center justify-between">
               <div>
@@ -1674,15 +1671,17 @@ export default function Events() {
             )}
           </CardContent>
         </Card>
+        )}
             </div>
         </TabsContent>
 
         {/* ── Time & Environment Tab ── */}
         <TabsContent value="environment" className="mt-5">
+            {bridgeConnected ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
         {/* Game Time Control (v1.1.0) */}
-        <Card className={!bridgeConnected ? 'opacity-60 pointer-events-none' : ''}>
+        <Card>
           <CardHeader className="pb-4">
             <CardTitle className="flex items-center gap-2 text-base">
               <Calendar className="w-4 h-4 text-primary" />
@@ -1792,7 +1791,7 @@ export default function Events() {
         </Card>
 
         {/* Infrastructure (Power/Water) Control */}
-        <Card className={!bridgeConnected ? 'opacity-60 pointer-events-none' : ''}>
+        <Card>
           <CardHeader className="pb-4">
             <CardTitle className="flex items-center gap-2 text-base">
               <Zap className="w-4 h-4 text-primary" />
@@ -1870,6 +1869,13 @@ export default function Events() {
           </CardContent>
         </Card>
             </div>
+            ) : (
+              <div className="rounded-xl border border-dashed border-border/60 bg-card/30 p-8 text-center">
+                <Calendar className="w-8 h-8 text-muted-foreground/40 mx-auto mb-3" />
+                <p className="text-sm font-medium text-muted-foreground">Time & Infrastructure Controls</p>
+                <p className="text-xs text-muted-foreground/70 mt-1">Game time, power, and water controls require PanelBridge</p>
+              </div>
+            )}
         </TabsContent>
 
         {/* ── Sound Tab ── */}
@@ -1941,7 +1947,8 @@ export default function Events() {
         </Card>
 
         {/* Advanced Sound Controls (Panel Bridge v1.2.0) */}
-        <Card className={!bridgeConnected ? 'opacity-60 pointer-events-none' : ''}>
+        {bridgeConnected ? (
+        <Card>
           <CardHeader className="pb-4">
             <CardTitle className="flex items-center gap-2 text-base">
               <Megaphone className="w-4 h-4 text-primary" />
@@ -2109,6 +2116,15 @@ export default function Events() {
               </div>
           </CardContent>
         </Card>
+        ) : (
+          <Card className="border-dashed border-border/60 bg-card/30">
+            <CardContent className="flex flex-col items-center justify-center py-10 text-center">
+              <Megaphone className="w-6 h-6 text-muted-foreground/50 mb-2" />
+              <p className="text-sm font-medium text-muted-foreground">Advanced Sound Controls</p>
+              <p className="text-xs text-muted-foreground/70 mt-1">Coordinate-based sounds require PanelBridge</p>
+            </CardContent>
+          </Card>
+        )}
             </div>
         </TabsContent>
 
@@ -2469,7 +2485,7 @@ export default function Events() {
         {/* ── Bridge Operations Tab ── */}
         <TabsContent value="bridgeOps" className="mt-5">
             <div>
-              <Card className={!bridgeConnected ? 'opacity-80' : ''}>
+              <Card className={!bridgeConnected ? 'border-dashed border-border/60 bg-card/30' : ''}>
                 <CardHeader className="pb-4">
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                       <div className="space-y-2">

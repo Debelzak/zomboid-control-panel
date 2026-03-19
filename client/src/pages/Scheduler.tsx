@@ -540,7 +540,8 @@ export default function Scheduler() {
           </DialogContent>
       </Dialog>
 
-      {/* Status Cards */}
+      {/* Status Cards — only when tasks exist */}
+      {tasks.length > 0 && (
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
           <CardHeader className="pb-2">
@@ -591,6 +592,7 @@ export default function Scheduler() {
           </CardContent>
         </Card>
       </div>
+      )}
 
       {/* Manual Restart */}
       <Card>
@@ -732,7 +734,7 @@ export default function Scheduler() {
                   <div
                     key={task.id}
                     className={`p-4 rounded-lg border ${
-                      task.enabled ? 'bg-card' : 'bg-muted/50 opacity-60'
+                      task.enabled ? 'bg-card' : 'bg-muted/50 text-muted-foreground'
                     }`}
                   >
                     <div className="flex items-center justify-between">
@@ -887,10 +889,11 @@ export default function Scheduler() {
                     <div className="flex items-start justify-between">
                       <div className="flex items-center gap-2">
                         {entry.success ? (
-                          <CheckCircle2 className="w-4 h-4 text-primary flex-shrink-0" />
+                          <CheckCircle2 className="w-4 h-4 text-primary flex-shrink-0" aria-hidden="true" />
                         ) : (
-                          <XCircle className="w-4 h-4 text-destructive flex-shrink-0" />
+                          <XCircle className="w-4 h-4 text-destructive flex-shrink-0" aria-hidden="true" />
                         )}
+                        <span className="sr-only">{entry.success ? 'Succeeded' : 'Failed'}</span>
                         <div>
                           <span className="font-medium">{entry.task_name}</span>
                           <code className="ml-2 text-xs bg-muted px-1.5 py-0.5 rounded">

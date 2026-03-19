@@ -59,13 +59,13 @@ export default function Login() {
             type="text"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            placeholder="admin"
+            placeholder="e.g. admin"
             autoComplete="username"
             autoFocus
             maxLength={32}
             disabled={loading}
             aria-describedby={errorId}
-            aria-invalid={Boolean(error)}
+            aria-invalid={error ? true : undefined}
             required
           />
         </div>
@@ -80,21 +80,24 @@ export default function Login() {
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
               autoComplete="current-password"
+              className="pr-10"
               disabled={loading}
               aria-describedby={errorId}
-              aria-invalid={Boolean(error)}
+              aria-invalid={error ? true : undefined}
               required
               maxLength={128}
             />
-            <button
-              type="button"
+            <span
+              role="button"
+              tabIndex={0}
               onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-2 min-h-[44px] min-w-[44px] flex items-center justify-center text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setShowPassword(!showPassword); } }}
+              className="absolute right-3 inset-y-0 flex items-center text-muted-foreground hover:text-foreground cursor-pointer select-none rounded-sm focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2"
               aria-label={showPassword ? 'Hide password' : 'Show password'}
               aria-pressed={showPassword}
             >
               {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-            </button>
+            </span>
           </div>
         </div>
 

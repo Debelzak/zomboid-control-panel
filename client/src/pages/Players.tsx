@@ -133,16 +133,19 @@ function ActionTile({
   label,
   disabled,
   emphasis = 'default',
+  compact = false,
 }: {
   icon: React.ReactNode
   label: string
   disabled?: boolean
   emphasis?: 'default' | 'danger'
+  compact?: boolean
 }) {
   return (
     <div
       className={[
-        'flex min-h-20 w-full flex-col items-center justify-center gap-2 rounded-xl border px-3 py-3 text-center transition-colors',
+        'flex w-full items-center justify-center rounded-xl border text-center transition-colors',
+        compact ? 'min-h-14 flex-row gap-1.5 px-2.5 py-2' : 'min-h-20 flex-col gap-2 px-3 py-3',
         emphasis === 'danger'
           ? 'border-destructive/30 text-destructive hover:bg-destructive/5'
           : 'border-border/60 hover:bg-accent/40',
@@ -150,7 +153,7 @@ function ActionTile({
       ].join(' ')}
     >
       {icon}
-      <span className="text-xs font-medium">{label}</span>
+      <span className={compact ? 'text-[11px] font-medium' : 'text-xs font-medium'}>{label}</span>
     </div>
   )
 }
@@ -189,6 +192,10 @@ export default function Players() {
   const [xpAmount, setXpAmount] = useState(100)
   const [selectedVehicle, setSelectedVehicle] = useState('')
   const [unbanUsername, setUnbanUsername] = useState('')
+  const [unbanSteamIdDialogOpen, setUnbanSteamIdDialogOpen] = useState(false)
+  const [unbanSteamId, setUnbanSteamId] = useState('')
+  const [bannedSteamIds, setBannedSteamIds] = useState<Array<{ steamId: string; banned_at: string; reason?: string }>>([])
+  const [loadingBans, setLoadingBans] = useState(false)
   
   // Add User states
   const [addUserUsername, setAddUserUsername] = useState('')
@@ -520,6 +527,27 @@ export default function Players() {
     })
   }
 
+  const handleUnbanSteamId = () => {
+    if (!unbanSteamId) return
+    handleAction('Unban SteamID', () => playersApi.unbanSteamId(unbanSteamId), () => {
+      setUnbanSteamId('')
+      setUnbanSteamIdDialogOpen(false)
+      setBannedSteamIds(prev => prev.filter(b => b.steamId !== unbanSteamId))
+    })
+  }
+
+  const fetchBannedSteamIds = useCallback(async () => {
+    setLoadingBans(true)
+    try {
+      const res = await playersApi.getSteamIdBans()
+      setBannedSteamIds(res.bans || [])
+    } catch {
+      // Silently fail — list will be empty, manual input still works
+    } finally {
+      setLoadingBans(false)
+    }
+  }, [])
+
   const handleTeleport = () => {
     if (!teleportTarget || !teleportX || !teleportY) return
     handleAction('Teleport player', () => playersApi.teleport(teleportTarget, {
@@ -687,13 +715,13 @@ export default function Players() {
         </Alert>
       )}
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 stagger-in">
+      {/* Stats summary */}
+      {players.length > 0 && (
+      <div className="flex flex-wrap items-center gap-6 stagger-in">
         <SummaryCard icon={<Users className="h-5 w-5" />} label="Online Now" value={players.length} />
         <SummaryCard icon={<TrendingUp className="h-5 w-5" />} label="Peak Today" value={peakPlayers} />
-        <SummaryCard icon={<Shield className="h-5 w-5" />} label="Selected" value={selectedPlayer ? '1' : '0'} />
-        <SummaryCard icon={<Clock className="h-5 w-5" />} label="Auto Refresh" value="15s" />
       </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Player List */}
@@ -742,7 +770,7 @@ export default function Players() {
                       <button
                         key={player.name}
                         type="button"
-                        className={`group w-full text-left p-3 rounded-lg border cursor-pointer transition-[background-color,border-color,box-shadow] duration-200 ${
+                        className={`group w-full text-left p-3 rounded-lg border cursor-pointer transition-[background-color,border-color,box-shadow] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 ${
                           isSelected
                             ? 'bg-primary/10 border-primary shadow-sm'
                             : 'hover:bg-muted/50 border-transparent hover:border-border'
@@ -928,7 +956,7 @@ export default function Players() {
           <CardContent>
             <Tabs defaultValue="moderation">
               <div className="overflow-x-auto pb-1">
-                <TabsList className="inline-flex h-auto min-w-max gap-1 rounded-xl border border-border/60 bg-muted/40 p-1">
+                <TabsList className="inline-flex h-auto min-w-max gap-1 rounded-lg border border-border/60 bg-muted/40 p-1">
                   <TabsTrigger value="moderation" className="min-h-9 shrink-0 text-xs px-3">Moderation</TabsTrigger>
                   <TabsTrigger value="items" className="min-h-9 shrink-0 text-xs px-3">Items & XP</TabsTrigger>
                   <TabsTrigger value="vehicles" className="min-h-9 shrink-0 text-xs px-3">Vehicles</TabsTrigger>
@@ -941,7 +969,9 @@ export default function Players() {
 
               {/* Moderation Tab */}
               <TabsContent value="moderation" className="space-y-4 mt-4">
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {/* Primary actions — visible when a player is selected */}
+                {selectedPlayer ? (
+                <div className="grid grid-cols-3 gap-3">
                   {/* Kick */}
                   <Dialog open={kickDialogOpen} onOpenChange={setKickDialogOpen}>
                     <DialogTrigger asChild>
@@ -958,8 +988,9 @@ export default function Players() {
                       </DialogHeader>
                       <div className="space-y-4">
                         <div>
-                          <Label>Reason (optional)</Label>
+                          <Label htmlFor="kick-reason">Reason (optional)</Label>
                           <Input
+                            id="kick-reason"
                             value={kickReason}
                             onChange={(e) => setKickReason(e.target.value)}
                             placeholder="Enter reason..."
@@ -994,8 +1025,9 @@ export default function Players() {
                       </DialogHeader>
                       <div className="space-y-4">
                         <div>
-                          <Label>Reason (optional)</Label>
+                          <Label htmlFor="ban-reason">Reason (optional)</Label>
                           <Input
+                            id="ban-reason"
                             value={banReason}
                             onChange={(e) => setBanReason(e.target.value)}
                             placeholder="Enter reason..."
@@ -1045,33 +1077,6 @@ export default function Players() {
                     </AlertDialogContent>
                   </AlertDialog>
 
-                  {/* Unban */}
-                  <Dialog open={unbanDialogOpen} onOpenChange={setUnbanDialogOpen}>
-                    <DialogTrigger asChild>
-                      <button type="button" className="block h-auto w-full p-0 text-left">
-                        <ActionTile icon={<UserPlus className="w-5 h-5" />} label="Unban" />
-                      </button>
-                    </DialogTrigger>
-                    <DialogContent>
-                      <DialogHeader>
-                        <DialogTitle>Unban Player</DialogTitle>
-                      </DialogHeader>
-                      <div>
-                        <Label>Username</Label>
-                        <Input
-                          value={unbanUsername}
-                          onChange={(e) => setUnbanUsername(e.target.value)}
-                          placeholder="Enter username to unban..."
-                        />
-                      </div>
-                      <DialogFooter>
-                        <Button onClick={handleUnban} disabled={loading || !unbanUsername}>
-                          Unban Player
-                        </Button>
-                      </DialogFooter>
-                    </DialogContent>
-                  </Dialog>
-
                   {/* Access Level */}
                   <Dialog>
                     <DialogTrigger asChild>
@@ -1087,9 +1092,9 @@ export default function Players() {
                         </DialogDescription>
                       </DialogHeader>
                       <div>
-                        <Label>Access Level</Label>
+                        <Label htmlFor="access-level">Access Level</Label>
                         <Select value={accessLevel} onValueChange={setAccessLevel}>
-                          <SelectTrigger>
+                          <SelectTrigger id="access-level">
                             <SelectValue placeholder="Select level..." />
                           </SelectTrigger>
                           <SelectContent>
@@ -1125,8 +1130,9 @@ export default function Players() {
                       </DialogHeader>
                       <div className="space-y-4">
                         <div>
-                          <Label>Target Player</Label>
+                          <Label htmlFor="teleport-target">Target Player</Label>
                           <Input
+                            id="teleport-target"
                             value={teleportTarget || selectedPlayer}
                             onChange={(e) => setTeleportTarget(e.target.value)}
                             placeholder="Player to teleport"
@@ -1157,8 +1163,9 @@ export default function Players() {
                         
                         <div className="grid grid-cols-3 gap-2">
                           <div>
-                            <Label>X</Label>
+                            <Label htmlFor="teleport-x">X</Label>
                             <Input
+                              id="teleport-x"
                               type="number"
                               value={teleportX}
                               onChange={(e) => setTeleportX(e.target.value)}
@@ -1168,8 +1175,9 @@ export default function Players() {
                             />
                           </div>
                           <div>
-                            <Label>Y</Label>
+                            <Label htmlFor="teleport-y">Y</Label>
                             <Input
+                              id="teleport-y"
                               type="number"
                               value={teleportY}
                               onChange={(e) => setTeleportY(e.target.value)}
@@ -1179,8 +1187,9 @@ export default function Players() {
                             />
                           </div>
                           <div>
-                            <Label>Z</Label>
+                            <Label htmlFor="teleport-z">Z</Label>
                             <Input
+                              id="teleport-z"
                               type="number"
                               value={teleportZ}
                               onChange={(e) => setTeleportZ(e.target.value)}
@@ -1205,12 +1214,20 @@ export default function Players() {
                       </DialogFooter>
                     </DialogContent>
                   </Dialog>
+                </div>
+                ) : (
+                <div className="rounded-lg border border-dashed border-border/50 px-4 py-6 text-center">
+                  <p className="text-sm text-muted-foreground">Select a player to manage</p>
+                </div>
+                )}
 
+                {/* Secondary actions — less frequent operations */}
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                   {/* Voice Ban */}
                   <Dialog open={voiceBanDialogOpen} onOpenChange={setVoiceBanDialogOpen}>
                     <DialogTrigger asChild>
                       <button type="button" className="block h-auto w-full p-0 text-left">
-                        <ActionTile icon={<MicOff className="w-5 h-5" />} label="Voice Ban" />
+                        <ActionTile icon={<MicOff className="w-4 h-4" />} label="Voice Ban" compact />
                       </button>
                     </DialogTrigger>
                     <DialogContent>
@@ -1263,7 +1280,7 @@ export default function Players() {
                   <Dialog open={steamIdBanDialogOpen} onOpenChange={setSteamIdBanDialogOpen}>
                     <DialogTrigger asChild>
                       <button type="button" className="block h-auto w-full p-0 text-left">
-                        <ActionTile icon={<Ban className="w-5 h-5" />} label="SteamID Ban" emphasis="danger" />
+                        <ActionTile icon={<Ban className="w-4 h-4" />} label="SteamID Ban" emphasis="danger" compact />
                       </button>
                     </DialogTrigger>
                     <DialogContent>
@@ -1314,7 +1331,7 @@ export default function Players() {
                   <Dialog open={addUserDialogOpen} onOpenChange={setAddUserDialogOpen}>
                     <DialogTrigger asChild>
                       <button type="button" className="block h-auto w-full p-0 text-left">
-                        <ActionTile icon={<UserPlus className="w-5 h-5" />} label="Add User" />
+                        <ActionTile icon={<UserPlus className="w-4 h-4" />} label="Add User" compact />
                       </button>
                     </DialogTrigger>
                     <DialogContent>
@@ -1359,10 +1376,88 @@ export default function Players() {
                       </DialogFooter>
                     </DialogContent>
                   </Dialog>
+
+                  {/* Unban */}
+                  <Dialog open={unbanDialogOpen} onOpenChange={setUnbanDialogOpen}>
+                    <DialogTrigger asChild>
+                      <button type="button" className="block h-auto w-full p-0 text-left">
+                        <ActionTile icon={<UserPlus className="w-4 h-4" />} label="Unban" compact />
+                      </button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Unban Player</DialogTitle>
+                      </DialogHeader>
+                      <div>
+                        <Label htmlFor="unban-username">Username</Label>
+                        <Input
+                          id="unban-username"
+                          value={unbanUsername}
+                          onChange={(e) => setUnbanUsername(e.target.value)}
+                          placeholder="Enter username to unban..."
+                        />
+                      </div>
+                      <DialogFooter>
+                        <Button onClick={handleUnban} disabled={loading || !unbanUsername}>
+                          Unban Player
+                        </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
+
+                  {/* Unban SteamID */}
+                  <Dialog open={unbanSteamIdDialogOpen} onOpenChange={(open) => {
+                    setUnbanSteamIdDialogOpen(open)
+                    if (open) fetchBannedSteamIds()
+                    else setUnbanSteamId('')
+                  }}>
+                    <DialogTrigger asChild>
+                      <button type="button" className="block h-auto w-full p-0 text-left">
+                        <ActionTile icon={<UserPlus className="w-4 h-4" />} label="Unban SteamID" compact />
+                      </button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Unban SteamID</DialogTitle>
+                      </DialogHeader>
+                      <div className="space-y-3">
+                        {bannedSteamIds.length > 0 && (
+                          <div>
+                            <Label>Select banned SteamID</Label>
+                            <Select value={unbanSteamId} onValueChange={setUnbanSteamId}>
+                              <SelectTrigger>
+                                <SelectValue placeholder={loadingBans ? 'Loading...' : 'Select a banned SteamID...'} />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {bannedSteamIds.map((ban) => (
+                                  <SelectItem key={ban.steamId} value={ban.steamId}>
+                                    {ban.steamId}
+                                    {ban.banned_at && <span className="ml-2 text-xs text-muted-foreground">{new Date(ban.banned_at).toLocaleDateString()}</span>}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
+                        <div>
+                          <Label htmlFor="unban-steamid">{bannedSteamIds.length > 0 ? 'Or enter manually' : 'Steam ID'}</Label>
+                          <Input
+                            id="unban-steamid"
+                            value={unbanSteamId}
+                            onChange={(e) => setUnbanSteamId(e.target.value)}
+                            placeholder="Enter Steam ID to unban..."
+                          />
+                        </div>
+                      </div>
+                      <DialogFooter>
+                        <Button onClick={handleUnbanSteamId} disabled={loading || !unbanSteamId}>
+                          Unban SteamID
+                        </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
                 </div>
               </TabsContent>
-
-              {/* Items & XP Tab */}
               <TabsContent value="items" className="space-y-4 mt-4">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                   {/* Add Item */}
@@ -1834,10 +1929,10 @@ export default function Players() {
                             <button
                               type="button"
                               onClick={() => removeTag(tag)}
-                              className="ml-1 rounded p-1 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                              className="ml-1 rounded p-1.5 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                               aria-label={`Remove ${tag} tag`}
                             >
-                              <X className="w-3 h-3" />
+                              <X className="w-3.5 h-3.5" />
                             </button>
                           </Badge>
                         ))}

@@ -11,7 +11,6 @@ import { useToast } from '@/components/ui/use-toast'
 import { rconApi, configApi, serverApi } from '@/lib/api'
 import { useSocket } from '@/contexts/SocketContext'
 import { EmptyState } from '@/components/EmptyState'
-import { PageHeader } from '@/components/PageHeader'
 import { StatusIndicator } from '@/components/StatusIndicator'
 import { cn } from '@/lib/utils'
 
@@ -109,24 +108,24 @@ const ServerLogLine = memo(function ServerLogLine({ line }: { line: string }) {
   return (
     <div
       className={cn(
-        'mb-1 rounded-md border-l px-2 py-1.5',
+        'border-l px-2 py-0.5 leading-tight',
         parsed.type === 'ERROR'
-          ? 'border-destructive/30 bg-destructive/10'
+          ? 'border-destructive/40 bg-destructive/8'
           : parsed.type === 'WARN'
-            ? 'border-warning/30 bg-warning/10'
+            ? 'border-warning/40 bg-warning/8'
             : parsed.type === 'INFO'
-              ? 'border-primary/18 bg-primary/10'
-              : 'border-border/35 bg-transparent'
+              ? 'border-primary/20 bg-primary/5'
+              : 'border-transparent'
       )}
     >
-      <div className="flex items-start gap-2">
+      <div className="flex items-baseline gap-1.5">
         {parsed.type !== 'UNKNOWN' && (
-          <span className={`px-1.5 py-0.5 rounded-md text-xs font-semibold uppercase tracking-wide shrink-0 ${typeBadgeColors[parsed.type]}`}>
+          <span className={`px-1 rounded text-[10px] font-semibold uppercase tracking-wide shrink-0 ${typeBadgeColors[parsed.type]}`}>
             {parsed.type}
           </span>
         )}
         {parsed.category && (
-          <span className="shrink-0 text-muted-foreground">[{parsed.category}]</span>
+          <span className="shrink-0 text-muted-foreground/70 text-[11px]">[{parsed.category}]</span>
         )}
         <span className={`${typeColors[parsed.type]} break-words min-w-0`}>
           {parsed.message || parsed.raw}
@@ -521,13 +520,7 @@ export default function Console() {
 
 
   return (
-    <div className="space-y-4 sm:space-y-6 page-transition">
-      <PageHeader
-        title="Console"
-        description="Server console output and RCON commands"
-        icon={<TerminalIcon className="w-5 h-5 text-primary" />}
-      />
-
+    <div className="space-y-3 page-transition">
       <Tabs defaultValue="server-log" className="w-full">
         <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="server-log" className="flex items-center gap-2">
@@ -567,7 +560,7 @@ export default function Console() {
                 variant="ghost"
                 size="sm"
                 onClick={() => setServerLogFiltered(!serverLogFiltered)}
-                title={serverLogFiltered ? 'Show all messages (including noise)' : 'Filter out repetitive messages'}
+                aria-label={serverLogFiltered ? 'Show all messages (including noise)' : 'Filter out repetitive messages'}
                 className={serverLogFiltered ? 'text-primary' : ''}
               >
                 <Filter className="w-4 h-4 mr-1" />

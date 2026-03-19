@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { 
   Save,
   Server,
@@ -17,6 +17,7 @@ import {
   Download,
   RefreshCw,
   Archive,
+  Info,
   Trash2,
   HardDrive,
   RotateCcw,
@@ -25,7 +26,8 @@ import {
   RotateCw,
   Lock,
   User,
-  ExternalLink
+  ExternalLink,
+  FolderOpen
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { reportClientError } from '@/lib/client-errors'
@@ -67,6 +69,14 @@ import { useSocket } from '@/contexts/SocketContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { BridgeStatusBadge } from '@/components/BridgeStatusBadge'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogTrigger,
+} from '@/components/ui/dialog'
 import {
   Select,
   SelectContent,
@@ -209,6 +219,7 @@ export default function Settings() {
   const [bridgeLoading, setBridgeLoading] = useState(false)
   const [bridgeError, setBridgeError] = useState<string | null>(null)
   const [pinging, setPinging] = useState(false)
+  const [manualBridgePath, setManualBridgePath] = useState('')
   
   // Server list for install dropdown
   const [servers, setServers] = useState<ServerInstance[]>([])
@@ -230,15 +241,15 @@ export default function Settings() {
 
   // Section navigation via tabs
   const settingsSections = [
-    { id: 'panel', label: 'Panel', icon: Globe },
-    { id: 'https', label: 'HTTPS', icon: Lock },
-    { id: 'rcon', label: 'RCON', icon: Link },
-    { id: 'bridge', label: 'Bridge', icon: Zap },
-    { id: 'mods', label: 'Mods', icon: Clock },
-    { id: 'api-keys', label: 'API Keys', icon: Key },
-    { id: 'backups', label: 'Backups', icon: Archive },
-    { id: 'security', label: 'Security', icon: Shield },
-    { id: 'about', label: 'About', icon: Server },
+    { id: 'panel', label: 'Panel', icon: Globe, group: 'core' },
+    { id: 'https', label: 'HTTPS', icon: Lock, group: 'core' },
+    { id: 'rcon', label: 'RCON', icon: Link, group: 'connections' },
+    { id: 'bridge', label: 'Bridge', icon: Zap, group: 'connections' },
+    { id: 'mods', label: 'Mods', icon: Clock, group: 'features' },
+    { id: 'api-keys', label: 'API Keys', icon: Key, group: 'features' },
+    { id: 'backups', label: 'Backups', icon: Archive, group: 'features' },
+    { id: 'security', label: 'Security', icon: Shield, group: 'system' },
+    { id: 'about', label: 'About', icon: Server, group: 'system' },
   ]
   const [activeSection, setActiveSection] = useState('panel')
   
@@ -1029,6 +1040,31 @@ export default function Settings() {
     }
   }
 
+  const handleManualConfigure = async () => {
+    const trimmed = manualBridgePath.trim()
+    if (!trimmed) return
+    setBridgeLoading(true)
+    setBridgeError(null)
+    try {
+      const result = await panelBridgeApi.configureDirect(trimmed)
+      if (result.success) {
+        toast({
+          title: 'Bridge Configured',
+          description: `Watching: ${result.bridgePath}`,
+          variant: 'success' as const,
+        })
+        setManualBridgePath('')
+        await fetchBridgeStatus()
+      } else {
+        setBridgeError(result.error || 'Failed to configure bridge')
+      }
+    } catch (error) {
+      setBridgeError(error instanceof Error ? error.message : 'Failed to configure bridge with manual path')
+    } finally {
+      setBridgeLoading(false)
+    }
+  }
+
   const handlePingMod = async () => {
     setPinging(true)
     try {
@@ -1090,10 +1126,6 @@ export default function Settings() {
   const selectedInstallTarget = selectedInstallServer
     ? `${selectedInstallServer.installPath}${sep}media${sep}lua${sep}server${sep}PanelBridge.lua`
     : null
-  const watchedBridgeFolder = bridgeStatus?.bridgePath
-    || (selectedInstallServer?.zomboidDataPath
-      ? `${selectedInstallServer.zomboidDataPath}${sep}panelbridge${sep}${selectedInstallServer.serverName}`
-      : null)
 
   const handleChangePassword = async () => {
     if (!newPassword || !confirmPassword) return
@@ -1165,18 +1197,22 @@ export default function Settings() {
       />
 
       <Tabs value={activeSection} onValueChange={setActiveSection} className="mt-6">
-        <TabsList className="flex h-auto flex-wrap gap-1 bg-muted/40 p-1 rounded-xl w-full">
-          {settingsSections.map((section) => {
+        <TabsList className="flex h-auto flex-wrap gap-1 bg-muted/40 p-1 rounded-lg w-full">
+          {settingsSections.map((section, idx) => {
             const Icon = section.icon
+            const prevGroup = idx > 0 ? settingsSections[idx - 1].group : section.group
+            const showSeparator = idx > 0 && section.group !== prevGroup
             return (
-              <TabsTrigger
-                key={section.id}
-                value={section.id}
-                className="flex items-center gap-1.5 px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-sm"
-              >
-                <Icon className="w-3.5 h-3.5 shrink-0" />
-                <span className="hidden sm:inline">{section.label}</span>
-              </TabsTrigger>
+              <React.Fragment key={section.id}>
+                {showSeparator && <div className="mx-0.5 hidden sm:block w-px self-stretch bg-border/40" />}
+                <TabsTrigger
+                  value={section.id}
+                  className="flex items-center gap-1.5 px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-sm"
+                >
+                  <Icon className="w-3.5 h-3.5 shrink-0" />
+                  <span className="hidden sm:inline">{section.label}</span>
+                </TabsTrigger>
+              </React.Fragment>
             )
           })}
         </TabsList>
@@ -1197,8 +1233,9 @@ export default function Settings() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="max-w-xs">
-            <Label>Panel Port</Label>
+            <Label htmlFor="panel-port">Panel Port</Label>
             <Input
+              id="panel-port"
               type="number"
               value={settings.panelPort}
               onChange={(e) => updateSetting('panelPort', e.target.value)}
@@ -1264,8 +1301,9 @@ export default function Settings() {
             </div>
 
             <div className="space-y-2">
-              <Label>Additional Allowed Origins</Label>
+              <Label htmlFor="cors-origins">Additional Allowed Origins</Label>
               <Textarea
+                id="cors-origins"
                 value={settings.corsAllowedOrigins}
                 onChange={(e) => updateSetting('corsAllowedOrigins', e.target.value)}
                 placeholder={'http://123.45.67.89:3001\nhttps://panel.example.com'}
@@ -1579,8 +1617,9 @@ export default function Settings() {
           {settings.httpsEnabled && (
             <div className="ml-2 space-y-4 border-l-2 border-primary/20 pl-2">
               <div className="max-w-xs">
-                <Label>HTTPS Port</Label>
+                <Label htmlFor="https-port">HTTPS Port</Label>
                 <Input
+                  id="https-port"
                   type="number"
                   value={settings.httpsPort}
                   onChange={(e) => updateSetting('httpsPort', e.target.value)}
@@ -1593,8 +1632,9 @@ export default function Settings() {
                 </p>
               </div>
               <div className="max-w-md">
-                <Label>Custom Certificate Path <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                <Label htmlFor="https-cert-path">Custom Certificate Path <span className="text-muted-foreground font-normal">(optional)</span></Label>
                 <Input
+                  id="https-cert-path"
                   value={settings.httpsCertPath}
                   onChange={(e) => updateSetting('httpsCertPath', e.target.value)}
                   placeholder="Example: C:\\certs\\panel.fullchain.pem"
@@ -1603,8 +1643,9 @@ export default function Settings() {
                 <p className="text-xs text-muted-foreground mt-1">Set both certificate and key paths, or leave both empty.</p>
               </div>
               <div className="max-w-md">
-                <Label>Custom Key Path <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                <Label htmlFor="https-key-path">Custom Key Path <span className="text-muted-foreground font-normal">(optional)</span></Label>
                 <Input
+                  id="https-key-path"
                   value={settings.httpsKeyPath}
                   onChange={(e) => updateSetting('httpsKeyPath', e.target.value)}
                   placeholder="Example: C:\\certs\\panel.privkey.pem"
@@ -1682,8 +1723,9 @@ export default function Settings() {
           </div>
           {settings.autoReconnect && (
             <div className="max-w-xs">
-              <Label>Reconnect Interval (seconds)</Label>
+              <Label htmlFor="reconnect-interval">Reconnect Interval (seconds)</Label>
               <Input
+                id="reconnect-interval"
                 type="number"
                 value={settings.reconnectInterval}
                 onChange={(e) => updateSetting('reconnectInterval', e.target.value)}
@@ -1714,7 +1756,93 @@ export default function Settings() {
                 <Zap className="w-4 h-4 text-primary" />
                 Panel Bridge
               </CardTitle>
-              <CardDescription>Connects this panel to the live game for weather, utilities, richer chat, and other in-world actions</CardDescription>
+              <CardDescription className="flex items-center gap-2">
+                Connects this panel to the live game for weather, utilities, richer chat, and other in-world actions
+                <Dialog>
+                  <DialogTrigger asChild>
+                    <button className="inline-flex items-center gap-1 text-xs text-primary hover:underline whitespace-nowrap">
+                      <Info className="w-3.5 h-3.5" />
+                      How it works
+                    </button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+                    <DialogHeader>
+                      <DialogTitle className="flex items-center gap-2">
+                        <Zap className="w-4 h-4 text-primary" />
+                        Panel Bridge
+                      </DialogTitle>
+                      <DialogDescription>
+                        A Lua mod that runs inside Project Zomboid, giving this panel direct access to the live game world.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-5 text-sm">
+                      {/* What it unlocks */}
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">What it unlocks</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2">
+                            <p className="font-medium text-foreground">Weather & Climate</p>
+                            <p className="text-xs text-muted-foreground">Storms, rain, temperature, fog, wind</p>
+                          </div>
+                          <div className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2">
+                            <p className="font-medium text-foreground">Player Actions</p>
+                            <p className="text-xs text-muted-foreground">Teleport, heal, god mode, inventory</p>
+                          </div>
+                          <div className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2">
+                            <p className="font-medium text-foreground">World Control</p>
+                            <p className="text-xs text-muted-foreground">Utilities, zombies, time, sandbox</p>
+                          </div>
+                          <div className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2">
+                            <p className="font-medium text-foreground">Chat & Sound</p>
+                            <p className="text-xs text-muted-foreground">Server chat, admin chat, world sounds</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* How it works */}
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">How it works</p>
+                        <p className="text-muted-foreground mb-3">
+                          Two pieces meet in the middle: the panel runs a file watcher, and <strong className="text-foreground">PanelBridge.lua</strong> runs inside the game. They exchange commands via JSON files.
+                        </p>
+                      </div>
+
+                      {/* Setup steps */}
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Setup</p>
+                        <ol className="space-y-2">
+                          <li className="flex gap-3 items-start">
+                            <span className="flex-none w-5 h-5 rounded-full bg-primary/15 text-primary text-xs font-bold flex items-center justify-center mt-0.5">1</span>
+                            <div>
+                              <p className="font-medium">Install the Lua file</p>
+                              <p className="text-muted-foreground text-xs">Use the Install section on this tab to copy PanelBridge.lua into your server.</p>
+                            </div>
+                          </li>
+                          <li className="flex gap-3 items-start">
+                            <span className="flex-none w-5 h-5 rounded-full bg-primary/15 text-primary text-xs font-bold flex items-center justify-center mt-0.5">2</span>
+                            <div>
+                              <p className="font-medium">Run Auto Setup</p>
+                              <p className="text-muted-foreground text-xs">Points the panel at the correct server data folder and starts the watcher.</p>
+                            </div>
+                          </li>
+                          <li className="flex gap-3 items-start">
+                            <span className="flex-none w-5 h-5 rounded-full bg-primary/15 text-primary text-xs font-bold flex items-center justify-center mt-0.5">3</span>
+                            <div>
+                              <p className="font-medium">Start the PZ server</p>
+                              <p className="text-muted-foreground text-xs">When the game loads the mod, status changes from <strong className="text-warning">Waiting</strong> to <strong className="text-primary">Connected</strong>.</p>
+                            </div>
+                          </li>
+                        </ol>
+                      </div>
+
+                      {/* Requirement */}
+                      <div className="rounded-lg border border-warning/35 bg-warning/10 px-3 py-2 text-xs">
+                        <p><strong>Requires LuaChecksum=false</strong> in your server INI. Commands can fail with checksum enabled.</p>
+                      </div>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              </CardDescription>
             </div>
             {bridgeStatus && (
               <BridgeStatusBadge
@@ -1726,58 +1854,9 @@ export default function Settings() {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          <Alert className="border-border/60 bg-muted/40">
-            <Zap className="h-4 w-4 text-primary" />
-            <AlertTitle>What Panel Bridge does</AlertTitle>
-            <AlertDescription className="space-y-3 text-sm text-muted-foreground">
-              <p>
-                Panel Bridge has two pieces that must meet in the middle: the panel runs a local watcher, and your Project Zomboid server runs <strong className="text-foreground">PanelBridge.lua</strong> inside the game.
-              </p>
-              <p className="rounded-lg border border-warning/35 bg-warning/10 px-3 py-2 text-foreground">
-                Before starting the server, set <strong className="text-foreground">LuaChecksum=false</strong> in your server INI. PanelBridge commands can fail when Lua checksum is enabled.
-              </p>
-              <div className="grid gap-3 md:grid-cols-3">
-                <div className="rounded-xl border border-border/60 bg-background/60 p-3">
-                  <p className="text-sm font-semibold text-foreground">1. Install the Lua file</p>
-                  <p className="mt-2 text-sm text-foreground">Copy <strong>PanelBridge.lua</strong> into the server install folder.</p>
-                  <p className="mt-2 break-all text-xs text-muted-foreground">
-                    {selectedInstallTarget || 'Select a server below to see the exact install path.'}
-                  </p>
-                </div>
-                <div className="rounded-xl border border-border/60 bg-background/60 p-3">
-                  <p className="text-sm font-semibold text-foreground">2. Run Auto Setup</p>
-                  <p className="mt-2 text-sm text-foreground">Tell the panel which server data folder to watch.</p>
-                  <p className="mt-2 break-all text-xs text-muted-foreground">
-                    {watchedBridgeFolder || 'When configured, the panel watches the panelbridge folder for your selected server.'}
-                  </p>
-                </div>
-                <div className="rounded-xl border border-border/60 bg-background/60 p-3">
-                  <p className="text-sm font-semibold text-foreground">3. Start the server</p>
-                  <p className="mt-2 text-sm text-foreground">When the game loads the mod, the status changes from Waiting to Connected.</p>
-                  <p className="mt-2 text-xs text-muted-foreground">Connected means the Lua mod is alive in-game and ready to answer advanced commands.</p>
-                </div>
-              </div>
-            </AlertDescription>
-          </Alert>
-
-          <div className="grid gap-3 md:grid-cols-3">
-            <div className="rounded-xl border border-border/60 bg-muted/25 p-3">
-              <p className="text-sm font-semibold text-foreground">Not running</p>
-              <p className="mt-2 text-sm text-foreground">The panel watcher is not started yet.</p>
-            </div>
-            <div className="rounded-xl border border-warning/30 bg-warning/8 p-3">
-              <p className="text-sm font-semibold text-warning">Waiting</p>
-              <p className="mt-2 text-sm text-foreground">The panel is watching the folder, but the PZ server has not loaded the mod yet.</p>
-            </div>
-            <div className="rounded-xl border border-primary/30 bg-primary/8 p-3">
-              <p className="text-sm font-semibold text-primary">Connected</p>
-              <p className="mt-2 text-sm text-foreground">The panel watcher and the in-game Lua mod can now exchange commands and status.</p>
-            </div>
-          </div>
-
           {/* Status Display - when connected */}
           {bridgeStatus?.modConnected && bridgeStatus.modStatus && (
-            <Alert className="border-primary/30 bg-primary/10">
+            <Alert className="border-primary/30 bg-primary/10" aria-live="polite">
               <div className="flex items-center gap-3 mb-3">
                 <CheckCircle2 className="w-5 h-5 text-primary" />
                 <span className="font-semibold text-primary">
@@ -1800,39 +1879,59 @@ export default function Settings() {
             </Alert>
           )}
 
-          {/* Not running - show auto-setup button */}
+          {/* Not running - setup flow */}
           {!bridgeStatus?.isRunning && (
-            <div className="p-4 bg-muted rounded-xl space-y-4">
-              <p className="text-sm text-muted-foreground">
-                Start with <strong className="text-foreground">Auto Setup</strong>. It points the panel at the correct server data folder and starts the bridge watcher for the active server.
-              </p>
-              <div className="flex flex-wrap gap-3">
-                <Button 
-                  onClick={() => handleAutoConfigure()} 
-                  disabled={bridgeLoading}
-                  className="gap-2"
-                >
-                  {bridgeLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
-                  Auto Setup
-                </Button>
-                <p className="text-xs text-muted-foreground self-center">
-                  Best first step after installing the Lua file
-                </p>
+            <div className="p-4 bg-muted rounded-xl space-y-3">
+              <p className="text-sm font-medium">Get Started</p>
+              <ol className="space-y-1.5 text-sm text-muted-foreground list-decimal list-inside">
+                <li>Install <strong className="text-foreground">PanelBridge.lua</strong> using the section below</li>
+                <li>Set <strong className="text-foreground">LuaChecksum=false</strong> in your server INI</li>
+                <li>Click <strong className="text-foreground">Auto Setup</strong> to start the bridge watcher</li>
+                <li>Start or restart the PZ server</li>
+              </ol>
+              <Button 
+                onClick={() => handleAutoConfigure()} 
+                disabled={bridgeLoading}
+                className="gap-2"
+              >
+                {bridgeLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+                Auto Setup
+              </Button>
+
+              <div className="border-t border-border/50 pt-3 mt-1 space-y-2">
+                <p className="text-xs text-muted-foreground">Or set the bridge path manually (Linux / VPS / custom installs):</p>
+                <div className="flex gap-2">
+                  <Input
+                    value={manualBridgePath}
+                    onChange={(e) => setManualBridgePath(e.target.value)}
+                    placeholder="/home/pzuser/Zomboid/Lua/panelbridge/MyServer"
+                    className="text-xs h-9"
+                  />
+                  <Button
+                    onClick={handleManualConfigure}
+                    disabled={bridgeLoading || !manualBridgePath.trim()}
+                    variant="secondary"
+                    size="sm"
+                    className="shrink-0 gap-1.5"
+                  >
+                    {bridgeLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FolderOpen className="w-3.5 h-3.5" />}
+                    Connect
+                  </Button>
+                </div>
               </div>
             </div>
           )}
 
           {/* Waiting for mod */}
           {bridgeStatus?.isRunning && !bridgeStatus?.modConnected && (
-            <Alert className="border-warning/40 bg-warning/10">
+            <Alert className="border-warning/40 bg-warning/10" aria-live="polite">
               <Cloud className="h-4 w-4 text-warning" />
-              <AlertTitle className="text-warning">Waiting for PZ mod to respond</AlertTitle>
+              <AlertTitle className="text-warning">Waiting for PZ mod</AlertTitle>
               <AlertDescription className="space-y-2">
-                <p>The panel side is ready. Now start the Project Zomboid server with PanelBridge.lua installed and enabled in the server mod list.</p>
-                <p>Make sure <strong className="text-foreground">LuaChecksum=false</strong> is set in the server INI before startup.</p>
+                <p>The panel is ready. Start the PZ server with PanelBridge.lua installed and <strong className="text-foreground">LuaChecksum=false</strong> set.</p>
                 {bridgeStatus?.bridgePath && (
                   <p className="text-xs text-muted-foreground break-words">
-                    Watching folder: <code className="rounded bg-background px-1 break-all">{bridgeStatus.bridgePath}</code>
+                    Watching: <code className="rounded bg-background px-1 break-all">{bridgeStatus.bridgePath}</code>
                   </p>
                 )}
               </AlertDescription>
@@ -1841,7 +1940,7 @@ export default function Settings() {
 
           {/* Error display */}
           {bridgeError && (
-            <Alert variant="destructive">
+            <Alert variant="destructive" aria-live="assertive">
               <AlertTriangle className="h-4 w-4" />
               <AlertTitle>Panel Bridge Error</AlertTitle>
               <AlertDescription>{bridgeError}</AlertDescription>
@@ -1883,14 +1982,9 @@ export default function Settings() {
             </div>
           )}
 
-          {/* Install Mod Section */}
+          {/* Install Mod */}
           <div className="p-4 bg-muted rounded-xl space-y-3">
-            <div className="space-y-1">
-              <p className="text-sm font-medium">Install PanelBridge.lua</p>
-              <p className="text-xs text-muted-foreground">
-                This copies the Lua file into your game server install so Project Zomboid can load it on startup.
-              </p>
-            </div>
+            <p className="text-sm font-medium">Install PanelBridge.lua</p>
             <div className="flex flex-wrap gap-3 items-center">
               <Select value={selectedInstallServerId} onValueChange={setSelectedInstallServerId}>
                 <SelectTrigger className="w-[200px]">
@@ -1918,17 +2012,11 @@ export default function Settings() {
                 Install Mod
               </Button>
             </div>
-            <div className="space-y-2 text-xs text-muted-foreground">
-              <p>
-                Copies PanelBridge.lua to <code className="bg-background px-1 rounded">media/lua/server/</code> in the selected server's install folder.
+            {selectedInstallTarget && (
+              <p className="text-xs text-muted-foreground break-all">
+                Destination: <code className="bg-background px-1 rounded">{selectedInstallTarget}</code>
               </p>
-              <p className="break-all">
-                Exact destination: <code className="bg-background px-1 rounded">{selectedInstallTarget || 'Select a server to see the destination path.'}</code>
-              </p>
-              <p>
-                After copying the file, start Auto Setup and then restart the PZ server so the mod can load.
-              </p>
-            </div>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -1948,8 +2036,9 @@ export default function Settings() {
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="max-w-xs space-y-2">
-            <Label className="text-base">Check Interval (minutes)</Label>
+            <Label htmlFor="mod-check-interval" className="text-base">Check Interval (minutes)</Label>
             <Input
+              id="mod-check-interval"
               type="number"
               value={settings.modCheckInterval}
               onChange={(e) => updateSetting('modCheckInterval', e.target.value)}
@@ -1973,8 +2062,9 @@ export default function Settings() {
           </div>
           {settings.modAutoRestart && (
             <div className="max-w-xs space-y-2 pl-4 border-l-2 border-primary/30">
-              <Label className="text-base">Restart Delay (minutes)</Label>
+              <Label htmlFor="mod-restart-delay" className="text-base">Restart Delay (minutes)</Label>
               <Input
+                id="mod-restart-delay"
                 type="number"
                 value={settings.modRestartDelay}
                 onChange={(e) => updateSetting('modRestartDelay', e.target.value)}
@@ -2003,9 +2093,10 @@ export default function Settings() {
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="space-y-2">
-            <Label className="text-base">Steam Web API Key</Label>
+            <Label htmlFor="steam-api-key" className="text-base">Steam Web API Key</Label>
             <div className="relative max-w-md">
               <Input
+                id="steam-api-key"
                 type={showSteamApiKey ? 'text' : 'password'}
                 value={settings.steamApiKey}
                 onChange={(e) => updateSetting('steamApiKey', e.target.value)}
@@ -2016,7 +2107,7 @@ export default function Settings() {
               <button
                 type="button"
                 onClick={() => setShowSteamApiKey(!showSteamApiKey)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                className="absolute right-3 inset-y-0 flex items-center text-muted-foreground hover:text-foreground"
                 aria-label={showSteamApiKey ? 'Hide API key' : 'Show API key'}
               >
                 {showSteamApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -2321,7 +2412,7 @@ export default function Settings() {
                   <button
                     type="button"
                     onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    className="absolute right-3 inset-y-0 flex items-center text-muted-foreground hover:text-foreground"
                     aria-label={showCurrentPassword ? 'Hide password' : 'Show password'}
                   >
                     {showCurrentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -2339,7 +2430,7 @@ export default function Settings() {
                   <button
                     type="button"
                     onClick={() => setShowNewPassword(!showNewPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    className="absolute right-3 inset-y-0 flex items-center text-muted-foreground hover:text-foreground"
                     aria-label={showNewPassword ? 'Hide password' : 'Show password'}
                   >
                     {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}

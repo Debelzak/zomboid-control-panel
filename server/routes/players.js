@@ -9,10 +9,14 @@ import {
   upsertPlayerNote,
   deletePlayerNote,
   getPlayerStats,
-  getPlayerStat
+  getPlayerStat,
+  getSteamIdBans,
+  addSteamIdBan,
+  removeSteamIdBan
 } from '../database/init.js';
 import { VEHICLES, PERKS, ACCESS_LEVELS } from '../utils/commands.js';
 import { sanitizeError } from '../utils/sanitize.js';
+import bridge from '../services/panelBridge.js';
 
 const router = express.Router();
 
@@ -250,7 +254,20 @@ router.post('/teleport', async (req, res) => {
       if (!isValidNumber(x) || !isValidNumber(y) || !isValidNumber(z)) {
         return res.status(400).json({ error: 'Invalid coordinates' });
       }
-      result = await rconService.teleportTo(x, y, z);
+      if (player1) {
+        // Teleport a specific player to coordinates — requires PanelBridge
+        // (RCON 'teleportto' is a self-teleport and doesn't accept a target player)
+        if (!isValidUsername(player1)) {
+          return res.status(400).json({ error: 'Invalid player1 username format' });
+        }
+        if (!bridge.isRunning) {
+          return res.status(503).json({ error: 'PanelBridge is not running — cannot teleport a player to coordinates without it' });
+        }
+        result = await bridge.teleportPlayer(player1, Number(x), Number(y), Number(z));
+      } else {
+        // No target player — admin self-teleport via RCON
+        result = await rconService.teleportTo(x, y, z);
+      }
     } else if (player1) {
       if (!isValidUsername(player1)) {
         return res.status(400).json({ error: 'Invalid player1 username format' });
@@ -447,6 +464,17 @@ router.get('/access-levels', (req, res) => {
   res.json({ levels: ACCESS_LEVELS });
 });
 
+// Get banned SteamIDs
+router.get('/steamid-bans', async (req, res) => {
+  try {
+    const bans = await getSteamIdBans();
+    res.json({ bans });
+  } catch (error) {
+    log.error(`Failed to get SteamID bans: ${error.message}`);
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
 // Ban by SteamID
 router.post('/banid', async (req, res) => {
   try {
@@ -463,6 +491,7 @@ router.post('/banid', async (req, res) => {
     }
     
     const result = await rconService.banSteamId(steamId);
+    await addSteamIdBan(steamId);
     await logPlayerAction(steamId, 'banid', null);
     
     res.json(result);
@@ -487,6 +516,7 @@ router.post('/unbanid', async (req, res) => {
     }
     
     const result = await rconService.unbanSteamId(steamId);
+    await removeSteamIdBan(steamId);
     await logPlayerAction(steamId, 'unbanid', null);
     
     res.json(result);

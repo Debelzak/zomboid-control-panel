@@ -15,6 +15,9 @@ interface ConnectionStatusProps {
 export function ConnectionStatus({ className, showLabel = false }: ConnectionStatusProps) {
   const { connected, reconnecting, reconnectAttempt, error } = useConnectionStatus()
 
+  // Only show when not connected — a permanently visible "Connected" badge is noise
+  if (connected && !reconnecting) return null
+
   const getStatusInfo = () => {
     if (connected) {
       return {
@@ -54,6 +57,7 @@ export function ConnectionStatus({ className, showLabel = false }: ConnectionSta
           className={cn(
             'flex items-center gap-2 rounded-md border px-2.5 py-1.5 transition-colors',
             status.surface,
+            connected && 'conn-status-breathing',
             className
           )}
         >

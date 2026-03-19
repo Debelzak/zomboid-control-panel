@@ -377,9 +377,16 @@ export default function ChunkCleaner() {
   }, [hasCanvas])
 
   // ─── Map tile loading (lazy, on-demand) ───
+  const MAX_TILE_CACHE = 512
   const loadMapTile = useCallback((tileX: number, tileY: number) => {
     const key = `${tileX}_${tileY}`
     if (key in tileCacheRef.current) return
+    // Evict oldest entries when cache exceeds limit
+    const keys = Object.keys(tileCacheRef.current)
+    if (keys.length >= MAX_TILE_CACHE) {
+      const toRemove = keys.slice(0, keys.length - MAX_TILE_CACHE + 64)
+      for (const k of toRemove) delete tileCacheRef.current[k]
+    }
     tileCacheRef.current[key] = null // mark as loading
     const img = new window.Image()
     img.crossOrigin = 'anonymous'
@@ -423,7 +430,7 @@ export default function ChunkCleaner() {
       const warningVar = cssVar('--warning') || '28 80% 55%'
       const hsl = (v: string, a: number) => `hsl(${v} / ${a})`
 
-      const canvasBg = bgVar ? `hsl(${bgVar})` : 'hsl(228 30% 7%)'
+      const canvasBg = bgVar ? `hsl(${bgVar})` : hsl('228 30% 7%', 1)
       
       // Dark background
       ctx.fillStyle = canvasBg

@@ -38,6 +38,7 @@ const VALID_ACTIONS = new Set([
   'getUtilitiesStatus', 'restoreUtilities', 'shutOffUtilities',
   'saveWorld', 'getSandboxOptions',
   'getZombieCount', 'clearZombiesNearPlayer',
+  'airdrop',
   'getSafehouses', 'safehouseAddPlayer', 'safehouseRemovePlayer', 'safehouseSetOwner', 'safehouseSetRespawn',
   'getFactions', 'createFaction', 'factionAddPlayer', 'factionRemovePlayer', 'factionSetTag', 'removeFaction',
   'getVehiclesDetailed', 'vehicleRepair', 'vehicleSetAlarm', 'vehicleSetSiren', 'vehicleSetTrunkLocked',
@@ -436,6 +437,41 @@ router.post('/configure', (req, res) => {
   }
 });
 
+// Configure the bridge with a direct panelbridge folder path (manual override)
+router.post('/configure-direct', (req, res) => {
+  const { bridgePath: reqPath } = req.body;
+
+  if (!reqPath || typeof reqPath !== 'string') {
+    return res.status(400).json({ error: 'bridgePath is required' });
+  }
+
+  // Basic validation: must be an absolute path
+  const resolved = path.resolve(reqPath);
+  if (!path.isAbsolute(resolved)) {
+    return res.status(400).json({ error: 'Path must be absolute' });
+  }
+
+  // Block obvious system dirs
+  const lower = process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+  const blocked = process.platform === 'win32'
+    ? ['c:\\windows', 'c:\\program files']
+    : ['/etc', '/usr', '/bin', '/sbin', '/proc', '/sys', '/dev'];
+  if (blocked.some(p => lower.startsWith(p))) {
+    return res.status(400).json({ error: 'Path targets a protected system directory' });
+  }
+
+  try {
+    if (bridge.isRunning) {
+      bridge.stop();
+    }
+    const configuredPath = bridge.configure(resolved, true);
+    bridge.start();
+    res.json({ success: true, message: 'Bridge configured with manual path and started', bridgePath: configuredPath });
+  } catch (error) {
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
 // Start the bridge polling
 router.post('/start', (req, res) => {
   try {
@@ -642,6 +678,34 @@ router.post('/command', async (req, res) => {
   
   if (!bridge.isRunning) {
     return res.status(400).json({ error: 'Bridge not running. Start it first.' });
+  }
+  
+  // Action-specific validation
+  if (action === 'airdrop' && args) {
+    const VALID_PRESETS = ['military', 'medical', 'food', 'building', 'weapons', 'tools'];
+    const x = Number(args.x), y = Number(args.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || x < -1000 || x > 100000 || y < -1000 || y > 100000) {
+      return res.status(400).json({ error: 'Invalid airdrop coordinates' });
+    }
+    if (args.preset && (typeof args.preset !== 'string' || !VALID_PRESETS.includes(args.preset))) {
+      return res.status(400).json({ error: `Invalid preset. Valid: ${VALID_PRESETS.join(', ')}` });
+    }
+    if (args.items && (!Array.isArray(args.items) || args.items.length > 50)) {
+      return res.status(400).json({ error: 'items must be an array with at most 50 entries' });
+    }
+    if (Array.isArray(args.items)) {
+      for (const entry of args.items) {
+        if (!entry || typeof entry !== 'object') {
+          return res.status(400).json({ error: 'Each item must be an object with itemType' });
+        }
+        if (typeof entry.itemType !== 'string' || !/^[A-Za-z]\w*\.[A-Za-z]\w*$/.test(entry.itemType)) {
+          return res.status(400).json({ error: `Invalid item type format: ${String(entry.itemType).slice(0, 60)}` });
+        }
+        if (entry.count !== undefined && (typeof entry.count !== 'number' || entry.count < 1 || entry.count > 20)) {
+          return res.status(400).json({ error: 'Item count must be 1-20' });
+        }
+      }
+    }
   }
   
   try {

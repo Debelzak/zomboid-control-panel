@@ -514,6 +514,7 @@ export const playersApi = {
   // Ban/unban by SteamID
   banSteamId: (steamId: string) => apiPost('/players/banid', { steamId }),
   unbanSteamId: (steamId: string) => apiPost('/players/unbanid', { steamId }),
+  getSteamIdBans: () => apiGet('/players/steamid-bans'),
   // Voice ban
   voiceBan: (username: string, enabled: boolean) => apiPost('/players/voiceban', { username, enabled }),
   // Add user with password (for whitelist servers)
@@ -1003,6 +1004,14 @@ export const panelBridgeApi = {
   // Configure the bridge with Zomboid save path
   configure: (zomboidSavePath: string) => apiPost('/panel-bridge/configure', { zomboidSavePath }),
 
+  // Configure the bridge with a direct panelbridge folder path (manual override)
+  configureDirect: (bridgePath: string) => apiPost('/panel-bridge/configure-direct', { bridgePath }) as Promise<{
+    success: boolean
+    message?: string
+    bridgePath: string
+    error?: string
+  }>,
+
   // Start the bridge
   start: () => apiPost('/panel-bridge/start'),
 
@@ -1190,6 +1199,28 @@ export const panelBridgeApi = {
   // Create custom noise
   createNoise: (options: { x?: number; y?: number; z?: number; radius?: number; volume?: number; username?: string }) =>
     apiPost('/panel-bridge/sound/noise', options),
+
+  // =============================================
+  // AIRDROP SYSTEM
+  // =============================================
+
+  // Deploy an airdrop at world coordinates
+  triggerAirdrop: (options: {
+    x: number; y: number;
+    preset?: 'military' | 'medical' | 'food' | 'building' | 'weapons' | 'tools';
+    items?: Array<{ itemType: string; count?: number }>;
+    announce?: boolean;
+    attractZombies?: boolean;
+    soundRadius?: number;
+  }) => {
+    if (!Number.isFinite(options.x) || !Number.isFinite(options.y)) {
+      return Promise.reject(new Error('Invalid coordinates'))
+    }
+    return apiPost('/panel-bridge/command', {
+      action: 'airdrop',
+      args: { ...options, x: Math.round(options.x), y: Math.round(options.y) },
+    })
+  },
 
   // =============================================
   // V1.4.0 INFRASTRUCTURE (POWER/WATER) CONTROLS

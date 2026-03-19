@@ -430,6 +430,11 @@ class AuthService {
           return next();
         }
 
+        // Allow map tile proxy (loaded via <img> tags, can't send auth headers)
+        if (req.path.startsWith('/api/map/tiles/')) {
+          return next();
+        }
+
         // Skip auth if no users exist (setup needed)
         const needsSetup = await this.needsSetup();
         if (needsSetup) {

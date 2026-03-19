@@ -136,6 +136,7 @@ import debugRoutes, { addLogToBuffer } from './routes/debug.js';
 import serverFinderRoutes from './routes/serverFinder.js';
 import panelBridgeRoutes from './routes/panelBridge.js';
 import backupRoutes from './routes/backup.js';
+import mapProxyRoutes from './routes/mapProxy.js';
 import panelBridge from './services/panelBridge.js';
 
 dotenv.config();
@@ -642,6 +643,7 @@ app.use('/api/debug', debugRoutes);
 app.use('/api/server-finder', serverFinderRoutes);
 app.use('/api/panel-bridge', panelBridgeRoutes);
 app.use('/api/backup', backupRoutes);
+app.use('/api/map', mapProxyRoutes);
 
 // Health check + panel version
 // In exe builds, PANEL_VERSION is injected by esbuild at compile time.
@@ -1177,7 +1179,7 @@ async function start() {
         // Skip auto-open on headless Linux (no display server)
         if (process.platform !== 'win32' && process.platform !== 'darwin' &&
             !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY) {
-          log.info(`Panel running at ${url} (no display detected — skipping browser open)`);
+          log.debug(`Panel running at ${url} (no display detected — skipping browser open)`);
         } else {
           const openCmd = process.platform === 'win32' 
             ? `start "" "${url}"` 

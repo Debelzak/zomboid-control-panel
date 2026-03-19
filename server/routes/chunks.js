@@ -106,10 +106,19 @@ router.get('/saves', async (req, res) => {
         const stats = await fs.promises.stat(savePath);
         
         // Count chunk files (uses recursive count for B42's subdirectory structure)
+        // Also check save root for B41 flat chunk files
         let chunkCount = 0;
         const mapPath = path.join(savePath, 'map');
         if (fs.existsSync(mapPath)) {
           chunkCount = await countFiles(mapPath);
+        }
+        if (chunkCount === 0) {
+          // B41 fallback: count map_X_Y.bin files in save root
+          const B41_CHUNK_REGEX = /^map_\d+_\d+\.bin$/i;
+          try {
+            const rootEntries = await fs.promises.readdir(savePath);
+            chunkCount = rootEntries.filter(f => B41_CHUNK_REGEX.test(f)).length;
+          } catch (e) {}
         }
         
         // Get save size
@@ -162,15 +171,8 @@ router.get('/chunks/:saveName', async (req, res) => {
     
     log.info(`[ChunkCleaner] Loading chunks for "${sanitizedSaveName}" from: ${mapPath}`);
     
-    if (!fs.existsSync(mapPath)) {
-      log.warn(`[ChunkCleaner] Map folder not found: ${mapPath}`);
-      // List what IS in the save directory for debugging
-      if (fs.existsSync(savePath)) {
-        const contents = await fs.promises.readdir(savePath);
-        log.info(`[ChunkCleaner] Save directory contents: ${contents.join(', ')}`);
-      } else {
-        log.warn(`[ChunkCleaner] Save directory not found: ${savePath}`);
-      }
+    if (!fs.existsSync(savePath)) {
+      log.warn(`[ChunkCleaner] Save directory not found: ${savePath}`);
       return res.json({ chunks: [], bounds: null });
     }
     
@@ -178,13 +180,21 @@ router.get('/chunks/:saveName', async (req, res) => {
     let minX = Infinity, maxX = -Infinity;
     let minY = Infinity, maxY = -Infinity;
     
-    // B42 uses subdirectory structure: map/{X}/{Y}.bin
-    // First try the new B42 directory-based structure
-    const mapContents = await fs.promises.readdir(mapPath, { withFileTypes: true });
-    const xDirs = mapContents.filter(d => d.isDirectory() && /^\d+$/.test(d.name));
-    const flatBinFiles = mapContents.filter(f => f.isFile() && f.name.endsWith('.bin'));
+    const mapExists = fs.existsSync(mapPath);
     
-    log.info(`[ChunkCleaner] Map contents: ${mapContents.length} entries, ${xDirs.length} numeric dirs (B42), ${flatBinFiles.length} flat .bin files (B41)`);
+    // B42 uses subdirectory structure: map/{X}/{Y}.bin
+    // B41 may use flat files inside map/ OR flat files in the save root
+    let mapContents = [];
+    let xDirs = [];
+    let flatBinFiles = [];
+    
+    if (mapExists) {
+      mapContents = await fs.promises.readdir(mapPath, { withFileTypes: true });
+      xDirs = mapContents.filter(d => d.isDirectory() && /^\d+$/.test(d.name));
+      flatBinFiles = mapContents.filter(f => f.isFile() && f.name.endsWith('.bin'));
+    }
+    
+    log.info(`[ChunkCleaner] map/ ${mapExists ? 'exists' : 'missing'}: ${mapContents.length} entries, ${xDirs.length} numeric dirs (B42), ${flatBinFiles.length} flat .bin files (B41)`);
     
     // Limit maximum chunks to prevent memory issues with very large maps
     const MAX_CHUNKS = 50000;
@@ -276,10 +286,44 @@ router.get('/chunks/:saveName', async (req, res) => {
       }
     }
     
+    // B41 fallback: if map/ didn't yield any chunks, check save root for
+    // flat chunk files like map_X_Y.bin (common B41 save layout).
+    const isB42 = xDirs.length > 0;
+    if (!isB42 && chunks.length === 0) {
+      const B41_CHUNK_REGEX = /^map_(\d+)_(\d+)\.bin$/i;
+      const rootEntries = await fs.promises.readdir(savePath, { withFileTypes: true });
+      const rootBinFiles = rootEntries.filter(f => f.isFile() && B41_CHUNK_REGEX.test(f.name));
+      
+      if (rootBinFiles.length > 0) {
+        log.info(`[ChunkCleaner] Found ${rootBinFiles.length} B41 chunk files in save root`);
+        
+        const rootPromises = rootBinFiles.slice(0, MAX_CHUNKS).map(async entry => {
+          const match = entry.name.match(B41_CHUNK_REGEX);
+          if (!match) return null;
+          const x = parseInt(match[1], 10);
+          const y = parseInt(match[2], 10);
+          try {
+            const stats = await fs.promises.stat(path.join(savePath, entry.name));
+            return { file: entry.name, x, y, size: stats.size, modified: stats.mtime, source: 'saveroot' };
+          } catch (e) { return null; }
+        });
+        
+        const rootResults = await Promise.all(rootPromises);
+        for (const res of rootResults) {
+          if (res && chunks.length < MAX_CHUNKS) {
+            chunks.push(res);
+            minX = Math.min(minX, res.x);
+            maxX = Math.max(maxX, res.x);
+            minY = Math.min(minY, res.y);
+            maxY = Math.max(maxY, res.y);
+          }
+        }
+      }
+    }
+    
     // Also check chunkdata folder — but ONLY for legacy (B41) saves.
     // In B42 (directory-based map/), chunkdata files use a different coordinate
     // system (cell-based, not chunk-based) and would corrupt bounds if mixed in.
-    const isB42 = xDirs.length > 0;
     if (!isB42) {
       const chunkDataPath = path.join(savePath, 'chunkdata');
       if (fs.existsSync(chunkDataPath)) {
@@ -411,7 +455,10 @@ router.post('/delete-chunks', async (req, res) => {
       // Do this in parallel but with error handling
       await Promise.all(chunks.map(async chunk => {
         try {
-            const mapFile = path.join(savePath, 'map', chunk.file);
+            // Determine source file location
+            const mapFile = chunk.source === 'saveroot'
+              ? path.join(savePath, chunk.file)
+              : path.join(savePath, 'map', chunk.file);
             // Use try/catch for existence check + copy to avoid race conditions
             try {
                 // Handle B42's subdirectory structure (e.g., "1000/1208.bin" -> "map_1000_1208.bin")
@@ -450,8 +497,15 @@ router.post('/delete-chunks', async (req, res) => {
       const chunkErrors = [];
       
       try {
-        // Delete from map folder
-        const mapFile = path.join(savePath, 'map', chunk.file);
+        // Delete from the correct location based on source
+        let mapFile;
+        if (chunk.source === 'saveroot') {
+          // B41 flat file in save root directory
+          mapFile = path.join(savePath, chunk.file);
+        } else {
+          // Default: map/ directory (both B42 subdirs and B41 flat files in map/)
+          mapFile = path.join(savePath, 'map', chunk.file);
+        }
         try {
             await fs.promises.unlink(mapFile);
             wasDeleted = true;
@@ -547,14 +601,21 @@ router.post('/delete-region', async (req, res) => {
     const savePath = path.join(savesPath, sanitizedSaveName);
     const mapPath = path.join(savePath, 'map');
     
-    if (!fs.existsSync(mapPath)) {
-      return res.status(404).json({ error: 'Save map folder not found' });
+    if (!fs.existsSync(savePath)) {
+      return res.status(404).json({ error: 'Save not found' });
     }
     
-    // Get all chunks - handle both B42 directory structure and legacy flat files
+    const mapExists = fs.existsSync(mapPath);
+    
+    // Get all chunks - handle B42 directory structure, B41 flat files in map/, and B41 flat files in save root
     const chunksToDelete = [];
-    const mapContents = await fs.promises.readdir(mapPath, { withFileTypes: true });
-    const xDirs = mapContents.filter(d => d.isDirectory() && /^\d+$/.test(d.name));
+    let mapContents = [];
+    let xDirs = [];
+    
+    if (mapExists) {
+      mapContents = await fs.promises.readdir(mapPath, { withFileTypes: true });
+      xDirs = mapContents.filter(d => d.isDirectory() && /^\d+$/.test(d.name));
+    }
     
     if (xDirs.length > 0) {
       // B42 structure: map/{X}/{Y}.bin
@@ -587,7 +648,7 @@ router.post('/delete-region', async (req, res) => {
         }
       }));
     } else {
-      // Legacy flat file structure
+      // Legacy flat file structure in map/ directory
       const files = mapContents.filter(f => f.isFile() && f.name.endsWith('.bin')).map(f => f.name);
       
       for (const file of files) {
@@ -601,6 +662,28 @@ router.post('/delete-region', async (req, res) => {
           
           if (shouldDelete) {
             chunksToDelete.push({ file, x, y });
+          }
+        }
+      }
+      
+      // B41 save-root fallback: check for map_X_Y.bin in save root
+      if (chunksToDelete.length === 0) {
+        const B41_CHUNK_REGEX = /^map_(\d+)_(\d+)\.bin$/i;
+        const rootEntries = await fs.promises.readdir(savePath, { withFileTypes: true });
+        const rootBinFiles = rootEntries.filter(f => f.isFile() && B41_CHUNK_REGEX.test(f.name));
+        
+        for (const entry of rootBinFiles) {
+          const match = entry.name.match(B41_CHUNK_REGEX);
+          if (match) {
+            const x = parseInt(match[1], 10);
+            const y = parseInt(match[2], 10);
+            
+            const inRegion = x >= minX && x <= maxX && y >= minY && y <= maxY;
+            const shouldDelete = invert ? !inRegion : inRegion;
+            
+            if (shouldDelete) {
+              chunksToDelete.push({ file: entry.name, x, y, source: 'saveroot' });
+            }
           }
         }
       }
@@ -624,7 +707,9 @@ router.post('/delete-region', async (req, res) => {
       
       // Parallel backup
       await Promise.all(chunksToDelete.map(async chunk => {
-        const srcFile = path.join(mapPath, chunk.file);
+        const srcFile = chunk.source === 'saveroot'
+          ? path.join(savePath, chunk.file)
+          : path.join(mapPath, chunk.file);
         try {
              const backupName = `map_${chunk.file.replace(/[/\\]/g, '_')}`;
              await fs.promises.copyFile(srcFile, path.join(backupPath, backupName));
@@ -647,7 +732,10 @@ router.post('/delete-region', async (req, res) => {
     
     await Promise.all(chunksToDelete.map(async chunk => {
       try {
-        await fs.promises.unlink(path.join(mapPath, chunk.file));
+        const chunkFile = chunk.source === 'saveroot'
+          ? path.join(savePath, chunk.file)
+          : path.join(mapPath, chunk.file);
+        await fs.promises.unlink(chunkFile);
         // Atomic increment? JS is single threaded event loop, so yes this is safe.
         // But `deleted` is a simple var captured in closure.
         // It's safe in Node.js main thread.
@@ -750,6 +838,29 @@ router.get('/stats/:saveName', async (req, res) => {
             size,
             sizeFormatted: formatBytes(size)
             };
+        }
+      } catch (e) {}
+    }
+    
+    // B41 root chunk files: count map_X_Y.bin in save root when map/ has no chunks
+    if (!stats.folders.map || stats.folders.map.fileCount === 0) {
+      const B41_CHUNK_REGEX = /^map_\d+_\d+\.bin$/i;
+      try {
+        const rootEntries = await fs.promises.readdir(savePath, { withFileTypes: true });
+        const rootChunks = rootEntries.filter(f => f.isFile() && B41_CHUNK_REGEX.test(f.name));
+        if (rootChunks.length > 0) {
+          let rootChunkSize = 0;
+          for (const f of rootChunks) {
+            try {
+              const s = await fs.promises.stat(path.join(savePath, f.name));
+              rootChunkSize += s.size;
+            } catch (e) {}
+          }
+          stats.folders['map (root)'] = {
+            fileCount: rootChunks.length,
+            size: rootChunkSize,
+            sizeFormatted: formatBytes(rootChunkSize)
+          };
         }
       } catch (e) {}
     }
@@ -872,10 +983,17 @@ router.get('/browse', async (req, res) => {
     const parentBase = path.basename(path.dirname(resolved));
     const isSavesMultiplayer = basename === 'Multiplayer' && parentBase === 'Saves';
     
-    // Check if any child dirs contain a map/ folder (direct save dirs)
-    const hasMapFolders = directories.some(d => 
-      fs.existsSync(path.join(resolved, d, 'map'))
-    );
+    // Check if any child dirs contain a map/ folder or B41 root chunk files (direct save dirs)
+    const B41_ROOT_REGEX = /^map_\d+_\d+\.bin$/i;
+    const hasMapFolders = directories.some(d => {
+      const childPath = path.join(resolved, d);
+      if (fs.existsSync(path.join(childPath, 'map'))) return true;
+      // B41 fallback: check for map_X_Y.bin files in the child directory
+      try {
+        const childFiles = fs.readdirSync(childPath);
+        return childFiles.some(f => B41_ROOT_REGEX.test(f));
+      } catch (e) { return false; }
+    });
     
     res.json({
       currentPath: resolved,

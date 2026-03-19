@@ -82,7 +82,7 @@ function DebugPerformanceCharts({ performanceHistory }: DebugPerformanceChartsPr
               <XAxis dataKey="time" stroke={colors.axis} fontSize={12} />
               <YAxis stroke={colors.axis} fontSize={12} />
               <RTooltip />
-              <Line type="monotone" dataKey="cpuLoad" stroke={colors.cpu} strokeWidth={2} dot={false} name="CPU Load" />
+              <Line type="monotone" dataKey="cpuLoad" stroke={colors.cpu} strokeWidth={2} strokeDasharray="6 3" dot={false} name="CPU Load" />
             </LineChart>
           </ResponsiveContainer>
         </CardContent>

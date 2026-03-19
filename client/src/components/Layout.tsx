@@ -92,6 +92,7 @@ const navSections: NavSection[] = [
     color: 'amber',
     items: [
       { to: '/events', icon: Zap, label: 'Events & Weather' },
+      { to: '/world-map', icon: Map, label: 'World Map' },
     ]
   },
   {
@@ -268,9 +269,9 @@ export default function Layout({ children }: LayoutProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [openSections, setOpenSections] = useState<Set<string>>(new Set(['active', 'world']))
   const [updateInfo, setUpdateInfo] = useState<UpdateStatus | null>(null)
-  const [updateDismissed, setUpdateDismissed] = useState(false)
+  const [updateDismissed, setUpdateDismissed] = useState(() => sessionStorage.getItem('updateBannerDismissed') === 'true')
   const [playerCount, setPlayerCount] = useState<number>(0)
-  const [panelVersion, setPanelVersion] = useState('0.0.0')
+  const [panelVersion, setPanelVersion] = useState('')
   const socket = useContext(SocketContext)
   const { toast } = useToast()
 
@@ -409,6 +410,7 @@ export default function Layout({ children }: LayoutProps) {
     const handleUpdateAvailable = (data: UpdateStatus) => {
       setUpdateInfo(data)
       setUpdateDismissed(false) // Show banner again when new update detected
+      sessionStorage.removeItem('updateBannerDismissed')
     }
     
     const handleUpdateCheck = (data: UpdateStatus) => {
@@ -615,8 +617,8 @@ export default function Layout({ children }: LayoutProps) {
                         )} />
                       </span>
                       <span className={cn(
-                        "text-[0.86rem] leading-none font-semibold uppercase tracking-[0.08em] transition-colors",
-                        isOpen || hasActiveChild ? tone.labelActive : "text-foreground/88 group-hover:text-foreground"
+                        "text-[0.78rem] leading-none font-medium uppercase tracking-[0.1em] transition-colors",
+                        isOpen || hasActiveChild ? tone.labelActive : "text-foreground/60 group-hover:text-foreground/80"
                       )}>
                         {section.label}
                       </span>
@@ -706,7 +708,7 @@ export default function Layout({ children }: LayoutProps) {
               {theme === 'survival' ? '// Zomboid Control Panel' : 'Zomboid Control Panel'}
             </p>
             <p className="mt-1 flex items-center justify-center gap-2 text-xs text-muted-foreground">
-              <span>v{panelVersion}</span>
+              {panelVersion && <span>v{panelVersion}</span>}
               <Badge variant="warning" className="px-2 py-0.5 text-xs uppercase tracking-wide text-warning-foreground shadow-none">
                 Beta
               </Badge>
@@ -743,7 +745,10 @@ export default function Layout({ children }: LayoutProps) {
                     variant="outline" 
                     size="sm"
                     className="w-full sm:w-auto"
-                    onClick={() => setUpdateDismissed(true)}
+                    onClick={() => {
+                      setUpdateDismissed(true)
+                      sessionStorage.setItem('updateBannerDismissed', 'true')
+                    }}
                   >
                     Dismiss
                   </Button>

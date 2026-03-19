@@ -452,7 +452,8 @@ export default function Backups() {
       )}
 
       {/* Status Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 stagger-in">
+      {backups.length > 0 && (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 stagger-in">
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center gap-3">
@@ -511,6 +512,7 @@ export default function Backups() {
           </CardContent>
         </Card>
       </div>
+      )}
 
       {/* Settings Panel (collapsible) */}
       {showSettings && (
@@ -520,7 +522,7 @@ export default function Backups() {
               <Settings className="w-5 h-5" />
               Backup Settings
             </CardTitle>
-            <CardDescription>Configure scheduled backup settings</CardDescription>
+            <CardDescription>Configure scheduled backup settings.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -664,18 +666,6 @@ export default function Backups() {
                 )}
                 Delete Older
               </Button>
-              <Button
-                onClick={handleCreateBackup}
-                disabled={creatingBackup || restoringBackup !== null || !backupStatus?.savesExists}
-                className="h-10 gap-2"
-              >
-                {creatingBackup ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Archive className="w-4 h-4" />
-                )}
-                {creatingBackup ? 'Creating backup...' : 'Create backup'}
-              </Button>
             </div>
           </div>
         </CardHeader>
@@ -685,7 +675,7 @@ export default function Backups() {
               <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
             </div>
           ) : backups.length === 0 ? (
-            <EmptyState type="noData" title="No backups yet" description="Create a manual backup before you change saves, mods, or server settings." />
+            <EmptyState type="noData" title="No safety net" description="Create a backup before changing saves, mods, or server settings — one bad update away from lost progress." action={{ label: 'Create Backup', onClick: handleCreateBackup, variant: 'default' }} />
           ) : (
             <div className="space-y-2">
               {/* Select All Header */}

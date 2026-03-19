@@ -24,13 +24,10 @@ export function AuthScreenLayout({
 }: AuthScreenLayoutProps) {
   return (
     <div className="relative min-h-screen overflow-hidden bg-background px-4 py-10 sm:px-6">
+      <a href="#auth-content" className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-50 focus:rounded-md focus:bg-primary focus:px-4 focus:py-2 focus:text-primary-foreground focus:text-sm">Skip to content</a>
       <div
         aria-hidden="true"
-        className="absolute inset-0 opacity-70"
-        style={{
-          backgroundImage:
-            'radial-gradient(circle at 84% -12%, hsl(var(--primary) / 0.22), transparent 38%), radial-gradient(circle at 12% 108%, hsl(var(--destructive) / 0.16), transparent 42%), linear-gradient(180deg, hsl(var(--background)), hsl(var(--background)))',
-        }}
+        className="auth-bg-gradient absolute inset-0 opacity-70"
       />
       <div
         aria-hidden="true"
@@ -39,18 +36,18 @@ export function AuthScreenLayout({
       <div aria-hidden="true" className="control-room-sweep absolute inset-0 opacity-55" />
       <div aria-hidden="true" className="drift-embers absolute inset-x-0 bottom-0 h-48 opacity-45" />
 
-      <div className="relative mx-auto flex min-h-[calc(100vh-5rem)] w-full max-w-md items-center justify-center">
+      <main id="auth-content" className="relative mx-auto flex min-h-[calc(100vh-5rem)] w-full max-w-md items-start justify-center pt-[12vh]">
         <div className="w-full">
           <div className="mb-8 text-center">
-            <div className="mb-4 inline-flex h-14 w-14 items-center justify-center rounded-2xl border border-primary/12 bg-primary/8 text-primary shadow-sm">
+            <div aria-hidden="true" className="mb-4 inline-flex h-14 w-14 items-center justify-center rounded-2xl border border-primary/12 bg-primary/8 text-primary shadow-sm">
               <Shield className="h-7 w-7" />
             </div>
-            <div className="mb-3 inline-flex items-center rounded-full border border-border/60 bg-card/50 px-3 py-1 text-xs font-medium uppercase tracking-[0.24em] text-muted-foreground backdrop-blur-sm">
+            <div aria-hidden="true" className="mb-3 inline-flex items-center rounded-full border border-border/60 bg-card/50 px-3 py-1 text-xs font-medium uppercase tracking-[0.24em] text-muted-foreground backdrop-blur-sm">
               {badge}
             </div>
             <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">{title}</h1>
             <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-muted-foreground">{description}</p>
-            <div className="mx-auto mt-4 inline-flex items-center gap-2 rounded-full border border-border/60 bg-card/45 px-3 py-1.5 text-xs uppercase tracking-[0.2em] text-muted-foreground">
+            <div aria-hidden="true" className="mx-auto mt-4 inline-flex items-center gap-2 rounded-full border border-border/60 bg-card/45 px-3 py-1.5 text-xs uppercase tracking-[0.2em] text-muted-foreground">
               <span className="inline-flex h-2 w-2 rounded-full bg-primary shadow-[0_0_10px_hsl(var(--primary)/0.45)]" />
               Operational access
             </div>
@@ -65,10 +62,10 @@ export function AuthScreenLayout({
           </Card>
 
           {footer ? (
-            <p className="mx-auto mt-4 max-w-sm text-center text-xs leading-5 text-muted-foreground">{footer}</p>
+            <p className="mx-auto mt-4 text-center text-xs leading-5 text-muted-foreground sm:max-w-sm">{footer}</p>
           ) : null}
         </div>
-      </div>
+      </main>
     </div>
   )
 }

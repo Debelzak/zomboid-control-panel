@@ -912,7 +912,7 @@ export default function Debug() {
                   <FileText className="w-5 h-5" />
                   Log Files on Disk
                 </CardTitle>
-                <CardDescription>Download or view historical log files</CardDescription>
+                <CardDescription>Download or view historical log files.</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-2">
@@ -950,7 +950,7 @@ export default function Debug() {
                   <AlertCircle className="w-5 h-5" />
                   Crash Logs
                 </CardTitle>
-                <CardDescription>Java crash dumps and error logs</CardDescription>
+                <CardDescription>Java crash dumps and error logs.</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="flex justify-end mb-3">
@@ -1303,7 +1303,7 @@ export default function Debug() {
                     <FolderOpen className="w-4 h-4 text-warning" />
                     File Paths
                   </CardTitle>
-                  <CardDescription>Data and log file locations</CardDescription>
+                  <CardDescription>Data and log file locations.</CardDescription>
                 </div>
                 {!editingPaths && (
                   <Button variant="outline" size="sm" onClick={handleEditPaths}>

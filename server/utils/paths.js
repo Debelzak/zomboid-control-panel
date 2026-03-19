@@ -111,7 +111,9 @@ export async function setDataPaths(newPaths, moveFiles = true) {
     if (typeof dir !== 'string' || dir.length > 500) {
       return { success: false, error: 'Invalid path format' };
     }
-    const resolved = path.resolve(dir).toLowerCase();
+    const resolved = process.platform === 'win32'
+      ? path.resolve(dir).toLowerCase()
+      : path.resolve(dir);
     if (BLOCKED_PREFIXES.some(p => resolved.startsWith(p))) {
       return { success: false, error: 'Path targets a protected system directory' };
     }

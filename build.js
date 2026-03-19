@@ -94,11 +94,23 @@ function writeReleaseReadme() {
 - If launch fails with glibc errors, run on Ubuntu 20.04+ or use Docker.
 - The binary is self-contained — Node.js is NOT required.
 
+## Running as a Service (Linux)
+A systemd unit file is included:
+  sudo cp zomboid-panel.service /etc/systemd/system/
+  sudo systemctl daemon-reload
+  sudo systemctl enable --now zomboid-panel
+Edit the service file to match your install path and user.
+
+## Docker
+  docker compose up -d
+See docker-compose.yml comments for volume mount and UID configuration.
+
 ## Folder Structure
 - ZomboidControlPanel.exe - Windows standalone binary
 - ZomboidControlPanel      - Linux standalone binary
 - Start.bat                - Windows launch script
 - start.sh                 - Linux launch script
+- zomboid-panel.service    - systemd unit file (Linux)
 - client/dist/             - Web interface (required, must stay alongside binary)
 - data/db.json             - Configuration database (created on first run)
 - logs/                    - Application logs
@@ -261,6 +273,10 @@ async function main() {
     fs.cpSync('./pz-mod', './release/pz-mod', { recursive: true });
   }
 
+  if (fs.existsSync('./zomboid-panel.service')) {
+    fs.copyFileSync('./zomboid-panel.service', './release/zomboid-panel.service');
+  }
+
   const startBat = `@echo off
 echo Starting Zomboid Control Panel...
 echo.
@@ -325,6 +341,9 @@ fi
   console.log('  - data/');
   console.log('  - logs/');
   console.log('  - pz-mod/');
+  if (fs.existsSync('./release/zomboid-panel.service')) {
+    console.log('  - zomboid-panel.service');
+  }
   console.log('  - README.txt');
 }
 

@@ -53,6 +53,7 @@ const defaultData = {
   player_notes: [],
   player_stats: [],
   mod_presets: [],
+  steamid_bans: [],
   performance_history: [],
   discord_webhooks: [],
   users: [],
@@ -1030,6 +1031,43 @@ export async function deleteModPreset(id) {
   if (index === -1) return false;
 
   db.data.mod_presets.splice(index, 1);
+  scheduleWrite();
+  return true;
+}
+
+// ============================================
+// SteamID Ban Tracking
+// ============================================
+
+export async function getSteamIdBans() {
+  const db = await getDb();
+  if (!db.data.steamid_bans) db.data.steamid_bans = [];
+  return db.data.steamid_bans;
+}
+
+export async function addSteamIdBan(steamId, reason = null) {
+  const db = await getDb();
+  if (!db.data.steamid_bans) db.data.steamid_bans = [];
+
+  // Don't add duplicates
+  if (db.data.steamid_bans.some(b => b.steamId === steamId)) return;
+
+  db.data.steamid_bans.push({
+    steamId,
+    reason: reason || null,
+    banned_at: new Date().toISOString()
+  });
+  scheduleWrite();
+}
+
+export async function removeSteamIdBan(steamId) {
+  const db = await getDb();
+  if (!db.data.steamid_bans) return false;
+
+  const index = db.data.steamid_bans.findIndex(b => b.steamId === steamId);
+  if (index === -1) return false;
+
+  db.data.steamid_bans.splice(index, 1);
   scheduleWrite();
   return true;
 }

@@ -160,7 +160,7 @@ export default function DemoMenuPreview() {
               </div>
             </div>
 
-            <div className="mt-6 inline-flex items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200/90">
+            <div className="mt-6 inline-flex items-center gap-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning-foreground/90">
               <Server className="h-4 w-4" />
               Demo safety lock enabled
             </div>

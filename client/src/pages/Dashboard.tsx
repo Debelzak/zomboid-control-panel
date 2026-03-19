@@ -585,7 +585,6 @@ export default function Dashboard() {
       <PageHeader
         title="Dashboard"
         description="Monitor and control your Project Zomboid server"
-        eyebrow="Live Ops"
         tone="ops"
         actions={
           <div className="flex items-center gap-3">
@@ -647,35 +646,35 @@ export default function Dashboard() {
             </div>
           </CardHeader>
           <CardContent className="space-y-5">
-            <div className="grid gap-3 md:grid-cols-3">
-              <div className="rounded-lg border border-border/60 bg-background/45 p-4">
+            <ol className="grid gap-3 md:grid-cols-3 list-none p-0 m-0">
+              <li className="rounded-lg border border-border/60 bg-background/45 p-4">
                 <p className="text-sm font-semibold text-foreground">
-                  <span className="mr-2 inline-flex h-5 w-5 items-center justify-center rounded text-xs font-bold bg-primary/15 text-primary">1</span>
+                  <span className="mr-2 inline-flex h-5 w-5 items-center justify-center rounded text-xs font-bold bg-primary/15 text-primary" aria-hidden="true">1</span>
                   Bring in a server
                 </p>
                 <p className="mt-1.5 pl-7 text-sm leading-6 text-muted-foreground">
                   Add an existing install, connect remote RCON, or create a new server.
                 </p>
-              </div>
-              <div className="rounded-lg border border-border/60 bg-background/45 p-4">
+              </li>
+              <li className="rounded-lg border border-border/60 bg-background/45 p-4">
                 <p className="text-sm font-semibold text-foreground">
-                  <span className="mr-2 inline-flex h-5 w-5 items-center justify-center rounded text-xs font-bold bg-primary/15 text-primary">2</span>
+                  <span className="mr-2 inline-flex h-5 w-5 items-center justify-center rounded text-xs font-bold bg-primary/15 text-primary" aria-hidden="true">2</span>
                   Verify connectivity
                 </p>
                 <p className="mt-1.5 pl-7 text-sm leading-6 text-muted-foreground">
                   Confirm paths, RCON credentials, and active server.
                 </p>
-              </div>
-              <div className="rounded-lg border border-border/60 bg-background/45 p-4">
+              </li>
+              <li className="rounded-lg border border-border/60 bg-background/45 p-4">
                 <p className="text-sm font-semibold text-foreground">
-                  <span className="mr-2 inline-flex h-5 w-5 items-center justify-center rounded text-xs font-bold bg-primary/15 text-primary">3</span>
+                  <span className="mr-2 inline-flex h-5 w-5 items-center justify-center rounded text-xs font-bold bg-primary/15 text-primary" aria-hidden="true">3</span>
                   Reach live control
                 </p>
                 <p className="mt-1.5 pl-7 text-sm leading-6 text-muted-foreground">
                   When status, players, and chat update, live control is ready.
                 </p>
-              </div>
-            </div>
+              </li>
+            </ol>
 
             <div className="flex flex-wrap gap-3">
               <Link to="/server-setup" className={cn(buttonVariants({ variant: 'default' }))}>
@@ -702,10 +701,10 @@ export default function Dashboard() {
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3">
               <div className={cn(
-                "h-3 w-3 rounded-full shrink-0",
+                "h-3 w-3 rounded-full shrink-0 server-status-dot",
                 status?.running
-                  ? "bg-[hsl(var(--success))]"
-                  : "bg-destructive"
+                  ? "server-status-dot--online"
+                  : "server-status-dot--offline"
               )} aria-hidden="true" />
               <div>
                 <span className="text-xl font-bold tracking-tight">
@@ -749,7 +748,7 @@ export default function Dashboard() {
                 <button
                   onClick={() => copyToClipboard(status.publicIp!, "Public IP")}
                   className="flex min-h-11 items-center gap-1.5 rounded-md px-2 py-1 font-mono text-xs text-muted-foreground transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 sm:min-h-8"
-                  title="Copy public IP"
+                  aria-label={`Copy public IP: ${status.publicIp}${status.port ? `:${status.port}` : ''}`}
                 >
                   <span className="font-sans font-medium text-muted-foreground/70 uppercase tracking-wide text-xs">pub</span>
                   {status.publicIp}{status.port ? `:${status.port}` : ''}
@@ -760,7 +759,7 @@ export default function Dashboard() {
                 <button
                   onClick={() => copyToClipboard(status.localIp!, "Local IP")}
                   className="flex min-h-11 items-center gap-1.5 rounded-md px-2 py-1 font-mono text-xs text-muted-foreground transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 sm:min-h-8"
-                  title="Copy local IP"
+                  aria-label={`Copy local IP: ${status.localIp}${status.port ? `:${status.port}` : ''}`}
                 >
                   <span className="font-sans font-medium text-muted-foreground/70 uppercase tracking-wide text-xs">lan</span>
                   {status.localIp}{status.port ? `:${status.port}` : ''}
@@ -781,7 +780,7 @@ export default function Dashboard() {
                 <button
                   onClick={() => copyToClipboard(panelInfo.url, "Panel address")}
                   className="flex min-h-11 items-center gap-1.5 rounded-md px-2 py-1 font-mono text-xs text-muted-foreground transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 sm:min-h-8"
-                  title="Copy panel address"
+                  aria-label={`Copy panel address: ${panelInfo.url}`}
                 >
                   <Globe className="w-3 h-3" />
                   {panelInfo.url}
@@ -921,63 +920,105 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Performance Charts */}
-      {performanceHistory.length > 0 && (
-        <Suspense
-          fallback={
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              {[0, 1].map((index) => (
-                <Card key={index}>
-                  <CardHeader className="pb-2">
-                    <div className="h-5 w-32 rounded bg-muted/60" />
-                    <div className="h-4 w-24 rounded bg-muted/40" />
-                  </CardHeader>
-                  <CardContent>
-                    <div className="h-[150px] animate-pulse rounded-lg bg-muted/40" />
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          }
-        >
-          {showPerformanceCharts ? <DashboardPerformanceCharts performanceHistory={performanceHistory} /> : null}
-        </Suspense>
-      )}
-
-      {/* Player Activity */}
-      <section className="rounded-xl border border-border/60 bg-background/25 px-5 py-4">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-foreground">Player Activity</h2>
-          <Link to="/players">
-            <Button variant="ghost" size="sm" className="text-xs text-muted-foreground">
-              View all
-            </Button>
-          </Link>
-        </div>
-        {playerActivity.length === 0 ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">No recent activity. Events appear as players connect and interact.</p>
-        ) : (
-          <div className="space-y-1">
-            {playerActivity.map((activity) => {
-              const style = getEventStyle(activity.action)
-
-              return (
-                <div key={activity.id} className="flex min-w-0 items-center gap-3 rounded-md px-2 py-1.5 transition-colors hover:bg-muted/30">
-                  <span className={cn("shrink-0", style.color)} aria-hidden="true">{style.icon}</span>
-                  <span className="max-w-[14rem] truncate text-sm font-medium" dir="auto" title={activity.player_name}>{activity.player_name}</span>
-                  <span className="text-sm text-muted-foreground">{style.label}</span>
-                  {activity.details && (
-                    <span className="min-w-0 max-w-[24rem] truncate text-sm text-muted-foreground" dir="auto" title={activity.details}>— {activity.details}</span>
-                  )}
-                  <span className="ml-auto whitespace-nowrap text-xs tabular-nums text-muted-foreground/70">
-                    {new Date(activity.logged_at).toLocaleString()}
-                  </span>
+      {/* Operational Grid: Performance + Activity side-by-side */}
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-5">
+        {/* Performance Charts — left 3 cols on desktop */}
+        <div className="lg:col-span-3 space-y-4">
+          {performanceHistory.length > 0 ? (
+            <Suspense
+              fallback={
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  {[0, 1].map((index) => (
+                    <Card key={index}>
+                      <CardHeader className="pb-2">
+                        <div className="h-5 w-32 rounded bg-muted/60" />
+                        <div className="h-4 w-24 rounded bg-muted/40" />
+                      </CardHeader>
+                      <CardContent>
+                        <div className="h-[150px] animate-pulse rounded-lg bg-muted/40" />
+                      </CardContent>
+                    </Card>
+                  ))}
                 </div>
-              )
-            })}
+              }
+            >
+              {showPerformanceCharts ? <DashboardPerformanceCharts performanceHistory={performanceHistory} /> : null}
+            </Suspense>
+          ) : (
+            <div className="rounded-xl border border-border/60 bg-card/50 px-5 py-4">
+              <div className="grid grid-cols-2 gap-6">
+                <section>
+                  <div className="flex items-center gap-2 mb-1">
+                    <Users className="h-3.5 w-3.5 text-muted-foreground" />
+                    <h3 className="text-xs font-medium text-muted-foreground">Players Online</h3>
+                  </div>
+                  <p className="text-3xl font-bold tracking-tight tabular-nums">{players.length}</p>
+                </section>
+                <section>
+                  <div className="flex items-center gap-2 mb-1">
+                    <Activity className="h-3.5 w-3.5 text-muted-foreground" />
+                    <h3 className="text-xs font-medium text-muted-foreground">Uptime</h3>
+                  </div>
+                  <p className="text-3xl font-bold tracking-tight tabular-nums">{status?.running && status.uptime > 0 ? formatUptime(status.uptime) : 'Offline'}</p>
+                </section>
+              </div>
+              {!status?.running && (
+                <div className="mt-4 pt-4 border-t border-border/30">
+                  <p className="text-xs font-medium text-muted-foreground mb-3">Quick Actions</p>
+                  <div className="flex flex-wrap gap-2">
+                    <Link to="/server-config" className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'gap-1.5 text-xs')}>
+                      <Server className="h-3.5 w-3.5" /> Server Config
+                    </Link>
+                    <Link to="/mods" className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'gap-1.5 text-xs')}>
+                      <Gamepad2 className="h-3.5 w-3.5" /> Mods
+                    </Link>
+                    <Link to="/backups" className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'gap-1.5 text-xs')}>
+                      <Archive className="h-3.5 w-3.5" /> Backups
+                    </Link>
+                    <Link to="/settings" className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'gap-1.5 text-xs')}>
+                      <Wifi className="h-3.5 w-3.5" /> Settings
+                    </Link>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Player Activity — right 2 cols, compact feed */}
+        <section className="lg:col-span-2 rounded-xl border border-border/60 bg-card/50 px-5 py-4 flex flex-col">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-base font-semibold text-foreground">Player Activity</h2>
+            <Link to="/players">
+              <Button variant="ghost" size="sm" className="text-xs text-muted-foreground">
+                View all
+              </Button>
+            </Link>
           </div>
-        )}
-      </section>
+          {playerActivity.length === 0 ? (
+            <div className="flex-1 flex items-center justify-center">
+              <p className="py-6 text-center text-sm text-muted-foreground">No activity yet.</p>
+            </div>
+          ) : (
+            <div className="space-y-1 flex-1 overflow-y-auto max-h-[22rem]">
+              {playerActivity.map((activity) => {
+                const style = getEventStyle(activity.action)
+
+                return (
+                  <div key={activity.id} className="flex min-w-0 items-center gap-2.5 rounded-md px-2 py-1.5 transition-colors hover:bg-muted/30">
+                    <span className={cn("shrink-0", style.color)} aria-hidden="true">{style.icon}</span>
+                    <span className="max-w-[10rem] truncate text-sm font-medium" dir="auto" title={activity.player_name}>{activity.player_name}</span>
+                    <span className="text-xs text-muted-foreground">{style.label}</span>
+                    <span className="ml-auto whitespace-nowrap text-xs tabular-nums text-muted-foreground/70">
+                      {new Date(activity.logged_at).toLocaleTimeString()}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </section>
+      </div>
 
       {/* Confirmation Dialog */}
       <AlertDialog open={!!confirmAction} onOpenChange={(open) => !open && setConfirmAction(null)}>

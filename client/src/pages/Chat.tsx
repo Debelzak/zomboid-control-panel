@@ -316,7 +316,7 @@ export default function Chat() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Chat Window */}
         <div className="lg:col-span-2">
-          <Card className="h-[50vh] min-h-[300px] sm:h-[600px] flex flex-col">
+          <Card className="h-[50vh] min-h-[300px] sm:h-[500px] md:h-[600px] flex flex-col">
             <CardHeader className="pb-3 border-b shrink-0">
               <CardTitle className="flex items-center gap-2 text-base">
                 <MessagesSquare className="w-4 h-4 text-primary" />
@@ -359,7 +359,7 @@ export default function Chat() {
               <div className="p-4 border-t bg-muted/30">
                 <div className="flex flex-wrap gap-2 mb-3">
                   <Select value={channel} onValueChange={(v) => setChannel(v as ChatChannel)}>
-                    <SelectTrigger className="h-11 w-full sm:w-44">
+                    <SelectTrigger className="h-11 w-full sm:w-44" aria-label="Chat channel">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>

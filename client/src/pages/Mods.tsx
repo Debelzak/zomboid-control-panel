@@ -26,7 +26,8 @@ import {
   Save,
   FolderOpen,
   Loader2,
-  GripVertical
+  GripVertical,
+  MoreVertical
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { PageHeader } from '@/components/PageHeader'
@@ -55,6 +56,13 @@ import {
 } from '@/components/ui/tooltip'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { useToast } from '@/components/ui/use-toast'
 import { modsApi } from '@/lib/api'
 import { EmptyState } from '@/components/EmptyState'
@@ -1159,29 +1167,30 @@ export default function Mods() {
           }
         />
 
-        {/* Status Bar */}
-        <div className="flex items-center gap-4 rounded-xl border border-border/70 bg-gradient-to-r from-secondary/80 via-card to-accent/25 p-3 shadow-sm flex-wrap">
+        {/* Status Bar — only show when mods are tracked */}
+        {(status?.totalModsTracked || 0) > 0 && (
+        <div className="flex items-center gap-4 rounded-lg border border-border/50 bg-card/60 px-3 py-2 flex-wrap">
           <div className="flex items-center gap-2">
-            <Package className="w-4 h-4 text-muted-foreground" />
+            <Package className="w-3.5 h-3.5 text-muted-foreground" />
             <span className="text-sm font-medium">{status?.totalModsTracked || 0} tracked</span>
           </div>
           <Separator orientation="vertical" className="h-4" />
           <div className="flex items-center gap-2">
-            <Layers className="w-4 h-4 text-muted-foreground" />
+            <Layers className="w-3.5 h-3.5 text-muted-foreground" />
             <span className="text-sm font-medium">{iniConfig?.totalMods || 0} configured</span>
           </div>
           {modsWithUpdates.length > 0 && (
             <>
               <Separator orientation="vertical" className="h-4" />
               <div className="flex items-center gap-2 text-warning">
-                <AlertTriangle className="w-4 h-4" />
+                <AlertTriangle className="w-3.5 h-3.5" />
                 <span className="text-sm font-medium">{modsWithUpdates.length} updates</span>
               </div>
             </>
           )}
           <Separator orientation="vertical" className="h-4" />
           <div className="flex items-center gap-2">
-            <Clock className="w-4 h-4 text-muted-foreground" />
+            <Clock className="w-3.5 h-3.5 text-muted-foreground" />
             <span className="text-xs text-muted-foreground">
               {status?.lastCheck ? `Last check ${new Date(status.lastCheck).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'Never checked'}
             </span>
@@ -1194,7 +1203,7 @@ export default function Mods() {
               <Tooltip>
                 <TooltipTrigger asChild>
                   <div className="flex items-center gap-2 text-destructive">
-                    <AlertTriangle className="w-4 h-4" />
+                    <AlertTriangle className="w-3.5 h-3.5" />
                     <span className="text-xs">ACF Not Found</span>
                   </div>
                 </TooltipTrigger>
@@ -1205,47 +1214,47 @@ export default function Mods() {
               </Tooltip>
             </>
           )}
-          
-        </div>
 
-        {/* Operations Bar */}
-        <div className="flex flex-col items-stretch justify-between gap-3 rounded-xl border border-border/70 bg-card/92 p-3 shadow-sm lg:flex-row lg:items-center">
-          <div className="space-y-0.5 min-w-0">
-            <p className="text-sm font-medium">Mod Operations</p>
-            <p className="text-xs text-muted-foreground">Run checks, import collections, and manage restart behavior.</p>
-          </div>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:flex xl:flex-wrap xl:justify-end">
-            <Button variant="outline" size="sm" onClick={handleSyncFromServer} disabled={loading} className="w-full xl:w-auto">
-              <Download className="w-4 h-4 mr-2" />
-              Sync from Server
+          <div className="ml-auto flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={handleSyncFromServer} disabled={loading}>
+              <Download className="w-3.5 h-3.5 mr-1.5" />
+              Sync
             </Button>
-            <Button variant="outline" size="sm" onClick={handleCheckUpdates} disabled={checking} className="w-full xl:w-auto">
-              <RefreshCw className={`w-4 h-4 mr-2 ${checking ? 'animate-spin' : ''}`} />
+            <Button variant="outline" size="sm" onClick={handleCheckUpdates} disabled={checking}>
+              <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${checking ? 'animate-spin' : ''}`} />
               Check Updates
             </Button>
-            <Button variant="secondary" size="sm" onClick={() => setCollectionDialogOpen(true)} className="w-full xl:w-auto">
-              <Library className="w-4 h-4 mr-2" />
-              Import Collection
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setRestartSettingsOpen(true)}
-              className="h-11 w-full xl:h-9 xl:w-auto"
-            >
-              <Settings2 className="w-4 h-4 mr-2" />
-              Restart Settings
-            </Button>
-            <div className="flex min-h-11 items-center justify-between gap-2 rounded-md border border-border/70 bg-secondary/55 px-3 py-2 xl:min-h-9 xl:justify-start xl:px-2 xl:py-1.5">
-              <span className="text-xs text-muted-foreground">Auto-restart</span>
-              <Switch
-                checked={status?.autoRestartEnabled || false}
-                onCheckedChange={handleToggleAutoRestart}
-                disabled={loading}
-              />
-            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-8 w-8 p-0" aria-label="More actions">
+                  <MoreVertical className="w-4 h-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => setCollectionDialogOpen(true)}>
+                  <Library className="w-4 h-4 mr-2" />
+                  Import Collection
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setRestartSettingsOpen(true)}>
+                  <Settings2 className="w-4 h-4 mr-2" />
+                  Restart Settings
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-sm">Auto-restart</span>
+                    <Switch
+                      checked={status?.autoRestartEnabled || false}
+                      onCheckedChange={handleToggleAutoRestart}
+                      disabled={loading}
+                    />
+                  </div>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
+        )}
 
         {/* Pending Restart Alert */}
         {status?.pendingRestart && (
@@ -1811,6 +1820,7 @@ export default function Mods() {
             )}
 
             {/* Search and Filters */}
+            {mods.length > 0 && (
             <div className="flex items-center gap-4 flex-wrap">
               <div className="relative min-w-0 basis-full sm:basis-auto sm:flex-1 sm:max-w-sm">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -1855,6 +1865,7 @@ export default function Mods() {
                 </Button>
               )}
             </div>
+            )}
 
             {/* Mods List */}
             <Card>
@@ -1864,7 +1875,8 @@ export default function Mods() {
                     <EmptyState
                       type={searchQuery ? 'noResults' : 'noMods'}
                       title={searchQuery ? 'No mods match your search' : 'No mods tracked'}
-                      description={searchQuery ? 'Try a different search term' : 'Add mods manually or sync from server configuration'}
+                      description={searchQuery ? 'Try a different search term' : 'Track Workshop mods to detect updates and manage your load order.'}
+                      action={searchQuery ? undefined : { label: 'Sync from Server', onClick: handleSyncFromServer, variant: 'outline' }}
                     />
                   ) : (
                     <div className="divide-y">

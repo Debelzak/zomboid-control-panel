@@ -50,7 +50,7 @@ function DashboardPerformanceCharts({ performanceHistory }: DashboardPerformance
               <XAxis dataKey="time" stroke="hsl(var(--muted-foreground))" fontSize={10} tickLine={false} axisLine={false} />
               <YAxis stroke="hsl(var(--muted-foreground))" fontSize={10} tickLine={false} axisLine={false} width={40} unit=" MB" />
               <RTooltip />
-              <Line type="monotone" dataKey="memoryMB" stroke="hsl(var(--chart-2))" strokeWidth={2} dot={false} name="Memory" />
+              <Line type="monotone" dataKey="memoryMB" stroke="hsl(var(--chart-2))" strokeWidth={2} strokeDasharray="6 3" dot={false} name="Memory" />
             </LineChart>
           </ResponsiveContainer>
         </CardContent>
