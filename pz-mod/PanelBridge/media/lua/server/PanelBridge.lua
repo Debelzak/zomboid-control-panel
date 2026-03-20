@@ -3876,36 +3876,54 @@ end
 -- Clear ALL zombies in loaded cells
 handlers.clearAllZombies = function(args)
     local world = getWorld()
-    local cell = world and world:getCell()
-    if not cell then
-        return false, nil, "Could not access world cell"
+    if not world then
+        return false, nil, "World not available"
     end
 
+    -- Try ForceKillAllZombies first (reliable in both B41 and B42)
     local removed = 0
-    local ok, err = pcall(function()
-        local zombies = cell:getZombieList()
-        if zombies then
-            for i = zombies:size() - 1, 0, -1 do
-                local zombie = zombies:get(i)
-                if zombie then
-                    pcall(function()
-                        zombie:removeFromSquare()
-                        zombie:removeFromWorld()
-                        removed = removed + 1
-                    end)
+    local usedForceKill = false
+    if world.ForceKillAllZombies then
+        local ok, err = pcall(function()
+            world:ForceKillAllZombies()
+            usedForceKill = true
+        end)
+        if not ok then
+            PanelBridge.warn("ForceKillAllZombies failed, falling back to manual removal", { error = tostring(err) })
+        end
+    end
+
+    -- Fallback: manual removal from cell zombie list
+    if not usedForceKill then
+        local cell = world:getCell()
+        if not cell then
+            return false, nil, "Could not access world cell"
+        end
+        local ok, err = pcall(function()
+            local zombies = cell:getZombieList()
+            if zombies then
+                for i = zombies:size() - 1, 0, -1 do
+                    local zombie = zombies:get(i)
+                    if zombie then
+                        pcall(function()
+                            zombie:removeFromSquare()
+                            zombie:removeFromWorld()
+                            removed = removed + 1
+                        end)
+                    end
                 end
             end
+        end)
+        if not ok then
+            PanelBridge.warn("Error clearing zombies manually", { error = tostring(err) })
         end
-    end)
-
-    if not ok then
-        PanelBridge.warn("Error clearing all zombies", { error = tostring(err) })
     end
 
-    PanelBridge.info("Cleared all loaded zombies", { removed = removed })
+    PanelBridge.warn("Cleared zombies", { usedForceKill = usedForceKill, manualRemoved = removed })
     return true, {
-        message = "Removed " .. removed .. " zombies from loaded cells",
-        removed = removed
+        message = usedForceKill and "Force-killed all zombies" or ("Removed " .. removed .. " zombies from loaded cells"),
+        removed = removed,
+        usedForceKill = usedForceKill
     }
 end
 
@@ -3924,11 +3942,6 @@ handlers.spawnHordeNearPlayer = function(args)
         return false, nil, "Player not found: " .. username
     end
 
-    local world = getWorld()
-    if not world or not world.CreateSwarm then
-        return false, nil, "CreateSwarm API not available"
-    end
-
     local px, py = player:getX(), player:getY()
 
     -- Random angle, spawn 50-70 tiles from player in a 30x30 area
@@ -3937,21 +3950,41 @@ handlers.spawnHordeNearPlayer = function(args)
     local cx = math.floor(px + math.cos(angle) * dist)
     local cy = math.floor(py + math.sin(angle) * dist)
     local half = 15
+    local method = "unknown"
 
     local ok, err = pcall(function()
-        world:CreateSwarm(count, cx - half, cy - half, cx + half, cy + half)
+        -- B42 preferred: ZombiePopulationManager.createHordeInAreaTo
+        -- Creates real zombies that walk toward the player
+        local zpop = ZombiePopulationManager and ZombiePopulationManager.instance
+        if zpop and zpop.createHordeInAreaTo then
+            zpop:createHordeInAreaTo(cx - half, cy - half, half * 2, half * 2, math.floor(px), math.floor(py), count)
+            method = "createHordeInAreaTo"
+        elseif zpop and zpop.createHordeFromTo then
+            zpop:createHordeFromTo(cx, cy, math.floor(px), math.floor(py), count)
+            method = "createHordeFromTo"
+        else
+            -- Fallback: IsoWorld.CreateSwarm (B41)
+            local world = getWorld()
+            if world and world.CreateSwarm then
+                world:CreateSwarm(count, cx - half, cy - half, cx + half, cy + half)
+                method = "CreateSwarm"
+            else
+                error("No zombie spawning API available")
+            end
+        end
     end)
 
     if not ok then
         return false, nil, "Failed to spawn horde: " .. tostring(err)
     end
 
-    PanelBridge.info("Spawned horde near player", { username = username, count = count, cx = cx, cy = cy })
+    PanelBridge.warn("Spawned horde near player", { username = username, count = count, cx = cx, cy = cy, method = method })
     return true, {
         message = "Spawned " .. count .. " zombies near " .. username,
         count = count,
         center = { x = cx, y = cy },
-        distance = dist
+        distance = dist,
+        method = method
     }
 end
 
@@ -3968,11 +4001,6 @@ handlers.spawnHordeBehindPlayer = function(args)
     local player = getPlayerByUsername(username)
     if not player then
         return false, nil, "Player not found: " .. username
-    end
-
-    local world = getWorld()
-    if not world or not world.CreateSwarm then
-        return false, nil, "CreateSwarm API not available"
     end
 
     local px, py = player:getX(), player:getY()
@@ -4001,22 +4029,40 @@ handlers.spawnHordeBehindPlayer = function(args)
     local cx = math.floor(px + behindX * dist)
     local cy = math.floor(py + behindY * dist)
     local half = 15
+    local method = "unknown"
 
     local ok, err = pcall(function()
-        world:CreateSwarm(count, cx - half, cy - half, cx + half, cy + half)
+        -- B42 preferred: ZombiePopulationManager.createHordeInAreaTo
+        local zpop = ZombiePopulationManager and ZombiePopulationManager.instance
+        if zpop and zpop.createHordeInAreaTo then
+            zpop:createHordeInAreaTo(cx - half, cy - half, half * 2, half * 2, math.floor(px), math.floor(py), count)
+            method = "createHordeInAreaTo"
+        elseif zpop and zpop.createHordeFromTo then
+            zpop:createHordeFromTo(cx, cy, math.floor(px), math.floor(py), count)
+            method = "createHordeFromTo"
+        else
+            local world = getWorld()
+            if world and world.CreateSwarm then
+                world:CreateSwarm(count, cx - half, cy - half, cx + half, cy + half)
+                method = "CreateSwarm"
+            else
+                error("No zombie spawning API available")
+            end
+        end
     end)
 
     if not ok then
         return false, nil, "Failed to spawn horde behind: " .. tostring(err)
     end
 
-    PanelBridge.info("Spawned horde behind player", { username = username, count = count, direction = dirName, cx = cx, cy = cy })
+    PanelBridge.warn("Spawned horde behind player", { username = username, count = count, direction = dirName, cx = cx, cy = cy, method = method })
     return true, {
         message = "Spawned " .. count .. " zombies behind " .. username,
         count = count,
         center = { x = cx, y = cy },
         playerDirection = dirName,
-        distance = dist
+        distance = dist,
+        method = method
     }
 end
 
@@ -4430,9 +4476,6 @@ end
 -- ============================================
 
 handlers.triggerSwarmEvent = function(args)
-    local world = getWorld()
-    if not world then return false, nil, "World not available" end
-
     local count = math.floor(tonumber(args.count) or 25)
     local x1 = math.floor(tonumber(args.x1) or 0)
     local y1 = math.floor(tonumber(args.y1) or 0)
@@ -4443,16 +4486,32 @@ handlers.triggerSwarmEvent = function(args)
     if x2 < x1 then x1, x2 = x2, x1 end
     if y2 < y1 then y1, y2 = y2, y1 end
 
+    local midX = math.floor((x1 + x2) / 2)
+    local midY = math.floor((y1 + y2) / 2)
+    local method = "unknown"
+
     local ok, err = pcall(function()
-        if world.CreateSwarm then
-            world:CreateSwarm(count, x1, y1, x2, y2)
+        local zpop = ZombiePopulationManager and ZombiePopulationManager.instance
+        if zpop and zpop.createHordeInAreaTo then
+            zpop:createHordeInAreaTo(x1, y1, x2 - x1, y2 - y1, midX, midY, count)
+            method = "createHordeInAreaTo"
+        elseif zpop and zpop.createHordeFromTo then
+            zpop:createHordeFromTo(x1, y1, midX, midY, count)
+            method = "createHordeFromTo"
         else
-            error("CreateSwarm API not available")
+            local world = getWorld()
+            if world and world.CreateSwarm then
+                world:CreateSwarm(count, x1, y1, x2, y2)
+                method = "CreateSwarm"
+            else
+                error("No zombie spawning API available")
+            end
         end
     end)
     if not ok then return false, nil, "Failed to trigger swarm: " .. tostring(err) end
 
-    return true, { message = "Swarm event triggered", count = count, area = { x1 = x1, y1 = y1, x2 = x2, y2 = y2 } }
+    PanelBridge.warn("Swarm event triggered", { count = count, area = { x1 = x1, y1 = y1, x2 = x2, y2 = y2 }, method = method })
+    return true, { message = "Swarm event triggered", count = count, area = { x1 = x1, y1 = y1, x2 = x2, y2 = y2 }, method = method }
 end
 
 handlers.runEventSequence = function(args)

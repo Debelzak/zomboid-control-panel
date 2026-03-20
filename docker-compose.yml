@@ -31,6 +31,8 @@ services:
     volumes:
       - ./data:/app/data          # Persist database (db.json)
       - ./logs:/app/logs          # Persist logs
+      # Uncomment and adjust: PanelBridge IPC requires access to the Zomboid user data folder
+      # - /home/pzuser/Zomboid:/zomboid
     environment:
       - NODE_ENV=production
       # - PORT=3001

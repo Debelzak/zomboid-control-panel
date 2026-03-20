@@ -1808,9 +1808,12 @@ router.post('/zombies/clear-all', async (req, res) => {
     return res.status(400).json({ error: 'Bridge not running' });
   }
   try {
+    log.info('Clearing all zombies');
     const result = await bridge.sendCommand('clearAllZombies', {});
+    log.info('Clear all zombies result: %o', result);
     res.json(result);
   } catch (error) {
+    log.warn('Clear all zombies failed: %s', error.message);
     res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
@@ -1826,9 +1829,12 @@ router.post('/zombies/spawn-near', async (req, res) => {
   }
   const safeCount = Math.min(Math.max(Math.floor(Number(count) || 50), 1), 500);
   try {
+    log.info('Spawning horde near player: %s (count: %d)', username, safeCount);
     const result = await bridge.sendCommand('spawnHordeNearPlayer', { username, count: safeCount });
+    log.info('Spawn horde near result: %o', result);
     res.json(result);
   } catch (error) {
+    log.warn('Spawn horde near failed: %s', error.message);
     res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
@@ -1844,9 +1850,12 @@ router.post('/zombies/spawn-behind', async (req, res) => {
   }
   const safeCount = Math.min(Math.max(Math.floor(Number(count) || 50), 1), 500);
   try {
+    log.info('Spawning horde behind player: %s (count: %d)', username, safeCount);
     const result = await bridge.sendCommand('spawnHordeBehindPlayer', { username, count: safeCount });
+    log.info('Spawn horde behind result: %o', result);
     res.json(result);
   } catch (error) {
+    log.warn('Spawn horde behind failed: %s', error.message);
     res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
