@@ -6,29 +6,24 @@ import {
   Megaphone,
   Loader2,
   RefreshCw,
-  Info,
-  AlertCircle,
   Shield,
   MessageSquare,
-  Bell
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { PageHeader } from '@/components/PageHeader'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { useToast } from '@/components/ui/use-toast'
 import { panelBridgeApi, playersApi } from '@/lib/api'
 import { useSocket } from '@/contexts/SocketContext'
 import { EmptyState } from '@/components/EmptyState'
-import { BridgeStatusBadge } from '@/components/BridgeStatusBadge'
 import { cn } from '@/lib/utils'
 import { reportClientError } from '@/lib/client-errors'
 
 interface ChatMessage {
   id: string
-  type: 'server' | 'admin' | 'general' | 'alert'
+  type: string
   author?: string
   message: string
   timestamp: Date
@@ -39,40 +34,11 @@ interface Player {
   online: boolean
 }
 
-type ChatChannel = 'server' | 'admin' | 'general' | 'alert'
-
-const channelTone: Record<ChatChannel, { surface: string; icon: string; label: string }> = {
-  server: {
-    surface: 'border-border/60 bg-muted/30',
-    icon: 'text-primary',
-    label: 'text-foreground/90',
-  },
-  alert: {
-    surface: 'border-warning/20 bg-warning/10',
-    icon: 'text-warning',
-    label: 'text-warning',
-  },
-  admin: {
-    surface: 'border-destructive/20 bg-destructive/10',
-    icon: 'text-destructive',
-    label: 'text-destructive',
-  },
-  general: {
-    surface: 'border-primary/20 bg-primary/10',
-    icon: 'text-primary',
-    label: 'text-primary',
-  },
-}
-
 export default function Chat() {
   const [message, setMessage] = useState('')
-  const [channel, setChannel] = useState<ChatChannel>('server')
-  const [authorName, setAuthorName] = useState('Server')
   const [players, setPlayers] = useState<Player[]>([])
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([])
   const [sending, setSending] = useState(false)
-  const [bridgeConnected, setBridgeConnected] = useState(false)
-  const [bridgeLoading, setBridgeLoading] = useState(true)
   
   const chatEndRef = useRef<HTMLDivElement>(null)
   const sendingRef = useRef(false)
@@ -98,49 +64,21 @@ export default function Chat() {
     }
   }, [])
 
-  const checkBridgeStatus = useCallback(async () => {
-    try {
-      setBridgeLoading(true)
-      const status = await panelBridgeApi.getStatus()
-      setBridgeConnected(status.modConnected && status.isRunning)
-    } catch {
-      setBridgeConnected(false)
-    } finally {
-      setBridgeLoading(false)
-    }
-  }, [])
-
   useEffect(() => {
     fetchPlayers()
-    checkBridgeStatus()
     const interval = setInterval(() => {
       fetchPlayers()
     }, 15000)
     return () => clearInterval(interval)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fetchPlayers]) // checkBridgeStatus only runs once on mount, socket handles updates
+  }, [fetchPlayers])
 
-  // Listen for bridge status updates via socket
+  // Listen for chat messages from the server log tailer
   useEffect(() => {
     if (socket) {
-      const handleBridgeStatus = (data: { isRunning?: boolean; modConnected?: boolean }) => {
-        setBridgeConnected(prev => {
-          const isRunning = data.isRunning ?? prev
-          const modConnected = data.modConnected ?? prev
-          return Boolean(isRunning && modConnected)
-        })
-      }
-
-      const handleBridgeModStatus = (data: { alive?: boolean }) => {
-        setBridgeConnected(prev => Boolean(prev && data.alive))
-      }
-
-      const handleSocketMessage = (data: { id?: string; author?: string; message?: string; timestamp?: string }) => {
+      const handleSocketMessage = (data: { id?: string; type?: string; author?: string; message?: string; timestamp?: string }) => {
         const msg = data.message
         if (!msg) return
         setChatHistory(prev => {
-             // Deduplication: Check if we have a message with same content/author in last 2 seconds
-             // This prevents echoing our own messages if we optimistically added them
              const recent = prev.slice(-5);
              const isDuplicate = recent.some(m => 
                  m.message === msg && 
@@ -151,7 +89,7 @@ export default function Chat() {
 
              const newMessage: ChatMessage = {
                 id: data.id || Date.now().toString(),
-                type: 'general',
+                type: data.type || 'general',
                 author: data.author,
                 message: msg,
                 timestamp: new Date(data.timestamp || Date.now())
@@ -161,68 +99,31 @@ export default function Chat() {
         });
       }
 
-      socket.on('panelBridge:status', handleBridgeStatus)
-      socket.on('panelBridge:modStatus', handleBridgeModStatus)
       socket.on('chat:message', handleSocketMessage)
-
-      return () => {
-        socket.off('panelBridge:status', handleBridgeStatus)
-        socket.off('panelBridge:modStatus', handleBridgeModStatus)
-        socket.off('chat:message', handleSocketMessage)
-      }
+      return () => { socket.off('chat:message', handleSocketMessage) }
     }
   }, [socket])
-
-  const getChannelLabel = (ch: ChatChannel): string => {
-    switch (ch) {
-      case 'server': return 'Server Chat'
-      case 'admin': return 'Admin Only'
-      case 'general': return 'General'
-      case 'alert': return 'Alert'
-      default: return ch
-    }
-  }
 
   const sendMessage = async () => {
     if (!message.trim() || sendingRef.current) return
     sendingRef.current = true
     setSending(true)
     try {
-      let result
-      let channelLabel = getChannelLabel(channel)
-
-      // Backend chat routes handle RCON fallback transparently
-      switch (channel) {
-          case 'server':
-          result = await panelBridgeApi.sendToServerChat(message, false)
-          break
-          case 'alert':
-          result = await panelBridgeApi.sendToServerChat(message, true)
-          channelLabel = 'Alert'
-          break
-          case 'admin':
-          result = await panelBridgeApi.sendToAdminChat(message)
-          break
-          case 'general':
-          result = await panelBridgeApi.sendToGeneralChat(message, authorName)
-          channelLabel = authorName.trim() || 'Server'
-          break
-      }
+      // Uses RCON servermsg as primary (handled by backend)
+      const result = await panelBridgeApi.sendToServerChat(message, false)
 
       if (result?.success) {
-        // Add to local chat history (keep last 200 messages)
-        // With LogTailer, this might duplicate if we are fast enough, but our dedup logic should handle it
         setChatHistory(prev => [...prev, {
           id: Date.now().toString(),
-          type: channel,
-          author: channel === 'general' ? authorName : 'Server',
+          type: 'server',
+          author: 'Server',
           message: message,
           timestamp: new Date()
         }].slice(-200))
         setMessage('')
         toast({
-          title: 'Transmission Sent',
-          description: `Routed cleanly to ${channelLabel}`,
+          title: 'Broadcast Sent',
+          description: 'Message delivered to all connected players.',
           variant: 'success' as const,
         })
       } else {
@@ -247,54 +148,31 @@ export default function Chat() {
     }
   }
 
-  const getMessageStyle = (type: ChatChannel) => {
-    return cn('ml-4 rounded-xl border px-3 py-3', channelTone[type].surface)
+  const getMessageStyle = (type: string) => {
+    if (type === 'server') return 'ml-4 rounded-xl border px-3 py-3 border-warning/20 bg-warning/10'
+    if (type === 'admin') return 'ml-4 rounded-xl border px-3 py-3 border-destructive/20 bg-destructive/10'
+    return 'ml-4 rounded-xl border px-3 py-3 border-border/60 bg-muted/30'
   }
 
-  const getMessageIcon = (type: ChatChannel) => {
-    switch (type) {
-      case 'alert':
-        return <Bell className={cn('w-3 h-3', channelTone[type].icon)} />
-      case 'admin':
-        return <Shield className={cn('w-3 h-3', channelTone[type].icon)} />
-      case 'general':
-        return <MessageSquare className={cn('w-3 h-3', channelTone[type].icon)} />
-      default:
-        return <Megaphone className={cn('w-3 h-3', channelTone[type].icon)} />
-    }
+  const getMessageMeta = (msg: ChatMessage) => {
+    if (msg.type === 'server') return { icon: <Megaphone className="w-3 h-3 text-warning" />, label: msg.author || 'Server', labelClass: 'text-warning' }
+    if (msg.type === 'admin') return { icon: <Shield className="w-3 h-3 text-destructive" />, label: msg.author || 'Admin', labelClass: 'text-destructive' }
+    return { icon: <MessageSquare className="w-3 h-3 text-primary" />, label: msg.author || 'Player', labelClass: 'text-primary' }
   }
 
   return (
     <div className="space-y-6 page-transition">
       <PageHeader
         title="In-Game Chat"
-        description="Send server, alert, admin, or custom-name messages through PanelBridge, with RCON fallback for standard broadcasts."
+        description="Broadcast messages to all connected players and see their chat in real time."
         icon={<MessagesSquare className="w-5 h-5" />}
         actions={
-          <div className="flex items-center gap-2">
-            <BridgeStatusBadge connected={bridgeConnected} loading={bridgeLoading} />
-            <Button variant="outline" size="sm" onClick={() => { fetchPlayers(); checkBridgeStatus() }} className="gap-2">
-              <RefreshCw className="w-4 h-4" />
-              Refresh
-            </Button>
-          </div>
+          <Button variant="outline" size="sm" onClick={fetchPlayers} className="gap-2">
+            <RefreshCw className="w-4 h-4" />
+            Refresh
+          </Button>
         }
       />
-
-      {/* Bridge Warning */}
-      {!bridgeConnected && !bridgeLoading && (
-        <Card className="border-warning/25 bg-warning/8">
-          <CardContent className="flex items-center gap-4 py-4">
-            <AlertCircle className="w-5 h-5 text-warning shrink-0" />
-            <div>
-              <p className="font-medium text-warning">PanelBridge Not Connected</p>
-              <p className="text-sm text-muted-foreground">
-                Standard broadcasts can still go out through RCON. Reconnect PanelBridge for admin chat, custom author names, and richer routing controls.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Chat Window */}
@@ -305,34 +183,34 @@ export default function Chat() {
                 <MessagesSquare className="w-4 h-4 text-primary" />
                 Server Chat
               </CardTitle>
-              <CardDescription>Send a live message to connected players.</CardDescription>
+              <CardDescription>Live chat feed from the server. Your broadcasts appear to all players in-game.</CardDescription>
             </CardHeader>
             <CardContent className="flex-1 flex flex-col p-0 min-h-0">
               {/* Messages Area */}
               <ScrollArea className="flex-1 px-4" role="log" aria-live="polite" aria-label="Chat messages">
                 <div className="py-4 space-y-3">
                   {chatHistory.length === 0 ? (
-                    <EmptyState type="noMessages" title="No chat messages yet" description={bridgeConnected ? "Send a message to start the chat log." : "Connect PanelBridge in Settings or send an RCON broadcast below."} compact />
+                    <EmptyState type="noMessages" title="No chat messages yet" description="Player messages and your broadcasts will appear here in real time." compact />
                   ) : (
-                    chatHistory.map((msg) => (
-                      <div
-                        key={msg.id}
-                        className={getMessageStyle(msg.type)}
-                      >
-                        <div className="flex items-center justify-between mb-1">
-                          <div className="flex items-center gap-2">
-                            {getMessageIcon(msg.type)}
-                            <span className={cn('text-xs font-medium', channelTone[msg.type].label)}>
-                              {msg.type === 'general' && msg.author ? msg.author : getChannelLabel(msg.type)}
-                            </span>
+                    chatHistory.map((msg) => {
+                      const meta = getMessageMeta(msg)
+                      return (
+                        <div key={msg.id} className={getMessageStyle(msg.type)}>
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center gap-2">
+                              {meta.icon}
+                              <span className={cn('text-xs font-medium', meta.labelClass)}>
+                                {meta.label}
+                              </span>
+                            </div>
+                            <time dateTime={msg.timestamp.toISOString()} className="text-xs text-muted-foreground">
+                              {msg.timestamp.toLocaleTimeString()}
+                            </time>
                           </div>
-                          <time dateTime={msg.timestamp.toISOString()} className="text-xs text-muted-foreground">
-                            {msg.timestamp.toLocaleTimeString()}
-                          </time>
+                          <p className="text-sm break-words [overflow-wrap:anywhere]">{msg.message}</p>
                         </div>
-                        <p className="text-sm break-words [overflow-wrap:anywhere]">{msg.message}</p>
-                      </div>
-                    ))
+                      )
+                    })
                   )}
                   <div ref={chatEndRef} />
                 </div>
@@ -340,55 +218,10 @@ export default function Chat() {
 
               {/* Message Input */}
               <div className="p-4 border-t bg-muted/30">
-                <div className="flex flex-wrap gap-2 mb-3">
-                  <Select value={channel} onValueChange={(v) => setChannel(v as ChatChannel)}>
-                    <SelectTrigger className="h-11 w-full sm:w-44" aria-label="Chat channel">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="server">
-                        <div className="flex items-center gap-2">
-                          <Megaphone className="w-4 h-4" />
-                          Server Chat
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="alert">
-                        <div className="flex items-center gap-2">
-                          <Bell className="w-4 h-4 text-warning" />
-                          Alert (high visibility)
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="admin">
-                        <div className="flex items-center gap-2">
-                          <Shield className="w-4 h-4 text-destructive" />
-                          Admin Only
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="general">
-                        <div className="flex items-center gap-2">
-                          <MessageSquare className="w-4 h-4 text-primary" />
-                          Custom name
-                        </div>
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                  
-                  {channel === 'general' && (
-                    <Input
-                      placeholder="Display name"
-                      aria-label="Display name for custom chat messages"
-                      value={authorName}
-                      onChange={(e) => setAuthorName(e.target.value)}
-                      maxLength={32}
-                      className="h-11 w-full sm:w-36"
-                    />
-                  )}
-                </div>
-
                 <div className="flex gap-2">
                   <Input
-                    placeholder="Write a message... (Enter to send)"
-                    aria-label="Chat message"
+                    placeholder="Broadcast a message to all players... (Enter to send)"
+                    aria-label="Broadcast message"
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
                     onKeyDown={handleKeyDown}
@@ -434,46 +267,6 @@ export default function Chat() {
                   ))}
                 </div>
               )}
-            </CardContent>
-          </Card>
-
-          {/* Chat Types Info */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Info className="w-4 h-4 text-muted-foreground" />
-                Chat Types
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="text-sm space-y-3">
-              <div className="flex items-start gap-2">
-                <Megaphone className="w-4 h-4 mt-0.5 text-primary shrink-0" />
-                <div>
-                  <strong className="text-foreground">Server Chat:</strong>
-                  <span className="text-muted-foreground"> Standard message shown to everyone online.</span>
-                </div>
-              </div>
-              <div className="flex items-start gap-2">
-                <Bell className="w-4 h-4 mt-0.5 text-warning shrink-0" />
-                <div>
-                  <strong className="text-foreground">Alert:</strong>
-                  <span className="text-muted-foreground"> Higher-visibility message for everyone online.</span>
-                </div>
-              </div>
-              <div className="flex items-start gap-2">
-                <Shield className="w-4 h-4 mt-0.5 text-destructive shrink-0" />
-                <div>
-                  <strong className="text-foreground">Admin Only:</strong>
-                  <span className="text-muted-foreground"> Visible only to admins in game.</span>
-                </div>
-              </div>
-              <div className="flex items-start gap-2">
-                <MessageSquare className="w-4 h-4 mt-0.5 text-primary shrink-0" />
-                <div>
-                  <strong className="text-foreground">Custom Author:</strong>
-                  <span className="text-muted-foreground"> Sends a general chat message with the display name you choose.</span>
-                </div>
-              </div>
             </CardContent>
           </Card>
 

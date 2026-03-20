@@ -922,7 +922,7 @@ async function start() {
     logTailer.on('chatMessage', (data) => {
         io.emit('chat:message', {
             id: Date.now().toString(),
-            type: 'general', // Default to general for now
+            type: data.type || 'general',
             author: data.author,
             message: data.message,
             timestamp: data.timestamp

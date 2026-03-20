@@ -9,17 +9,18 @@ import { getActiveServer, getSetting } from '../database/init.js';
 export class LogTailer extends EventEmitter {
   constructor() {
     super();
-    this.logPath = null;
-    this.watcher = null;
+    this.logPath = null;       // server-console.txt (legacy B41 chat source)
+    this.chatLogPath = null;   // B42 dedicated chat log file (Logs/*_chat.txt)
+    this.chatLogSize = 0;
     this.currentSize = 0;
     this.isWatching = false;
     this.checkTimer = null;
-    this.debounceTimer = null;
+    this.logsDir = null;       // Path to Logs/ directory for chat log discovery
   }
 
   async init() {
     await this.findLogPath();
-    if (this.logPath) {
+    if (this.logPath || this.chatLogPath) {
         this.startWatching();
     }
   }
@@ -27,11 +28,9 @@ export class LogTailer extends EventEmitter {
   async findLogPath() {
     try {
         const activeServer = await getActiveServer();
-        // Default Zomboid path logic
         const homeDir = os.homedir();
         let basePath = homeDir ? path.join(homeDir, 'Zomboid') : '';
         
-        // Use explicitly configured Zomboid path if available
         if (activeServer?.zomboidDataPath) {
             basePath = activeServer.zomboidDataPath;
         } else {
@@ -39,29 +38,20 @@ export class LogTailer extends EventEmitter {
             if (settingPath) basePath = settingPath;
         }
 
-        const serverName = activeServer?.serverName || await getSetting('serverName') || 'servertest';
-        
-        // Target: .../Zomboid/Server/serverName_chat.txt (Clean chat log)
-        // Or: .../Zomboid/server-console.txt (noisy console log)
-        
-        // Priority 1: dedicated chat log (usually simpler to parse)
-        // Note: Project Zomboid logs chat to dedicated SQLite db since B41.60 usually, 
-        // but often text logs are still enabled or can be enabled.
-        // Let's stick to server-console.txt as it's the most reliable source of truth for console output
-        // which includes [chat] messages if configured.
-        
-        // The server-console.txt is often in the UserHome/Zomboid folder, OR custom -cachedir
+        // server-console.txt (B41 chat via [chat] markers, also general log tailing)
         const consoleLogPath = path.join(basePath, 'server-console.txt');
-        
-        // Also check "Logs" folder? PZ puts dated logs in /Logs/
-        // But we want the LIVE log.
-        
         if (fs.existsSync(consoleLogPath)) {
             this.logPath = consoleLogPath;
             log.info(`Found console log at ${consoleLogPath}`);
         } else {
             log.warn(`Could not find server-console.txt at ${consoleLogPath}`);
-            this.logPath = null;
+        }
+
+        // B42 dedicated chat log: Logs/*_chat.txt
+        const logsDir = path.join(basePath, 'Logs');
+        if (fs.existsSync(logsDir)) {
+            this.logsDir = logsDir;
+            this.findLatestChatLog();
         }
 
     } catch (e) {
@@ -69,25 +59,49 @@ export class LogTailer extends EventEmitter {
     }
   }
 
+  // Find the most recently modified *_chat.txt in the Logs/ directory
+  findLatestChatLog() {
+    if (!this.logsDir) return;
+    try {
+        const files = fs.readdirSync(this.logsDir)
+            .filter(f => f.endsWith('_chat.txt'))
+            .map(f => {
+                const full = path.join(this.logsDir, f);
+                try { return { path: full, mtime: fs.statSync(full).mtimeMs }; }
+                catch { return null; }
+            })
+            .filter(Boolean)
+            .sort((a, b) => b.mtime - a.mtime);
+
+        if (files.length > 0) {
+            const latest = files[0].path;
+            if (latest !== this.chatLogPath) {
+                this.chatLogPath = latest;
+                // Start from end so we don't replay old messages on startup
+                try { this.chatLogSize = fs.statSync(latest).size; } catch { this.chatLogSize = 0; }
+                log.info(`Tailing B42 chat log: ${latest}`);
+            }
+        }
+    } catch (e) {
+        log.debug(`Error scanning chat logs: ${e.message}`);
+    }
+  }
+
   async startWatching() {
-    if (this.isWatching || !this.logPath) return;
+    if (this.isWatching) return;
 
     try {
-        // Get initial size
-        // We use sync here just for immediate initialization
-        if (fs.existsSync(this.logPath)) {
+        if (this.logPath && fs.existsSync(this.logPath)) {
             const stats = fs.statSync(this.logPath);
             this.currentSize = stats.size;
-        } else {
-            this.currentSize = 0;
         }
 
-        log.info(`Started watching ${this.logPath} (start size: ${this.currentSize})`);
+        log.info(`Started watching (console: ${this.logPath || 'none'}, chatLog: ${this.chatLogPath || 'none'})`);
         
         this.isWatching = true;
         this.checkLoop();
     } catch (e) {
-        log.error(`Failed to watch file: ${e.message}`);
+        log.error(`Failed to start watching: ${e.message}`);
         this.isWatching = false;
     }
   }
@@ -103,102 +117,128 @@ export class LogTailer extends EventEmitter {
   async checkLoop() {
       if (!this.isWatching) return;
       
-      await this.checkFile();
+      await this.checkConsoleLog();
+      await this.checkChatLog();
       
       if (this.isWatching) {
-          // Schedule next check
           this.checkTimer = setTimeout(() => this.checkLoop(), 2000);
       }
   }
 
-  async checkFile() {
+  // Tail server-console.txt (legacy B41 [chat] lines)
+  async checkConsoleLog() {
+     if (!this.logPath) return;
      try {
-         // Async stat to avoid blocking event loop
          let stats;
-         try {
-             stats = await fs.promises.stat(this.logPath);
-         } catch (e) {
-             // File access error or not found
-             return;
-         }
+         try { stats = await fs.promises.stat(this.logPath); } catch { return; }
          
          if (stats.size > this.currentSize) {
-             // File grew - read the new chunk
              const bytesToRead = stats.size - this.currentSize;
-             
-             // Avoid reading massive chunks if file grew too much (e.g. rotation reused file)
-             if (bytesToRead > 1024 * 1024) { // 1MB limit per tick
-                 log.warn('Log grew too fast, skipping to end');
+             if (bytesToRead > 1024 * 1024) {
                  this.currentSize = stats.size;
                  return;
              }
-
-             await new Promise((resolve) => {
-                 const stream = fs.createReadStream(this.logPath, {
-                     start: this.currentSize,
-                     end: stats.size
-                 });
-                 
-                 let data = '';
-                 stream.on('data', chunk => data += chunk);
-                 stream.on('end', () => {
-                     this.currentSize = stats.size;
-                     try {
-                         this.processNewData(data);
-                     } catch (e) {
-                         log.error(`Error processing log data: ${e.message}`);
-                     }
-                     resolve();
-                 });
-                 stream.on('error', (err) => {
-                     // Only log read errors if we are debugging
-                     resolve();
-                 });
-             });
-             
+             const data = await this.readChunk(this.logPath, this.currentSize, stats.size);
+             this.currentSize = stats.size;
+             if (data) this.processConsoleData(data);
          } else if (stats.size < this.currentSize) {
-             // File rotated/truncated
-             this.currentSize = 0; // Check next time from 0
-             log.info('Log file truncated/rotated');
+             this.currentSize = 0;
          }
-     } catch (e) {
-         // General polling errors
-     }
+     } catch { /* polling error */ }
   }
 
-  processNewData(data) {
+  // Tail the active B42 *_chat.txt file
+  async checkChatLog() {
+     // Re-discover latest chat log periodically (PZ creates new ones on restart)
+     if (this.logsDir) this.findLatestChatLog();
+     if (!this.chatLogPath) return;
+
+     try {
+         let stats;
+         try { stats = await fs.promises.stat(this.chatLogPath); } catch { return; }
+         
+         if (stats.size > this.chatLogSize) {
+             const bytesToRead = stats.size - this.chatLogSize;
+             if (bytesToRead > 1024 * 1024) {
+                 this.chatLogSize = stats.size;
+                 return;
+             }
+             const data = await this.readChunk(this.chatLogPath, this.chatLogSize, stats.size);
+             this.chatLogSize = stats.size;
+             if (data) this.processChatLogData(data);
+         } else if (stats.size < this.chatLogSize) {
+             this.chatLogSize = 0;
+         }
+     } catch { /* polling error */ }
+  }
+
+  readChunk(filePath, start, end) {
+    return new Promise((resolve) => {
+        const stream = fs.createReadStream(filePath, { start, end });
+        let data = '';
+        stream.on('data', chunk => data += chunk);
+        stream.on('end', () => resolve(data));
+        stream.on('error', () => resolve(null));
+    });
+  }
+
+  // Parse server-console.txt lines (B41-style [chat] markers)
+  processConsoleData(data) {
     const lines = data.split(/\r?\n/);
     for (const line of lines) {
         if (!line.trim()) continue;
-        
-        // Parse Chat Messages
-        // Format roughly: [13-02-22 18:20:15.123] [chat] [Safehouse] <User> Message
-        // Or: [chat] <User> Message
-        
         if (line.includes('[chat]')) {
-            this.parseChatLine(line);
+            const cleanLine = line.replace(/^\[.*?\]\s*/, '');
+            if (!cleanLine.includes('[chat]')) continue;
+            const match = cleanLine.match(/<([^>]+)>\s+(.*)/);
+            if (match) {
+                this.emit('chatMessage', {
+                    author: match[1],
+                    message: match[2],
+                    type: 'general',
+                    timestamp: new Date()
+                });
+            }
         }
     }
   }
 
-  parseChatLine(line) {
-      // Regex to extract user and message
-      // Removing timestamps first if present
-      const cleanLine = line.replace(/^\[.*?\]\s*/, ''); // Remove first timestamp [xx-xx-xx]
-      
-      if (!cleanLine.includes('[chat]')) return;
-      
-      // Look for <User> Message
-      const match = cleanLine.match(/<([^>]+)>\s+(.*)/);
-      if (match) {
-          const author = match[1];
-          const message = match[2];
-          
-          this.emit('chatMessage', {
-              author,
-              message,
-              timestamp: new Date()
-          });
-      }
+  // Parse B42 dedicated chat log lines
+  // Formats:
+  //   Player msg:  [DD-MM-YY HH:MM:SS.mmm][info] Got message:ChatMessage{chat=General, author='user', text='hello'}.
+  //   Server msg:  [DD-MM-YY HH:MM:SS.mmm] Server alert message: 'text' sent..
+  processChatLogData(data) {
+    const lines = data.split(/\r?\n/);
+    for (const line of lines) {
+        if (!line.trim()) continue;
+
+        // Player/admin chat messages
+        const msgMatch = line.match(/Got message:ChatMessage\{chat=([^,]+),\s*author='([^']*)',\s*text='(.*)'\}/);
+        if (msgMatch) {
+            const chatType = msgMatch[1].trim();
+            const author = msgMatch[2];
+            const text = msgMatch[3];
+            // Map PZ chat types to our types
+            let type = 'general';
+            if (chatType === 'Admin chat') type = 'admin';
+            else if (chatType === 'Server Alert' || chatType === 'Server chat') type = 'server';
+            else if (chatType === 'Local') type = 'general';
+            else if (chatType === 'Shout') type = 'general';
+
+            this.emit('chatMessage', { author, message: text, type, timestamp: new Date() });
+            continue;
+        }
+
+        // Server alert messages (from RCON servermsg)
+        const alertMatch = line.match(/Server alert message: '(.+)' sent\.\./);
+        if (alertMatch) {
+            this.emit('chatMessage', {
+                author: 'Server',
+                message: alertMatch[1],
+                type: 'server',
+                timestamp: new Date()
+            });
+        }
+    }
   }
 }
