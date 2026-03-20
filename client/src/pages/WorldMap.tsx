@@ -24,7 +24,7 @@ import {
 import { PageHeader } from '@/components/PageHeader'
 import { BridgeStatusBadge } from '@/components/BridgeStatusBadge'
 import { Button } from '@/components/ui/button'
-import { panelBridgeApi } from '@/lib/api'
+import { panelBridgeApi, updateApi, serversApi } from '@/lib/api'
 import { useToast } from '@/components/ui/use-toast'
 import { cn } from '@/lib/utils'
 
@@ -73,24 +73,58 @@ const AIRDROP_PRESETS = [
   { id: 'tools',     label: 'Tools',      icon: Wrench,           desc: 'Axes, wrenches, blowtorch, tape' },
 ] as const
 
-// ─── B42 DZI Map Constants ────────────────────────────────
+// ─── DZI Map Constants ────────────────────────────────────
 // Camera: canvasX = dziPixelX * scale + offset.x
-// Map tiles served from b42map.com via backend proxy to avoid CORS.
-const DZI_TILE_URL = '/api/map/tiles' // proxied through Express backend
-const DZI_TILE_SIZE = 1024      // pixels per DZI tile
-const DZI_FULL_WIDTH = 2314432  // full-res image width
-const DZI_FULL_HEIGHT = 1019072 // full-res image height
-const DZI_MAX_LEVEL = 22        // ceil(log2(max(w,h)))
+// Map tiles served via backend proxy to avoid CORS.
 
-// Isometric projection constants (from b42map.com map info)
-const ISO_X0 = 1036288          // pixel origin X in full-res image
-const ISO_Y0 = -139296          // pixel origin Y
-const ISO_HALF_SQR = 64         // X component per game tile (sqr/2)
-const ISO_QUARTER_SQR = 32      // Y component per game tile (sqr/4)
+interface MapConfig {
+  tileUrl: string
+  tileSize: number
+  fullWidth: number
+  fullHeight: number
+  maxLevel: number
+  isoX0: number
+  isoY0: number
+  isoHalfSqr: number
+  isoQuarterSqr: number
+  defaultCenter: { x: number; y: number }
+  label: string
+}
+
+const MAP_B42: MapConfig = {
+  tileUrl: '/api/map/tiles',
+  tileSize: 1024,
+  fullWidth: 2314432,
+  fullHeight: 1019072,
+  maxLevel: 22,
+  isoX0: 1036288,
+  isoY0: -139296,
+  isoHalfSqr: 64,
+  isoQuarterSqr: 32,
+  defaultCenter: { x: 1280000, y: 410000 },
+  label: 'B42',
+}
+
+const MAP_B41: MapConfig = {
+  tileUrl: '/api/map/b41tiles',
+  tileSize: 1024,
+  fullWidth: 2285184,
+  fullHeight: 990400,
+  maxLevel: 22, // ceil(log2(2285184)) = 22
+  // Isometric projection from map.projectzomboid.com (multiply=2):
+  // Origin derived from PxToTileOffset {x:-5577, y:10327}
+  isoX0: 1017856,  // (5577 + 10327) * 64
+  isoY0: -152000,  // (5577 - 10327) * 32
+  isoHalfSqr: 64,  // 32 * multiply(2)
+  isoQuarterSqr: 32, // 16 * multiply(2)
+  defaultCenter: { x: 1100000, y: 400000 },
+  label: 'B41',
+}
+
+const DZI_TILE_SIZE = 1024      // shared between both configs
 
 const MIN_SCALE = 0.0003        // canvas px per DZI px (zoomed way out)
 const MAX_SCALE = 1.0           // canvas px per DZI px (zoomed way in)
-const DEFAULT_SCALE = 0.001     // shows most of Knox County
 const POLL_INTERVAL = 3000
 const MARKER_HIT_RADIUS = 14
 
@@ -106,9 +140,6 @@ const PZ_LANDMARKS = [
   { name: 'Ekron',          gx:  7460, gy:  9050 },
 ]
 
-// Default center (DZI pixel coordinates — rough center of Knox County)
-const DEFAULT_CENTER = { x: 1280000, y: 410000 }
-
 // ─── Component ────────────────────────────────────────────
 export default function WorldMap() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -119,7 +150,9 @@ export default function WorldMap() {
   const drawRequestRef = useRef<number>(0)
 
   const [players, setPlayers] = useState<MapPlayer[]>([])
-  const [scale, setScale] = useState(DEFAULT_SCALE)
+  const [, setMapCfg] = useState<MapConfig>(MAP_B42)
+  const mapCfgRef = useRef<MapConfig>(MAP_B42)
+  const [scale, setScale] = useState(0.001)
   const [offset, setOffset] = useState({ x: 0, y: 0 })
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 })
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null)
@@ -137,6 +170,38 @@ export default function WorldMap() {
   const [airdropMarkers, setAirdropMarkers] = useState<AirdropMarker[]>([])
 
   const { toast } = useToast()
+
+  // Detect B41 vs B42 on mount — check gameVersion + branch
+  useEffect(() => {
+    let cancelled = false
+    async function detect() {
+      try {
+        const [statusRes, serverRes] = await Promise.allSettled([
+          updateApi.getStatus(),
+          serversApi.getActive(),
+        ])
+        if (cancelled) return
+
+        let isB41 = false
+        if (statusRes.status === 'fulfilled' && statusRes.value.gameVersion) {
+          isB41 = statusRes.value.gameVersion.startsWith('41.')
+        }
+        if (!isB41 && serverRes.status === 'fulfilled') {
+          const branch = serverRes.value.server?.branch
+          if (branch && /b41/i.test(branch)) isB41 = true
+        }
+
+        if (isB41) {
+          setMapCfg(MAP_B41)
+          mapCfgRef.current = MAP_B41
+          // Clear tile cache when switching maps
+          tileCacheRef.current = {}
+        }
+      } catch { /* best-effort */ }
+    }
+    detect()
+    return () => { cancelled = true }
+  }, [])
 
   // Track mounted state to guard async callbacks
   useEffect(() => {
@@ -186,7 +251,7 @@ export default function WorldMap() {
     img.onerror = () => {
       pendingTileLoadsRef.current--
     }
-    img.src = `${DZI_TILE_URL}/${level}/${col}_${row}.jpg`
+    img.src = `${mapCfgRef.current.tileUrl}/${level}/${col}_${row}.jpg`
   }, [])
 
   // ─── Coordinate transforms (DZI pixel ↔ canvas, game-tile ↔ DZI) ─
@@ -209,7 +274,7 @@ export default function WorldMap() {
   // Player game-tile → canvas pixel (isometric projection)
   const playerToScreen = useCallback(
     (gx: number, gy: number, s?: number, off?: { x: number; y: number }) => {
-      const dzi = gameTileToDzi(gx, gy)
+      const dzi = gameTileToDzi(gx, gy, mapCfgRef.current)
       return dziToCanvas(dzi.x, dzi.y, s, off)
     }, [dziToCanvas]
   )
@@ -218,7 +283,7 @@ export default function WorldMap() {
   const screenToTile = useCallback(
     (cx: number, cy: number, s?: number, off?: { x: number; y: number }) => {
       const dzi = canvasToDzi(cx, cy, s, off)
-      return dziToGameTile(dzi.x, dzi.y)
+      return dziToGameTile(dzi.x, dzi.y, mapCfgRef.current)
     }, [canvasToDzi]
   )
 
@@ -311,11 +376,12 @@ export default function WorldMap() {
     ctx.fillStyle = '#0a0c0b'
     ctx.fillRect(0, 0, W, H)
 
-    // ── B42 DZI map tiles ──
-    const level = Math.max(0, Math.min(DZI_MAX_LEVEL, Math.round(DZI_MAX_LEVEL + Math.log2(s))))
-    const levelScale = Math.pow(2, DZI_MAX_LEVEL - level)
-    const levelW = Math.ceil(DZI_FULL_WIDTH / levelScale)
-    const levelH = Math.ceil(DZI_FULL_HEIGHT / levelScale)
+    // ── DZI map tiles ──
+    const mc = mapCfgRef.current
+    const level = Math.max(0, Math.min(mc.maxLevel, Math.round(mc.maxLevel + Math.log2(s))))
+    const levelScale = Math.pow(2, mc.maxLevel - level)
+    const levelW = Math.ceil(mc.fullWidth / levelScale)
+    const levelH = Math.ceil(mc.fullHeight / levelScale)
 
     // Visible DZI full-res pixel range
     const visMinDziX = -off.x / s
@@ -693,9 +759,11 @@ export default function WorldMap() {
   useEffect(() => {
     if (hasInitRef.current || canvasSize.width === 0) return
     hasInitRef.current = true
+    const c = mapCfgRef.current.defaultCenter
+    const s = 0.001
     setOffset({
-      x: canvasSize.width / 2 - DEFAULT_CENTER.x * DEFAULT_SCALE,
-      y: canvasSize.height / 2 - DEFAULT_CENTER.y * DEFAULT_SCALE,
+      x: canvasSize.width / 2 - c.x * s,
+      y: canvasSize.height / 2 - c.y * s,
     })
   }, [canvasSize])
 
@@ -707,10 +775,12 @@ export default function WorldMap() {
 
     if (players.length === 0) {
       // Reset to default Knox County view
-      setScale(DEFAULT_SCALE)
+      const c = mapCfgRef.current.defaultCenter
+      const s = 0.001
+      setScale(s)
       setOffset({
-        x: W / 2 - DEFAULT_CENTER.x * DEFAULT_SCALE,
-        y: H / 2 - DEFAULT_CENTER.y * DEFAULT_SCALE,
+        x: W / 2 - c.x * s,
+        y: H / 2 - c.y * s,
       })
       return
     }
@@ -718,7 +788,7 @@ export default function WorldMap() {
     // Find player bounds in DZI pixel coords
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
     for (const p of players) {
-      const dzi = gameTileToDzi(p.x, p.y)
+      const dzi = gameTileToDzi(p.x, p.y, mapCfgRef.current)
       minX = Math.min(minX, dzi.x)
       minY = Math.min(minY, dzi.y)
       maxX = Math.max(maxX, dzi.x)
@@ -1084,7 +1154,7 @@ export default function WorldMap() {
     const W = canvasSize.width
     const H = canvasSize.height
     if (W === 0) return
-    const dzi = gameTileToDzi(p.x, p.y)
+    const dzi = gameTileToDzi(p.x, p.y, mapCfgRef.current)
     const viewScale = Math.max(scale, 0.01) // zoom in if too far out
     setScale(viewScale)
     setOffset({ x: W / 2 - dzi.x * viewScale, y: H / 2 - dzi.y * viewScale })
@@ -1197,7 +1267,7 @@ export default function WorldMap() {
               <span className="opacity-50">Hover to see coordinates</span>
             )}
             <span className="mx-2 opacity-30">|</span>
-            <span className="opacity-50">{(scale / DEFAULT_SCALE * 100).toFixed(0)}%</span>
+            <span className="opacity-50">{(scale / 0.001 * 100).toFixed(0)}%</span>
           </div>
         </div>
 
@@ -1466,20 +1536,20 @@ function easeOutCubic(t: number): number {
   return 1 - Math.pow(1 - t, 3)
 }
 
-// Game tile → DZI full-res pixel (isometric projection from b42map.com)
-function gameTileToDzi(gx: number, gy: number) {
+// Game tile → DZI full-res pixel (isometric projection)
+function gameTileToDzi(gx: number, gy: number, cfg: MapConfig) {
   return {
-    x: ISO_X0 + (gx - gy) * ISO_HALF_SQR,
-    y: ISO_Y0 + (gx + gy) * ISO_QUARTER_SQR,
+    x: cfg.isoX0 + (gx - gy) * cfg.isoHalfSqr,
+    y: cfg.isoY0 + (gx + gy) * cfg.isoQuarterSqr,
   }
 }
 
 // DZI full-res pixel → game tile (inverse isometric)
-function dziToGameTile(dziX: number, dziY: number) {
-  const dx = dziX - ISO_X0
-  const dy = dziY - ISO_Y0
+function dziToGameTile(dziX: number, dziY: number, cfg: MapConfig) {
+  const dx = dziX - cfg.isoX0
+  const dy = dziY - cfg.isoY0
   return {
-    x: dx / (2 * ISO_HALF_SQR) + dy / (2 * ISO_QUARTER_SQR),
-    y: -dx / (2 * ISO_HALF_SQR) + dy / (2 * ISO_QUARTER_SQR),
+    x: dx / (2 * cfg.isoHalfSqr) + dy / (2 * cfg.isoQuarterSqr),
+    y: -dx / (2 * cfg.isoHalfSqr) + dy / (2 * cfg.isoQuarterSqr),
   }
 }
