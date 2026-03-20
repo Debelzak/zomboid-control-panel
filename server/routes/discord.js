@@ -46,7 +46,9 @@ router.get('/config', async (req, res) => {
       adminRoleId: discordBot.adminRoleId,
       modRoleId: discordBot.modRoleId,
       channelId: discordBot.channelId,
-      autoStart: autoStart !== false // default true
+      autoStart: autoStart !== false, // default true
+      chatRelayEnabled: discordBot.chatRelayEnabled !== false,
+      chatRelayChannelId: discordBot.chatRelayChannelId || ''
     });
   } catch (error) {
     log.error(`Failed to get Discord config: ${error.message}`);
@@ -57,7 +59,7 @@ router.get('/config', async (req, res) => {
 // Update Discord bot config
 router.put('/config', async (req, res) => {
   try {
-    const { token, guildId, adminRoleId, modRoleId, channelId, autoStart } = req.body;
+    const { token, guildId, adminRoleId, modRoleId, channelId, autoStart, chatRelayEnabled, chatRelayChannelId } = req.body;
     
     const discordBot = req.app.get('discordBot');
     if (!discordBot) {
@@ -85,6 +87,14 @@ router.put('/config', async (req, res) => {
     if (typeof autoStart === 'boolean') {
       const { setSetting } = await import('../database/init.js');
       await setSetting('discordAutoStart', autoStart);
+    }
+
+    // Save chat relay settings
+    if (typeof chatRelayEnabled === 'boolean' || typeof chatRelayChannelId === 'string') {
+      await discordBot.updateChatRelay(
+        typeof chatRelayEnabled === 'boolean' ? chatRelayEnabled : discordBot.chatRelayEnabled,
+        typeof chatRelayChannelId === 'string' ? chatRelayChannelId : discordBot.chatRelayChannelId
+      );
     }
     
     // Only reconnect if authentication-relevant credentials (token or guild ID)

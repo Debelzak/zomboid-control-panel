@@ -56,6 +56,8 @@ interface DiscordConfig {
   modRoleId: string
   channelId: string
   autoStart: boolean
+  chatRelayEnabled: boolean
+  chatRelayChannelId: string
 }
 
 interface BotInfo {
@@ -144,6 +146,8 @@ export default function Discord() {
   const [adminRoleId, setAdminRoleId] = useState('')
   const [modRoleId, setModRoleId] = useState('')
   const [channelId, setChannelId] = useState('')
+  const [chatRelayEnabled, setChatRelayEnabled] = useState(true)
+  const [chatRelayChannelId, setChatRelayChannelId] = useState('')
   
   // Setup wizard state
   const [configMessage, setConfigMessage] = useState<FlashMessage | null>(null)
@@ -172,6 +176,8 @@ export default function Discord() {
         setAdminRoleId(configData.adminRoleId || '')
         setModRoleId(configData.modRoleId || '')
         setChannelId(configData.channelId || '')
+        setChatRelayEnabled(configData.chatRelayEnabled !== false)
+        setChatRelayChannelId(configData.chatRelayChannelId || '')
         setAutoStart(configData.autoStart !== false)
       }
     } catch {
@@ -210,7 +216,8 @@ export default function Discord() {
   const hasChannelIdError = Boolean(channelId && !isValidDiscordId(channelId))
   const hasAdminRoleIdError = Boolean(adminRoleId && !isValidDiscordId(adminRoleId))
   const hasModRoleIdError = Boolean(modRoleId && !isValidDiscordId(modRoleId))
-  const hasConfigValidationError = hasGuildIdError || hasChannelIdError || hasAdminRoleIdError || hasModRoleIdError
+  const hasChatRelayChannelIdError = Boolean(chatRelayChannelId && !isValidDiscordId(chatRelayChannelId))
+  const hasConfigValidationError = hasGuildIdError || hasChannelIdError || hasAdminRoleIdError || hasModRoleIdError || hasChatRelayChannelIdError
   const canSaveConfig = Boolean(guildId && (token || config?.hasToken) && !hasConfigValidationError)
 
   const handleSaveConfig = async (andStart = false) => {
@@ -256,7 +263,9 @@ export default function Discord() {
         adminRoleId || undefined,
         channelId || undefined,
         autoStart,
-        modRoleId || undefined
+        modRoleId || undefined,
+        chatRelayEnabled,
+        chatRelayChannelId || undefined
       )
       
       if (andStart) {
@@ -1250,6 +1259,33 @@ export default function Discord() {
               <p className="text-sm text-muted-foreground">The bot will start automatically when the panel boots up</p>
             </div>
             <Switch checked={autoStart} onCheckedChange={setAutoStart} />
+          </div>
+
+          {/* Chat Relay */}
+          <div className="space-y-4 p-4 rounded-lg border">
+            <div className="flex items-center justify-between">
+              <div>
+                <Label className="font-medium">In-Game Chat Relay</Label>
+                <p className="text-sm text-muted-foreground">Forward player chat messages from the game server to Discord</p>
+              </div>
+              <Switch checked={chatRelayEnabled} onCheckedChange={setChatRelayEnabled} />
+            </div>
+            {chatRelayEnabled && (
+              <div className="space-y-2">
+                <Label htmlFor="chatRelayChannelId" className="text-sm">Chat Relay Channel (optional)</Label>
+                <Input
+                  id="chatRelayChannelId" value={chatRelayChannelId}
+                  onChange={(e) => setChatRelayChannelId(e.target.value)}
+                  placeholder="Leave empty to use main channel"
+                  className="font-mono"
+                  maxLength={20}
+                />
+                <p className="text-xs text-muted-foreground">Send chat to a different channel than notifications. Leave empty to use the main channel above.</p>
+                {hasChatRelayChannelIdError && (
+                  <p className="text-xs text-destructive">Invalid format — use a 17-19 digit channel ID</p>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="flex justify-end gap-2">

@@ -743,8 +743,8 @@ export const configApi = {
 export const discordApi = {
   getStatus: () => apiGet('/discord/status'),
   getConfig: () => apiGet('/discord/config'),
-  updateConfig: (token: string, guildId: string, adminRoleId?: string, channelId?: string, autoStart?: boolean, modRoleId?: string) =>
-    apiPut('/discord/config', { token, guildId, adminRoleId, modRoleId, channelId, autoStart }),
+  updateConfig: (token: string, guildId: string, adminRoleId?: string, channelId?: string, autoStart?: boolean, modRoleId?: string, chatRelayEnabled?: boolean, chatRelayChannelId?: string) =>
+    apiPut('/discord/config', { token, guildId, adminRoleId, modRoleId, channelId, autoStart, chatRelayEnabled, chatRelayChannelId }),
   start: () => apiPost('/discord/start'),
   stop: () => apiPost('/discord/stop'),
   testToken: (token: string) => apiPost('/discord/test', { token }),

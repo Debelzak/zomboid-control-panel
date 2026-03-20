@@ -33,6 +33,8 @@ export class DiscordBot {
     this.isRunning = false;
     this.webhookEvents = {};
     this.commandPermissions = { ...DEFAULT_COMMAND_PERMISSIONS };
+    this.chatRelayEnabled = true;
+    this.chatRelayChannelId = null; // null = use main channelId
     
     // Setup Chat Bridge listener
     if (this.logTailer) {
@@ -41,15 +43,15 @@ export class DiscordBot {
   }
 
   async handleGameChat(data) {
-      // Don't echo back if the bot is not running or channel not set
-      if (!this.isRunning || !this.channelId || !this.client) return;
+      if (!this.chatRelayEnabled || !this.isRunning || !this.client) return;
+      
+      // Use dedicated chat relay channel if set, otherwise fall back to main channel
+      const targetChannelId = this.chatRelayChannelId || this.channelId;
+      if (!targetChannelId) return;
       
       try {
-          // Find channel
-          const channel = await this.client.channels.fetch(this.channelId);
+          const channel = await this.client.channels.fetch(targetChannelId);
           if (channel && channel.isTextBased()) {
-              // Send as embed or plain text? Plain text is more chat-like.
-              // Avoid pinging everyone
               const cleanMessage = data.message.replace(/@everyone/g, '(everyone)').replace(/@here/g, '(here)');
               await channel.send(`**<${data.author}>** ${cleanMessage}`);
           }
@@ -76,6 +78,11 @@ export class DiscordBot {
       }
     }
     
+    // Load chat relay settings
+    const chatRelayEnabled = await getSetting('discordChatRelayEnabled');
+    this.chatRelayEnabled = chatRelayEnabled !== false; // default true
+    this.chatRelayChannelId = await getSetting('discordChatRelayChannelId') || null;
+
     // Load webhook events
     const savedEvents = await getSetting('discordWebhookEvents');
     if (savedEvents) {
@@ -121,6 +128,13 @@ export class DiscordBot {
     this.adminRoleId = adminRoleId;
     this.modRoleId = modRoleId || null;
     this.channelId = channelId;
+  }
+
+  async updateChatRelay(enabled, channelId) {
+    this.chatRelayEnabled = enabled;
+    this.chatRelayChannelId = channelId || null;
+    await setSetting('discordChatRelayEnabled', enabled);
+    await setSetting('discordChatRelayChannelId', channelId || '');
   }
 
   async updateCommandPermissions(permissions) {
