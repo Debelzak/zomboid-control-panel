@@ -286,6 +286,19 @@ function PanelBridge.detectVersion()
         end
     end)
     
+    -- Fallback: parse build string if player-based detection couldn't run
+    if not version.isB42 and not version.isB41 and version.build ~= "unknown" then
+        local major = version.build:match("^(%d+)%.")
+        if major then
+            local majorNum = tonumber(major)
+            if majorNum and majorNum >= 42 then
+                version.isB42 = true
+            elseif majorNum and majorNum == 41 then
+                version.isB41 = true
+            end
+        end
+    end
+    
     PanelBridge.detectedVersion = version
     PanelBridge.info("Detected PZ version", version)
     
