@@ -196,6 +196,16 @@ export default function WorldMap() {
           mapCfgRef.current = MAP_B41
           // Clear tile cache when switching maps
           tileCacheRef.current = {}
+          // Re-center on B41 default center
+          const el = containerRef.current
+          if (el) {
+            const s = 0.001
+            const c = MAP_B41.defaultCenter
+            setOffset({
+              x: el.clientWidth / 2 - c.x * s,
+              y: el.clientHeight / 2 - c.y * s,
+            })
+          }
         }
       } catch { /* best-effort */ }
     }
