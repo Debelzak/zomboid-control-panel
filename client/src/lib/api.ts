@@ -1429,6 +1429,7 @@ export interface UpdateStatus {
 
 export interface UpdateCheckerStatus {
   updateAvailable: UpdateStatus | null
+  gameVersion: string | null
   lastCheck: string | null
   intervalMinutes: number
   isChecking: boolean

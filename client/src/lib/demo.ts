@@ -105,6 +105,20 @@ export function installDemoFetchShim(): void {
         },
       })
     }
+    if (path === '/api/server/update-check/status') {
+      return jsonResponse({
+        updateAvailable: {
+          updateAvailable: false,
+          installed: { buildId: '21143703', branch: 'unstable', lastUpdated: new Date().toISOString() },
+          latest: { buildId: '21143703', branch: 'unstable', timeUpdated: null, description: null },
+          lastCheck: new Date().toISOString(),
+        },
+        gameVersion: '42.15.2',
+        lastCheck: new Date().toISOString(),
+        intervalMinutes: 30,
+        isChecking: false,
+      })
+    }
 
     if (path === '/api/server-files/paths') {
       return jsonResponse({

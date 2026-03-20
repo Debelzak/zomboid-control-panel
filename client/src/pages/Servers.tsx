@@ -198,6 +198,7 @@ export default function Servers() {
   const [steamCompleted, setSteamCompleted] = useState<'success' | 'error' | null>(null)
   const [steamcmdPath, setSteamcmdPath] = useState('')
   const [updateInfo, setUpdateInfo] = useState<UpdateStatus | null>(null)
+  const [gameVersion, setGameVersion] = useState<string | null>(null)
   const [availableBranches, setAvailableBranches] = useState<Array<{name: string, description: string, buildId?: string | null}>>([
     { name: 'stable', description: 'Stable release' },
     { name: 'unstable', description: 'Unstable beta' }
@@ -236,6 +237,9 @@ export default function Servers() {
     updateApi.getStatus().then(status => {
       if (status.updateAvailable?.updateAvailable) {
         setUpdateInfo(status.updateAvailable)
+      }
+      if (status.gameVersion) {
+        setGameVersion(status.gameVersion)
       }
     }).catch(e => reportClientWarning('Failed to load update status.', e))
   }, [])
@@ -971,24 +975,32 @@ export default function Servers() {
                 </div>
 
                 {/* Branch & Build Info (if update info available for active server) */}
-                {server.isActive && updateInfo && (
+                {server.isActive && (updateInfo || gameVersion) && (
                   <div className="p-2.5 rounded-md bg-muted/50 border border-border/50">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between flex-wrap gap-y-1">
                       <div className="flex items-center gap-2">
-                        <GitBranch className="w-3.5 h-3.5 text-muted-foreground" />
-                        <span className="text-xs text-muted-foreground">Branch:</span>
-                        <Badge variant="secondary" className="text-xs font-mono">{updateInfo.installed.branch}</Badge>
-                      </div>
-                      <div className="flex items-center gap-2 text-xs">
-                        <span className="text-muted-foreground">Build:</span>
-                        <span className="font-mono font-medium">{updateInfo.installed.buildId}</span>
-                        {updateInfo.updateAvailable && (
+                        {gameVersion && (
+                          <Badge variant="outline" className="text-xs font-mono">v{gameVersion}</Badge>
+                        )}
+                        {updateInfo && (
                           <>
-                            <ArrowRight className="w-3 h-3 text-warning" />
-                            <span className="font-mono font-semibold text-warning">{updateInfo.latest.buildId}</span>
+                            <GitBranch className="w-3.5 h-3.5 text-muted-foreground" />
+                            <Badge variant="secondary" className="text-xs font-mono">{updateInfo.installed.branch}</Badge>
                           </>
                         )}
                       </div>
+                      {updateInfo && (
+                        <div className="flex items-center gap-2 text-xs">
+                          <span className="text-muted-foreground">Build:</span>
+                          <span className="font-mono font-medium">{updateInfo.installed.buildId}</span>
+                          {updateInfo.updateAvailable && (
+                            <>
+                              <ArrowRight className="w-3 h-3 text-warning" />
+                              <span className="font-mono font-semibold text-warning">{updateInfo.latest.buildId}</span>
+                            </>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}

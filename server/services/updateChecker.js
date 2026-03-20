@@ -3,7 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import { createLogger } from '../utils/logger.js';
 const log = createLogger('Updates');
-import { getSetting, setSetting } from '../database/init.js';
+import { getSetting, setSetting, getActiveServer } from '../database/init.js';
 
 /**
  * Service to check for PZ server updates via Steam
@@ -14,6 +14,7 @@ export class UpdateChecker {
     this.checkInterval = null;
     this.lastCheck = null;
     this.updateAvailable = null;
+    this.gameVersion = null;
     this.isChecking = false;
     
     // Default check interval: 30 minutes
@@ -75,6 +76,32 @@ export class UpdateChecker {
     }
     
     log.info(`interval set to ${minutes} minutes`);
+  }
+
+  /**
+   * Get game version from server-console.txt first line (e.g. "version=42.13.0 ...")
+   */
+  async getGameVersion() {
+    try {
+      const activeServer = await getActiveServer();
+      const dataPath = activeServer?.zomboidDataPath || await getSetting('zomboidDataPath');
+      if (!dataPath) return null;
+
+      const consolePath = path.join(dataPath, 'server-console.txt');
+      await fs.promises.access(consolePath);
+
+      // Read only the first 512 bytes — version is on the first line
+      const fd = await fs.promises.open(consolePath, 'r');
+      const buf = Buffer.alloc(512);
+      await fd.read(buf, 0, 512, 0);
+      await fd.close();
+
+      const firstLine = buf.toString('utf8').split(/\r?\n/)[0];
+      const match = firstLine.match(/version=(\d+\.\d+(?:\.\d+)?)/);
+      return match ? match[1] : null;
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -243,6 +270,9 @@ export class UpdateChecker {
         return null;
       }
 
+      // Get game version from console log
+      this.gameVersion = await this.getGameVersion();
+
       // Get latest build info from Steam
       const latest = await this.getLatestBuildInfo(steamcmdPath, installed.branch);
       if (!latest || !latest.buildId) {
@@ -316,6 +346,7 @@ export class UpdateChecker {
   getStatus() {
     return {
       updateAvailable: this.updateAvailable,
+      gameVersion: this.gameVersion,
       lastCheck: this.lastCheck,
       intervalMinutes: this.intervalMs / 60000,
       isChecking: this.isChecking
