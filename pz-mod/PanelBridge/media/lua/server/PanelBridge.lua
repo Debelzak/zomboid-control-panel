@@ -91,7 +91,7 @@ local PanelBridge = {
     initialized = false,
     
     -- Debug/Logging system
-    DEBUG_MODE = false, -- Set to true to enable verbose logging
+    DEBUG_MODE = true, -- Verbose logging enabled
     debugLog = {},      -- Recent debug entries (ring buffer)
     MAX_DEBUG_ENTRIES = 200,
     MAX_PENDING_RESULTS = 500,
@@ -2484,25 +2484,24 @@ handlers.teleportPlayer = function(args)
     end
     
     local success, err = pcall(function()
-        -- B42: use setTeleport which handles position + network sync in one call
-        if player.setTeleport then
-            player:setTeleport(x, y, z)
-            return
+        -- B42: setPosition(float, float, float) is a direct IsoPlayer method
+        if player.setPosition then
+            player:setPosition(x, y, z)
+        else
+            -- Fallback: set coordinates individually
+            player:setX(x)
+            player:setY(y)
+            player:setZ(z)
         end
-        -- B42 fallback: set position directly + force network update
-        player:setX(x)
-        player:setY(y)
-        player:setZ(z)
+        -- Update last-known position for network consistency
         if player.setLx then
             player:setLx(x)
             player:setLy(y)
             player:setLz(z)
         end
-        -- Try various network sync methods (sendObjectChange may not exist in B42)
-        if player.sendPlayerExtraInfo then
-            player:sendPlayerExtraInfo()
-        elseif player.sendObjectChange then
-            player:sendObjectChange("teleport")
+        -- Enable network teleport flag so other clients see the move
+        if player.setNetworkTeleportEnabled then
+            player:setNetworkTeleportEnabled(true)
         end
     end)
     
