@@ -1970,7 +1970,7 @@ export default function Mods() {
 
           {/* Server Config Tab */}
           <TabsContent value="config" className="space-y-4">
-              <Card className="border-border/70 bg-card/92 shadow-sm">
+              <Card className="border-border/70 bg-card shadow-sm">
               <CardHeader className="pb-3">
                 <CardTitle className="text-lg flex items-center gap-2">
                   <FileText className="w-5 h-5" />
@@ -1985,15 +1985,15 @@ export default function Mods() {
                   <>
                     {/* Summary Stats */}
                     <div className="grid grid-cols-3 gap-4 stagger-in">
-                      <div className="text-center p-3 rounded-lg border border-border/60 bg-secondary/80">
+                      <div className="text-center p-3 rounded-lg border border-border/60 bg-secondary">
                         <div className="text-2xl font-bold">{iniConfig.totalMods}</div>
                         <div className="text-xs text-muted-foreground">Mods</div>
                       </div>
-                      <div className="text-center p-3 rounded-lg border border-border/60 bg-secondary/80">
+                      <div className="text-center p-3 rounded-lg border border-border/60 bg-secondary">
                         <div className="text-2xl font-bold">{iniConfig.workshopIds.length}</div>
                         <div className="text-xs text-muted-foreground">Workshop Items</div>
                       </div>
-                      <div className="text-center p-3 rounded-lg border border-border/60 bg-secondary/80">
+                      <div className="text-center p-3 rounded-lg border border-border/60 bg-secondary">
                         <div className="text-2xl font-bold">{iniConfig.maps.length}</div>
                         <div className="text-xs text-muted-foreground">Maps</div>
                       </div>
@@ -2040,7 +2040,7 @@ export default function Mods() {
                     )}
 
                     {/* Sync Mod IDs Button */}
-                    <div className="flex flex-col gap-3 rounded-lg border border-border/70 bg-gradient-to-r from-secondary/85 to-accent/18 p-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex flex-col gap-3 rounded-lg border border-border/70 bg-secondary p-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
                       <div className="min-w-0">
                         <p className="text-sm font-medium">Sync Mod IDs from Downloads</p>
                         <p className="text-xs text-muted-foreground">
@@ -2116,7 +2116,7 @@ export default function Mods() {
                               </Badge>
                             ))}
                           </div>
-                          <div className="text-xs text-muted-foreground bg-muted/30 p-2 rounded font-mono break-all">
+                          <div className="text-xs text-muted-foreground bg-muted/50 p-2 rounded font-mono break-all">
                             WorkshopItems={iniConfig.workshopIds?.join(';') || ''}
                           </div>
                         </div>
@@ -2149,7 +2149,7 @@ export default function Mods() {
                               </Badge>
                             ))}
                           </div>
-                          <div className="text-xs text-muted-foreground bg-muted/30 p-2 rounded font-mono break-all">
+                          <div className="text-xs text-muted-foreground bg-muted/50 p-2 rounded font-mono break-all">
                             Mods={iniConfig.modIds?.join(';') || ''}
                           </div>
                         </div>
@@ -2287,7 +2287,7 @@ export default function Mods() {
 
                     {/* Pending Mods to Install */}
                     {modsToInstall.length > 0 && (
-                      <div className="space-y-3 rounded-lg border border-border/70 bg-gradient-to-r from-secondary/80 to-accent/18 p-3">
+                      <div className="space-y-3 rounded-lg border border-border/70 bg-secondary p-3">
                         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                           <Label className="flex items-center gap-2">
                             <Plus className="w-4 h-4" />
@@ -2335,7 +2335,7 @@ export default function Mods() {
             </Card>
 
             {/* Mod Presets */}
-            <Card className="border-border/70 bg-card/92 shadow-sm">
+            <Card className="border-border/70 bg-card shadow-sm">
               <CardHeader className="pb-3">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
@@ -2382,7 +2382,7 @@ export default function Mods() {
                           />
                         </div>
                         {iniConfig?.configured && (
-                          <div className="rounded-lg border border-border/70 bg-secondary/80 p-3 text-sm text-muted-foreground">
+                          <div className="rounded-lg border border-border/70 bg-secondary p-3 text-sm text-muted-foreground">
                             This will save {iniConfig.workshopIds?.length || 0} workshop items and {iniConfig.modIds?.length || 0} mod IDs.
                           </div>
                         )}
@@ -2416,7 +2416,7 @@ export default function Mods() {
                     {presets.map((preset) => (
                       <div
                         key={preset.id}
-                        className="flex flex-col gap-3 rounded-lg border border-border/70 bg-card/70 p-3 transition-colors hover:bg-accent/22 sm:flex-row sm:items-center sm:justify-between"
+                        className="flex flex-col gap-3 rounded-lg border border-border/70 bg-muted/50 p-3 transition-colors hover:bg-accent/22 sm:flex-row sm:items-center sm:justify-between"
                       >
                         <div className="flex-1 min-w-0">
                           <div className="font-medium">{preset.name}</div>
@@ -2458,7 +2458,7 @@ export default function Mods() {
             </Card>
 
             {/* Help Card */}
-            <Card className="border-border/70 bg-gradient-to-br from-secondary/85 via-card to-accent/18 shadow-sm">
+            <Card className="border-border/70 bg-card shadow-sm">
               <CardHeader className="pb-3">
                 <CardTitle className="text-lg flex items-center gap-2">
                   <Info className="w-5 h-5" />

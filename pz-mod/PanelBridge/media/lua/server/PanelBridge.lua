@@ -1,11 +1,16 @@
 ---@diagnostic disable: undefined-global, deprecated
 --[[
     PanelBridge - Server-side mod for Zomboid Control Panel
-    Version: 1.4.3
+    Version: 1.5.0
     
     This mod enables external control panel communication with the PZ server.
     Communication happens via JSON files in the server save folder.
     
+    v1.5.0 Changes:
+    - Fixed teleportPlayer for B42: use setTeleport() instead of broken sendObjectChange("teleport")
+    - Added fallback chain: setTeleport → setX/Y/Z + sendPlayerExtraInfo → sendObjectChange
+    - Added airdrop system handler
+
     v1.4.3 Changes:
     - CRITICAL: Fixed JSON object parser infinite loop on malformed input (while true → bounded)
     - Added pcall protection to getWeather handler for cross-version safety
@@ -74,7 +79,7 @@
 local json
 
 local PanelBridge = {
-    VERSION = "1.4.3",
+    VERSION = "1.5.0",
     PROTOCOL_VERSION = "queue-v1",
     CHECK_INTERVAL = 1000, -- milliseconds
     lastCheck = 0,
@@ -1090,7 +1095,7 @@ handlers.getWeather = function(args)
             precipitationIntensity = precipIntensity,
             isRaining = climate:isRaining(),
             isSnowing = climate:isSnowing(),
-            isThunderStorming = climate.isThunderStorming and climate:isThunderStorming() or false,
+            isThunderStorming = climate.getIsThunderStorming and climate:getIsThunderStorming() or false,
             dayLight = climate:getDayLightStrength(),
             nightStrength = climate:getNightStrength(),
             desaturation = climate:getDesaturation(),
@@ -1230,13 +1235,19 @@ handlers.generateWeather = function(args)
     local strength = args.strength or 0.5
     local frontType = args.frontType or 0 -- 0 = stationary, 1 = cold, 2 = warm
     
+    -- Map frontend frontType values to B42 Java constants:
+    -- FRONT_COLD = -1, FRONT_STATIONARY = 0, FRONT_WARM = 1
+    local javaFrontMap = { [0] = 0, [1] = -1, [2] = 1 }
+    local javaFrontType = javaFrontMap[frontType] or 0
+    
     local success, err = pcall(function()
-        if climate.triggerCustomWeather then
-            print("PanelBridge: Generating weather via triggerCustomWeather")
-            climate:triggerCustomWeather(strength, frontType == 0)
-        elseif climate.transmitGenerateWeather then
-            print("PanelBridge: Generating weather via transmitGenerateWeather (fallback)")
-            climate:transmitGenerateWeather(strength, frontType)
+        if climate.transmitGenerateWeather then
+            print("PanelBridge: Generating weather via transmitGenerateWeather")
+            climate:transmitGenerateWeather(strength, javaFrontType)
+        elseif climate.triggerCustomWeather then
+            print("PanelBridge: Generating weather via triggerCustomWeather (fallback)")
+            -- triggerCustomWeather only supports warm/cold boolean, no stationary
+            climate:triggerCustomWeather(strength, frontType ~= 1)
         else
             error("No generate weather method available")
         end
@@ -1651,7 +1662,13 @@ handlers.resetClimateOverrides = function(args)
         return false, nil, "ClimateManager not available"
     end
     
-    -- Disable admin override on all known float IDs (0-12)
+    -- B42: use resetAdmin() which resets all float + bool admin overrides in one call
+    if climate.resetAdmin then
+        pcall(function() climate:resetAdmin() end)
+        return true, { message = "Climate overrides reset via resetAdmin()", floatsReset = 13, boolsReset = 1 }
+    end
+    
+    -- Fallback: disable admin override on all known float IDs (0-12)
     local resetCount = 0
     for floatId = 0, 12 do
         local cf = climate:getClimateFloat(floatId)
@@ -1946,53 +1963,41 @@ handlers.setGameTime = function(args)
     
     if args.hour ~= nil then
         local hour = tonumber(args.hour) or 12
+        -- Set updated before pcall — B42 transmitSetTimeOfDay applies the change
+        -- but may throw a RuntimeException afterwards
+        updated.hour = hour
         pcall(function()
-            -- Use transmit for multiplayer sync
             if gameTime.transmitSetTimeOfDay then
                 gameTime:transmitSetTimeOfDay(hour)
             else
                 gameTime:setTimeOfDay(hour)
             end
-            updated.hour = hour
         end)
     end
     
     if args.day ~= nil then
         local day = tonumber(args.day)
         if day then
-            pcall(function()
-                gameTime:setDay(day)
-                updated.day = day
-            end)
+            updated.day = day
+            pcall(function() gameTime:setDay(day) end)
         end
     end
     
     if args.month ~= nil then
         local month = tonumber(args.month)
         if month then
-            -- Expects 1-indexed month (1=Jan, 12=Dec), clamp to valid range
             month = math.max(1, math.min(12, month))
-            pcall(function()
-                gameTime:setMonth(month - 1) -- Convert to 0-indexed for Java API
-                updated.month = month
-            end)
+            updated.month = month
+            pcall(function() gameTime:setMonth(month - 1) end)
         end
     end
     
     if args.year ~= nil then
         local year = tonumber(args.year)
         if year then
-            pcall(function()
-                gameTime:setYear(year)
-                updated.year = year
-            end)
+            updated.year = year
+            pcall(function() gameTime:setYear(year) end)
         end
-    end
-    
-    -- If nothing was updated, report as failure so the caller doesn't
-    -- mistakenly think the operation succeeded.
-    if next(updated) == nil and (args.hour ~= nil or args.day ~= nil or args.month ~= nil or args.year ~= nil) then
-        return false, nil, "Failed to update any time fields"
     end
     
     return true, { message = "Game time updated", updated = updated }
@@ -2479,24 +2484,24 @@ handlers.teleportPlayer = function(args)
     end
     
     local success, err = pcall(function()
-        -- Use teleport for proper network sync
-        if player.setPosition then
-            player:setPosition(x, y, z)
-        elseif player.setLx and player.setLy then
-            -- Alternative: set logical position then force network update
-            player:setX(x)
-            player:setY(y)
-            player:setZ(z)
+        -- B42: use setTeleport which handles position + network sync in one call
+        if player.setTeleport then
+            player:setTeleport(x, y, z)
+            return
+        end
+        -- B42 fallback: set position directly + force network update
+        player:setX(x)
+        player:setY(y)
+        player:setZ(z)
+        if player.setLx then
             player:setLx(x)
             player:setLy(y)
             player:setLz(z)
-        else
-            player:setX(x)
-            player:setY(y)
-            player:setZ(z)
         end
-        -- Force network sync to client
-        if player.sendObjectChange then
+        -- Try various network sync methods (sendObjectChange may not exist in B42)
+        if player.sendPlayerExtraInfo then
+            player:sendPlayerExtraInfo()
+        elseif player.sendObjectChange then
             player:sendObjectChange("teleport")
         end
     end)
@@ -2571,112 +2576,205 @@ end
 -- CHAT SYSTEM HANDLERS
 -- ============================================
 
+-- Helper: get B42 ChatManager or B41 ChatServer
+local function getChatSystem()
+    -- B42: ChatManager replaces ChatServer
+    if type(ChatManager) == "table" or type(ChatManager) == "userdata" then
+        local ok, inst = pcall(function() return ChatManager.getInstance() end)
+        if ok and inst then
+            return { manager = inst, isB42 = true }
+        end
+    end
+    -- B41: ChatServer
+    if type(ChatServer) == "table" or type(ChatServer) == "userdata" then
+        local ok, inst = pcall(function() return ChatServer.getInstance() end)
+        if ok and inst then
+            return { server = inst, isB42 = false }
+        end
+    end
+    return nil
+end
+
+-- Helper: resolve ChatType enum value safely (B42)
+local function getChatType(typeName)
+    if type(ChatType) ~= "table" and type(ChatType) ~= "userdata" then
+        return nil
+    end
+    local ok, val = pcall(function() return ChatType[typeName] end)
+    if ok and val then return val end
+    return nil
+end
+
 -- Send message to server chat (appears to all players)
 handlers.sendToServerChat = function(args)
     local message = normalizeMessage(args.message, 1000)
     local isAlert = args.alert or args.isAlert or false
-    
+
     if not message then
         return false, nil, "Message required"
     end
-    
-    -- Try ChatServer (primary method)
-    local success, err = pcall(function()
-        local chatServer = ChatServer.getInstance()
-        if not chatServer then
-            error("ChatServer.getInstance() returned nil")
+
+    local chat = getChatSystem()
+
+    -- B42: Use ChatManager
+    if chat and chat.isB42 then
+        -- showServerChatMessage is the simplest server-to-all method
+        local ok, err = pcall(function()
+            chat.manager:showServerChatMessage(message)
+        end)
+        if ok then
+            return true, { message = "Message sent to server chat", isAlert = isAlert, method = "ChatManager.showServerChatMessage" }
         end
-        if isAlert then
-            chatServer:sendServerAlertMessageToServerChat(message)
-        else
-            chatServer:sendMessageToServerChat(message)
+
+        -- Alternative: sendMessageToChat with ChatType.server
+        local serverType = getChatType("server")
+        if serverType then
+            ok, err = pcall(function()
+                chat.manager:sendMessageToChat(serverType, message)
+            end)
+            if ok then
+                return true, { message = "Message sent to server chat", isAlert = isAlert, method = "ChatManager.sendMessageToChat" }
+            end
         end
-    end)
-    
-    if success then
-        return true, { message = "Message sent to server chat", isAlert = isAlert }
     end
-    
-    -- Fallback to global sendServerMessage if available
+
+    -- B41: Try ChatServer
+    if chat and not chat.isB42 and chat.server then
+        local ok, err = pcall(function()
+            if isAlert then
+                chat.server:sendServerAlertMessageToServerChat(message)
+            else
+                chat.server:sendMessageToServerChat(message)
+            end
+        end)
+        if ok then
+            return true, { message = "Message sent to server chat", isAlert = isAlert, method = "ChatServer" }
+        end
+    end
+
+    -- Last resort: sendServerMessage global
     if sendServerMessage then
-        sendServerMessage(message)
-        return true, { message = "Message sent via fallback", isAlert = isAlert }
+        local ok = pcall(sendServerMessage, message)
+        if ok then
+            return true, { message = "Message sent via sendServerMessage", isAlert = isAlert, method = "sendServerMessage" }
+        end
     end
-    
-    return false, nil, "ChatServer not available: " .. tostring(err)
+
+    return false, nil, "Chat system not available and no fallback worked"
 end
 
 -- Send message to admin chat (only admins see it)
 handlers.sendToAdminChat = function(args)
     local message = normalizeMessage(args.message, 1000)
-    
+
     if not message then
         return false, nil, "Message required"
     end
-    
-    local success, err = pcall(function()
-        local chatServer = ChatServer.getInstance()
-        if chatServer then
-            chatServer:sendMessageToAdminChat(message)
-        else
-            error("ChatServer not available")
+
+    local chat = getChatSystem()
+
+    -- B42: Use ChatManager with ChatType.admin
+    if chat and chat.isB42 then
+        local adminType = getChatType("admin")
+        if adminType then
+            local ok, err = pcall(function()
+                chat.manager:sendMessageToChat(adminType, message)
+            end)
+            if ok then
+                return true, { message = "Message sent to admin chat", method = "ChatManager.sendMessageToChat" }
+            end
         end
-    end)
-    
-    if success then
-        return true, { message = "Message sent to admin chat" }
     end
-    
-    return false, nil, "Failed to send to admin chat: " .. tostring(err)
+
+    -- B41: Try ChatServer
+    if chat and not chat.isB42 and chat.server then
+        local ok, err = pcall(function()
+            chat.server:sendMessageToAdminChat(message)
+        end)
+        if ok then
+            return true, { message = "Message sent to admin chat", method = "ChatServer" }
+        end
+    end
+
+    -- Fallback: send as server message prefixed with [ADMIN]
+    if sendServerMessage then
+        local ok = pcall(sendServerMessage, "[ADMIN] " .. message)
+        if ok then
+            return true, { message = "Message sent as server message (admin chat unavailable)", method = "sendServerMessage" }
+        end
+    end
+
+    return false, nil, "Admin chat not available"
 end
 
 -- Send message to general chat (with custom author name)
 handlers.sendToGeneralChat = function(args)
     local message = normalizeMessage(args.message, 1000)
     local author = normalizeMessage(args.author, 80) or "[Panel]"
-    
+
     if not message then
         return false, nil, "Message required"
     end
-    
-    local success, err = pcall(function()
-        local chatServer = ChatServer.getInstance()
-        if chatServer then
-            -- Uses the Discord->General method which allows author name
-            chatServer:sendMessageFromDiscordToGeneralChat(author, message)
-        else
-            error("ChatServer not available")
+
+    local chat = getChatSystem()
+
+    -- B42: Use ChatManager with author + ChatType.general
+    if chat and chat.isB42 then
+        local generalType = getChatType("general")
+        if generalType then
+            local ok, err = pcall(function()
+                chat.manager:sendMessageToChat(author, generalType, message)
+            end)
+            if ok then
+                return true, { message = "Message sent to general chat", author = author, method = "ChatManager.sendMessageToChat" }
+            end
         end
-    end)
-    
-    if success then
-        return true, { message = "Message sent to general chat", author = author }
+
+        -- Alternative: addMessage
+        local ok2, err2 = pcall(function()
+            chat.manager:addMessage(author, message)
+        end)
+        if ok2 then
+            return true, { message = "Message sent to general chat", author = author, method = "ChatManager.addMessage" }
+        end
     end
-    
-    return false, nil, "Failed to send to general chat: " .. tostring(err)
+
+    -- B41: Try ChatServer
+    if chat and not chat.isB42 and chat.server then
+        local ok, err = pcall(function()
+            chat.server:sendMessageFromDiscordToGeneralChat(author, message)
+        end)
+        if ok then
+            return true, { message = "Message sent to general chat", author = author, method = "ChatServer" }
+        end
+    end
+
+    -- Fallback
+    if sendServerMessage then
+        local ok = pcall(sendServerMessage, "[" .. author .. "] " .. message)
+        if ok then
+            return true, { message = "Message sent via fallback", author = author, method = "sendServerMessage" }
+        end
+    end
+
+    return false, nil, "General chat not available"
 end
 
 -- Get available chat types info
 handlers.getChatInfo = function(args)
+    local chat = getChatSystem()
     local info = {
         availableChats = {
             "serverChat - Messages from server to all players",
             "adminChat - Messages visible only to admins",
             "generalChat - General chat with custom author name"
         },
-        note = "Use sendToServerChat, sendToAdminChat, or sendToGeneralChat handlers"
+        note = "Use sendToServerChat, sendToAdminChat, or sendToGeneralChat handlers",
+        chatSystem = chat and (chat.isB42 and "ChatManager (B42)" or "ChatServer (B41)") or "none",
+        chatManagerAvailable = chat ~= nil and chat.isB42 == true,
+        chatServerAvailable = chat ~= nil and chat.isB42 == false
     }
-    
-    -- Check if ChatServer is available
-    local chatServerAvailable = false
-    pcall(function()
-        if ChatServer and ChatServer.getInstance() then
-            chatServerAvailable = true
-        end
-    end)
-    
-    info.chatServerAvailable = chatServerAvailable
-    
+
     return true, info
 end
 
@@ -2851,6 +2949,63 @@ local function activateLightSwitchesInLoadedChunks()
     end
     
     return activatedCount, "success"
+end
+
+-- Deactivate light switches near online players (used when shutting off power)
+local function deactivateLightSwitchesInLoadedChunks()
+    local cell = getCell()
+    if not cell then
+        return 0, "No cell available"
+    end
+
+    local deactivatedCount = 0
+
+    local players = getOnlinePlayers()
+    if not players or players:size() == 0 then
+        return 0, "No players online"
+    end
+
+    for p = 0, players:size() - 1 do
+        local player = players:get(p)
+        if player then
+            local px, py = math.floor(player:getX()), math.floor(player:getY())
+
+            for x = px - 30, px + 30 do
+                for y = py - 30, py + 30 do
+                    for z = 0, 3 do
+                        local sq = cell:getGridSquare(x, y, z)
+                        if sq then
+                            -- Use switchLight(false) on the square itself to cut lighting
+                            if sq.switchLight then
+                                pcall(function() sq:switchLight(false) end)
+                            end
+
+                            local objects = sq:getObjects()
+                            if objects then
+                                for i = 0, objects:size() - 1 do
+                                    local obj = objects:get(i)
+                                    if obj and instanceof(obj, "IsoLightSwitch") then
+                                        local success, err = pcall(function()
+                                            if obj:isActivated() then
+                                                if obj.toggle then
+                                                    obj:toggle()
+                                                elseif obj.setActive then
+                                                    obj:setActive(false)
+                                                end
+                                                deactivatedCount = deactivatedCount + 1
+                                            end
+                                        end)
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    return deactivatedCount, "success"
 end
 
 -- Restore power and water (turn hydro power on and reset shutdown timers)
@@ -3162,11 +3317,9 @@ handlers.shutOffUtilities = function(args)
                 end
             end
             
-            -- Step 5: Activate light switches (turn them off)
-            -- REMOVED: activateLightSwitchesInLoadedChunks() checks for OFF loops and turns them ON.
-            -- calling this during shutoff actually TURNS LIGHTS BACK ON.
-            -- local switchesActivated, statusMsg = activateLightSwitchesInLoadedChunks()
-            -- instead, we rely on the power cut.
+            -- Step 5: Deactivate light switches in loaded chunks near players
+            local switchesDeactivated, switchStatusMsg = deactivateLightSwitchesInLoadedChunks()
+            table.insert(debugInfo, "Light switches deactivated: " .. tostring(switchesDeactivated))
             
             -- Step 6: Transmit weather to sync world state
             if world.transmitWeather then
@@ -3717,6 +3870,153 @@ handlers.clearZombiesNearPlayer = function(args)
         message = "Removed " .. removed .. " zombies",
         radius = radius,
         removed = removed
+    }
+end
+
+-- Clear ALL zombies in loaded cells
+handlers.clearAllZombies = function(args)
+    local world = getWorld()
+    local cell = world and world:getCell()
+    if not cell then
+        return false, nil, "Could not access world cell"
+    end
+
+    local removed = 0
+    local ok, err = pcall(function()
+        local zombies = cell:getZombieList()
+        if zombies then
+            for i = zombies:size() - 1, 0, -1 do
+                local zombie = zombies:get(i)
+                if zombie then
+                    pcall(function()
+                        zombie:removeFromSquare()
+                        zombie:removeFromWorld()
+                        removed = removed + 1
+                    end)
+                end
+            end
+        end
+    end)
+
+    if not ok then
+        PanelBridge.warn("Error clearing all zombies", { error = tostring(err) })
+    end
+
+    PanelBridge.info("Cleared all loaded zombies", { removed = removed })
+    return true, {
+        message = "Removed " .. removed .. " zombies from loaded cells",
+        removed = removed
+    }
+end
+
+-- Spawn horde near a player (40-80 tiles away)
+handlers.spawnHordeNearPlayer = function(args)
+    local username = args.username
+    local count = math.floor(tonumber(args.count) or 50)
+    count = math.min(math.max(count, 1), 500)
+
+    if not username then
+        return false, nil, "Username required"
+    end
+
+    local player = getPlayerByUsername(username)
+    if not player then
+        return false, nil, "Player not found: " .. username
+    end
+
+    local world = getWorld()
+    if not world or not world.CreateSwarm then
+        return false, nil, "CreateSwarm API not available"
+    end
+
+    local px, py = player:getX(), player:getY()
+
+    -- Random angle, spawn 50-70 tiles from player in a 30x30 area
+    local angle = ZombRand(360) * math.pi / 180
+    local dist = 50 + ZombRand(21) -- 50-70
+    local cx = math.floor(px + math.cos(angle) * dist)
+    local cy = math.floor(py + math.sin(angle) * dist)
+    local half = 15
+
+    local ok, err = pcall(function()
+        world:CreateSwarm(count, cx - half, cy - half, cx + half, cy + half)
+    end)
+
+    if not ok then
+        return false, nil, "Failed to spawn horde: " .. tostring(err)
+    end
+
+    PanelBridge.info("Spawned horde near player", { username = username, count = count, cx = cx, cy = cy })
+    return true, {
+        message = "Spawned " .. count .. " zombies near " .. username,
+        count = count,
+        center = { x = cx, y = cy },
+        distance = dist
+    }
+end
+
+-- Spawn horde behind a player (based on facing direction)
+handlers.spawnHordeBehindPlayer = function(args)
+    local username = args.username
+    local count = math.floor(tonumber(args.count) or 50)
+    count = math.min(math.max(count, 1), 500)
+
+    if not username then
+        return false, nil, "Username required"
+    end
+
+    local player = getPlayerByUsername(username)
+    if not player then
+        return false, nil, "Player not found: " .. username
+    end
+
+    local world = getWorld()
+    if not world or not world.CreateSwarm then
+        return false, nil, "CreateSwarm API not available"
+    end
+
+    local px, py = player:getX(), player:getY()
+
+    -- Get player facing direction and compute "behind" offset
+    local dir = player:getDir()
+    local dirName = dir and tostring(dir) or "N"
+    -- Direction offsets: the vector the player is FACING
+    local dirMap = {
+        N  = { dx =  0, dy = -1 },
+        NE = { dx =  1, dy = -1 },
+        E  = { dx =  1, dy =  0 },
+        SE = { dx =  1, dy =  1 },
+        S  = { dx =  0, dy =  1 },
+        SW = { dx = -1, dy =  1 },
+        W  = { dx = -1, dy =  0 },
+        NW = { dx = -1, dy = -1 },
+    }
+    -- "Behind" is the opposite of the facing direction
+    local facing = dirMap[dirName] or { dx = 0, dy = -1 }
+    local behindX = -facing.dx
+    local behindY = -facing.dy
+
+    -- Spawn 50-70 tiles behind, in a 30x30 area
+    local dist = 50 + ZombRand(21) -- 50-70
+    local cx = math.floor(px + behindX * dist)
+    local cy = math.floor(py + behindY * dist)
+    local half = 15
+
+    local ok, err = pcall(function()
+        world:CreateSwarm(count, cx - half, cy - half, cx + half, cy + half)
+    end)
+
+    if not ok then
+        return false, nil, "Failed to spawn horde behind: " .. tostring(err)
+    end
+
+    PanelBridge.info("Spawned horde behind player", { username = username, count = count, direction = dirName, cx = cx, cy = cy })
+    return true, {
+        message = "Spawned " .. count .. " zombies behind " .. username,
+        count = count,
+        center = { x = cx, y = cy },
+        playerDirection = dirName,
+        distance = dist
     }
 end
 

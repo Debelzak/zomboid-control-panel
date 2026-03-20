@@ -2073,6 +2073,91 @@ router.post('/delete-files', async (req, res) => {
   }
 });
 
+// List directory contents for the in-app folder browser
+router.post('/list-directory', async (req, res) => {
+  try {
+    const { dirPath } = req.body;
+    
+    // If no path provided, return available drives (Windows) or root (Linux)
+    if (!dirPath) {
+      if (isWindows) {
+        // List available drive letters
+        const drives = [];
+        for (let i = 65; i <= 90; i++) {
+          const letter = String.fromCharCode(i);
+          const drivePath = `${letter}:\\`;
+          try {
+            fs.accessSync(drivePath, fs.constants.R_OK);
+            let label = `Local Disk (${letter}:)`;
+            try {
+              const stats = fs.statfsSync(drivePath);
+              const totalGB = (stats.bsize * stats.blocks / (1024 ** 3)).toFixed(1);
+              const freeGB = (stats.bsize * stats.bfree / (1024 ** 3)).toFixed(1);
+              label = `${letter}: — ${freeGB} GB free of ${totalGB} GB`;
+            } catch {}
+            drives.push({ name: `${letter}:`, path: drivePath, label, isDrive: true });
+          } catch {}
+        }
+        return res.json({ entries: drives, currentPath: null, parentPath: null });
+      } else {
+        // Linux: start at root
+        return res.json({ entries: [{ name: '/', path: '/', label: '/', isDrive: true }], currentPath: null, parentPath: null });
+      }
+    }
+    
+    // Validate the requested path
+    if (!isValidPath(dirPath)) {
+      return res.status(400).json({ error: 'Invalid path' });
+    }
+    
+    const normalized = path.normalize(dirPath);
+    
+    if (!fs.existsSync(normalized)) {
+      return res.status(404).json({ error: 'Path does not exist' });
+    }
+    
+    const stat = fs.statSync(normalized);
+    if (!stat.isDirectory()) {
+      return res.status(400).json({ error: 'Path is not a directory' });
+    }
+    
+    // Read directory entries — only folders
+    let items;
+    try {
+      items = fs.readdirSync(normalized, { withFileTypes: true });
+    } catch (e) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    
+    const folders = [];
+    for (const item of items) {
+      if (!item.isDirectory()) continue;
+      // Skip hidden/system folders
+      if (item.name.startsWith('.') || item.name === '$RECYCLE.BIN' || item.name === 'System Volume Information') continue;
+      folders.push({
+        name: item.name,
+        path: path.join(normalized, item.name),
+      });
+    }
+    
+    // Sort alphabetically, case-insensitive
+    folders.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+    
+    // Parent path
+    const parentPath = path.dirname(normalized);
+    const hasParent = parentPath !== normalized; // at root when dirname === self
+    
+    res.json({
+      entries: folders,
+      currentPath: normalized,
+      parentPath: hasParent ? parentPath : null,
+    });
+  } catch (error) {
+    log.error(`List directory failed: ${error.message}`);
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
 // Open folder browser dialog (uses PowerShell on Windows, zenity/kdialog on Linux)
 router.post('/browse-folder', async (req, res) => {
   try {
@@ -2118,32 +2203,19 @@ router.post('/browse-folder', async (req, res) => {
     const safePath = initialPath && isValidPath(initialPath) ? initialPath.replace(/'/g, "''") : '';
     const safeDesc = description.replace(/'/g, "''");
     
-    // Use modern Windows Vista+ folder picker via COM (Shell.Application)
-    // This shows the modern Explorer-style dialog instead of the old XP dialog
+    // Simple FolderBrowserDialog — needs -STA for COM, no RootFolder restriction
     const psScript = `
 Add-Type -AssemblyName System.Windows.Forms
-Add-Type -AssemblyName Microsoft.VisualBasic
-
-# Try to use the modern FolderBrowserDialog with Vista style
 $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
 $dialog.Description = '${safeDesc}'
 $dialog.UseDescriptionForTitle = $true
-$dialog.RootFolder = [System.Environment+SpecialFolder]::MyComputer
 $dialog.ShowNewFolderButton = $true
 ${safePath ? `if (Test-Path '${safePath}') { $dialog.SelectedPath = '${safePath}' }` : ''}
-
-# Force the modern dialog style
-$dialog.GetType().GetProperty('AutoUpgradeEnabled', [System.Reflection.BindingFlags]'Instance,NonPublic,Public').SetValue($dialog, $true, $null) 2>$null
-
 $result = $dialog.ShowDialog()
-if ($result -eq 'OK') {
-    Write-Output $dialog.SelectedPath
-} else {
-    Write-Output ''
-}
+if ($result -eq 'OK') { Write-Output $dialog.SelectedPath } else { Write-Output '' }
 `;
     
-    const powershell = spawn('powershell', ['-NoProfile', '-Command', psScript], {
+    const powershell = spawn('powershell', ['-NoProfile', '-STA', '-Command', psScript], {
       windowsHide: false
     });
     

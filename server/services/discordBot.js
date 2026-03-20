@@ -610,14 +610,14 @@ export class DiscordBot {
     });
 
      try {
-       // Await the 'ready' event so that isRunning === true before start() returns.
-       // client.login() resolves when the WebSocket authenticates; 'ready' fires after.
+       // Await the 'clientReady' event so that isRunning === true before start() returns.
+       // client.login() resolves when the WebSocket authenticates; 'clientReady' fires after.
        await new Promise((resolve, reject) => {
          const timeout = setTimeout(
            () => reject(new Error('Bot ready timeout after 30s')),
            30000
          );
-         this.client.once('ready', async () => {
+         this.client.once('clientReady', async () => {
            clearTimeout(timeout);
            log.info(`bot logged in as ${this.client.user.tag}`);
            try {

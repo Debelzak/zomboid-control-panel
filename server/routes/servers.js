@@ -528,6 +528,12 @@ router.delete('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Server not found' });
     }
     
+    // Notify all clients so sidebar refreshes
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('activeServerChanged', { deleted: serverId });
+    }
+    
     log.info(`Deleted server ID: ${serverId}`);
     res.json({ success: true, message: 'Server deleted successfully' });
   } catch (error) {

@@ -37,7 +37,8 @@ const VALID_ACTIONS = new Set([
   'sendToServerChat', 'sendToAdminChat', 'sendToGeneralChat', 'getChatInfo',
   'getUtilitiesStatus', 'restoreUtilities', 'shutOffUtilities',
   'saveWorld', 'getSandboxOptions',
-  'getZombieCount', 'clearZombiesNearPlayer',
+  'getZombieCount', 'clearZombiesNearPlayer', 'clearAllZombies',
+  'spawnHordeNearPlayer', 'spawnHordeBehindPlayer',
   'airdrop',
   'getSafehouses', 'safehouseAddPlayer', 'safehouseRemovePlayer', 'safehouseSetOwner', 'safehouseSetRespawn',
   'getFactions', 'createFaction', 'factionAddPlayer', 'factionRemovePlayer', 'factionSetTag', 'removeFaction',
@@ -756,6 +757,10 @@ router.get('/server-info', async (req, res) => {
   
   try {
     const result = await bridge.getServerInfo();
+    // Lua JSON encodes empty tables as {} (object) instead of [] (array)
+    if (result?.data?.players && !Array.isArray(result.data.players)) {
+      result.data.players = Object.values(result.data.players);
+    }
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: sanitizeError(error.message) });
@@ -1192,6 +1197,9 @@ router.get('/commands', (req, res) => {
       // === Zombies ===
       { action: 'getZombieCount', description: 'Get zombie count in loaded cells', args: {} },
       { action: 'clearZombiesNearPlayer', description: 'Remove zombies near a player', args: { username: 'string (required)', radius: 'number (default: 50)' } },
+      { action: 'clearAllZombies', description: 'Remove ALL zombies from loaded cells', args: {} },
+      { action: 'spawnHordeNearPlayer', description: 'Spawn horde 50-70 tiles from player', args: { username: 'string (required)', count: 'number 1-500 (default: 50)' } },
+      { action: 'spawnHordeBehindPlayer', description: 'Spawn horde behind player based on facing direction', args: { username: 'string (required)', count: 'number 1-500 (default: 50)' } },
 
       // === Safehouses ===
       { action: 'getSafehouses', description: 'List all safehouses and key metadata', args: {} },
@@ -1788,6 +1796,55 @@ router.post('/zombies/clear-near-player', async (req, res) => {
   }
   try {
     const result = await bridge.sendCommand('clearZombiesNearPlayer', { username, radius });
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
+// Clear ALL zombies in loaded cells
+router.post('/zombies/clear-all', async (req, res) => {
+  if (!bridge.isRunning) {
+    return res.status(400).json({ error: 'Bridge not running' });
+  }
+  try {
+    const result = await bridge.sendCommand('clearAllZombies', {});
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
+// Spawn horde near a player
+router.post('/zombies/spawn-near', async (req, res) => {
+  if (!bridge.isRunning) {
+    return res.status(400).json({ error: 'Bridge not running' });
+  }
+  const { username, count = 50 } = req.body;
+  if (!username || !BRIDGE_USERNAME_REGEX.test(username)) {
+    return res.status(400).json({ error: 'Valid username is required' });
+  }
+  const safeCount = Math.min(Math.max(Math.floor(Number(count) || 50), 1), 500);
+  try {
+    const result = await bridge.sendCommand('spawnHordeNearPlayer', { username, count: safeCount });
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
+// Spawn horde behind a player
+router.post('/zombies/spawn-behind', async (req, res) => {
+  if (!bridge.isRunning) {
+    return res.status(400).json({ error: 'Bridge not running' });
+  }
+  const { username, count = 50 } = req.body;
+  if (!username || !BRIDGE_USERNAME_REGEX.test(username)) {
+    return res.status(400).json({ error: 'Valid username is required' });
+  }
+  const safeCount = Math.min(Math.max(Math.floor(Number(count) || 50), 1), 500);
+  try {
+    const result = await bridge.sendCommand('spawnHordeBehindPlayer', { username, count: safeCount });
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: sanitizeError(error.message) });

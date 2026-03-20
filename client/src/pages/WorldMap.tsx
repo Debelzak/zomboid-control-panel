@@ -13,7 +13,6 @@ import {
   Shield,
   CloudLightning,
   Volume2,
-  Navigation,
   X,
   Swords,
   Pill,
@@ -227,11 +226,14 @@ export default function WorldMap() {
   const fetchPlayerPositions = useCallback(async () => {
     try {
       const res = await panelBridgeApi.getServerInfo()
-      if (res.success && res.data?.players) {
+      const rawPlayers = res.success && res.data?.players
+        ? (Array.isArray(res.data.players) ? res.data.players : Object.values(res.data.players))
+        : null
+      if (rawPlayers) {
         setBridgeConnected(true)
         setPlayers((prev) => {
           const prevMap = new globalThis.Map(prev.map((p) => [p.username || p.displayName, p]))
-          return res.data.players.map((p: any) => {
+          return rawPlayers.map((p: any) => {
             const key = p.name || p.username
             const old = prevMap.get(key)
             return {
@@ -396,6 +398,11 @@ export default function WorldMap() {
       const isHovered = hoveredPlayer === player.username
       const isSelected = selectedPlayer?.username === player.username
       const isAdmin = player.accessLevel && player.accessLevel !== '' && player.accessLevel !== 'none'
+      const pinScale = isHovered ? 1.15 : 1
+      const headR = mRadius * 0.65 * pinScale
+      const bodyH = mRadius * 1.1 * pinScale
+      const bodyW = mRadius * 1.2 * pinScale
+      const pinCenterY = p.y - bodyH * 0.2 // shift pin up so point sits at coords
 
       // Pulse ring (skip if reduced motion)
       if (!prefersReducedMotion.current) {
@@ -403,7 +410,7 @@ export default function WorldMap() {
         const pulseRadius = mRadius + 4 + pulsePhase * 8
         const pulseAlpha = 0.3 * (1 - pulsePhase)
         ctx.beginPath()
-        ctx.arc(p.x, p.y, pulseRadius, 0, Math.PI * 2)
+        ctx.arc(p.x, pinCenterY, pulseRadius, 0, Math.PI * 2)
         ctx.strokeStyle = getPlayerColor(player, pulseAlpha)
         ctx.lineWidth = 1.5
         ctx.stroke()
@@ -412,51 +419,92 @@ export default function WorldMap() {
       // Outer glow
       if (isHovered || isSelected) {
         ctx.beginPath()
-        ctx.arc(p.x, p.y, mRadius + 4, 0, Math.PI * 2)
-        ctx.fillStyle = getPlayerColor(player, 0.2)
+        ctx.arc(p.x, pinCenterY, mRadius + 5, 0, Math.PI * 2)
+        ctx.fillStyle = getPlayerColor(player, 0.18)
         ctx.fill()
       }
 
-      // Main dot
+      // Drop shadow
+      ctx.save()
+      ctx.shadowColor = 'rgba(0,0,0,0.45)'
+      ctx.shadowBlur = 5
+      ctx.shadowOffsetX = 1
+      ctx.shadowOffsetY = 2
+
+      const color = getPlayerColor(player, 0.92)
+
+      // Body (teardrop / triangular torso pointing down)
       ctx.beginPath()
-      ctx.arc(p.x, p.y, isHovered ? mRadius + 2 : mRadius, 0, Math.PI * 2)
-      ctx.fillStyle = getPlayerColor(player, 0.9)
+      ctx.moveTo(p.x - bodyW, pinCenterY)          // left shoulder
+      ctx.lineTo(p.x, pinCenterY + bodyH + headR)   // bottom point
+      ctx.lineTo(p.x + bodyW, pinCenterY)            // right shoulder
+      ctx.closePath()
+      ctx.fillStyle = color
       ctx.fill()
 
-      // Inner highlight
+      // Head circle
       ctx.beginPath()
-      ctx.arc(p.x - 1.5, p.y - 1.5, 2, 0, Math.PI * 2)
-      ctx.fillStyle = 'rgba(255,255,255,0.35)'
+      ctx.arc(p.x, pinCenterY - headR * 0.4, headR, 0, Math.PI * 2)
+      ctx.fillStyle = color
+      ctx.fill()
+
+      ctx.restore() // remove shadow for inner details
+
+      // Dark outline
+      ctx.beginPath()
+      ctx.moveTo(p.x - bodyW, pinCenterY)
+      ctx.lineTo(p.x, pinCenterY + bodyH + headR)
+      ctx.lineTo(p.x + bodyW, pinCenterY)
+      ctx.closePath()
+      ctx.arc(p.x, pinCenterY - headR * 0.4, headR, 0, Math.PI * 2)
+      ctx.strokeStyle = 'rgba(0,0,0,0.4)'
+      ctx.lineWidth = 1
+      ctx.stroke()
+
+      // Inner head highlight
+      ctx.beginPath()
+      ctx.arc(p.x - headR * 0.25, pinCenterY - headR * 0.65, headR * 0.35, 0, Math.PI * 2)
+      ctx.fillStyle = 'rgba(255,255,255,0.3)'
       ctx.fill()
 
       // Admin star
       if (isAdmin) {
-        ctx.fillStyle = 'rgba(251,191,36,0.8)'
-        drawStar(ctx, p.x + mRadius + 3, p.y - mRadius - 1, 3, 5)
+        ctx.fillStyle = 'rgba(251,191,36,0.9)'
+        drawStar(ctx, p.x + mRadius + 4, pinCenterY - headR - 3, 3.5, 5)
       }
 
       // Username label
+      const labelY = pinCenterY - headR - mRadius * 0.5 - 4
       const labelAlpha = isHovered || isSelected ? 1 : 0.8
       ctx.font = `600 ${Math.max(10, Math.min(13, s * 2500))}px ui-sans-serif, system-ui, sans-serif`
       ctx.textAlign = 'center'
+      ctx.save()
+      ctx.shadowColor = 'rgba(0,0,0,0.6)'
+      ctx.shadowBlur = 3
+      ctx.shadowOffsetY = 1
       ctx.fillStyle = `rgba(255,255,255,${labelAlpha})`
-      ctx.fillText(player.displayName || player.username, p.x, p.y - mRadius - 6)
+      ctx.fillText(player.displayName || player.username, p.x, labelY)
+      ctx.restore()
 
       // Health bar
       if (player.health !== undefined && s > 0.0005) {
         const barW = 24
         const barH = 3
         const barX = p.x - barW / 2
-        const barY = p.y + mRadius + 4
+        const barY = pinCenterY + bodyH + headR + 4
         const healthPct = Math.max(0, Math.min(100, player.health)) / 100
 
         ctx.fillStyle = 'rgba(0,0,0,0.5)'
-        ctx.fillRect(barX, barY, barW, barH)
+        ctx.beginPath()
+        ctx.roundRect(barX, barY, barW, barH, 1.5)
+        ctx.fill()
         ctx.fillStyle =
           healthPct > 0.5 ? 'rgba(74,222,128,0.8)' :
           healthPct > 0.25 ? 'rgba(251,191,36,0.8)' :
           'rgba(248,113,113,0.8)'
-        ctx.fillRect(barX, barY, barW * healthPct, barH)
+        ctx.beginPath()
+        ctx.roundRect(barX, barY, barW * healthPct, barH, 1.5)
+        ctx.fill()
       }
     }
 
@@ -476,7 +524,7 @@ export default function WorldMap() {
       // Pulsing ring (first 30s)
       if (age < 30_000 && !prefersReducedMotion.current) {
         const pulse = ((now / 800) % 1)
-        const ringR = dropSize + 6 + pulse * 14
+        const ringR = dropSize + 8 + pulse * 14
         ctx.beginPath()
         ctx.arc(ap.x, ap.y, ringR, 0, Math.PI * 2)
         ctx.strokeStyle = `rgba(251,191,36,${0.4 * (1 - pulse) * fadeAlpha})`
@@ -484,30 +532,73 @@ export default function WorldMap() {
         ctx.stroke()
       }
 
-      // Outer glow
+      // Ground shadow (ellipse below crate)
+      ctx.save()
+      ctx.globalAlpha = fadeAlpha * 0.25
       ctx.beginPath()
-      ctx.arc(ap.x, ap.y, dropSize + 4, 0, Math.PI * 2)
-      ctx.fillStyle = `rgba(251,191,36,${0.15 * fadeAlpha})`
+      ctx.ellipse(ap.x, ap.y + dropSize * 1.1, dropSize * 1.2, dropSize * 0.3, 0, 0, Math.PI * 2)
+      ctx.fillStyle = 'rgba(0,0,0,1)'
       ctx.fill()
+      ctx.restore()
 
-      // Package icon (a box shape)
       ctx.save()
       ctx.globalAlpha = fadeAlpha
-      const bs = dropSize * 0.8
-      ctx.fillStyle = `rgba(251,191,36,0.85)`
-      ctx.fillRect(ap.x - bs, ap.y - bs, bs * 2, bs * 2)
-      ctx.strokeStyle = `rgba(180,130,20,0.9)`
-      ctx.lineWidth = 1.5
-      ctx.strokeRect(ap.x - bs, ap.y - bs, bs * 2, bs * 2)
-      // Cross straps
+
+      const bs = dropSize * 0.7
+      const crateTop = ap.y - bs * 0.3
+      const crateBottom = ap.y + bs * 1.1
+      const crateH = crateBottom - crateTop
+
+      // Crate body (rounded rect)
       ctx.beginPath()
-      ctx.moveTo(ap.x, ap.y - bs)
-      ctx.lineTo(ap.x, ap.y + bs)
-      ctx.moveTo(ap.x - bs, ap.y)
-      ctx.lineTo(ap.x + bs, ap.y)
-      ctx.strokeStyle = `rgba(120,80,10,0.6)`
+      ctx.roundRect(ap.x - bs, crateTop, bs * 2, crateH, 2)
+      ctx.fillStyle = 'rgba(140,100,40,0.92)'
+      ctx.fill()
+      ctx.strokeStyle = 'rgba(90,65,20,0.95)'
+      ctx.lineWidth = 1.5
+      ctx.stroke()
+
+      // Crate cross straps
+      ctx.beginPath()
+      ctx.moveTo(ap.x, crateTop)
+      ctx.lineTo(ap.x, crateBottom)
+      ctx.moveTo(ap.x - bs, crateTop + crateH * 0.45)
+      ctx.lineTo(ap.x + bs, crateTop + crateH * 0.45)
+      ctx.strokeStyle = 'rgba(200,160,60,0.7)'
       ctx.lineWidth = 1
       ctx.stroke()
+
+      // Parachute lines from crate top corners + center to canopy
+      const canopyY = crateTop - dropSize * 1.6
+      const canopyW = dropSize * 1.8
+      ctx.beginPath()
+      ctx.moveTo(ap.x - bs, crateTop)
+      ctx.lineTo(ap.x - canopyW, canopyY)
+      ctx.moveTo(ap.x + bs, crateTop)
+      ctx.lineTo(ap.x + canopyW, canopyY)
+      ctx.moveTo(ap.x, crateTop)
+      ctx.lineTo(ap.x, canopyY)
+      ctx.strokeStyle = `rgba(220,200,160,${0.5 * fadeAlpha})`
+      ctx.lineWidth = 0.8
+      ctx.stroke()
+
+      // Parachute canopy (arc)
+      ctx.beginPath()
+      ctx.moveTo(ap.x - canopyW, canopyY)
+      ctx.quadraticCurveTo(ap.x, canopyY - dropSize * 1.2, ap.x + canopyW, canopyY)
+      ctx.strokeStyle = `rgba(251,191,36,${0.85 * fadeAlpha})`
+      ctx.lineWidth = 2.5
+      ctx.stroke()
+
+      // Canopy fill (subtle)
+      ctx.beginPath()
+      ctx.moveTo(ap.x - canopyW, canopyY)
+      ctx.quadraticCurveTo(ap.x, canopyY - dropSize * 1.2, ap.x + canopyW, canopyY)
+      ctx.lineTo(ap.x - canopyW, canopyY)
+      ctx.closePath()
+      ctx.fillStyle = `rgba(251,191,36,${0.12 * fadeAlpha})`
+      ctx.fill()
+
       ctx.restore()
 
       // Label
@@ -517,12 +608,11 @@ export default function WorldMap() {
         const fontSize = Math.max(9, Math.min(12, s * 2200))
         ctx.font = `600 ${fontSize}px ui-sans-serif, system-ui, sans-serif`
         ctx.textAlign = 'center'
-        // Dark shadow for legibility over any map background
         ctx.shadowColor = 'rgba(0,0,0,0.7)'
         ctx.shadowBlur = 3
         ctx.shadowOffsetY = 1
         ctx.fillStyle = `rgba(251,191,36,${0.9 * fadeAlpha})`
-        ctx.fillText(presetDef.label, ap.x, ap.y - dropSize - 6)
+        ctx.fillText(presetDef.label, ap.x, ap.y - dropSize * 2.2)
         ctx.restore()
       }
     }
@@ -897,27 +987,6 @@ export default function WorldMap() {
   }, [contextMenu])
 
   // ─── Actions ────────────────────────────────────────────
-  const teleportPlayerTo = useCallback(
-    async (username: string, x: number, y: number) => {
-      setActionLoading(`teleport-${username}`)
-      try {
-        const res = await panelBridgeApi.teleportPlayerBridge(username, x, y, 0)
-        if (res.success) {
-          toast({ title: 'Teleported', description: `${username} moved to ${x}, ${y}` })
-          fetchPlayerPositions()
-        } else {
-          toast({ title: 'Teleport failed', description: res.error || 'Unknown error', variant: 'destructive' })
-        }
-      } catch {
-        toast({ title: 'Error', description: 'Failed to teleport', variant: 'destructive' })
-      } finally {
-        setActionLoading(null)
-        setContextMenu(null)
-      }
-    },
-    [toast, fetchPlayerPositions]
-  )
-
   const triggerLightningAt = useCallback(
     async (x: number, y: number) => {
       setActionLoading('lightning')
@@ -1281,23 +1350,6 @@ export default function WorldMap() {
                     setContextMenu(null)
                   }}
                 />
-              </>
-            )}
-
-            {players.length > 0 && !contextMenu.player && (
-              <>
-                <div className="px-2 pt-1.5 pb-0.5 text-[10px] uppercase tracking-wider text-muted-foreground/60 font-semibold select-none">
-                  Teleport here
-                </div>
-                {players.map((p) => (
-                  <ContextMenuItem
-                    key={p.username}
-                    icon={<Navigation className="w-3.5 h-3.5" />}
-                    label={p.displayName || p.username}
-                    loading={actionLoading === `teleport-${p.username}`}
-                    onClick={() => teleportPlayerTo(p.username, contextMenu.worldX, contextMenu.worldY)}
-                  />
-                ))}
               </>
             )}
 

@@ -581,8 +581,7 @@ export async function getTrackedMods() {
   const db = await getDb();
   const serverId = await getActiveServerId();
   if (!serverId) return db.data.tracked_mods; // no servers yet → return all (legacy)
-  // Return mods for this server, plus legacy mods without a server_id
-  return db.data.tracked_mods.filter(m => m.server_id === serverId || !m.server_id);
+  return db.data.tracked_mods.filter(m => m.server_id === serverId);
 }
 
 export async function addTrackedMod(workshopId, name = null) {
@@ -782,7 +781,11 @@ export async function deleteServer(id) {
   if (index === -1) return false;
 
   const wasActive = db.data.servers[index].isActive;
+  const serverId = String(db.data.servers[index].id);
   db.data.servers.splice(index, 1);
+
+  // Clean up tracked mods for the deleted server
+  db.data.tracked_mods = db.data.tracked_mods.filter(m => m.server_id !== serverId);
 
   if (wasActive && db.data.servers.length > 0) {
     db.data.servers[0].isActive = true;

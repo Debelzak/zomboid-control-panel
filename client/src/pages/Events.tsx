@@ -31,7 +31,16 @@ import {
   RotateCcw,
   Calendar,
   Sunrise,
-  Sunset
+  Sunset,
+  Wrench,
+  ShieldCheck,
+  Lock,
+  Unlock,
+  ChevronDown,
+  ChevronUp,
+  Check,
+  X,
+  Info
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -210,6 +219,14 @@ interface BridgeFormField {
 interface BridgeOperationForm {
   fields: BridgeFormField[]
   buildArgs?: (values: Record<string, string>) => Record<string, unknown>
+}
+
+interface BridgeResultData {
+  operation: string
+  success: boolean
+  data: unknown
+  error?: string
+  timestamp: string
 }
 
 const bridgeOperationForms: Record<string, BridgeOperationForm> = {
@@ -478,9 +495,6 @@ const bridgeOperationGroups = [
   },
 ] as const
 
-const BRIDGE_OUTPUT_MAX_CHARS = 100000
-const BRIDGE_RESULT_PLACEHOLDER = 'Run a command to view response output.'
-
 const formatPanelTimestamp = (date: Date): string => {
   try {
     return new Intl.DateTimeFormat(undefined, {
@@ -490,6 +504,288 @@ const formatPanelTimestamp = (date: Date): string => {
   } catch {
     return date.toLocaleString()
   }
+}
+
+// ============================================
+// STRUCTURED RESULT DISPLAY
+// ============================================
+
+interface BridgeResultDisplayProps {
+  result: BridgeResultData
+  loading: string | null
+  onInlineAction: (action: string, args: Record<string, unknown>, label: string) => Promise<void>
+  players: Player[]
+}
+
+function BridgeResultDisplay({ result, loading, onInlineAction, players }: BridgeResultDisplayProps) {
+  const [showRaw, setShowRaw] = useState(false)
+  const { operation, success, data, error, timestamp } = result
+  const isLoading = loading !== null
+
+  if (!success) {
+    return (
+      <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-4">
+        <div className="flex items-center gap-2 text-sm font-medium text-destructive">
+          <X className="h-4 w-4" />
+          Operation Failed
+        </div>
+        <p className="mt-2 text-xs text-muted-foreground">{error || 'Unknown error'}</p>
+        <p className="mt-1 text-xs text-muted-foreground/70">{timestamp}</p>
+      </div>
+    )
+  }
+
+  // Vehicle list
+  if (operation === 'getVehiclesDetailed') {
+    const vehicles = (data as { vehicles?: unknown[] })?.vehicles ?? []
+    if (vehicles.length === 0) {
+      return (
+        <ResultCard title="No Vehicles Found" icon={<Car className="h-4 w-4" />} timestamp={timestamp}>
+          <p className="text-sm text-muted-foreground">No vehicles are currently loaded in any active cell.</p>
+        </ResultCard>
+      )
+    }
+    return (
+      <div className="rounded-lg border border-border/70 bg-muted/15 p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Car className="h-4 w-4 text-primary" />
+            <span className="text-sm font-medium">{vehicles.length} Vehicle{vehicles.length !== 1 ? 's' : ''} Loaded</span>
+          </div>
+          <span className="text-xs text-muted-foreground">{timestamp}</span>
+        </div>
+        <div className="overflow-x-auto -mx-1">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border/60 text-left">
+                <th className="pb-2 pr-3 text-xs font-medium text-muted-foreground">ID</th>
+                <th className="pb-2 pr-3 text-xs font-medium text-muted-foreground">Type</th>
+                <th className="pb-2 pr-3 text-xs font-medium text-muted-foreground">Location</th>
+                <th className="pb-2 pr-3 text-xs font-medium text-muted-foreground">Battery</th>
+                <th className="pb-2 pr-3 text-xs font-medium text-muted-foreground">Status</th>
+                <th className="pb-2 text-xs font-medium text-muted-foreground">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(vehicles as Array<Record<string, unknown>>).map((v) => {
+                const vid = Number(v.id)
+                const script = String(v.scriptName || '').replace('Base.', '')
+                const vx = Math.round(Number(v.x) || 0)
+                const vy = Math.round(Number(v.y) || 0)
+                const battery = Math.round((Number(v.batteryCharge) || 0) * 100)
+                const alarmed = Boolean(v.alarmed)
+                const sirening = Boolean(v.sirening)
+                const trunkLocked = Boolean(v.trunkLocked)
+                return (
+                  <tr key={vid} className="border-b border-border/30 last:border-0">
+                    <td className="py-2.5 pr-3 font-mono text-xs text-foreground/80">{vid}</td>
+                    <td className="py-2.5 pr-3 text-xs">{script || '—'}</td>
+                    <td className="py-2.5 pr-3 font-mono text-xs text-foreground/70">{vx}, {vy}</td>
+                    <td className="py-2.5 pr-3">
+                      <span className={cn('text-xs font-medium', battery > 50 ? 'text-green-500' : battery > 20 ? 'text-yellow-500' : 'text-red-400')}>
+                        {battery}%
+                      </span>
+                    </td>
+                    <td className="py-2.5 pr-3">
+                      <div className="flex flex-wrap gap-1">
+                        {alarmed && <Badge variant="outline" className="h-5 text-[10px] px-1.5 text-yellow-500 border-yellow-500/30">Alarm</Badge>}
+                        {sirening && <Badge variant="outline" className="h-5 text-[10px] px-1.5 text-blue-400 border-blue-400/30">Siren</Badge>}
+                        <Badge variant="outline" className={cn('h-5 text-[10px] px-1.5', trunkLocked ? 'text-foreground/60' : 'text-green-500 border-green-500/30')}>
+                          {trunkLocked ? 'Locked' : 'Open'}
+                        </Badge>
+                      </div>
+                    </td>
+                    <td className="py-2.5">
+                      <div className="flex flex-wrap gap-1">
+                        <Button size="sm" variant="ghost" className="h-7 px-2 text-xs gap-1" disabled={isLoading}
+                          onClick={() => onInlineAction('vehicleRepair', { vehicleId: vid }, `Vehicle #${vid} repaired`)}>
+                          <Wrench className="h-3 w-3" /> Repair
+                        </Button>
+                        <Button size="sm" variant="ghost" className="h-7 px-2 text-xs gap-1" disabled={isLoading}
+                          onClick={() => onInlineAction('vehicleSetAlarm', { vehicleId: vid, enabled: !alarmed }, alarmed ? `Alarm disabled on #${vid}` : `Alarm enabled on #${vid}`)}>
+                          {alarmed ? 'Alarm Off' : 'Alarm On'}
+                        </Button>
+                        <Button size="sm" variant="ghost" className="h-7 px-2 text-xs gap-1" disabled={isLoading}
+                          onClick={() => onInlineAction('vehicleSetTrunkLocked', { vehicleId: vid, locked: !trunkLocked }, trunkLocked ? `Trunk unlocked on #${vid}` : `Trunk locked on #${vid}`)}>
+                          {trunkLocked ? <><Unlock className="h-3 w-3" /> Unlock</> : <><Lock className="h-3 w-3" /> Lock</>}
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    )
+  }
+
+  // Safehouse list
+  if (operation === 'getSafehouses') {
+    const safehouses = (data as { safehouses?: unknown[] })?.safehouses ?? []
+    if (safehouses.length === 0) {
+      return (
+        <ResultCard title="No Safehouses Found" icon={<ShieldCheck className="h-4 w-4" />} timestamp={timestamp}>
+          <p className="text-sm text-muted-foreground">No safehouses are claimed on this server.</p>
+        </ResultCard>
+      )
+    }
+    return (
+      <div className="rounded-lg border border-border/70 bg-muted/15 p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4 text-primary" />
+            <span className="text-sm font-medium">{safehouses.length} Safehouse{safehouses.length !== 1 ? 's' : ''}</span>
+          </div>
+          <span className="text-xs text-muted-foreground">{timestamp}</span>
+        </div>
+        <div className="space-y-2">
+          {(safehouses as Array<Record<string, unknown>>).map((sh, i) => {
+            const title = String(sh.title || sh.id || `Safehouse ${i + 1}`)
+            const owner = String(sh.owner || '—')
+            const members = Array.isArray(sh.members) ? sh.members : []
+            const ref = String(sh.id ?? sh.title ?? '')
+            return (
+              <div key={ref || i} className="rounded-md border border-border/50 bg-background/40 p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate">{title}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Owner: {owner} · {members.length} member{members.length !== 1 ? 's' : ''}</p>
+                    {members.length > 0 && (
+                      <p className="text-xs text-muted-foreground/70 mt-0.5 truncate">Members: {members.map(String).join(', ')}</p>
+                    )}
+                  </div>
+                  <div className="flex gap-1 shrink-0">
+                    {players.length > 0 && (
+                      <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" disabled={isLoading}
+                        onClick={() => {
+                          const username = players[0]?.name
+                          if (username) onInlineAction('safehouseAddPlayer', { safehouseRef: ref, username }, `Added ${username} to ${title}`)
+                        }}>
+                        + Player
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
+
+  // Faction list
+  if (operation === 'getFactions') {
+    const factions = (data as { factions?: unknown[] })?.factions ?? []
+    if (factions.length === 0) {
+      return (
+        <ResultCard title="No Factions Found" icon={<Users className="h-4 w-4" />} timestamp={timestamp}>
+          <p className="text-sm text-muted-foreground">No factions exist on this server.</p>
+        </ResultCard>
+      )
+    }
+    return (
+      <div className="rounded-lg border border-border/70 bg-muted/15 p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Users className="h-4 w-4 text-primary" />
+            <span className="text-sm font-medium">{factions.length} Faction{factions.length !== 1 ? 's' : ''}</span>
+          </div>
+          <span className="text-xs text-muted-foreground">{timestamp}</span>
+        </div>
+        <div className="space-y-2">
+          {(factions as Array<Record<string, unknown>>).map((f, i) => {
+            const name = String(f.name || `Faction ${i + 1}`)
+            const owner = String(f.owner || '—')
+            const tag = String(f.tag || '')
+            const members = Array.isArray(f.members) ? f.members : []
+            return (
+              <div key={name} className="rounded-md border border-border/50 bg-background/40 p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium">{name}</p>
+                      {tag && <Badge variant="outline" className="h-5 text-[10px] px-1.5">{tag}</Badge>}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5">Owner: {owner} · {members.length} member{members.length !== 1 ? 's' : ''}</p>
+                    {members.length > 0 && (
+                      <p className="text-xs text-muted-foreground/70 mt-0.5 truncate">Members: {members.map(String).join(', ')}</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
+
+  // Infrastructure snapshot
+  if (operation === 'getInfrastructureSnapshot') {
+    const d = data as Record<string, unknown> | null
+    if (!d) return <ResultCard title="No Data" icon={<Info className="h-4 w-4" />} timestamp={timestamp}><p className="text-sm text-muted-foreground">Empty response.</p></ResultCard>
+    return (
+      <ResultCard title="Infrastructure Snapshot" icon={<Gauge className="h-4 w-4" />} timestamp={timestamp}>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          {Object.entries(d).filter(([k]) => k !== 'success' && k !== 'message').map(([k, v]) => (
+            <div key={k} className="space-y-0.5">
+              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">{k.replace(/([A-Z])/g, ' $1').trim()}</p>
+              <p className="text-sm font-medium">{typeof v === 'number' ? (Number.isInteger(v) ? v : v.toFixed(2)) : String(v ?? '—')}</p>
+            </div>
+          ))}
+        </div>
+      </ResultCard>
+    )
+  }
+
+  // Generic action results — extract message from common response shapes
+  const msg = typeof data === 'string' ? data
+    : (data as Record<string, unknown>)?.message ? String((data as Record<string, unknown>).message)
+    : null
+
+  return (
+    <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 space-y-2">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+          <Check className="h-4 w-4 text-primary" />
+          {bridgeOperationTemplates[operation]?.label || operation}
+        </div>
+        <span className="text-xs text-muted-foreground">{timestamp}</span>
+      </div>
+      {msg && <p className="text-sm text-muted-foreground">{msg}</p>}
+      <button
+        type="button"
+        onClick={() => setShowRaw(!showRaw)}
+        className="flex items-center gap-1 text-xs text-muted-foreground/70 hover:text-muted-foreground transition-colors"
+      >
+        {showRaw ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+        {showRaw ? 'Hide details' : 'Show details'}
+      </button>
+      {showRaw && (
+        <pre className="max-h-48 overflow-auto rounded-md border border-border/50 bg-background/60 p-2.5 text-xs font-mono whitespace-pre-wrap break-words text-muted-foreground">
+          {JSON.stringify(data, null, 2)}
+        </pre>
+      )}
+    </div>
+  )
+}
+
+function ResultCard({ title, icon, timestamp, children }: { title: string; icon: React.ReactNode; timestamp: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-lg border border-border/70 bg-muted/15 p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-primary">{icon}</span>
+          <span className="text-sm font-medium">{title}</span>
+        </div>
+        <span className="text-xs text-muted-foreground">{timestamp}</span>
+      </div>
+      {children}
+    </div>
+  )
 }
 
 export default function Events() {
@@ -554,7 +850,7 @@ export default function Events() {
       })
     )
   })
-  const [bridgeOperationResult, setBridgeOperationResult] = useState<string>(BRIDGE_RESULT_PLACEHOLDER)
+  const [bridgeResultData, setBridgeResultData] = useState<BridgeResultData | null>(null)
   const [bridgeFormError, setBridgeFormError] = useState<string | null>(null)
   const [bridgeLastRunAt, setBridgeLastRunAt] = useState<string | null>(null)
   const [bridgeSafehouseOptions, setBridgeSafehouseOptions] = useState<Array<{ value: string; label: string }>>([])
@@ -868,16 +1164,20 @@ export default function Events() {
   // Alarm triggers at admin's in-game position (admin must be online)
   const triggerAlarm = () => serverApi.alarm()
   
-  // Zombie commands
-  const createHorde = (count: number, username?: string) => 
-    serverApi.createHorde(count, username)
+  // Zombie commands — use PanelBridge (CreateSwarm) for proper distance control
+  const createHorde = (count: number, username?: string) => {
+    if (!username) throw new Error('Target player required for horde spawn')
+    return panelBridgeApi.spawnHordeNear(username, count)
+  }
   
-  // createhorde2: spawns zombies behind the player (more cinematic)
-  const createHorde2 = (count: number, username?: string) => 
-    executeCommand(username ? `createhorde2 ${count} "${username}"` : `createhorde2 ${count}`)
+  // Spawn horde behind the player based on their facing direction
+  const createHorde2 = (count: number, username?: string) => {
+    if (!username) throw new Error('Target player required for horde spawn')
+    return panelBridgeApi.spawnHordeBehind(username, count)
+  }
   
-  // removezombies: clears all zombies from the map
-  const removeZombies = () => serverApi.removeZombies()
+  // Clear all zombies from loaded cells
+  const removeZombies = () => panelBridgeApi.clearAllZombies()
   
   // Time commands
   const setGameTimeSpeed = () => executeCommand(`setTimeSpeed ${timeSpeed}`)
@@ -965,7 +1265,6 @@ export default function Events() {
   }
 
   const bridgeActiveGroup = bridgeOperationGroups.find((group) => (group.operations as readonly string[]).includes(bridgeOperation))
-  const bridgeResultReady = bridgeOperationResult !== BRIDGE_RESULT_PLACEHOLDER
   const currentBridgeForm = bridgeOperationForms[bridgeOperation]
   const currentBridgeFields = currentBridgeForm?.fields ?? []
   const currentBridgeHasComboFields = currentBridgeFields.some((field) => field.type === 'combo')
@@ -985,7 +1284,7 @@ export default function Events() {
   const selectBridgeOperation = (nextOperation: string) => {
     setBridgeOperation(nextOperation)
     setBridgeFormError(null)
-    setBridgeOperationResult(BRIDGE_RESULT_PLACEHOLDER)
+    setBridgeResultData(null)
     setBridgeLastRunAt(null)
   }
 
@@ -1026,38 +1325,39 @@ export default function Events() {
     setBridgeFormError(null)
   }
 
-  const copyBridgeOutput = async () => {
+  const runInlineAction = async (action: string, args: Record<string, unknown>, label: string) => {
+    setBridgeLoading(action)
     try {
-      if (bridgeOperationResult === BRIDGE_RESULT_PLACEHOLDER) {
-        toast({
-          title: 'Nothing to copy',
-          description: 'Run an operation first to generate output.',
-          variant: 'destructive',
-        })
-        return
-      }
-
-      await navigator.clipboard.writeText(bridgeOperationResult)
+      await panelBridgeApi.sendCommand(action, args)
       toast({
-        title: 'Output copied',
-        description: 'Bridge response copied to clipboard.',
+        title: `${label}`,
+        description: 'Operation completed successfully.',
         variant: 'success' as const,
       })
-    } catch {
+      // Re-run the current list operation to refresh table data
+      if (bridgeResultData?.operation) {
+        try {
+          const refreshed = await panelBridgeApi.sendCommand(bridgeResultData.operation, {})
+          const payload = (refreshed as Record<string, unknown>)?.data ?? refreshed
+          setBridgeResultData({
+            operation: bridgeResultData.operation,
+            success: true,
+            data: payload,
+            timestamp: formatPanelTimestamp(new Date()),
+          })
+        } catch { /* ignore refresh failure */ }
+      }
+      // Also refresh combo options
+      setBridgeOptionsRefreshTick((prev) => prev + 1)
+    } catch (error) {
       toast({
-        title: 'Copy failed',
-        description: 'Clipboard is not available in this context.',
+        title: `${label} failed`,
+        description: getUserErrorMessage(error, 'Operation failed.'),
         variant: 'destructive',
       })
+    } finally {
+      setBridgeLoading(null)
     }
-  }
-
-  const formatBridgeResult = (response: unknown): string => {
-    const rendered = typeof response === 'string' ? response : JSON.stringify(response, null, 2)
-    if (!rendered) return 'No response content.'
-    if (rendered.length <= BRIDGE_OUTPUT_MAX_CHARS) return rendered
-
-    return `${rendered.slice(0, BRIDGE_OUTPUT_MAX_CHARS)}\n\n[output truncated: ${rendered.length - BRIDGE_OUTPUT_MAX_CHARS} characters omitted]`
   }
 
   const runBridgeOperation = async () => {
@@ -1086,19 +1386,35 @@ export default function Events() {
     }
 
     setBridgeLoading(bridgeOperation)
-  setBridgeFormError(null)
+    setBridgeFormError(null)
     try {
       const response = await panelBridgeApi.sendCommand(bridgeOperation, parsedArgs)
-      setBridgeOperationResult(formatBridgeResult(response))
+      const payload = (response as Record<string, unknown>)?.data ?? response
+      setBridgeResultData({
+        operation: bridgeOperation,
+        success: true,
+        data: payload,
+        timestamp: formatPanelTimestamp(new Date()),
+      })
       setBridgeLastRunAt(formatPanelTimestamp(new Date()))
+      // Refresh combo options for list operations
+      if (['getSafehouses', 'getFactions', 'getVehiclesDetailed'].includes(bridgeOperation)) {
+        setBridgeOptionsRefreshTick((prev) => prev + 1)
+      }
       toast({
         title: `${bridgeOperationTemplates[bridgeOperation]?.label || bridgeOperation} executed`,
-        description: 'Command sent successfully. See output panel for details.',
+        description: 'Operation completed successfully.',
         variant: 'success' as const,
       })
     } catch (error) {
       const message = getUserErrorMessage(error, 'Bridge operation failed.')
-      setBridgeOperationResult(JSON.stringify({ success: false, error: message }, null, 2))
+      setBridgeResultData({
+        operation: bridgeOperation,
+        success: false,
+        data: null,
+        error: message,
+        timestamp: formatPanelTimestamp(new Date()),
+      })
       setBridgeLastRunAt(formatPanelTimestamp(new Date()))
       toast({
         title: 'Bridge operation failed',
@@ -2193,7 +2509,7 @@ export default function Events() {
               <Clock className="w-4 h-4 text-primary" />
               Time Speed
             </CardTitle>
-            <CardDescription>Speed up or slow down the in-game clock.</CardDescription>
+            <CardDescription>Speed up or slow down the in-game clock. Resets to 1x when any player moves or provides input.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-3">
@@ -2866,55 +3182,31 @@ export default function Events() {
                     >
                       Reset Fields
                     </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        setBridgeOperationResult(BRIDGE_RESULT_PLACEHOLDER)
-                        setBridgeLastRunAt(null)
-                      }}
-                      disabled={bridgeLoading !== null}
-                      className="h-11"
-                    >
-                      Clear Output
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={copyBridgeOutput}
-                      disabled={bridgeLoading !== null || bridgeOperationResult === BRIDGE_RESULT_PLACEHOLDER}
-                      className="h-11"
-                    >
-                      Copy Output
-                    </Button>
+                    {bridgeResultData && (
+                      <Button
+                        variant="outline"
+                        onClick={() => setBridgeResultData(null)}
+                        disabled={bridgeLoading !== null}
+                        className="h-11"
+                      >
+                        Clear Results
+                      </Button>
+                    )}
                   </div>
 
                   <p className="text-xs text-muted-foreground" aria-live="polite">
-                    {bridgeRunDisabledReason || 'Ready. Review the output after each run.'}
+                    {bridgeRunDisabledReason || 'Ready.'}
                   </p>
 
-                  <div className="rounded-lg border border-border/70 bg-muted/20 p-4">
-                    <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <div>
-                        <Label>Response Output</Label>
-                        <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                          The raw response from the Bridge. Large results are truncated.
-                        </p>
-                      </div>
-                      <Badge variant={bridgeResultReady ? 'secondary' : 'outline'}>
-                        {bridgeResultReady ? 'Output ready' : 'Awaiting run'}
-                      </Badge>
-                    </div>
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-xs text-muted-foreground" aria-live="polite">
-                        {bridgeLastRunAt ? `Last run: ${bridgeLastRunAt}` : 'No run yet'}
-                      </span>
-                    </div>
-                    <pre
-                      className="max-h-72 overflow-auto rounded-md border border-border/70 bg-background/70 p-3 text-xs font-mono whitespace-pre-wrap break-words"
-                      aria-live="polite"
-                    >
-{bridgeOperationResult}
-                    </pre>
-                  </div>
+                  {/* Structured Result Display */}
+                  {bridgeResultData && (
+                    <BridgeResultDisplay
+                      result={bridgeResultData}
+                      loading={bridgeLoading}
+                      onInlineAction={runInlineAction}
+                      players={players}
+                    />
+                  )}
                 </CardContent>
               </Card>
             </div>

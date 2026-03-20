@@ -152,6 +152,9 @@ export default function ChunkCleaner() {
   // Chunk limit warning
   const [limitReached, setLimitReached] = useState(false)
   
+  // Guard against stale chunk-load responses when user switches saves quickly
+  const loadIdRef = useRef(0)
+  
   // Delete dialog
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [createBackup, setCreateBackup] = useState(true)
@@ -247,6 +250,7 @@ export default function ChunkCleaner() {
 
   const loadChunks = useCallback(async () => {
     if (!selectedSave) return
+    const thisLoadId = ++loadIdRef.current
     setLoading(true)
     setChunks([])
     setBounds(null)
@@ -256,18 +260,29 @@ export default function ChunkCleaner() {
     
     try {
       const pathToUse = customPath || undefined
-      const [chunksResult, statsResult] = await Promise.all([
+      // Load chunks and stats independently so a stats failure doesn't block the map
+      const [chunksSettled, statsSettled] = await Promise.allSettled([
         chunksApi.getChunks(selectedSave, pathToUse),
         chunksApi.getStats(selectedSave, pathToUse)
       ])
+      
+      // Discard stale response if user switched saves while loading
+      if (thisLoadId !== loadIdRef.current) return
+      
+      if (chunksSettled.status === 'rejected') {
+        throw chunksSettled.reason
+      }
+      const chunksResult = chunksSettled.value
+      const statsResult = statsSettled.status === 'fulfilled' ? statsSettled.value : null
+      
       // B42 saves use map/{X}/{Y}.bin with 8×8 tile chunks.
       // B41 saves use flat files with 10×10 tile chunks.
       // The grabofus map tiles use B41 chunk space (1 chunk = 10 tiles).
       // Convert B42 → B41: multiply by 0.8  (8/10).
       // The 'file' field is preserved unchanged for deletion operations.
-      const rawChunks: ChunkInfo[] = chunksResult.chunks || []
+      const rawChunks: ChunkInfo[] = Array.isArray(chunksResult.chunks) ? chunksResult.chunks : []
       const isB42 = chunksResult.isB42 === true || (rawChunks.length > 0 && rawChunks[0].file?.includes('/'))
-      if (isB42) {
+      if (isB42 && rawChunks.length > 0) {
         for (const c of rawChunks) {
           c.x = Math.floor(c.x * 8 / 10)
           c.y = Math.floor(c.y * 8 / 10)
@@ -285,17 +300,18 @@ export default function ChunkCleaner() {
         }
       }
       setChunks(rawChunks)
-      setBounds(chunksResult.bounds)
+      setBounds(chunksResult.bounds ?? null)
       setStats(statsResult)
       setLimitReached(chunksResult.limitReached === true)
     } catch (error) {
+      if (thisLoadId !== loadIdRef.current) return
       toast({
         title: 'Error',
         description: error instanceof Error ? error.message : 'Failed to load chunks',
         variant: 'destructive',
       })
     } finally {
-      setLoading(false)
+      if (thisLoadId === loadIdRef.current) setLoading(false)
     }
   }, [selectedSave, customPath, toast])
 
@@ -926,7 +942,7 @@ export default function ChunkCleaner() {
       
       toast({
         title: 'Chunks Deleted',
-        description: `Deleted ${result.deleted} chunks${createBackup ? ' (backup created)' : ''}`,
+        description: `Deleted ${result.deleted ?? 0} chunks${createBackup ? ' (backup created)' : ''}`,    
       })
       
       setDeleteDialogOpen(false)
@@ -1101,7 +1117,7 @@ export default function ChunkCleaner() {
                     <span className="font-medium">{stats.totalSizeFormatted}</span>
                   </div>
                   <Separator />
-                  {Object.entries(stats.folders).map(([folder, info]) => (
+                  {Object.entries(stats.folders || {}).map(([folder, info]) => (
                     <div key={folder} className="flex justify-between text-xs">
                       <span className="text-muted-foreground">{folder}</span>
                       <span>{info.fileCount} files ({info.sizeFormatted})</span>

@@ -59,6 +59,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from '@/components/ui/accordion'
+import { FolderBrowser } from '@/components/FolderBrowser'
 
 interface InstallLog {
   type: 'info' | 'success' | 'error' | 'command' | 'stdout' | 'stderr'
@@ -376,15 +377,12 @@ export default function ServerSetup() {
     }
   }
 
-  const handleBrowseFolder = async (setter: (path: string) => void, description: string, currentPath?: string) => {
-    try {
-      const result = await serverApi.browseFolder(currentPath, description)
-      if (result.success && result.path) {
-        setter(result.path)
-      }
-    } catch (error) {
-      toast({ title: 'Folder Picker Failed', description: 'Could not open the folder picker. Try entering the path manually.', variant: 'destructive' })
-    }
+  const [browseOpen, setBrowseOpen] = useState(false)
+  const [browseSetter, setBrowseSetter] = useState<{ fn: (path: string) => void; title: string; initial?: string } | null>(null)
+
+  const handleBrowseFolder = (setter: (path: string) => void, description: string, currentPath?: string) => {
+    setBrowseSetter({ fn: setter, title: description, initial: currentPath })
+    setBrowseOpen(true)
   }
 
   const handleAutoDetectRam = async () => {
@@ -1906,6 +1904,7 @@ export default function ServerSetup() {
   }
 
   return (
+    <>
     <div className="max-w-3xl mx-auto space-y-6 page-transition">
       {/* Header */}
       <div className="text-center">
@@ -1971,5 +1970,14 @@ export default function ServerSetup() {
         </div>
       )}
     </div>
+
+    <FolderBrowser
+      open={browseOpen}
+      onOpenChange={setBrowseOpen}
+      onSelect={(path) => browseSetter?.fn(path)}
+      initialPath={browseSetter?.initial}
+      title={browseSetter?.title}
+    />
+  </>
   )
 }

@@ -445,6 +445,12 @@ export const serverApi = {
   // Folder browser
   browseFolder: (initialPath?: string, description?: string) => 
     apiPost('/server/browse-folder', { initialPath, description }),
+  listDirectory: (dirPath?: string) => 
+    apiPost('/server/list-directory', { dirPath }) as Promise<{
+      entries: Array<{ name: string; path: string; label?: string; isDrive?: boolean }>;
+      currentPath: string | null;
+      parentPath: string | null;
+    }>,
   
   // Weather
   startRain: (intensity?: number) => apiPost('/server/weather/start-rain', { intensity }),
@@ -1259,6 +1265,22 @@ export const panelBridgeApi = {
   // Import character data (apply XP, perks to player)
   importCharacter: (username: string, data: CharacterImportData): Promise<CharacterImportResponse> =>
     apiPost('/panel-bridge/character/import', { username, data }),
+
+  // =============================================
+  // ZOMBIE CONTROLS
+  // =============================================
+
+  // Spawn horde near a player (50-70 tiles away)
+  spawnHordeNear: (username: string, count: number) =>
+    apiPost('/panel-bridge/zombies/spawn-near', { username, count }),
+
+  // Spawn horde behind a player based on facing direction
+  spawnHordeBehind: (username: string, count: number) =>
+    apiPost('/panel-bridge/zombies/spawn-behind', { username, count }),
+
+  // Clear ALL zombies from loaded cells
+  clearAllZombies: () =>
+    apiPost('/panel-bridge/zombies/clear-all'),
 }
 
 // =============================================

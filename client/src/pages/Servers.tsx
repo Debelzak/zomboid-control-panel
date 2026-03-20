@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext } from 'react'
+import { useState, useEffect, useContext, useRef } from 'react'
 import { 
   Server, 
   Plus, 
@@ -29,6 +29,7 @@ import {
   Network
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Progress } from '@/components/ui/progress'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -54,7 +55,6 @@ import {
 } from "@/components/ui/dropdown-menu"
 import {
   AlertDialog,
-  AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
@@ -169,6 +169,8 @@ export default function Servers() {
   const [deleteServer, setDeleteServer] = useState<ServerInstance | null>(null)
   const [deleteFiles, setDeleteFiles] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [deleteProgress, setDeleteProgress] = useState(0)
+  const deleteProgressRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const [activating, setActivating] = useState<string | number | null>(null)
   
   // Add server dialog
@@ -506,22 +508,45 @@ export default function Servers() {
     if (!deleteServer) return
     
     setDeleting(true)
+    setDeleteProgress(0)
+
+    // Animate progress: fast to ~70%, then slow crawl to ~90%
+    let prog = 0
+    deleteProgressRef.current = setInterval(() => {
+      prog += prog < 70 ? 8 : 1
+      if (prog > 92) prog = 92
+      setDeleteProgress(prog)
+    }, 200)
+
     try {
       // If deleteFiles is checked and server has an installPath, delete the files first
       if (deleteFiles && deleteServer.installPath) {
         try {
-          await serversDetectApi.deleteFiles(deleteServer.installPath)
-        } catch {
-          // Continue with panel removal even if file deletion fails
+          const result = await serversDetectApi.deleteFiles(deleteServer.installPath) as { error?: string }
+          if (result?.error) {
+            toast({ 
+              title: 'File deletion failed', 
+              description: result.error,
+              variant: 'destructive'
+            })
+          }
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : 'Could not delete server files'
           toast({ 
             title: 'Warning', 
-            description: 'Could not delete server files, but removing from panel.',
+            description: `${msg} — removing from panel anyway.`,
             variant: 'destructive'
           })
         }
       }
       
       await serversApi.delete(deleteServer.id)
+
+      // Complete the progress bar before closing
+      if (deleteProgressRef.current) clearInterval(deleteProgressRef.current)
+      setDeleteProgress(100)
+      await new Promise(r => setTimeout(r, 350))
+
       toast({ 
         title: 'Deleted', 
         description: deleteFiles 
@@ -538,7 +563,9 @@ export default function Servers() {
         variant: 'destructive'
       })
     } finally {
+      if (deleteProgressRef.current) clearInterval(deleteProgressRef.current)
       setDeleting(false)
+      setDeleteProgress(0)
     }
   }
 
@@ -1552,7 +1579,7 @@ export default function Servers() {
       </Dialog>
 
       {/* Delete Confirmation */}
-      <AlertDialog open={!!deleteServer} onOpenChange={(open) => { if (!open) { setDeleteServer(null); setDeleteFiles(false); } }}>
+      <AlertDialog open={!!deleteServer} onOpenChange={(open) => { if (!open && !deleting) { setDeleteServer(null); setDeleteFiles(false); } }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Remove Server from Panel?</AlertDialogTitle>
@@ -1566,6 +1593,7 @@ export default function Servers() {
                       id="deleteFiles"
                       checked={deleteFiles}
                       onCheckedChange={(checked) => setDeleteFiles(checked === true)}
+                      disabled={deleting}
                       className="mt-1"
                     />
                     <label htmlFor="deleteFiles" className="text-sm cursor-pointer">
@@ -1578,23 +1606,35 @@ export default function Servers() {
                   </div>
                 )}
                 
-                {!deleteFiles && (
+                {!deleteFiles && !deleting && (
                   <p className="text-sm text-muted-foreground">
                     Server files will NOT be deleted - you can add this server back later.
                   </p>
+                )}
+
+                {deleting && (
+                  <div className="space-y-2 pt-1">
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>{deleteFiles ? 'Deleting server files...' : 'Removing server...'}</span>
+                    </div>
+                    <Progress value={deleteProgress} className="h-1.5" />
+                  </div>
                 )}
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
-            <AlertDialogAction 
+            <Button 
               onClick={handleDeleteServer} 
               disabled={deleting}
               className={deleteFiles ? "bg-destructive text-destructive-foreground hover:bg-destructive/90" : ""}
             >
-              {deleting ? 'Removing...' : deleteFiles ? 'Delete Everything' : 'Remove from Panel'}
-            </AlertDialogAction>
+              {deleting ? (
+                <><Loader2 className="w-4 h-4 animate-spin mr-2" />Removing...</>
+              ) : deleteFiles ? 'Delete Everything' : 'Remove from Panel'}
+            </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
