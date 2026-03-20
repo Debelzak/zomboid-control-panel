@@ -749,7 +749,13 @@ local function processSingleCommand(cmd)
     PanelBridge.processedIdCount = PanelBridge.processedIdCount + 1
     PanelBridge.stats.commandsProcessed = PanelBridge.stats.commandsProcessed + 1
 
-    PanelBridge.info("Processing command: " .. tostring(cmd.action), { id = cmd.id })
+    -- Frequent polling commands log at DEBUG to avoid spam
+    local quietCommands = { getServerInfo=true, ping=true, getWeather=true, getGameTime=true, getWorldStats=true, getUtilitiesStatus=true, getClimateFloats=true, getAllPlayerDetails=true }
+    if quietCommands[cmd.action] then
+        PanelBridge.debug("Processing command: " .. tostring(cmd.action), { id = cmd.id })
+    else
+        PanelBridge.info("Processing command: " .. tostring(cmd.action), { id = cmd.id })
+    end
 
     local handler = handlers[cmd.action]
     if handler then
@@ -2575,21 +2581,41 @@ end
 -- CHAT SYSTEM HANDLERS
 -- ============================================
 
+-- Helper: resolve a Java class from either a Lua global or the full package path
+local function resolveJavaClass(globalName, fullPath)
+    -- Try the bare global first (may be exposed by PZ)
+    local g = rawget(_G, globalName)
+    if g ~= nil then return g end
+    -- Walk the full Java package path (e.g. zombie.network.chat.ChatServer)
+    local ok, cls = pcall(function()
+        local parts = {}
+        for part in fullPath:gmatch("[^%.]+") do parts[#parts + 1] = part end
+        local cur = rawget(_G, parts[1])
+        if cur == nil then return nil end
+        for i = 2, #parts do cur = cur[parts[i]] end
+        return cur
+    end)
+    if ok and cls ~= nil then return cls end
+    return nil
+end
+
 -- Helper: get chat system components
 -- ChatServer (zombie.network.chat.ChatServer) = SERVER-SIDE, works on both B41 and B42 dedicated servers
 -- ChatManager (zombie.chat.ChatManager) = CLIENT-SIDE, only works on client (not on dedicated server)
 local function getChatSystem()
     local result = {}
     -- ChatServer: server-side component — available on dedicated servers in both B41 and B42
-    if type(ChatServer) == "table" or type(ChatServer) == "userdata" then
-        local ok, inst = pcall(function() return ChatServer.getInstance() end)
+    local ChatServerClass = resolveJavaClass("ChatServer", "zombie.network.chat.ChatServer")
+    if ChatServerClass then
+        local ok, inst = pcall(function() return ChatServerClass.getInstance() end)
         if ok and inst then
             result.server = inst
         end
     end
-    -- ChatManager: client-side component — B42 only, may NOT work on dedicated server
-    if type(ChatManager) == "table" or type(ChatManager) == "userdata" then
-        local ok, inst = pcall(function() return ChatManager.getInstance() end)
+    -- ChatManager: client-side component — may NOT work on dedicated server
+    local ChatManagerClass = resolveJavaClass("ChatManager", "zombie.chat.ChatManager")
+    if ChatManagerClass then
+        local ok, inst = pcall(function() return ChatManagerClass.getInstance() end)
         if ok and inst then
             result.manager = inst
         end
@@ -2600,10 +2626,9 @@ end
 
 -- Helper: resolve ChatType enum value safely
 local function getChatType(typeName)
-    if type(ChatType) ~= "table" and type(ChatType) ~= "userdata" then
-        return nil
-    end
-    local ok, val = pcall(function() return ChatType[typeName] end)
+    local ChatTypeClass = resolveJavaClass("ChatType", "zombie.chat.ChatType")
+    if not ChatTypeClass then return nil end
+    local ok, val = pcall(function() return ChatTypeClass[typeName] end)
     if ok and val then return val end
     return nil
 end
@@ -2618,6 +2643,7 @@ handlers.sendToServerChat = function(args)
     end
 
     local chat = getChatSystem()
+    local debugInfo = {}
 
     -- ChatServer: server-side, works on both B41 and B42 dedicated servers
     if chat and chat.server then
@@ -2631,6 +2657,9 @@ handlers.sendToServerChat = function(args)
         if ok then
             return true, { message = "Message sent to server chat", isAlert = isAlert, method = "ChatServer" }
         end
+        debugInfo[#debugInfo + 1] = "ChatServer.send failed: " .. tostring(err)
+    else
+        debugInfo[#debugInfo + 1] = "ChatServer: " .. (chat and "getInstance returned nil" or "class not found")
     end
 
     -- ChatManager fallback (client-side, unlikely to work on dedicated server)
@@ -2641,17 +2670,27 @@ handlers.sendToServerChat = function(args)
         if ok then
             return true, { message = "Message sent to server chat", isAlert = isAlert, method = "ChatManager" }
         end
+        debugInfo[#debugInfo + 1] = "ChatManager.show failed: " .. tostring(err)
     end
 
-    -- Last resort: sendServerMessage global
-    if sendServerMessage then
-        local ok = pcall(sendServerMessage, message)
-        if ok then
-            return true, { message = "Message sent via sendServerMessage", isAlert = isAlert, method = "sendServerMessage" }
+    -- Fallback: Say to each player (shows as overhead text + chat)
+    local ok3, err3 = pcall(function()
+        local players = getOnlinePlayers()
+        if players and players:size() > 0 then
+            for i = 0, players:size() - 1 do
+                local p = players:get(i)
+                if p then p:Say(message) end
+            end
+            return true
         end
+        return false
+    end)
+    if ok3 then
+        return true, { message = "Message sent via player:Say()", isAlert = isAlert, method = "player:Say" }
     end
+    debugInfo[#debugInfo + 1] = "player:Say fallback failed: " .. tostring(err3)
 
-    return false, nil, "Chat system not available and no fallback worked"
+    return false, nil, "Chat system not available: " .. table.concat(debugInfo, "; ")
 end
 
 -- Send message to admin chat (only admins see it)
@@ -2687,12 +2726,22 @@ handlers.sendToAdminChat = function(args)
         end
     end
 
-    -- Fallback: send as server message prefixed with [ADMIN]
-    if sendServerMessage then
-        local ok = pcall(sendServerMessage, "[ADMIN] " .. message)
-        if ok then
-            return true, { message = "Message sent as server message (admin chat unavailable)", method = "sendServerMessage" }
+    -- Fallback: Say to each player with [ADMIN] prefix
+    local ok3, err3 = pcall(function()
+        local players = getOnlinePlayers()
+        if players and players:size() > 0 then
+            for i = 0, players:size() - 1 do
+                local p = players:get(i)
+                if p and p.accessLevel and p:getAccessLevel() ~= "" then
+                    p:Say("[ADMIN] " .. message)
+                end
+            end
+            return true
         end
+        return false
+    end)
+    if ok3 then
+        return true, { message = "Message sent via player:Say (admin fallback)", method = "player:Say" }
     end
 
     return false, nil, "Admin chat not available"
@@ -2739,12 +2788,20 @@ handlers.sendToGeneralChat = function(args)
         end
     end
 
-    -- Fallback
-    if sendServerMessage then
-        local ok = pcall(sendServerMessage, "[" .. author .. "] " .. message)
-        if ok then
-            return true, { message = "Message sent via fallback", author = author, method = "sendServerMessage" }
+    -- Fallback: Say to each player with author prefix
+    local ok3, err3 = pcall(function()
+        local players = getOnlinePlayers()
+        if players and players:size() > 0 then
+            for i = 0, players:size() - 1 do
+                local p = players:get(i)
+                if p then p:Say("[" .. author .. "] " .. message) end
+            end
+            return true
         end
+        return false
+    end)
+    if ok3 then
+        return true, { message = "Message sent via player:Say", author = author, method = "player:Say" }
     end
 
     return false, nil, "General chat not available"
@@ -3916,6 +3973,15 @@ handlers.clearAllZombies = function(args)
     }
 end
 
+-- Helper: resolve ZombiePopulationManager (not exposed as global in B42)
+local function getZombiePopManager()
+    local ZPM = resolveJavaClass("ZombiePopulationManager", "zombie.popman.ZombiePopulationManager")
+    if ZPM and ZPM.instance then
+        return ZPM.instance
+    end
+    return nil
+end
+
 -- Spawn horde near a player (40-80 tiles away)
 handlers.spawnHordeNearPlayer = function(args)
     local username = args.username
@@ -3944,7 +4010,7 @@ handlers.spawnHordeNearPlayer = function(args)
     local ok, err = pcall(function()
         -- B42 preferred: ZombiePopulationManager.createHordeInAreaTo
         -- Creates real zombies that walk toward the player
-        local zpop = ZombiePopulationManager and ZombiePopulationManager.instance
+        local zpop = getZombiePopManager()
         if zpop and zpop.createHordeInAreaTo then
             zpop:createHordeInAreaTo(cx - half, cy - half, half * 2, half * 2, math.floor(px), math.floor(py), count)
             method = "createHordeInAreaTo"
@@ -4022,7 +4088,7 @@ handlers.spawnHordeBehindPlayer = function(args)
 
     local ok, err = pcall(function()
         -- B42 preferred: ZombiePopulationManager.createHordeInAreaTo
-        local zpop = ZombiePopulationManager and ZombiePopulationManager.instance
+        local zpop = getZombiePopManager()
         if zpop and zpop.createHordeInAreaTo then
             zpop:createHordeInAreaTo(cx - half, cy - half, half * 2, half * 2, math.floor(px), math.floor(py), count)
             method = "createHordeInAreaTo"
@@ -4232,6 +4298,25 @@ handlers.createFaction = function(args)
     if not name then return false, nil, "Faction name required" end
     if not owner then return false, nil, "Faction owner required" end
 
+    -- Pre-check: faction name already taken
+    if Faction.factionExist and Faction.factionExist(name) then
+        return false, nil, "A faction named '" .. name .. "' already exists"
+    end
+
+    -- Pre-check: owner already in a faction
+    if Faction.isAlreadyInFaction then
+        local alreadyIn = false
+        local okChk, _ = pcall(function() alreadyIn = Faction.isAlreadyInFaction(owner) end)
+        if okChk and alreadyIn then
+            local existingName = ""
+            pcall(function()
+                local f = Faction.getPlayerFaction(owner)
+                if f then existingName = " (" .. tostring(f:getName()) .. ")" end
+            end)
+            return false, nil, "Owner '" .. owner .. "' is already in a faction" .. existingName
+        end
+    end
+
     local ok, factionOrErr = pcall(function()
         return Faction.createFaction(name, owner)
     end)
@@ -4239,8 +4324,16 @@ handlers.createFaction = function(args)
         return false, nil, "Failed to create faction: " .. tostring(factionOrErr)
     end
 
-    local created = factionOrErr ~= nil
-    return true, { message = created and "Faction created" or "Faction creation returned nil", name = name, owner = owner }
+    if not factionOrErr then
+        return false, nil, "Faction creation failed (name may be taken or owner ineligible)"
+    end
+
+    -- Sync to clients
+    pcall(function()
+        if factionOrErr.syncFaction then factionOrErr:syncFaction() end
+    end)
+
+    return true, { message = "Faction '" .. name .. "' created with owner '" .. owner .. "'", name = name, owner = owner }
 end
 
 handlers.factionAddPlayer = function(args)
@@ -4383,13 +4476,12 @@ handlers.getVehiclesDetailed = function(args)
                 z = v.getZ and v:getZ() or nil,
                 scriptName = v.getScriptName and v:getScriptName() or nil,
                 type = v.getVehicleType and v:getVehicleType() or nil,
-                speedKmh = v.getCurrentAbsoluteSpeedKmHour and v:getCurrentAbsoluteSpeedKmHour() or 0,
+                speedKmh = v.getCurrentSpeedKmHour and v:getCurrentSpeedKmHour() or 0,
                 batteryCharge = v.getBatteryCharge and v:getBatteryCharge() or nil,
                 fuelPct = v.getRemainingFuelPercentage and v:getRemainingFuelPercentage() or nil,
                 alarmed = v.isAlarmed and v:isAlarmed() or false,
-                sirening = v.isSirening and v:isSirening() or false,
-                trunkLocked = v.isTrunkLocked and v:isTrunkLocked() or false,
-                inTrafficJam = v.isInTrafficJam and v:isInTrafficJam() or false
+                sirening = v.getLightbarSirenMode and v:getLightbarSirenMode() > 0 or false,
+                trunkLocked = v.isTrunkLocked and v:isTrunkLocked() or false
             })
         end
     end
@@ -4480,7 +4572,7 @@ handlers.triggerSwarmEvent = function(args)
     local method = "unknown"
 
     local ok, err = pcall(function()
-        local zpop = ZombiePopulationManager and ZombiePopulationManager.instance
+        local zpop = getZombiePopManager()
         if zpop and zpop.createHordeInAreaTo then
             zpop:createHordeInAreaTo(x1, y1, x2 - x1, y2 - y1, midX, midY, count)
             method = "createHordeInAreaTo"
@@ -4606,57 +4698,6 @@ handlers.getInfrastructureSnapshot = function(args)
     end
 
     return true, snapshot
-end
-
-handlers.addLamppost = function(args)
-    local world = getWorld and getWorld() or nil
-    local cell = (getCell and getCell()) or (world and world.getCell and world:getCell()) or nil
-    if not cell then return false, nil, "Cell not available" end
-
-    local x = math.floor(tonumber(args.x) or 0)
-    local y = math.floor(tonumber(args.y) or 0)
-    local z = math.floor(tonumber(args.z) or 0)
-    local r = tonumber(args.r) or 1.0
-    local g = tonumber(args.g) or 0.85
-    local b = tonumber(args.b) or 0.6
-    local rad = math.floor(tonumber(args.radius) or 8)
-
-    r = math.min(math.max(r, 0), 1)
-    g = math.min(math.max(g, 0), 1)
-    b = math.min(math.max(b, 0), 1)
-    rad = math.min(math.max(rad, 1), 30)
-
-    local ok, err = pcall(function()
-        if cell.addLamppost then
-            cell:addLamppost(x, y, z, r, g, b, rad)
-        else
-            error("addLamppost API not available")
-        end
-    end)
-    if not ok then return false, nil, "Failed to add lamppost: " .. tostring(err) end
-
-    return true, { message = "Lamppost added", x = x, y = y, z = z, color = { r = r, g = g, b = b }, radius = rad }
-end
-
-handlers.removeLamppost = function(args)
-    local world = getWorld and getWorld() or nil
-    local cell = (getCell and getCell()) or (world and world.getCell and world:getCell()) or nil
-    if not cell then return false, nil, "Cell not available" end
-
-    local x = math.floor(tonumber(args.x) or 0)
-    local y = math.floor(tonumber(args.y) or 0)
-    local z = math.floor(tonumber(args.z) or 0)
-
-    local ok, err = pcall(function()
-        if cell.removeLamppost then
-            cell:removeLamppost(x, y, z)
-        else
-            error("removeLamppost API not available")
-        end
-    end)
-    if not ok then return false, nil, "Failed to remove lamppost: " .. tostring(err) end
-
-    return true, { message = "Lamppost removed", x = x, y = y, z = z }
 end
 
 -- ============================================
