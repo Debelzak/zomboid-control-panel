@@ -19,7 +19,7 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { useToast } from '@/components/ui/use-toast'
-import { panelBridgeApi, playersApi, rconApi } from '@/lib/api'
+import { panelBridgeApi, playersApi } from '@/lib/api'
 import { useSocket } from '@/contexts/SocketContext'
 import { EmptyState } from '@/components/EmptyState'
 import { BridgeStatusBadge } from '@/components/BridgeStatusBadge'
@@ -191,41 +191,22 @@ export default function Chat() {
       let result
       let channelLabel = getChannelLabel(channel)
 
-      if (bridgeConnected) {
-        // Use powerful Mod API if available
-        switch (channel) {
-            case 'server':
-            result = await panelBridgeApi.sendToServerChat(message, false)
-            break
-            case 'alert':
-            result = await panelBridgeApi.sendToServerChat(message, true)
-            channelLabel = 'Alert'
-            break
-            case 'admin':
-            result = await panelBridgeApi.sendToAdminChat(message)
-            break
-            case 'general':
-            result = await panelBridgeApi.sendToGeneralChat(message, authorName)
-            channelLabel = authorName.trim() || 'Server'
-            break
-        }
-      } else {
-        // Fallback to RCON
-        // RCON works best for 'server' broadcasts.
-        // For general/admin, we just use servermsg with prefix
-        const safeMessage = message.replace(/"/g, '\\"');
-        
-        switch (channel) {
-            case 'server':
-            case 'alert':
-                result = await rconApi.execute(`servermsg "${safeMessage}"`)
-                break;
-            default:
-                // Prepend author or context since we can't truly impersonate via RCON easily
-                const prefix = channel === 'admin' ? '[Admin]' : `[${authorName}]`;
-                result = await rconApi.execute(`servermsg "${prefix} ${safeMessage}"`)
-                break;
-        }
+      // Backend chat routes handle RCON fallback transparently
+      switch (channel) {
+          case 'server':
+          result = await panelBridgeApi.sendToServerChat(message, false)
+          break
+          case 'alert':
+          result = await panelBridgeApi.sendToServerChat(message, true)
+          channelLabel = 'Alert'
+          break
+          case 'admin':
+          result = await panelBridgeApi.sendToAdminChat(message)
+          break
+          case 'general':
+          result = await panelBridgeApi.sendToGeneralChat(message, authorName)
+          channelLabel = authorName.trim() || 'Server'
+          break
       }
 
       if (result?.success) {

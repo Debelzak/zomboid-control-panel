@@ -2689,8 +2689,8 @@ handlers.sendToServerChat = function(args)
         debugInfo[#debugInfo + 1] = "ChatManager.show failed: " .. tostring(err)
     end
 
-    -- Fallback: Say to each player (shows as overhead text + chat)
-    local ok3, err3 = pcall(function()
+    -- Fallback: Say to each player (shows as overhead text only, not in chat window)
+    local ok3, sent3 = pcall(function()
         local players = getOnlinePlayers()
         if players and players:size() > 0 then
             for i = 0, players:size() - 1 do
@@ -2701,10 +2701,10 @@ handlers.sendToServerChat = function(args)
         end
         return false
     end)
-    if ok3 then
-        return true, { message = "Message sent via player:Say()", isAlert = isAlert, method = "player:Say" }
+    if ok3 and sent3 then
+        return true, { message = "Message sent via player:Say (overhead text only)", isAlert = isAlert, method = "player:Say" }
     end
-    debugInfo[#debugInfo + 1] = "player:Say fallback failed: " .. tostring(err3)
+    debugInfo[#debugInfo + 1] = ok3 and "player:Say fallback: no players online" or ("player:Say fallback failed: " .. tostring(sent3))
 
     return false, nil, "Chat system not available: " .. table.concat(debugInfo, "; ")
 end
@@ -2742,8 +2742,8 @@ handlers.sendToAdminChat = function(args)
         end
     end
 
-    -- Fallback: Say to each player with [ADMIN] prefix
-    local ok3, err3 = pcall(function()
+    -- Fallback: Say to each player with [ADMIN] prefix (overhead text only)
+    local ok3, sent3 = pcall(function()
         local players = getOnlinePlayers()
         if players and players:size() > 0 then
             for i = 0, players:size() - 1 do
@@ -2756,8 +2756,8 @@ handlers.sendToAdminChat = function(args)
         end
         return false
     end)
-    if ok3 then
-        return true, { message = "Message sent via player:Say (admin fallback)", method = "player:Say" }
+    if ok3 and sent3 then
+        return true, { message = "Message sent via player:Say (admin, overhead text only)", method = "player:Say" }
     end
 
     return false, nil, "Admin chat not available"
@@ -2804,8 +2804,8 @@ handlers.sendToGeneralChat = function(args)
         end
     end
 
-    -- Fallback: Say to each player with author prefix
-    local ok3, err3 = pcall(function()
+    -- Fallback: Say to each player with author prefix (overhead text only)
+    local ok3, sent3 = pcall(function()
         local players = getOnlinePlayers()
         if players and players:size() > 0 then
             for i = 0, players:size() - 1 do
@@ -2816,8 +2816,8 @@ handlers.sendToGeneralChat = function(args)
         end
         return false
     end)
-    if ok3 then
-        return true, { message = "Message sent via player:Say", author = author, method = "player:Say" }
+    if ok3 and sent3 then
+        return true, { message = "Message sent via player:Say (overhead text only)", author = author, method = "player:Say" }
     end
 
     return false, nil, "General chat not available"
