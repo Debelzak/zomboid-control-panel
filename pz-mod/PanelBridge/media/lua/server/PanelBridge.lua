@@ -4898,6 +4898,16 @@ function PanelBridge.onServerStarted()
         serverName = getServerName()
     })
     
+    -- Reset time speed to 1x so fast-forward doesn't persist across reboots
+    pcall(function()
+        local gt = getGameTime()
+        if gt and gt.getMultiplier and gt:getMultiplier() ~= 1 then
+            local prev = gt:getMultiplier()
+            gt:setMultiplier(1)
+            print("[PanelBridge] Reset time speed from " .. tostring(prev) .. "x to 1x")
+        end
+    end)
+
     PanelBridge.initialized = true
     PanelBridge.info("PanelBridge ready", { path = PanelBridge.getBasePath() })
     print("[PanelBridge] Ready at: " .. PanelBridge.getBasePath())

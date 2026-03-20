@@ -2509,7 +2509,7 @@ export default function Events() {
               <Clock className="w-4 h-4 text-primary" />
               Time Speed
             </CardTitle>
-            <CardDescription>Speed up or slow down the in-game clock. Resets to 1x when any player moves or provides input.</CardDescription>
+            <CardDescription>Speed up or slow down the in-game clock. Auto-resets to 1x on server restart.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-3">
