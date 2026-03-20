@@ -2596,20 +2596,23 @@ end
 
 -- Helper: resolve a Java class from either a Lua global or the full package path
 local function resolveJavaClass(globalName, fullPath)
-    -- Try the bare global first (may be exposed by PZ)
-    local g = rawget(_G, globalName)
-    if g ~= nil then return g end
+    -- Try direct global access (through metatable — Kahlua exposes Java classes this way)
+    local ok1, g = pcall(function() return _G[globalName] end)
+    if ok1 and g then return g end
     -- Walk the full Java package path (e.g. zombie.network.chat.ChatServer)
-    local ok, cls = pcall(function()
-        local parts = {}
-        for part in fullPath:gmatch("[^%.]+") do parts[#parts + 1] = part end
-        local cur = rawget(_G, parts[1])
-        if cur == nil then return nil end
-        for i = 2, #parts do cur = cur[parts[i]] end
-        return cur
-    end)
-    if ok and cls ~= nil then return cls end
-    return nil
+    -- pcall each step to avoid Java null indexing errors
+    local parts = {}
+    for part in fullPath:gmatch("[^%.]+") do parts[#parts + 1] = part end
+    local cur
+    local ok
+    ok, cur = pcall(function() return _G[parts[1]] end)
+    if not ok or not cur then return nil end
+    for i = 2, #parts do
+        local parent = cur
+        ok, cur = pcall(function() return parent[parts[i]] end)
+        if not ok or not cur then return nil end
+    end
+    return cur
 end
 
 -- Helper: get chat system components
