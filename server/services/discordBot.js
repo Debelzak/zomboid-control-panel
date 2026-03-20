@@ -264,6 +264,13 @@ export class DiscordBot {
     
     if (level === 'everyone') return true;
     
+    // Server owner always has full access
+    if (interaction.guild && interaction.guild.ownerId === interaction.user.id) return true;
+    
+    // Discord Administrator permission holders can use everything
+    if (interaction.member && interaction.member.permissions &&
+        interaction.member.permissions.has(PermissionFlagsBits.Administrator)) return true;
+    
     // Admin role holders can use everything
     if (this.adminRoleId && this.hasRole(interaction, this.adminRoleId)) return true;
     
