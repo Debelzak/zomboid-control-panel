@@ -1988,12 +1988,10 @@ router.post('/chat/general', async (req, res) => {
   if (!bridge.isRunning) {
     return res.status(400).json({ error: 'Bridge not running' });
   }
-  const { message, author = 'Server' } = req.body;
+  const author = typeof req.body.author === 'string' ? req.body.author.trim().slice(0, 64) || 'Server' : 'Server';
+  const { message } = req.body;
   if (!message || typeof message !== 'string' || message.length > 2000) {
     return res.status(400).json({ error: 'message is required (max 2000 chars)' });
-  }
-  if (typeof author !== 'string' || author.length > 64) {
-    return res.status(400).json({ error: 'Invalid author (max 64 chars)' });
   }
   try {
     const result = await bridge.sendCommand('sendToGeneralChat', { message, author });

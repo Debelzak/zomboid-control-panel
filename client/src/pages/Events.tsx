@@ -181,15 +181,10 @@ const bridgeOperationTemplates: Record<string, { label: string; description: str
   factionSetTag: { label: 'Faction Set Tag', description: 'Set short faction tag.', args: '{\n  "factionName": "FactionName",\n  "tag": "TAG"\n}' },
   removeFaction: { label: 'Remove Faction', description: 'Delete faction.', args: '{\n  "factionName": "FactionName"\n}' },
   getVehiclesDetailed: { label: 'List Vehicles', description: 'List loaded vehicles with telemetry.', args: '{}' },
-  vehicleRepair: { label: 'Vehicle Repair', description: 'Repair vehicle by id.', args: '{\n  "vehicleId": 123\n}' },
-  vehicleSetAlarm: { label: 'Vehicle Alarm', description: 'Enable/disable and trigger alarm state.', args: '{\n  "vehicleId": 123,\n  "enabled": true\n}' },
-  vehicleSetSiren: { label: 'Vehicle Siren', description: 'Set siren mode.', args: '{\n  "vehicleId": 123,\n  "mode": 1\n}' },
-  vehicleSetTrunkLocked: { label: 'Vehicle Trunk Lock', description: 'Lock/unlock trunk.', args: '{\n  "vehicleId": 123,\n  "locked": true\n}' },
   triggerSwarmEvent: { label: 'Trigger Swarm Event', description: 'Spawn zombies in rectangular area.', args: '{\n  "count": 25,\n  "x1": 10500,\n  "y1": 9800,\n  "x2": 10600,\n  "y2": 9900\n}' },
   runEventSequence: { label: 'Run Event Sequence', description: 'Run chained chat/weather/swarm/utilities/noise sequence.', args: '{\n  "steps": [\n    { "kind": "chat", "message": "Event incoming", "channel": "general" },\n    { "kind": "weather", "weatherType": "storm", "duration": 2 }\n  ]\n}' },
   getInfrastructureSnapshot: { label: 'Infrastructure Snapshot', description: 'Read hydro/weather state and optional sample point.', args: '{\n  "x": 10500,\n  "y": 9800,\n  "z": 0\n}' },
-  addLamppost: { label: 'Add Lamppost', description: 'Add temporary light source.', args: '{\n  "x": 10500,\n  "y": 9800,\n  "z": 0,\n  "r": 1.0,\n  "g": 0.85,\n  "b": 0.6,\n  "radius": 8\n}' },
-  removeLamppost: { label: 'Remove Lamppost', description: 'Remove temporary light source.', args: '{\n  "x": 10500,\n  "y": 9800,\n  "z": 0\n}' },
+
   moderationKickUser: { label: 'Kick User', description: 'Kick player via BanSystem.', args: '{\n  "username": "PlayerName",\n  "reason": "Rule violation"\n}' },
   moderationBanUser: { label: 'Ban User', description: 'Ban or unban player.', args: '{\n  "username": "PlayerName",\n  "reason": "Rule violation",\n  "ban": true\n}' },
   moderationBanIP: { label: 'Ban IP', description: 'Ban or unban IP address.', args: '{\n  "ip": "127.0.0.1",\n  "reason": "Abuse",\n  "ban": true\n}' },
@@ -296,41 +291,6 @@ const bridgeOperationForms: Record<string, BridgeOperationForm> = {
     ],
   },
   getVehiclesDetailed: { fields: [] },
-  vehicleRepair: {
-    fields: [
-      { key: 'vehicleId', label: 'Vehicle ID', type: 'combo', required: true, placeholder: 'Select vehicle id', castAs: 'number' },
-    ],
-  },
-  vehicleSetAlarm: {
-    fields: [
-      { key: 'vehicleId', label: 'Vehicle ID', type: 'combo', required: true, placeholder: 'Select vehicle id', castAs: 'number' },
-      { key: 'enabled', label: 'Alarm Enabled', type: 'boolean', defaultValue: 'true' },
-    ],
-  },
-  vehicleSetSiren: {
-    fields: [
-      { key: 'vehicleId', label: 'Vehicle ID', type: 'combo', required: true, placeholder: 'Select vehicle id', castAs: 'number' },
-      {
-        key: 'mode',
-        label: 'Siren Mode',
-        type: 'select',
-        required: true,
-        defaultValue: '1',
-        options: [
-          { value: '0', label: 'Off (0)' },
-          { value: '1', label: 'Mode 1' },
-          { value: '2', label: 'Mode 2' },
-          { value: '3', label: 'Mode 3' },
-        ],
-      },
-    ],
-  },
-  vehicleSetTrunkLocked: {
-    fields: [
-      { key: 'vehicleId', label: 'Vehicle ID', type: 'combo', required: true, placeholder: 'Select vehicle id', castAs: 'number' },
-      { key: 'locked', label: 'Lock Trunk', type: 'boolean', defaultValue: 'true' },
-    ],
-  },
   triggerSwarmEvent: {
     fields: [
       { key: 'count', label: 'Zombie Count', type: 'number', required: true, defaultValue: '25', min: 1, max: 500 },
@@ -404,24 +364,6 @@ const bridgeOperationForms: Record<string, BridgeOperationForm> = {
       }
     },
   },
-  addLamppost: {
-    fields: [
-      { key: 'x', label: 'X', type: 'number', required: true, defaultValue: '10500' },
-      { key: 'y', label: 'Y', type: 'number', required: true, defaultValue: '9800' },
-      { key: 'z', label: 'Z', type: 'number', required: true, defaultValue: '0' },
-      { key: 'r', label: 'Red (0-1)', type: 'number', required: true, defaultValue: '1', min: 0, max: 1, step: 0.05 },
-      { key: 'g', label: 'Green (0-1)', type: 'number', required: true, defaultValue: '0.85', min: 0, max: 1, step: 0.05 },
-      { key: 'b', label: 'Blue (0-1)', type: 'number', required: true, defaultValue: '0.6', min: 0, max: 1, step: 0.05 },
-      { key: 'radius', label: 'Radius', type: 'number', required: true, defaultValue: '8', min: 1, max: 50 },
-    ],
-  },
-  removeLamppost: {
-    fields: [
-      { key: 'x', label: 'X', type: 'number', required: true, defaultValue: '10500' },
-      { key: 'y', label: 'Y', type: 'number', required: true, defaultValue: '9800' },
-      { key: 'z', label: 'Z', type: 'number', required: true, defaultValue: '0' },
-    ],
-  },
   moderationKickUser: {
     fields: [
       { key: 'username', label: 'Username', type: 'combo', required: true, placeholder: 'Select player' },
@@ -479,13 +421,13 @@ const bridgeOperationGroups = [
     id: 'vehicles',
     label: 'Vehicles',
     description: 'Repair, alarms, sirens, and storage locks.',
-    operations: ['getVehiclesDetailed', 'vehicleRepair', 'vehicleSetAlarm', 'vehicleSetSiren', 'vehicleSetTrunkLocked'],
+    operations: ['getVehiclesDetailed'],
   },
   {
     id: 'events',
     label: 'Events',
     description: 'Swarm, infrastructure, and scripted sequences.',
-    operations: ['triggerSwarmEvent', 'runEventSequence', 'getInfrastructureSnapshot', 'addLamppost', 'removeLamppost'],
+    operations: ['triggerSwarmEvent', 'runEventSequence', 'getInfrastructureSnapshot'],
   },
   {
     id: 'moderation',

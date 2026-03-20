@@ -75,6 +75,7 @@ export default function Chat() {
   const [bridgeLoading, setBridgeLoading] = useState(true)
   
   const chatEndRef = useRef<HTMLDivElement>(null)
+  const sendingRef = useRef(false)
   const { toast } = useToast()
   const socket = useSocket()
 
@@ -183,8 +184,8 @@ export default function Chat() {
   }
 
   const sendMessage = async () => {
-    if (!message.trim()) return
-
+    if (!message.trim() || sendingRef.current) return
+    sendingRef.current = true
     setSending(true)
     try {
       let result
@@ -205,7 +206,7 @@ export default function Chat() {
             break
             case 'general':
             result = await panelBridgeApi.sendToGeneralChat(message, authorName)
-            channelLabel = `${authorName}`
+            channelLabel = authorName.trim() || 'Server'
             break
         }
       } else {
@@ -253,6 +254,7 @@ export default function Chat() {
         variant: 'destructive',
       })
     } finally {
+      sendingRef.current = false
       setSending(false)
     }
   }

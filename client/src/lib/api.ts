@@ -1148,7 +1148,7 @@ export const panelBridgeApi = {
     apiPost('/panel-bridge/chat/admin', { message }),
   
   sendToGeneralChat: (message: string, author?: string) =>
-    apiPost('/panel-bridge/chat/general', { message, author: author ?? 'Server' }),
+    apiPost('/panel-bridge/chat/general', { message, author: author?.trim() || 'Server' }),
 
   // Sandbox options (v1.1.0)
   getSandboxOptions: () => apiGet('/panel-bridge/sandbox'),
