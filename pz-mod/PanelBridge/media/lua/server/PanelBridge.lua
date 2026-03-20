@@ -81,7 +81,7 @@ local json
 local PanelBridge = {
     VERSION = "1.5.0",
     PROTOCOL_VERSION = "queue-v1",
-    CHECK_INTERVAL = 1000, -- milliseconds
+    CHECK_INTERVAL = 250, -- milliseconds (fast command polling)
     lastCheck = 0,
     lastStatusUpdate = 0,
     STATUS_INTERVAL = 3000, -- status update every 3 seconds (faster for detection)

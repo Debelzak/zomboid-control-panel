@@ -48,7 +48,7 @@ class PanelBridge extends EventEmitter {
     this.watcherRetries = 0;
     this.maxWatcherRetries = 3;
     this.config = {
-      pollIntervalMs: 300,          // Faster polling for results (300ms)
+      pollIntervalMs: 150,          // Fast polling for results (150ms)
       statusCheckMs: 1000,          // Check status every 1 second
       commandTimeoutMs: 15000,
       statusStaleMs: 45000,         // Status considered stale after 45 seconds (Lua updates every 5s)
