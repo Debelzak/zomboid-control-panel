@@ -2576,26 +2576,30 @@ end
 -- CHAT SYSTEM HANDLERS
 -- ============================================
 
--- Helper: get B42 ChatManager or B41 ChatServer
+-- Helper: get chat system components
+-- ChatServer (zombie.network.chat.ChatServer) = SERVER-SIDE, works on both B41 and B42 dedicated servers
+-- ChatManager (zombie.chat.ChatManager) = CLIENT-SIDE, only works on client (not on dedicated server)
 local function getChatSystem()
-    -- B42: ChatManager replaces ChatServer
-    if type(ChatManager) == "table" or type(ChatManager) == "userdata" then
-        local ok, inst = pcall(function() return ChatManager.getInstance() end)
-        if ok and inst then
-            return { manager = inst, isB42 = true }
-        end
-    end
-    -- B41: ChatServer
+    local result = {}
+    -- ChatServer: server-side component — available on dedicated servers in both B41 and B42
     if type(ChatServer) == "table" or type(ChatServer) == "userdata" then
         local ok, inst = pcall(function() return ChatServer.getInstance() end)
         if ok and inst then
-            return { server = inst, isB42 = false }
+            result.server = inst
         end
     end
+    -- ChatManager: client-side component — B42 only, may NOT work on dedicated server
+    if type(ChatManager) == "table" or type(ChatManager) == "userdata" then
+        local ok, inst = pcall(function() return ChatManager.getInstance() end)
+        if ok and inst then
+            result.manager = inst
+        end
+    end
+    if result.server or result.manager then return result end
     return nil
 end
 
--- Helper: resolve ChatType enum value safely (B42)
+-- Helper: resolve ChatType enum value safely
 local function getChatType(typeName)
     if type(ChatType) ~= "table" and type(ChatType) ~= "userdata" then
         return nil
@@ -2616,30 +2620,8 @@ handlers.sendToServerChat = function(args)
 
     local chat = getChatSystem()
 
-    -- B42: Use ChatManager
-    if chat and chat.isB42 then
-        -- showServerChatMessage is the simplest server-to-all method
-        local ok, err = pcall(function()
-            chat.manager:showServerChatMessage(message)
-        end)
-        if ok then
-            return true, { message = "Message sent to server chat", isAlert = isAlert, method = "ChatManager.showServerChatMessage" }
-        end
-
-        -- Alternative: sendMessageToChat with ChatType.server
-        local serverType = getChatType("server")
-        if serverType then
-            ok, err = pcall(function()
-                chat.manager:sendMessageToChat(serverType, message)
-            end)
-            if ok then
-                return true, { message = "Message sent to server chat", isAlert = isAlert, method = "ChatManager.sendMessageToChat" }
-            end
-        end
-    end
-
-    -- B41: Try ChatServer
-    if chat and not chat.isB42 and chat.server then
+    -- ChatServer: server-side, works on both B41 and B42 dedicated servers
+    if chat and chat.server then
         local ok, err = pcall(function()
             if isAlert then
                 chat.server:sendServerAlertMessageToServerChat(message)
@@ -2649,6 +2631,16 @@ handlers.sendToServerChat = function(args)
         end)
         if ok then
             return true, { message = "Message sent to server chat", isAlert = isAlert, method = "ChatServer" }
+        end
+    end
+
+    -- ChatManager fallback (client-side, unlikely to work on dedicated server)
+    if chat and chat.manager then
+        local ok, err = pcall(function()
+            chat.manager:showServerChatMessage(message)
+        end)
+        if ok then
+            return true, { message = "Message sent to server chat", isAlert = isAlert, method = "ChatManager" }
         end
     end
 
@@ -2673,26 +2665,26 @@ handlers.sendToAdminChat = function(args)
 
     local chat = getChatSystem()
 
-    -- B42: Use ChatManager with ChatType.admin
-    if chat and chat.isB42 then
+    -- ChatServer: server-side, works on both B41 and B42 dedicated servers
+    if chat and chat.server then
+        local ok, err = pcall(function()
+            chat.server:sendMessageToAdminChat(message)
+        end)
+        if ok then
+            return true, { message = "Message sent to admin chat", method = "ChatServer" }
+        end
+    end
+
+    -- ChatManager fallback (client-side, unlikely to work on dedicated server)
+    if chat and chat.manager then
         local adminType = getChatType("admin")
         if adminType then
             local ok, err = pcall(function()
                 chat.manager:sendMessageToChat(adminType, message)
             end)
             if ok then
-                return true, { message = "Message sent to admin chat", method = "ChatManager.sendMessageToChat" }
+                return true, { message = "Message sent to admin chat", method = "ChatManager" }
             end
-        end
-    end
-
-    -- B41: Try ChatServer
-    if chat and not chat.isB42 and chat.server then
-        local ok, err = pcall(function()
-            chat.server:sendMessageToAdminChat(message)
-        end)
-        if ok then
-            return true, { message = "Message sent to admin chat", method = "ChatServer" }
         end
     end
 
@@ -2718,34 +2710,33 @@ handlers.sendToGeneralChat = function(args)
 
     local chat = getChatSystem()
 
-    -- B42: Use ChatManager with author + ChatType.general
-    if chat and chat.isB42 then
+    -- ChatServer: server-side, works on both B41 and B42 dedicated servers
+    if chat and chat.server then
+        local ok, err = pcall(function()
+            chat.server:sendMessageFromDiscordToGeneralChat(author, message)
+        end)
+        if ok then
+            return true, { message = "Message sent to general chat", author = author, method = "ChatServer" }
+        end
+    end
+
+    -- ChatManager fallback (client-side, unlikely to work on dedicated server)
+    if chat and chat.manager then
         local generalType = getChatType("general")
         if generalType then
             local ok, err = pcall(function()
                 chat.manager:sendMessageToChat(author, generalType, message)
             end)
             if ok then
-                return true, { message = "Message sent to general chat", author = author, method = "ChatManager.sendMessageToChat" }
+                return true, { message = "Message sent to general chat", author = author, method = "ChatManager" }
             end
         end
 
-        -- Alternative: addMessage
         local ok2, err2 = pcall(function()
             chat.manager:addMessage(author, message)
         end)
         if ok2 then
             return true, { message = "Message sent to general chat", author = author, method = "ChatManager.addMessage" }
-        end
-    end
-
-    -- B41: Try ChatServer
-    if chat and not chat.isB42 and chat.server then
-        local ok, err = pcall(function()
-            chat.server:sendMessageFromDiscordToGeneralChat(author, message)
-        end)
-        if ok then
-            return true, { message = "Message sent to general chat", author = author, method = "ChatServer" }
         end
     end
 
@@ -2770,9 +2761,8 @@ handlers.getChatInfo = function(args)
             "generalChat - General chat with custom author name"
         },
         note = "Use sendToServerChat, sendToAdminChat, or sendToGeneralChat handlers",
-        chatSystem = chat and (chat.isB42 and "ChatManager (B42)" or "ChatServer (B41)") or "none",
-        chatManagerAvailable = chat ~= nil and chat.isB42 == true,
-        chatServerAvailable = chat ~= nil and chat.isB42 == false
+        chatServerAvailable = chat ~= nil and chat.server ~= nil,
+        chatManagerAvailable = chat ~= nil and chat.manager ~= nil
     }
 
     return true, info
