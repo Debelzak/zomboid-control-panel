@@ -2,6 +2,7 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
+import crypto from 'crypto';
 import { createLogger } from '../utils/logger.js';
 const log = createLogger('API:Mods');
 import { getTrackedMods, addTrackedMod, removeTrackedMod, clearModUpdates, getSetting, getActiveServer, getModPresets, createModPreset, updateModPreset, deleteModPreset } from '../database/init.js';
@@ -2058,6 +2059,353 @@ router.post('/add-mod-advanced', async (req, res) => {
   } catch (error) {
     log.error(`Failed to add mod advanced: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
+// ─── Mod Conflict Scanner ───────────────────────────────────────────────────
+// Scans all configured workshop mods for file-level conflicts (multiple mods
+// overriding the same game file). Similar concept to LOOT for Skyrim.
+
+// Prevent concurrent scans from hammering disk I/O
+let conflictScanInFlight = false;
+
+// Max file size to hash (50 MB) — larger files are treated as different
+const HASH_MAX_BYTES = 50 * 1024 * 1024;
+
+// Recursively collect all files under a directory, returning relative paths.
+// Guarded with depth and file-count limits to prevent runaway traversal.
+function walkDir(dir, prefix = '', _depth = 0) {
+  const MAX_DEPTH = 20;
+  const MAX_FILES = 50_000;
+  const results = [];
+  if (_depth > MAX_DEPTH) return results;
+  let entries;
+  try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return results; }
+  for (const entry of entries) {
+    if (results.length >= MAX_FILES) break;
+    const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) {
+      // Skip symlinked directories to stay within the expected tree
+      const fullPath = path.join(dir, entry.name);
+      try {
+        const real = fs.realpathSync(fullPath);
+        if (!real.startsWith(fs.realpathSync(dir))) continue;
+      } catch { continue; }
+      const sub = walkDir(fullPath, rel, _depth + 1);
+      results.push(...sub);
+    } else {
+      results.push(rel);
+    }
+  }
+  return results;
+}
+
+// Classify a file path into a conflict severity category
+function classifyFile(relPath) {
+  const lower = relPath.toLowerCase();
+  // Lua script overrides are the most impactful
+  if (lower.startsWith('lua/')) {
+    if (lower.startsWith('lua/server/')) return 'lua-server';
+    if (lower.startsWith('lua/client/')) return 'lua-client';
+    if (lower.startsWith('lua/shared/')) return 'lua-shared';
+    return 'lua-other';
+  }
+  if (lower.startsWith('scripts/')) return 'scripts';       // item/recipe/vehicle definitions
+  if (lower.startsWith('maps/')) return 'maps';
+  if (lower.startsWith('texturepacks/') || lower.startsWith('textures/') || lower.endsWith('.pack')) return 'textures';
+  if (lower.startsWith('ui/')) return 'ui-assets';
+  if (lower.startsWith('sound/') || lower.startsWith('music/')) return 'audio';
+  if (lower.startsWith('models/') || lower.endsWith('.fbx') || lower.endsWith('.x')) return 'models';
+  if (lower.endsWith('.png') || lower.endsWith('.jpg')) return 'textures';
+  if (lower.endsWith('.xml') || lower.endsWith('.txt')) return 'data';
+  return 'other';
+}
+
+const SEVERITY_MAP = {
+  'lua-server': 'high',
+  'lua-shared': 'high',
+  'lua-client': 'high',
+  'lua-other': 'high',
+  'scripts': 'high',
+  'maps': 'medium',
+  'textures': 'low',
+  'ui-assets': 'low',
+  'models': 'low',
+  'audio': 'low',
+  'data': 'medium',
+  'other': 'low'
+};
+
+const CATEGORY_LABELS = {
+  'lua-server': 'Server Lua Scripts',
+  'lua-shared': 'Shared Lua Scripts',
+  'lua-client': 'Client Lua Scripts',
+  'lua-other': 'Lua Scripts',
+  'scripts': 'Item/Recipe/Vehicle Scripts',
+  'maps': 'Map Data',
+  'textures': 'Texture Packs',
+  'ui-assets': 'UI Assets',
+  'models': '3D Models',
+  'audio': 'Audio',
+  'data': 'Data Files',
+  'other': 'Other Files'
+};
+
+router.get('/conflicts', async (req, res) => {
+  if (conflictScanInFlight) {
+    return res.status(429).json({ error: 'A conflict scan is already running. Please wait.' });
+  }
+  conflictScanInFlight = true;
+  const scanStart = Date.now();
+  try {
+    const serverPath = await getServerPath();
+    if (!serverPath) {
+      return res.status(400).json({ error: 'Server install path not configured' });
+    }
+
+    // Read configured workshop items from INI
+    const serverConfigPath = await getServerConfigPath();
+    const serverName = await getServerName();
+    const iniPath = getSanitizedIniPath(serverConfigPath, serverName);
+
+    let workshopIds = [];
+    let modIdsFromIni = [];
+    if (iniPath && fs.existsSync(iniPath)) {
+      const iniContent = fs.readFileSync(iniPath, 'utf-8');
+      const wsMatch = iniContent.match(/^WorkshopItems=(.*)$/m);
+      const modsMatch = iniContent.match(/^Mods=(.*)$/m);
+      if (wsMatch && wsMatch[1].trim()) {
+        workshopIds = wsMatch[1].trim().split(';').map(s => s.trim()).filter(Boolean);
+      }
+      if (modsMatch && modsMatch[1].trim()) {
+        modIdsFromIni = modsMatch[1].trim().split(';').map(s => s.trim()).filter(Boolean);
+      }
+    }
+
+    if (workshopIds.length === 0) {
+      return res.json({
+        totalConflicts: 0,
+        identicalSkipped: 0,
+        pairs: [],
+        totalPairs: 0,
+        modsScanned: 0,
+        missingDeps: [],
+        modLoadOrder: modIdsFromIni,
+        warnings: [],
+        scanDurationMs: Date.now() - scanStart
+      });
+    }
+
+    // For each workshop item, scan its file tree under media/
+    // fileIndex: { relativePath -> [{ workshopId, modId, modName }] }
+    const fileIndex = {};
+    const modInfoMap = {};  // workshopId -> [{ modId, modName, requires }]
+    let modsScanned = 0;
+    const warnings = [];
+
+    for (const wsId of workshopIds) {
+      // Validate workshopId is numeric and reasonable length (Steam IDs are ~10 digits)
+      if (!/^\d{1,15}$/.test(wsId)) {
+        warnings.push(`Skipped invalid workshop ID: ${wsId.slice(0, 20)}`);
+        continue;
+      }
+
+      const possiblePaths = getWorkshopPaths(wsId, serverPath);
+      let workshopPath = null;
+      for (const p of possiblePaths) {
+        if (fs.existsSync(p)) { workshopPath = p; break; }
+      }
+      if (!workshopPath) {
+        warnings.push(`Workshop ${wsId}: not found on disk (not downloaded?)`);
+        continue;
+      }
+
+      // Get mod details (IDs, names, dependencies)
+      const modDetails = getModDetailsFromWorkshop(wsId, serverPath);
+      modInfoMap[wsId] = modDetails;
+
+      // Scan each mod's media/ folder
+      const modsFolder = path.join(workshopPath, 'mods');
+      const searchBase = fs.existsSync(modsFolder) ? modsFolder : workshopPath;
+
+      let modEntries;
+      try { modEntries = fs.readdirSync(searchBase, { withFileTypes: true }); } catch { continue; }
+
+      for (const modDir of modEntries) {
+        if (!modDir.isDirectory()) continue;
+
+        const mediaPath = path.join(searchBase, modDir.name, 'media');
+        if (!fs.existsSync(mediaPath)) continue;
+
+        // Find which modId this folder corresponds to
+        const matchingMod = modDetails.find(m => m.id === modDir.name || m.name === modDir.name);
+        const modId = matchingMod?.id || modDir.name;
+        const modName = matchingMod?.name || modDir.name;
+        modsScanned++;
+
+        const files = walkDir(mediaPath);
+        for (const relFile of files) {
+          const normalizedPath = relFile.replace(/\\/g, '/').toLowerCase();
+          if (!fileIndex[normalizedPath]) {
+            fileIndex[normalizedPath] = [];
+          }
+          fileIndex[normalizedPath].push({
+            workshopId: wsId,
+            modId,
+            modName,
+            absPath: path.join(mediaPath, relFile)
+          });
+        }
+      }
+    }
+
+    // Find files that appear in 2+ mods (= conflicts)
+    // Hash file contents to distinguish real conflicts (different content) from
+    // identical copies (shared libraries, common assets).
+    function hashFile(filePath) {
+      try {
+        const stat = fs.statSync(filePath);
+        if (stat.size > HASH_MAX_BYTES) return 'too-large';
+        const buf = fs.readFileSync(filePath);
+        return crypto.createHash('md5').update(buf).digest('hex');
+      } catch { return null; }
+    }
+
+    const conflicts = [];
+    let identicalSkipped = 0;
+    for (const [filePath, mods] of Object.entries(fileIndex)) {
+      if (mods.length < 2) continue;
+
+      // Deduplicate by modId (same workshop item with multiple folders shouldn't count)
+      const uniqueModIds = [...new Set(mods.map(m => m.modId))];
+      if (uniqueModIds.length < 2) continue;
+
+      // Hash each mod's copy of this file to check if content actually differs
+      const hashes = mods.map(m => ({ ...m, hash: hashFile(m.absPath) }));
+      const validHashes = hashes.filter(h => h.hash != null);
+
+      // If none of the files could be read, skip — don't treat as identical
+      if (validHashes.length === 0) continue;
+
+      const uniqueHashes = new Set(validHashes.map(h => h.hash));
+
+      // If all readable copies are byte-identical (excluding too-large files),
+      // it's not a real conflict
+      if (uniqueHashes.size <= 1 && !uniqueHashes.has('too-large')) {
+        identicalSkipped++;
+        continue;
+      }
+
+      const category = classifyFile(filePath);
+      conflicts.push({
+        file: filePath,
+        category,
+        categoryLabel: CATEGORY_LABELS[category] || category,
+        severity: SEVERITY_MAP[category] || 'low',
+        identical: false,
+        mods: mods.map(m => ({
+          workshopId: m.workshopId,
+          modId: m.modId,
+          modName: m.modName
+        }))
+      });
+    }
+
+    // Sort: high severity first, then by file path
+    const severityOrder = { high: 0, medium: 1, low: 2 };
+    conflicts.sort((a, b) => 
+      (severityOrder[a.severity] ?? 3) - (severityOrder[b.severity] ?? 3) ||
+      a.file.localeCompare(b.file)
+    );
+
+    // Group by mod pair for summary
+    const pairConflicts = {};
+    for (const conflict of conflicts) {
+      const modIds = conflict.mods.map(m => m.modId).sort();
+      for (let i = 0; i < modIds.length; i++) {
+        for (let j = i + 1; j < modIds.length; j++) {
+          const pairKey = `${modIds[i]}|${modIds[j]}`;
+          if (!pairConflicts[pairKey]) {
+            pairConflicts[pairKey] = {
+              modA: conflict.mods.find(m => m.modId === modIds[i]),
+              modB: conflict.mods.find(m => m.modId === modIds[j]),
+              files: [],
+              highCount: 0,
+              mediumCount: 0,
+              lowCount: 0
+            };
+          }
+          pairConflicts[pairKey].files.push({
+            file: conflict.file,
+            category: conflict.category,
+            categoryLabel: conflict.categoryLabel,
+            severity: conflict.severity
+          });
+          pairConflicts[pairKey][`${conflict.severity}Count`]++;
+        }
+      }
+    }
+
+    // Convert pairs to sorted array
+    const pairs = Object.values(pairConflicts).sort((a, b) => 
+      (b.highCount - a.highCount) || (b.mediumCount - a.mediumCount) || (b.files.length - a.files.length)
+    );
+
+    // Dependency info
+    const dependencies = {};
+    for (const [wsId, details] of Object.entries(modInfoMap)) {
+      for (const mod of details) {
+        if (mod.require?.length > 0) {
+          dependencies[mod.id] = {
+            modId: mod.id,
+            modName: mod.name,
+            workshopId: wsId,
+            requires: mod.require
+          };
+        }
+      }
+    }
+
+    // Check for missing dependencies
+    // Built-in PZ mod IDs that are always available
+    const builtInMods = new Set(['Base', 'base', 'Farming', 'Radio', 'Camping', 'Trapping', 'Fishing', 'Foraging', 'Erosion', 'Hydrocraft']);
+    const allModIds = new Set(builtInMods);
+    for (const details of Object.values(modInfoMap)) {
+      for (const mod of details) allModIds.add(mod.id);
+    }
+    // Also include mod IDs from INI
+    for (const id of modIdsFromIni) allModIds.add(id);
+
+    const missingDeps = [];
+    for (const [modId, depInfo] of Object.entries(dependencies)) {
+      for (const req of depInfo.requires) {
+        if (!allModIds.has(req)) {
+          missingDeps.push({
+            modId,
+            modName: depInfo.modName,
+            workshopId: depInfo.workshopId,
+            missingDep: req
+          });
+        }
+      }
+    }
+
+    res.json({
+      totalConflicts: conflicts.length,
+      identicalSkipped,
+      pairs,
+      totalPairs: pairs.length,
+      modsScanned,
+      missingDeps,
+      modLoadOrder: modIdsFromIni,
+      warnings,
+      scanDurationMs: Date.now() - scanStart
+    });
+  } catch (error) {
+    log.error(`Failed to scan mod conflicts: ${error.message}`);
+    res.status(500).json({ error: sanitizeError(error.message) });
+  } finally {
+    conflictScanInFlight = false;
   }
 });
 

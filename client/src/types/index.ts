@@ -128,6 +128,48 @@ export type AccessLevel = 'none' | 'observer' | 'gm' | 'overseer' | 'moderator' 
 
 export const ACCESS_LEVELS: AccessLevel[] = ['none', 'observer', 'gm', 'overseer', 'moderator', 'admin']
 
+// Mod Conflict Scanner Types
+export interface ConflictScanResult {
+  totalConflicts: number
+  identicalSkipped: number
+  pairs: ConflictPair[]
+  totalPairs: number
+  modsScanned: number
+  missingDeps: MissingDependency[]
+  modLoadOrder: string[]
+  warnings?: string[]
+  scanDurationMs?: number
+}
+
+export interface ConflictPair {
+  modA: ConflictModRef
+  modB: ConflictModRef
+  files: ConflictFile[]
+  highCount: number
+  mediumCount: number
+  lowCount: number
+}
+
+export interface ConflictModRef {
+  workshopId: string
+  modId: string
+  modName: string
+}
+
+export interface ConflictFile {
+  file: string
+  category: string
+  categoryLabel?: string
+  severity: 'high' | 'medium' | 'low'
+}
+
+export interface MissingDependency {
+  modId: string
+  modName: string
+  workshopId: string
+  missingDep: string
+}
+
 // PZ Command Categories
 export interface CommandCategory {
   name: string

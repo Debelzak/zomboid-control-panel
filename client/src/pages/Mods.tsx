@@ -27,8 +27,12 @@ import {
   FolderOpen,
   Loader2,
   GripVertical,
-  MoreVertical
+  MoreVertical,
+  Shield,
+  ShieldAlert,
+  FileWarning,
 } from 'lucide-react'
+import { ConflictScanResult } from '@/types'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { PageHeader } from '@/components/PageHeader'
 import { Button } from '@/components/ui/button'
@@ -64,6 +68,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useToast } from '@/components/ui/use-toast'
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 import { modsApi } from '@/lib/api'
 import { EmptyState } from '@/components/EmptyState'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -124,6 +129,15 @@ interface IniConfig {
   error?: string
 }
 
+// ── Conflict scanner constants (hoisted to avoid re-creation in render) ──
+const CONFLICT_FILE_LIMIT = 50
+const SCAN_PHASE_MESSAGES = [
+  'Reading workshop folders...',
+  'Walking mod file trees...',
+  'Hashing file contents...',
+  'Comparing across mods...'
+] as const
+
 export default function Mods() {
   const [mods, setMods] = useState<TrackedMod[]>([])
   const [status, setStatus] = useState<ModStatus | null>(null)
@@ -183,6 +197,30 @@ export default function Mods() {
   const [restartWarningMinutes, setRestartWarningMinutes] = useState(5)
   const [delayIfPlayersOnline, setDelayIfPlayersOnline] = useState(false)
   const [maxDelayMinutes, setMaxDelayMinutes] = useState(30)
+  
+  // Conflict scanner
+  const [conflicts, setConflicts] = useState<ConflictScanResult | null>(null)
+  const [conflictsLoading, setConflictsLoading] = useState(false)
+  const [conflictsError, setConflictsError] = useState<string | null>(null)
+  const [scanPhase, setScanPhase] = useState(0)
+  const [lastScanTime, setLastScanTime] = useState<Date | null>(null)
+  const [scanIniSnapshot, setScanIniSnapshot] = useState<string | null>(null)
+  const [openPairs, setOpenPairs] = useState<string[]>([])
+  const conflictAbortRef = useRef<AbortController | null>(null)
+
+  // Cycle through scan phases while loading
+  useEffect(() => {
+    if (!conflictsLoading) { setScanPhase(0); return }
+    const id = setInterval(() => setScanPhase(p => (p + 1) % SCAN_PHASE_MESSAGES.length), 2200)
+    return () => clearInterval(id)
+  }, [conflictsLoading])
+
+  // Detect stale conflict results when INI config changes
+  const conflictsStale = useMemo(() => {
+    if (!conflicts || !scanIniSnapshot) return false
+    const currentSnapshot = JSON.stringify(iniConfig?.workshopIds?.slice().sort() || [])
+    return currentSnapshot !== scanIniSnapshot
+  }, [conflicts, scanIniSnapshot, iniConfig?.workshopIds])
   
   // Track if auto-discover is pending (moved here for cleanup)
   const autoDiscoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -278,6 +316,8 @@ export default function Mods() {
       if (autoDiscoverTimeoutRef.current) {
         clearTimeout(autoDiscoverTimeoutRef.current)
       }
+      // Cancel any in-flight conflict scan
+      conflictAbortRef.current?.abort()
     }
   }, [])
 
@@ -1137,6 +1177,37 @@ export default function Mods() {
   const modsWithUpdates = useMemo(() => mods.filter(m => m.update_available), [mods])
   const configuredWorkshopIds = useMemo(() => new Set(iniConfig?.workshopIds || []), [iniConfig?.workshopIds])
 
+  const scanConflicts = useCallback(async () => {
+    // Cancel any in-flight scan
+    conflictAbortRef.current?.abort()
+    const controller = new AbortController()
+    conflictAbortRef.current = controller
+
+    setConflictsLoading(true)
+    setConflictsError(null)
+    try {
+      const result = await modsApi.getConflicts({ signal: controller.signal })
+      if (controller.signal.aborted) return
+      setConflicts(result)
+      setLastScanTime(new Date())
+      setScanIniSnapshot(JSON.stringify(iniConfig?.workshopIds?.slice().sort() || []))
+      setOpenPairs([])
+    } catch (error) {
+      if (controller.signal.aborted) return
+      const msg = error instanceof Error ? error.message : 'Failed to scan for conflicts'
+      setConflictsError(msg)
+      toast({
+        title: 'Scan Failed',
+        description: msg,
+        variant: 'destructive',
+      })
+    } finally {
+      if (!controller.signal.aborted) {
+        setConflictsLoading(false)
+      }
+    }
+  }, [toast, iniConfig?.workshopIds])
+
   return (
     <TooltipProvider>
       <div className="space-y-6 page-transition">
@@ -1276,7 +1347,7 @@ export default function Mods() {
 
         <Tabs defaultValue="mods" className="space-y-4">
           <div className="flex items-center justify-between flex-wrap gap-2">
-            <TabsList className="grid w-full grid-cols-2 sm:w-auto">
+            <TabsList className="grid w-full grid-cols-3 sm:w-auto">
               <TabsTrigger value="mods" className="w-full">
                 <Package className="w-4 h-4 mr-2" />
                 Tracked Mods
@@ -1284,6 +1355,10 @@ export default function Mods() {
               <TabsTrigger value="config" className="w-full">
                 <Settings2 className="w-4 h-4 mr-2" />
                 Server Config
+              </TabsTrigger>
+              <TabsTrigger value="conflicts" className="w-full" onClick={() => { if (!conflicts) scanConflicts() }}>
+                <Shield className="w-4 h-4 mr-2" />
+                Conflicts
               </TabsTrigger>
             </TabsList>
 
@@ -1555,106 +1630,104 @@ export default function Mods() {
                         
                         {/* Mod IDs selection */}
                         {discoveredMod.modIds.length > 0 ? (
-                          <div className="space-y-2">
-                            <div className="rounded-md border border-border/70 bg-background/70 p-2.5">
-                              <div className="flex items-center justify-between gap-2">
-                                <Label className="text-xs font-medium">
-                                  {discoveredMod.hasMultipleModIds
-                                    ? `Mod IDs (${selectedModIds.size} of ${discoveredMod.modIds.length} selected)`
-                                    : 'Mod ID'}
-                                </Label>
-                                {discoveredMod.hasMultipleModIds && (
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    className="h-7 text-xs px-2"
-                                    onClick={() => setShowAdvancedIdSelection(!showAdvancedIdSelection)}
-                                  >
-                                    {showAdvancedIdSelection ? 'Hide Selection' : 'Review IDs'}
-                                  </Button>
-                                )}
-                              </div>
+                          <div className="space-y-2.5">
+                            <div className="flex items-center justify-between gap-2">
+                              <Label className="text-xs font-medium">
+                                {discoveredMod.hasMultipleModIds
+                                  ? `Mod IDs (${selectedModIds.size} of ${discoveredMod.modIds.length} selected)`
+                                  : 'Mod ID'}
+                              </Label>
+                              {discoveredMod.hasMultipleModIds && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 text-xs px-2.5"
+                                  onClick={() => setShowAdvancedIdSelection(!showAdvancedIdSelection)}
+                                >
+                                  {showAdvancedIdSelection ? 'Hide' : 'Review IDs'}
+                                </Button>
+                              )}
+                            </div>
 
-                              {discoveredMod.hasMultipleModIds && !showAdvancedIdSelection ? (
-                                <p className="text-xs text-muted-foreground mt-1.5">
-                                  New IDs are pre-selected automatically. Open Review IDs to manually adjust selection.
-                                </p>
-                              ) : (
-                                <>
-                                  {discoveredMod.hasMultipleModIds && (
-                                    <div className="mt-2 mb-2 flex flex-wrap gap-1">
-                                      <Button
-                                        size="sm"
-                                        variant="ghost"
-                                        className="h-7 text-xs px-2"
-                                        onClick={() => {
-                                          const newIds = discoveredMod.modIds.filter(
-                                            id => !discoveredMod.alreadyConfigured?.includes(id)
-                                          )
-                                          setSelectedModIds(new Set(newIds))
-                                        }}
-                                      >
-                                        Select New
-                                      </Button>
-                                      <Button
-                                        size="sm"
-                                        variant="ghost"
-                                        className="h-7 text-xs px-2"
-                                        onClick={() => {
-                                          if (selectedModIds.size === discoveredMod.modIds.length) {
-                                            setSelectedModIds(new Set())
-                                          } else {
-                                            setSelectedModIds(new Set(discoveredMod.modIds))
+                            {discoveredMod.hasMultipleModIds && !showAdvancedIdSelection ? (
+                              <p className="text-xs text-muted-foreground">
+                                New IDs are pre-selected automatically. Open Review IDs to manually adjust selection.
+                              </p>
+                            ) : (
+                              <>
+                                {discoveredMod.hasMultipleModIds && (
+                                  <div className="flex flex-wrap gap-1.5">
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-7 text-xs px-2.5"
+                                      onClick={() => {
+                                        const newIds = discoveredMod.modIds.filter(
+                                          id => !discoveredMod.alreadyConfigured?.includes(id)
+                                        )
+                                        setSelectedModIds(new Set(newIds))
+                                      }}
+                                    >
+                                      Select New
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-7 text-xs px-2.5"
+                                      onClick={() => {
+                                        if (selectedModIds.size === discoveredMod.modIds.length) {
+                                          setSelectedModIds(new Set())
+                                        } else {
+                                          setSelectedModIds(new Set(discoveredMod.modIds))
+                                        }
+                                      }}
+                                    >
+                                      {selectedModIds.size === discoveredMod.modIds.length ? 'None' : 'All'}
+                                    </Button>
+                                  </div>
+                                )}
+                                <div className="space-y-1 max-h-48 overflow-y-auto rounded-md border border-border/50 bg-background/50 p-1.5">
+                                  {discoveredMod.modIds.map((modId) => {
+                                    const isConfigured = discoveredMod.alreadyConfigured?.includes(modId)
+                                    return (
+                                      <div
+                                        key={modId}
+                                        role="button"
+                                        tabIndex={0}
+                                        aria-pressed={selectedModIds.has(modId)}
+                                        className={`flex items-center gap-2 px-2.5 py-1.5 rounded cursor-pointer transition-colors ${
+                                          selectedModIds.has(modId)
+                                            ? 'bg-primary/8 border-l-2 border-l-primary'
+                                            : isConfigured
+                                              ? 'bg-muted/30 opacity-70'
+                                              : 'hover:bg-muted/40'
+                                        }`}
+                                        onClick={() => toggleModIdSelection(modId)}
+                                        onKeyDown={(event) => {
+                                          if (event.key === 'Enter' || event.key === ' ') {
+                                            event.preventDefault()
+                                            toggleModIdSelection(modId)
                                           }
                                         }}
                                       >
-                                        {selectedModIds.size === discoveredMod.modIds.length ? 'None' : 'All'}
-                                      </Button>
-                                    </div>
-                                  )}
-                                  <div className="space-y-1 max-h-40 overflow-y-auto rounded border bg-background p-1">
-                                    {discoveredMod.modIds.map((modId) => {
-                                      const isConfigured = discoveredMod.alreadyConfigured?.includes(modId)
-                                      return (
-                                        <div
-                                          key={modId}
-                                          role="button"
-                                          tabIndex={0}
-                                          aria-pressed={selectedModIds.has(modId)}
-                                          className={`flex items-center gap-2 p-2 rounded cursor-pointer transition-colors ${
-                                            selectedModIds.has(modId)
-                                              ? 'bg-primary/10 border border-primary'
-                                              : isConfigured
-                                                ? 'bg-muted/50 border border-transparent'
-                                                : 'hover:bg-muted/50 border border-transparent'
-                                          }`}
-                                          onClick={() => toggleModIdSelection(modId)}
-                                          onKeyDown={(event) => {
-                                            if (event.key === 'Enter' || event.key === ' ') {
-                                              event.preventDefault()
-                                              toggleModIdSelection(modId)
-                                            }
-                                          }}
-                                        >
-                                          <Checkbox
-                                            checked={selectedModIds.has(modId)}
-                                            onCheckedChange={() => toggleModIdSelection(modId)}
-                                          />
-                                          <code className="text-xs font-mono flex-1 truncate" title={modId}>
-                                            {modId}
-                                          </code>
-                                          {isConfigured && (
-                                            <Badge variant="outline" className="text-xs h-5 shrink-0 text-muted-foreground">
-                                              Exists
-                                            </Badge>
-                                          )}
-                                        </div>
-                                      )
-                                    })}
-                                  </div>
-                                </>
-                              )}
-                            </div>
+                                        <Checkbox
+                                          checked={selectedModIds.has(modId)}
+                                          onCheckedChange={() => toggleModIdSelection(modId)}
+                                        />
+                                        <code className="text-xs font-mono flex-1 truncate" title={modId}>
+                                          {modId}
+                                        </code>
+                                        {isConfigured && (
+                                          <Badge variant="outline" className="text-xs h-5 shrink-0 text-muted-foreground">
+                                            Exists
+                                          </Badge>
+                                        )}
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              </>
+                            )}
                           </div>
                         ) : (
                           <div className="flex items-center gap-2 rounded-lg border border-warning/40 bg-warning/10 p-2.5 text-xs">
@@ -2494,6 +2567,330 @@ export default function Mods() {
                     <p>Use warning and delay settings to avoid hard interruptions during high-pop sessions.</p>
                   </div>
                 </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* ─── Conflicts Tab ─── */}
+          <TabsContent value="conflicts" className="space-y-4">
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Shield className="w-4 h-4" />
+                      Mod Conflict Scanner
+                    </CardTitle>
+                    <CardDescription className="mt-1">
+                      Scans installed mods for overlapping game files
+                      {lastScanTime && !conflictsLoading && (
+                        <span className="ml-2 opacity-50">
+                          · last scan {lastScanTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          {conflicts?.scanDurationMs != null && ` (${(conflicts.scanDurationMs / 1000).toFixed(1)}s)`}
+                        </span>
+                      )}
+                    </CardDescription>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={scanConflicts}
+                    disabled={conflictsLoading}
+                  >
+                    {conflictsLoading ? (
+                      <><RefreshCw className="w-4 h-4 mr-1.5 animate-spin" /> Scanning...</>
+                    ) : (
+                      <><RefreshCw className="w-4 h-4 mr-1.5" /> {conflicts ? 'Rescan' : 'Scan'}</>
+                    )}
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {/* Loading state — first scan */}
+                {conflictsLoading && !conflicts ? (
+                  <div className="py-10">
+                    <div className="max-w-xs mx-auto text-center space-y-5">
+                      <div className="relative w-12 h-12 mx-auto">
+                        <Shield className="w-12 h-12 text-primary/30" />
+                        <Shield className="w-12 h-12 text-primary absolute inset-0 scan-pulse-icon" style={{ clipPath: 'inset(0 0 50% 0)' }} />
+                      </div>
+                      <div className="scan-progress-bar h-1 rounded-full bg-border/50" />
+                      <div className="h-10">
+                        <p className="text-sm font-medium text-foreground/80 transition-opacity duration-300">
+                          {SCAN_PHASE_MESSAGES[scanPhase]}
+                        </p>
+                        <p className="text-xs text-muted-foreground/60 mt-1">
+                          This may take a moment for large mod lists
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ) : conflictsError && !conflicts ? (
+                  /* Error state — scan failed with no prior results */
+                  <div className="flex items-center justify-center py-12 text-muted-foreground">
+                    <div className="text-center max-w-xs space-y-3">
+                      <ShieldAlert className="w-10 h-10 mx-auto text-destructive/60" />
+                      <div>
+                        <p className="font-medium text-foreground text-sm">Scan failed</p>
+                        <p className="text-xs mt-1.5 opacity-70 break-words" dir="auto">{conflictsError}</p>
+                      </div>
+                      <Button variant="outline" size="sm" onClick={scanConflicts} disabled={conflictsLoading}>
+                        <RefreshCw className="w-3.5 h-3.5 mr-1.5" /> Retry
+                      </Button>
+                    </div>
+                  </div>
+                ) : !conflicts ? (
+                  <div className="flex items-center justify-center py-12 text-muted-foreground">
+                    <div className="text-center max-w-xs">
+                      <Shield className="w-10 h-10 mx-auto mb-3 opacity-40" />
+                      <p className="font-medium text-foreground text-sm">No scan results yet</p>
+                      <p className="text-xs mt-1.5 opacity-70">
+                        Click Scan to check your installed mods for conflicting file overrides
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className={`space-y-4 stagger-in relative ${conflictsLoading ? 'pointer-events-none' : ''}`}>
+                    {/* Re-scan overlay */}
+                    {conflictsLoading && (
+                      <div className="absolute inset-0 bg-background/60 backdrop-blur-[1px] z-10 flex items-center justify-center rounded-lg transition-opacity duration-200">
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          Rescanning...
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Error banner on re-scan failure */}
+                    {conflictsError && (
+                      <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-2.5 flex items-center gap-2 text-xs text-destructive">
+                        <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                        <span className="flex-1 min-w-0 break-words" dir="auto">Rescan failed: {conflictsError}</span>
+                        <Button variant="ghost" size="sm" className="h-6 px-2 text-xs shrink-0" onClick={scanConflicts} disabled={conflictsLoading}>
+                          Retry
+                        </Button>
+                      </div>
+                    )}
+
+                    {/* Stale results banner — INI changed since last scan */}
+                    {conflictsStale && !conflictsLoading && (
+                      <div className="rounded-lg border border-warning/30 bg-warning/5 p-2.5 flex items-center gap-2 text-xs">
+                        <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-warning" />
+                        <span className="flex-1 text-muted-foreground">Mods changed since last scan — results may be outdated</span>
+                        <Button variant="outline" size="sm" className="h-6 px-2 text-xs shrink-0" onClick={scanConflicts} disabled={conflictsLoading}>
+                          Rescan
+                        </Button>
+                      </div>
+                    )}
+
+                    {/* Summary stats */}
+                    {conflicts.modsScanned > 0 ? (
+                      <div className="flex flex-wrap gap-2">
+                        <div className="flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs">
+                          <Package className="w-3.5 h-3.5 text-muted-foreground" />
+                          <span className="text-muted-foreground">Mods scanned:</span>
+                          <span className="font-medium">{conflicts.modsScanned}</span>
+                        </div>
+                        <div className={`flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs ${
+                          conflicts.totalConflicts > 0 ? 'border-warning/30 bg-warning/5' : 'border-green-500/30 bg-green-500/5'
+                        }`}>
+                          {conflicts.totalConflicts > 0 ? (
+                            <FileWarning className="w-3.5 h-3.5 text-warning" />
+                          ) : (
+                            <CheckCircle className="w-3.5 h-3.5 text-green-500" />
+                          )}
+                          <span className="text-muted-foreground">File conflicts:</span>
+                          <span className="font-medium">{conflicts.totalConflicts}</span>
+                        </div>
+                        {conflicts.totalPairs > 0 && (
+                          <div className="flex items-center gap-2 rounded-md border border-warning/30 bg-warning/5 px-3 py-1.5 text-xs">
+                            <ShieldAlert className="w-3.5 h-3.5 text-warning" />
+                            <span className="text-muted-foreground">Conflicting pairs:</span>
+                            <span className="font-medium">{conflicts.totalPairs}</span>
+                          </div>
+                        )}
+                        {(conflicts.identicalSkipped ?? 0) > 0 && (
+                          <div className="flex items-center gap-2 rounded-md border border-green-500/30 bg-green-500/5 px-3 py-1.5 text-xs">
+                            <CheckCircle className="w-3.5 h-3.5 text-green-500/70" />
+                            <span className="text-muted-foreground">Identical (skipped):</span>
+                            <span className="font-medium">{conflicts.identicalSkipped}</span>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      /* No mods configured — distinct from "no conflicts" */
+                      <div className="rounded-lg border border-border/50 bg-muted/20 p-3">
+                        <p className="text-xs text-muted-foreground flex items-center gap-2">
+                          <Info className="w-3.5 h-3.5 shrink-0" />
+                          No workshop mods are configured in the server INI. Add mods in the Server Config tab to scan for conflicts.
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Warnings from scan (missing workshop dirs, etc.) */}
+                    {(conflicts.warnings?.length ?? 0) > 0 && (
+                      <div className="rounded-lg border border-warning/30 bg-warning/5 p-3 space-y-1">
+                        <div className="flex items-center gap-2 text-xs font-medium text-warning">
+                          <AlertTriangle className="w-3.5 h-3.5" />
+                          Scanner Warnings ({conflicts.warnings!.length})
+                        </div>
+                        {conflicts.warnings!.map((w, i) => (
+                          <p key={i} className="text-xs text-muted-foreground pl-5 break-words" dir="auto">{w}</p>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Missing dependencies */}
+                    {(conflicts.missingDeps?.length ?? 0) > 0 && (
+                      <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 space-y-2">
+                        <div className="flex items-center gap-2 text-xs font-medium text-destructive">
+                          <AlertTriangle className="w-3.5 h-3.5" />
+                          Missing Dependencies ({conflicts.missingDeps!.length})
+                        </div>
+                        <div className="space-y-1">
+                          {conflicts.missingDeps!.map((dep, i) => (
+                            <div key={i} className="text-xs text-muted-foreground flex items-center gap-1.5 flex-wrap">
+                              <span className="font-mono text-foreground/80 truncate max-w-[200px]" title={dep.modName || dep.modId}>{dep.modName || dep.modId}</span>
+                              <span>requires</span>
+                              <code className="font-mono text-destructive truncate max-w-[200px]" title={dep.missingDep}>{dep.missingDep}</code>
+                              <span className="opacity-50">— not found</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* No conflicts — only when we actually scanned mods */}
+                    {conflicts.modsScanned > 0 && conflicts.totalConflicts === 0 && (conflicts.missingDeps?.length ?? 0) === 0 && (
+                      <div className="flex items-center justify-center py-8 text-muted-foreground">
+                        <div className="text-center">
+                          <CheckCircle className="w-8 h-8 mx-auto text-green-500/70 mb-2" />
+                          <p className="font-medium text-foreground text-sm">No conflicts detected</p>
+                          <p className="text-xs mt-1 opacity-70">
+                            {conflicts.modsScanned} mod{conflicts.modsScanned !== 1 ? 's' : ''} scanned — no overlapping file overrides found
+                            {(conflicts.identicalSkipped ?? 0) > 0 && (
+                              <span className="block mt-0.5">
+                                {conflicts.identicalSkipped} shared file{conflicts.identicalSkipped !== 1 ? 's' : ''} with identical content skipped
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Conflict pairs */}
+                    {(conflicts.pairs?.length ?? 0) > 0 && (() => {
+                      const loadOrderEntries: [string, number][] = (conflicts.modLoadOrder ?? []).map((id, i) => [id, i + 1] as [string, number])
+                      const loadOrderMap: globalThis.Map<string, number> = new globalThis.Map(loadOrderEntries)
+                      const allPairKeys = conflicts.pairs!.map((_, i) => `pair-${i}`)
+                      const allExpanded = openPairs.length === allPairKeys.length
+                      return (
+                        <>
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-muted-foreground">{conflicts.pairs!.length} mod pair{conflicts.pairs!.length !== 1 ? 's' : ''} with conflicts</span>
+                            <button
+                              type="button"
+                              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                              onClick={() => setOpenPairs(allExpanded ? [] : allPairKeys)}
+                            >
+                              {allExpanded ? 'Collapse all' : 'Expand all'}
+                            </button>
+                          </div>
+                          <Accordion type="multiple" value={openPairs} onValueChange={setOpenPairs} className="space-y-2">
+                            {conflicts.pairs!.map((pair, pairIdx) => {
+                              const totalFiles = pair.files.length
+                              const visibleFiles = pair.files.slice(0, CONFLICT_FILE_LIMIT)
+                              const hiddenCount = totalFiles - visibleFiles.length
+                              const maxSeverity = pair.highCount > 0 ? 'high' : pair.mediumCount > 0 ? 'medium' : 'low'
+                              const posA = loadOrderMap.get(pair.modA.modId)
+                              const posB = loadOrderMap.get(pair.modB.modId)
+                              const winner = posA != null && posB != null ? (posA > posB ? 'A' : posB > posA ? 'B' : null) : null
+                              return (
+                                <AccordionItem key={pairIdx} value={`pair-${pairIdx}`} className="border rounded-lg px-0 overflow-hidden">
+                                  <AccordionTrigger className="px-4 py-3 hover:no-underline [&[data-state=open]>div>.chevron]:rotate-180">
+                                    <div className="flex items-center gap-3 flex-1 min-w-0 text-left">
+                                      <div className={`w-2 h-2 rounded-full shrink-0 ${
+                                        maxSeverity === 'high' ? 'bg-destructive' : maxSeverity === 'medium' ? 'bg-warning' : 'bg-muted-foreground'
+                                      }`} />
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-1.5 text-sm font-medium">
+                                          <span className="truncate max-w-[40%]" title={pair.modA.modName}>
+                                            {pair.modA.modName}
+                                            {posA != null && <span className="ml-1 text-[10px] font-normal text-muted-foreground/60">#{posA}</span>}
+                                          </span>
+                                          <span className="text-muted-foreground font-normal text-xs shrink-0">vs</span>
+                                          <span className="truncate max-w-[40%]" title={pair.modB.modName}>
+                                            {pair.modB.modName}
+                                            {posB != null && <span className="ml-1 text-[10px] font-normal text-muted-foreground/60">#{posB}</span>}
+                                          </span>
+                                        </div>
+                                        <div className="flex items-center gap-2 mt-0.5">
+                                          <span className="text-xs text-muted-foreground">
+                                            {totalFiles} file{totalFiles !== 1 ? 's' : ''}
+                                          </span>
+                                          {pair.highCount > 0 && (
+                                            <Badge variant="destructive" className="text-[10px] leading-none h-[18px] px-1.5">{pair.highCount} high</Badge>
+                                          )}
+                                          {pair.mediumCount > 0 && (
+                                            <Badge variant="warning" className="text-[10px] leading-none h-[18px] px-1.5">{pair.mediumCount} med</Badge>
+                                          )}
+                                          {pair.lowCount > 0 && (
+                                            <Badge variant="secondary" className="text-[10px] leading-none h-[18px] px-1.5">{pair.lowCount} low</Badge>
+                                          )}
+                                          {winner && (
+                                            <span className="text-[10px] text-muted-foreground/50 shrink-0">
+                                              → {winner === 'A' ? pair.modA.modName : pair.modB.modName} wins
+                                            </span>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </AccordionTrigger>
+                                  <AccordionContent>
+                                    <div className="px-4 pb-3 space-y-0.5">
+                                      <p className="text-xs text-muted-foreground/60 mb-2">
+                                        The mod loaded last in your load order wins for each file
+                                      </p>
+                                      {visibleFiles.map((f, fIdx) => (
+                                        <div
+                                          key={fIdx}
+                                          className="flex items-center gap-2 text-xs py-1 px-2 rounded transition-colors duration-100 hover:bg-muted/40"
+                                        >
+                                          <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                                            f.severity === 'high' ? 'bg-destructive' : f.severity === 'medium' ? 'bg-warning' : 'bg-muted-foreground/50'
+                                          }`} />
+                                          <code className="font-mono text-[11px] flex-1 min-w-0 truncate text-foreground/80" title={f.file}>
+                                            {f.file}
+                                          </code>
+                                          <span className="text-[10px] text-muted-foreground/60 shrink-0">{f.categoryLabel || f.category}</span>
+                                        </div>
+                                      ))}
+                                      {hiddenCount > 0 && (
+                                        <p className="text-xs text-muted-foreground/50 text-center pt-2">
+                                          + {hiddenCount} more file{hiddenCount !== 1 ? 's' : ''}
+                                        </p>
+                                      )}
+                                    </div>
+                                  </AccordionContent>
+                                </AccordionItem>
+                              )
+                            })}
+                          </Accordion>
+                        </>
+                      )
+                    })()}
+
+                    {/* Load order tip — only when there are actual conflicts */}
+                    {conflicts.totalConflicts > 0 && (
+                      <div className="rounded-lg border border-border/50 bg-muted/20 p-3">
+                        <p className="text-xs text-muted-foreground flex items-center gap-2">
+                          <Info className="w-3.5 h-3.5 shrink-0" />
+                          Load order determines which mod's files win. The <strong className="text-foreground/80">last loaded</strong> mod takes precedence for conflicting files.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>

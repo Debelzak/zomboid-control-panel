@@ -225,6 +225,16 @@ async function fetchWithRetry(
       // Create AbortController for timeout
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), RETRY_CONFIG.fetchTimeout)
+
+      // If caller provided a signal, abort our controller when it fires
+      const externalSignal = options?.signal
+      if (externalSignal) {
+        if (externalSignal.aborted) {
+          controller.abort(externalSignal.reason)
+        } else {
+          externalSignal.addEventListener('abort', () => controller.abort(externalSignal.reason), { once: true })
+        }
+      }
       
       try {
         const response = await fetch(url, {
@@ -299,8 +309,8 @@ async function handleResponse<T = any>(response: Response): Promise<T> {
 }
 
 // Helper for GET requests with retry
-function apiGet<T = any>(endpoint: string): Promise<T> {
-  return fetchWithRetry(`${API_BASE}${endpoint}`).then((response) => handleResponse<T>(response))
+function apiGet<T = any>(endpoint: string, options?: RequestInit): Promise<T> {
+  return fetchWithRetry(`${API_BASE}${endpoint}`, options).then((response) => handleResponse<T>(response))
 }
 
 // Helper for POST requests with retry
@@ -661,6 +671,9 @@ export const modsApi = {
   
   // Mod Load Order
   saveModOrder: (modIds: string[]) => apiPost('/mods/save-order', { modIds }),
+  
+  // Mod Conflict Scanner
+  getConflicts: (options?: RequestInit) => apiGet<import('@/types').ConflictScanResult>('/mods/conflicts', options),
 }
 
 // Chunks API (Chunk Cleaner)

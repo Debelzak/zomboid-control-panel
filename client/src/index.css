@@ -940,6 +940,44 @@ input::-ms-clear {
   100% { transform: scale(1); }
 }
 
+/* ── Scan progress sweep ── */
+@keyframes scanSweep {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+
+.scan-progress-bar {
+  overflow: hidden;
+  position: relative;
+}
+
+.scan-progress-bar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: 50%;
+  background: linear-gradient(90deg, transparent, hsl(var(--primary) / 0.6), transparent);
+  animation: scanSweep 1.5s cubic-bezier(0.25, 1, 0.5, 1) infinite;
+}
+
+/* Pulse variant for scan icon — respects reduced motion */
+.scan-pulse-icon {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scan-progress-bar::after {
+    animation: none;
+    /* Static bar instead of sweep */
+    width: 100%;
+    background: hsl(var(--primary) / 0.25);
+  }
+  .scan-pulse-icon {
+    animation: none;
+    opacity: 0.7;
+  }
+}
+
 /* Slide-in from right for panels/drawers */
 .slide-in-right {
   animation: slideInRight 0.25s ease-out;
