@@ -657,6 +657,11 @@ router.get('/ping', async (req, res) => {
 
 // Send a command to the game
 router.post('/command', async (req, res) => {
+  const activeServer = await getActiveServer();
+  if (activeServer?.isRemote) {
+    return res.status(400).json({ error: 'PanelBridge is not available for remote servers. This feature requires the Lua mod running on the same machine as the panel.' });
+  }
+
   const { action, args } = req.body;
   
   if (!action) {

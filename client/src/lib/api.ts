@@ -314,11 +314,12 @@ function apiGet<T = any>(endpoint: string, options?: RequestInit): Promise<T> {
 }
 
 // Helper for POST requests with retry
-function apiPost<T = any>(endpoint: string, body?: unknown): Promise<T> {
+function apiPost<T = any>(endpoint: string, body?: unknown, options?: { signal?: AbortSignal }): Promise<T> {
   return fetchWithRetry(`${API_BASE}${endpoint}`, {
     method: 'POST',
     headers: body ? { 'Content-Type': 'application/json' } : undefined,
     body: body ? JSON.stringify(body) : undefined,
+    signal: options?.signal,
   }).then((response) => handleResponse<T>(response))
 }
 
@@ -595,16 +596,16 @@ export const schedulerApi = {
 
 // Mods API
 export const modsApi = {
-  getStatus: () => apiGet('/mods/status'),
-  getTrackedMods: () => apiGet('/mods/tracked'),
+  getStatus: (options?: RequestInit) => apiGet('/mods/status', options),
+  getTrackedMods: (options?: RequestInit) => apiGet('/mods/tracked', options),
   trackMod: (workshopId: string) => apiPost('/mods/track', { workshopId }),
   untrackMod: (workshopId: string) => apiDelete(`/mods/track/${workshopId}`),
-  checkUpdates: () => apiPost('/mods/check-updates'),
+  checkUpdates: (options?: { signal?: AbortSignal }) => apiPost('/mods/check-updates', undefined, options),
   getServerMods: () => apiGet('/mods/server-mods'),
-  syncFromServer: () => apiPost('/mods/sync-from-server'),
-  clearUpdates: () => apiPost('/mods/clear-updates'),
-  start: () => apiPost('/mods/start'),
-  stop: () => apiPost('/mods/stop'),
+  syncFromServer: (options?: { signal?: AbortSignal }) => apiPost('/mods/sync-from-server', undefined, options),
+  clearUpdates: (options?: { signal?: AbortSignal }) => apiPost('/mods/clear-updates', undefined, options),
+  start: (options?: { signal?: AbortSignal }) => apiPost('/mods/start', undefined, options),
+  stop: (options?: { signal?: AbortSignal }) => apiPost('/mods/stop', undefined, options),
   setAutoRestart: (enabled: boolean) => apiPost('/mods/auto-restart', { enabled }),
   setRestartOptions: (options: { warningMinutes?: number; delayIfPlayersOnline?: boolean; maxDelayMinutes?: number; checkInterval?: number }) =>
     apiPut('/mods/restart-options', options),
@@ -629,6 +630,85 @@ export const modsApi = {
   
   // Remove a single mod from server .ini file (removes from both WorkshopItems= and Mods=)
   removeFromIni: (workshopId: string, modId?: string) => apiPost('/mods/remove-from-ini', { workshopId, modId }),
+  
+  // Toggle a single mod ID on/off in the Mods= line
+  toggleModId: (modId: string, enabled: boolean) => apiPost('/mods/toggle-mod-id', { modId, enabled }) as Promise<{
+    success: boolean
+    modId: string
+    enabled: boolean
+    totalMods: number
+  }>,
+
+  // Batch toggle multiple mod IDs on/off in a single INI write
+  batchToggleModIds: (changes: Array<{ modId: string; enabled: boolean }>) => apiPost('/mods/batch-toggle-mod-ids', { changes }) as Promise<{
+    success: boolean
+    changed: number
+    totalMods: number
+  }>,
+
+  // Repair Map= entries - remove invalid map entries that don't have actual map data on disk
+  repairMapEntries: () => apiPost('/mods/repair-map-entries') as Promise<{
+    success: boolean
+    removed: string[]
+    added?: string[]
+    remaining: string[]
+    message: string
+  }>,
+
+  // Deduplicate mod IDs - remove duplicate entries from Mods= line
+  deduplicateModIds: () => apiPost('/mods/deduplicate-mod-ids') as Promise<{
+    success: boolean
+    removed: string[]
+    removedCount: number
+    remaining: number
+    message: string
+  }>,
+
+  // Missing Dependencies: Add a single resolved dep to INI
+  addMissingDep: (workshopId: string, modId?: string) => apiPost('/mods/add-missing-dep', { workshopId, modId }) as Promise<{
+    success: boolean
+    workshopId: string
+    modId: string | null
+    wsAdded: boolean
+    modIdAdded: boolean
+    mapFolders: string[]
+    message: string
+  }>,
+
+  // Missing Dependencies: Batch add all resolved deps
+  addAllResolvedDeps: (deps: Array<{ workshopId: string; modId?: string }>) =>
+    apiPost('/mods/add-all-resolved-deps', { deps }) as Promise<{
+      success: boolean
+      total: number
+      wsAdded: number
+      modIdsAdded: number
+      mapFolders: string[]
+      message: string
+    }>,
+
+  // Missing Dependencies: Search Steam Workshop for a mod by name/ID
+  searchWorkshopMods: (query: string) => apiPost('/mods/search-workshop-mods', { query }) as Promise<{
+    success: boolean
+    query: string
+    results: Array<{
+      workshopId: string
+      modId?: string
+      modName: string
+      description?: string
+      subscriberCount?: number
+      source: 'local' | 'steam'
+      isDownloaded: boolean
+    }>
+    searchUrl: string
+  }>,
+
+  // Missing Dependencies: Auto-resolve unresolved deps via local scan
+  resolveMissingDeps: (deps: Array<{ missingDep: string; resolvedWorkshopId?: string }>) =>
+    apiPost('/mods/resolve-missing-deps', { deps }) as Promise<{
+      success: boolean
+      deps: Array<{ missingDep: string; resolvedWorkshopId?: string; resolvedModName?: string }>
+      resolvedCount: number
+    }>,
   
   // Sync mod IDs from downloaded workshop mods - reads mod.info files and updates Mods= in ini
   syncModIds: () => apiPost('/mods/sync-mod-ids'),
@@ -674,6 +754,7 @@ export const modsApi = {
   
   // Mod Conflict Scanner
   getConflicts: (options?: RequestInit) => apiGet<import('@/types').ConflictScanResult>('/mods/conflicts', options),
+  getCachedConflicts: () => apiGet<(import('@/types').ConflictScanResult & { stale?: boolean; _workshopIdsSnapshot?: string[]; _modIdsSnapshot?: string[] }) | null>('/mods/conflicts/cached'),
 }
 
 // Chunks API (Chunk Cleaner)

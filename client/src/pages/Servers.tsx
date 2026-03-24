@@ -690,7 +690,7 @@ export default function Servers() {
 
     setAddingServer(true)
     try {
-      await serversApi.create({
+      const createResult = await serversApi.create({
         name: newServer.name || newServer.serverName,
         serverName: newServer.serverName,
         installPath: newServer.installPath,
@@ -706,6 +706,10 @@ export default function Servers() {
         useDebug: newServer.useDebug,
         isRemote: addMode === 'remote'
       } as Partial<ServerInstance>)
+      
+      if (createResult.server?.id) {
+        await serversApi.activate(createResult.server.id)
+      }
       
       toast({ title: 'Server Added', description: `"${newServer.name}" added to panel` })
       setShowAddDialog(false)
@@ -903,13 +907,17 @@ export default function Servers() {
                           <Power className="w-4 h-4 mr-2" /> Set Active
                         </DropdownMenuItem>
                       )}
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem onClick={() => openSteamOperation(server, 'update')}>
-                        <RefreshCw className="w-4 h-4 mr-2" /> Update Server
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => openSteamOperation(server, 'verify')}>
-                        <ShieldCheck className="w-4 h-4 mr-2" /> Verify Files
-                      </DropdownMenuItem>
+                      {!server.isRemote && (
+                        <>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem onClick={() => openSteamOperation(server, 'update')}>
+                            <RefreshCw className="w-4 h-4 mr-2" /> Update Server
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => openSteamOperation(server, 'verify')}>
+                            <ShieldCheck className="w-4 h-4 mr-2" /> Verify Files
+                          </DropdownMenuItem>
+                        </>
+                      )}
                       <DropdownMenuSeparator />
                       <DropdownMenuItem 
                         onClick={() => setDeleteServer(server)}

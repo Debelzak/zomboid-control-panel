@@ -735,6 +735,7 @@ export class RconService extends EventEmitter {
                                  errorMsg.includes('EPIPE') ||
                                  errorMsg.includes('not connected') || 
                                  errorMsg.includes('timeout') ||
+                                 errorMsg.includes('timed out') ||
                                  errorMsg.includes('socket');
       
       const isServerOffline = errorMsg.includes('Server is not running');

@@ -97,8 +97,9 @@ const B42_DZI_FULL_W = 19968   // full-resolution image width in pixels
 const B42_DZI_FULL_H = 16128   // full-resolution image height in pixels
 const B42_DZI_TILE_PX = 256    // DZI tile size in pixels
 const B42_DZI_MAX_LEVEL = 15   // ceil(log2(max(W,H)))
-// 1 PZ cell = 300 game tiles = 256 DZI pixels; 1 B41 chunk = 10 tiles
-const B41_CHUNK_TO_DZI_PX = 2560 / 300  // ≈ 8.5333 DZI full-res pixels per B41 chunk
+// B42: 1 PZ cell = 256 tiles, pzmap2dzi renders 256 px/cell → 1 tile = 1 DZI px
+// After B42→B41 conversion (×0.8), 1 B41-equiv chunk = 10 DZI px
+const B42_CHUNK_TO_DZI_PX = 10
 
 // Known PZ city / landmark positions (in chunk coordinates)
 // Derived from map.projectzomboid.com overlays.json POI centroids (game-tile ÷ 10)
@@ -508,11 +509,10 @@ export default function ChunkCleaner() {
         if (isB42Save) {
           // ── B42 DZI tiles from b42map.com ──
           // Choose DZI level: want ~1 DZI pixel ≈ 1 screen pixel
-          // 1 B41 chunk on screen = `scale` px; 1 B41 chunk = B41_CHUNK_TO_DZI_PX full DZI px
+          // 1 B41-equiv chunk on screen = `scale` px; 1 B41-equiv chunk = B42_CHUNK_TO_DZI_PX full DZI px
           // At level L, levelScale = 2^(maxLevel-L), so 1 DZI pixel at level L = levelScale full-res px
-          // Screen pixels per DZI pixel at level L = scale / B41_CHUNK_TO_DZI_PX * levelScale
-          // Ideal: levelScale = B41_CHUNK_TO_DZI_PX / scale
-          const idealLevel = B42_DZI_MAX_LEVEL - Math.log2(B41_CHUNK_TO_DZI_PX / Math.max(scale, 0.01))
+          // Ideal: levelScale = B42_CHUNK_TO_DZI_PX / scale
+          const idealLevel = B42_DZI_MAX_LEVEL - Math.log2(B42_CHUNK_TO_DZI_PX / Math.max(scale, 0.01))
           const level = Math.max(0, Math.min(B42_DZI_MAX_LEVEL, Math.round(idealLevel)))
           const levelScale = Math.pow(2, B42_DZI_MAX_LEVEL - level)
           
@@ -522,10 +522,10 @@ export default function ChunkCleaner() {
           const numRows = Math.ceil(levelH / B42_DZI_TILE_PX)
           
           // Convert visible chunk bounds → DZI pixel bounds at this level
-          const pixMinX = visMinX * B41_CHUNK_TO_DZI_PX / levelScale
-          const pixMinY = visMinY * B41_CHUNK_TO_DZI_PX / levelScale
-          const pixMaxX = visMaxX * B41_CHUNK_TO_DZI_PX / levelScale
-          const pixMaxY = visMaxY * B41_CHUNK_TO_DZI_PX / levelScale
+          const pixMinX = visMinX * B42_CHUNK_TO_DZI_PX / levelScale
+          const pixMinY = visMinY * B42_CHUNK_TO_DZI_PX / levelScale
+          const pixMaxX = visMaxX * B42_CHUNK_TO_DZI_PX / levelScale
+          const pixMaxY = visMaxY * B42_CHUNK_TO_DZI_PX / levelScale
           
           const colMin = Math.max(0, Math.floor(pixMinX / B42_DZI_TILE_PX))
           const colMax = Math.min(numCols - 1, Math.floor(pixMaxX / B42_DZI_TILE_PX))
@@ -533,7 +533,7 @@ export default function ChunkCleaner() {
           const rowMax = Math.min(numRows - 1, Math.floor(pixMaxY / B42_DZI_TILE_PX))
           
           // Chunks covered by one DZI pixel at this level
-          const chunkPerDziPx = levelScale / B41_CHUNK_TO_DZI_PX
+          const chunkPerDziPx = levelScale / B42_CHUNK_TO_DZI_PX
           
           for (let row = rowMin; row <= rowMax; row++) {
             for (let col = colMin; col <= colMax; col++) {

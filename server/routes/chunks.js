@@ -8,6 +8,19 @@ import { sanitizeError } from '../utils/sanitize.js';
 
 const router = express.Router();
 
+// Block all chunk operations for remote servers (no local filesystem access)
+router.use(async (req, res, next) => {
+  try {
+    const activeServer = await getActiveServer();
+    if (activeServer?.isRemote) {
+      return res.status(400).json({ error: 'Map cleanup is not available for remote servers. The server filesystem is not accessible from this panel.' });
+    }
+    next();
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Helper: Get zomboidDataPath from active server or legacy settings
 async function getZomboidDataPath() {
   // First try active server (multi-server support)

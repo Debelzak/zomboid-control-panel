@@ -50,7 +50,12 @@ interface EmptyStateProps {
   action?: {
     label: string
     onClick: () => void
-    variant?: 'default' | 'outline' | 'secondary'
+    variant?: 'default' | 'outline' | 'secondary' | 'ghost'
+  }
+  secondaryAction?: {
+    label: string
+    onClick: () => void
+    variant?: 'default' | 'outline' | 'secondary' | 'ghost'
   }
   compact?: boolean
   className?: string
@@ -62,6 +67,7 @@ export function EmptyState({
   title, 
   description, 
   action,
+  secondaryAction,
   compact = false,
   className = ''
 }: EmptyStateProps) {
@@ -84,14 +90,26 @@ export function EmptyState({
         <p className={`${compact ? 'text-xs' : 'text-sm'} max-w-sm leading-6 text-muted-foreground`}>{description}</p>
       )}
       {action && (
-        <Button
-          variant={action.variant || 'outline'}
-          size={compact ? 'sm' : 'default'}
-          onClick={action.onClick}
-          className="mt-4 min-h-11"
-        >
-          {action.label}
-        </Button>
+        <div className="mt-4 flex items-center gap-2">
+          <Button
+            variant={action.variant || 'outline'}
+            size={compact ? 'sm' : 'default'}
+            onClick={action.onClick}
+            className="min-h-11"
+          >
+            {action.label}
+          </Button>
+          {secondaryAction && (
+            <Button
+              variant={secondaryAction.variant || 'ghost'}
+              size={compact ? 'sm' : 'default'}
+              onClick={secondaryAction.onClick}
+              className="min-h-11"
+            >
+              {secondaryAction.label}
+            </Button>
+          )}
+        </div>
       )}
     </div>
   )

@@ -9,7 +9,8 @@ import {
   updateScheduledTask, 
   deleteScheduledTask,
   getScheduleHistory,
-  clearScheduleHistory
+  clearScheduleHistory,
+  getActiveServer
 } from '../database/init.js';
 
 const router = express.Router();
@@ -185,6 +186,11 @@ router.delete('/tasks/:id', async (req, res) => {
 // Trigger immediate restart
 router.post('/restart-now', async (req, res) => {
   try {
+    const activeServer = await getActiveServer();
+    if (activeServer?.isRemote) {
+      return res.status(400).json({ error: 'Cannot restart a remote server. The process is not managed by this panel.' });
+    }
+
     const scheduler = req.app.get('scheduler');
     const { warningMinutes } = req.body;
     

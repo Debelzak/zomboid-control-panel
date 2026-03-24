@@ -68,17 +68,36 @@ export interface TrackedMod {
   id: number
   workshop_id: string
   name: string
-  last_updated: string
+  server_id?: number | null
+  last_updated: string | null
   last_checked: string | null
   update_available: number
   created_at: string
 }
 
+export interface ModUpdateInfo {
+  workshopId: string
+  name: string
+  localTimestamp: string
+  latestTimestamp: string
+}
+
 export interface ModStatus {
-  totalMods: number
+  running: boolean
+  totalModsTracked: number
   updatesAvailable: number
   lastCheck: string | null
+  lastUpdateDetected: string | null
+  checkInterval: number
   autoRestartEnabled: boolean
+  workshopAcfConfigured: boolean
+  workshopAcfPath: string | null
+  totalModsInWorkshop: number
+  modsNeedingUpdate: ModUpdateInfo[]
+  restartWarningMinutes: number
+  delayIfPlayersOnline: boolean
+  maxDelayMinutes: number
+  pendingRestart: boolean
 }
 
 // Settings Types
@@ -132,10 +151,22 @@ export const ACCESS_LEVELS: AccessLevel[] = ['none', 'observer', 'gm', 'overseer
 export interface ConflictScanResult {
   totalConflicts: number
   identicalSkipped: number
+  additiveSkipped?: number
+  pzAdditiveSkipped?: number
+  pzAdditiveBreakdown?: {
+    sandbox: number
+    scripts: number
+    clothing: number
+    fileguidtable: number
+    translate: number
+  }
   pairs: ConflictPair[]
   totalPairs: number
   modsScanned: number
+  modsNotFound?: number
+  totalWorkshopIds?: number
   missingDeps: MissingDependency[]
+  steamDeps?: SteamDependency[]
   modLoadOrder: string[]
   warnings?: string[]
   scanDurationMs?: number
@@ -168,6 +199,45 @@ export interface MissingDependency {
   modName: string
   workshopId: string
   missingDep: string
+  resolvedWorkshopId?: string
+  resolvedModName?: string
+}
+
+export interface SteamDependency {
+  parentWorkshopId: string
+  parentName: string
+  childWorkshopId: string
+  childName: string
+  source: 'steam'
+}
+
+// SSE streaming scan event types
+export interface ScanStreamInit {
+  totalWorkshopIds: number
+  modLoadOrder: string[]
+}
+
+export interface ScanStreamModScanned {
+  modId: string
+  modName: string
+  workshopId: string
+  fileCount: number
+  modsScanned: number
+  totalWorkshopIds: number
+  progress: number  // 0-60
+}
+
+export interface ScanStreamConflictFound {
+  file: string
+  severity: 'high' | 'medium' | 'low'
+  categoryLabel: string
+  mods: string[]
+  conflictsSoFar: number
+}
+
+export interface ScanStreamPhase {
+  phase: 'hashing' | 'grouping'
+  progress: number
 }
 
 // PZ Command Categories

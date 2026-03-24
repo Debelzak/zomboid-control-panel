@@ -254,7 +254,11 @@ export class ModChecker extends EventEmitter {
       
       return null;
     } catch (e) {
-      // Ignore errors (permission, missing path)
+      if (e.code === 'EACCES' || e.code === 'EPERM') {
+        log.warn(`Permission denied resolving mod name for ${workshopId}: ${e.message}`);
+      } else {
+        log.debug(`Could not resolve mod name from disk for ${workshopId}: ${e.code || e.message}`);
+      }
       return null;
     }
   }
@@ -565,7 +569,15 @@ export class ModChecker extends EventEmitter {
         // If latest_timeupdated is newer than timeupdated, an update is available
         if (latest_timeupdated > timeupdated) {
           const trackedMod = trackedMap.get(workshopId);
-          const modName = trackedMod?.name || `Workshop Mod ${workshopId}`;
+          // Try to resolve real name from disk, fall back to tracked name, then generic
+          const nameFromDisk = this.resolveModNameFromDisk(workshopId);
+          const modName = nameFromDisk || trackedMod?.name || `Workshop Mod ${workshopId}`;
+          
+          // Update tracked mod name if we resolved a better one
+          if (trackedMod && nameFromDisk && trackedMod.name !== nameFromDisk) {
+            trackedMod.name = nameFromDisk;
+            await addTrackedMod(workshopId, nameFromDisk);
+          }
           
           log.info(`Mod update available: ${modName} (${workshopId}) - local: ${timeupdated}, latest: ${latest_timeupdated}`);
           
@@ -579,6 +591,7 @@ export class ModChecker extends EventEmitter {
           // Add to tracking if not already tracked
           if (!trackedMod) {
             await addTrackedMod(workshopId, modName);
+            trackedMap.set(workshopId, { workshop_id: workshopId, name: modName });
           }
           
           // Invalidate name cache as files might change after update
@@ -653,21 +666,24 @@ export class ModChecker extends EventEmitter {
     try {
       const { addTrackedMod } = await import('../database/init.js');
       
+      // Try to resolve the real name from mod.info on disk
+      const nameFromDisk = this.resolveModNameFromDisk(workshopId);
+      const modName = nameFromDisk || `Workshop Mod ${workshopId}`;
+      
       // Try to get mod info from local ACF file
       const allInfo = await this.getWorkshopInfo();
       const modInfo = allInfo[workshopId];
       
       if (modInfo) {
-        // We have mod info from ACF
-        await addTrackedMod(workshopId, `Workshop Mod ${workshopId}`);
+        await addTrackedMod(workshopId, modName);
         if (modInfo.timeupdated) {
           await updateModTimestamp(workshopId, new Date(modInfo.timeupdated * 1000).toISOString());
         }
-        return { success: true, name: `Workshop Mod ${workshopId}`, needsUpdate: modInfo.needsUpdate };
+        return { success: true, name: modName, needsUpdate: modInfo.needsUpdate };
       } else {
         // Mod not in ACF (not subscribed on this server) - still add to tracking
-        await addTrackedMod(workshopId, `Workshop Mod ${workshopId}`);
-        return { success: true, name: `Workshop Mod ${workshopId}`, note: 'Mod not found in Steam Workshop cache - may not be subscribed' };
+        await addTrackedMod(workshopId, modName);
+        return { success: true, name: modName, note: 'Mod not found in Steam Workshop cache - may not be subscribed' };
       }
     } catch (error) {
       return { success: false, error: error.message };
@@ -681,8 +697,8 @@ export class ModChecker extends EventEmitter {
     
     return {
       running: !!this.intervalId,
-      lastCheck: this.lastCheck,
-      lastUpdateDetected: this.lastUpdateDetected,
+      lastCheck: this.lastCheck instanceof Date ? this.lastCheck.toISOString() : (this.lastCheck || null),
+      lastUpdateDetected: this.lastUpdateDetected instanceof Date ? this.lastUpdateDetected.toISOString() : (this.lastUpdateDetected || null),
       checkInterval: this.checkInterval,
       modsNeedingUpdate: this.modsNeedingUpdate,
       workshopAcfConfigured: !!this.workshopAcfPath && fs.existsSync(this.workshopAcfPath),

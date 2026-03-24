@@ -11,15 +11,12 @@ import {
   Clock,
   Download,
   FileText,
-  Map,
+  Map as MapIcon,
   Library,
   Search,
   Filter,
   Settings2,
-  Power,
-  ChevronDown,
   ChevronRight,
-  Copy,
   Check,
   Info,
   Layers,
@@ -31,8 +28,15 @@ import {
   Shield,
   ShieldAlert,
   FileWarning,
+  Wrench,
+  Network,
+  GitBranch,
+  PlusCircle,
+  X,
 } from 'lucide-react'
-import { ConflictScanResult } from '@/types'
+import { ConflictScanResult, ScanStreamModScanned, ScanStreamConflictFound } from '@/types'
+import { FileDiffViewer } from '@/components/FileDiffViewer'
+import { getAccessToken } from '@/lib/authToken'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { PageHeader } from '@/components/PageHeader'
 import { Button } from '@/components/ui/button'
@@ -72,6 +76,16 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { modsApi } from '@/lib/api'
 import { EmptyState } from '@/components/EmptyState'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 
 interface TrackedMod {
   id: number
@@ -127,16 +141,11 @@ interface IniConfig {
   totalMods: number
   iniPath?: string
   error?: string
+  workshopModMap?: Record<string, Array<{ id: string; name: string; enabled: boolean }>>
 }
 
 // ── Conflict scanner constants (hoisted to avoid re-creation in render) ──
 const CONFLICT_FILE_LIMIT = 50
-const SCAN_PHASE_MESSAGES = [
-  'Reading workshop folders...',
-  'Walking mod file trees...',
-  'Hashing file contents...',
-  'Comparing across mods...'
-] as const
 
 export default function Mods() {
   const [mods, setMods] = useState<TrackedMod[]>([])
@@ -182,15 +191,21 @@ export default function Mods() {
   const [iniConfig, setIniConfig] = useState<IniConfig | null>(null)
   const [modsToInstall, setModsToInstall] = useState<CollectionMod[]>([])
   const [orderedModIds, setOrderedModIds] = useState<string[]>([])
-  const [showModOrderEditor, setShowModOrderEditor] = useState(false)
   const [savingModOrder, setSavingModOrder] = useState(false)
   const [draggedModIndex, setDraggedModIndex] = useState<number | null>(null)  
   // Expand/collapse states
-  const [showMapsExpanded, setShowMapsExpanded] = useState(false)
-  const [showWorkshopIdsExpanded, setShowWorkshopIdsExpanded] = useState(false)
-  const [showModIdsExpanded, setShowModIdsExpanded] = useState(false)
-  const [copiedField, setCopiedField] = useState<string | null>(null)
-  const copiedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [repairingMaps, setRepairingMaps] = useState(false)
+  const [mapRepairResult, setMapRepairResult] = useState<{ removed: string[]; added?: string[]; remaining: string[]; message: string } | null>(null)
+  const [confirmRemoveMod, setConfirmRemoveMod] = useState<string | null>(null) // workshopId to confirm single remove
+  const [confirmBulkRemove, setConfirmBulkRemove] = useState(false)
+  const [confirmRemoveWorkshop, setConfirmRemoveWorkshop] = useState<string | null>(null) // wsId for config tab remove
+  const [deduplicating, setDeduplicating] = useState(false)
+  const [deduplicateResult, setDeduplicateResult] = useState<string | null>(null)
+  const [filterMultiId, setFilterMultiId] = useState(true)
+  const [modManagerSearch, setModManagerSearch] = useState('')
+  const [configSubTab, setConfigSubTab] = useState<'active' | 'order' | 'add' | 'presets' | 'tools'>('active')
+  const [lastSavedMod, setLastSavedMod] = useState<string | null>(null)
+  const savedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   
   // Restart settings dialog
   const [restartSettingsOpen, setRestartSettingsOpen] = useState(false)
@@ -202,25 +217,54 @@ export default function Mods() {
   const [conflicts, setConflicts] = useState<ConflictScanResult | null>(null)
   const [conflictsLoading, setConflictsLoading] = useState(false)
   const [conflictsError, setConflictsError] = useState<string | null>(null)
-  const [scanPhase, setScanPhase] = useState(0)
   const [lastScanTime, setLastScanTime] = useState<Date | null>(null)
   const [scanIniSnapshot, setScanIniSnapshot] = useState<string | null>(null)
   const [openPairs, setOpenPairs] = useState<string[]>([])
-  const conflictAbortRef = useRef<AbortController | null>(null)
+  // SSE streaming scan state
+  const [scanProgress, setScanProgress] = useState(0)
+  const [scanCurrentMod, setScanCurrentMod] = useState<string | null>(null)
+  const [scanModsScanned, setScanModsScanned] = useState(0)
+  const [scanTotalMods, setScanTotalMods] = useState(0)
+  const [streamConflicts, setStreamConflicts] = useState<ScanStreamConflictFound[]>([])
+  const eventSourceRef = useRef<EventSource | null>(null)
+  const closingIntentionallyRef = useRef(false)
+  const sseIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Batched scan-progress ref — flush via rAF to coalesce rapid SSE updates into 1 render
+  const scanBatchRef = useRef<{ progress: number; modName: string | null; modsScanned: number; dirty: boolean; raf: number }>({ progress: 0, modName: null, modsScanned: 0, dirty: false, raf: 0 })
 
-  // Cycle through scan phases while loading
+  // Inner sub-tab within Conflicts: 'network' or 'dependencies'
+  const [conflictSubTab, setConflictSubTab] = useState<'network' | 'dependencies'>('network')
+  // Severity filter for pairs list: 'all' | 'high' | 'medium' | 'low'
+  const [pairSeverityFilter, setPairSeverityFilter] = useState<'all' | 'high' | 'medium' | 'low'>('all')
+  // Graph filter state (used for pair filtering in the conflict list)
+  const [graphFilterMod, setGraphFilterMod] = useState<string | null>(null)
+
+  // Track which conflict pairs have "show all files" expanded
+  const [expandedFilePairs, setExpandedFilePairs] = useState<Set<string>>(new Set())
+  // Missing deps state
+  const [depAdding, setDepAdding] = useState<string[]>([])
+  const [depAddResults, setDepAddResults] = useState<Record<string, 'added' | 'error'>>({})
+  const [fixingAllDeps, setFixingAllDeps] = useState(false)
+  // Clean up SSE connection on unmount or page navigation
   useEffect(() => {
-    if (!conflictsLoading) { setScanPhase(0); return }
-    const id = setInterval(() => setScanPhase(p => (p + 1) % SCAN_PHASE_MESSAGES.length), 2200)
-    return () => clearInterval(id)
-  }, [conflictsLoading])
+    return () => {
+      closingIntentionallyRef.current = true
+      eventSourceRef.current?.close()
+      eventSourceRef.current = null
+      if (sseIdleTimerRef.current) clearTimeout(sseIdleTimerRef.current)
+      sseIdleTimerRef.current = null
+    }
+  }, [])
 
   // Detect stale conflict results when INI config changes
   const conflictsStale = useMemo(() => {
     if (!conflicts || !scanIniSnapshot) return false
-    const currentSnapshot = JSON.stringify(iniConfig?.workshopIds?.slice().sort() || [])
+    const currentSnapshot = JSON.stringify({
+      ws: iniConfig?.workshopIds?.slice().sort() || [],
+      mods: iniConfig?.modIds?.slice().sort() || []
+    })
     return currentSnapshot !== scanIniSnapshot
-  }, [conflicts, scanIniSnapshot, iniConfig?.workshopIds])
+  }, [conflicts, scanIniSnapshot, iniConfig?.workshopIds, iniConfig?.modIds])
   
   // Track if auto-discover is pending (moved here for cleanup)
   const autoDiscoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -247,18 +291,11 @@ export default function Mods() {
   
   // Mod conflict detection
   interface ModConflict {
-    type: 'duplicate' | 'missing_modid' | 'incompatible' | 'outdated_dependency'
-    severity: 'error' | 'warning' | 'info'
+    type: 'duplicate' | 'missing_modid' | 'outdated_dependency'
+    severity: 'warning' | 'info'
     message: string
     modIds?: string[]
-    workshopIds?: string[]
   }
-  
-  // Known incompatible mod pairs (workshop IDs)
-  const knownIncompatibleMods: Array<{ mod1: string; mod2: string; reason: string }> = [
-    // Add known incompatibilities here
-    // { mod1: '123456', mod2: '789012', reason: 'Both modify the same game systems' },
-  ]
   
   // Detect conflicts in current configuration
   const detectedConflicts = useMemo((): ModConflict[] => {
@@ -292,32 +329,17 @@ export default function Mods() {
       })
     }
     
-    // Check for known incompatible mods
-    for (const pair of knownIncompatibleMods) {
-      if (iniConfig.workshopIds.includes(pair.mod1) && iniConfig.workshopIds.includes(pair.mod2)) {
-        conflicts.push({
-          type: 'incompatible',
-          severity: 'error',
-          message: `Incompatible mods: ${pair.reason}`,
-          workshopIds: [pair.mod1, pair.mod2]
-        })
-      }
-    }
-    
     return conflicts
   }, [iniConfig])
   
   // Cleanup timeouts on unmount
   useEffect(() => {
     return () => {
-      if (copiedTimeoutRef.current) {
-        clearTimeout(copiedTimeoutRef.current)
-      }
       if (autoDiscoverTimeoutRef.current) {
         clearTimeout(autoDiscoverTimeoutRef.current)
       }
       // Cancel any in-flight conflict scan
-      conflictAbortRef.current?.abort()
+      eventSourceRef.current?.close()
     }
   }, [])
 
@@ -377,6 +399,7 @@ export default function Mods() {
       setPresets(data.presets || [])
     } catch (error) {
       reportClientError('Failed to fetch presets.', error)
+      setFetchError('Failed to load presets')
     } finally {
       setPresetsLoading(false)
     }
@@ -386,6 +409,23 @@ export default function Mods() {
   useEffect(() => {
     const initializeData = async () => {
       await Promise.allSettled([fetchData(), fetchPresets()])
+      // Load cached conflict scan results (if any) so the Conflicts tab isn't blank
+      try {
+        const cached = await modsApi.getCachedConflicts()
+        if (cached) {
+          setConflicts(cached)
+          setConflictsError(null) // clear any stale error from a previous session
+          setLastScanTime(new Date()) // approximate — exact time isn't stored
+          // Set a snapshot so stale detection works when modIds change after cached load
+          setScanIniSnapshot(JSON.stringify({
+            ws: cached._workshopIdsSnapshot || [],
+            mods: cached._modIdsSnapshot || []
+          }))
+          if (cached.stale) {
+            // Config changed since last scan — the stale banner will show
+          }
+        }
+      } catch { /* non-fatal — user can still trigger a fresh scan */ }
     }
     initializeData()
   }, [fetchData, fetchPresets])
@@ -406,7 +446,7 @@ export default function Mods() {
       fetchPresets()
     } catch (error) {
       toast({
-        title: 'Error',
+        title: 'Preset save failed',
         description: error instanceof Error ? error.message : 'Failed to save preset',
         variant: 'destructive',
       })
@@ -427,7 +467,7 @@ export default function Mods() {
       fetchData() // Refresh current config
     } catch (error) {
       toast({
-        title: 'Error',
+        title: 'Preset apply failed',
         description: error instanceof Error ? error.message : 'Failed to apply preset',
         variant: 'destructive',
       })
@@ -447,7 +487,7 @@ export default function Mods() {
       fetchPresets()
     } catch (error) {
       toast({
-        title: 'Error',
+        title: 'Preset delete failed',
         description: error instanceof Error ? error.message : 'Failed to delete preset',
         variant: 'destructive',
       })
@@ -489,7 +529,7 @@ export default function Mods() {
       fetchData()
     } catch (error) {
       toast({
-        title: 'Error',
+        title: 'Update check failed',
         description: error instanceof Error ? error.message : 'Failed to check updates',
         variant: 'destructive',
       })
@@ -620,8 +660,8 @@ export default function Mods() {
     
     if (!workshopId) {
       toast({
-        title: 'Invalid Input',
-        description: 'Please enter a valid Workshop URL or numeric ID (e.g., 3616536783)',
+        title: 'Invalid Workshop URL',
+        description: 'Enter a Workshop URL or numeric ID. Example: 3616536783',
         variant: 'destructive',
       })
       return
@@ -650,21 +690,21 @@ export default function Mods() {
       
       if (result.addedModIds.length > 0) {
         toast({
-          title: 'Mod Added',
-          description: result.message + (result.mapFoldersAdded.length > 0 
-            ? ` (Maps: ${result.mapFoldersAdded.join(', ')})` 
-            : ''),
+          title: 'Mod added to server config',
+          description: `${result.addedModIds.join(', ')} written to .ini.${result.mapFoldersAdded.length > 0 
+            ? ` Map${result.mapFoldersAdded.length !== 1 ? 's' : ''}: ${result.mapFoldersAdded.join(', ')}.` 
+            : ''} Restart the server to load it.`,
           variant: 'success' as const,
         })
       } else if (result.workshopAlreadyExisted) {
         toast({
-          title: 'Already Configured',
-          description: 'This mod is already in your server configuration',
+          title: 'Already configured',
+          description: 'This mod is already in your server .ini file.',
         })
       } else {
         toast({
-          title: 'Workshop ID Added',
-          description: 'Workshop ID added. Mod IDs will be synced after server downloads the mod.',
+          title: 'Workshop ID added',
+          description: 'Added to .ini. Mod IDs will be discovered after the server downloads the files.',
         })
       }
       
@@ -676,7 +716,7 @@ export default function Mods() {
       fetchData()
     } catch (error) {
       toast({
-        title: 'Error',
+        title: 'Add mod failed',
         description: error instanceof Error ? error.message : 'Failed to add mod',
         variant: 'destructive',
       })
@@ -711,13 +751,13 @@ export default function Mods() {
       }
       
       toast({
-        title: 'Success',
-        description: 'Mod removed from tracking and server config',
+        title: 'Mod removed',
+        description: 'Removed from tracking and server config.',
       })
       fetchData()
     } catch (error) {
       toast({
-        title: 'Error',
+        title: 'Remove failed',
         description: error instanceof Error ? error.message : 'Failed to remove mod',
         variant: 'destructive',
       })
@@ -770,7 +810,7 @@ export default function Mods() {
       fetchData()
     } catch (error) {
       toast({
-        title: 'Error',
+        title: 'Remove failed',
         description: error instanceof Error ? error.message : 'Failed to remove mods',
         variant: 'destructive',
       })
@@ -784,13 +824,12 @@ export default function Mods() {
     try {
       await modsApi.setAutoRestart(!status?.autoRestartEnabled)
       toast({
-        title: 'Success',
-        description: `Auto-restart ${status?.autoRestartEnabled ? 'disabled' : 'enabled'}`,
+        title: `Auto-restart ${status?.autoRestartEnabled ? 'disabled' : 'enabled'}`,
       })
       fetchData()
     } catch (error) {
       toast({
-        title: 'Error',
+        title: 'Setting update failed',
         description: error instanceof Error ? error.message : 'Failed to update setting',
         variant: 'destructive',
       })
@@ -804,13 +843,13 @@ export default function Mods() {
     try {
       const result = await modsApi.syncFromServer()
       toast({
-        title: 'Success',
-        description: `Synced ${result.synced || 0} mods from server configuration`,
+        title: 'Mods synced',
+        description: `Synced ${result.synced || 0} mods from server configuration.`,
       })
       fetchData()
     } catch (error) {
       toast({
-        title: 'Error',
+        title: 'Sync failed',
         description: error instanceof Error ? error.message : 'Failed to sync mods',
         variant: 'destructive',
       })
@@ -824,13 +863,12 @@ export default function Mods() {
     try {
       await modsApi.clearUpdates()
       toast({
-        title: 'Success',
-        description: 'Update flags cleared',
+        title: 'Update flags cleared',
       })
       fetchData()
     } catch (error) {
       toast({
-        title: 'Error',
+        title: 'Clear failed',
         description: error instanceof Error ? error.message : 'Failed to clear updates',
         variant: 'destructive',
       })
@@ -842,8 +880,8 @@ export default function Mods() {
   const handleImportCollection = async () => {
     if (!collectionUrl) {
       toast({
-        title: 'Error',
-        description: 'Please enter a collection URL or ID',
+        title: 'No URL entered',
+        description: 'Paste a Steam Workshop collection URL or numeric ID to import.',
         variant: 'destructive',
       })
       return
@@ -860,13 +898,13 @@ export default function Mods() {
       })))
       
       toast({
-        title: 'Collection Loaded',
-        description: `Found ${result.mods.length} mods in the collection`,
+        title: `${result.mods.length} mods found`,
+        description: 'Select which mods to add, then confirm.',
       })
     } catch (error) {
       toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to import collection',
+        title: 'Collection import failed',
+        description: error instanceof Error ? error.message : 'Could not fetch collection from Steam. Check the URL and try again.',
         variant: 'destructive',
       })
     } finally {
@@ -897,8 +935,8 @@ export default function Mods() {
     
     if (selectedModsList.length === 0) {
       toast({
-        title: 'Error',
-        description: 'Please select at least one mod',
+        title: 'No mods selected',
+        description: 'Check the mods you want to add from the list above.',
         variant: 'destructive',
       })
       return
@@ -908,27 +946,31 @@ export default function Mods() {
     try {
       const results = await Promise.allSettled(
         selectedModsList.map(async (mod) => {
-          await modsApi.trackMod(mod.workshopId)
+          // Write each mod directly to the server .ini (workshopId + mod IDs + map folders)
+          const selectedModIds = mod.modId ? [mod.modId] : undefined
+          await modsApi.addModAdvanced(
+            mod.workshopId,
+            selectedModIds,
+            !selectedModIds // includeAllModIds when no explicit modId was set
+          )
           return mod.workshopId
         })
       )
 
-      const added = results.filter(result => result.status === 'fulfilled').length
+      const added = results.filter(r => r.status === 'fulfilled').length
+      const failed = results.filter(r => r.status === 'rejected').length
       results.forEach((result, index) => {
         if (result.status === 'rejected') {
           reportClientWarning(`Failed to add mod ${selectedModsList[index].workshopId}.`, result.reason)
         }
       })
 
-      setModsToInstall(prev => {
-        const existing = new Set(prev.map(m => m.workshopId))
-        const newMods = selectedModsList.filter(m => !existing.has(m.workshopId))
-        return [...prev, ...newMods]
-      })
-
       toast({
-        title: 'Success',
-        description: `Added ${added} mods for tracking`,
+        title: `${added} mod${added !== 1 ? 's' : ''} added to server config`,
+        description: failed > 0
+          ? `${failed} failed — check the console for details`
+          : 'Restart the server to load the new mods.',
+        variant: failed > 0 ? 'destructive' : 'success' as const,
       })
       
       setCollectionDialogOpen(false)
@@ -937,8 +979,8 @@ export default function Mods() {
       fetchData()
     } catch (error) {
       toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to add mods',
+        title: 'Import failed',
+        description: error instanceof Error ? error.message : 'Could not add mods to server config. Try again.',
         variant: 'destructive',
       })
     } finally {
@@ -949,8 +991,8 @@ export default function Mods() {
   const handleWriteToIni = async () => {
     if (modsToInstall.length === 0) {
       toast({
-        title: 'Error',
-        description: 'No mods to configure',
+        title: 'Nothing to write',
+        description: 'Add mods to the pending list first, then write to INI.',
         variant: 'destructive',
       })
       return
@@ -978,7 +1020,7 @@ export default function Mods() {
       fetchData()
     } catch (error) {
       toast({
-        title: 'Error',
+        title: 'Write to INI failed',
         description: error instanceof Error ? error.message : 'Failed to write configuration',
         variant: 'destructive',
       })
@@ -1012,7 +1054,7 @@ export default function Mods() {
       fetchData()
     } catch (error) {
       toast({
-        title: 'Error',
+        title: 'Mod ID sync failed',
         description: error instanceof Error ? error.message : 'Failed to sync mod IDs',
         variant: 'destructive',
       })
@@ -1067,7 +1109,7 @@ export default function Mods() {
       fetchData()
     } catch (error) {
       toast({
-        title: 'Error',
+        title: 'Save order failed',
         description: error instanceof Error ? error.message : 'Failed to save mod order',
         variant: 'destructive',
       })
@@ -1110,24 +1152,6 @@ export default function Mods() {
     setSelectedMods(new Set())
   }
 
-  const copyToClipboard = async (text: string, field: string) => {
-    try {
-      await navigator.clipboard.writeText(text)
-      setCopiedField(field)
-      // Clear any existing timeout
-      if (copiedTimeoutRef.current) {
-        clearTimeout(copiedTimeoutRef.current)
-      }
-      copiedTimeoutRef.current = setTimeout(() => setCopiedField(null), 2000)
-    } catch {
-      toast({
-        title: 'Error',
-        description: 'Failed to copy to clipboard',
-        variant: 'destructive',
-      })
-    }
-  }
-
   const handleSaveRestartSettings = async () => {
     setLoading(true)
     try {
@@ -1144,7 +1168,7 @@ export default function Mods() {
       fetchData()
     } catch (error) {
       toast({
-        title: 'Error',
+        title: 'Settings save failed',
         description: error instanceof Error ? error.message : 'Failed to save settings',
         variant: 'destructive',
       })
@@ -1164,7 +1188,7 @@ export default function Mods() {
       fetchData()
     } catch (error) {
       toast({
-        title: 'Error',
+        title: 'Cancel failed',
         description: error instanceof Error ? error.message : 'Failed to cancel restart',
         variant: 'destructive',
       })
@@ -1177,36 +1201,193 @@ export default function Mods() {
   const modsWithUpdates = useMemo(() => mods.filter(m => m.update_available), [mods])
   const configuredWorkshopIds = useMemo(() => new Set(iniConfig?.workshopIds || []), [iniConfig?.workshopIds])
 
-  const scanConflicts = useCallback(async () => {
-    // Cancel any in-flight scan
-    conflictAbortRef.current?.abort()
-    const controller = new AbortController()
-    conflictAbortRef.current = controller
+  // Memoize conflict-pairs derived data to avoid recalc on every render
+  const loadOrderMap = useMemo(() => {
+    const entries: [string, number][] = (conflicts?.modLoadOrder ?? []).map((id, i) => [id, i + 1] as [string, number])
+    return new Map(entries)
+  }, [conflicts?.modLoadOrder])
 
-    setConflictsLoading(true)
-    setConflictsError(null)
-    try {
-      const result = await modsApi.getConflicts({ signal: controller.signal })
-      if (controller.signal.aborted) return
-      setConflicts(result)
-      setLastScanTime(new Date())
-      setScanIniSnapshot(JSON.stringify(iniConfig?.workshopIds?.slice().sort() || []))
-      setOpenPairs([])
-    } catch (error) {
-      if (controller.signal.aborted) return
-      const msg = error instanceof Error ? error.message : 'Failed to scan for conflicts'
-      setConflictsError(msg)
-      toast({
-        title: 'Scan Failed',
-        description: msg,
-        variant: 'destructive',
+  const filteredPairs = useMemo(() => {
+    if (!conflicts?.pairs?.length) return []
+    let pairs = graphFilterMod
+      ? conflicts.pairs.filter(p => p.modA.modId === graphFilterMod || p.modB.modId === graphFilterMod)
+      : conflicts.pairs
+    if (pairSeverityFilter !== 'all') {
+      pairs = pairs.filter(p => {
+        if (pairSeverityFilter === 'high') return p.highCount > 0
+        if (pairSeverityFilter === 'medium') return p.mediumCount > 0
+        if (pairSeverityFilter === 'low') return p.lowCount > 0
+        return true
       })
-    } finally {
-      if (!controller.signal.aborted) {
-        setConflictsLoading(false)
+    }
+    return pairs
+  }, [conflicts?.pairs, graphFilterMod, pairSeverityFilter])
+
+  // Top conflicting mods — ranked by number of pairs and severity
+  const topConflictingMods = useMemo(() => {
+    if (!conflicts?.pairs?.length) return []
+    const modStats = new Map<string, { modId: string; modName: string; pairs: number; high: number; medium: number; low: number; files: number }>()
+    for (const pair of conflicts.pairs) {
+      for (const mod of [pair.modA, pair.modB]) {
+        if (!modStats.has(mod.modId)) {
+          modStats.set(mod.modId, { modId: mod.modId, modName: mod.modName, pairs: 0, high: 0, medium: 0, low: 0, files: 0 })
+        }
+        const s = modStats.get(mod.modId)!
+        s.pairs++
+        s.high += pair.highCount
+        s.medium += pair.mediumCount
+        s.low += pair.lowCount
+        s.files += pair.files.length
       }
     }
-  }, [toast, iniConfig?.workshopIds])
+    return Array.from(modStats.values()).sort((a, b) => (b.high - a.high) || (b.medium - a.medium) || (b.pairs - a.pairs)).slice(0, 15)
+  }, [conflicts?.pairs])
+
+  const scanConflicts = useCallback(async () => {
+    // Close any previous SSE connection
+    eventSourceRef.current?.close()
+    closingIntentionallyRef.current = false
+
+    setConflictsLoading(true)
+    setScanProgress(0)
+    setScanCurrentMod(null)
+    setScanModsScanned(0)
+    setScanTotalMods(0)
+    setStreamConflicts([])
+    setGraphFilterMod(null)
+    // Cancel any pending rAF from previous scan
+    cancelAnimationFrame(scanBatchRef.current.raf)
+    scanBatchRef.current = { progress: 0, modName: null, modsScanned: 0, dirty: false, raf: 0 }
+
+    const token = getAccessToken()
+    // SSE doesn't support custom headers, so pass token as query param 
+    const url = `/api/mods/conflicts/stream${token ? `?token=${encodeURIComponent(token)}` : ''}`
+    const es = new EventSource(url)
+    eventSourceRef.current = es
+
+    // Idle timeout: if no SSE events arrive for 90s, assume connection is dead
+    const resetIdleTimer = () => {
+      if (sseIdleTimerRef.current) clearTimeout(sseIdleTimerRef.current)
+      sseIdleTimerRef.current = setTimeout(() => {
+        es.close()
+        eventSourceRef.current = null
+        setConflictsError('Scan timed out — no response from server')
+        setConflictsLoading(false)
+      }, 90_000)
+    }
+    resetIdleTimer()
+
+    es.addEventListener('init', (e) => {
+      resetIdleTimer()
+      try {
+        const data = JSON.parse(e.data)
+        setConflictsError(null)
+        setScanTotalMods(data.totalWorkshopIds || 0)
+      } catch (err) { console.warn('SSE init parse error:', err) }
+    })
+
+    es.addEventListener('mod-scanned', (e) => {
+      resetIdleTimer()
+      try {
+        const data: ScanStreamModScanned = JSON.parse(e.data)
+        // Batch into ref — flush once per frame to avoid 3 setState per SSE event
+        const batch = scanBatchRef.current
+        batch.progress = data.progress
+        batch.modName = data.modName
+        batch.modsScanned = data.modsScanned
+        if (!batch.dirty) {
+          batch.dirty = true
+          batch.raf = requestAnimationFrame(() => {
+            setScanProgress(batch.progress)
+            setScanCurrentMod(batch.modName)
+            setScanModsScanned(batch.modsScanned)
+            batch.dirty = false
+          })
+        }
+      } catch (err) { console.warn('SSE mod-scanned parse error:', err) }
+    })
+
+    es.addEventListener('conflict-found', (e) => {
+      resetIdleTimer()
+      try {
+        const data: ScanStreamConflictFound = JSON.parse(e.data)
+        // Keep only the last 50 entries (only 8 are displayed at a time)
+        setStreamConflicts(prev => {
+          if (prev.length >= 50) {
+            const next = prev.slice(-24)
+            next.push(data)
+            return next
+          }
+          return [...prev, data]
+        })
+      } catch (err) { console.warn('SSE conflict-found parse error:', err) }
+    })
+
+    es.addEventListener('phase', (e) => {
+      resetIdleTimer()
+      try {
+        const data = JSON.parse(e.data)
+        setScanProgress(data.progress)
+        if (data.phase === 'hashing') setScanCurrentMod('Comparing file contents...')
+        if (data.phase === 'grouping') setScanCurrentMod('Grouping results...')
+      } catch (err) { console.warn('SSE phase parse error:', err) }
+    })
+
+    es.addEventListener('complete', (e) => {
+      if (sseIdleTimerRef.current) clearTimeout(sseIdleTimerRef.current)
+      try {
+        const data = JSON.parse((e as MessageEvent).data)
+        // Flush any pending batch before setting final state
+        cancelAnimationFrame(scanBatchRef.current.raf)
+        scanBatchRef.current.dirty = false
+        setConflicts(data)
+        setLastScanTime(new Date())
+        setScanIniSnapshot(JSON.stringify({
+          ws: iniConfig?.workshopIds?.slice().sort() || [],
+          mods: iniConfig?.modIds?.slice().sort() || []
+        }))
+        setOpenPairs([])
+        setScanProgress(100)
+      } catch (err) {
+        setConflictsError('Failed to parse scan results')
+      } finally {
+        es.close()
+        eventSourceRef.current = null
+        setConflictsLoading(false)
+      }
+    })
+
+    es.addEventListener('error', (e) => {
+      // Native EventSource fires Event (not MessageEvent) on connection drop.
+      // Custom 'error' events from our backend ARE MessageEvents with data.
+      if (sseIdleTimerRef.current) clearTimeout(sseIdleTimerRef.current)
+      es.close()
+      eventSourceRef.current = null
+
+      // If we closed intentionally (navigation/unmount), don't show errors.
+      // The backend may still finish — cached results will load on re-mount.
+      if (closingIntentionallyRef.current) {
+        closingIntentionallyRef.current = false
+        setConflictsLoading(false)
+        return
+      }
+
+      const me = e as MessageEvent
+      if (typeof me.data === 'string') {
+        try {
+          const data = JSON.parse(me.data)
+          setConflictsError(data.error || 'Scan failed')
+        } catch {
+          setConflictsError('Scan connection lost')
+        }
+      } else {
+        // Connection lost — try to recover cached results from backend
+        setConflictsError('Scan connection lost')
+      }
+      setConflictsLoading(false)
+      toast({ title: 'Scan Failed', description: 'Lost connection to scan stream', variant: 'destructive' })
+    })
+  }, [toast, iniConfig?.workshopIds, iniConfig?.modIds])
 
   return (
     <TooltipProvider>
@@ -1275,22 +1456,27 @@ export default function Mods() {
                 <TooltipTrigger asChild>
                   <div className="flex items-center gap-2 text-destructive">
                     <AlertTriangle className="w-3.5 h-3.5" />
-                    <span className="text-xs">ACF Not Found</span>
+                    <span className="text-xs">Workshop path missing</span>
                   </div>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>Workshop ACF file not found</p>
-                  <p className="text-xs text-muted-foreground">Configure server install path in Settings</p>
+                  <p>Can't find workshop data file (ACF)</p>
+                  <p className="text-xs text-muted-foreground">Set the server install path in Settings to enable update detection.</p>
                 </TooltipContent>
               </Tooltip>
             </>
           )}
 
           <div className="ml-auto flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={handleSyncFromServer} disabled={loading}>
-              <Download className="w-3.5 h-3.5 mr-1.5" />
-              Sync
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="outline" size="sm" onClick={handleSyncFromServer} disabled={loading}>
+                  <Download className="w-3.5 h-3.5 mr-1.5" />
+                  Sync
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Sync tracked mods from server INI config</TooltipContent>
+            </Tooltip>
             <Button variant="outline" size="sm" onClick={handleCheckUpdates} disabled={checking}>
               <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${checking ? 'animate-spin' : ''}`} />
               Check Updates
@@ -1376,7 +1562,7 @@ export default function Mods() {
                   <DialogHeader>
                     <DialogTitle>Import Steam Workshop Collection</DialogTitle>
                     <DialogDescription>
-                      Import all mods from a Steam Workshop collection
+                      Paste a collection URL to add all its mods to your server config at once
                     </DialogDescription>
                   </DialogHeader>
                   <div className="space-y-4">
@@ -1437,13 +1623,14 @@ export default function Mods() {
                                 <Checkbox
                                   checked={mod.selected}
                                   onCheckedChange={() => toggleModSelection(mod.workshopId)}
+                                aria-label={`Select ${mod.name}`}
                                 />
                                 <div className="flex-1 space-y-1 min-w-0">
                                   <div className="flex items-center gap-2 min-w-0">
                                     <span className="font-medium text-sm truncate">{mod.name}</span>
                                     {mod.isMap && (
                                       <Badge variant="secondary" className="text-xs">
-                                        <Map className="w-3 h-3 mr-1" />
+                                        <MapIcon className="w-3 h-3 mr-1" />
                                         Map
                                       </Badge>
                                     )}
@@ -1502,7 +1689,7 @@ export default function Mods() {
                       onClick={handleAddCollectionMods} 
                       disabled={loading || collectionMods.filter(m => m.selected).length === 0}
                     >
-                      Add {collectionMods.filter(m => m.selected).length} Mods
+                      {loading ? 'Adding...' : `Add ${collectionMods.filter(m => m.selected).length} Mods to Server`}
                     </Button>
                   </DialogFooter>
                 </DialogContent>
@@ -1522,7 +1709,14 @@ export default function Mods() {
                   <DialogHeader>
                     <DialogTitle>Add Workshop Mod</DialogTitle>
                     <DialogDescription>
-                      Paste a Steam Workshop URL or ID. Mod IDs will be auto-discovered.
+                      Paste a Steam Workshop URL or ID — or{' '}
+                      <button
+                        type="button"
+                        className="text-primary hover:underline"
+                        onClick={() => { setAdvancedAddOpen(false); setCollectionDialogOpen(true) }}
+                      >
+                        import an entire collection
+                      </button>.
                     </DialogDescription>
                   </DialogHeader>
                   <div className="space-y-4">
@@ -1602,7 +1796,7 @@ export default function Mods() {
                           <div className="flex gap-1 shrink-0">
                             {discoveredMod.isMap && (
                               <Badge variant="secondary" className="text-xs h-5">
-                                <Map className="w-3 h-3 mr-1" />
+                                <MapIcon className="w-3 h-3 mr-1" />
                                 Map
                               </Badge>
                             )}
@@ -1686,7 +1880,7 @@ export default function Mods() {
                                     </Button>
                                   </div>
                                 )}
-                                <div className="space-y-1 max-h-48 overflow-y-auto rounded-md border border-border/50 bg-background/50 p-1.5">
+                                <div className="space-y-1 max-h-[50vh] overflow-y-auto rounded-md border border-border/50 bg-background/50 p-1.5">
                                   {discoveredMod.modIds.map((modId) => {
                                     const isConfigured = discoveredMod.alreadyConfigured?.includes(modId)
                                     return (
@@ -1695,7 +1889,7 @@ export default function Mods() {
                                         role="button"
                                         tabIndex={0}
                                         aria-pressed={selectedModIds.has(modId)}
-                                        className={`flex items-center gap-2 px-2.5 py-1.5 rounded cursor-pointer transition-colors ${
+                                        className={`flex items-center gap-2 px-2.5 py-1.5 rounded cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/50 ${
                                           selectedModIds.has(modId)
                                             ? 'bg-primary/8 border-l-2 border-l-primary'
                                             : isConfigured
@@ -1713,6 +1907,7 @@ export default function Mods() {
                                         <Checkbox
                                           checked={selectedModIds.has(modId)}
                                           onCheckedChange={() => toggleModIdSelection(modId)}
+                                        aria-label={`Select mod ID ${modId}`}
                                         />
                                         <code className="text-xs font-mono flex-1 truncate" title={modId}>
                                           {modId}
@@ -1750,7 +1945,7 @@ export default function Mods() {
                         {/* Map folders info */}
                         {discoveredMod.mapFolders.length > 0 && (
                           <div className="flex items-start gap-2 text-xs">
-                            <Map className="w-3.5 h-3.5 text-muted-foreground mt-0.5 shrink-0" />
+                            <MapIcon className="w-3.5 h-3.5 text-muted-foreground mt-0.5 shrink-0" />
                             <div>
                               <span className="font-medium">Map folders will be added:</span>
                               <div className="text-muted-foreground mt-0.5">
@@ -1925,7 +2120,7 @@ export default function Mods() {
                   <Button variant="outline" size="sm" onClick={deselectAll}>
                     Deselect
                   </Button>
-                  <Button variant="destructive" size="sm" onClick={handleBulkRemove} disabled={loading}>
+                  <Button variant="destructive" size="sm" onClick={() => setConfirmBulkRemove(true)} disabled={loading}>
                     <Trash2 className="w-4 h-4 mr-2" />
                     Remove
                   </Button>
@@ -1950,6 +2145,7 @@ export default function Mods() {
                       title={searchQuery ? 'No mods match your search' : 'No mods tracked'}
                       description={searchQuery ? 'Try a different search term' : 'Track Workshop mods to detect updates and manage your load order.'}
                       action={searchQuery ? undefined : { label: 'Sync from Server', onClick: handleSyncFromServer, variant: 'outline' }}
+                      secondaryAction={searchQuery ? undefined : { label: 'Import Collection', onClick: () => setCollectionDialogOpen(true), variant: 'ghost' }}
                     />
                   ) : (
                     <div className="divide-y">
@@ -1963,6 +2159,7 @@ export default function Mods() {
                           <Checkbox
                             checked={selectedMods.has(mod.workshop_id)}
                             onCheckedChange={() => toggleModSelect(mod.workshop_id)}
+                          aria-label={`Select ${mod.name || mod.workshop_id}`}
                           />
                           
                           {mod.update_available ? (
@@ -1982,7 +2179,7 @@ export default function Mods() {
                                 </Badge>
                               ) : null}
                               <Badge variant={configuredWorkshopIds.has(mod.workshop_id) ? 'success' : 'secondary'} className="text-xs">
-                                {configuredWorkshopIds.has(mod.workshop_id) ? 'Configured' : 'Tracked Only'}
+                                {configuredWorkshopIds.has(mod.workshop_id) ? 'In Config' : 'Not in Config'}
                               </Badge>
                             </div>
                             <div className="flex items-center gap-2 flex-wrap mt-1">
@@ -2023,7 +2220,7 @@ export default function Mods() {
                                 variant="ghost"
                                 size="iconDense"
                                 className="h-10 w-10 text-destructive hover:text-destructive sm:h-10 sm:w-10"
-                                onClick={() => handleRemoveMod(mod.workshop_id)}
+                                onClick={() => setConfirmRemoveMod(mod.workshop_id)}
                                 disabled={loading}
                                 aria-label={`Remove mod ${mod.name || mod.workshop_id}`}
                               >
@@ -2043,76 +2240,450 @@ export default function Mods() {
 
           {/* Server Config Tab */}
           <TabsContent value="config" className="space-y-4">
-              <Card className="border-border/70 bg-card shadow-sm">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <FileText className="w-5 h-5" />
-                  Server INI Configuration
-                </CardTitle>
-                <CardDescription>
-                  Current mod settings in your server's INI file
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {iniConfig?.configured ? (
-                  <>
-                    {/* Summary Stats */}
-                    <div className="grid grid-cols-3 gap-4 stagger-in">
-                      <div className="text-center p-3 rounded-lg border border-border/60 bg-secondary">
-                        <div className="text-2xl font-bold">{iniConfig.totalMods}</div>
-                        <div className="text-xs text-muted-foreground">Mods</div>
-                      </div>
-                      <div className="text-center p-3 rounded-lg border border-border/60 bg-secondary">
-                        <div className="text-2xl font-bold">{iniConfig.workshopIds.length}</div>
-                        <div className="text-xs text-muted-foreground">Workshop Items</div>
-                      </div>
-                      <div className="text-center p-3 rounded-lg border border-border/60 bg-secondary">
-                        <div className="text-2xl font-bold">{iniConfig.maps.length}</div>
-                        <div className="text-xs text-muted-foreground">Maps</div>
-                      </div>
-                    </div>
+            {iniConfig?.configured ? (
+              <>
+                {/* ─── Sub-tab nav ─── */}
+                <div className="flex items-center gap-1 border-b border-border/40 pb-0 overflow-x-auto">
+                  {([
+                    { key: 'active' as const, label: 'Active Mods', icon: <Package className="w-3.5 h-3.5" /> },
+                    { key: 'order' as const, label: 'Load Order', icon: <GripVertical className="w-3.5 h-3.5" /> },
+                    { key: 'add' as const, label: 'Add Mods', icon: <Plus className="w-3.5 h-3.5" /> },
+                    { key: 'presets' as const, label: 'Presets', icon: <FolderOpen className="w-3.5 h-3.5" /> },
+                    { key: 'tools' as const, label: 'Tools', icon: <Wrench className="w-3.5 h-3.5" /> },
+                  ]).map(tab => (
+                    <button
+                      key={tab.key}
+                      onClick={() => setConfigSubTab(tab.key)}
+                      className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors duration-150 whitespace-nowrap -mb-[1px] ${
+                        configSubTab === tab.key
+                          ? 'border-primary text-foreground'
+                          : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border/50'
+                      }`}
+                    >
+                      {tab.icon}
+                      {tab.label}
+                      {tab.key === 'order' && hasModOrderChanged && <span className="w-1.5 h-1.5 rounded-full bg-warning" />}
+                    </button>
+                  ))}
+                </div>
 
-                    <div className="space-y-1">
-                      <p className="text-sm font-semibold">Step 1: Detect and Sync</p>
-                      <p className="text-xs text-muted-foreground">Resolve warnings and sync discovered mod IDs before applying changes.</p>
-                    </div>
-                    
-                    {/* Conflict Warnings */}
-                    {detectedConflicts.length > 0 && (
-                      <div className="space-y-2">
-                        {detectedConflicts.map((conflict, idx) => (
-                          <div 
-                            key={idx} 
-                            className={`flex items-start gap-2 p-3 rounded-lg border ${
-                              conflict.severity === 'error' ? 'bg-destructive/10 border-destructive/40' :
-                              conflict.severity === 'warning' ? 'bg-warning/10 border-warning/40' :
-                              'bg-primary/10 border-primary/30'
-                            }`}
-                          >
-                            <AlertTriangle className={`w-4 h-4 mt-0.5 flex-shrink-0 ${
-                              conflict.severity === 'error' ? 'text-destructive' :
-                              conflict.severity === 'warning' ? 'text-warning' :
-                              'text-primary'
-                            }`} />
-                            <div className="text-sm">
-                              <span className={`font-medium ${
-                                conflict.severity === 'error' ? 'text-destructive' :
-                                conflict.severity === 'warning' ? 'text-warning' :
-                                'text-primary'
-                              }`}>
-                                {conflict.type === 'duplicate' && 'Duplicate Mods'}
-                                {conflict.type === 'missing_modid' && 'Missing Mod IDs'}
-                                {conflict.type === 'incompatible' && 'Incompatible Mods'}
-                                {conflict.type === 'outdated_dependency' && 'Outdated Dependency'}
+                {/* ─── Summary bar ─── */}
+                <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                  <span className="tabular-nums">{iniConfig.totalMods} <span className="opacity-50">mods</span></span>
+                  <span className="tabular-nums">{iniConfig.workshopIds.length} <span className="opacity-50">workshop item{iniConfig.workshopIds.length !== 1 ? 's' : ''}</span></span>
+                  <span className="tabular-nums">{iniConfig.maps.length} <span className="opacity-50">map{iniConfig.maps.length !== 1 ? 's' : ''}</span></span>
+                </div>
+
+                {/* ═══ ACTIVE MODS SUB-TAB ═══ */}
+                {configSubTab === 'active' && (() => {
+                  const wsMap = iniConfig.workshopModMap || {}
+                  type ModEntry = { id: string; name: string; enabled: boolean }
+                  type WsGroup = { wsId: string; mods: ModEntry[]; allEnabled: boolean; someEnabled: boolean }
+                  const groups: WsGroup[] = []
+                  for (const wsId of (iniConfig.workshopIds || [])) {
+                    const details = wsMap[wsId] || []
+                    if (details.length === 0) continue
+                    groups.push({
+                      wsId,
+                      mods: details,
+                      allEnabled: details.every(m => m.enabled),
+                      someEnabled: details.some(m => m.enabled),
+                    })
+                  }
+                  const allModsList = groups.flatMap(g => g.mods)
+                  const mappedIds = new Set(allModsList.map(m => m.id))
+                  const orphaned = (iniConfig.modIds || []).filter(id => !mappedIds.has(id))
+                  const enabledCount = allModsList.filter(m => m.enabled).length
+                  const multiIdCount = groups.filter(g => g.mods.length > 1).length
+
+                  const q = modManagerSearch.toLowerCase().trim()
+                  const filteredGroups = groups
+                    .map(g => {
+                      if (!q) return g
+                      const matchesWs = g.wsId.includes(q)
+                      if (matchesWs) return g
+                      const matched = g.mods.filter(m => m.id.toLowerCase().includes(q) || m.name.toLowerCase().includes(q))
+                      if (matched.length === 0) return null
+                      return { ...g, mods: matched }
+                    })
+                    .filter((g): g is WsGroup => g !== null)
+                  const displayGroups = filterMultiId ? filteredGroups.filter(g => g.mods.length > 1) : filteredGroups
+
+                  const toggleMod = async (mod: ModEntry, wsId: string) => {
+                    const on = !mod.enabled
+                    try {
+                      await modsApi.toggleModId(mod.id, on)
+                      setIniConfig(prev => {
+                        if (!prev) return prev
+                        const newModIds = on ? [...prev.modIds, mod.id] : prev.modIds.filter(id => id !== mod.id)
+                        const newMap = { ...prev.workshopModMap }
+                        if (newMap[wsId]) {
+                          newMap[wsId] = newMap[wsId].map(m => m.id === mod.id ? { ...m, enabled: on } : m)
+                        }
+                        return { ...prev, modIds: newModIds, totalMods: newModIds.length, workshopModMap: newMap }
+                      })
+                      setOrderedModIds(prev => on ? [...prev, mod.id] : prev.filter(id => id !== mod.id))
+                      setLastSavedMod(mod.id)
+                      if (savedTimeoutRef.current) clearTimeout(savedTimeoutRef.current)
+                      savedTimeoutRef.current = setTimeout(() => setLastSavedMod(null), 2000)
+                    } catch (e) { reportClientError('Failed to toggle mod', e); toast({ variant: 'destructive', title: 'Failed to toggle mod' }) }
+                  }
+
+                  const toggleAllInGroup = async (g: WsGroup) => {
+                    const on = !g.allEnabled
+                    const modsToToggle = g.mods.filter(mod => mod.enabled !== on)
+                    if (modsToToggle.length === 0) return
+                    try {
+                      await modsApi.batchToggleModIds(modsToToggle.map(mod => ({ modId: mod.id, enabled: on })))
+                      setIniConfig(prev => {
+                        if (!prev) return prev
+                        let newModIds = [...prev.modIds]
+                        const newMap = { ...prev.workshopModMap }
+                        for (const mod of modsToToggle) {
+                          if (on) {
+                            if (!newModIds.includes(mod.id)) newModIds.push(mod.id)
+                          } else {
+                            newModIds = newModIds.filter(id => id !== mod.id)
+                          }
+                        }
+                        if (newMap[g.wsId]) {
+                          newMap[g.wsId] = newMap[g.wsId].map(m => {
+                            const toggled = modsToToggle.find(t => t.id === m.id)
+                            return toggled ? { ...m, enabled: on } : m
+                          })
+                        }
+                        return { ...prev, modIds: newModIds, totalMods: newModIds.length, workshopModMap: newMap }
+                      })
+                      setOrderedModIds(prev => {
+                        let next = [...prev]
+                        for (const mod of modsToToggle) {
+                          if (on) { if (!next.includes(mod.id)) next.push(mod.id) }
+                          else { next = next.filter(id => id !== mod.id) }
+                        }
+                        return next
+                      })
+                    } catch (e) { reportClientError('Failed to toggle group', e); toast({ variant: 'destructive', title: 'Failed to toggle group' }) }
+                  }
+
+                  const removeWorkshop = async (wsId: string) => {
+                    try {
+                      await modsApi.removeFromIni(wsId)
+                      const updated = await modsApi.getCurrentConfig()
+                      setIniConfig(updated)
+                      if (updated?.modIds) setOrderedModIds(updated.modIds)
+                      setLastSavedMod(`removed-${wsId}`)
+                      if (savedTimeoutRef.current) clearTimeout(savedTimeoutRef.current)
+                      savedTimeoutRef.current = setTimeout(() => setLastSavedMod(null), 2000)
+                    } catch (e) { reportClientError('Failed to remove workshop item', e); toast({ variant: 'destructive', title: 'Failed to remove workshop item' }) }
+                  }
+
+                  // Handle confirmed workshop removal from AlertDialog
+                  const handleConfirmedRemoveWorkshop = async () => {
+                    if (confirmRemoveWorkshop) {
+                      await removeWorkshop(confirmRemoveWorkshop)
+                      setConfirmRemoveWorkshop(null)
+                    }
+                  }
+
+                  const getGroupLabel = (g: WsGroup): string => {
+                    const first = g.mods[0]
+                    return first.name !== first.id ? first.name : first.id
+                  }
+
+                  return (
+                    <div className="space-y-3">
+                      {/* Conflict warnings (compact) */}
+                      {detectedConflicts.length > 0 && (
+                        <div className="space-y-1.5">
+                          {detectedConflicts.map((conflict, idx) => (
+                            <div
+                              key={idx}
+                              className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm ${
+                                conflict.severity === 'warning' ? 'bg-warning/10 border-warning/40' : 'bg-primary/10 border-primary/30'
+                              }`}
+                            >
+                              <AlertTriangle className={`w-3.5 h-3.5 shrink-0 ${conflict.severity === 'warning' ? 'text-warning' : 'text-primary'}`} />
+                              <span className="flex-1 min-w-0">
+                                <span className={`font-medium ${conflict.severity === 'warning' ? 'text-warning' : 'text-primary'}`}>
+                                  {conflict.type === 'duplicate' && 'Duplicate Mods'}
+                                  {conflict.type === 'missing_modid' && 'Missing Mod IDs'}
+                                  {conflict.type === 'outdated_dependency' && 'Outdated Dependency'}
+                                </span>
+                                <span className="text-muted-foreground">: {conflict.message}</span>
                               </span>
-                              <span className="text-muted-foreground">: {conflict.message}</span>
+                              {conflict.type === 'duplicate' && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="shrink-0 h-8 text-xs border-warning/40 text-warning hover:bg-warning/20"
+                                  disabled={deduplicating}
+                                  onClick={async () => {
+                                    setDeduplicating(true)
+                                    setDeduplicateResult(null)
+                                    try {
+                                      const result = await modsApi.deduplicateModIds()
+                                      setDeduplicateResult(result.message)
+                                      if (result.removed.length > 0) {
+                                        const updated = await modsApi.getCurrentConfig()
+                                        setIniConfig(updated)
+                                        if (updated?.modIds) setOrderedModIds(updated.modIds)
+                                      }
+                                    } catch (err: unknown) {
+                                      const errMsg = err instanceof Error ? err.message : 'Failed to deduplicate'
+                                      const msg = errMsg.includes('<')
+                                        ? 'Failed to deduplicate — server endpoint not available'
+                                        : errMsg
+                                      setDeduplicateResult(`Error: ${msg}`)
+                                    } finally {
+                                      setDeduplicating(false)
+                                    }
+                                  }}
+                                >
+                                  {deduplicating ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Wrench className="w-3 h-3 mr-1" />}
+                                  Fix
+                                </Button>
+                              )}
                             </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                          ))}
+                          {deduplicateResult && (
+                            <p className={`text-xs px-3 ${deduplicateResult.startsWith('Removed') ? 'text-emerald-400' : 'text-muted-foreground'}`}>{deduplicateResult}</p>
+                          )}
+                        </div>
+                      )}
 
-                    {/* Sync Mod IDs Button */}
+                      {/* Search + filter bar */}
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-[11px] tabular-nums text-muted-foreground">
+                            {enabledCount}<span className="opacity-50">/{allModsList.length}</span> on
+                          </span>
+                          {multiIdCount > 0 && (
+                            <button
+                              onClick={() => setFilterMultiId(!filterMultiId)}
+                              className={`text-[11px] px-2 py-0.5 rounded border transition-colors duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/50 ${filterMultiId ? 'bg-primary/20 border-primary/50 text-primary' : 'border-border/40 text-muted-foreground hover:text-foreground'}`}
+                            >
+                              Multi-ID ({multiIdCount})
+                            </button>
+                          )}
+                          {lastSavedMod && (
+                            <span className="text-[11px] text-emerald-400 flex items-center gap-1 animate-in fade-in duration-300">
+                              <Check className="w-3 h-3" /> Saved to INI
+                            </span>
+                          )}
+                        </div>
+                        <div className="relative w-full sm:w-56">
+                          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+                          <Input value={modManagerSearch} onChange={e => setModManagerSearch(e.target.value)} placeholder="Filter mods..." aria-label="Filter mods" className="h-7 text-xs pl-8 bg-background/60" />
+                          {modManagerSearch && (
+                            <button onClick={() => setModManagerSearch('')} aria-label="Clear search" className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground text-[11px] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/50 rounded">✕</button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Scrollable mod list */}
+                      <div className="rounded-lg border border-border/40 overflow-hidden bg-black/20">
+                        {displayGroups.length > 0 ? (
+                          <ScrollArea className="h-[calc(100vh-340px)] min-h-[300px]">
+                            <div className="divide-y divide-border/25">
+                              {displayGroups.map(g => {
+                                const isSingle = g.mods.length === 1
+                                const mod0 = g.mods[0]
+
+                                if (isSingle) {
+                                  return (
+                                    <div
+                                      key={g.wsId}
+                                      className={`group flex items-center gap-3 px-3 py-1.5 transition-colors duration-150 hover:bg-muted/10 ${!mod0.enabled ? 'opacity-50' : ''}`}
+                                    >
+                                      <Checkbox
+                                        checked={mod0.enabled}
+                                        onCheckedChange={() => toggleMod(mod0, g.wsId)}
+                                        className="shrink-0"
+                                      aria-label={`${mod0.enabled ? "Disable" : "Enable"} ${mod0.name || mod0.id}`}
+                                      />
+                                      <div className="min-w-0 flex-1 flex items-baseline gap-2">
+                                        <span className="text-xs font-mono truncate">{mod0.id}</span>
+                                        {mod0.name !== mod0.id && (
+                                          <span className="text-[11px] text-muted-foreground/70 truncate hidden sm:inline">{mod0.name}</span>
+                                        )}
+                                      </div>
+                                      <span className="text-[11px] text-muted-foreground/60 tabular-nums shrink-0 hidden sm:inline">{g.wsId}</span>
+                                      <button
+                                        onClick={() => setConfirmRemoveWorkshop(g.wsId)}
+                                        className="opacity-0 group-hover:opacity-60 hover:!opacity-100 text-destructive/70 hover:text-destructive transition-opacity duration-150 p-0.5 rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-destructive/50 focus-visible:opacity-100"
+                                        title={`Remove workshop item ${g.wsId} from INI`}
+                                        aria-label={`Remove ${mod0.id}`}
+                                      >
+                                        <X className="w-3 h-3" />
+                                      </button>
+                                    </div>
+                                  )
+                                }
+
+                                return (
+                                  <div key={g.wsId} className={`group ${!g.someEnabled ? 'opacity-50' : ''}`}>
+                                    <div className="flex items-center gap-3 px-3 py-1.5">
+                                      <button
+                                        onClick={() => toggleAllInGroup(g)}
+                                        className="flex items-center gap-3 flex-1 min-w-0 text-left hover:bg-muted/10 -mx-3 -my-1.5 px-3 py-1.5 transition-colors duration-150 focus-visible:outline-none focus-visible:bg-muted/10"
+                                      >
+                                        <div className={`w-2 h-2 rounded-sm shrink-0 ${g.allEnabled ? 'bg-emerald-400' : g.someEnabled ? 'bg-emerald-400/40' : 'bg-muted-foreground/20'}`} />
+                                        <span className="text-xs font-medium truncate flex-1">{getGroupLabel(g)}</span>
+                                        <span className="text-[11px] tabular-nums text-muted-foreground/70 shrink-0">{g.mods.filter(m => m.enabled).length}/{g.mods.length}</span>
+                                        <span className="text-[11px] text-muted-foreground/60 tabular-nums shrink-0 hidden sm:inline">{g.wsId}</span>
+                                      </button>
+                                      <button
+                                        onClick={() => setConfirmRemoveWorkshop(g.wsId)}
+                                        className="opacity-0 group-hover:opacity-60 hover:!opacity-100 text-destructive/70 hover:text-destructive transition-opacity duration-150 p-0.5 rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-destructive/50 focus-visible:opacity-100 shrink-0"
+                                        title={`Remove workshop item ${g.wsId} from INI`}
+                                        aria-label={`Remove ${getGroupLabel(g)}`}
+                                      >
+                                        <X className="w-3 h-3" />
+                                      </button>
+                                    </div>
+                                    <div className="pl-8 pr-3 pb-1.5 flex flex-wrap gap-1">
+                                      {g.mods.map(mod => (
+                                        <button
+                                          key={mod.id}
+                                          onClick={() => toggleMod(mod, g.wsId)}
+                                          title={`${mod.id}${mod.name !== mod.id ? ` — ${mod.name}` : ''}\nClick to ${mod.enabled ? 'disable' : 'enable'}`}
+                                          className={`
+                                            px-1.5 py-0.5 rounded text-[11px] font-medium transition-colors duration-150 cursor-pointer
+                                            focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/50
+                                            ${mod.enabled
+                                              ? 'bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25'
+                                              : 'bg-muted/15 text-muted-foreground/75 hover:text-muted-foreground hover:bg-muted/25'
+                                            }
+                                          `}
+                                        >
+                                          {mod.id}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                              {/* Orphaned mods */}
+                              {!filterMultiId && orphaned.filter(id => !q || id.toLowerCase().includes(q)).map(id => (
+                                <div key={`orphan-${id}`} className="flex items-center gap-3 px-3 py-1.5 opacity-60">
+                                  <AlertTriangle className="w-3 h-3 text-warning/60 shrink-0" />
+                                  <span className="text-xs font-mono truncate flex-1">{id}</span>
+                                  <span className="text-[11px] text-warning/50">not on disk</span>
+                                </div>
+                              ))}
+                            </div>
+                          </ScrollArea>
+                        ) : (
+                          <div className="px-3 py-8 text-center text-xs text-muted-foreground">
+                            {q ? `No mods matching "${modManagerSearch}"` : 'No mod IDs found'}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Mods= raw line */}
+                      <div className="pt-2 border-t border-border/15">
+                        <div className="text-[11px] text-muted-foreground/60 font-mono break-all leading-tight line-clamp-2" title={`Mods=${iniConfig.modIds?.join(';') || ''}`}>
+                          Mods={iniConfig.modIds?.join(';') || ''}
+                        </div>
+                      </div>
+
+                      {/* Workshop item remove confirmation */}
+                      <AlertDialog open={!!confirmRemoveWorkshop} onOpenChange={(open) => { if (!open) setConfirmRemoveWorkshop(null) }}>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Remove workshop item?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              This will remove the workshop item and its mod IDs from the server INI. Workshop files on disk won't be deleted.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction
+                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              onClick={handleConfirmedRemoveWorkshop}
+                            >
+                              Remove
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </div>
+                  )
+                })()}
+
+                {/* ═══ LOAD ORDER SUB-TAB ═══ */}
+                {configSubTab === 'order' && (
+                  <div className="space-y-3">
+                    {orderedModIds.length === 0 ? (
+                      <div className="flex items-center justify-center py-10 text-muted-foreground">
+                        <div className="text-center space-y-2">
+                          <Layers className="w-8 h-8 mx-auto opacity-30" />
+                          <p className="text-sm font-medium text-foreground/70">No mods in load order</p>
+                          <p className="text-xs">Enable mods in the Active Mods tab first.</p>
+                        </div>
+                      </div>
+                    ) : (
+                    <>
+                    <p className="text-xs text-muted-foreground">Drag to reorder. Changes are not saved until you click Save.</p>
+                    <div className="rounded-lg border border-border/30 overflow-hidden">
+                      <ScrollArea className="h-[calc(100vh-320px)] min-h-[200px]">
+                        <div className="divide-y divide-border/15">
+                          {orderedModIds
+                            .filter(modId => {
+                              const q = modManagerSearch.toLowerCase().trim()
+                              return !q || modId.toLowerCase().includes(q)
+                            })
+                            .map((modId) => {
+                              const actualIndex = orderedModIds.indexOf(modId)
+                              return (
+                                <div
+                                  key={modId}
+                                  draggable={!modManagerSearch.trim()}
+                                  onDragStart={() => handleDragStart(actualIndex)}
+                                  onDragOver={(e) => handleDragOver(e, actualIndex)}
+                                  onDragEnd={handleDragEnd}
+                                  className={`flex items-center gap-2 px-2.5 py-1 cursor-move transition-colors duration-150 hover:bg-muted/15 ${
+                                    draggedModIndex === actualIndex ? 'opacity-30 bg-primary/5' : ''
+                                  }`}
+                                >
+                                  <GripVertical className="w-3 h-3 text-muted-foreground/30 shrink-0" />
+                                  <span className="text-[11px] tabular-nums text-muted-foreground/60 w-5 text-right shrink-0">{actualIndex + 1}</span>
+                                  <span className="text-[11px] font-mono truncate flex-1">{modId}</span>
+                                  <div className="flex shrink-0">
+                                    <button onClick={() => moveModUp(actualIndex)} disabled={actualIndex === 0} className="p-1.5 min-w-[36px] min-h-[36px] flex items-center justify-center hover:bg-muted/30 disabled:opacity-30 rounded transition-colors duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/50" aria-label="Move up">
+                                      <ChevronRight className="w-3.5 h-3.5 -rotate-90" />
+                                    </button>
+                                    <button onClick={() => moveModDown(actualIndex)} disabled={actualIndex === orderedModIds.length - 1} className="p-1.5 min-w-[36px] min-h-[36px] flex items-center justify-center hover:bg-muted/30 disabled:opacity-30 rounded transition-colors duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/50" aria-label="Move down">
+                                      <ChevronRight className="w-3.5 h-3.5 rotate-90" />
+                                    </button>
+                                  </div>
+                                </div>
+                              )
+                            })}
+                        </div>
+                      </ScrollArea>
+                      {hasModOrderChanged && (
+                        <div className="px-3 py-2 border-t border-border/40 bg-muted/20 flex items-center justify-between">
+                          <span className="text-[11px] text-warning">Unsaved order changes</span>
+                          <div className="flex gap-2">
+                            <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => setOrderedModIds(iniConfig.modIds)}>Reset</Button>
+                            <Button size="sm" className="h-8 text-xs" onClick={handleSaveModOrder} disabled={savingModOrder}>
+                              {savingModOrder ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Save className="w-3 h-3 mr-1" />}
+                              Save Order
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    </>
+                    )}
+                  </div>
+                )}
+
+                {/* ═══ ADD MODS SUB-TAB ═══ */}
+                {configSubTab === 'add' && (
+                  <div className="space-y-4">
+                    {/* Sync Mod IDs */}
                     <div className="flex flex-col gap-3 rounded-lg border border-border/70 bg-secondary p-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
                       <div className="min-w-0">
                         <p className="text-sm font-medium">Sync Mod IDs from Downloads</p>
@@ -2120,9 +2691,9 @@ export default function Mods() {
                           Reads mod.info from downloaded mods and adds their IDs to Mods= in the INI
                         </p>
                       </div>
-                      <Button 
-                        onClick={handleSyncModIds} 
-                        disabled={syncing} 
+                      <Button
+                        onClick={handleSyncModIds}
+                        disabled={syncing}
                         size="sm"
                         variant="outline"
                       >
@@ -2135,236 +2706,13 @@ export default function Mods() {
                       </Button>
                     </div>
 
-                    <Separator />
-
-                    <div className="space-y-1">
-                      <p className="text-sm font-semibold">Step 2: Review Maps</p>
-                      <p className="text-xs text-muted-foreground">Verify map folders before changing identifiers or load order.</p>
-                    </div>
-
-                    {/* Maps List */}
-                    <div>
-                      <button
-                        onClick={() => setShowMapsExpanded(!showMapsExpanded)}
-                        className="flex items-center gap-2 text-sm font-medium mb-2 hover:text-primary transition-colors"
-                      >
-                        {showMapsExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                        <Map className="w-4 h-4" />
-                        Maps ({iniConfig.maps.length})
-                      </button>
-                      {showMapsExpanded && (
-                        <div className="flex flex-wrap gap-1 ml-6">
-                          {iniConfig.maps.map((map, i) => (
-                            <Badge key={i} variant="secondary" className="text-xs max-w-[250px] truncate">
-                              {map}
-                            </Badge>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    <Separator />
-
-                    <div className="space-y-1">
-                      <p className="text-sm font-semibold">Step 3: Review IDs</p>
-                      <p className="text-xs text-muted-foreground">Inspect Workshop items and resolved Mod IDs currently defined in the INI.</p>
-                    </div>
-
-                    {/* Workshop IDs List */}
-                    <div>
-                      <button
-                        onClick={() => setShowWorkshopIdsExpanded(!showWorkshopIdsExpanded)}
-                        className="flex items-center gap-2 text-sm font-medium mb-2 hover:text-primary transition-colors"
-                      >
-                        {showWorkshopIdsExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                        <Package className="w-4 h-4" />
-                        WorkshopItems= ({iniConfig.workshopIds?.length || 0})
-                      </button>
-                      {showWorkshopIdsExpanded && (
-                        <div className="ml-6 space-y-2">
-                          <div className="flex flex-wrap gap-1">
-                            {iniConfig.workshopIds?.map((id, i) => (
-                              <Badge key={i} variant="outline" className="text-xs font-mono">
-                                {id}
-                              </Badge>
-                            ))}
-                          </div>
-                          <div className="text-xs text-muted-foreground bg-muted/50 p-2 rounded font-mono break-all">
-                            WorkshopItems={iniConfig.workshopIds?.join(';') || ''}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    <Separator />
-
-                    <div className="space-y-1">
-                      <p className="text-sm font-semibold">Step 4: Tune Load Order</p>
-                      <p className="text-xs text-muted-foreground">Reorder mods so dependencies load correctly, then save the load order.</p>
-                    </div>
-
-                    {/* Mod IDs List */}
-                    <div>
-                      <button
-                        onClick={() => setShowModIdsExpanded(!showModIdsExpanded)}
-                        className="flex items-center gap-2 text-sm font-medium mb-2 hover:text-primary transition-colors"
-                      >
-                        {showModIdsExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                        <FileText className="w-4 h-4" />
-                        Mods= ({iniConfig.modIds?.length || 0})
-                      </button>
-                      {showModIdsExpanded && (
-                        <div className="ml-6 space-y-2">
-                          <div className="flex flex-wrap gap-1">
-                            {iniConfig.modIds?.map((id, i) => (
-                              <Badge key={i} variant="outline" className="text-xs font-mono">
-                                {id}
-                              </Badge>
-                            ))}
-                          </div>
-                          <div className="text-xs text-muted-foreground bg-muted/50 p-2 rounded font-mono break-all">
-                            Mods={iniConfig.modIds?.join(';') || ''}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Mod Load Order */}
-                    <div>
-                      <button
-                        onClick={() => setShowModOrderEditor(!showModOrderEditor)}
-                        className="flex items-center gap-2 text-sm font-medium mb-2 hover:text-primary transition-colors"
-                      >
-                        {showModOrderEditor ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                        <Layers className="w-4 h-4" />
-                        Mod Load Order ({orderedModIds.length})
-                        {hasModOrderChanged && (
-                            <Badge variant="warning" className="text-xs ml-2">
-                            Modified
-                          </Badge>
-                        )}
-                      </button>
-                      {showModOrderEditor && (
-                        <div className="space-y-2 ml-6">
-                          <p className="text-xs text-muted-foreground mb-2">
-                            Drag to reorder, or use the arrow buttons. Mods higher in the list load first.
-                          </p>
-                          <ScrollArea className="h-[min(48vh,20rem)] border rounded-lg p-2 sm:h-[min(52vh,24rem)]">
-                            <div className="space-y-1">
-                              {orderedModIds.map((modId, index) => (
-                                <div
-                                  key={modId}
-                                  draggable
-                                  onDragStart={() => handleDragStart(index)}
-                                  onDragOver={(e) => handleDragOver(e, index)}
-                                  onDragEnd={handleDragEnd}
-                                  className={`flex items-center gap-2 p-2 rounded border bg-background hover:bg-muted/50 cursor-move transition-colors ${
-                                    draggedModIndex === index ? 'opacity-50 border-primary' : ''
-                                  }`}
-                                >
-                                  <GripVertical className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                                  <span className="text-xs text-muted-foreground w-6">{index + 1}.</span>
-                                  <span className="text-sm font-mono flex-1 truncate">{modId}</span>
-                                  <div className="flex gap-1">
-                                    <Button
-                                      variant="ghost"
-                                      size="iconDense"
-                                      className="h-10 w-10 sm:h-10 sm:w-10"
-                                      onClick={() => moveModUp(index)}
-                                      disabled={index === 0}
-                                      aria-label="Move mod up"
-                                    >
-                                      <ChevronRight className="w-3 h-3 rotate-[-90deg]" />
-                                    </Button>
-                                    <Button
-                                      variant="ghost"
-                                      size="iconDense"
-                                      className="h-10 w-10 sm:h-10 sm:w-10"
-                                      onClick={() => moveModDown(index)}
-                                      disabled={index === orderedModIds.length - 1}
-                                      aria-label="Move mod down"
-                                    >
-                                      <ChevronRight className="w-3 h-3 rotate-90" />
-                                    </Button>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </ScrollArea>
-                          {hasModOrderChanged && (
-                            <div className="flex justify-end gap-2 pt-2">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setOrderedModIds(iniConfig.modIds)}
-                              >
-                                Reset
-                              </Button>
-                              <Button
-                                size="sm"
-                                onClick={handleSaveModOrder}
-                                disabled={savingModOrder}
-                              >
-                                {savingModOrder ? (
-                                  <>
-                                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                    Saving...
-                                  </>
-                                ) : (
-                                  <>
-                                    <Save className="w-4 h-4 mr-2" />
-                                    Save Order
-                                  </>
-                                )}
-                              </Button>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-
-                    <Separator />
-
-                    <div className="space-y-1">
-                      <p className="text-sm font-semibold">Step 5: Export or Apply</p>
-                      <p className="text-xs text-muted-foreground">Copy the current config strings or write pending mod selections to the server INI.</p>
-                    </div>
-
-                    {/* Copy Buttons */}
-                    <div className="flex flex-col gap-2 sm:flex-row">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="w-full sm:w-auto"
-                        onClick={() => {
-                          const text = orderedModIds.length > 0 ? orderedModIds.join(';') : (iniConfig?.modIds?.join(';') || '');
-                          if (text) copyToClipboard(text, 'mods');
-                        }}
-                      >
-                        {copiedField === 'mods' ? <Check className="w-4 h-4 mr-2" /> : <Copy className="w-4 h-4 mr-2" />}
-                        Copy Mods=
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="w-full sm:w-auto"
-                        onClick={() => {
-                          const text = iniConfig?.workshopIds?.join(';') || '';
-                          if (text) copyToClipboard(text, 'workshop');
-                        }}
-                      >
-                        {copiedField === 'workshop' ? <Check className="w-4 h-4 mr-2" /> : <Copy className="w-4 h-4 mr-2" />}
-                        Copy WorkshopItems=
-                      </Button>
-                    </div>
-
                     {/* Pending Mods to Install */}
                     {modsToInstall.length > 0 && (
                       <div className="space-y-3 rounded-lg border border-border/70 bg-secondary p-3">
                         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                           <Label className="flex items-center gap-2">
                             <Plus className="w-4 h-4" />
-                            {modsToInstall.length} mods pending configuration
+                            {modsToInstall.length} mods queued for INI
                           </Label>
                           <Button
                             variant="ghost"
@@ -2378,10 +2726,10 @@ export default function Mods() {
                           {modsToInstall.map(mod => (
                             <Badge key={mod.workshopId} variant="outline" className="max-w-full text-xs sm:max-w-[200px]">
                               <span className="truncate">{mod.name}</span>
-                              {mod.isMap && <Map className="w-3 h-3 ml-1" />}
+                              {mod.isMap && <MapIcon className="w-3 h-3 ml-1" />}
                               <button
                                 type="button"
-                                aria-label={`Remove ${mod.name} from pending configuration`}
+                                aria-label={`Remove ${mod.name} from queue`}
                                 onClick={() => removeFromInstallList(mod.workshopId)}
                                 className="ml-1 hover:text-destructive"
                               >
@@ -2396,179 +2744,230 @@ export default function Mods() {
                         </Button>
                       </div>
                     )}
-                  </>
-                ) : (
-                  <div className="text-center py-8">
-                    <FileText className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-                    <p className="text-muted-foreground">{iniConfig?.error || 'Server configuration not found'}</p>
-                    <p className="text-sm text-muted-foreground">Start the server once to generate the config file</p>
+
+                    {modsToInstall.length === 0 && (
+                      <div className="text-center py-8 text-muted-foreground">
+                        <Plus className="w-10 h-10 mx-auto mb-3 opacity-30" />
+                        <p className="text-sm">No mods pending</p>
+                        <p className="text-xs">Use the Tracked Mods tab to find and add new workshop items, or click Sync to detect new downloads.</p>
+                      </div>
+                    )}
                   </div>
                 )}
-              </CardContent>
-            </Card>
 
-            {/* Mod Presets */}
-            <Card className="border-border/70 bg-card shadow-sm">
-              <CardHeader className="pb-3">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <div className="text-xs font-semibold text-muted-foreground mb-1">Step 6: Save and Reuse</div>
-                    <CardTitle className="text-lg flex items-center gap-2">
-                      <FolderOpen className="w-5 h-5" />
-                      Mod Presets
-                    </CardTitle>
-                    <CardDescription>
-                      Save and load different mod configurations
-                    </CardDescription>
-                  </div>
-                  <Dialog open={savePresetOpen} onOpenChange={setSavePresetOpen}>
-                    <DialogTrigger asChild>
-                      <Button size="sm" disabled={!iniConfig?.configured} className="w-full sm:w-auto">
-                        <Save className="w-4 h-4 mr-2" />
-                        Save Current
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                      <DialogHeader>
-                        <DialogTitle>Save Mod Preset</DialogTitle>
-                        <DialogDescription>
-                          Save the current mod configuration as a preset for easy switching later.
-                        </DialogDescription>
-                      </DialogHeader>
-                      <div className="space-y-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="presetName">Preset Name</Label>
-                          <Input
-                            id="presetName"
-                            value={presetName}
-                            onChange={(e) => setPresetName(e.target.value)}
-                            placeholder="e.g., Vanilla+ Light, Hardcore, RP Server"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="presetDesc">Description (optional)</Label>
-                          <Input
-                            id="presetDesc"
-                            value={presetDescription}
-                            onChange={(e) => setPresetDescription(e.target.value)}
-                            placeholder="Brief description of this preset..."
-                          />
-                        </div>
-                        {iniConfig?.configured && (
-                          <div className="rounded-lg border border-border/70 bg-secondary p-3 text-sm text-muted-foreground">
-                            This will save {iniConfig.workshopIds?.length || 0} workshop items and {iniConfig.modIds?.length || 0} mod IDs.
-                          </div>
-                        )}
-                      </div>
-                      <DialogFooter className="flex-col sm:flex-row gap-2">
-                        <Button variant="outline" onClick={() => setSavePresetOpen(false)} className="w-full sm:w-auto">
-                          Cancel
-                        </Button>
-                        <Button onClick={handleSavePreset} disabled={savingPreset || !presetName.trim()} className="w-full sm:w-auto">
-                          {savingPreset && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                          Save Preset
-                        </Button>
-                      </DialogFooter>
-                    </DialogContent>
-                  </Dialog>
-                </div>
-              </CardHeader>
-              <CardContent>
-                {presetsLoading ? (
-                  <div className="flex items-center justify-center py-8">
-                    <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-                  </div>
-                ) : presets.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <FolderOpen className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                    <p>No presets saved yet</p>
-                    <p className="text-sm">Save your current mod configuration to create a preset</p>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {presets.map((preset) => (
-                      <div
-                        key={preset.id}
-                        className="flex flex-col gap-3 rounded-lg border border-border/70 bg-muted/50 p-3 transition-colors hover:bg-accent/22 sm:flex-row sm:items-center sm:justify-between"
-                      >
-                        <div className="flex-1 min-w-0">
-                          <div className="font-medium">{preset.name}</div>
-                          <div className="text-xs text-muted-foreground">
-                            {preset.workshopIds?.length || 0} mods • {preset.description || 'No description'}
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            Saved {new Date(preset.created_at).toLocaleDateString()}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2 self-start sm:self-auto">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleApplyPreset(preset.id, preset.name)}
-                            disabled={applyingPreset === preset.id}
-                          >
-                            {applyingPreset === preset.id ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : (
-                              <Download className="w-4 h-4" />
+                {/* ═══ PRESETS SUB-TAB ═══ */}
+                {configSubTab === 'presets' && (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs text-muted-foreground">Save and restore mod configurations.</p>
+                      <Dialog open={savePresetOpen} onOpenChange={setSavePresetOpen}>
+                        <DialogTrigger asChild>
+                          <Button size="sm" disabled={!iniConfig?.configured}>
+                            <Save className="w-4 h-4 mr-2" />
+                            Save Current
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent>
+                          <DialogHeader>
+                            <DialogTitle>Save Mod Preset</DialogTitle>
+                            <DialogDescription>
+                              Save the current mod configuration as a preset for easy switching later.
+                            </DialogDescription>
+                          </DialogHeader>
+                          <div className="space-y-4">
+                            <div className="space-y-2">
+                              <Label htmlFor="presetName">Preset Name</Label>
+                              <Input
+                                id="presetName"
+                                value={presetName}
+                                onChange={(e) => setPresetName(e.target.value)}
+                                placeholder="e.g., Vanilla+ Light, Hardcore, RP Server"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="presetDesc">Description (optional)</Label>
+                              <Input
+                                id="presetDesc"
+                                value={presetDescription}
+                                onChange={(e) => setPresetDescription(e.target.value)}
+                                placeholder="Brief description of this preset..."
+                              />
+                            </div>
+                            {iniConfig?.configured && (
+                              <div className="rounded-lg border border-border/70 bg-secondary p-3 text-sm text-muted-foreground">
+                                This will save {iniConfig.workshopIds?.length || 0} workshop items and {iniConfig.modIds?.length || 0} mod IDs.
+                              </div>
                             )}
-                            <span className="ml-1.5">Load</span>
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleDeletePreset(preset.id, preset.name)}
-                            className="text-destructive hover:text-destructive"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
+                          </div>
+                          <DialogFooter className="flex-col sm:flex-row gap-2">
+                            <Button variant="outline" onClick={() => setSavePresetOpen(false)} className="w-full sm:w-auto">
+                              Cancel
+                            </Button>
+                            <Button onClick={handleSavePreset} disabled={savingPreset || !presetName.trim()} className="w-full sm:w-auto">
+                              {savingPreset && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                              Save Preset
+                            </Button>
+                          </DialogFooter>
+                        </DialogContent>
+                      </Dialog>
+                    </div>
+
+                    {presetsLoading ? (
+                      <div className="flex items-center justify-center py-8">
+                        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
                       </div>
-                    ))}
+                    ) : presets.length === 0 ? (
+                      <div className="text-center py-8 text-muted-foreground">
+                        <FolderOpen className="w-10 h-10 mx-auto mb-3 opacity-30" />
+                        <p className="text-sm">No presets saved yet</p>
+                        <p className="text-xs">Save your current mod configuration to create a preset</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {presets.map((preset) => (
+                          <div
+                            key={preset.id}
+                            className="flex flex-col gap-3 rounded-lg border border-border/70 bg-muted/50 p-3 transition-colors hover:bg-accent/22 sm:flex-row sm:items-center sm:justify-between"
+                          >
+                            <div className="flex-1 min-w-0">
+                              <div className="font-medium truncate">{preset.name}</div>
+                              <div className="text-xs text-muted-foreground truncate">
+                                {preset.workshopIds?.length || 0} mods &bull; {preset.description || 'No description'}
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                Saved {new Date(preset.created_at).toLocaleDateString()}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 self-start sm:self-auto">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleApplyPreset(preset.id, preset.name)}
+                                disabled={applyingPreset === preset.id}
+                              >
+                                {applyingPreset === preset.id ? (
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : (
+                                  <Download className="w-4 h-4" />
+                                )}
+                                <span className="ml-1.5">Load</span>
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleDeletePreset(preset.id, preset.name)}
+                                className="text-destructive hover:text-destructive"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
-              </CardContent>
-            </Card>
 
-            {/* Help Card */}
-            <Card className="border-border/70 bg-card shadow-sm">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <Info className="w-5 h-5" />
-                  Operator Safety Notes
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3 text-sm text-muted-foreground">
-                <div className="flex items-start gap-3">
-                  <AlertTriangle className="w-4 h-4 mt-0.5 text-warning" />
-                  <div>
-                    <p className="font-medium text-foreground">Load Order Is Operationally Critical</p>
-                    <p>Keep frameworks and dependencies above content mods. Incorrect order can cause silent failures.</p>
+                {/*  TOOLS SUB-TAB  */}
+                {configSubTab === 'tools' && (
+                  <div className="space-y-4">
+                    <div className="rounded-lg border border-border/40 p-3 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 text-sm font-medium">
+                          <MapIcon className="w-4 h-4" />
+                          Maps= ({iniConfig?.maps?.length || 0})
+                        </div>
+                        <button
+                          onClick={async () => {
+                            try {
+                              setRepairingMaps(true)
+                              const result = await modsApi.repairMapEntries()
+                              setMapRepairResult(result)
+                            } catch (err) {
+                              console.error('Map repair failed:', err)
+                              setMapRepairResult({ removed: [], remaining: iniConfig?.maps || [], message: 'Map repair failed — check server connection' })
+                            } finally {
+                              setRepairingMaps(false)
+                            }
+                          }}
+                          disabled={repairingMaps}
+                          className="flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-muted hover:bg-accent text-muted-foreground hover:text-accent-foreground transition-colors disabled:opacity-50"
+                          title="Validate and remove invalid map entries"
+                        >
+                          {repairingMaps ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wrench className="w-3 h-3" />}
+                          Repair
+                        </button>
+                      </div>
+                      {mapRepairResult && (
+                        <div className={`p-2 rounded text-xs ${(mapRepairResult.removed.length > 0 || (mapRepairResult.added?.length ?? 0) > 0) ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'}`}>
+                          {mapRepairResult.message}
+                        </div>
+                      )}
+                      <div className="flex flex-wrap gap-1">
+                        {iniConfig.maps.map((map, i) => (
+                          <Badge key={i} variant="secondary" className="text-xs max-w-[250px] truncate">
+                            {map}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Workshop IDs Review */}
+                    <div className="rounded-lg border border-border/40 p-3 space-y-2">
+                      <div className="flex items-center gap-2 text-sm font-medium">
+                        <Package className="w-4 h-4" />
+                        WorkshopItems= ({iniConfig.workshopIds?.length || 0})
+                      </div>
+                      <div className="flex flex-wrap gap-1 max-h-[200px] overflow-y-auto">
+                        {iniConfig.workshopIds?.map((id, i) => (
+                          <Badge key={i} variant="outline" className="text-xs font-mono">
+                            {id}
+                          </Badge>
+                        ))}
+                      </div>
+                      <div className="text-xs text-muted-foreground bg-muted/50 p-2 rounded font-mono break-all max-h-[80px] overflow-y-auto">
+                        WorkshopItems={iniConfig.workshopIds?.join(';') || ''}
+                      </div>
+                    </div>
+
+                    {/* Operator Notes */}
+                    <div className="rounded-lg border border-border/40 p-3 space-y-3 text-sm text-muted-foreground">
+                      <div className="text-xs font-semibold text-foreground flex items-center gap-2">
+                        <Info className="w-3.5 h-3.5" />
+                        Operator Notes
+                      </div>
+                      <div className="flex items-start gap-3">
+                        <AlertTriangle className="w-3.5 h-3.5 mt-0.5 text-warning shrink-0" />
+                        <div>
+                          <p className="font-medium text-foreground text-xs">Load Order Matters</p>
+                          <p className="text-xs">Frameworks and dependencies must load before content mods. Wrong order can cause silent failures.</p>
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-3">
+                        <MapIcon className="w-3.5 h-3.5 mt-0.5 text-primary shrink-0" />
+                        <div>
+                          <p className="font-medium text-foreground text-xs">Map Mods Need Extra Care</p>
+                          <p className="text-xs">After importing map mods, verify map folder names so spawns and cells load correctly.</p>
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-3">
+                        <RefreshCw className="w-3.5 h-3.5 mt-0.5 text-primary shrink-0" />
+                        <div>
+                          <p className="font-medium text-foreground text-xs">Sync After Downloading New Mods</p>
+                          <p className="text-xs">Workshop items without matching mod IDs usually means Steam hasn't finished downloading.</p>
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <Map className="w-4 h-4 mt-0.5 text-primary" />
-                  <div>
-                    <p className="font-medium text-foreground">Map Mods Need Extra Attention</p>
-                    <p>Always verify map folders and related IDs after imports so spawns and cells load correctly.</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <RefreshCw className="w-4 h-4 mt-0.5 text-primary" />
-                  <div>
-                    <p className="font-medium text-foreground">Run Sync Mod IDs After New Downloads</p>
-                    <p>Workshop items without matching Mod IDs usually indicate mods are not fully downloaded yet.</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <Power className="w-4 h-4 mt-0.5 text-primary" />
-                  <div>
-                    <p className="font-medium text-foreground">Auto-Restart Can Impact Active Players</p>
-                    <p>Use warning and delay settings to avoid hard interruptions during high-pop sessions.</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+                )}
+              </>
+            ) : (
+              <div className="text-center py-8">
+                <FileText className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+                <p className="text-muted-foreground">{iniConfig?.error || 'Server config file not found'}</p>
+                <p className="text-sm text-muted-foreground">Start the server once — it will create the INI file automatically.</p>
+              </div>
+            )}
           </TabsContent>
 
           {/* ─── Conflicts Tab ─── */}
@@ -2578,61 +2977,81 @@ export default function Mods() {
                 <div className="flex items-center justify-between">
                   <div>
                     <CardTitle className="text-base flex items-center gap-2">
-                      <Shield className="w-4 h-4" />
+                      <Shield className="w-4 h-4" aria-hidden="true" />
                       Mod Conflict Scanner
                     </CardTitle>
                     <CardDescription className="mt-1">
-                      Scans installed mods for overlapping game files
+                      Detects when multiple mods modify the same files
                       {lastScanTime && !conflictsLoading && (
-                        <span className="ml-2 opacity-50">
-                          · last scan {lastScanTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          {conflicts?.scanDurationMs != null && ` (${(conflicts.scanDurationMs / 1000).toFixed(1)}s)`}
+                        <span className="ml-2 tabular-nums opacity-50">
+                          Last scan: {new Date(lastScanTime).toLocaleString()}
                         </span>
                       )}
                     </CardDescription>
                   </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={scanConflicts}
-                    disabled={conflictsLoading}
-                  >
-                    {conflictsLoading ? (
-                      <><RefreshCw className="w-4 h-4 mr-1.5 animate-spin" /> Scanning...</>
-                    ) : (
-                      <><RefreshCw className="w-4 h-4 mr-1.5" /> {conflicts ? 'Rescan' : 'Scan'}</>
-                    )}
-                  </Button>
                 </div>
               </CardHeader>
               <CardContent>
-                {/* Loading state — first scan */}
+                {/* Loading state — streaming scan */}
                 {conflictsLoading && !conflicts ? (
-                  <div className="py-10">
-                    <div className="max-w-xs mx-auto text-center space-y-5">
-                      <div className="relative w-12 h-12 mx-auto">
-                        <Shield className="w-12 h-12 text-primary/30" />
-                        <Shield className="w-12 h-12 text-primary absolute inset-0 scan-pulse-icon" style={{ clipPath: 'inset(0 0 50% 0)' }} />
+                  <div className="py-6">
+                    <div className="max-w-md mx-auto space-y-4">
+                      {/* Real progress bar */}
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between text-xs text-muted-foreground" aria-live="polite">
+                          <span>{scanCurrentMod || 'Preparing to scan mods...'}</span>
+                          {scanProgress > 0 && <span className="tabular-nums">{scanProgress}%</span>}
+                        </div>
+                        <div className={`h-1.5 rounded-full bg-border/50 overflow-hidden ${scanProgress === 0 ? 'scan-indeterminate' : ''}`} role="progressbar" aria-valuenow={scanProgress} aria-valuemin={0} aria-valuemax={100} aria-label="Conflict scan progress">
+                          {scanProgress > 0 && (
+                            <div
+                              className={`h-full rounded-full bg-primary transition-all duration-500 ease-out ${scanProgress > 0 && scanProgress < 100 ? 'scan-progress-glow' : ''} ${scanProgress >= 100 ? 'scan-complete-flash' : ''}`}
+                              style={{ width: `${scanProgress}%` }}
+                            />
+                          )}
+                        </div>
+                        {scanTotalMods > 0 && (
+                          <p className="text-[11px] text-muted-foreground/70">
+                            {scanModsScanned} of {scanTotalMods} mods scanned
+                          </p>
+                        )}
                       </div>
-                      <div className="scan-progress-bar h-1 rounded-full bg-border/50" />
-                      <div className="h-10">
-                        <p className="text-sm font-medium text-foreground/80 transition-opacity duration-300">
-                          {SCAN_PHASE_MESSAGES[scanPhase]}
-                        </p>
-                        <p className="text-xs text-muted-foreground/60 mt-1">
-                          This may take a moment for large mod lists
-                        </p>
-                      </div>
+
+                      {/* Live conflict feed */}
+                      {streamConflicts.length > 0 && (
+                        <div className="rounded-lg border border-border/30 bg-muted/10 overflow-hidden" aria-live="polite">
+                          <div className="px-3 py-1.5 text-[11px] font-medium text-warning/80 border-b border-border/20 bg-warning/5">
+                            {streamConflicts[streamConflicts.length - 1]?.conflictsSoFar ?? streamConflicts.length} conflict{(streamConflicts[streamConflicts.length - 1]?.conflictsSoFar ?? streamConflicts.length) !== 1 ? 's' : ''} found so far
+                          </div>
+                          <div className="max-h-32 overflow-y-auto">
+                            {streamConflicts.slice(-8).map((c, i) => (
+                              <div key={i} className={`flex items-center gap-2 px-3 py-1 text-[11px] conflict-stream-enter ${
+                                c.severity === 'high' ? 'bg-destructive/5' : c.severity === 'medium' ? 'bg-warning/5' : ''
+                              }`}>
+                                <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                                  c.severity === 'high' ? 'bg-destructive severity-pulse' : c.severity === 'medium' ? 'bg-warning' : 'bg-primary/50'
+                                }`} aria-hidden="true" />
+                                <span className="sr-only">{c.severity} severity:</span>
+                                <span className="font-mono text-foreground/70 truncate flex-1">{c.file}</span>
+                                <span className="text-muted-foreground/70 shrink-0">in {c.mods.length} mods</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 ) : conflictsError && !conflicts ? (
                   /* Error state — scan failed with no prior results */
-                  <div className="flex items-center justify-center py-12 text-muted-foreground">
+                  <div className="flex items-center justify-center py-8 text-muted-foreground">
                     <div className="text-center max-w-xs space-y-3">
-                      <ShieldAlert className="w-10 h-10 mx-auto text-destructive/60" />
+                      <ShieldAlert className="w-10 h-10 mx-auto text-destructive/60" aria-hidden="true" />
                       <div>
                         <p className="font-medium text-foreground text-sm">Scan failed</p>
-                        <p className="text-xs mt-1.5 opacity-70 break-words" dir="auto">{conflictsError}</p>
+                        <p className="text-xs mt-1.5 text-muted-foreground break-words" dir="auto">{conflictsError}</p>
+                        <p className="text-[11px] mt-2 text-muted-foreground/60 leading-relaxed">
+                          Check that the backend is running, your workshop path is set in Settings, and mods are downloaded.
+                        </p>
                       </div>
                       <Button variant="outline" size="sm" onClick={scanConflicts} disabled={conflictsLoading}>
                         <RefreshCw className="w-3.5 h-3.5 mr-1.5" /> Retry
@@ -2640,32 +3059,38 @@ export default function Mods() {
                     </div>
                   </div>
                 ) : !conflicts ? (
-                  <div className="flex items-center justify-center py-12 text-muted-foreground">
-                    <div className="text-center max-w-xs">
-                      <Shield className="w-10 h-10 mx-auto mb-3 opacity-40" />
-                      <p className="font-medium text-foreground text-sm">No scan results yet</p>
-                      <p className="text-xs mt-1.5 opacity-70">
-                        Click Scan to check your installed mods for conflicting file overrides
-                      </p>
+                  <div className="flex items-center justify-center py-10 text-muted-foreground">
+                    <div className="text-center max-w-sm space-y-3">
+                      <Shield className="w-10 h-10 mx-auto opacity-40" aria-hidden="true" />
+                      <div>
+                        <p className="font-medium text-foreground text-sm">Scan your mods for file conflicts</p>
+                        <p className="text-xs mt-1.5 text-muted-foreground leading-relaxed">
+                          Checks all downloaded mods for overlapping files — Lua scripts, item definitions, textures, and more.
+                          When two mods change the same file, the last one in your load order wins.
+                        </p>
+                      </div>
+                      <Button variant="outline" size="sm" onClick={scanConflicts} disabled={conflictsLoading}>
+                        <RefreshCw className="w-3.5 h-3.5 mr-1.5" /> Scan Mods
+                      </Button>
                     </div>
                   </div>
                 ) : (
-                  <div className={`space-y-4 stagger-in relative ${conflictsLoading ? 'pointer-events-none' : ''}`}>
+                  <div className={`space-y-3 stagger-in relative ${conflictsLoading ? 'pointer-events-none' : ''}`}>
                     {/* Re-scan overlay */}
                     {conflictsLoading && (
-                      <div className="absolute inset-0 bg-background/60 backdrop-blur-[1px] z-10 flex items-center justify-center rounded-lg transition-opacity duration-200">
+                      <div className="absolute inset-0 bg-background/60 backdrop-blur-[1px] z-10 flex items-center justify-center rounded-lg transition-opacity duration-200 animate-in fade-in" role="status" aria-busy="true">
                         <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <RefreshCw className="w-4 h-4 animate-spin" />
-                          Rescanning...
+                          <RefreshCw className="w-4 h-4 animate-spin" aria-hidden="true" />
+                          Scanning mods...
                         </div>
                       </div>
                     )}
 
                     {/* Error banner on re-scan failure */}
                     {conflictsError && (
-                      <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-2.5 flex items-center gap-2 text-xs text-destructive">
-                        <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                        <span className="flex-1 min-w-0 break-words" dir="auto">Rescan failed: {conflictsError}</span>
+                      <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 flex items-center gap-2 text-xs text-destructive">
+                        <AlertTriangle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                        <span className="flex-1 min-w-0 break-words" dir="auto">Scan failed — {conflictsError}</span>
                         <Button variant="ghost" size="sm" className="h-6 px-2 text-xs shrink-0" onClick={scanConflicts} disabled={conflictsLoading}>
                           Retry
                         </Button>
@@ -2674,103 +3099,121 @@ export default function Mods() {
 
                     {/* Stale results banner — INI changed since last scan */}
                     {conflictsStale && !conflictsLoading && (
-                      <div className="rounded-lg border border-warning/30 bg-warning/5 p-2.5 flex items-center gap-2 text-xs">
-                        <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-warning" />
-                        <span className="flex-1 text-muted-foreground">Mods changed since last scan — results may be outdated</span>
+                      <div className="rounded-lg border border-warning/30 bg-warning/5 p-3 flex items-center gap-2 text-xs">
+                        <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-warning" aria-hidden="true" />
+                        <span className="flex-1 text-muted-foreground">Your mod list changed since this scan — results may be outdated.</span>
                         <Button variant="outline" size="sm" className="h-6 px-2 text-xs shrink-0" onClick={scanConflicts} disabled={conflictsLoading}>
                           Rescan
                         </Button>
                       </div>
                     )}
 
-                    {/* Summary stats */}
+                    {/* ─── Compact stat bar ─── */}
                     {conflicts.modsScanned > 0 ? (
-                      <div className="flex flex-wrap gap-2">
-                        <div className="flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs">
-                          <Package className="w-3.5 h-3.5 text-muted-foreground" />
-                          <span className="text-muted-foreground">Mods scanned:</span>
-                          <span className="font-medium">{conflicts.modsScanned}</span>
-                        </div>
-                        <div className={`flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs ${
-                          conflicts.totalConflicts > 0 ? 'border-warning/30 bg-warning/5' : 'border-green-500/30 bg-green-500/5'
-                        }`}>
-                          {conflicts.totalConflicts > 0 ? (
-                            <FileWarning className="w-3.5 h-3.5 text-warning" />
-                          ) : (
-                            <CheckCircle className="w-3.5 h-3.5 text-green-500" />
+                      <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 rounded-lg border border-border/30 bg-muted/5 px-4 py-2.5">
+                        <div className="flex items-center gap-1.5 text-xs" title={`${conflicts.totalWorkshopIds || conflicts.modsScanned} workshop items — ${conflicts.modsScanned} mod directories scanned`}>
+                          <Package className="w-3.5 h-3.5 text-muted-foreground" aria-hidden="true" />
+                          <span className="text-muted-foreground">Mods</span>
+                          <span className="font-medium tabular-nums">{conflicts.totalWorkshopIds || conflicts.modsScanned}</span>
+                          {(conflicts.modsNotFound ?? 0) > 0 && (
+                            <span className="text-muted-foreground/60 font-normal text-[11px] ml-0.5">({conflicts.modsNotFound} not on disk)</span>
                           )}
-                          <span className="text-muted-foreground">File conflicts:</span>
-                          <span className="font-medium">{conflicts.totalConflicts}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-xs">
+                          {conflicts.totalConflicts > 0 ? (
+                            <FileWarning className="w-3.5 h-3.5 text-warning" aria-hidden="true" />
+                          ) : (
+                            <CheckCircle className="w-3.5 h-3.5 text-success" aria-hidden="true" />
+                          )}
+                          <span className="text-muted-foreground">Conflicts</span>
+                          <span className={`font-medium tabular-nums ${conflicts.totalConflicts > 0 ? 'text-warning' : 'text-success'}`}>{conflicts.totalConflicts}</span>
                         </div>
                         {conflicts.totalPairs > 0 && (
-                          <div className="flex items-center gap-2 rounded-md border border-warning/30 bg-warning/5 px-3 py-1.5 text-xs">
-                            <ShieldAlert className="w-3.5 h-3.5 text-warning" />
-                            <span className="text-muted-foreground">Conflicting pairs:</span>
-                            <span className="font-medium">{conflicts.totalPairs}</span>
+                          <div className="flex items-center gap-1.5 text-xs">
+                            <ShieldAlert className="w-3.5 h-3.5 text-warning" aria-hidden="true" />
+                            <span className="text-muted-foreground">Mod Pairs</span>
+                            <span className="font-medium tabular-nums text-warning">{conflicts.totalPairs}</span>
                           </div>
                         )}
                         {(conflicts.identicalSkipped ?? 0) > 0 && (
-                          <div className="flex items-center gap-2 rounded-md border border-green-500/30 bg-green-500/5 px-3 py-1.5 text-xs">
-                            <CheckCircle className="w-3.5 h-3.5 text-green-500/70" />
-                            <span className="text-muted-foreground">Identical (skipped):</span>
-                            <span className="font-medium">{conflicts.identicalSkipped}</span>
+                          <div className="flex items-center gap-1.5 text-xs">
+                            <CheckCircle className="w-3.5 h-3.5 text-success/70" aria-hidden="true" />
+                            <span className="text-muted-foreground">Identical (safe)</span>
+                            <span className="font-medium tabular-nums text-success">{conflicts.identicalSkipped}</span>
                           </div>
+                        )}
+                        {((conflicts.additiveSkipped ?? 0) + (conflicts.pzAdditiveSkipped ?? 0)) > 0 && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <div className="flex items-center gap-1.5 text-xs cursor-help">
+                                <CheckCircle className="w-3.5 h-3.5 text-success/70" aria-hidden="true" />
+                                <span className="text-muted-foreground">PZ Additive (safe)</span>
+                                <span className="font-medium tabular-nums text-success">{(conflicts.additiveSkipped ?? 0) + (conflicts.pzAdditiveSkipped ?? 0)}</span>
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom" className="text-xs space-y-0.5">
+                              <p className="font-medium mb-1">Files PZ merges automatically — not real conflicts:</p>
+                              {(conflicts.pzAdditiveBreakdown?.sandbox ?? 0) > 0 && <p>{conflicts.pzAdditiveBreakdown!.sandbox} sandbox-options.txt</p>}
+                              {(conflicts.pzAdditiveBreakdown?.translate ?? 0) + (conflicts.additiveSkipped ?? 0) > 0 && <p>{(conflicts.pzAdditiveBreakdown?.translate ?? 0) + (conflicts.additiveSkipped ?? 0)} translation files</p>}
+                              {(conflicts.pzAdditiveBreakdown?.scripts ?? 0) > 0 && <p>{conflicts.pzAdditiveBreakdown!.scripts} script files (different definitions)</p>}
+                              {(conflicts.pzAdditiveBreakdown?.clothing ?? 0) > 0 && <p>{conflicts.pzAdditiveBreakdown!.clothing} clothing XMLs (different items)</p>}
+                              {(conflicts.pzAdditiveBreakdown?.fileguidtable ?? 0) > 0 && <p>{conflicts.pzAdditiveBreakdown!.fileguidtable} mod editor metadata</p>}
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
+                        {((conflicts.missingDeps?.length ?? 0) + (conflicts.steamDeps?.length ?? 0)) > 0 && (
+                          <div className="flex items-center gap-1.5 text-xs">
+                            <AlertTriangle className="w-3.5 h-3.5 text-destructive" aria-hidden="true" />
+                            <span className="text-muted-foreground">Missing Deps</span>
+                            <span className="font-medium tabular-nums text-destructive">{(conflicts.missingDeps?.length ?? 0) + (conflicts.steamDeps?.length ?? 0)}</span>
+                          </div>
+                        )}
+                        {/* Warnings inline */}
+                        {(conflicts.warnings?.length ?? 0) > 0 && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <div className="flex items-center gap-1.5 text-xs cursor-help">
+                                <AlertTriangle className="w-3.5 h-3.5 text-warning" aria-hidden="true" />
+                                <span className="text-warning">{conflicts.warnings!.length} warning{conflicts.warnings!.length !== 1 ? 's' : ''}</span>
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom" className="max-w-xs text-xs space-y-0.5">
+                              {conflicts.warnings!.slice(0, 5).map((w, i) => <p key={i} className="break-words">{w}</p>)}
+                              {conflicts.warnings!.length > 5 && <p className="text-muted-foreground">+{conflicts.warnings!.length - 5} more</p>}
+                            </TooltipContent>
+                          </Tooltip>
                         )}
                       </div>
                     ) : (
-                      /* No mods configured — distinct from "no conflicts" */
                       <div className="rounded-lg border border-border/50 bg-muted/20 p-3">
                         <p className="text-xs text-muted-foreground flex items-center gap-2">
-                          <Info className="w-3.5 h-3.5 shrink-0" />
-                          No workshop mods are configured in the server INI. Add mods in the Server Config tab to scan for conflicts.
+                          <Info className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                          No mods are configured. Add mods in Server Config first.
                         </p>
                       </div>
                     )}
 
-                    {/* Warnings from scan (missing workshop dirs, etc.) */}
-                    {(conflicts.warnings?.length ?? 0) > 0 && (
-                      <div className="rounded-lg border border-warning/30 bg-warning/5 p-3 space-y-1">
-                        <div className="flex items-center gap-2 text-xs font-medium text-warning">
-                          <AlertTriangle className="w-3.5 h-3.5" />
-                          Scanner Warnings ({conflicts.warnings!.length})
-                        </div>
-                        {conflicts.warnings!.map((w, i) => (
-                          <p key={i} className="text-xs text-muted-foreground pl-5 break-words" dir="auto">{w}</p>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Missing dependencies */}
-                    {(conflicts.missingDeps?.length ?? 0) > 0 && (
-                      <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 space-y-2">
-                        <div className="flex items-center gap-2 text-xs font-medium text-destructive">
-                          <AlertTriangle className="w-3.5 h-3.5" />
-                          Missing Dependencies ({conflicts.missingDeps!.length})
-                        </div>
-                        <div className="space-y-1">
-                          {conflicts.missingDeps!.map((dep, i) => (
-                            <div key={i} className="text-xs text-muted-foreground flex items-center gap-1.5 flex-wrap">
-                              <span className="font-mono text-foreground/80 truncate max-w-[200px]" title={dep.modName || dep.modId}>{dep.modName || dep.modId}</span>
-                              <span>requires</span>
-                              <code className="font-mono text-destructive truncate max-w-[200px]" title={dep.missingDep}>{dep.missingDep}</code>
-                              <span className="opacity-50">— not found</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* No conflicts — only when we actually scanned mods */}
-                    {conflicts.modsScanned > 0 && conflicts.totalConflicts === 0 && (conflicts.missingDeps?.length ?? 0) === 0 && (
-                      <div className="flex items-center justify-center py-8 text-muted-foreground">
-                        <div className="text-center">
-                          <CheckCircle className="w-8 h-8 mx-auto text-green-500/70 mb-2" />
-                          <p className="font-medium text-foreground text-sm">No conflicts detected</p>
-                          <p className="text-xs mt-1 opacity-70">
-                            {conflicts.modsScanned} mod{conflicts.modsScanned !== 1 ? 's' : ''} scanned — no overlapping file overrides found
+                    {/* No conflicts — only when scanned and nothing found */}
+                    {conflicts.modsScanned > 0 && conflicts.totalConflicts === 0 && (conflicts.missingDeps?.length ?? 0) === 0 && (conflicts.steamDeps?.length ?? 0) === 0 && (
+                      <div className="flex items-center justify-center py-8 text-muted-foreground scan-complete-flash">
+                        <div className="text-center max-w-xs">
+                          <CheckCircle className="w-8 h-8 mx-auto text-success/70 mb-2" aria-hidden="true" />
+                          <p className="font-medium text-foreground text-sm">No conflicts found</p>
+                          <p className="text-xs mt-1 text-muted-foreground">
+                            {conflicts.modsScanned} mod{conflicts.modsScanned !== 1 ? 's' : ''} scanned — no files overlap between different mods.
+                            {(conflicts.modsNotFound ?? 0) > 0 && (
+                              <span className="block mt-0.5">
+                                {conflicts.modsNotFound} mod{conflicts.modsNotFound !== 1 ? 's' : ''} not downloaded on disk (skipped)
+                              </span>
+                            )}
                             {(conflicts.identicalSkipped ?? 0) > 0 && (
                               <span className="block mt-0.5">
-                                {conflicts.identicalSkipped} shared file{conflicts.identicalSkipped !== 1 ? 's' : ''} with identical content skipped
+                                {conflicts.identicalSkipped} identical file{conflicts.identicalSkipped !== 1 ? 's' : ''} shared across mods (safe, not a conflict)
+                              </span>
+                            )}
+                            {(conflicts.additiveSkipped ?? 0) + (conflicts.pzAdditiveSkipped ?? 0) > 0 && (
+                              <span className="block mt-0.5">
+                                {(conflicts.additiveSkipped ?? 0) + (conflicts.pzAdditiveSkipped ?? 0)} file{(conflicts.additiveSkipped ?? 0) + (conflicts.pzAdditiveSkipped ?? 0) !== 1 ? 's' : ''} PZ merges automatically (translations, sandbox options, clothing, scripts — not real conflicts)
                               </span>
                             )}
                           </p>
@@ -2778,115 +3221,443 @@ export default function Mods() {
                       </div>
                     )}
 
-                    {/* Conflict pairs */}
-                    {(conflicts.pairs?.length ?? 0) > 0 && (() => {
-                      const loadOrderEntries: [string, number][] = (conflicts.modLoadOrder ?? []).map((id, i) => [id, i + 1] as [string, number])
-                      const loadOrderMap: globalThis.Map<string, number> = new globalThis.Map(loadOrderEntries)
-                      const allPairKeys = conflicts.pairs!.map((_, i) => `pair-${i}`)
-                      const allExpanded = openPairs.length === allPairKeys.length
-                      return (
-                        <>
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs text-muted-foreground">{conflicts.pairs!.length} mod pair{conflicts.pairs!.length !== 1 ? 's' : ''} with conflicts</span>
-                            <button
-                              type="button"
-                              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                              onClick={() => setOpenPairs(allExpanded ? [] : allPairKeys)}
-                            >
-                              {allExpanded ? 'Collapse all' : 'Expand all'}
-                            </button>
-                          </div>
-                          <Accordion type="multiple" value={openPairs} onValueChange={setOpenPairs} className="space-y-2">
-                            {conflicts.pairs!.map((pair, pairIdx) => {
-                              const totalFiles = pair.files.length
-                              const visibleFiles = pair.files.slice(0, CONFLICT_FILE_LIMIT)
-                              const hiddenCount = totalFiles - visibleFiles.length
-                              const maxSeverity = pair.highCount > 0 ? 'high' : pair.mediumCount > 0 ? 'medium' : 'low'
-                              const posA = loadOrderMap.get(pair.modA.modId)
-                              const posB = loadOrderMap.get(pair.modB.modId)
-                              const winner = posA != null && posB != null ? (posA > posB ? 'A' : posB > posA ? 'B' : null) : null
+                    {/* ─── Inner sub-tabs: Network / Dependencies ─── */}
+                    {(conflicts.totalConflicts > 0 || (conflicts.missingDeps?.length ?? 0) > 0 || (conflicts.steamDeps?.length ?? 0) > 0) && (
+                      <div>
+                        {/* Sub-tab bar */}
+                        <div className="flex items-center gap-1 border-b border-border/30 mb-3">
+                          <button
+                            onClick={() => setConflictSubTab('network')}
+                            className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors -mb-px ${
+                              conflictSubTab === 'network'
+                                ? 'border-accent text-accent-foreground'
+                                : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border/50'
+                            }`}
+                          >
+                            <Network className="w-3.5 h-3.5" />
+                            Conflict Network
+                            {conflicts.totalPairs > 0 && (
+                              <Badge variant="secondary" className="text-[11px] h-4 px-1 ml-0.5">{conflicts.totalPairs}</Badge>
+                            )}
+                          </button>
+                          <button
+                            onClick={() => setConflictSubTab('dependencies')}
+                            className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors -mb-px ${
+                              conflictSubTab === 'dependencies'
+                                ? 'border-accent text-accent-foreground'
+                                : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border/50'
+                            }`}
+                          >
+                            <GitBranch className="w-3.5 h-3.5" />
+                            Missing Dependencies
+                            {(() => {
+                              const depCount = (conflicts.missingDeps?.length ?? 0) + (conflicts.steamDeps?.length ?? 0)
+                              return depCount > 0 ? (
+                                <Badge variant="destructive" className="text-[11px] h-4 px-1 ml-0.5">{depCount}</Badge>
+                              ) : null
+                            })()}
+                          </button>
+                        </div>
+
+                        {/* ═══ NETWORK SUB-TAB ═══ */}
+                        {conflictSubTab === 'network' && (
+                          <div className="space-y-3">
+                            {/* Load order tip */}
+                            {conflicts.totalConflicts > 0 && (
+                              <div className="rounded-lg border border-border/30 bg-muted/10 px-3 py-2">
+                                <p className="text-xs text-muted-foreground flex items-start gap-2">
+                                  <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" aria-hidden="true" />
+                                  <span>When mods change the same file, the <strong className="text-foreground/80">last one in your load order</strong> takes effect. Reorder mods in Server Config to control priority.</span>
+                                </p>
+                              </div>
+                            )}
+
+                            {/* Top Conflicting Mods — ranked summary */}
+                            {topConflictingMods.length > 0 && (
+                              <div className="rounded-lg border border-border/30 bg-muted/5 overflow-hidden">
+                                <div className="px-3 py-2 border-b border-border/20 bg-accent/5">
+                                  <span className="text-[11px] uppercase tracking-wide text-accent-foreground/70">Most Conflicting Mods</span>
+                                </div>
+                                <div className="divide-y divide-border/10 max-h-[260px] overflow-y-auto">
+                                  {topConflictingMods.map((mod, i) => {
+                                    const isSelected = graphFilterMod === mod.modId
+                                    return (
+                                      <button
+                                        key={mod.modId}
+                                        onClick={() => setGraphFilterMod(isSelected ? null : mod.modId)}
+                                        className={`w-full flex items-center gap-3 px-3 py-1.5 text-left transition-colors hover:bg-muted/20 ${isSelected ? 'bg-accent/10' : ''}`}
+                                      >
+                                        <span className="text-[11px] font-mono text-muted-foreground/60 w-4 text-right shrink-0">{i + 1}</span>
+                                        <span className="flex-1 min-w-0 text-xs truncate text-foreground/80">{mod.modName}</span>
+                                        <span className="flex items-center gap-1.5 shrink-0">
+                                          {mod.high > 0 && <span className="text-[11px] tabular-nums text-destructive/80">{mod.high}H</span>}
+                                          {mod.medium > 0 && <span className="text-[11px] tabular-nums text-warning/80">{mod.medium}M</span>}
+                                          {mod.low > 0 && <span className="text-[11px] tabular-nums text-primary/60">{mod.low}L</span>}
+                                          <span className="text-[11px] text-muted-foreground/60 ml-1">{mod.pairs}p</span>
+                                        </span>
+                                      </button>
+                                    )
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Severity filter tabs + pairs header */}
+                            {(conflicts.pairs?.length ?? 0) > 0 && (() => {
+                              const allPairs = graphFilterMod
+                                ? conflicts.pairs!.filter(p => p.modA.modId === graphFilterMod || p.modB.modId === graphFilterMod)
+                                : conflicts.pairs!
+                              const highCount = allPairs.filter(p => p.highCount > 0).length
+                              const medCount = allPairs.filter(p => p.mediumCount > 0).length
+                              const lowCount = allPairs.filter(p => p.lowCount > 0).length
+                              const allPairKeys = filteredPairs.map(p => `${p.modA.modId}--${p.modB.modId}`)
+                              const allExpanded = openPairs.length === allPairKeys.length && allPairKeys.length > 0
                               return (
-                                <AccordionItem key={pairIdx} value={`pair-${pairIdx}`} className="border rounded-lg px-0 overflow-hidden">
-                                  <AccordionTrigger className="px-4 py-3 hover:no-underline [&[data-state=open]>div>.chevron]:rotate-180">
-                                    <div className="flex items-center gap-3 flex-1 min-w-0 text-left">
-                                      <div className={`w-2 h-2 rounded-full shrink-0 ${
-                                        maxSeverity === 'high' ? 'bg-destructive' : maxSeverity === 'medium' ? 'bg-warning' : 'bg-muted-foreground'
+                                <>
+                                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                                    <div className="flex items-center gap-1">
+                                      {[
+                                        { key: 'all' as const, label: 'All', count: allPairs.length },
+                                        { key: 'high' as const, label: 'Critical', count: highCount, color: 'text-destructive' },
+                                        { key: 'medium' as const, label: 'Medium', count: medCount, color: 'text-warning' },
+                                        { key: 'low' as const, label: 'Low', count: lowCount, color: 'text-primary/70' },
+                                      ].map(tab => (
+                                        <button
+                                          key={tab.key}
+                                          onClick={() => setPairSeverityFilter(tab.key)}
+                                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition-colors ${
+                                            pairSeverityFilter === tab.key
+                                              ? 'bg-accent text-accent-foreground'
+                                              : 'text-muted-foreground hover:text-foreground hover:bg-muted/30'
+                                          }`}
+                                        >
+                                          {tab.label}
+                                          <span className={`tabular-nums ${pairSeverityFilter === tab.key ? '' : tab.color || ''}`}>{tab.count}</span>
+                                        </button>
+                                      ))}
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                      {graphFilterMod && (
+                                        <button
+                                          className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+                                          onClick={() => setGraphFilterMod(null)}
+                                        >
+                                          Clear mod filter
+                                        </button>
+                                      )}
+                                      <button
+                                        type="button"
+                                        className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                                        onClick={() => setOpenPairs(allExpanded ? [] : allPairKeys)}
+                                      >
+                                        {allExpanded ? 'Collapse all' : 'Expand all'}
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  {/* Pairs list */}
+                                  {filteredPairs.length > 0 ? (
+                                    <div className="max-h-[min(calc(100vh-420px),70vh)] min-h-[200px] overflow-y-auto rounded-lg border border-border/20 pr-1">
+                                      <Accordion type="multiple" value={openPairs} onValueChange={setOpenPairs} className="space-y-1.5 p-1.5">
+                                        {filteredPairs.map((pair, pairIdx) => {
+                                          const pairKey = `${pair.modA.modId}--${pair.modB.modId}`
+                                          const totalFiles = pair.files.length
+                                          const showAll = expandedFilePairs.has(pairKey)
+                                          const visibleFiles = showAll ? pair.files : pair.files.slice(0, CONFLICT_FILE_LIMIT)
+                                          const hiddenCount = showAll ? 0 : totalFiles - Math.min(totalFiles, CONFLICT_FILE_LIMIT)
+                                          const maxSeverity = pair.highCount > 0 ? 'high' : pair.mediumCount > 0 ? 'medium' : 'low'
+                                          const posA = loadOrderMap.get(pair.modA.modId)
+                                          const posB = loadOrderMap.get(pair.modB.modId)
+                                          const winner = posA != null && posB != null ? (posA > posB ? 'A' : posB > posA ? 'B' : null) : null
+                                          return (
+                                            <AccordionItem key={pairKey} value={pairKey} className={`border rounded-lg px-0 overflow-hidden border-l-2 conflict-pair-enter ${
+                                              maxSeverity === 'high' ? 'border-l-destructive/40' : maxSeverity === 'medium' ? 'border-l-warning/30' : 'border-l-primary/25'
+                                            }`} style={{ animationDelay: `${Math.min(pairIdx * 50, 400)}ms` }}>
+                                              <AccordionTrigger className="px-4 py-3 hover:no-underline [&[data-state=open]>div>.chevron]:rotate-180">
+                                                <div className="flex items-center gap-3 flex-1 min-w-0 text-left">
+                                                  <div className={`w-2 h-2 rounded-full shrink-0 ${
+                                                    maxSeverity === 'high' ? 'bg-destructive severity-pulse' : maxSeverity === 'medium' ? 'bg-warning' : 'bg-primary/60'
+                                                  }`} aria-hidden="true" />
+                                                  <span className="sr-only">{maxSeverity} severity conflict:</span>
+                                                  <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center gap-1.5 text-sm font-medium">
+                                                      <span className="truncate max-w-[40%]" title={pair.modA.modName}>
+                                                        {pair.modA.modName}
+                                                        {posA != null && (
+                                                          <Tooltip>
+                                                            <TooltipTrigger asChild>
+                                                              <span className="ml-1 text-[11px] font-normal text-muted-foreground/70 cursor-help">#{posA}</span>
+                                                            </TooltipTrigger>
+                                                            <TooltipContent side="top" className="text-xs">Load order position — higher # loads last and takes priority</TooltipContent>
+                                                          </Tooltip>
+                                                        )}
+                                                      </span>
+                                                      <span className="text-muted-foreground font-normal text-xs shrink-0">vs</span>
+                                                      <span className="truncate max-w-[40%]" title={pair.modB.modName}>
+                                                        {pair.modB.modName}
+                                                        {posB != null && (
+                                                          <Tooltip>
+                                                            <TooltipTrigger asChild>
+                                                              <span className="ml-1 text-[11px] font-normal text-muted-foreground/70 cursor-help">#{posB}</span>
+                                                            </TooltipTrigger>
+                                                            <TooltipContent side="top" className="text-xs">Load order position — higher # loads last and takes priority</TooltipContent>
+                                                          </Tooltip>
+                                                        )}
+                                                      </span>
+                                                    </div>
+                                                    <div className="flex items-center gap-2 mt-0.5">
+                                                      <span className="text-xs text-muted-foreground">
+                                                        {totalFiles} file{totalFiles !== 1 ? 's' : ''}
+                                                      </span>
+                                                      {pair.highCount > 0 && (
+                                                        <Badge variant="destructive" className="text-[11px] leading-none h-[18px] px-1.5">{pair.highCount} high</Badge>
+                                                      )}
+                                                      {pair.mediumCount > 0 && (
+                                                        <Badge variant="warning" className="text-[11px] leading-none h-[18px] px-1.5">{pair.mediumCount} med</Badge>
+                                                      )}
+                                                      {pair.lowCount > 0 && (
+                                                        <Badge variant="secondary" className="text-[11px] leading-none h-[18px] px-1.5 border-primary/20 text-primary">{pair.lowCount} low</Badge>
+                                                      )}
+                                                      {winner && (
+                                                        <span className="text-[11px] text-muted-foreground/70 shrink-0">
+                                                          → {winner === 'A' ? pair.modA.modName : pair.modB.modName} loads last
+                                                        </span>
+                                                      )}
+                                                    </div>
+                                                  </div>
+                                                </div>
+                                              </AccordionTrigger>
+                                              <AccordionContent>
+                                                <div className="px-4 pb-3 pt-0.5 space-y-1">
+                                                  <p className="text-[11px] text-muted-foreground/70 mb-2">
+                                                    The last-loaded mod's version of each file takes effect — click a file to compare
+                                                  </p>
+                                                  {visibleFiles.map((f, fIdx) => (
+                                                    <FileDiffViewer
+                                                      key={fIdx}
+                                                      file={f.file}
+                                                      modAId={pair.modA.modId}
+                                                      modBId={pair.modB.modId}
+                                                      modAName={pair.modA.modName}
+                                                      modBName={pair.modB.modName}
+                                                      severity={f.severity}
+                                                    />
+                                                  ))}
+                                                  {hiddenCount > 0 && (
+                                                    <button
+                                                      onClick={() => setExpandedFilePairs(prev => {
+                                                        const next = new Set(prev)
+                                                        next.add(pairKey)
+                                                        return next
+                                                      })}
+                                                      className="text-[11px] text-muted-foreground/70 hover:text-foreground text-center pt-2 w-full transition-colors"
+                                                    >
+                                                      Show {hiddenCount} more file{hiddenCount !== 1 ? 's' : ''}
+                                                    </button>
+                                                  )}
+                                                </div>
+                                              </AccordionContent>
+                                            </AccordionItem>
+                                          )
+                                        })}
+                                      </Accordion>
+                                    </div>
+                                  ) : (
+                                    <div className="text-center py-4 text-xs text-muted-foreground/60">
+                                      No pairs match this filter
+                                    </div>
+                                  )}
+                                </>
+                              )
+                            })()}
+
+
+
+                          </div>
+                        )}
+
+                        {/* ═══ DEPENDENCIES SUB-TAB ═══ */}
+                        {conflictSubTab === 'dependencies' && (() => {
+                          const missingDeps = conflicts.missingDeps || [];
+                          const steamDeps = conflicts.steamDeps || [];
+                          const totalDeps = missingDeps.length + steamDeps.length;
+
+                          if (totalDeps === 0) {
+                            return (
+                              <div className="flex items-center justify-center py-10 text-muted-foreground">
+                                <div className="text-center max-w-xs">
+                                  <CheckCircle className="w-8 h-8 mx-auto text-success/70 mb-2" aria-hidden="true" />
+                                  <p className="font-medium text-foreground text-sm">All dependencies satisfied</p>
+                                  <p className="text-xs mt-1 text-muted-foreground">Every mod's required dependencies are present in your server config.</p>
+                                </div>
+                              </div>
+                            );
+                          }
+
+                          const handleAddDep = async (workshopId: string, modId: string, key: string) => {
+                            setDepAdding(prev => [...prev, key]);
+                            try {
+                              await modsApi.addMissingDep(workshopId, modId);
+                              setDepAddResults(prev => ({ ...prev, [key]: 'added' as const }));
+                            } catch {
+                              setDepAddResults(prev => ({ ...prev, [key]: 'error' as const }));
+                            } finally {
+                              setDepAdding(prev => prev.filter(k => k !== key));
+                            }
+                          };
+
+                          // Build unified flat list from both sources
+                          type DepRow = {
+                            key: string
+                            requiredBy: string
+                            requiredByWsId: string
+                            depName: string
+                            depWorkshopId: string | null
+                            source: 'local' | 'steam'
+                          }
+
+                          const rows: DepRow[] = []
+
+                          // Steam deps (best quality — exact workshop IDs from Steam API)
+                          for (const sd of steamDeps) {
+                            const key = `steam-${sd.parentWorkshopId}-${sd.childWorkshopId}`
+                            rows.push({
+                              key,
+                              requiredBy: sd.parentName,
+                              requiredByWsId: sd.parentWorkshopId,
+                              depName: sd.childName,
+                              depWorkshopId: sd.childWorkshopId,
+                              source: 'steam',
+                            })
+                          }
+
+                          // Local mod.info deps (fallback — may overlap with steam deps)
+                          for (const dep of missingDeps) {
+                            // Skip if already covered by a steam dep from same parent
+                            const alreadyCovered = steamDeps.some(sd =>
+                              sd.parentWorkshopId === dep.workshopId && dep.resolvedWorkshopId && sd.childWorkshopId === dep.resolvedWorkshopId
+                            )
+                            if (alreadyCovered) continue
+                            const key = `local-${dep.workshopId}-${dep.missingDep}`
+                            rows.push({
+                              key,
+                              requiredBy: dep.modName,
+                              requiredByWsId: dep.workshopId,
+                              depName: dep.resolvedModName || dep.missingDep,
+                              depWorkshopId: dep.resolvedWorkshopId || null,
+                              source: 'local',
+                            })
+                          }
+
+                          const addableRows = rows.filter(r => r.depWorkshopId && depAddResults[r.key] !== 'added')
+                          const addedCount = rows.filter(r => depAddResults[r.key] === 'added').length
+
+                          const handleFixAll = async () => {
+                            if (addableRows.length === 0) return
+                            setFixingAllDeps(true)
+                            try {
+                              await modsApi.addAllResolvedDeps(
+                                addableRows.map(r => ({ workshopId: r.depWorkshopId!, modId: r.depName }))
+                              )
+                              for (const r of addableRows) {
+                                setDepAddResults(prev => ({ ...prev, [r.key]: 'added' as const }))
+                              }
+                            } catch { /* handled */ }
+                            finally { setFixingAllDeps(false) }
+                          }
+
+                          return (
+                            <div className="space-y-3">
+                              {/* Header with Fix All */}
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs text-muted-foreground">
+                                  {rows.length} missing{addedCount > 0 && <span className="text-green-400 ml-1">({addedCount} added)</span>}
+                                </span>
+                                {addableRows.length > 0 && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={handleFixAll}
+                                    disabled={fixingAllDeps}
+                                    className="h-7 text-xs"
+                                  >
+                                    {fixingAllDeps ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <PlusCircle className="w-3.5 h-3.5 mr-1.5" />}
+                                    Add All ({addableRows.length})
+                                  </Button>
+                                )}
+                              </div>
+
+                              {/* Flat list — one row per dependency */}
+                              <div className="rounded-lg border border-border/30 overflow-hidden divide-y divide-border/15 max-h-[min(calc(100vh-380px),70vh)] min-h-[200px] overflow-y-auto">
+                                {rows.map((row) => {
+                                  const added = depAddResults[row.key] === 'added'
+                                  const adding = depAdding.includes(row.key)
+                                  const errored = depAddResults[row.key] === 'error'
+
+                                  return (
+                                    <div key={row.key} className={`flex items-center gap-3 px-4 py-2.5 transition-colors ${added ? 'bg-green-500/5' : 'bg-background/30 hover:bg-muted/10'}`}>
+                                      {/* Status dot */}
+                                      <span className={`w-2 h-2 rounded-full shrink-0 ${
+                                        added ? 'bg-green-400' : row.depWorkshopId ? 'bg-amber-400' : 'bg-red-400'
                                       }`} />
+
+                                      {/* Dep name + required-by (two-line) */}
                                       <div className="flex-1 min-w-0">
-                                        <div className="flex items-center gap-1.5 text-sm font-medium">
-                                          <span className="truncate max-w-[40%]" title={pair.modA.modName}>
-                                            {pair.modA.modName}
-                                            {posA != null && <span className="ml-1 text-[10px] font-normal text-muted-foreground/60">#{posA}</span>}
-                                          </span>
-                                          <span className="text-muted-foreground font-normal text-xs shrink-0">vs</span>
-                                          <span className="truncate max-w-[40%]" title={pair.modB.modName}>
-                                            {pair.modB.modName}
-                                            {posB != null && <span className="ml-1 text-[10px] font-normal text-muted-foreground/60">#{posB}</span>}
-                                          </span>
-                                        </div>
-                                        <div className="flex items-center gap-2 mt-0.5">
-                                          <span className="text-xs text-muted-foreground">
-                                            {totalFiles} file{totalFiles !== 1 ? 's' : ''}
-                                          </span>
-                                          {pair.highCount > 0 && (
-                                            <Badge variant="destructive" className="text-[10px] leading-none h-[18px] px-1.5">{pair.highCount} high</Badge>
-                                          )}
-                                          {pair.mediumCount > 0 && (
-                                            <Badge variant="warning" className="text-[10px] leading-none h-[18px] px-1.5">{pair.mediumCount} med</Badge>
-                                          )}
-                                          {pair.lowCount > 0 && (
-                                            <Badge variant="secondary" className="text-[10px] leading-none h-[18px] px-1.5">{pair.lowCount} low</Badge>
-                                          )}
-                                          {winner && (
-                                            <span className="text-[10px] text-muted-foreground/50 shrink-0">
-                                              → {winner === 'A' ? pair.modA.modName : pair.modB.modName} wins
-                                            </span>
-                                          )}
-                                        </div>
+                                        <span className={`text-sm font-medium block truncate ${added ? 'text-green-400/80 line-through' : 'text-foreground/90'}`}>
+                                          {row.depName}
+                                        </span>
+                                        <span className="text-[11px] text-muted-foreground/60 block truncate">
+                                          required by{' '}
+                                          <a href={`https://steamcommunity.com/sharedfiles/filedetails/?id=${row.requiredByWsId}`}
+                                            target="_blank" rel="noopener noreferrer"
+                                            className="text-muted-foreground/70 hover:text-foreground underline decoration-muted-foreground/30 hover:decoration-foreground/50 transition-colors"
+                                          >{row.requiredBy}</a>
+                                          {row.source === 'steam' && <span className="ml-1.5 text-accent/50">via Workshop</span>}
+                                        </span>
+                                      </div>
+
+                                      {/* Action */}
+                                      <div className="shrink-0 flex items-center gap-1.5">
+                                        {added ? (
+                                          <span className="text-xs text-green-400/70 flex items-center gap-1"><Check className="w-3.5 h-3.5" /> Added</span>
+                                        ) : errored ? (
+                                          <span className="text-xs text-red-400/70">Failed</span>
+                                        ) : row.depWorkshopId ? (
+                                          <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => handleAddDep(row.depWorkshopId!, row.depName, row.key)}
+                                            disabled={adding}
+                                            className="h-7 px-2.5 text-xs"
+                                          >
+                                            {adding ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Plus className="w-3 h-3 mr-1" />}
+                                            Add
+                                          </Button>
+                                        ) : (
+                                          <a
+                                            href={`https://steamcommunity.com/workshop/browse/?appid=108600&searchtext=${encodeURIComponent(row.depName)}`}
+                                            target="_blank" rel="noopener noreferrer"
+                                            className="inline-flex items-center gap-1 h-7 px-2.5 text-xs rounded-md border border-border/40 text-muted-foreground hover:text-foreground transition-colors"
+                                          >
+                                            <ExternalLink className="w-3 h-3" /> Find on Steam
+                                          </a>
+                                        )}
+                                        {row.depWorkshopId && (
+                                          <a href={`https://steamcommunity.com/sharedfiles/filedetails/?id=${row.depWorkshopId}`}
+                                            target="_blank" rel="noopener noreferrer"
+                                            className="text-muted-foreground/30 hover:text-muted-foreground/60 transition-colors p-1"
+                                            title="View on Steam Workshop">
+                                            <ExternalLink className="w-3.5 h-3.5" />
+                                          </a>
+                                        )}
                                       </div>
                                     </div>
-                                  </AccordionTrigger>
-                                  <AccordionContent>
-                                    <div className="px-4 pb-3 space-y-0.5">
-                                      <p className="text-xs text-muted-foreground/60 mb-2">
-                                        The mod loaded last in your load order wins for each file
-                                      </p>
-                                      {visibleFiles.map((f, fIdx) => (
-                                        <div
-                                          key={fIdx}
-                                          className="flex items-center gap-2 text-xs py-1 px-2 rounded transition-colors duration-100 hover:bg-muted/40"
-                                        >
-                                          <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                                            f.severity === 'high' ? 'bg-destructive' : f.severity === 'medium' ? 'bg-warning' : 'bg-muted-foreground/50'
-                                          }`} />
-                                          <code className="font-mono text-[11px] flex-1 min-w-0 truncate text-foreground/80" title={f.file}>
-                                            {f.file}
-                                          </code>
-                                          <span className="text-[10px] text-muted-foreground/60 shrink-0">{f.categoryLabel || f.category}</span>
-                                        </div>
-                                      ))}
-                                      {hiddenCount > 0 && (
-                                        <p className="text-xs text-muted-foreground/50 text-center pt-2">
-                                          + {hiddenCount} more file{hiddenCount !== 1 ? 's' : ''}
-                                        </p>
-                                      )}
-                                    </div>
-                                  </AccordionContent>
-                                </AccordionItem>
-                              )
-                            })}
-                          </Accordion>
-                        </>
-                      )
-                    })()}
-
-                    {/* Load order tip — only when there are actual conflicts */}
-                    {conflicts.totalConflicts > 0 && (
-                      <div className="rounded-lg border border-border/50 bg-muted/20 p-3">
-                        <p className="text-xs text-muted-foreground flex items-center gap-2">
-                          <Info className="w-3.5 h-3.5 shrink-0" />
-                          Load order determines which mod's files win. The <strong className="text-foreground/80">last loaded</strong> mod takes precedence for conflicting files.
-                        </p>
+                                  )
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </div>
                     )}
                   </div>
@@ -2896,6 +3667,48 @@ export default function Mods() {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Single mod remove confirmation */}
+      <AlertDialog open={!!confirmRemoveMod} onOpenChange={(open) => { if (!open) setConfirmRemoveMod(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove this mod?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will untrack the mod and remove it from the server INI config. The workshop files on disk won't be deleted.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => { if (confirmRemoveMod) handleRemoveMod(confirmRemoveMod); setConfirmRemoveMod(null) }}
+            >
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bulk remove confirmation */}
+      <AlertDialog open={confirmBulkRemove} onOpenChange={setConfirmBulkRemove}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove {selectedMods.size} mod{selectedMods.size !== 1 ? 's' : ''}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will untrack all selected mods and remove them from the server INI config. Workshop files on disk won't be deleted.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => { handleBulkRemove(); setConfirmBulkRemove(false) }}
+            >
+              Remove {selectedMods.size} mod{selectedMods.size !== 1 ? 's' : ''}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </TooltipProvider>
   )
 }

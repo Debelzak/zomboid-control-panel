@@ -827,9 +827,10 @@ export default function Dashboard() {
                 action: () => serverApi.restart(5),
                 variant: 'warning'
               })}
-              disabled={!status?.running || loading !== null}
+              disabled={!status?.running || loading !== null || activeServer?.isRemote}
               variant="warning"
               className="gap-2"
+              title={activeServer?.isRemote ? 'Not available for remote (RCON-only) servers' : undefined}
             >
               <RotateCcw className="w-4 h-4" />
               Restart
@@ -887,7 +888,7 @@ export default function Dashboard() {
                     action: () => serverApi.restart(0),
                     variant: 'destructive'
                   })}
-                  disabled={!status?.running || loading !== null}
+                  disabled={!status?.running || loading !== null || activeServer?.isRemote}
                   className="text-destructive focus:text-destructive"
                 >
                   <Zap className="w-4 h-4 mr-2" />

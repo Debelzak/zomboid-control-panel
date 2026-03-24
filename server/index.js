@@ -377,6 +377,13 @@ const apiLimiter = rateLimit({
 app.use('/api/', apiLimiter);
 
 // Auth middleware — protects all /api/ routes except /api/auth/*
+// SSE endpoints can't set custom headers, so we accept ?token= as a fallback
+app.use('/api/', (req, res, next) => {
+  if (req.query.token && !req.headers.authorization) {
+    req.headers.authorization = `Bearer ${req.query.token}`;
+  }
+  next();
+});
 app.use(authService.middleware());
 
 // Stricter rate limit for destructive/sensitive operations
@@ -576,6 +583,7 @@ async function tryStartPanelBridge(trigger = 'unknown') {
 // Auto-start PanelBridge when RCON connects (secondary trigger)
 rconService.on('connected', async () => {
   log.info('RCON connected - checking PanelBridge...');
+  rconConnectedAt = Date.now();
   await tryStartPanelBridge('rcon-connected');
 });
 
@@ -824,6 +832,7 @@ onLog((logEntry) => {
 // ============================================
 let lastPlayerList = [];
 let playerPollingInterval = null;
+let rconConnectedAt = 0; // timestamp of last RCON connect — used for grace period
 
 function startPlayerPolling() {
   // Poll every 5 seconds for player changes
@@ -835,6 +844,12 @@ function startPlayerPolling() {
     try {
       // Only poll if RCON is connected
       if (!rconService.connected) {
+        return;
+      }
+
+      // Grace period: skip polling for 15s after RCON connects
+      // PZ server may accept RCON before it's ready to respond to commands
+      if (rconConnectedAt && Date.now() - rconConnectedAt < 15000) {
         return;
       }
       

@@ -308,6 +308,11 @@ router.get('/status', async (req, res) => {
 // Start server
 router.post('/start', async (req, res) => {
   try {
+    const activeServer = await getActiveServer();
+    if (activeServer?.isRemote) {
+      return res.status(400).json({ error: 'Cannot start a remote server. Remote servers are managed externally — use RCON to interact.' });
+    }
+
     const serverManager = req.app.get('serverManager');
     const rconService = req.app.get('rconService');
     
@@ -500,6 +505,11 @@ router.post('/stop', async (req, res) => {
 // Force stop server
   router.post('/force-stop', async (req, res) => {
   try {
+    const activeServer = await getActiveServer();
+    if (activeServer?.isRemote) {
+      return res.status(400).json({ error: 'Cannot force-stop a remote server. The process is not managed by this panel.' });
+    }
+
     const serverManager = req.app.get('serverManager');
     const result = await serverManager.stopServer(false);
     
@@ -516,6 +526,11 @@ router.post('/stop', async (req, res) => {
 // Restart server
 router.post('/restart', async (req, res) => {
   try {
+    const activeServer = await getActiveServer();
+    if (activeServer?.isRemote) {
+      return res.status(400).json({ error: 'Cannot restart a remote server. The process is not managed by this panel.' });
+    }
+
     const scheduler = req.app.get('scheduler');
     // Parse and clamp warningMinutes to 0-60 (matches /api/scheduler/restart-now)
     let warningMinutes = parseInt(req.body.warningMinutes, 10);

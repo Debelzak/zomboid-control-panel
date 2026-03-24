@@ -3,6 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import { createLogger } from '../utils/logger.js';
 import { sanitizeError } from '../utils/sanitize.js';
+import { getActiveServer } from '../database/init.js';
 const log = createLogger('API:Backup');
 
 const router = express.Router();
@@ -76,6 +77,11 @@ router.post('/settings', async (req, res) => {
 // Create a manual backup
 router.post('/create', async (req, res) => {
   try {
+    const activeServer = await getActiveServer();
+    if (activeServer?.isRemote) {
+      return res.status(400).json({ error: 'Backups are not available for remote servers. The server filesystem is not accessible from this panel.' });
+    }
+
     const backupService = req.app.get('backupService');
     const io = req.app.get('io');
     
@@ -142,6 +148,11 @@ router.get('/download/:name', async (req, res) => {
 // Restore a backup
 router.post('/restore/:name', async (req, res) => {
   try {
+    const activeServer = await getActiveServer();
+    if (activeServer?.isRemote) {
+      return res.status(400).json({ error: 'Backup restore is not available for remote servers. The server filesystem is not accessible from this panel.' });
+    }
+
     const backupService = req.app.get('backupService');
     const serverManager = req.app.get('serverManager');
     

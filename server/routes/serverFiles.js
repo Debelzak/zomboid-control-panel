@@ -9,6 +9,19 @@ import { sanitizeError } from '../utils/sanitize.js';
 
 const router = express.Router();
 
+// Block all file operations for remote servers (no local filesystem access)
+router.use(async (req, res, next) => {
+  try {
+    const activeServer = await getActiveServer();
+    if (activeServer?.isRemote) {
+      return res.status(400).json({ error: 'Server file editing is not available for remote servers. The server filesystem is not accessible from this panel.' });
+    }
+    next();
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Helper function to escape regex special characters
 function escapeRegExp(str) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
