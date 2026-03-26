@@ -1,11 +1,15 @@
 ---@diagnostic disable: undefined-global, deprecated
 --[[
     PanelBridge - Server-side mod for Zomboid Control Panel
-    Version: 1.6.0
+    Version: 1.7.0
     
     This mod enables external control panel communication with the PZ server.
     Communication happens via JSON files in the server save folder.
     
+    v1.7.0 Changes:
+    - Added getAllSandboxOptions handler: enumerates ALL sandbox options (vanilla + mod-registered)
+      with metadata (type, min/max, default, enum values), grouped by mod/table name
+
     v1.6.0 Changes:
     - Added vehicleSetFuel and vehicleSetBattery handlers for remote vehicle management
     - Added safehouse player list to getSafehouses response
@@ -88,7 +92,7 @@
 local json
 
 local PanelBridge = {
-    VERSION = "1.6.0",
+    VERSION = "1.7.0",
     PROTOCOL_VERSION = "queue-v1",
     CHECK_INTERVAL = 250, -- milliseconds (fast command polling)
     lastCheck = 0,
@@ -2673,6 +2677,409 @@ handlers.getSandboxOptions = function(args)
     safeOpt("sleepNeeded", function() return sandbox:getSleepNeeded() end)
     
     return true, { options = options }
+end
+
+-- Get ALL sandbox options including mod-added ones, grouped by source
+handlers.getAllSandboxOptions = function(args)
+    local sandbox = getSandboxOptions()
+    if not sandbox then
+        return false, nil, "SandboxOptions not available"
+    end
+
+    local allOptions = {}
+    local totalCount = 0
+
+    -- Helper to extract value from a sandbox option object
+    local function getOptionValue(opt)
+        local raw = nil
+        -- Try getValue first (most common)
+        if opt.getValue then
+            local ok, val = pcall(function() return opt:getValue() end)
+            if ok then raw = val end
+        end
+        -- Try getIntValue for integer enums
+        if raw == nil and opt.getIntValue then
+            local ok, val = pcall(function() return opt:getIntValue() end)
+            if ok then raw = val end
+        end
+        -- Try direct value field
+        if raw == nil and opt.value ~= nil then raw = opt.value end
+        -- Ensure the value is JSON-serializable (not userdata/Java object)
+        if raw == nil then return nil end
+        local t = type(raw)
+        if t == "string" or t == "number" or t == "boolean" then return raw end
+        -- Userdata or table — coerce to string for safety
+        local ok2, str = pcall(tostring, raw)
+        return ok2 and str or nil
+    end
+
+    -- Helper to safely coerce a value to string, returning nil if the value is nil
+    local function safeStr(fn)
+        local ok, val = pcall(fn)
+        if ok and val ~= nil then return tostring(val) end
+        return nil
+    end
+
+    -- Helper to extract option metadata
+    local function getOptionInfo(opt)
+        local info = {}
+        -- Get the option name (e.g., "MyMod.SettingName")
+        info.name = safeStr(function() return opt:getName() end)
+        -- Get the short name (just "SettingName")
+        info.shortName = safeStr(function() return opt:getShortName() end)
+        -- Get the table/page name (mod or category grouping)
+        info.tableName = safeStr(function() return opt:getTableName() end)
+        -- Get the tooltip/translation key
+        info.tooltip = safeStr(function() return opt:getTooltip() end)
+        -- Get the translated name if available
+        info.translatedName = safeStr(function() return opt:getTranslatedName() end)
+        -- Get value
+        info.value = getOptionValue(opt)
+        -- Get type info
+        pcall(function()
+            if not opt.getClass then return end
+            local classObj = opt:getClass()
+            if not classObj then return end
+            local className = tostring(classObj)
+            if className:find("Boolean") then
+                info.type = "boolean"
+            elseif className:find("Double") or className:find("Integer") or className:find("Numeric") then
+                info.type = "number"
+            elseif className:find("Enum") then
+                info.type = "enum"
+                -- Try to get enum values
+                pcall(function()
+                    if opt.getNumValues and opt.getValueName then
+                        local numVals = opt:getNumValues()
+                        if numVals and numVals > 0 then
+                            info.enumValues = {}
+                            local cap = math.min(numVals, 50)
+                            for i = 0, cap - 1 do
+                                pcall(function()
+                                    table.insert(info.enumValues, tostring(opt:getValueName(i)))
+                                end)
+                            end
+                        end
+                    end
+                end)
+                -- Get selected index for enums
+                pcall(function()
+                    if opt.getIntValue then
+                        info.selectedIndex = opt:getIntValue()
+                    end
+                end)
+            elseif className:find("String") then
+                info.type = "string"
+            else
+                info.type = className
+            end
+        end)
+        -- Get min/max for numeric types
+        pcall(function()
+            if opt.getMin then
+                local v = opt:getMin()
+                if type(v) == "number" then info.min = v end
+            end
+        end)
+        pcall(function()
+            if opt.getMax then
+                local v = opt:getMax()
+                if type(v) == "number" then info.max = v end
+            end
+        end)
+        -- Get default value
+        pcall(function()
+            if opt.getDefaultValue then
+                local v = opt:getDefaultValue()
+                local t = type(v)
+                if t == "string" or t == "number" or t == "boolean" then
+                    info.default = v
+                else
+                    local ok2, str = pcall(tostring, v)
+                    if ok2 then info.default = str end
+                end
+            end
+        end)
+        return info
+    end
+
+    -- Method 1: Try getNumOptions + getOptionByIndex (Java ArrayList-style)
+    local enumerated = false
+    pcall(function()
+        local numOptions = sandbox:getNumOptions()
+        if numOptions and numOptions > 0 then
+            for i = 0, numOptions - 1 do
+                pcall(function()
+                    local opt = sandbox:getOptionByIndex(i)
+                    if opt then
+                        local info = getOptionInfo(opt)
+                        if info.name then
+                            -- Group by table name (mod name or vanilla category)
+                            local group = (info.tableName and info.tableName ~= "") and info.tableName or "Vanilla"
+                            if not allOptions[group] then
+                                allOptions[group] = {}
+                            end
+                            table.insert(allOptions[group], info)
+                            totalCount = totalCount + 1
+                        end
+                    end
+                end)
+            end
+            enumerated = true
+        end
+    end)
+
+    -- Method 2: Try iterating the options ArrayList directly
+    if not enumerated then
+        pcall(function()
+            local optionsList = sandbox:getOptions()
+            if optionsList then
+                local size = optionsList:size()
+                for i = 0, size - 1 do
+                    pcall(function()
+                        local opt = optionsList:get(i)
+                        if opt then
+                            local info = getOptionInfo(opt)
+                            if info.name then
+                                local group = (info.tableName and info.tableName ~= "") and info.tableName or "Vanilla"
+                                if not allOptions[group] then
+                                    allOptions[group] = {}
+                                end
+                                table.insert(allOptions[group], info)
+                                totalCount = totalCount + 1
+                            end
+                        end
+                    end)
+                end
+                enumerated = true
+            end
+        end)
+    end
+
+    -- Method 3: Try pairs enumeration on the sandbox object itself
+    if not enumerated then
+        pcall(function()
+            for k, v in pairs(sandbox) do
+                if type(v) ~= "function" then
+                    pcall(function()
+                        -- Check if it's a sandbox option object with getName
+                        if v and type(v) == "userdata" and v.getName then
+                            local info = getOptionInfo(v)
+                            if info.name then
+                                local group = (info.tableName and info.tableName ~= "") and info.tableName or "Vanilla"
+                                if not allOptions[group] then
+                                    allOptions[group] = {}
+                                end
+                                table.insert(allOptions[group], info)
+                                totalCount = totalCount + 1
+                            end
+                        else
+                            -- Simple key-value — coerce value for JSON safety
+                            local group = "Vanilla"
+                            if tostring(k):find("%.") then
+                                group = tostring(k):match("^([^%.]+)")
+                            end
+                            if not allOptions[group] then
+                                allOptions[group] = {}
+                            end
+                            local safeVal = v
+                            local vt = type(v)
+                            if vt ~= "string" and vt ~= "number" and vt ~= "boolean" and v ~= nil then
+                                local ok3, str3 = pcall(tostring, v)
+                                safeVal = ok3 and str3 or nil
+                            end
+                            table.insert(allOptions[group], {
+                                name = tostring(k),
+                                value = safeVal,
+                                type = type(v)
+                            })
+                            totalCount = totalCount + 1
+                        end
+                    end)
+                end
+            end
+            if totalCount > 0 then enumerated = true end
+        end)
+    end
+
+    -- Sort options within each group by name
+    for group, opts in pairs(allOptions) do
+        table.sort(opts, function(a, b)
+            return (a.name or "") < (b.name or "")
+        end)
+    end
+
+    -- Build group list with counts
+    local groups = {}
+    for group, opts in pairs(allOptions) do
+        table.insert(groups, { name = group, count = #opts })
+    end
+    table.sort(groups, function(a, b) return a.name < b.name end)
+
+    PanelBridge.info("Sandbox options enumerated", {
+        totalOptions = totalCount,
+        groups = #groups,
+        enumerated = enumerated
+    })
+
+    return true, {
+        options = allOptions,
+        groups = groups,
+        totalCount = totalCount,
+        enumerated = enumerated
+    }
+end
+
+-- Set a single sandbox option value
+handlers.setSandboxOption = function(args)
+    local optName = args and args.name
+    local newValue = args and args.value
+    if not optName or optName == "" then
+        return false, nil, "Missing option name"
+    end
+    if newValue == nil then
+        return false, nil, "Missing value"
+    end
+
+    local sandbox = getSandboxOptions()
+    if not sandbox then
+        return false, nil, "SandboxOptions not available"
+    end
+
+    -- Find the option by name
+    local targetOpt = nil
+    pcall(function()
+        local numOptions = sandbox:getNumOptions()
+        if numOptions and numOptions > 0 then
+            for i = 0, numOptions - 1 do
+                local opt = sandbox:getOptionByIndex(i)
+                if opt and opt.getName then
+                    local name = opt:getName()
+                    if name == optName then
+                        targetOpt = opt
+                        return
+                    end
+                end
+            end
+        end
+    end)
+
+    -- Fallback: try getOptions():get()
+    if not targetOpt then
+        pcall(function()
+            local optionsList = sandbox:getOptions()
+            if optionsList then
+                local size = optionsList:size()
+                for i = 0, size - 1 do
+                    local opt = optionsList:get(i)
+                    if opt and opt.getName then
+                        local name = opt:getName()
+                        if name == optName then
+                            targetOpt = opt
+                            return
+                        end
+                    end
+                end
+            end
+        end)
+    end
+
+    if not targetOpt then
+        return false, nil, "Option not found: " .. tostring(optName)
+    end
+
+    -- Determine the option type and apply the value
+    local optType = nil
+    pcall(function()
+        if not targetOpt.getClass then return end
+        local className = tostring(targetOpt:getClass())
+        if className:find("Boolean") then optType = "boolean"
+        elseif className:find("Double") or className:find("Numeric") then optType = "double"
+        elseif className:find("Integer") then optType = "integer"
+        elseif className:find("Enum") then optType = "enum"
+        elseif className:find("String") then optType = "string"
+        end
+    end)
+
+    local ok, err
+    if optType == "boolean" then
+        local boolVal = (newValue == true or newValue == "true" or newValue == 1)
+        ok, err = pcall(function() targetOpt:setValue(boolVal) end)
+    elseif optType == "enum" then
+        local intVal = tonumber(newValue)
+        if not intVal then return false, nil, "Invalid enum value" end
+        intVal = math.floor(intVal)
+        -- Bounds-check against getNumValues if available
+        pcall(function()
+            if targetOpt.getNumValues then
+                local numVals = targetOpt:getNumValues()
+                if numVals and intVal >= numVals then intVal = numVals - 1 end
+                if intVal < 0 then intVal = 0 end
+            end
+        end)
+        ok, err = pcall(function() targetOpt:setValue(intVal) end)
+    elseif optType == "integer" then
+        local intVal = tonumber(newValue)
+        if not intVal then return false, nil, "Invalid integer value" end
+        intVal = math.floor(intVal)
+        -- Clamp to min/max if the option exposes them
+        pcall(function()
+            if targetOpt.getMin then
+                local mn = targetOpt:getMin()
+                if type(mn) == "number" and intVal < mn then intVal = mn end
+            end
+            if targetOpt.getMax then
+                local mx = targetOpt:getMax()
+                if type(mx) == "number" and intVal > mx then intVal = mx end
+            end
+        end)
+        ok, err = pcall(function() targetOpt:setValue(intVal) end)
+    elseif optType == "double" then
+        local numVal = tonumber(newValue)
+        if not numVal then return false, nil, "Invalid numeric value" end
+        -- Clamp to min/max
+        pcall(function()
+            if targetOpt.getMin then
+                local mn = targetOpt:getMin()
+                if type(mn) == "number" and numVal < mn then numVal = mn end
+            end
+            if targetOpt.getMax then
+                local mx = targetOpt:getMax()
+                if type(mx) == "number" and numVal > mx then numVal = mx end
+            end
+        end)
+        ok, err = pcall(function() targetOpt:setValue(numVal) end)
+    elseif optType == "string" then
+        ok, err = pcall(function() targetOpt:setValue(tostring(newValue)) end)
+    else
+        -- Unknown type — try generic setValue with the raw value
+        ok, err = pcall(function() targetOpt:setValue(newValue) end)
+    end
+
+    if not ok then
+        return false, nil, "Failed to set value: " .. tostring(err)
+    end
+
+    -- Read back the value to confirm
+    local confirmed = nil
+    pcall(function()
+        if targetOpt.getValue then
+            confirmed = targetOpt:getValue()
+            local t = type(confirmed)
+            if t ~= "string" and t ~= "number" and t ~= "boolean" then
+                local ok2, str = pcall(tostring, confirmed)
+                confirmed = ok2 and str or nil
+            end
+        end
+    end)
+
+    PanelBridge.info("Sandbox option set", { name = optName, value = tostring(newValue), confirmed = tostring(confirmed) })
+
+    return true, {
+        name = optName,
+        value = confirmed,
+        type = optType
+    }
 end
 
 -- ============================================

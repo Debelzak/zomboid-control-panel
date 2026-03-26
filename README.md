@@ -39,6 +39,7 @@ So I built the whole thing. [Background story →](https://www.youtube.com/watch
 - **Player management** — Online players, activity history. Kick, ban, unban, access levels.
 - **PanelBridge extras** — Teleport, heal, god mode, invisibility, character export/import (skills, perks, recipes, inventory).
 - **World & events** — Weather triggers, climate control, game time, sandbox settings. Chat and admin messaging.
+- **Live mod settings** — Browse and edit every sandbox option from your mods and vanilla, grouped by mod, searchable, with instant apply. No config files, no restart.
 - **Mod tracking** — Workshop mod update detection with configurable polling.
 - **Scheduling** — Recurring tasks: restarts, saves, broadcasts.
 - **Maintenance** — Backups/restores, chunk cleanup, full RCON console.

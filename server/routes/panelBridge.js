@@ -36,7 +36,7 @@ const VALID_ACTIONS = new Set([
   'playWorldSound', 'playSoundNearPlayer', 'triggerGunshot', 'triggerAlarmSound', 'createNoise',
   'sendToServerChat', 'sendToAdminChat', 'sendToGeneralChat', 'getChatInfo',
   'getUtilitiesStatus', 'restoreUtilities', 'shutOffUtilities',
-  'saveWorld', 'getSandboxOptions',
+  'saveWorld', 'getSandboxOptions', 'getAllSandboxOptions', 'setSandboxOption',
   'getZombieCount', 'clearZombiesNearPlayer', 'clearAllZombies',
   'spawnHordeNearPlayer', 'spawnHordeBehindPlayer',
   'airdrop',

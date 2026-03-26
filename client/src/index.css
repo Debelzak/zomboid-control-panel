@@ -8,6 +8,16 @@ input::-ms-clear {
   display: none;
 }
 
+/* Hide native number input spinners — values are typed directly */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
 @layer base {
   /* Base tokens: PZ-themed dark fallback (matches survival spirit).
      The app is always dark — :root inherits from .dark when no theme class is set. */

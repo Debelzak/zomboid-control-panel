@@ -9,6 +9,7 @@ import {
   Search,
   Code,
   FormInput,
+  Puzzle,
   Loader2,
   CheckCircle,
   AlertCircle,
@@ -66,7 +67,7 @@ import {
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { PageHeader } from '@/components/PageHeader'
 // DropdownMenu imports available if needed
-import { serverFilesApi, SpawnPointsByProfession, SpawnRegion, SandboxData, ConfigTemplate } from '@/lib/api'
+import { serverFilesApi, panelBridgeApi, SpawnPointsByProfession, SpawnRegion, SandboxData, ConfigTemplate } from '@/lib/api'
 import { getUserErrorMessage } from '@/lib/errorMessage'
 import { EmptyState } from '@/components/EmptyState'
 import {
@@ -408,6 +409,44 @@ export default function ServerConfig() {
   const [originalSandboxData, setOriginalSandboxData] = useState<SandboxData | null>(null)
   const [originalRawContent, setOriginalRawContent] = useState('')
   
+  // Mod Settings (live from PanelBridge)
+  const [modSettings, setModSettings] = useState<Record<string, Array<{
+    name?: string; shortName?: string; tableName?: string; value?: unknown;
+    type?: string; min?: number; max?: number; default?: unknown;
+    enumValues?: string[]; selectedIndex?: number; translatedName?: string;
+    tooltip?: string;
+  }>> | null>(null)
+  const [modSettingsGroups, setModSettingsGroups] = useState<Array<{ name: string; count: number }>>([])
+  const [modSettingsLoading, setModSettingsLoading] = useState(false)
+  const [modSettingsError, setModSettingsError] = useState<string | null>(null)
+  const [modSettingsSearch, setModSettingsSearch] = useState('')
+  const [expandedModGroups, setExpandedModGroups] = useState<Set<string>>(new Set())
+  const [modSettingsLastLoaded, setModSettingsLastLoaded] = useState<Date | null>(null)
+  const modSettingsAbortRef = useRef<AbortController | null>(null)
+  const [savingOptions, setSavingOptions] = useState<Set<string>>(new Set())
+
+  // Memoize filtered mod settings groups to avoid duplicate filter logic
+  const filteredModGroups = useMemo(() => {
+    if (!modSettings || !modSettingsGroups.length) return []
+    return modSettingsGroups
+      .map(group => {
+        const opts = modSettings[group.name] || []
+        if (!modSettingsSearch) return { ...group, filteredOpts: opts }
+        const q = modSettingsSearch.toLowerCase()
+        const groupMatches = group.name.toLowerCase().includes(q)
+        const filteredOpts = groupMatches
+          ? opts
+          : opts.filter(o =>
+              (o.name || '').toLowerCase().includes(q) ||
+              (o.shortName || '').toLowerCase().includes(q) ||
+              (o.translatedName || '').toLowerCase().includes(q) ||
+              (o.tooltip || '').toLowerCase().includes(q)
+            )
+        return { ...group, filteredOpts }
+      })
+      .filter(g => g.filteredOpts.length > 0)
+  }, [modSettings, modSettingsGroups, modSettingsSearch])
+  
   // Copy state
   const [copied, setCopied] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -560,6 +599,95 @@ export default function ServerConfig() {
   }
 
   // Save handlers
+
+  // Load mod sandbox options from PanelBridge
+  const loadModSettings = useCallback(async () => {
+    // Abort any in-flight request
+    modSettingsAbortRef.current?.abort()
+    const controller = new AbortController()
+    modSettingsAbortRef.current = controller
+    setModSettingsLoading(true)
+    setModSettingsError(null)
+    try {
+      const response = await panelBridgeApi.sendCommand('getAllSandboxOptions', {}) as {
+        success?: boolean
+        data?: {
+          options: Record<string, Array<{
+            name?: string; shortName?: string; tableName?: string; value?: unknown;
+            type?: string; min?: number; max?: number; default?: unknown;
+            enumValues?: string[]; selectedIndex?: number; translatedName?: string;
+            tooltip?: string;
+          }>>
+          groups: Array<{ name: string; count: number }>
+          totalCount: number
+          enumerated: boolean
+        }
+        error?: string
+      }
+      if (response?.success && response.data) {
+        setModSettings(response.data.options)
+        setModSettingsGroups(response.data.groups)
+        setModSettingsLastLoaded(new Date())
+        setModSettingsError(null)
+      } else {
+        setModSettingsError(response?.error || 'Failed to load mod settings. Is PanelBridge connected?')
+      }
+    } catch (error) {
+      if (controller.signal.aborted) return
+      setModSettingsError(getUserErrorMessage(error, 'Failed to load mod settings. Check PanelBridge connection.'))
+    } finally {
+      if (!controller.signal.aborted) setModSettingsLoading(false)
+    }
+  }, [])
+
+  const handleOptionChange = useCallback(async (optName: string, newValue: unknown, groupName: string) => {
+    // Prevent duplicate inflight requests for the same option
+    setSavingOptions(prev => {
+      if (prev.has(optName)) return prev
+      const next = new Set(prev)
+      next.add(optName)
+      return next
+    })
+    try {
+      const response = await panelBridgeApi.sendCommand('setSandboxOption', { name: optName, value: newValue }) as {
+        success?: boolean
+        data?: { name: string; value: unknown; type: string }
+        error?: string
+      }
+      if (response?.success && response.data) {
+        const confirmedVal = response.data.value ?? newValue
+        setModSettings(prev => {
+          if (!prev) return prev
+          const updated = { ...prev }
+          const groupOpts = updated[groupName]
+          if (groupOpts) {
+            updated[groupName] = groupOpts.map(o => {
+              if (o.name !== optName) return o
+              const patched = { ...o, value: confirmedVal }
+              // Sync selectedIndex for enums so the dropdown reflects the new value
+              if (o.type === 'enum' && typeof confirmedVal === 'number') {
+                patched.selectedIndex = confirmedVal
+              }
+              return patched
+            })
+          }
+          return updated
+        })
+        toast({ title: 'Option updated', description: `${optName} set successfully` })
+      } else {
+        toast({ title: 'Failed to update', description: response?.error || 'Unknown error', variant: 'destructive' })
+      }
+    } catch (error) {
+      toast({ title: 'Error', description: getUserErrorMessage(error, 'Failed to set option'), variant: 'destructive' })
+    } finally {
+      setSavingOptions(prev => {
+        const next = new Set(prev)
+        next.delete(optName)
+        return next
+      })
+    }
+  }, [toast])
+
   const handleSaveIni = async () => {
     setSaving(true)
     try {
@@ -1200,6 +1328,10 @@ export default function ServerConfig() {
             <Map className="w-4 h-4" />
             <span className="font-medium">Spawn Regions</span>
           </TabsTrigger>
+          <TabsTrigger value="modsettings" className="min-h-10 shrink-0 rounded-md px-3">
+            <Puzzle className="w-4 h-4" />
+            <span className="font-medium">Mod Settings</span>
+          </TabsTrigger>
         </TabsList>
         </div>
 
@@ -1687,9 +1819,343 @@ export default function ServerConfig() {
             </CardContent>
           </Card>
         </TabsContent>
-      </Tabs>
 
-      {/* Backups Dialog */}
+        {/* Mod Settings Tab (Live from PanelBridge) */}
+        <TabsContent value="modsettings" className="mt-4">
+          <Card className="border-border/60">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <div className="rounded-lg border border-primary/20 bg-primary/10 p-1.5 text-primary">
+                      <Puzzle className="w-4 h-4" />
+                    </div>
+                    Mod Sandbox Options
+                  </CardTitle>
+                  <CardDescription className="mt-1">
+                    Live sandbox settings registered by mods, read from the running server via PanelBridge.
+                  </CardDescription>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={loadModSettings}
+                    disabled={modSettingsLoading}
+                    className="gap-2"
+                  >
+                    {modSettingsLoading ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="w-4 h-4" />
+                    )}
+                    {modSettings ? 'Refresh' : 'Load from Server'}
+                  </Button>
+                </div>
+              </div>
+
+              {modSettings && modSettingsGroups.length > 0 && (
+                <div className="mt-3 flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search mod settings..."
+                      value={modSettingsSearch}
+                      onChange={(e) => setModSettingsSearch(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Escape') { setModSettingsSearch(''); e.currentTarget.blur() } }}
+                      className="pl-9 pr-8"
+                      maxLength={200}
+                    />
+                    {modSettingsSearch && (
+                      <button
+                        onClick={() => setModSettingsSearch('')}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                        aria-label="Clear search"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      const allVisible = filteredModGroups.length > 0 && filteredModGroups.every(g => expandedModGroups.has(g.name))
+                      if (allVisible) {
+                        setExpandedModGroups(new Set())
+                      } else {
+                        setExpandedModGroups(new Set(filteredModGroups.map(g => g.name)))
+                      }
+                    }}
+                    className="shrink-0 text-xs gap-1.5"
+                  >
+                    {filteredModGroups.length > 0 && filteredModGroups.every(g => expandedModGroups.has(g.name)) ? (
+                      <><ChevronDown className="w-3.5 h-3.5" /> Collapse All</>
+                    ) : (
+                      <><ChevronRight className="w-3.5 h-3.5" /> Expand All</>
+                    )}
+                  </Button>
+                </div>
+              )}
+            </CardHeader>
+            <CardContent>
+              {!modSettings && !modSettingsLoading && !modSettingsError && (
+                <EmptyState
+                  type="noMods"
+                  title="Mod settings not loaded"
+                  description="Click 'Load from Server' to fetch sandbox options from all installed mods via PanelBridge. The PZ server must be running with PanelBridge active."
+                />
+              )}
+
+              {modSettingsError && (
+                <Alert variant={modSettings ? 'default' : 'destructive'} className="mb-3">
+                  <AlertCircle className="w-4 h-4" />
+                  <AlertTitle>{modSettings ? 'Refresh failed — showing previous data' : 'Failed to load mod settings'}</AlertTitle>
+                  <AlertDescription className="flex items-center justify-between gap-3">
+                    <span className="break-words min-w-0">{modSettingsError}</span>
+                    <Button variant="outline" size="sm" onClick={loadModSettings} disabled={modSettingsLoading} className="shrink-0 gap-1.5">
+                      <RefreshCw className="w-3.5 h-3.5" /> Retry
+                    </Button>
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              {modSettingsLoading && (
+                <div className="flex items-center justify-center py-12 gap-3 text-muted-foreground">
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <span>Loading sandbox options from server...</span>
+                </div>
+              )}
+
+              {modSettings && modSettingsGroups.length === 0 && !modSettingsLoading && (
+                <EmptyState
+                  type="noMods"
+                  title="No sandbox options found"
+                  description="The server returned no sandbox options. This may happen if no mods register custom sandbox settings, or the API isn't available in this PZ build."
+                />
+              )}
+
+              {modSettings && modSettingsGroups.length > 0 && (
+                <ScrollArea className="h-[calc(100vh-440px)] min-h-[400px] pr-4">
+                  <div className="mb-3 flex items-center gap-3 text-sm text-muted-foreground flex-wrap">
+                    <Badge variant="secondary">
+                      {modSettingsSearch ? `${filteredModGroups.length} / ${modSettingsGroups.length}` : modSettingsGroups.length} groups
+                    </Badge>
+                    <Badge variant="secondary">
+                      {modSettingsSearch
+                        ? `${filteredModGroups.reduce((s, g) => s + g.filteredOpts.length, 0)} / ${modSettingsGroups.reduce((s, g) => s + g.count, 0)}`
+                        : modSettingsGroups.reduce((s, g) => s + g.count, 0)
+                      } options
+                    </Badge>
+                    {modSettingsLastLoaded && (
+                      <span className="text-xs text-muted-foreground/60 ml-auto">
+                        Loaded {modSettingsLastLoaded.toLocaleTimeString()}
+                      </span>
+                    )}
+                  </div>
+                  {filteredModGroups
+                    .map(group => {
+                      const isExpanded = expandedModGroups.has(group.name)
+                      const filteredOpts = group.filteredOpts
+
+                      return (
+                        <div key={group.name} className="mb-3">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setExpandedModGroups(prev => {
+                                const next = new Set(prev)
+                                if (next.has(group.name)) next.delete(group.name)
+                                else next.add(group.name)
+                                return next
+                              })
+                            }}
+                            aria-expanded={isExpanded}
+                            className={`flex items-center gap-3 w-full py-2.5 px-4 rounded-lg transition-[background-color,border-color,box-shadow,color] duration-200 ${
+                              isExpanded
+                                ? 'border border-primary/30 bg-primary/10 shadow-sm'
+                                : 'bg-muted/50 hover:bg-muted border border-transparent'
+                            }`}
+                          >
+                            <div className={`p-1 rounded transition-colors ${isExpanded ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>
+                              {isExpanded ? (
+                                <ChevronDown className="w-4 h-4" />
+                              ) : (
+                                <ChevronRight className="w-4 h-4" />
+                              )}
+                            </div>
+                            <span className={`font-medium truncate min-w-0 ${isExpanded ? 'text-primary' : ''}`} title={group.name}>{group.name}</span>
+                            <Badge variant={isExpanded ? "default" : "secondary"} className="ml-auto">
+                              {filteredOpts.length}
+                            </Badge>
+                          </button>
+                          {isExpanded && (
+                            <div className="mt-3 ml-4 space-y-1 border-l-2 border-primary/30 pl-4">
+                              {filteredOpts.map((opt, idx) => {
+                                const displayName = opt.shortName || opt.name || `Option ${idx}`
+                                const rawVal = opt.value
+                                let displayValue: string
+                                if (rawVal === undefined || rawVal === null) {
+                                  displayValue = '—'
+                                } else if (typeof rawVal === 'number') {
+                                  displayValue = Number.isInteger(rawVal) ? String(rawVal) : rawVal.toFixed(4).replace(/0+$/, '').replace(/\.$/, '')
+                                } else {
+                                  displayValue = String(rawVal)
+                                }
+                                const typeLabel = opt.type || 'unknown'
+                                const boolValue = typeLabel === 'boolean'
+                                  ? (rawVal === true || rawVal === 'true' || rawVal === 1)
+                                  : false
+                                const isSaving = opt.name ? savingOptions.has(opt.name) : false
+                                const isModified = opt.default !== undefined && opt.default !== null && (() => {
+                                  const d = opt.default, v = opt.value
+                                  if (typeof d === 'number' && typeof v === 'number') return Math.abs(d - v) >= 0.0001
+                                  return String(d) !== String(v)
+                                })()
+
+                                return (
+                                  <div
+                                    key={`${opt.name || 'opt'}-${idx}`}
+                                    className={`flex items-center justify-between py-2 px-3 rounded-md hover:bg-muted/50 gap-4 ${isSaving ? 'opacity-60 pointer-events-none' : ''}`}
+                                  >
+                                    <div className="flex-1 min-w-0">
+                                      <div className="font-medium text-sm truncate" title={opt.tooltip || opt.name || displayName}>
+                                        {opt.translatedName || displayName}
+                                      </div>
+                                      {opt.translatedName && opt.shortName && opt.translatedName !== opt.shortName && (
+                                        <div className="text-xs text-muted-foreground/70 font-mono truncate" title={opt.name}>{opt.name}</div>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-2 shrink-0">
+                                      {typeLabel === 'boolean' ? (
+                                        <div className="flex items-center gap-2">
+                                          <Switch
+                                            checked={boolValue}
+                                            onCheckedChange={(checked) => opt.name && !isSaving && handleOptionChange(opt.name, checked, group.name)}
+                                            disabled={isSaving}
+                                            aria-label={`${displayName}: ${boolValue ? 'ON' : 'OFF'}`}
+                                          />
+                                          <span className={`text-xs font-mono ${boolValue ? 'text-primary' : 'text-muted-foreground'}`}>
+                                            {boolValue ? 'ON' : 'OFF'}
+                                          </span>
+                                        </div>
+                                      ) : typeLabel === 'enum' && opt.enumValues && opt.enumValues.length > 0 ? (
+                                        <Select
+                                          value={opt.selectedIndex !== undefined ? String(opt.selectedIndex) : displayValue}
+                                          onValueChange={(val) => {
+                                            if (!opt.name || isSaving) return
+                                            const idx = parseInt(val, 10)
+                                            if (isNaN(idx)) return
+                                            handleOptionChange(opt.name, idx, group.name)
+                                          }}
+                                          disabled={isSaving}
+                                        >
+                                          <SelectTrigger className="h-7 w-[180px] text-xs font-mono" aria-label={displayName}>
+                                            <SelectValue />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            {opt.enumValues.map((ev, ei) => (
+                                              <SelectItem key={ei} value={String(ei)} className="text-xs font-mono">
+                                                {ev}
+                                              </SelectItem>
+                                            ))}
+                                          </SelectContent>
+                                        </Select>
+                                      ) : typeLabel === 'number' || typeLabel === 'double' || typeLabel === 'integer' ? (
+                                        <Input
+                                          key={`${opt.name}-${displayValue}`}
+                                          type="number"
+                                          className="h-7 w-[100px] text-xs font-mono text-right"
+                                          defaultValue={displayValue}
+                                          min={opt.min}
+                                          max={opt.max}
+                                          step={typeLabel === 'double' ? 0.01 : 1}
+                                          disabled={isSaving}
+                                          aria-label={displayName}
+                                          onBlur={(e) => {
+                                            let num = parseFloat(e.target.value)
+                                            if (isNaN(num) || !opt.name) return
+                                            if (opt.min !== undefined) num = Math.max(opt.min, num)
+                                            if (opt.max !== undefined) num = Math.min(opt.max, num)
+                                            if (num === rawVal) return
+                                            e.target.value = String(num)
+                                            handleOptionChange(opt.name, num, group.name)
+                                          }}
+                                          onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                              (e.target as HTMLInputElement).blur()
+                                            }
+                                          }}
+                                        />
+                                      ) : (
+                                        <Input
+                                          key={`${opt.name}-${displayValue}`}
+                                          type="text"
+                                          className="h-7 w-[160px] text-xs font-mono"
+                                          defaultValue={displayValue}
+                                          disabled={isSaving}
+                                          aria-label={displayName}
+                                          onBlur={(e) => {
+                                            if (e.target.value !== String(rawVal) && opt.name) {
+                                              handleOptionChange(opt.name, e.target.value, group.name)
+                                            }
+                                          }}
+                                          onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                              (e.target as HTMLInputElement).blur()
+                                            }
+                                          }}
+                                        />
+                                      )}
+                                      {opt.min !== undefined && opt.max !== undefined && (
+                                        <span className="text-xs text-muted-foreground/60 whitespace-nowrap">
+                                          {opt.min}–{opt.max}
+                                        </span>
+                                      )}
+                                      {isModified && (
+                                        <Tooltip>
+                                          <TooltipTrigger asChild>
+                                            <button
+                                              type="button"
+                                              className="text-xs text-muted-foreground/50 hover:text-primary whitespace-nowrap flex items-center gap-1"
+                                              onClick={() => opt.name && opt.default !== undefined && handleOptionChange(opt.name, opt.default, group.name)}
+                                              disabled={isSaving}
+                                              title={`Reset to default: ${opt.default}`}
+                                            >
+                                              <Undo2 className="w-3 h-3" />
+                                              <span>def: {String(opt.default)}</span>
+                                            </button>
+                                          </TooltipTrigger>
+                                          <TooltipContent side="left">
+                                            <p>Reset to default: {String(opt.default)}</p>
+                                          </TooltipContent>
+                                        </Tooltip>
+                                      )}
+                                      {isSaving && <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />}
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  {modSettingsSearch && filteredModGroups.length === 0 && (
+                    <div className="flex flex-col items-center justify-center py-8 text-muted-foreground gap-2">
+                      <Search className="w-5 h-5 opacity-50" />
+                      <p className="text-sm">No settings match &ldquo;{modSettingsSearch.length > 60 ? modSettingsSearch.slice(0, 60) + '…' : modSettingsSearch}&rdquo;</p>
+                      <Button variant="ghost" size="sm" onClick={() => setModSettingsSearch('')} className="text-xs">
+                        Clear search
+                      </Button>
+                    </div>
+                  )}
+                </ScrollArea>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
       <Dialog open={showBackups} onOpenChange={setShowBackups}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
