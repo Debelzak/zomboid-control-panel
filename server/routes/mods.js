@@ -22,6 +22,17 @@ function withIniLock(iniPath, fn) {
   return next;
 }
 
+// Strip UTF-8 BOM (byte-order mark) that some text editors prepend to files.
+// If present, the BOM breaks regex patterns anchored with ^ on the first line.
+function stripBom(str) {
+  return str.charCodeAt(0) === 0xFEFF ? str.slice(1) : str;
+}
+
+// Read a text file as UTF-8 with BOM stripping and CRLF normalisation
+function readTextFile(filePath) {
+  return stripBom(fs.readFileSync(filePath, 'utf-8')).replace(/\r\n/g, '\n');
+}
+
 // Security: Strip INI-sensitive characters from values to prevent injection
 function sanitizeIniValue(value) {
   return String(value).replace(/[\r\n;=]/g, '');
@@ -403,7 +414,7 @@ router.post('/sync-from-server', async (req, res) => {
     }
     
     // Read and parse the INI file (normalize CRLF for cross-platform compatibility)
-    const content = fs.readFileSync(iniPath, 'utf-8').replace(/\r\n/g, '\n');
+    const content = readTextFile(iniPath);
     const modsMatch = content.match(/^Mods=(.*)$/m);
     const workshopMatch = content.match(/^WorkshopItems=(.*)$/m);
     
@@ -667,7 +678,7 @@ router.post('/write-to-ini', async (req, res) => {
     
     if (!fs.existsSync(iniPath)) {
       return res.status(400).json({ 
-        error: `Server config not found at ${iniPath}. Start the server once first to generate the config file.` 
+        error: 'Server config file not found. Start the server once first to generate the config file.' 
       });
     }
     
@@ -757,7 +768,7 @@ router.post('/write-to-ini', async (req, res) => {
     
     // Atomically read-modify-write the ini file inside the lock
     await withIniLock(iniPath, () => {
-      let content = fs.readFileSync(iniPath, 'utf-8').replace(/\r\n/g, '\n');
+      let content = readTextFile(iniPath);
       
       // Update or add Mods= (mod IDs like NeatUI_Framework)
       if (content.includes('Mods=')) {
@@ -838,7 +849,7 @@ router.get('/current-config', async (req, res) => {
       });
     }
     
-    const content = fs.readFileSync(iniPath, 'utf-8').replace(/\r\n/g, '\n');
+    const content = readTextFile(iniPath);
     
     // Extract mod-related settings
     const modsMatch = content.match(/^Mods=(.*)$/m);
@@ -913,7 +924,7 @@ router.post('/toggle-mod-id', async (req, res) => {
     }
     
     const result = await withIniLock(iniPath, () => {
-      let content = fs.readFileSync(iniPath, 'utf-8').replace(/\r\n/g, '\n');
+      let content = readTextFile(iniPath);
       const modsMatch = content.match(/^Mods=(.*)$/m);
       let currentModIds = modsMatch?.[1]?.split(';').filter(Boolean) || [];
       
@@ -992,7 +1003,7 @@ router.post('/batch-toggle-mod-ids', async (req, res) => {
     }
 
     const result = await withIniLock(iniPath, () => {
-      let content = fs.readFileSync(iniPath, 'utf-8').replace(/\r\n/g, '\n');
+      let content = readTextFile(iniPath);
       const modsMatch = content.match(/^Mods=(.*)$/m);
       let currentModIds = modsMatch?.[1]?.split(';').filter(Boolean) || [];
       
@@ -1063,7 +1074,7 @@ router.post('/add-to-ini', async (req, res) => {
     
     if (!fs.existsSync(iniPath)) {
       return res.status(400).json({ 
-        error: `Server config not found at ${iniPath}. Start the server once first to generate the config file.` 
+        error: 'Server config file not found. Start the server once first to generate the config file.' 
       });
     }
     
@@ -1101,7 +1112,7 @@ router.post('/add-to-ini', async (req, res) => {
     
     // Atomically read-modify-write inside the lock
     const result = await withIniLock(iniPath, () => {
-      let content = fs.readFileSync(iniPath, 'utf-8').replace(/\r\n/g, '\n');
+      let content = readTextFile(iniPath);
       
       const workshopMatch = content.match(/^WorkshopItems=(.*)$/m);
       const currentWorkshopIds = workshopMatch?.[1]?.split(';').filter(Boolean) || [];
@@ -1367,7 +1378,7 @@ function findMapFoldersFromWorkshop(workshopId, serverPath) {
           // B42 mods may have versioned subfolders: <entry>/42/media/maps/ or <entry>/common/media/maps/
           const subEntries = fs.readdirSync(entryPath, { withFileTypes: true });
           for (const sub of subEntries) {
-            if (sub.isDirectory() && (sub.name === '42' || sub.name === '41' || sub.name === 'common')) {
+            if (sub.isDirectory() && /^(42(\.\d+)?|41|common)$/i.test(sub.name)) {
               scanMapsDir(path.join(entryPath, sub.name, 'media', 'maps'));
             }
           }
@@ -1436,7 +1447,7 @@ function getModDetailsFromWorkshop(workshopId, serverPath) {
         
         const modInfoPath = candidatePaths.find(p => fs.existsSync(p));
         if (modInfoPath) {
-          const content = fs.readFileSync(modInfoPath, 'utf-8');
+          const content = readTextFile(modInfoPath);
           const info = {};
           
           // Parse mod.info
@@ -1458,7 +1469,7 @@ function getModDetailsFromWorkshop(workshopId, serverPath) {
               icon: info.icon,
               description: info.description || '',
               url: info.url,
-              require: info.require ? info.require.split(',').map(s => s.trim()).filter(Boolean) : []
+              require: info.require ? info.require.split(/[,;]/).map(s => s.trim().replace(/^\\+/, '')).filter(Boolean) : []
             });
           }
         }
@@ -1513,7 +1524,7 @@ router.post('/inspect-workshop-item', async (req, res) => {
 // Remove a single mod from server .ini file
 router.post('/remove-from-ini', async (req, res) => {
   try {
-    const { workshopId, modId } = req.body;
+    const { workshopId, modId, modIds: clientModIds } = req.body;
     
     if (!workshopId) {
       return res.status(400).json({ error: 'Workshop ID is required' });
@@ -1523,6 +1534,11 @@ router.post('/remove-from-ini', async (req, res) => {
     if (!/^\d{1,15}$/.test(String(workshopId))) {
       return res.status(400).json({ error: 'Invalid Workshop ID' });
     }
+
+    // Validate optional modIds array from client
+    const knownModIds = Array.isArray(clientModIds)
+      ? clientModIds.filter(id => typeof id === 'string' && id.length > 0 && id.length < 200).slice(0, 50)
+      : [];
     
     const serverConfigPath = await getServerConfigPath();
     const serverPath = await getServerPath();
@@ -1546,7 +1562,7 @@ router.post('/remove-from-ini', async (req, res) => {
     
     // Atomically read-modify-write inside the lock
     const lockResult = await withIniLock(iniPath, () => {
-      let content = fs.readFileSync(iniPath, 'utf-8').replace(/\r\n/g, '\n');
+      let content = readTextFile(iniPath);
     
       // Get current workshop items
       const workshopMatch = content.match(/^WorkshopItems=(.*)$/m);
@@ -1582,12 +1598,27 @@ router.post('/remove-from-ini', async (req, res) => {
         removedModIds.push(modId);
       }
     
-      // Legacy: if no mods found via filesystem, use single lookup
+      // Fallback: if no mods removed via filesystem, try single lookup
       if (removedModIds.length === 0 && !modId && serverPath) {
         const fallbackModId = findModIdFromWorkshop(String(workshopId), serverPath);
         if (fallbackModId && modIds.includes(fallbackModId)) {
           modIds = modIds.filter(id => id !== fallbackModId);
           removedModIds.push(fallbackModId);
+        }
+      }
+    
+      // Last resort: when filesystem lookup couldn't find mod IDs, use the
+      // mod IDs the client already knows about (from the UI's config data)
+      // to prevent WorkshopItems/Mods desync.
+      if (removedModIds.length === 0 && knownModIds.length > 0) {
+        for (const mid of knownModIds) {
+          if (modIds.includes(mid) && !removedModIds.includes(mid)) {
+            modIds = modIds.filter(id => id !== mid);
+            removedModIds.push(mid);
+          }
+        }
+        if (removedModIds.length > 0) {
+          log.info(`Fallback: removed ${removedModIds.join(', ')} for workshop ${workshopId} via client-provided mod IDs`);
         }
       }
     
@@ -1622,12 +1653,12 @@ router.post('/remove-from-ini', async (req, res) => {
     
       // Update WorkshopItems=
       if (content.includes('WorkshopItems=')) {
-        content = content.replace(/^WorkshopItems=.*/m, `WorkshopItems=${workshopIds.join(';')}`);
+        content = content.replace(/^WorkshopItems=.*/m, `WorkshopItems=${sanitizeIniList(workshopIds)}`);
       }
     
       // Update Mods=
       if (content.includes('Mods=')) {
-        content = content.replace(/^Mods=.*/m, `Mods=${modIds.join(';')}`);
+        content = content.replace(/^Mods=.*/m, `Mods=${sanitizeIniList(modIds)}`);
       }
     
       fs.writeFileSync(iniPath, content, 'utf-8');
@@ -1649,6 +1680,131 @@ router.post('/remove-from-ini', async (req, res) => {
     });
   } catch (error) {
     log.error(`Failed to remove mod from ini: ${error.message}`);
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
+// Batch remove multiple mods from tracking AND server .ini in a single operation
+// Avoids the N×2 individual API call problem for bulk removal
+router.post('/batch-remove', async (req, res) => {
+  try {
+    const { workshopIds } = req.body;
+
+    if (!Array.isArray(workshopIds) || workshopIds.length === 0) {
+      return res.status(400).json({ error: 'workshopIds array is required' });
+    }
+
+    // Cap batch size to prevent abuse
+    if (workshopIds.length > 500) {
+      return res.status(400).json({ error: 'Maximum 500 mods per batch' });
+    }
+
+    // Validate all IDs upfront
+    const validIds = [];
+    for (const id of workshopIds) {
+      const str = String(id);
+      if (/^\d{1,15}$/.test(str)) validIds.push(str);
+    }
+
+    if (validIds.length === 0) {
+      return res.status(400).json({ error: 'No valid workshop IDs provided' });
+    }
+
+    // Step 1: Remove all from database (fast, in-memory)
+    const dbResults = { removed: 0, failed: 0 };
+    for (const wsId of validIds) {
+      try {
+        await removeTrackedMod(wsId);
+        dbResults.removed++;
+      } catch (e) {
+        dbResults.failed++;
+        log.debug(`DB removal failed for ${wsId}: ${e.message}`);
+      }
+    }
+
+    // Step 2: Remove all from INI in a single locked write
+    const serverConfigPath = await getServerConfigPath();
+    const serverPath = await getServerPath();
+    const serverName = await getServerName();
+
+    let iniResult = { removed: 0, skipped: 0 };
+
+    if (serverConfigPath && serverName) {
+      const sanitizedServerName = path.basename(serverName);
+      if (sanitizedServerName && sanitizedServerName === serverName && !serverName.includes('..')) {
+        const iniPath = path.join(serverConfigPath, `${sanitizedServerName}.ini`);
+
+        if (fs.existsSync(iniPath)) {
+          iniResult = await withIniLock(iniPath, () => {
+            let content = readTextFile(iniPath);
+            const removeSet = new Set(validIds);
+
+            // Parse current lists
+            const workshopMatch = content.match(/^WorkshopItems=(.*)$/m);
+            let iniWorkshopIds = workshopMatch?.[1]?.split(';').filter(Boolean) || [];
+
+            const modsMatch = content.match(/^Mods=(.*)$/m);
+            let iniModIds = modsMatch?.[1]?.split(';').filter(Boolean) || [];
+
+            const mapMatch = content.match(/^Map=(.*)$/m);
+            let iniMaps = mapMatch?.[1]?.split(';').filter(Boolean) || [];
+
+            // Collect all mod IDs and map folders to remove
+            const modIdsToRemove = new Set();
+            const mapFoldersToRemove = new Set();
+
+            for (const wsId of validIds) {
+              if (serverPath) {
+                const allModIds = findAllModIdsFromWorkshop(wsId, serverPath);
+                for (const mid of allModIds) modIdsToRemove.add(mid);
+
+                const mapFolders = findMapFoldersFromWorkshop(wsId, serverPath);
+                for (const folder of mapFolders) mapFoldersToRemove.add(folder);
+              }
+            }
+
+            // Filter lists
+            const origWsCount = iniWorkshopIds.length;
+            const origModCount = iniModIds.length;
+            iniWorkshopIds = iniWorkshopIds.filter(id => !removeSet.has(id));
+            iniModIds = iniModIds.filter(id => !modIdsToRemove.has(id));
+            iniMaps = iniMaps.filter(m => !mapFoldersToRemove.has(m));
+
+            if (iniMaps.length === 0) iniMaps = ['Muldraugh, KY'];
+
+            // Write back
+            if (content.includes('WorkshopItems=')) {
+              content = content.replace(/^WorkshopItems=.*/m, `WorkshopItems=${sanitizeIniList(iniWorkshopIds)}`);
+            }
+            if (content.includes('Mods=')) {
+              content = content.replace(/^Mods=.*/m, `Mods=${sanitizeIniList(iniModIds)}`);
+            }
+            if (content.includes('Map=')) {
+              content = content.replace(/^Map=.*/m, `Map=${sanitizeIniList(iniMaps)}`);
+            }
+
+            fs.writeFileSync(iniPath, content, 'utf-8');
+
+            const wsRemoved = origWsCount - iniWorkshopIds.length;
+            const modRemoved = origModCount - iniModIds.length;
+            log.info(`Batch INI removal: removed ${wsRemoved} workshop IDs, ${modRemoved} mod IDs, ${mapFoldersToRemove.size} map folders`);
+
+            return { removed: wsRemoved, skipped: validIds.length - wsRemoved };
+          });
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      total: validIds.length,
+      dbRemoved: dbResults.removed,
+      dbFailed: dbResults.failed,
+      iniRemoved: iniResult.removed,
+      iniSkipped: iniResult.skipped,
+    });
+  } catch (error) {
+    log.error(`Batch removal failed: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
@@ -1676,7 +1832,7 @@ router.post('/repair-map-entries', async (req, res) => {
 
     // Atomically read-modify-write inside the lock
     const lockResult = await withIniLock(iniPath, () => {
-      let content = fs.readFileSync(iniPath, 'utf-8').replace(/\r\n/g, '\n');
+      let content = readTextFile(iniPath);
       const mapMatch = content.match(/^Map=(.*)$/m);
       const currentMaps = mapMatch?.[1]?.split(';').filter(Boolean) || [];
 
@@ -1773,7 +1929,7 @@ router.post('/deduplicate-mod-ids', async (req, res) => {
 
     // Atomically read-modify-write inside the lock
     const lockResult = await withIniLock(iniPath, () => {
-      let content = fs.readFileSync(iniPath, 'utf-8').replace(/\r\n/g, '\n');
+      let content = readTextFile(iniPath);
       const modsMatch = content.match(/^Mods=(.*)$/m);
       const currentMods = modsMatch?.[1]?.split(';').filter(Boolean) || [];
 
@@ -1867,7 +2023,7 @@ router.post('/add-missing-dep', async (req, res) => {
 
     // Atomically read-modify-write inside the lock
     const lockResult = await withIniLock(iniPath, () => {
-      let content = fs.readFileSync(iniPath, 'utf-8').replace(/\r\n/g, '\n');
+      let content = readTextFile(iniPath);
 
       // Add to WorkshopItems if not present
       const wsMatch = content.match(/^WorkshopItems=(.*)$/m);
@@ -1941,6 +2097,9 @@ router.post('/add-all-resolved-deps', async (req, res) => {
     if (!deps || !Array.isArray(deps) || deps.length === 0) {
       return res.status(400).json({ error: 'No dependencies provided' });
     }
+    if (deps.length > 200) {
+      return res.status(400).json({ error: 'Too many dependencies in one request (max 200)' });
+    }
 
     // Validate all workshop IDs
     for (const dep of deps) {
@@ -1979,7 +2138,7 @@ router.post('/add-all-resolved-deps', async (req, res) => {
 
     // Atomically read-modify-write inside the lock
     const lockResult = await withIniLock(iniPath, () => {
-      let content = fs.readFileSync(iniPath, 'utf-8').replace(/\r\n/g, '\n');
+      let content = readTextFile(iniPath);
       const wsMatch = content.match(/^WorkshopItems=(.*)$/m);
       const currentWs = new Set(wsMatch?.[1]?.split(';').filter(Boolean) || []);
       const modsMatch = content.match(/^Mods=(.*)$/m);
@@ -2251,9 +2410,9 @@ router.post('/sync-mod-ids', async (req, res) => {
     }
 
     // First pass: read INI to get workshop IDs list (no lock needed for read-only)
-    const preContent = fs.readFileSync(iniPath, 'utf-8').replace(/\r\n/g, '\n');
+    const preContent = readTextFile(iniPath);
     const preWorkshopMatch = preContent.match(/^WorkshopItems=(.*)$/m);
-    const workshopIds = preWorkshopMatch?.[1]?.split(';').filter(Boolean) || [];
+    const workshopIds = (preWorkshopMatch?.[1]?.split(';').filter(Boolean) || []).filter(id => /^\d{1,15}$/.test(id));
     
     // Pre-resolve all mod IDs BEFORE taking the lock (async operations)
     const resolvedMap = new Map(); // workshopId -> { availableModIds, fallbackId, error }
@@ -2274,7 +2433,7 @@ router.post('/sync-mod-ids', async (req, res) => {
     
     // Atomically re-read, modify, and write inside the lock
     const lockResult = await withIniLock(iniPath, () => {
-      let content = fs.readFileSync(iniPath, 'utf-8').replace(/\r\n/g, '\n');
+      let content = readTextFile(iniPath);
     
       const modsMatch = content.match(/^Mods=(.*)$/m);
       const currentModIds = modsMatch?.[1]?.split(';').filter(Boolean) || [];
@@ -2373,7 +2532,7 @@ router.get('/validate-config', async (req, res) => {
       return res.status(400).json({ error: 'Server config file not found' });
     }
     
-    const content = fs.readFileSync(iniPath, 'utf-8').replace(/\r\n/g, '\n');
+    const content = readTextFile(iniPath);
     const workshopMatch = content.match(/^WorkshopItems=(.*)$/m);
     const modsMatch = content.match(/^Mods=(.*)$/m);
     
@@ -2470,9 +2629,18 @@ router.get('/presets', async (req, res) => {
 // Create a mod preset (save current mods as a preset)
 router.post('/presets', async (req, res) => {
   try {
-    const { name, description } = req.body;
-    if (!name) {
+    let { name, description } = req.body;
+    if (!name || typeof name !== 'string') {
       return res.status(400).json({ error: 'Preset name is required' });
+    }
+    name = name.trim();
+    if (!name || name.length > 100) {
+      return res.status(400).json({ error: 'Preset name must be 1-100 characters' });
+    }
+    if (description && typeof description === 'string') {
+      description = description.trim().slice(0, 500);
+    } else {
+      description = '';
     }
     
     // Read current mods from INI
@@ -2488,7 +2656,7 @@ router.post('/presets', async (req, res) => {
       return res.status(400).json({ error: 'Server INI not found' });
     }
     
-    const content = fs.readFileSync(iniPath, 'utf-8').replace(/\r\n/g, '\n');
+    const content = readTextFile(iniPath);
     const workshopMatch = content.match(/^WorkshopItems=(.*)$/m);
     const modsMatch = content.match(/^Mods=(.*)$/m);
     
@@ -2513,9 +2681,26 @@ router.put('/presets/:id', async (req, res) => {
       return res.status(400).json({ error: 'Invalid preset ID' });
     }
     
-    const { name, description, workshopIds, modIds } = req.body;
+    const updates = {};
+    if (req.body.name !== undefined) {
+      if (typeof req.body.name !== 'string') return res.status(400).json({ error: 'name must be a string' });
+      const trimmed = req.body.name.trim();
+      if (!trimmed || trimmed.length > 100) return res.status(400).json({ error: 'name must be 1-100 characters' });
+      updates.name = trimmed;
+    }
+    if (req.body.description !== undefined) {
+      updates.description = typeof req.body.description === 'string' ? req.body.description.trim().slice(0, 500) : '';
+    }
+    if (req.body.workshopIds !== undefined) {
+      if (!Array.isArray(req.body.workshopIds)) return res.status(400).json({ error: 'workshopIds must be an array' });
+      updates.workshop_ids = req.body.workshopIds;
+    }
+    if (req.body.modIds !== undefined) {
+      if (!Array.isArray(req.body.modIds)) return res.status(400).json({ error: 'modIds must be an array' });
+      updates.mods = req.body.modIds;
+    }
     
-    const preset = await updateModPreset(id, { name, description, workshopIds, modIds });
+    const preset = await updateModPreset(id, updates);
     if (!preset) {
       return res.status(404).json({ error: 'Preset not found' });
     }
@@ -2574,7 +2759,7 @@ router.post('/presets/:id/apply', async (req, res) => {
     }
     
     await withIniLock(iniPath, () => {
-      let content = fs.readFileSync(iniPath, 'utf-8').replace(/\r\n/g, '\n');
+      let content = readTextFile(iniPath);
     
       const workshopLine = `WorkshopItems=${sanitizeIniList(preset.workshop_ids || [])}`;
       if (content.includes('WorkshopItems=')) {
@@ -2613,6 +2798,14 @@ router.post('/save-order', async (req, res) => {
     if (!Array.isArray(modIds)) {
       return res.status(400).json({ error: 'modIds must be an array' });
     }
+    if (modIds.length > 2000) {
+      return res.status(400).json({ error: 'Too many mod IDs (max 2000)' });
+    }
+    for (const id of modIds) {
+      if (typeof id !== 'string' || id.length > 200) {
+        return res.status(400).json({ error: 'Each mod ID must be a string (max 200 chars)' });
+      }
+    }
 
     const serverConfigPath = await getServerConfigPath();
     const serverName = await getServerName();
@@ -2627,7 +2820,7 @@ router.post('/save-order', async (req, res) => {
     }
     
     await withIniLock(iniPath, () => {
-      let content = fs.readFileSync(iniPath, 'utf-8').replace(/\r\n/g, '\n');
+      let content = readTextFile(iniPath);
     
       const modsLine = `Mods=${sanitizeIniList(modIds)}`;
       if (content.includes('Mods=')) {
@@ -2823,7 +3016,7 @@ router.post('/add-mod-advanced', async (req, res) => {
     // Validate mod ID format BEFORE taking the lock (prevent INI injection)
     let modIdsToAdd = selectedModIds || [];
     for (const modId of modIdsToAdd) {
-      if (typeof modId !== 'string' || /[\r\n;=]/.test(modId) || modId.length > 200) {
+      if (typeof modId !== 'string' || !modId.trim() || /[\r\n;=]/.test(modId) || modId.length > 200) {
         return res.status(400).json({ error: `Invalid mod ID format: ${String(modId).substring(0, 50)}` });
       }
     }
@@ -2842,7 +3035,7 @@ router.post('/add-mod-advanced', async (req, res) => {
     // Atomically read-modify-write inside the lock
     let addedMapFolders = [];
     const lockResult = await withIniLock(iniPath, () => {
-      let content = fs.readFileSync(iniPath, 'utf-8').replace(/\r\n/g, '\n');
+      let content = readTextFile(iniPath);
     
       const workshopMatch = content.match(/^WorkshopItems=(.*)$/m);
       const currentWorkshopIds = workshopMatch?.[1]?.split(';').filter(Boolean) || [];
@@ -2977,6 +3170,9 @@ function walkDir(dir, prefix = '', _depth = 0) {
     if (results.length >= MAX_FILES) { truncated = true; break; }
     const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
     if (entry.isDirectory()) {
+      // Skip version-control and metadata directories — never game content
+      const lowerName = entry.name.toLowerCase();
+      if (lowerName === '.git' || lowerName === '.svn' || lowerName === '.hg' || lowerName === '__pycache__' || lowerName === 'node_modules' || lowerName === '.vscode') continue;
       // Skip symlinked directories to stay within the expected tree
       const fullPath = path.join(dir, entry.name);
       try {
@@ -3076,7 +3272,7 @@ const CATEGORY_LABELS = {
 // overlapping keys represent a real conflict.
 function extractTranslationKeys(filePath) {
   try {
-    const content = fs.readFileSync(filePath, 'utf-8');
+    const content = stripBom(fs.readFileSync(filePath, 'utf-8'));
     const keys = new Set();
     // Match lines like:   IGUI_perks_Lightfoot = "靈巧",
     const re = /^\s*([A-Za-z_]\w*)\s*=/gm;
@@ -3117,7 +3313,7 @@ function compareTranslationKeys(modEntries) {
 // are additive (not conflicting). Only overlapping definitions are real conflicts.
 function extractScriptDefinitions(filePath) {
   try {
-    const content = fs.readFileSync(filePath, 'utf-8');
+    const content = stripBom(fs.readFileSync(filePath, 'utf-8'));
     if (content.length > 2 * 1024 * 1024) return null; // skip huge files
     const defs = new Set();
     // Match: module ModuleName { ... }
@@ -3176,7 +3372,7 @@ function compareScriptDefinitions(modEntries) {
 // are harmless. PZ uses `m_MaleModel`/`m_FemaleModel` as the unique identifier.
 function extractClothingDefinitions(filePath) {
   try {
-    const content = fs.readFileSync(filePath, 'utf-8');
+    const content = stripBom(fs.readFileSync(filePath, 'utf-8'));
     if (content.length > 2 * 1024 * 1024) return null;
     const defs = new Set();
     // Match XML tags like <m_MaleModel>ItemName</m_MaleModel> or <m_FemaleModel>ItemName</m_FemaleModel>
@@ -3246,7 +3442,7 @@ async function readIniModLists() {
   let workshopIds = [];
   let modIdsFromIni = [];
   if (iniPath && fs.existsSync(iniPath)) {
-    const iniContent = fs.readFileSync(iniPath, 'utf-8');
+    const iniContent = readTextFile(iniPath);
     const wsMatch = iniContent.match(/^WorkshopItems=(.*)$/m);
     const modsMatch = iniContent.match(/^Mods=(.*)$/m);
     if (wsMatch && wsMatch[1].trim()) {
@@ -3351,7 +3547,7 @@ async function buildFileIndex(workshopIds, serverPath, onModScanned, activeModId
     // Yield after each workshop item so SSE writes and incoming requests aren't starved
     await yieldTick();
   }
-  return { fileIndex, modInfoMap, modsScanned, modsNotFound, warnings };
+  return { fileIndex, modInfoMap, modsScanned, modsNotFound, modsSkippedInactive, warnings };
 }
 
 // Detect conflicts from a file index. Calls `onConflictFound(conflict)` for each.
@@ -3468,17 +3664,25 @@ function groupIntoPairs(conflicts) {
 
 // Compute missing dependencies, then try to resolve each to a workshop ID by scanning all downloaded folders
 function findMissingDeps(modInfoMap, modIdsFromIni, serverPath) {
+  const activeModSet = new Set(modIdsFromIni);
   const dependencies = {};
   for (const [wsId, details] of Object.entries(modInfoMap)) {
     for (const mod of details) {
-      if (mod.require?.length > 0) {
+      // Only check deps for mods actually active in the Mods= INI line
+      if (mod.require?.length > 0 && activeModSet.has(mod.id)) {
         dependencies[mod.id] = { modId: mod.id, modName: mod.name, workshopId: wsId, requires: mod.require };
       }
     }
   }
-  const builtInMods = new Set(['Base', 'base', 'Farming', 'Radio', 'Camping', 'Trapping', 'Fishing', 'Foraging', 'Erosion', 'Hydrocraft']);
+  // Vanilla PZ modules — always available, never in WorkshopItems. Both B41 and B42
+  // module names included (some mods reference lowercase variants).
+  const builtInMods = new Set([
+    'Base', 'base', 'Farming', 'Radio', 'Camping', 'Trapping', 'Fishing', 'Foraging', 'Erosion',
+    // B42 additions
+    'Animal', 'NPCs', 'Seasons', 'FireFighting', 'FeedingTrough', 'RainBarrel',
+    'Vehicles', 'Zombies', 'XpSystem', 'HealthSystem', 'Professions', 'Climate',
+  ]);
   const allModIds = new Set(builtInMods);
-  for (const details of Object.values(modInfoMap)) { for (const mod of details) allModIds.add(mod.id); }
   for (const id of modIdsFromIni) allModIds.add(id);
   const missingDeps = [];
   for (const [modId, depInfo] of Object.entries(dependencies)) {
@@ -3669,7 +3873,7 @@ router.get('/conflicts', async (req, res) => {
     if (workshopIds.length === 0) {
       return res.json({ totalConflicts: 0, identicalSkipped: 0, additiveSkipped: 0, pzAdditiveSkipped: 0, pzAdditiveBreakdown: { sandbox: 0, scripts: 0, clothing: 0, fileguidtable: 0, translate: 0 }, pairs: [], totalPairs: 0, modsScanned: 0, missingDeps: [], modLoadOrder: modIdsFromIni, warnings: [], scanDurationMs: Date.now() - scanStart });
     }
-    const { fileIndex, modInfoMap, modsScanned, modsNotFound, warnings } = await buildFileIndex(workshopIds, serverPath);
+    const { fileIndex, modInfoMap, modsScanned, modsNotFound, modsSkippedInactive, warnings } = await buildFileIndex(workshopIds, serverPath, null, modIdsFromIni);
     const { conflicts, identicalSkipped, additiveSkipped, pzAdditiveSkipped, pzAdditiveBreakdown } = await detectConflicts(fileIndex);
     const severityOrder = { high: 0, medium: 1, low: 2 };
     conflicts.sort((a, b) => (severityOrder[a.severity] ?? 3) - (severityOrder[b.severity] ?? 3) || a.file.localeCompare(b.file));
@@ -3681,7 +3885,7 @@ router.get('/conflicts', async (req, res) => {
       steamDeps = steamResult.deps;
       warnings.push(...steamResult.warnings);
     } catch (e) { log.debug(`Steam deps lookup failed during batch scan (non-fatal): ${e.message}`); }
-    const result = { totalConflicts: conflicts.length, identicalSkipped, additiveSkipped, pzAdditiveSkipped, pzAdditiveBreakdown, pairs, totalPairs: pairs.length, modsScanned, modsNotFound, totalWorkshopIds: workshopIds.length, missingDeps, steamDeps, modLoadOrder: modIdsFromIni, warnings, scanDurationMs: Date.now() - scanStart };
+    const result = { totalConflicts: conflicts.length, identicalSkipped, additiveSkipped, pzAdditiveSkipped, pzAdditiveBreakdown, pairs, totalPairs: pairs.length, modsScanned, modsNotFound, modsSkippedInactive, totalWorkshopIds: workshopIds.length, missingDeps, steamDeps, modLoadOrder: modIdsFromIni, warnings, scanDurationMs: Date.now() - scanStart };
     lastScanWorkshopSnapshot = workshopIds.slice().sort().join(',');
     lastScanModSnapshot = modIdsFromIni?.slice().sort().join(',') || null;
     lastScanResult = result;
@@ -3738,7 +3942,7 @@ router.get('/conflicts/stream', async (req, res) => {
     }
 
     // Phase 1: scan mods — emit progress per mod
-    const { fileIndex, modInfoMap, modsScanned, modsNotFound, warnings } = await buildFileIndex(
+    const { fileIndex, modInfoMap, modsScanned, modsNotFound, modsSkippedInactive, warnings } = await buildFileIndex(
       workshopIds,
       serverPath,
       (info) => {
@@ -3806,6 +4010,7 @@ router.get('/conflicts/stream', async (req, res) => {
       totalPairs: pairs.length,
       modsScanned,
       modsNotFound,
+      modsSkippedInactive,
       totalWorkshopIds: workshopIds.length,
       missingDeps,
       steamDeps,
@@ -3878,13 +4083,30 @@ router.get('/conflicts/diff', async (req, res) => {
         if (!modDir.isDirectory()) continue;
         const matchingMod = modDetails.find(m => m.id === modDir.name || m.name === modDir.name);
         const modId = matchingMod?.id || modDir.name;
-        const candidate = path.join(searchBase, modDir.name, 'media', normalizedFile);
-        // Path must stay within media folder
-        const resolved = path.resolve(candidate);
-        const mediaBase = path.resolve(path.join(searchBase, modDir.name, 'media'));
-        if (!resolved.startsWith(mediaBase + path.sep) && resolved !== mediaBase) continue;
-        if (modId === String(modA) && fs.existsSync(candidate)) pathA = candidate;
-        if (modId === String(modB) && fs.existsSync(candidate)) pathB = candidate;
+        const modDirPath = path.join(searchBase, modDir.name);
+
+        // Collect media paths: direct media/ + B42 versioned subfolders (42/, 42.X/, common/)
+        const mediaCandidates = [path.join(modDirPath, 'media')];
+        if (!fs.existsSync(mediaCandidates[0])) {
+          mediaCandidates.length = 0;
+          try {
+            const subDirs = fs.readdirSync(modDirPath, { withFileTypes: true });
+            for (const sub of subDirs) {
+              if (sub.isDirectory() && /^(42(\.\d+)?|common)$/i.test(sub.name)) {
+                mediaCandidates.push(path.join(modDirPath, sub.name, 'media'));
+              }
+            }
+          } catch (e) { /* skip unreadable */ }
+        }
+
+        for (const mediaDir of mediaCandidates) {
+          const candidate = path.join(mediaDir, normalizedFile);
+          const resolved = path.resolve(candidate);
+          const mediaBase = path.resolve(mediaDir);
+          if (!resolved.startsWith(mediaBase + path.sep) && resolved !== mediaBase) continue;
+          if (modId === String(modA) && fs.existsSync(candidate)) pathA = candidate;
+          if (modId === String(modB) && fs.existsSync(candidate)) pathB = candidate;
+        }
       }
       if (pathA && pathB) break;
     }

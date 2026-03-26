@@ -56,6 +56,8 @@ import {
 import { useToast } from '@/components/ui/use-toast'
 import { SocketContext } from '@/contexts/SocketContext'
 import { PageHeader } from '@/components/PageHeader'
+import { EmptyState } from '@/components/EmptyState'
+import { cn } from '@/lib/utils'
 import { apiFetch } from '@/lib/api'
 
 interface LogEntry {
@@ -139,6 +141,9 @@ export default function Debug() {
   const [selectedCrashLog, setSelectedCrashLog] = useState<string | null>(null)
   const [crashLogContent, setCrashLogContent] = useState<string>('')
   const [loadingCrashLog, setLoadingCrashLog] = useState(false)
+  const [refreshingLogs, setRefreshingLogs] = useState(false)
+  const [refreshingCrashLogs, setRefreshingCrashLogs] = useState(false)
+  const [refreshingHealth, setRefreshingHealth] = useState(false)
   const [autoScroll, setAutoScroll] = useState(true)
   const [paused, setPaused] = useState(false)
   const [levelFilter, setLevelFilter] = useState<'all' | 'info' | 'warn' | 'error' | 'debug'>('all')
@@ -212,6 +217,7 @@ export default function Debug() {
 
   // Fetch health status
   const fetchHealthStatus = async () => {
+    setRefreshingHealth(true)
     try {
       const res = await authFetch('/api/debug/health')
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -223,6 +229,8 @@ export default function Debug() {
       }
     } catch (error) {
       reportClientError('Failed to fetch health status.', error)
+    } finally {
+      setRefreshingHealth(false)
     }
   }
 
@@ -259,6 +267,7 @@ export default function Debug() {
   }, [authFetch])
 
   const fetchCrashLogs = async () => {
+    setRefreshingCrashLogs(true)
     try {
       const res = await authFetch('/api/debug/crash-logs')
       if (!res.ok) return
@@ -268,6 +277,8 @@ export default function Debug() {
       }
     } catch {
       // Endpoint may not exist yet
+    } finally {
+      setRefreshingCrashLogs(false)
     }
   }
 
@@ -292,6 +303,7 @@ export default function Debug() {
 
   // Fetch recent logs
   const fetchLogs = async () => {
+    setRefreshingLogs(true)
     try {
       const res = await authFetch('/api/debug/logs')
       if (!res.ok) return
@@ -305,6 +317,8 @@ export default function Debug() {
       }
     } catch (error) {
       reportClientError('Failed to fetch logs.', error)
+    } finally {
+      setRefreshingLogs(false)
     }
   }
 
@@ -723,8 +737,8 @@ export default function Debug() {
                     <TooltipProvider>
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <Button variant="outline" size="sm" onClick={fetchLogs}>
-                            <RefreshCw className="w-4 h-4" />
+                          <Button variant="outline" size="sm" onClick={fetchLogs} disabled={refreshingLogs}>
+                            <RefreshCw className={cn("w-4 h-4", refreshingLogs && "animate-spin")} />
                           </Button>
                         </TooltipTrigger>
                         <TooltipContent>Refresh logs</TooltipContent>
@@ -842,11 +856,9 @@ export default function Debug() {
               <ScrollArea className="h-[300px] sm:h-[500px] rounded-lg border border-border/50 bg-muted/20">
                 <div className="font-mono text-sm p-4">
                   {filteredLogs.length === 0 ? (
-                    <div className="py-8 text-center text-muted-foreground">
-                      {logs.length === 0 
-                        ? 'No logs to display. Logs will appear here as the application runs.'
-                        : 'No logs match your filters.'}
-                    </div>
+                    logs.length === 0 
+                      ? <EmptyState compact type="noData" title="No logs to display" description="Logs will appear here as the application runs." />
+                      : <EmptyState compact type="noResults" title="No logs match your filters" description="Try adjusting your search or filter criteria." />
                   ) : (
                     filteredLogs.map((log) => {
                       const isLongMessage = log.message.length > 200
@@ -954,15 +966,13 @@ export default function Debug() {
               </CardHeader>
               <CardContent>
                 <div className="flex justify-end mb-3">
-                  <Button variant="outline" size="sm" onClick={fetchCrashLogs}>
-                    <RefreshCw className="w-4 h-4 mr-2" />
+                  <Button variant="outline" size="sm" onClick={fetchCrashLogs} disabled={refreshingCrashLogs}>
+                    <RefreshCw className={cn("w-4 h-4 mr-2", refreshingCrashLogs && "animate-spin")} />
                     Refresh
                   </Button>
                 </div>
                 {crashLogs.length === 0 ? (
-                  <p className="text-muted-foreground text-sm text-center py-4">
-                    No crash logs found. That's good news!
-                  </p>
+                  <EmptyState compact type="noData" title="No crash logs found" description="That's good news!" />
                 ) : (
                   <ScrollArea className="h-[300px] sm:h-[400px]">
                     <div className="space-y-2">
@@ -1039,10 +1049,7 @@ export default function Debug() {
           >
             {activeTab === 'performance' && performanceHistory.length > 0 ? <DebugPerformanceCharts performanceHistory={performanceHistory} /> : null}
             {activeTab === 'performance' && performanceHistory.length === 0 && (
-              <div className="text-center py-8 text-muted-foreground">
-                <p className="text-sm">No performance data collected yet.</p>
-                <p className="text-xs mt-1">Data is recorded while the server is running.</p>
-              </div>
+              <EmptyState compact type="noData" title="No performance data collected yet" description="Data is recorded while the server is running." />
             )}
           </Suspense>
 
@@ -1167,8 +1174,8 @@ export default function Debug() {
                   <Zap className="w-5 h-5" />
                   Services
                 </CardTitle>
-                <Button variant="outline" size="sm" onClick={fetchHealthStatus}>
-                  <RefreshCw className="w-4 h-4 mr-2" />
+                <Button variant="outline" size="sm" onClick={fetchHealthStatus} disabled={refreshingHealth}>
+                  <RefreshCw className={cn("w-4 h-4 mr-2", refreshingHealth && "animate-spin")} />
                   Refresh
                 </Button>
               </div>
@@ -1299,7 +1306,7 @@ export default function Debug() {
             <CardHeader className="pb-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <CardTitle className="flex items-center gap-2 text-base">
+                  <CardTitle className="flex items-center gap-2">
                     <FolderOpen className="w-4 h-4 text-warning" />
                     File Paths
                   </CardTitle>

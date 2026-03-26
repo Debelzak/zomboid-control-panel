@@ -87,17 +87,15 @@ export default function Login() {
               required
               maxLength={128}
             />
-            <span
-              role="button"
-              tabIndex={0}
+            <button
+              type="button"
               onClick={() => setShowPassword(!showPassword)}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setShowPassword(!showPassword); } }}
               className="absolute right-3 inset-y-0 flex items-center text-muted-foreground hover:text-foreground cursor-pointer select-none rounded-sm focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2"
               aria-label={showPassword ? 'Hide password' : 'Show password'}
               aria-pressed={showPassword}
             >
               {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-            </span>
+            </button>
           </div>
         </div>
 

@@ -11,9 +11,12 @@ import {
   RefreshCw,
   Play,
   Loader2,
-  AlertCircle
+  AlertCircle,
+  ChevronDown,
+  HelpCircle
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { PageHeader } from '@/components/PageHeader'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -86,6 +89,7 @@ export default function Scheduler() {
     modUpdateRestartPending: boolean
   } | null>(null)
   const [loading, setLoading] = useState(false)
+  const [initialLoading, setInitialLoading] = useState(true)
   const [runningTaskId, setRunningTaskId] = useState<number | null>(null)
   const [fetchError, setFetchError] = useState<string | null>(null)
   const { toast } = useToast()
@@ -122,6 +126,8 @@ export default function Scheduler() {
     } catch (error) {
       reportClientError('Failed to fetch scheduler data.', error)
       setFetchError('Failed to load scheduler data. The backend may be unreachable.')
+    } finally {
+      setInitialLoading(false)
     }
   }, [])
 
@@ -354,6 +360,14 @@ export default function Scheduler() {
   }
 
 
+
+  if (initialLoading) {
+    return (
+      <div className="flex items-center justify-center h-[60vh]">
+        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6 page-transition">
@@ -594,8 +608,10 @@ export default function Scheduler() {
       </div>
       )}
 
-      {/* Manual Restart */}
-      <Card>
+      {/* Quick Actions — 2-col grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Manual Restart */}
+        <Card>
         <CardHeader>
           <CardTitle>Manual Restart</CardTitle>
           <CardDescription>
@@ -715,6 +731,7 @@ export default function Scheduler() {
           </div>
         </CardContent>
       </Card>
+      </div>
 
       {/* Scheduled Tasks */}
       <Card>
@@ -870,13 +887,7 @@ export default function Scheduler() {
         <CardContent>
           <ScrollArea className="h-[300px] sm:h-[400px]">
             {history.length === 0 ? (
-              <div className="text-center py-8">
-                <History className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-                <p className="text-muted-foreground">No execution history</p>
-                <p className="text-sm text-muted-foreground">
-                  Executions will appear here.
-                </p>
-              </div>
+              <EmptyState type="noSchedule" title="No execution history" description="Executions will appear here." />
             ) : (
               <div className="space-y-2">
                 {history.map((entry) => (
@@ -925,42 +936,50 @@ export default function Scheduler() {
         </CardContent>
       </Card>
 
-      {/* Cron Help */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Cron Expression Help</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 text-sm">
-            <div>
-              <p className="font-medium">Minute</p>
-              <p className="text-muted-foreground">0-59</p>
+      {/* Cron Help — collapsible reference */}
+      <Collapsible>
+        <div className="rounded-xl border border-border/40 bg-card/40">
+          <CollapsibleTrigger className="flex w-full items-center justify-between px-5 py-3 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+            <span className="flex items-center gap-2">
+              <HelpCircle className="w-4 h-4" />
+              Cron Expression Help
+            </span>
+            <ChevronDown className="w-4 h-4 transition-transform duration-200 [[data-state=open]>&]:rotate-180" />
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="px-5 pb-4 pt-0">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 text-sm">
+                <div>
+                  <p className="font-medium">Minute</p>
+                  <p className="text-muted-foreground">0-59</p>
+                </div>
+                <div>
+                  <p className="font-medium">Hour</p>
+                  <p className="text-muted-foreground">0-23</p>
+                </div>
+                <div>
+                  <p className="font-medium">Day</p>
+                  <p className="text-muted-foreground">1-31</p>
+                </div>
+                <div>
+                  <p className="font-medium">Month</p>
+                  <p className="text-muted-foreground">1-12</p>
+                </div>
+                <div>
+                  <p className="font-medium">Weekday</p>
+                  <p className="text-muted-foreground">0-6 (Sun-Sat)</p>
+                </div>
+              </div>
+              <div className="mt-4 space-y-2 text-sm">
+                <p><code className="bg-muted px-1 rounded">*</code> = any value</p>
+                <p><code className="bg-muted px-1 rounded">*/n</code> = every n units</p>
+                <p><code className="bg-muted px-1 rounded">0 */2 * * *</code> = every 2 hours</p>
+                <p><code className="bg-muted px-1 rounded">0 6 * * *</code> = daily at 6 AM</p>
+              </div>
             </div>
-            <div>
-              <p className="font-medium">Hour</p>
-              <p className="text-muted-foreground">0-23</p>
-            </div>
-            <div>
-              <p className="font-medium">Day</p>
-              <p className="text-muted-foreground">1-31</p>
-            </div>
-            <div>
-              <p className="font-medium">Month</p>
-              <p className="text-muted-foreground">1-12</p>
-            </div>
-            <div>
-              <p className="font-medium">Weekday</p>
-              <p className="text-muted-foreground">0-6 (Sun-Sat)</p>
-            </div>
-          </div>
-          <div className="mt-4 space-y-2 text-sm">
-            <p><code className="bg-muted px-1 rounded">*</code> = any value</p>
-            <p><code className="bg-muted px-1 rounded">*/n</code> = every n units</p>
-            <p><code className="bg-muted px-1 rounded">0 */2 * * *</code> = every 2 hours</p>
-            <p><code className="bg-muted px-1 rounded">0 6 * * *</code> = daily at 6 AM</p>
-          </div>
-        </CardContent>
-      </Card>
+          </CollapsibleContent>
+        </div>
+      </Collapsible>
     </div>
   )
 }

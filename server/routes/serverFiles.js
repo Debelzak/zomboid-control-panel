@@ -616,7 +616,9 @@ router.put('/ini', async (req, res) => {
     }
     
     // Guard against prototype pollution
-    if ('__proto__' in settings || 'constructor' in settings || 'prototype' in settings) {
+    if (Object.prototype.hasOwnProperty.call(settings, '__proto__') ||
+        Object.prototype.hasOwnProperty.call(settings, 'constructor') ||
+        Object.prototype.hasOwnProperty.call(settings, 'prototype')) {
       return res.status(400).json({ error: 'Invalid settings' });
     }
     

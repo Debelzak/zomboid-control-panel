@@ -1878,10 +1878,7 @@ export default function Players() {
                     <Loader2 className="w-6 h-6 animate-spin text-primary" />
                   </div>
                 ) : !selectedPlayer ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <StickyNote className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                    <p>Select a player to view or add notes</p>
-                  </div>
+                  <EmptyState type="noData" title="Select a player to view or add notes" />
                 ) : (
                   <div className="space-y-4">
                     {/* Player Stats Card */}

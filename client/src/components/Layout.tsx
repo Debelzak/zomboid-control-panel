@@ -30,7 +30,7 @@ import { cn } from '@/lib/utils'
 import { ConnectionStatus } from './ConnectionStatus'
 import { serversApi, ServerInstance, updateApi, UpdateStatus } from '@/lib/api'
 import { SocketContext } from '@/contexts/SocketContext'
-import { useTheme } from '@/contexts/ThemeContext'
+
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/components/ui/use-toast'
 import {
@@ -224,8 +224,6 @@ function AuthFooter() {
 }
 
 function PanelBrand({ compact = false }: { compact?: boolean }) {
-  const { theme } = useTheme()
-
   return (
     <div className={cn("flex items-center", compact ? "gap-2" : "gap-3")}>
       <img
@@ -233,8 +231,7 @@ function PanelBrand({ compact = false }: { compact?: boolean }) {
         alt="Spiffo"
         className={cn(
           compact ? "h-10 w-8" : "h-12 w-10",
-          "object-contain drop-shadow-sm",
-          theme === 'survival' && "saturate-90"
+          "object-contain drop-shadow-sm saturate-90"
         )}
       />
       <div className="min-w-0">
@@ -252,7 +249,7 @@ function PanelBrand({ compact = false }: { compact?: boolean }) {
             compact ? "text-xs leading-tight" : "text-xs"
           )}
         >
-          {theme === 'survival' ? '// Control Panel' : 'Control Panel'}
+          // Control Panel
         </p>
       </div>
     </div>
@@ -300,7 +297,6 @@ export default function Layout({ children }: LayoutProps) {
   }, [socket])
   const navigate = useNavigate()
   const location = useLocation()
-  const { theme } = useTheme()
   const playerCountLabel = playerCount > 99 ? '99+' : String(playerCount)
 
   // Toggle section open/closed
@@ -488,9 +484,7 @@ export default function Layout({ children }: LayoutProps) {
         {/* Project Zomboid Banner with Spiffo */}
         <div className={cn(
           "relative overflow-hidden sidebar-header",
-          theme === 'survival' 
-            ? "bg-gradient-to-b from-amber-950/28 via-stone-950/94 to-card border-b border-amber-900/24"
-            : "bg-gradient-to-b from-amber-950/22 via-stone-950/94 to-card border-b border-primary/18"
+          "bg-gradient-to-b from-amber-950/28 via-stone-950/94 to-card border-b border-amber-900/24"
         )}>
           <div className="relative p-4">
             <PanelBrand />
@@ -705,7 +699,7 @@ export default function Layout({ children }: LayoutProps) {
           <AuthFooter />
           <div className="text-center">
             <p className="shell-brand-subtitle text-xs text-muted-foreground">
-              {theme === 'survival' ? '// Zomboid Control Panel' : 'Zomboid Control Panel'}
+              // Zomboid Control Panel
             </p>
             <p className="mt-1 flex items-center justify-center gap-2 text-xs text-muted-foreground">
               {panelVersion && <span>v{panelVersion}</span>}

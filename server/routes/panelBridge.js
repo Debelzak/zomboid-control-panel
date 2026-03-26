@@ -43,8 +43,10 @@ const VALID_ACTIONS = new Set([
   'getSafehouses', 'safehouseAddPlayer', 'safehouseRemovePlayer', 'safehouseSetOwner', 'safehouseSetRespawn',
   'getFactions', 'createFaction', 'factionAddPlayer', 'factionRemovePlayer', 'factionSetTag', 'removeFaction',
   'getVehiclesDetailed', 'vehicleRepair', 'vehicleSetAlarm', 'vehicleSetSiren', 'vehicleSetTrunkLocked',
+  'vehicleSetFuel', 'vehicleSetBattery',
+  'getTimeSpeed', 'setTimeSpeed', 'triggerHelicopterEvent',
   'triggerSwarmEvent', 'runEventSequence',
-  'getInfrastructureSnapshot', 'addLamppost', 'removeLamppost',
+  'getInfrastructureSnapshot',
   'moderationKickUser', 'moderationBanUser', 'moderationBanIP', 'moderationBanSteamID',
   'getDebugLog', 'setDebugMode', 'getStats', 'checkAPI', 'getAvailableHandlers', 'clearErrors'
 ]);

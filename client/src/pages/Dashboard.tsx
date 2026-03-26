@@ -54,6 +54,7 @@ import { useSocket } from '@/contexts/SocketContext'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { PageHeader } from '@/components/PageHeader'
+import { EmptyState } from '@/components/EmptyState'
 import { StatusIndicator } from '@/components/StatusIndicator'
 import { cn } from '@/lib/utils'
 import { getUserErrorMessage } from '@/lib/errorMessage'
@@ -581,7 +582,7 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 page-transition">
       <PageHeader
         title="Dashboard"
         description="Monitor and control your Project Zomboid server"
@@ -998,7 +999,7 @@ export default function Dashboard() {
           </div>
           {playerActivity.length === 0 ? (
             <div className="flex-1 flex items-center justify-center">
-              <p className="py-6 text-center text-sm text-muted-foreground">No activity yet.</p>
+              <EmptyState compact type="noPlayers" title="No activity yet" description="Player join/leave events will appear here." />
             </div>
           ) : (
             <div className="space-y-1 flex-1 overflow-y-auto max-h-[22rem]">

@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react'
+import { useState, useCallback, useRef, useEffect, memo } from 'react'
 import { ChevronDown, FileCode, ImageIcon, FileQuestion, Loader2, RotateCcw } from 'lucide-react'
 import { getAccessToken } from '@/lib/authToken'
 
@@ -52,6 +52,7 @@ interface FileDiffViewerProps {
   modAName: string
   modBName: string
   severity: 'high' | 'medium' | 'low'
+  categoryLabel?: string
 }
 
 function formatSize(bytes: number): string {
@@ -60,7 +61,7 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-export function FileDiffViewer({ file, modAId, modBId, modAName, modBName, severity }: FileDiffViewerProps) {
+export const FileDiffViewer = memo(function FileDiffViewer({ file, modAId, modBId, modAName, modBName, severity, categoryLabel }: FileDiffViewerProps) {
   const [expanded, setExpanded] = useState(false)
   const [loading, setLoading] = useState(false)
   const [diff, setDiff] = useState<DiffResult | null>(null)
@@ -124,6 +125,11 @@ export function FileDiffViewer({ file, modAId, modBId, modAName, modBName, sever
         <code className="font-mono text-[11px] flex-1 min-w-0 truncate text-foreground/80" title={file}>
           {file}
         </code>
+        {categoryLabel && (
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted/60 text-muted-foreground shrink-0" title={`File type: ${categoryLabel}`}>
+            {categoryLabel}
+          </span>
+        )}
         {loading ? (
           <Loader2 aria-hidden="true" className="w-3 h-3 animate-spin text-muted-foreground shrink-0" />
         ) : (
@@ -158,7 +164,7 @@ export function FileDiffViewer({ file, modAId, modBId, modAName, modBName, sever
       )}
     </div>
   )
-}
+})
 
 // ─── Text diff view ──────────────────────────────────────────────────────────
 function TextDiffView({ diff, modAName, modBName }: { diff: TextDiff; modAName: string; modBName: string }) {
@@ -188,7 +194,7 @@ function TextDiffView({ diff, modAName, modBName }: { diff: TextDiff; modAName: 
         {diff.hunks.slice(0, maxHunks).map((hunk, hIdx) => (
           <div key={hIdx}>
             {hIdx > 0 && (
-              <div className="px-3 py-0.5 text-[11px] text-muted-foreground/40 select-none border-t border-dashed border-border/20">
+              <div className="px-3 py-0.5 text-[11px] text-muted-foreground/50 select-none border-t border-dashed border-border/20">
                 ···
               </div>
             )}
@@ -203,11 +209,11 @@ function TextDiffView({ diff, modAName, modBName }: { diff: TextDiff; modAName: 
                     : ''
                 }`}
               >
-                <span className="diff-gutter w-8 sm:w-[52px] shrink-0 text-right pr-2 text-muted-foreground/30 select-none border-r border-border/20">
+                <span className="diff-gutter w-8 sm:w-[52px] shrink-0 text-right pr-2 text-muted-foreground/40 select-none border-r border-border/20">
                   {line.type === 'remove' && line.lineA != null ? line.lineA : ''}
                   {line.type === 'context' && line.lineA != null ? line.lineA : ''}
                 </span>
-                <span className="diff-gutter w-8 sm:w-[52px] shrink-0 text-right pr-2 text-muted-foreground/30 select-none border-r border-border/20">
+                <span className="diff-gutter w-8 sm:w-[52px] shrink-0 text-right pr-2 text-muted-foreground/40 select-none border-r border-border/20">
                   {line.type === 'add' && line.lineB != null ? line.lineB : ''}
                   {line.type === 'context' && line.lineB != null ? line.lineB : ''}
                 </span>
@@ -258,7 +264,7 @@ function ImageDiffView({ diff, modAName, modBName, file }: { diff: ImageDiff; mo
               onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
             />
           ) : (
-            <div className="h-20 rounded border border-border/30 flex items-center justify-center text-[11px] text-muted-foreground/70">
+            <div className="h-20 rounded border border-border/30 flex items-center justify-center text-[11px] text-muted-foreground">
               Too large to preview
             </div>
           )}
@@ -274,7 +280,7 @@ function ImageDiffView({ diff, modAName, modBName, file }: { diff: ImageDiff; mo
               onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
             />
           ) : (
-            <div className="h-20 rounded border border-border/30 flex items-center justify-center text-[11px] text-muted-foreground/70">
+            <div className="h-20 rounded border border-border/30 flex items-center justify-center text-[11px] text-muted-foreground">
               Too large to preview
             </div>
           )}
@@ -294,11 +300,11 @@ function BinaryDiffView({ diff, modAName, modBName }: { diff: BinaryDiff; modANa
       </div>
       <div className="grid grid-cols-2 gap-3 text-[11px] leading-relaxed">
         <div>
-          <p className="font-medium text-foreground/70">{modAName}</p>
+          <p className="font-medium text-foreground/80">{modAName}</p>
           <p>{formatSize(diff.modA.size)}{diff.modA.hash && ` · ${diff.modA.hash.slice(0, 8)}…`}</p>
         </div>
         <div>
-          <p className="font-medium text-foreground/70">{modBName}</p>
+          <p className="font-medium text-foreground/80">{modBName}</p>
           <p>{formatSize(diff.modB.size)}{diff.modB.hash && ` · ${diff.modB.hash.slice(0, 8)}…`}</p>
         </div>
       </div>

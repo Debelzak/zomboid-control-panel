@@ -164,6 +164,7 @@ export interface ConflictScanResult {
   totalPairs: number
   modsScanned: number
   modsNotFound?: number
+  modsSkippedInactive?: number
   totalWorkshopIds?: number
   missingDeps: MissingDependency[]
   steamDeps?: SteamDependency[]

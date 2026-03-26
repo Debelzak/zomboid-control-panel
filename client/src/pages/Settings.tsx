@@ -52,6 +52,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 import { useToast } from '@/components/ui/use-toast'
+import { EmptyState } from '@/components/EmptyState'
 import {
   configApi,
   panelBridgeApi,
@@ -1225,7 +1226,7 @@ export default function Settings() {
       {/* Panel Settings */}
       <Card id="settings-panel">
         <CardHeader className="pb-4">
-          <CardTitle className="flex items-center gap-2 text-base">
+          <CardTitle className="flex items-center gap-2">
             <Globe className="w-4 h-4 text-primary" />
             Panel Settings
           </CardTitle>
@@ -1575,7 +1576,7 @@ export default function Settings() {
       {/* HTTPS Settings */}
       <Card id="settings-https">
         <CardHeader className="pb-4">
-          <CardTitle className="flex items-center gap-2 text-base">
+          <CardTitle className="flex items-center gap-2">
             <Lock className="w-4 h-4 text-primary" />
             HTTPS
           </CardTitle>
@@ -1701,7 +1702,7 @@ export default function Settings() {
       {/* RCON Settings */}
       <Card id="settings-rcon">
         <CardHeader className="pb-4">
-          <CardTitle className="flex items-center gap-2 text-base">
+          <CardTitle className="flex items-center gap-2">
             <Link className="w-4 h-4 text-primary" />
             RCON Connection
           </CardTitle>
@@ -1752,7 +1753,7 @@ export default function Settings() {
         <CardHeader className="pb-4">
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle className="flex items-center gap-2 text-base">
+              <CardTitle className="flex items-center gap-2">
                 <Zap className="w-4 h-4 text-primary" />
                 Panel Bridge
               </CardTitle>
@@ -2027,7 +2028,7 @@ export default function Settings() {
       <Card id="settings-mods">
         <CardHeader className="pb-4">
           <div className="flex items-center gap-3">
-            <CardTitle className="flex items-center gap-2 text-base">
+            <CardTitle className="flex items-center gap-2">
               <Clock className="w-4 h-4 text-primary" />
               Mod Update Settings
             </CardTitle>
@@ -2085,7 +2086,7 @@ export default function Settings() {
       {/* API Keys */}
       <Card id="settings-api-keys">
         <CardHeader className="pb-4">
-          <CardTitle className="flex items-center gap-2 text-base">
+          <CardTitle className="flex items-center gap-2">
             <Key className="w-4 h-4 text-primary" />
             API Keys
           </CardTitle>
@@ -2136,7 +2137,7 @@ export default function Settings() {
         <CardHeader className="pb-4">
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle className="flex items-center gap-2 text-base">
+              <CardTitle className="flex items-center gap-2">
                 <Archive className="w-4 h-4 text-primary" />
                 World Backups
               </CardTitle>
@@ -2253,7 +2254,7 @@ export default function Settings() {
           <div className="space-y-2">
             <p className="text-base font-medium">Existing Backups</p>
             {backups.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-6 text-center">No backups yet. Click "Backup Now" to create one.</p>
+              <EmptyState compact type="empty" title="No backups yet" description='Click "Backup Now" to create one.' />
             ) : (
               <ScrollArea className="h-[200px] rounded-lg border">
                 <div className="p-2 space-y-2">
@@ -2373,7 +2374,7 @@ export default function Settings() {
       {/* Security & Authentication */}
       <Card id="settings-security">
         <CardHeader className="pb-4">
-          <CardTitle className="flex items-center gap-2 text-base">
+          <CardTitle className="flex items-center gap-2">
             <Shield className="w-4 h-4 text-primary" />
             Security & Authentication
           </CardTitle>
@@ -2492,7 +2493,7 @@ export default function Settings() {
       {/* About */}
       <Card id="settings-about">
         <CardHeader className="pb-4">
-          <CardTitle className="flex items-center gap-2 text-base">
+          <CardTitle className="flex items-center gap-2">
             <Server className="w-4 h-4 text-primary" />
             About
           </CardTitle>

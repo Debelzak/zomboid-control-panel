@@ -61,133 +61,10 @@ input::-ms-clear {
      THEME: SURVIVAL (Project Zomboid Authentic)
      Grungy, post-apocalyptic, worn aesthetic
      ========================================== */
-  .dark.theme-survival {
-    /* Near-black warmth — like a room lit by a single candle */
-    --background: 30 10% 5%;
-    --foreground: 36 16% 85%;
-    
-    /* Cards — dark panels, clearly separated from background */
-    --card: 28 8% 11%;
-    --card-foreground: 34 14% 84%;
-    
-    --popover: 28 8% 10%;
-    --popover-foreground: 34 14% 82%;
-    
-    /* Primary — action green, clean and distinct */
-    --primary: 82 38% 42%;
-    --primary-foreground: 80 24% 10%;
-    
-    /* Secondary — warm dark surface */
-    --secondary: 30 8% 13%;
-    --secondary-foreground: 32 12% 78%;
-    
-    /* Muted — subtle warm gray */
-    --muted: 25 7% 12%;
-    --muted-foreground: 30 10% 58%;
-    
-    /* Accent — amber firelight (the soul of PZ's visual identity) */
-    --accent: 34 55% 28%;
-    --accent-foreground: 38 48% 86%;
-    
-    /* Destructive — blood red with urgency */
-    --destructive: 6 55% 40%;
-    --destructive-foreground: 10 20% 92%;
-    
-    /* Success — emerald green, distinct from primary */
-    --success: 145 42% 38%;
-    --success-foreground: 150 18% 92%;
-    
-    /* Warning — emergency amber */
-    --warning: 36 82% 52%;
-    --warning-foreground: 34 40% 9%;
-
-    /* Info — radio/comms blue */
-    --info: 200 42% 48%;
-    --info-foreground: 200 18% 92%;
-    
-    /* Borders — warm neutral edges */
-    --border: 30 12% 20%;
-    --input: 28 8% 7%;
-    --ring: 36 68% 50%;
-    
-    /* Charts — PZ palette spread */
-    --chart-1: 82 38% 42%;
-    --chart-2: 6 55% 40%;
-    --chart-3: 36 82% 52%;
-    --chart-4: 200 36% 42%;
-    --chart-5: 30 18% 56%;
-  }
-
-  /* ==========================================
-     THEME: CLEAN (Modern Ops / Control Room)
-     Cooler, sleeker, steel-toned dashboard
-     ========================================== */
-  .dark.theme-clean {
-    --background: 210 12% 7%;
-    --foreground: 210 10% 84%;
-    --card: 210 10% 10%;
-    --card-foreground: 210 10% 84%;
-    --popover: 210 10% 10%;
-    --popover-foreground: 210 10% 84%;
-    --primary: 152 34% 42%;
-    --primary-foreground: 210 20% 9%;
-    --secondary: 210 10% 13%;
-    --secondary-foreground: 210 8% 78%;
-    --muted: 210 8% 12%;
-    --muted-foreground: 210 8% 68%;
-    --accent: 210 18% 22%;
-    --accent-foreground: 210 16% 84%;
-    --destructive: 0 48% 38%;
-    --destructive-foreground: 0 14% 92%;
-    --success: 152 46% 40%;
-    --success-foreground: 0 0% 98%;
-    --warning: 38 80% 52%;
-    --warning-foreground: 38 30% 8%;
-    --info: 201 64% 48%;
-    --info-foreground: 200 14% 94%;
-    --border: 210 10% 20%;
-    --input: 210 10% 9%;
-    --ring: 152 36% 46%;
-    --chart-1: 152 34% 42%;
-    --chart-2: 201 44% 42%;
-    --chart-3: 38 52% 48%;
-    --chart-4: 0 38% 42%;
-    --chart-5: 270 20% 48%;
-  }
+  /* Survival colors are identical to :root — no overrides needed. */
   
-  /* Fallback: match survival theme when no theme class is applied */
-  .dark {
-    --background: 30 10% 5%;
-    --foreground: 36 16% 85%;
-    --card: 28 8% 11%;
-    --card-foreground: 34 14% 84%;
-    --popover: 28 8% 10%;
-    --popover-foreground: 34 14% 82%;
-    --primary: 82 38% 42%;
-    --primary-foreground: 80 24% 10%;
-    --secondary: 30 8% 13%;
-    --secondary-foreground: 32 12% 78%;
-    --muted: 25 7% 12%;
-    --muted-foreground: 30 10% 58%;
-    --accent: 34 55% 28%;
-    --accent-foreground: 38 48% 86%;
-    --destructive: 6 55% 40%;
-    --destructive-foreground: 10 20% 92%;
-    --success: 145 42% 38%;
-    --success-foreground: 150 18% 92%;
-    --warning: 36 82% 52%;
-    --warning-foreground: 34 40% 9%;
-    --info: 200 42% 48%;
-    --info-foreground: 200 18% 92%;
-    --border: 30 12% 20%;
-    --input: 28 8% 7%;
-    --ring: 36 68% 50%;
-    --chart-1: 82 38% 42%;
-    --chart-2: 6 55% 40%;
-    --chart-3: 36 82% 52%;
-    --chart-4: 200 36% 42%;
-    --chart-5: 30 18% 56%;
-  }
+  /* Fallback: .dark without a theme class inherits :root base tokens.
+     No overrides needed — :root already defines the survival palette. */
 }
 
 /* ==============================================
@@ -235,13 +112,6 @@ input::-ms-clear {
     hsl(var(--background) / 0.04) 4px
   );
   contain: strict;
-}
-
-.theme-clean {
-  background:
-    radial-gradient(circle at 18% -15%, hsl(var(--primary) / 0.08), transparent 38%),
-    radial-gradient(circle at 86% 0%, hsl(var(--accent) / 0.06), transparent 34%),
-    linear-gradient(180deg, hsl(var(--background)) 0%, hsl(var(--card)) 100%);
 }
 
 /* Header styling - emergency broadcast feel */
@@ -431,12 +301,6 @@ input::-ms-clear {
   animation: warning-flicker 3s ease-in-out infinite;
 }
 
-/* Typewriter text effect class */
-.theme-survival .text-typewriter {
-  font-family: 'Courier New', monospace;
-  letter-spacing: 0.5px;
-}
-
 /* Display/header text (like emergency broadcasts) */
 .theme-survival .text-display {
   font-family: var(--font-display);
@@ -487,11 +351,6 @@ input::-ms-clear {
     transition-property: color, background-color, border-color, box-shadow, opacity, transform;
     transition-duration: 150ms;
     transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-  }
-  
-  /* Disable transition when switching themes to avoid jank */
-  .theme-transitioning * {
-    transition: none !important;
   }
 }
 
@@ -1105,6 +964,16 @@ input::-ms-clear {
     animation: none;
     opacity: 1;
   }
+  .tab-content-enter,
+  .sub-tab-enter,
+  .bulk-bar-enter {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+  .update-badge-pulse {
+    animation: none;
+  }
   .scan-progress-glow::after {
     animation: none;
     display: none;
@@ -1188,6 +1057,50 @@ input::-ms-clear {
   border-radius: 0 9999px 9999px 0;
   animation: progressEdgeGlow 1.5s ease-in-out infinite;
   background: hsl(var(--primary) / 0.7);
+}
+
+/* ── Tab content entrance — fade on mount ── */
+@keyframes tabContentIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.tab-content-enter {
+  animation: tabContentIn 0.2s var(--ease-out-expo);
+}
+
+/* ── Sub-tab content crossfade + slide ── */
+@keyframes subTabIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.sub-tab-enter {
+  animation: subTabIn 0.2s var(--ease-out-expo);
+}
+
+/* ── Bulk selection bar entrance ── */
+@keyframes bulkBarIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.bulk-bar-enter {
+  animation: bulkBarIn 0.2s var(--ease-out-expo);
+}
+
+/* ── Update badge attention pulse — slow, subtle ── */
+@keyframes updateBadgePulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.65; }
+}
+.update-badge-pulse {
+  animation: updateBadgePulse 3s ease-in-out infinite;
+}
+
+/* ── Mod toggle pill press feedback ── */
+@media (hover: hover) and (pointer: fine) {
+  .mod-toggle-pill:active {
+    transform: scale(0.92);
+    transition-duration: 75ms;
+  }
 }
 
 /* Slide-in from right for panels/drawers */
@@ -1371,13 +1284,6 @@ tr:hover td {
 }
 
 /* Active nav indicator bar glow */
-.theme-clean .nav-item-active {
-  background: linear-gradient(90deg,
-    hsl(var(--primary) / 0.14) 0%,
-    transparent 100%
-  );
-}
-
 .theme-survival .nav-item-active {
   background: linear-gradient(90deg,
     hsl(var(--primary) / 0.22) 0%,
@@ -1421,6 +1327,11 @@ tr:hover td {
 .perf-content-auto {
   content-visibility: auto;
   contain-intrinsic-size: 120px;
+}
+
+.perf-list-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 40px;
 }
 
 .perf-section-auto {

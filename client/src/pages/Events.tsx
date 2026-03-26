@@ -1402,7 +1402,7 @@ export default function Events() {
       {/* Target Selection */}
       <Card>
         <CardHeader className="pb-4">
-          <CardTitle className="flex items-center gap-2 text-base">
+          <CardTitle className="flex items-center gap-2">
             <Target className="w-4 h-4 text-primary" />
             Event Target
           </CardTitle>
@@ -1481,7 +1481,7 @@ export default function Events() {
         {/* Weather Controls */}
         <Card>
           <CardHeader className="pb-4">
-            <CardTitle className="flex items-center gap-2 text-base">
+            <CardTitle className="flex items-center gap-2">
               <Cloud className="w-4 h-4 text-primary" />
               Weather Controls
             </CardTitle>
@@ -1564,7 +1564,7 @@ export default function Events() {
         {bridgeConnected ? (
         <Card>
           <CardHeader className="pb-4">
-            <CardTitle className="flex items-center gap-2 text-base">
+            <CardTitle className="flex items-center gap-2">
               <Snowflake className="w-4 h-4 text-primary" />
               Advanced Weather
             </CardTitle>
@@ -1679,7 +1679,7 @@ export default function Events() {
           <CardHeader className="pb-4">
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle className="flex items-center gap-2 text-base">
+                <CardTitle className="flex items-center gap-2">
                   <Gauge className="w-4 h-4 text-primary" />
                   Climate Controls
                 </CardTitle>
@@ -1941,7 +1941,7 @@ export default function Events() {
         {/* Game Time Control (v1.1.0) */}
         <Card>
           <CardHeader className="pb-4">
-            <CardTitle className="flex items-center gap-2 text-base">
+            <CardTitle className="flex items-center gap-2">
               <Calendar className="w-4 h-4 text-primary" />
               Game Time
             </CardTitle>
@@ -2051,7 +2051,7 @@ export default function Events() {
         {/* Infrastructure (Power/Water) Control */}
         <Card>
           <CardHeader className="pb-4">
-            <CardTitle className="flex items-center gap-2 text-base">
+            <CardTitle className="flex items-center gap-2">
               <Zap className="w-4 h-4 text-primary" />
               Infrastructure
             </CardTitle>
@@ -2143,7 +2143,7 @@ export default function Events() {
         {/* Sound Events */}
         <Card>
           <CardHeader className="pb-4">
-            <CardTitle className="flex items-center gap-2 text-base">
+            <CardTitle className="flex items-center gap-2">
               <Volume2 className="w-4 h-4 text-primary" />
               Sound Events
             </CardTitle>
@@ -2208,7 +2208,7 @@ export default function Events() {
         {bridgeConnected ? (
         <Card>
           <CardHeader className="pb-4">
-            <CardTitle className="flex items-center gap-2 text-base">
+            <CardTitle className="flex items-center gap-2">
               <Megaphone className="w-4 h-4 text-primary" />
               Advanced Sound Controls
             </CardTitle>
@@ -2393,7 +2393,7 @@ export default function Events() {
         {/* Zombie Events */}
         <Card>
           <CardHeader className="pb-4">
-            <CardTitle className="flex items-center gap-2 text-base">
+            <CardTitle className="flex items-center gap-2">
               <Skull className="w-4 h-4 text-primary" />
               Zombie Events
             </CardTitle>
@@ -2447,7 +2447,7 @@ export default function Events() {
         {/* Time Speed Control */}
         <Card>
           <CardHeader className="pb-4">
-            <CardTitle className="flex items-center gap-2 text-base">
+            <CardTitle className="flex items-center gap-2">
               <Clock className="w-4 h-4 text-primary" />
               Time Speed
             </CardTitle>
@@ -2516,7 +2516,7 @@ export default function Events() {
         {/* Teleport */}
         <Card className="lg:col-span-2">
           <CardHeader className="pb-4">
-            <CardTitle className="flex items-center gap-2 text-base">
+            <CardTitle className="flex items-center gap-2">
               <MapPin className="w-4 h-4 text-primary" />
               Teleport
             </CardTitle>
@@ -2646,7 +2646,7 @@ export default function Events() {
         {/* Vehicle Spawning */}
         <Card>
           <CardHeader className="pb-4">
-            <CardTitle className="flex items-center gap-2 text-base">
+            <CardTitle className="flex items-center gap-2">
               <Car className="w-4 h-4 text-primary" />
               Vehicle Spawn
             </CardTitle>
@@ -2697,7 +2697,7 @@ export default function Events() {
         {/* Server Announcement */}
         <Card>
           <CardHeader className="pb-4">
-            <CardTitle className="flex items-center gap-2 text-base">
+            <CardTitle className="flex items-center gap-2">
               <Megaphone className="w-4 h-4 text-primary" />
               Server Announcement
             </CardTitle>
@@ -2747,7 +2747,7 @@ export default function Events() {
                 <CardHeader className="pb-4">
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                       <div className="space-y-2">
-                        <CardTitle className="flex items-center gap-2 text-base">
+                        <CardTitle className="flex items-center gap-2">
                           <Zap className="w-4 h-4 text-primary" />
                           Bridge Operations Console
                         </CardTitle>

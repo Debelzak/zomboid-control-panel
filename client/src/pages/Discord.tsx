@@ -892,7 +892,7 @@ export default function Discord() {
         {/* What you get */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">What does the bot do?</CardTitle>
+            <CardTitle>What does the bot do?</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="divide-y divide-border/60 text-sm">

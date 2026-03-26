@@ -629,7 +629,10 @@ export const modsApi = {
   addToIni: (workshopId: string, modId?: string) => apiPost('/mods/add-to-ini', { workshopId, modId }),
   
   // Remove a single mod from server .ini file (removes from both WorkshopItems= and Mods=)
-  removeFromIni: (workshopId: string, modId?: string) => apiPost('/mods/remove-from-ini', { workshopId, modId }),
+  removeFromIni: (workshopId: string, modId?: string, modIds?: string[]) => apiPost('/mods/remove-from-ini', { workshopId, modId, modIds }),
+
+  // Batch remove multiple mods from tracking AND server .ini in one operation
+  batchRemove: (workshopIds: string[]) => apiPost('/mods/batch-remove', { workshopIds }),
   
   // Toggle a single mod ID on/off in the Mods= line
   toggleModId: (modId: string, enabled: boolean) => apiPost('/mods/toggle-mod-id', { modId, enabled }) as Promise<{
@@ -714,8 +717,8 @@ export const modsApi = {
   syncModIds: () => apiPost('/mods/sync-mod-ids'),
   
   // Discover all mod IDs from a workshop item (for mods with multiple IDs)
-  discoverModIds: (workshopId?: string, workshopUrl?: string) => 
-    apiPost('/mods/discover-mod-ids', { workshopId, workshopUrl }) as Promise<{
+  discoverModIds: (workshopId?: string, workshopUrl?: string, options?: { signal?: AbortSignal }) => 
+    apiPost('/mods/discover-mod-ids', { workshopId, workshopUrl }, options) as Promise<{
       success: boolean
       workshopId: string
       name: string

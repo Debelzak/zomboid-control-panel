@@ -179,7 +179,7 @@ export default function Chat() {
         <div className="lg:col-span-2">
           <Card className="h-[50vh] min-h-[300px] sm:h-[500px] md:h-[600px] flex flex-col">
             <CardHeader className="pb-3 border-b shrink-0">
-              <CardTitle className="flex items-center gap-2 text-base">
+              <CardTitle className="flex items-center gap-2">
                 <MessagesSquare className="w-4 h-4 text-primary" />
                 Server Chat
               </CardTitle>
@@ -248,7 +248,7 @@ export default function Chat() {
           {/* Online Players */}
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2 text-base">
+              <CardTitle className="flex items-center gap-2">
                 <Users className="w-4 h-4 text-primary" />
                 Online Players
               </CardTitle>
@@ -273,7 +273,7 @@ export default function Chat() {
           {/* Quick Messages */}
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2 text-base">
+              <CardTitle className="flex items-center gap-2">
                 <Megaphone className="w-4 h-4 text-warning" />
                 Quick Messages
               </CardTitle>

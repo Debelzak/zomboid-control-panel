@@ -12,6 +12,7 @@ import { rconApi, configApi, serverApi } from '@/lib/api'
 import { useSocket } from '@/contexts/SocketContext'
 import { EmptyState } from '@/components/EmptyState'
 import { StatusIndicator } from '@/components/StatusIndicator'
+import { PageHeader } from '@/components/PageHeader'
 import { cn } from '@/lib/utils'
 
 interface CommandEntry {
@@ -520,7 +521,13 @@ export default function Console() {
 
 
   return (
-    <div className="space-y-3 page-transition">
+    <div className="space-y-6 page-transition">
+      <PageHeader
+        title="Console"
+        description="Server log output and RCON commands"
+        tone="ops"
+        icon={<TerminalIcon className="w-5 h-5" />}
+      />
       <Tabs defaultValue="server-log" className="w-full">
         <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="server-log" className="flex items-center gap-2">
@@ -691,7 +698,7 @@ export default function Console() {
         {/* Server Announcement */}
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-base">
+            <CardTitle className="flex items-center gap-2">
               <Megaphone className="w-5 h-5" />
               Server Announcement
             </CardTitle>
@@ -743,7 +750,7 @@ export default function Console() {
         {/* Channel Message */}
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-base">
+            <CardTitle className="flex items-center gap-2">
               <MessageCircle className="w-5 h-5" />
               Channel Message
             </CardTitle>
@@ -807,7 +814,7 @@ export default function Console() {
           className="h-[35vh] min-h-[200px] sm:h-[40vh] overflow-auto rounded-lg border border-border/30 bg-black/40 p-3 terminal-output"
         >
           {liveLog.length === 0 ? (
-            <p className="text-muted-foreground font-mono text-xs">No commands yet. Run an RCON command to see the response here.</p>
+            <EmptyState compact type="noMessages" title="No commands yet" description="Run an RCON command to see the response here." />
           ) : (
             liveLog.map((entry) => (
               <div key={`${entry.timestamp}-${entry.command}`} className="mb-3 font-mono text-sm">
@@ -897,7 +904,7 @@ export default function Console() {
           </div>
           <ScrollArea className="h-[35vh] min-h-[200px] rounded-lg border border-border/30 bg-black/40">
             {history.length === 0 ? (
-              <p className="text-muted-foreground text-center py-4 font-mono text-xs">No command history yet.</p>
+              <EmptyState compact type="noData" title="No command history" description="Commands you run will be logged here." />
             ) : (
               <div className="space-y-1 p-2">
                 {history

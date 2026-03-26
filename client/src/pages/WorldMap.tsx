@@ -48,6 +48,23 @@ interface MapPlayer {
   animProgress?: number
 }
 
+/** Shape of a player record as returned by the PanelBridge getServerInfo API */
+interface RawBridgePlayer {
+  name?: string
+  username?: string
+  displayName?: string
+  x: number
+  y: number
+  z?: number
+  health?: number
+  isAlive?: boolean
+  isInfected?: boolean
+  accessLevel?: string
+  hunger?: number
+  thirst?: number
+  fatigue?: number
+}
+
 interface ContextMenu {
   screenX: number
   screenY: number
@@ -308,8 +325,8 @@ export default function WorldMap() {
         setBridgeConnected(true)
         setPlayers((prev) => {
           const prevMap = new globalThis.Map(prev.map((p) => [p.username || p.displayName, p]))
-          return rawPlayers.map((p: any) => {
-            const key = p.name || p.username
+          return rawPlayers.map((p: RawBridgePlayer) => {
+            const key = (p.name || p.username) as string
             const old = prevMap.get(key)
             return {
               username: key,

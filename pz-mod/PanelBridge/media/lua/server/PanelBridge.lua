@@ -1,11 +1,20 @@
 ---@diagnostic disable: undefined-global, deprecated
 --[[
     PanelBridge - Server-side mod for Zomboid Control Panel
-    Version: 1.5.0
+    Version: 1.6.0
     
     This mod enables external control panel communication with the PZ server.
     Communication happens via JSON files in the server save folder.
     
+    v1.6.0 Changes:
+    - Added vehicleSetFuel and vehicleSetBattery handlers for remote vehicle management
+    - Added safehouse player list to getSafehouses response
+    - Added getTimeSpeed / setTimeSpeed handlers for time multiplier control
+    - Added triggerHelicopterEvent handler
+    - Fixed processedIds cleanup: sliding window (drop oldest half) instead of full clear
+    - Removed dead sendServerMessage handler (superseded by sendToServerChat)
+    - Removed addLamppost/removeLamppost from backend whitelist (no Lua implementation)
+
     v1.5.0 Changes:
     - Fixed teleportPlayer for B42: use setTeleport() instead of broken sendObjectChange("teleport")
     - Added fallback chain: setTeleport → setX/Y/Z + sendPlayerExtraInfo → sendObjectChange
@@ -79,7 +88,7 @@
 local json
 
 local PanelBridge = {
-    VERSION = "1.5.0",
+    VERSION = "1.6.0",
     PROTOCOL_VERSION = "queue-v1",
     CHECK_INTERVAL = 250, -- milliseconds (fast command polling)
     lastCheck = 0,
@@ -2047,6 +2056,109 @@ handlers.getWorldStats = function(args)
     }
 end
 
+-- Get current time speed multiplier
+handlers.getTimeSpeed = function(args)
+    local gt = getGameTime()
+    if not gt then
+        return false, nil, "GameTime not available"
+    end
+
+    local multiplier = 1
+    pcall(function()
+        if gt.getMultiplier then
+            multiplier = gt:getMultiplier()
+        end
+    end)
+
+    return true, { multiplier = multiplier }
+end
+
+-- Set time speed multiplier (1 = normal, higher = faster)
+handlers.setTimeSpeed = function(args)
+    local gt = getGameTime()
+    if not gt then
+        return false, nil, "GameTime not available"
+    end
+
+    local multiplier = tonumber(args.multiplier)
+    if not multiplier then
+        return false, nil, "multiplier required (number)"
+    end
+    -- Clamp to safe range: 1x to 100x
+    multiplier = math.min(math.max(math.floor(multiplier), 1), 100)
+
+    local ok, err = pcall(function()
+        gt:setMultiplier(multiplier)
+    end)
+    if not ok then
+        return false, nil, "Failed to set time speed: " .. tostring(err)
+    end
+
+    PanelBridge.info("Time speed set", { multiplier = multiplier })
+    return true, { message = "Time speed set to " .. multiplier .. "x", multiplier = multiplier }
+end
+
+-- Trigger helicopter event near a player
+handlers.triggerHelicopterEvent = function(args)
+    local username = args.username
+    if not username then
+        return false, nil, "Username required"
+    end
+
+    local player = getPlayerByUsername(username)
+    if not player then
+        return false, nil, "Player not found: " .. username
+    end
+
+    local method = "unknown"
+    local ok, err = pcall(function()
+        -- B42: use the helicopter events system
+        local HelicopterClass = resolveJavaClass("Helicopter", "zombie.characters.Helicopter")
+        if HelicopterClass and HelicopterClass.getInstance then
+            local heli = HelicopterClass.getInstance()
+            if heli and heli.activateForPlayer then
+                heli:activateForPlayer(player)
+                method = "Helicopter.activateForPlayer"
+                return
+            end
+        end
+
+        -- Try via RandomizedWorldBase / MetaEvents
+        if RZSUtil and RZSUtil.triggerRandomEvent then
+            RZSUtil.triggerRandomEvent("Helicopter", player)
+            method = "RZSUtil.triggerRandomEvent"
+            return
+        end
+
+        -- Try direct addHelicopter if available
+        if addHelicopter then
+            addHelicopter(player)
+            method = "addHelicopter"
+            return
+        end
+
+        -- ServerCheatInterface fallback
+        if ServerCheatInterface and ServerCheatInterface.triggerHelicopter then
+            ServerCheatInterface.triggerHelicopter(player)
+            method = "ServerCheatInterface"
+            return
+        end
+
+        error("No helicopter API available in this build")
+    end)
+
+    if not ok then
+        return false, nil, "Failed to trigger helicopter: " .. tostring(err)
+    end
+
+    PanelBridge.info("Helicopter triggered", { username = username, method = method })
+    return true, {
+        message = "Helicopter event triggered for " .. username,
+        username = username,
+        method = method
+    }
+end
+
 -- Get detailed player info
 handlers.getPlayerDetails = function(args)
     local username = args.username
@@ -2532,33 +2644,6 @@ handlers.teleportPlayer = function(args)
         message = "Player teleported",
         newPosition = { x = x, y = y, z = z }
     }
-end
-
--- Send a server message (to all players)
-handlers.sendServerMessage = function(args)
-    local message = normalizeMessage(args.message, 1000)
-    
-    if not message then
-        return false, nil, "Message required"
-    end
-    
-    -- Use the global sendServerMessage function if available
-    if sendServerMessage then
-        sendServerMessage(message)
-    else
-        -- Fallback: send to each player individually using chat
-        local onlinePlayers = getOnlinePlayers()
-        if onlinePlayers then
-            for i = 0, onlinePlayers:size() - 1 do
-                local player = onlinePlayers:get(i)
-                if player and player.sendPlayerMessage then
-                    player:sendPlayerMessage("Server", message)
-                end
-            end
-        end
-    end
-    
-    return true, { message = "Message sent" }
 end
 
 -- Get sandbox options (read-only)
@@ -4176,6 +4261,17 @@ handlers.getSafehouses = function(args)
         for i = 0, list:size() - 1 do
             local sh = list:get(i)
             if sh then
+                -- Collect allowed players
+                local players = {}
+                pcall(function()
+                    local pList = sh.getPlayers and sh:getPlayers() or nil
+                    if pList then
+                        for j = 0, pList:size() - 1 do
+                            table.insert(players, tostring(pList:get(j)))
+                        end
+                    end
+                end)
+
                 table.insert(out, {
                     id = sh.getId and sh:getId() or nil,
                     title = sh.getTitle and sh:getTitle() or nil,
@@ -4184,6 +4280,7 @@ handlers.getSafehouses = function(args)
                     y = sh.getY and sh:getY() or nil,
                     w = sh.getW and sh:getW() or nil,
                     h = sh.getH and sh:getH() or nil,
+                    players = players,
                     playerConnected = sh.getPlayerConnected and sh:getPlayerConnected() or 0,
                     lastVisited = sh.getLastVisited and sh:getLastVisited() or nil
                 })
@@ -4568,6 +4665,50 @@ handlers.vehicleSetTrunkLocked = function(args)
     return true, { message = "Vehicle trunk lock updated", vehicleId = tonumber(args.vehicleId), locked = locked }
 end
 
+handlers.vehicleSetFuel = function(args)
+    local vehicle = findVehicleById(args.vehicleId)
+    if not vehicle then return false, nil, "Vehicle not found" end
+
+    local pct = tonumber(args.percent)
+    if not pct then return false, nil, "percent required (0-100)" end
+    pct = math.min(math.max(pct, 0), 100)
+
+    local ok, err = pcall(function()
+        -- B42: setRemainingFuelPercentage expects 0-100
+        if vehicle.setRemainingFuelPercentage then
+            vehicle:setRemainingFuelPercentage(pct)
+        -- Fallback: some builds use tank capacity fraction (0-1)
+        elseif vehicle.setCurrentFuel and vehicle.getMaxFuel then
+            vehicle:setCurrentFuel(vehicle:getMaxFuel() * pct / 100)
+        else
+            error("No fuel setter available")
+        end
+    end)
+    if not ok then return false, nil, "Failed to set fuel: " .. tostring(err) end
+
+    return true, { message = "Vehicle fuel set to " .. pct .. "%", vehicleId = tonumber(args.vehicleId), percent = pct }
+end
+
+handlers.vehicleSetBattery = function(args)
+    local vehicle = findVehicleById(args.vehicleId)
+    if not vehicle then return false, nil, "Vehicle not found" end
+
+    local charge = tonumber(args.charge)
+    if not charge then return false, nil, "charge required (0-100)" end
+    charge = math.min(math.max(charge, 0), 100)
+
+    local ok, err = pcall(function()
+        if vehicle.setBatteryCharge then
+            vehicle:setBatteryCharge(charge)
+        else
+            error("setBatteryCharge not available")
+        end
+    end)
+    if not ok then return false, nil, "Failed to set battery: " .. tostring(err) end
+
+    return true, { message = "Vehicle battery set to " .. charge, vehicleId = tonumber(args.vehicleId), charge = charge }
+end
+
 -- ============================================
 -- AI DIRECTOR EVENT HANDLERS
 -- ============================================
@@ -4874,15 +5015,25 @@ function PanelBridge.processCommands()
         end
     end
     
-    -- Cleanup old processed IDs (keep manageable size)
+    -- Cleanup old processed IDs (sliding window: drop oldest half)
     -- Using counter instead of O(n) pairs() iteration
     if PanelBridge.processedIdCount > 500 then
-        -- Safe to clear: commands.json was just cleared above, so no pending commands
-        -- Higher threshold (500) reduces cleanup frequency
+        -- Rebuild with only the newest ~250 IDs to avoid re-processing risk
         local oldCount = PanelBridge.processedIdCount
-        PanelBridge.processedIds = {}
-        PanelBridge.processedIdCount = 0
-        PanelBridge.debug("Cleared processed IDs", { previousCount = oldCount })
+        local keep = {}
+        local keepCount = 0
+        local skip = math.floor(oldCount / 2)
+        local seen = 0
+        for id, _ in pairs(PanelBridge.processedIds) do
+            seen = seen + 1
+            if seen > skip then
+                keep[id] = true
+                keepCount = keepCount + 1
+            end
+        end
+        PanelBridge.processedIds = keep
+        PanelBridge.processedIdCount = keepCount
+        PanelBridge.debug("Trimmed processed IDs", { previous = oldCount, kept = keepCount })
     end
 end
 
