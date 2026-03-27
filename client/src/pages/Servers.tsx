@@ -1510,6 +1510,26 @@ export default function Servers() {
                   placeholder="Leave empty for default"
                 />
               </div>
+              
+              <div className="space-y-2">
+                <Label className="flex items-center gap-1.5">
+                  Custom Start Command
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Info className="w-3.5 h-3.5 text-muted-foreground cursor-help" />
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-[280px]">
+                      <p className="text-xs">Override the default startup script with a custom command. Supports arguments. Leave empty to use the default bat/sh file detection.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </Label>
+                <Input
+                  value={editingServer.startCommand || ''}
+                  onChange={e => setEditingServer({ ...editingServer, startCommand: e.target.value })}
+                  className="font-mono text-sm"
+                  placeholder="e.g. ./start-server.sh -servername MyServer"
+                />
+              </div>
               </>
               )}
               

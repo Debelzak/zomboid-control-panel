@@ -877,6 +877,7 @@ export interface ServerInstance {
   useDebug: boolean
   isRemote: boolean
   isActive: boolean
+  startCommand: string
   createdAt: string
 }
 

@@ -25,6 +25,7 @@ export class ServerManager {
     this.serverBat = process.env.PZ_SERVER_BAT || getDefaultStartupScript();
     this.savePath = process.env.PZ_SAVE_PATH || '';
     this.serverName = 'servertest';
+    this.startCommand = '';
     this.isRunning = false;
     this.startTime = null;
     this.configLoaded = false;
@@ -40,6 +41,7 @@ export class ServerManager {
     this.serverBat = process.env.PZ_SERVER_BAT || getDefaultStartupScript();
     this.savePath = process.env.PZ_SAVE_PATH || '';
     this.serverName = 'servertest';
+    this.startCommand = '';
     this.configLoaded = false;
     await this.loadConfig();
   }
@@ -101,6 +103,10 @@ export class ServerManager {
         }
         if (activeServer.zomboidDataPath) {
           this.savePath = activeServer.zomboidDataPath;
+        }
+        if (activeServer.startCommand) {
+          this.startCommand = activeServer.startCommand;
+          log.debug(`Using custom start command: ${this.startCommand}`);
         }
         this.configLoaded = true;
         log.debug(`Loaded config from active server: ${activeServer.name}`);
@@ -203,7 +209,7 @@ export class ServerManager {
     this.configLoaded = false;
     await this.loadConfig();
     
-    if (!this.serverPath) {
+    if (!this.startCommand && !this.serverPath) {
       throw new Error('Server path not configured');
     }
 
@@ -214,33 +220,64 @@ export class ServerManager {
       }
     }
 
-    const batPath = path.join(this.serverPath, this.serverBat);
-    
-    if (!fs.existsSync(batPath)) {
-      throw new Error(`Server startup script not found: ${batPath}`);
-    }
-
     // Start the server process
     log.info('Starting server process');
-    
-    if (isWindows) {
-      this.serverProcess = spawn('cmd.exe', ['/c', this.serverBat], {
-        cwd: this.serverPath,
-        detached: true,
-        stdio: 'ignore'
-      });
-    } else {
-      // Ensure the script is executable
-      try {
-        fs.chmodSync(batPath, 0o750);
-      } catch (e) {
-        log.warn(`Could not chmod startup script: ${e.message}`);
+
+    if (this.startCommand) {
+      // Custom start command — split into command and arguments
+      const parts = this.startCommand.match(/(?:[^\s"]+|"[^"]*")+/g) || [this.startCommand];
+      const cmd = parts[0].replace(/^"|"$/g, '');
+      const args = parts.slice(1).map(a => a.replace(/^"|"$/g, ''));
+      const cwd = this.serverPath || path.dirname(cmd);
+
+      log.info(`Using custom start command: ${cmd} ${args.join(' ')}`);
+
+      if (isWindows && (cmd.endsWith('.bat') || cmd.endsWith('.cmd'))) {
+        this.serverProcess = spawn('cmd.exe', ['/c', cmd, ...args], {
+          cwd,
+          detached: true,
+          stdio: 'ignore'
+        });
+      } else if (!isWindows && cmd.endsWith('.sh')) {
+        try { fs.chmodSync(cmd, 0o750); } catch (e) { /* ok */ }
+        this.serverProcess = spawn('bash', [cmd, ...args], {
+          cwd,
+          detached: true,
+          stdio: 'ignore'
+        });
+      } else {
+        this.serverProcess = spawn(cmd, args, {
+          cwd,
+          detached: true,
+          stdio: 'ignore'
+        });
       }
-      this.serverProcess = spawn('bash', [this.serverBat], {
-        cwd: this.serverPath,
-        detached: true,
-        stdio: 'ignore'
-      });
+    } else {
+      const batPath = path.join(this.serverPath, this.serverBat);
+    
+      if (!fs.existsSync(batPath)) {
+        throw new Error(`Server startup script not found: ${batPath}`);
+      }
+
+      if (isWindows) {
+        this.serverProcess = spawn('cmd.exe', ['/c', this.serverBat], {
+          cwd: this.serverPath,
+          detached: true,
+          stdio: 'ignore'
+        });
+      } else {
+        // Ensure the script is executable
+        try {
+          fs.chmodSync(batPath, 0o750);
+        } catch (e) {
+          log.warn(`Could not chmod startup script: ${e.message}`);
+        }
+        this.serverProcess = spawn('bash', [this.serverBat], {
+          cwd: this.serverPath,
+          detached: true,
+          stdio: 'ignore'
+        });
+      }
     }
     
     // Handle spawn errors (e.g., invalid path, permissions)

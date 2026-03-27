@@ -744,6 +744,7 @@ export async function createServer(serverConfig) {
     useNoSteam: serverConfig.useNoSteam || false,
     useDebug: serverConfig.useDebug || false,
     isRemote: serverConfig.isRemote || false,
+    startCommand: serverConfig.startCommand || '',
     isActive: isFirst,
     createdAt: new Date().toISOString()
   };
