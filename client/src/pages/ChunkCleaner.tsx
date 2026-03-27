@@ -1091,7 +1091,7 @@ export default function ChunkCleaner() {
         {/* Header + compact warning */}
         <div className="space-y-3">
           <PageHeader
-            title="Chunk Cleaner"
+            title="Map Cleanup"
             description="Reset damaged or over-looted map areas so the world can regenerate cleanly"
             icon={<Map className="w-5 h-5" />}
           />

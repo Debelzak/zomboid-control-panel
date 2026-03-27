@@ -2580,4 +2580,257 @@ router.post('/update-check/interval', async (req, res) => {
   }
 });
 
+// ── Server Wipe ──────────────────────────────────────────────────────────────
+
+// Guard against concurrent wipe operations
+let wipeInProgress = false;
+
+// Preview what will be wiped (dry-run)
+router.post('/wipe/preview', async (req, res) => {
+  try {
+    const serverManager = req.app.get('serverManager');
+    await serverManager.loadConfig();
+
+    const { targets } = req.body; // e.g. ["map", "players", "config"]
+    if (!Array.isArray(targets) || targets.length === 0) {
+      return res.status(400).json({ error: 'targets must be a non-empty array of: map, players, config' });
+    }
+
+    const allowedTargets = ['map', 'players', 'config'];
+    const invalid = targets.filter(t => !allowedTargets.includes(t));
+    if (invalid.length > 0) {
+      return res.status(400).json({ error: `Invalid targets: ${invalid.join(', ')}. Allowed: ${allowedTargets.join(', ')}` });
+    }
+
+    const savePath = serverManager.savePath;
+    const serverName = serverManager.serverName || 'servertest';
+    if (!savePath) {
+      return res.status(400).json({ error: 'No zomboid data path configured' });
+    }
+    // Reject server names with path separators
+    if (/[/\\]/.test(serverName)) {
+      return res.status(400).json({ error: 'Invalid server name' });
+    }
+
+    const saveDir = path.join(savePath, 'Saves', 'Multiplayer', serverName);
+    if (!fs.existsSync(saveDir)) {
+      return res.status(404).json({ error: `Save directory not found: ${serverName}` });
+    }
+
+    const preview = {};
+    let totalFiles = 0;
+    let totalSize = 0;
+
+    const countDir = (dir) => {
+      let files = 0;
+      let size = 0;
+      if (!fs.existsSync(dir)) return { files: 0, size: 0 };
+      try {
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          const fullPath = path.join(dir, entry.name);
+          if (entry.isDirectory()) {
+            const sub = countDir(fullPath);
+            files += sub.files;
+            size += sub.size;
+          } else {
+            files++;
+            try { size += fs.statSync(fullPath).size; } catch {}
+          }
+        }
+      } catch {}
+      return { files, size };
+    };
+
+    if (targets.includes('map')) {
+      const mapDir = path.join(saveDir, 'map');
+      const stats = countDir(mapDir);
+      preview.map = { path: mapDir, exists: fs.existsSync(mapDir), ...stats };
+      totalFiles += stats.files;
+      totalSize += stats.size;
+    }
+
+    if (targets.includes('players')) {
+      let playerFiles = 0;
+      let playerSize = 0;
+      const playersDir = path.join(saveDir, 'players');
+      if (fs.existsSync(playersDir)) {
+        const sub = countDir(playersDir);
+        playerFiles += sub.files;
+        playerSize += sub.size;
+      }
+      // Count player-specific .bin files in root
+      try {
+        const rootEntries = fs.readdirSync(saveDir, { withFileTypes: true });
+        for (const entry of rootEntries) {
+          if (!entry.isDirectory() && /^(map_p\.bin|map_zone\.bin)$/i.test(entry.name)) {
+            playerFiles++;
+            try { playerSize += fs.statSync(path.join(saveDir, entry.name)).size; } catch {}
+          }
+        }
+      } catch {}
+      preview.players = { path: playersDir, exists: fs.existsSync(playersDir), files: playerFiles, size: playerSize };
+      totalFiles += playerFiles;
+      totalSize += playerSize;
+    }
+
+    if (targets.includes('config')) {
+      // Only match known PZ world config file extensions (not .bin which could be game data)
+      let configFiles = 0;
+      let configSize = 0;
+      try {
+        const rootEntries = fs.readdirSync(saveDir, { withFileTypes: true });
+        for (const entry of rootEntries) {
+          if (!entry.isDirectory() && /\.(ini|vars|lua|txt)$/i.test(entry.name)) {
+            configFiles++;
+            try { configSize += fs.statSync(path.join(saveDir, entry.name)).size; } catch {}
+          }
+        }
+      } catch {}
+      preview.config = { path: saveDir, files: configFiles, size: configSize };
+      totalFiles += configFiles;
+      totalSize += configSize;
+    }
+
+    res.json({
+      success: true,
+      serverName,
+      saveDir,
+      targets,
+      preview,
+      totalFiles,
+      totalSize
+    });
+
+  } catch (error) {
+    log.error(`Wipe preview failed: ${error.message}`);
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
+// Execute server wipe
+router.post('/wipe', async (req, res) => {
+  try {
+    // Prevent concurrent wipes
+    if (wipeInProgress) {
+      return res.status(409).json({ error: 'A wipe operation is already in progress. Please wait.' });
+    }
+
+    const serverManager = req.app.get('serverManager');
+    await serverManager.loadConfig();
+
+    // Safety: server must be stopped
+    const isRunning = await serverManager.checkServerRunning();
+    if (isRunning) {
+      return res.status(400).json({ error: 'Server must be stopped before wiping. Stop the server first.' });
+    }
+
+    const { targets, confirm } = req.body;
+    if (confirm !== true) {
+      return res.status(400).json({ error: 'Wipe requires confirm: true' });
+    }
+    if (!Array.isArray(targets) || targets.length === 0) {
+      return res.status(400).json({ error: 'targets must be a non-empty array of: map, players, config' });
+    }
+
+    const allowedTargets = ['map', 'players', 'config'];
+    const invalid = targets.filter(t => !allowedTargets.includes(t));
+    if (invalid.length > 0) {
+      return res.status(400).json({ error: `Invalid targets: ${invalid.join(', ')}` });
+    }
+
+    const savePath = serverManager.savePath;
+    const serverName = serverManager.serverName || 'servertest';
+    if (!savePath) {
+      return res.status(400).json({ error: 'No zomboid data path configured' });
+    }
+    if (/[/\\]/.test(serverName)) {
+      return res.status(400).json({ error: 'Invalid server name' });
+    }
+
+    const saveDir = path.join(savePath, 'Saves', 'Multiplayer', serverName);
+    if (!fs.existsSync(saveDir)) {
+      return res.status(404).json({ error: `Save directory not found: ${serverName}` });
+    }
+
+    // Path traversal safety
+    const normalizedSaveDir = path.normalize(saveDir);
+    if (normalizedSaveDir.includes('..')) {
+      return res.status(400).json({ error: 'Invalid path' });
+    }
+
+    wipeInProgress = true;
+    const results = {};
+
+    try {
+      if (targets.includes('map')) {
+        const mapDir = path.join(saveDir, 'map');
+        if (fs.existsSync(mapDir)) {
+          log.warn(`WIPE: Deleting map data at ${mapDir}`);
+          fs.rmSync(mapDir, { recursive: true, force: true });
+          fs.mkdirSync(mapDir, { recursive: true });
+          results.map = 'deleted';
+        } else {
+          results.map = 'not found';
+        }
+      }
+
+      if (targets.includes('players')) {
+        const playersDir = path.join(saveDir, 'players');
+        let deletedCount = 0;
+        if (fs.existsSync(playersDir)) {
+          log.warn(`WIPE: Deleting player data at ${playersDir}`);
+          fs.rmSync(playersDir, { recursive: true, force: true });
+          fs.mkdirSync(playersDir, { recursive: true });
+          deletedCount++;
+        }
+        // Remove player .bin files in root
+        try {
+          const rootEntries = fs.readdirSync(saveDir, { withFileTypes: true });
+          for (const entry of rootEntries) {
+            if (!entry.isDirectory() && /^(map_p\.bin|map_zone\.bin)$/i.test(entry.name)) {
+              fs.unlinkSync(path.join(saveDir, entry.name));
+              deletedCount++;
+            }
+          }
+        } catch {}
+        results.players = deletedCount > 0 ? 'deleted' : 'not found';
+      }
+
+      if (targets.includes('config')) {
+        try {
+          const rootEntries = fs.readdirSync(saveDir, { withFileTypes: true });
+          let configDeleted = 0;
+          for (const entry of rootEntries) {
+            if (!entry.isDirectory() && /\.(ini|vars|lua|txt)$/i.test(entry.name)) {
+              fs.unlinkSync(path.join(saveDir, entry.name));
+              configDeleted++;
+            }
+          }
+          results.config = configDeleted > 0 ? `deleted ${configDeleted} files` : 'no config files found';
+        } catch (e) {
+          results.config = `error: ${e.message}`;
+        }
+      }
+    } finally {
+      wipeInProgress = false;
+    }
+
+    log.warn(`WIPE COMPLETE: server=${serverName}, targets=${targets.join(',')}, results=${JSON.stringify(results)}`);
+    await logServerEvent('wipe', `Server wiped: ${targets.join(', ')}`, { targets, results });
+
+    res.json({
+      success: true,
+      serverName,
+      targets,
+      results,
+      message: `Server "${serverName}" wiped: ${targets.join(', ')}`
+    });
+
+  } catch (error) {
+    log.error(`Wipe failed: ${error.message}`);
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
 export default router;

@@ -83,7 +83,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { EmptyState } from '@/components/EmptyState'
 import { playersApi, panelBridgeApi } from '@/lib/api'
 import { PageHeader } from '@/components/PageHeader'
-import { cn } from '@/lib/utils'
+import { cn, copyText } from '@/lib/utils'
 
 interface Player {
   name: string
@@ -1741,7 +1741,7 @@ export default function Players() {
                               variant="ghost"
                               className="h-7 w-7 p-0"
                               onClick={() => {
-                                navigator.clipboard.writeText(characterData)
+                                copyText(characterData)
                                 setCopied(true)
                                 if (copiedTimeoutRef.current) clearTimeout(copiedTimeoutRef.current)
                                 copiedTimeoutRef.current = setTimeout(() => setCopied(false), 2000)

@@ -57,7 +57,7 @@ import { useToast } from '@/components/ui/use-toast'
 import { SocketContext } from '@/contexts/SocketContext'
 import { PageHeader } from '@/components/PageHeader'
 import { EmptyState } from '@/components/EmptyState'
-import { cn } from '@/lib/utils'
+import { cn, copyText } from '@/lib/utils'
 import { apiFetch } from '@/lib/api'
 
 interface LogEntry {
@@ -474,7 +474,7 @@ export default function Debug() {
 
   const copyLogEntry = (log: LogEntry) => {
     const text = `[${log.timestamp.toISOString()}] [${log.level.toUpperCase()}] ${log.source ? `[${log.source}] ` : ''}${log.message}`
-    navigator.clipboard.writeText(text)
+    copyText(text)
     toast({
       title: 'Copied',
       description: 'Log entry copied to clipboard',

@@ -423,6 +423,10 @@ export const serverApi = {
   save: () => apiPost('/server/save'),
   sendMessage: (message: string) => apiPost('/server/message', { message }),
   
+  // Wipe
+  wipePreview: (targets: string[]) => apiPost('/server/wipe/preview', { targets }),
+  wipe: (targets: string[]) => apiPost('/server/wipe', { targets, confirm: true }),
+  
   // Panel info - returns the panel's own network address
   getPanelInfo: () => apiGet('/panel-info') as Promise<{ localIp: string; port: number; url: string }>,
   
@@ -918,6 +922,9 @@ export interface SandboxData {
   settings: Record<string, string | number | boolean>
   ZombieLore: Record<string, string | number | boolean>
   ZombieConfig: Record<string, string | number | boolean>
+  MultiplierConfig: Record<string, string | number | boolean>
+  Map: Record<string, string | number | boolean>
+  Basement: Record<string, string | number | boolean>
 }
 
 export interface BackupFile {

@@ -141,14 +141,14 @@ interface IniConfig {
   totalMods: number
   iniPath?: string
   error?: string
-  workshopModMap?: Record<string, Array<{ id: string; name: string; enabled: boolean }>>
+  workshopModMap?: Record<string, Array<{ id: string; name: string; enabled: boolean; require?: string[] }>>
 }
 
 // ── Conflict scanner constants (hoisted to avoid re-creation in render) ──
 const CONFLICT_FILE_LIMIT = 50
 
 // ── Types used in Active Mods sub-tab (hoisted for memoization) ──
-type ModEntry = { id: string; name: string; enabled: boolean }
+type ModEntry = { id: string; name: string; enabled: boolean; require?: string[] }
 type WsGroup = { wsId: string; mods: ModEntry[]; allEnabled: boolean; someEnabled: boolean }
 
 // ── Pure helper — parse workshop ID from URL or numeric input ──
@@ -931,9 +931,10 @@ export default function Mods() {
     try {
       const result = await modsApi.importCollection(collectionUrl)
       const mods = result.mods || []
+      const existingWorkshopIds = new Set(iniConfig?.workshopIds || [])
       setCollectionMods(mods.map((m: CollectionMod) => ({
         ...m,
-        selected: true,
+        selected: !existingWorkshopIds.has(m.workshopId),
         modId: '',
         mapFolder: m.isMap ? m.name.replace(/\s+/g, '') : undefined
       })))
@@ -1279,10 +1280,38 @@ export default function Mods() {
     }
     const allModsList = groups.flatMap(g => g.mods)
     const mappedIds = new Set(allModsList.map(m => m.id))
+    const enabledIds = new Set(allModsList.filter(m => m.enabled).map(m => m.id))
     const orphaned = (iniConfig?.modIds || []).filter(id => !mappedIds.has(id))
-    const enabledCount = allModsList.filter(m => m.enabled).length
+    // Add orphaned enabled IDs so dependency checks can find them
+    for (const id of orphaned) enabledIds.add(id)
+    const enabledCount = enabledIds.size
     const multiIdCount = groups.filter(g => g.mods.length > 1).length
-    return { groups, orphaned, enabledCount, multiIdCount }
+
+    // Build missing-deps map: modId → list of required mod IDs not currently enabled
+    const missingDepsMap = new Map<string, string[]>()
+    for (const g of groups) {
+      for (const mod of g.mods) {
+        if (!mod.require?.length || !mod.enabled) continue
+        const missing = mod.require.filter(r => !enabledIds.has(r))
+        if (missing.length > 0) missingDepsMap.set(mod.id, missing)
+      }
+    }
+
+    // Build duplicate mod ID map: modId → list of wsIds that provide it
+    const modIdProviders = new Map<string, string[]>()
+    for (const g of groups) {
+      for (const mod of g.mods) {
+        const list = modIdProviders.get(mod.id) || []
+        list.push(g.wsId)
+        modIdProviders.set(mod.id, list)
+      }
+    }
+    const duplicateModIds = new Map<string, string[]>()
+    for (const [modId, wsIds] of modIdProviders) {
+      if (wsIds.length > 1) duplicateModIds.set(modId, wsIds)
+    }
+
+    return { groups, orphaned, enabledCount, multiIdCount, missingDepsMap, duplicateModIds }
   }, [iniConfig?.workshopModMap, iniConfig?.workshopIds, iniConfig?.modIds])
 
   const activeModsFiltered = useMemo(() => {
@@ -1803,7 +1832,9 @@ export default function Mods() {
                         </div>
                         <ScrollArea className="h-[min(48vh,22rem)] border rounded-lg p-2 sm:h-[min(52vh,24rem)]">
                           <div className="space-y-2">
-                            {collectionMods.map((mod) => (
+                            {collectionMods.map((mod) => {
+                              const alreadyInstalled = iniConfig?.workshopIds?.includes(mod.workshopId)
+                              return (
                               <div 
                                 key={mod.workshopId} 
                                 className={`flex items-start gap-3 rounded-lg border p-3 transition-colors ${mod.selected ? 'border-primary/30 bg-primary/10' : 'bg-card/60 hover:bg-accent/20'}`}
@@ -1816,6 +1847,11 @@ export default function Mods() {
                                 <div className="flex-1 space-y-1 min-w-0">
                                   <div className="flex items-center gap-2 min-w-0">
                                     <span className="font-medium text-sm truncate">{mod.name}</span>
+                                    {alreadyInstalled && (
+                                      <Badge variant="outline" className="text-xs text-muted-foreground">
+                                        Installed
+                                      </Badge>
+                                    )}
                                     {mod.isMap && (
                                       <Badge variant="secondary" className="text-xs">
                                         <MapIcon className="w-3 h-3 mr-1" />
@@ -1865,7 +1901,7 @@ export default function Mods() {
                                   <ExternalLink className="w-3 h-3" />
                                 </Button>
                               </div>
-                            ))}
+                            )})}
                           </div>
                         </ScrollArea>
                       </div>
@@ -2472,7 +2508,7 @@ export default function Mods() {
 
                 {/* ═══ ACTIVE MODS SUB-TAB ═══ */}
                 {configSubTab === 'active' && (() => {
-                  const { orphaned, enabledCount, multiIdCount, groups } = activeModsData
+                  const { orphaned, enabledCount, multiIdCount, groups, missingDepsMap, duplicateModIds } = activeModsData
                   const { filteredGroups } = activeModsFiltered
                   const displayGroups = filterMultiId ? filteredGroups.filter(g => g.mods.length > 1) : filteredGroups
                   const totalModCount = groups.reduce((s, g) => s + g.mods.length, 0)
@@ -2650,6 +2686,24 @@ export default function Mods() {
                         </div>
                       </div>
 
+                      {/* Dependency / duplicate summary */}
+                      {(missingDepsMap.size > 0 || duplicateModIds.size > 0) && (
+                        <div className="flex flex-wrap gap-3 text-[11px]">
+                          {missingDepsMap.size > 0 && (
+                            <span className="flex items-center gap-1.5 text-destructive">
+                              <AlertTriangle className="w-3 h-3 shrink-0" />
+                              {missingDepsMap.size} mod{missingDepsMap.size !== 1 ? 's' : ''} with missing dependencies
+                            </span>
+                          )}
+                          {duplicateModIds.size > 0 && (
+                            <span className="flex items-center gap-1.5 text-warning">
+                              <AlertTriangle className="w-3 h-3 shrink-0" />
+                              {duplicateModIds.size} mod ID{duplicateModIds.size !== 1 ? 's' : ''} provided by multiple workshop items
+                            </span>
+                          )}
+                        </div>
+                      )}
+
                       {/* Scrollable mod list */}
                       <div className="rounded-lg border border-border/40 overflow-hidden bg-muted/10">
                         {displayGroups.length > 0 ? (
@@ -2658,6 +2712,10 @@ export default function Mods() {
                               {displayGroups.map(g => {
                                 const isSingle = g.mods.length === 1
                                 const mod0 = g.mods[0]
+                                // Collect dep/conflict info for the whole group
+                                const groupMissing = g.mods.flatMap(m => missingDepsMap.get(m.id) || [])
+                                const groupDupes = g.mods.filter(m => duplicateModIds.has(m.id))
+                                const groupRequires = g.mods.flatMap(m => m.require || []).filter((v, i, a) => a.indexOf(v) === i)
 
                                 if (isSingle) {
                                   return (
@@ -2671,10 +2729,30 @@ export default function Mods() {
                                         className="shrink-0"
                                       aria-label={`${mod0.enabled ? "Disable" : "Enable"} ${mod0.name || mod0.id}`}
                                       />
-                                      <div className="min-w-0 flex-1 flex items-baseline gap-2">
-                                        <span className="text-xs font-mono truncate">{mod0.id}</span>
-                                        {mod0.name !== mod0.id && (
-                                          <span className="text-[11px] text-muted-foreground/70 truncate hidden sm:inline">{mod0.name}</span>
+                                      <div className="min-w-0 flex-1">
+                                        <div className="flex items-baseline gap-2">
+                                          <span className="text-xs font-mono truncate">{mod0.id}</span>
+                                          {mod0.name !== mod0.id && (
+                                            <span className="text-[11px] text-muted-foreground/70 truncate hidden sm:inline">{mod0.name}</span>
+                                          )}
+                                          {groupDupes.length > 0 && (
+                                            <span className="text-[10px] px-1.5 py-0 rounded bg-warning/15 text-warning border border-warning/30 shrink-0" title={`Also provided by workshop item${duplicateModIds.get(mod0.id)!.length > 2 ? 's' : ''} ${duplicateModIds.get(mod0.id)!.filter(w => w !== g.wsId).join(', ')}`}>
+                                              duplicate
+                                            </span>
+                                          )}
+                                        </div>
+                                        {mod0.enabled && groupRequires.length > 0 && (
+                                          <div className="flex flex-wrap items-center gap-1 mt-0.5">
+                                            <span className="text-[10px] text-muted-foreground/60">requires:</span>
+                                            {groupRequires.map(dep => {
+                                              const isMissing = groupMissing.includes(dep)
+                                              return (
+                                                <span key={dep} className={`text-[10px] px-1 rounded font-mono ${isMissing ? 'bg-destructive/15 text-destructive border border-destructive/30' : 'bg-success/10 text-success/80 border border-success/20'}`} title={isMissing ? `${dep} is not enabled — this mod may not work` : `${dep} is active`}>
+                                                  {dep}
+                                                </span>
+                                              )
+                                            })}
+                                          </div>
                                         )}
                                       </div>
                                       <span className="text-[11px] text-muted-foreground/70 tabular-nums shrink-0 hidden sm:inline">{g.wsId}</span>
@@ -2711,24 +2789,44 @@ export default function Mods() {
                                         <X className="w-3 h-3" />
                                       </button>
                                     </div>
-                                    <div className="pl-8 pr-3 pb-1.5 flex flex-wrap gap-1">
-                                      {g.mods.map(mod => (
+                                    <div className="pl-8 pr-3 pb-1.5 space-y-1">
+                                      <div className="flex flex-wrap gap-1">
+                                      {g.mods.map(mod => {
+                                        const isDupe = duplicateModIds.has(mod.id)
+                                        return (
                                         <button
                                           key={mod.id}
                                           onClick={() => toggleMod(mod, g.wsId)}
-                                          title={`${mod.id}${mod.name !== mod.id ? ` — ${mod.name}` : ''}\nClick to ${mod.enabled ? 'disable' : 'enable'}`}
+                                          title={`${mod.id}${mod.name !== mod.id ? ` — ${mod.name}` : ''}${isDupe ? `\n⚠ Also in workshop ${duplicateModIds.get(mod.id)!.filter(w => w !== g.wsId).join(', ')}` : ''}\nClick to ${mod.enabled ? 'disable' : 'enable'}`}
                                           className={`
                                             px-1.5 py-0.5 rounded text-[11px] font-medium transition-colors duration-150 cursor-pointer truncate max-w-[200px] mod-toggle-pill
                                             focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 focus-visible:ring-offset-background
-                                            ${mod.enabled
-                                              ? 'bg-success/15 text-success hover:bg-success/25'
-                                              : 'bg-muted/15 text-muted-foreground/75 hover:text-muted-foreground hover:bg-muted/25'
+                                            ${isDupe
+                                              ? (mod.enabled ? 'bg-warning/15 text-warning hover:bg-warning/25 ring-1 ring-warning/30' : 'bg-warning/5 text-warning/50 hover:bg-warning/10 ring-1 ring-warning/20')
+                                              : (mod.enabled
+                                                ? 'bg-success/15 text-success hover:bg-success/25'
+                                                : 'bg-muted/15 text-muted-foreground/75 hover:text-muted-foreground hover:bg-muted/25')
                                             }
                                           `}
                                         >
                                           {mod.id}
                                         </button>
-                                      ))}
+                                        )
+                                      })}
+                                      </div>
+                                      {g.someEnabled && groupRequires.length > 0 && (
+                                        <div className="flex flex-wrap items-center gap-1">
+                                          <span className="text-[10px] text-muted-foreground/60">requires:</span>
+                                          {groupRequires.map(dep => {
+                                            const isMissing = groupMissing.includes(dep)
+                                            return (
+                                              <span key={dep} className={`text-[10px] px-1 rounded font-mono ${isMissing ? 'bg-destructive/15 text-destructive border border-destructive/30' : 'bg-success/10 text-success/80 border border-success/20'}`} title={isMissing ? `${dep} is not enabled — this mod may not work` : `${dep} is active`}>
+                                                {dep}
+                                              </span>
+                                            )
+                                          })}
+                                        </div>
+                                      )}
                                     </div>
                                   </div>
                                 )
@@ -2799,7 +2897,28 @@ export default function Mods() {
                 })()}
 
                 {/* ═══ LOAD ORDER SUB-TAB ═══ */}
-                {configSubTab === 'order' && (
+                {configSubTab === 'order' && (() => {
+                  // Build modId → display name lookup from workshopModMap + tracked mods
+                  const modIdNameMap = new Map<string, string>()
+                  const modIdWsMap = new Map<string, string>()
+                  const wsMap = iniConfig?.workshopModMap || {}
+                  for (const [wsId, details] of Object.entries(wsMap)) {
+                    for (const m of details) {
+                      if (m.name && m.name !== m.id) modIdNameMap.set(m.id, m.name)
+                      modIdWsMap.set(m.id, wsId)
+                    }
+                  }
+                  // Fallback: use tracked mod names matched via workshop ID
+                  for (const mod of mods) {
+                    const details = wsMap[mod.workshop_id]
+                    if (details) {
+                      for (const m of details) {
+                        if (!modIdNameMap.has(m.id) && mod.name) modIdNameMap.set(m.id, mod.name)
+                      }
+                    }
+                  }
+
+                  return (
                   <div className="space-y-3 sub-tab-enter">
                     {orderedModIds.length === 0 ? (
                       <div className="flex items-center justify-center py-10 text-muted-foreground">
@@ -2819,9 +2938,14 @@ export default function Mods() {
                             .map((modId, idx) => ({ modId, idx }))
                             .filter(({ modId }) => {
                               const q = deferredModManagerSearch.toLowerCase().trim()
-                              return !q || modId.toLowerCase().includes(q)
+                              if (!q) return true
+                              if (modId.toLowerCase().includes(q)) return true
+                              const name = modIdNameMap.get(modId)
+                              return name ? name.toLowerCase().includes(q) : false
                             })
-                            .map(({ modId, idx }) => (
+                            .map(({ modId, idx }) => {
+                                const displayName = modIdNameMap.get(modId)
+                                return (
                                 <div
                                   key={`${modId}-${idx}`}
                                   draggable={!modManagerSearch.trim()}
@@ -2834,7 +2958,9 @@ export default function Mods() {
                                 >
                                   <GripVertical className="w-3 h-3 text-muted-foreground/30 shrink-0" />
                                   <span className="text-[11px] tabular-nums text-muted-foreground w-5 text-right shrink-0">{idx + 1}</span>
-                                  <span className="text-[11px] font-mono truncate flex-1">{modId}</span>
+                                  <span className="text-[11px] font-mono truncate shrink-0">{modId}</span>
+                                  {displayName && <span className="text-[11px] text-muted-foreground/60 truncate flex-1">{displayName}</span>}
+                                  {!displayName && <span className="flex-1" />}
                                   <div className="flex shrink-0">
                                     <button onClick={() => moveModUp(idx)} disabled={idx === 0} className="p-1.5 min-w-[36px] min-h-[36px] flex items-center justify-center hover:bg-muted/30 disabled:opacity-30 rounded transition-colors duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/50" aria-label="Move up">
                                       <ChevronRight className="w-3.5 h-3.5 -rotate-90" />
@@ -2844,7 +2970,7 @@ export default function Mods() {
                                     </button>
                                   </div>
                                 </div>
-                              ))
+                              )})
                             }
                         </div>
                       </ScrollArea>
@@ -2864,7 +2990,8 @@ export default function Mods() {
                     </>
                     )}
                   </div>
-                )}
+                  )
+                })()}
 
                 {/* ═══ ADD MODS SUB-TAB ═══ */}
                 {configSubTab === 'add' && (

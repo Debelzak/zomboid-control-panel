@@ -863,14 +863,15 @@ router.get('/current-config', async (req, res) => {
     // Build workshop → modId mapping from disk
     const serverPath = await getServerPath();
     const modIdSet = new Set(modIds);
-    const workshopModMap = {}; // workshopId -> [{ id, name, enabled }]
+    const workshopModMap = {}; // workshopId -> [{ id, name, enabled, require }]
     if (serverPath) {
       for (const wsId of workshopIds) {
         const details = getModDetailsFromWorkshop(wsId, serverPath);
         workshopModMap[wsId] = details.map(m => ({
           id: m.id,
           name: m.name || m.id,
-          enabled: modIdSet.has(m.id)
+          enabled: modIdSet.has(m.id),
+          require: m.require?.length ? m.require : undefined
         }));
       }
     }

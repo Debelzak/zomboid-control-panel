@@ -39,7 +39,7 @@ import { Slider } from '@/components/ui/slider'
 import { Progress } from '@/components/ui/progress'
 import { Badge } from '@/components/ui/badge'
 import { reportClientError } from '@/lib/client-errors'
-import { cn } from '@/lib/utils'
+import { cn, copyText } from '@/lib/utils'
 import {
   Select,
   SelectContent,
@@ -407,7 +407,7 @@ export default function ServerSetup() {
   const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const handleCopyPassword = () => {
-    navigator.clipboard.writeText(rconPassword)
+    copyText(rconPassword)
     setCopiedPassword(true)
     toast({ title: 'Password Copied', description: 'RCON password copied to clipboard.' })
     if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current)

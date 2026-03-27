@@ -26,6 +26,7 @@ import {
   X,
   MoreHorizontal,
   Zap,
+  Trash2,
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -56,7 +57,7 @@ import { Label } from '@/components/ui/label'
 import { PageHeader } from '@/components/PageHeader'
 import { EmptyState } from '@/components/EmptyState'
 import { StatusIndicator } from '@/components/StatusIndicator'
-import { cn } from '@/lib/utils'
+import { cn, copyText } from '@/lib/utils'
 import { getUserErrorMessage } from '@/lib/errorMessage'
 
 interface PlayerActivity {
@@ -184,6 +185,10 @@ export default function Dashboard() {
     action: () => Promise<unknown>
     variant?: 'destructive' | 'warning'
   } | null>(null)
+  const [wipeDialog, setWipeDialog] = useState(false)
+  const [wipeTargets, setWipeTargets] = useState<Record<string, boolean>>({ map: true, players: false, config: false })
+  const [wipePreview, setWipePreview] = useState<any>(null)
+  const [wipeLoading, setWipeLoading] = useState(false)
   const { toast } = useToast()
   const socket = useSocket()
 
@@ -193,7 +198,7 @@ export default function Dashboard() {
 
   const copyToClipboard = async (text: string, label: string) => {
     try {
-      await navigator.clipboard.writeText(text)
+      await copyText(text)
       toast({
         title: "Copied!",
         description: `${label} copied to clipboard`,
@@ -747,7 +752,7 @@ export default function Dashboard() {
             <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm">
               {status?.publicIp && (
                 <button
-                  onClick={() => copyToClipboard(status.publicIp!, "Public IP")}
+                  onClick={() => copyToClipboard(`${status.publicIp}${status.port ? `:${status.port}` : ''}`, "Public address")}
                   className="flex min-h-11 items-center gap-1.5 rounded-md px-2 py-1 font-mono text-xs text-muted-foreground transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 sm:min-h-8"
                   aria-label={`Copy public IP: ${status.publicIp}${status.port ? `:${status.port}` : ''}`}
                 >
@@ -758,7 +763,7 @@ export default function Dashboard() {
               )}
               {status?.localIp && (
                 <button
-                  onClick={() => copyToClipboard(status.localIp!, "Local IP")}
+                  onClick={() => copyToClipboard(`${status.localIp}${status.port ? `:${status.port}` : ''}`, "Local address")}
                   className="flex min-h-11 items-center gap-1.5 rounded-md px-2 py-1 font-mono text-xs text-muted-foreground transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 sm:min-h-8"
                   aria-label={`Copy local IP: ${status.localIp}${status.port ? `:${status.port}` : ''}`}
                 >
@@ -894,6 +899,14 @@ export default function Dashboard() {
                 >
                   <Zap className="w-4 h-4 mr-2" />
                   Restart Now
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => { setWipePreview(null); setWipeDialog(true) }}
+                  disabled={status?.running || loading !== null || activeServer?.isRemote}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Wipe Server
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -1050,6 +1063,124 @@ export default function Dashboard() {
             >
               {confirmAction?.title}
             </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Wipe Server Dialog */}
+      <AlertDialog open={wipeDialog} onOpenChange={(open) => { if (!open && !wipeLoading) { setWipeDialog(false); setWipePreview(null) } }}>
+        <AlertDialogContent className="glass border-border/50">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-3 text-xl">
+              <Trash2 className="w-5 h-5 text-destructive" />
+              Wipe Server
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-base">
+              Select what data to delete from <span className="font-medium text-foreground">{activeServer?.serverName || 'the active server'}</span>. The server must be stopped.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <div className="space-y-3 py-2">
+            {([
+              ['map', 'Map Data', 'Chunk files, terrain, buildings. Players keep their characters.'],
+              ['players', 'Player Data', 'Player saves, inventories, positions.'],
+              ['config', 'World Config', 'Sandbox settings, world metadata files.'],
+            ] as const).map(([key, label, desc]) => (
+              <label key={key} className="flex items-start gap-3 p-3 rounded-md border border-border/50 hover:bg-muted/30 cursor-pointer">
+                <Checkbox
+                  checked={wipeTargets[key]}
+                  disabled={wipeLoading}
+                  onCheckedChange={(checked) => {
+                    setWipeTargets(prev => ({ ...prev, [key]: checked === true }))
+                    setWipePreview(null)
+                  }}
+                />
+                <div className="min-w-0">
+                  <div className="font-medium text-sm">{label}</div>
+                  <div className="text-xs text-muted-foreground">{desc}</div>
+                </div>
+              </label>
+            ))}
+          </div>
+
+          {wipePreview && (
+            <div className="rounded-md bg-destructive/10 border border-destructive/30 p-3 text-sm space-y-1">
+              {wipePreview.totalFiles === 0 ? (
+                <div className="text-muted-foreground">No files found for the selected targets.</div>
+              ) : (
+                <>
+                  <div className="font-medium text-destructive">This will permanently delete:</div>
+                  {wipePreview.preview?.map && wipePreview.preview.map.files > 0 && (
+                    <div>{wipePreview.preview.map.files.toLocaleString()} map files ({(wipePreview.preview.map.size / 1024 / 1024).toFixed(1)} MB)</div>
+                  )}
+                  {wipePreview.preview?.map && wipePreview.preview.map.files === 0 && (
+                    <div className="text-muted-foreground">No map files found</div>
+                  )}
+                  {wipePreview.preview?.players && wipePreview.preview.players.files > 0 && (
+                    <div>{wipePreview.preview.players.files.toLocaleString()} player files ({(wipePreview.preview.players.size / 1024 / 1024).toFixed(1)} MB)</div>
+                  )}
+                  {wipePreview.preview?.players && wipePreview.preview.players.files === 0 && (
+                    <div className="text-muted-foreground">No player files found</div>
+                  )}
+                  {wipePreview.preview?.config && wipePreview.preview.config.files > 0 && (
+                    <div>{wipePreview.preview.config.files.toLocaleString()} config files ({(wipePreview.preview.config.size / 1024 / 1024).toFixed(1)} MB)</div>
+                  )}
+                  {wipePreview.preview?.config && wipePreview.preview.config.files === 0 && (
+                    <div className="text-muted-foreground">No config files found</div>
+                  )}
+                  <div className="font-medium pt-1">Total: {wipePreview.totalFiles.toLocaleString()} files ({(wipePreview.totalSize / 1024 / 1024).toFixed(1)} MB)</div>
+                </>
+              )}
+            </div>
+          )}
+
+          <AlertDialogFooter className="gap-2 sm:gap-2">
+            <AlertDialogCancel className="mt-0" disabled={wipeLoading} onClick={() => { setWipeDialog(false); setWipePreview(null) }}>Cancel</AlertDialogCancel>
+            {!wipePreview ? (
+              <Button
+                variant="warning"
+                disabled={!Object.values(wipeTargets).some(Boolean) || wipeLoading}
+                onClick={async () => {
+                  if (wipeLoading) return
+                  setWipeLoading(true)
+                  try {
+                    const targets = Object.entries(wipeTargets).filter(([, v]) => v).map(([k]) => k)
+                    const res = await serverApi.wipePreview(targets)
+                    setWipePreview(res)
+                  } catch (e: any) {
+                    toast({ title: 'Preview failed', description: e?.message || 'Could not scan save directory', variant: 'destructive' })
+                  } finally {
+                    setWipeLoading(false)
+                  }
+                }}
+              >
+                {wipeLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                Preview
+              </Button>
+            ) : (
+              <Button
+                variant="destructive"
+                disabled={wipeLoading || wipePreview.totalFiles === 0}
+                onClick={async () => {
+                  if (wipeLoading) return
+                  setWipeLoading(true)
+                  try {
+                    const targets = Object.entries(wipeTargets).filter(([, v]) => v).map(([k]) => k)
+                    await serverApi.wipe(targets)
+                    toast({ title: 'Server Wiped', description: `Deleted: ${targets.join(', ')}` })
+                    setWipeDialog(false)
+                    setWipePreview(null)
+                  } catch (e: any) {
+                    toast({ title: 'Wipe failed', description: e?.message || 'Unknown error', variant: 'destructive' })
+                  } finally {
+                    setWipeLoading(false)
+                  }
+                }}
+              >
+                {wipeLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />}
+                Wipe Now
+              </Button>
+            )}
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

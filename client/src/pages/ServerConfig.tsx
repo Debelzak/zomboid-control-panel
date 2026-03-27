@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef, memo } from 'react'
+import { copyText } from '@/lib/utils'
 import {
   Settings,
   FileText,
@@ -414,7 +415,7 @@ export default function ServerConfig() {
     name?: string; shortName?: string; tableName?: string; value?: unknown;
     type?: string; min?: number; max?: number; default?: unknown;
     enumValues?: string[]; selectedIndex?: number; translatedName?: string;
-    tooltip?: string;
+    tooltip?: string; tooltipText?: string; pageName?: string;
   }>> | null>(null)
   const [modSettingsGroups, setModSettingsGroups] = useState<Array<{ name: string; count: number }>>([])
   const [modSettingsLoading, setModSettingsLoading] = useState(false)
@@ -440,7 +441,8 @@ export default function ServerConfig() {
               (o.name || '').toLowerCase().includes(q) ||
               (o.shortName || '').toLowerCase().includes(q) ||
               (o.translatedName || '').toLowerCase().includes(q) ||
-              (o.tooltip || '').toLowerCase().includes(q)
+              (o.tooltip || '').toLowerCase().includes(q) ||
+              (o.tooltipText || '').toLowerCase().includes(q)
             )
         return { ...group, filteredOpts }
       })
@@ -582,7 +584,7 @@ export default function ServerConfig() {
   // Copy raw content to clipboard
   const handleCopyRaw = async () => {
     try {
-      await navigator.clipboard.writeText(rawContent)
+      await copyText(rawContent)
       setCopied(true)
       if (copiedTimeoutRef.current) {
         clearTimeout(copiedTimeoutRef.current)
@@ -616,7 +618,7 @@ export default function ServerConfig() {
             name?: string; shortName?: string; tableName?: string; value?: unknown;
             type?: string; min?: number; max?: number; default?: unknown;
             enumValues?: string[]; selectedIndex?: number; translatedName?: string;
-            tooltip?: string;
+            tooltip?: string; tooltipText?: string; pageName?: string;
           }>>
           groups: Array<{ name: string; count: number }>
           totalCount: number
@@ -858,6 +860,31 @@ export default function ServerConfig() {
     return groupByCategory(filtered)
   }, [searchQuery])
 
+  // Find sandbox settings not covered by the schema (mod settings, etc.)
+  const uncategorizedSandboxKeys = useMemo(() => {
+    if (!sandboxData) return []
+    const schemaKeys = new Set(SANDBOX_SCHEMA.map(s => `${s.section || 'settings'}.${s.key}`))
+    const uncategorized: { section: string; key: string; value: string | number | boolean }[] = []
+    
+    for (const sectionName of Object.keys(sandboxData)) {
+      if (sectionName === 'VERSION') continue
+      const sectionData = sandboxData[sectionName as keyof SandboxData]
+      if (typeof sectionData !== 'object' || sectionData === null) continue
+      for (const [key, value] of Object.entries(sectionData as Record<string, string | number | boolean>)) {
+        if (!schemaKeys.has(`${sectionName}.${key}`)) {
+          const lower = searchQuery?.toLowerCase() || ''
+          if (!searchQuery || key.toLowerCase().includes(lower) || String(value).toLowerCase().includes(lower)) {
+            uncategorized.push({ section: sectionName, key, value })
+          }
+        }
+      }
+    }
+    return uncategorized.sort((a, b) => {
+      if (a.section !== b.section) return a.section.localeCompare(b.section)
+      return a.key.localeCompare(b.key)
+    })
+  }, [sandboxData, searchQuery])
+
   // Load backups
   const loadBackups = async () => {
     try {
@@ -1005,7 +1032,7 @@ export default function ServerConfig() {
   const expandAll = () => {
     const all = activeTab === 'ini' 
       ? INI_CATEGORIES.map(c => c.id) 
-      : SANDBOX_CATEGORIES.map(c => c.id)
+      : [...SANDBOX_CATEGORIES.map(c => c.id), 'uncategorized']
     setExpandedCategories(new Set(all))
   }
 
@@ -1418,6 +1445,15 @@ export default function ServerConfig() {
                 </div>
               ) : (
                 <ScrollArea className="h-[calc(100vh-380px)] min-h-[400px] pr-4">
+                  {iniSettings['DoLuaChecksum']?.toLowerCase() === 'true' && (
+                    <Alert variant="destructive" className="mb-4">
+                      <AlertTriangle className="h-4 w-4" />
+                      <AlertTitle>Lua Checksum is enabled</AlertTitle>
+                      <AlertDescription>
+                        PanelBridge modifies server-side Lua files. With Lua Checksum enabled, clients will fail verification and cannot connect. Disable <strong>DoLuaChecksum</strong> in the Mods category to allow players to join.
+                      </AlertDescription>
+                    </Alert>
+                  )}
                   {INI_CATEGORIES.map(category => {
                     const settings = filteredIniSettings[category.id] || []
                     if (settings.length === 0) return null
@@ -1589,6 +1625,86 @@ export default function ServerConfig() {
                       </div>
                     )
                   })}
+
+                  {/* Uncategorized / Mod Settings */}
+                  {uncategorizedSandboxKeys.length > 0 && (
+                    <div className="mb-3 perf-section-auto">
+                      <button
+                        onClick={() => toggleCategory('uncategorized')}
+                        className={`flex items-center gap-3 w-full py-2.5 px-4 rounded-lg transition-[background-color,border-color,box-shadow,color] duration-200 ${
+                          expandedCategories.has('uncategorized')
+                            ? 'border border-amber-500/30 bg-amber-500/10 shadow-sm' 
+                            : 'bg-muted/50 hover:bg-muted border border-transparent'
+                        }`}
+                      >
+                        <div className={`p-1 rounded transition-colors ${expandedCategories.has('uncategorized') ? 'bg-amber-500/20 text-amber-500' : 'bg-muted'}`}>
+                          {expandedCategories.has('uncategorized') ? (
+                            <ChevronDown className="w-4 h-4" />
+                          ) : (
+                            <ChevronRight className="w-4 h-4" />
+                          )}
+                        </div>
+                        <span className={`font-medium ${expandedCategories.has('uncategorized') ? 'text-amber-500' : ''}`}>Uncategorized / Mod Settings</span>
+                        <Badge variant={expandedCategories.has('uncategorized') ? "default" : "secondary"} className="ml-auto">
+                          {uncategorizedSandboxKeys.length}
+                        </Badge>
+                      </button>
+                      {expandedCategories.has('uncategorized') && (
+                        <div className="mt-3 ml-4 space-y-1 border-l-2 border-amber-500/30 pl-4">
+                          {uncategorizedSandboxKeys.map(({ section, key, value }) => {
+                            const origSection = originalSandboxData?.[section as keyof SandboxData]
+                            const origValue = typeof origSection === 'object' ? (origSection as Record<string, unknown>)?.[key] : undefined
+                            const isModified = value !== origValue
+                            return (
+                              <div key={`${section}.${key}`} className={`flex items-center justify-between py-2 px-3 rounded-md transition-colors ${isModified ? 'bg-amber-500/10 border border-amber-500/20' : 'hover:bg-muted/50'}`}>
+                                <div className="flex-1 min-w-0 mr-4">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-sm font-medium">{key}</span>
+                                    {section !== 'settings' && (
+                                      <code className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{section}</code>
+                                    )}
+                                    {isModified && (
+                                      <button
+                                        onClick={() => {
+                                          if (origValue !== undefined) {
+                                            setSandboxData(prev => {
+                                              if (!prev) return prev
+                                              const s = { ...(prev[section as keyof SandboxData] as Record<string, unknown> || {}) }
+                                              s[key] = origValue
+                                              return { ...prev, [section]: s } as SandboxData
+                                            })
+                                          }
+                                        }}
+                                        className="text-xs text-amber-500 hover:text-amber-400"
+                                        title="Undo change"
+                                      >↩</button>
+                                    )}
+                                  </div>
+                                </div>
+                                <Input
+                                  className="w-48 h-8 text-sm"
+                                  value={String(value)}
+                                  onChange={e => {
+                                    const raw = e.target.value
+                                    let parsed: string | number | boolean = raw
+                                    if (raw === 'true') parsed = true
+                                    else if (raw === 'false') parsed = false
+                                    else if (raw !== '' && !isNaN(Number(raw))) parsed = Number(raw)
+                                    setSandboxData(prev => {
+                                      if (!prev) return prev
+                                      const s = { ...(prev[section as keyof SandboxData] as Record<string, unknown> || {}) }
+                                      s[key] = parsed
+                                      return { ...prev, [section]: s } as SandboxData
+                                    })
+                                  }}
+                                />
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </ScrollArea>
               )}
             </CardContent>
@@ -1992,7 +2108,17 @@ export default function ServerConfig() {
                           {isExpanded && (
                             <div className="mt-3 ml-4 space-y-1 border-l-2 border-primary/30 pl-4">
                               {filteredOpts.map((opt, idx) => {
-                                const displayName = opt.shortName || opt.name || `Option ${idx}`
+                                // Build a clean display name: prefer translatedName, fall back to shortName with "Sandbox_" stripped
+                                const rawDisplayName = opt.shortName || opt.name || `Option ${idx}`
+                                const displayName = (opt.translatedName && opt.translatedName !== rawDisplayName)
+                                  ? opt.translatedName
+                                  : rawDisplayName.replace(/^Sandbox_/i, '').replace(/_/g, ' ')
+                                // Parse description from tooltipText: strip trailing "\nDefault = ..." line
+                                const rawTooltip = opt.tooltipText || opt.tooltip || ''
+                                const description = rawTooltip
+                                  .replace(/\\n/g, '\n')
+                                  .replace(/\n?Default\s*=\s*.*/i, '')
+                                  .trim()
                                 const rawVal = opt.value
                                 let displayValue: string
                                 if (rawVal === undefined || rawVal === null) {
@@ -2019,11 +2145,16 @@ export default function ServerConfig() {
                                     className={`flex items-center justify-between py-2 px-3 rounded-md hover:bg-muted/50 gap-4 ${isSaving ? 'opacity-60 pointer-events-none' : ''}`}
                                   >
                                     <div className="flex-1 min-w-0">
-                                      <div className="font-medium text-sm truncate" title={opt.tooltip || opt.name || displayName}>
-                                        {opt.translatedName || displayName}
+                                      <div className="font-medium text-sm truncate" title={opt.name || displayName}>
+                                        {displayName}
                                       </div>
-                                      {opt.translatedName && opt.shortName && opt.translatedName !== opt.shortName && (
-                                        <div className="text-xs text-muted-foreground/70 font-mono truncate" title={opt.name}>{opt.name}</div>
+                                      {description && (
+                                        <div className="text-xs text-muted-foreground/70 mt-0.5 line-clamp-2" title={rawTooltip}>
+                                          {description}
+                                        </div>
+                                      )}
+                                      {opt.name && opt.name !== displayName && (
+                                        <div className="text-[10px] text-muted-foreground/40 font-mono truncate mt-0.5" title={opt.name}>{opt.name}</div>
                                       )}
                                     </div>
                                     <div className="flex items-center gap-2 shrink-0">

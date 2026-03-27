@@ -101,8 +101,8 @@ const navSections: NavSection[] = [
     icon: FileCog,
     color: 'blue',
     items: [
-      { to: '/server-config', icon: FileCog, label: 'INI Settings', requiresLocal: true },
-      { to: '/mods', icon: Package, label: 'Workshop Mods', requiresLocal: true },
+      { to: '/server-config', icon: FileCog, label: 'Server Configuration', requiresLocal: true },
+      { to: '/mods', icon: Package, label: 'Mod Manager', requiresLocal: true },
     ]
   },
   {

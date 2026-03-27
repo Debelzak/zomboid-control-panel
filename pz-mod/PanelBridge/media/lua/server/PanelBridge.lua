@@ -2731,8 +2731,23 @@ handlers.getAllSandboxOptions = function(args)
         info.tableName = safeStr(function() return opt:getTableName() end)
         -- Get the tooltip/translation key
         info.tooltip = safeStr(function() return opt:getTooltip() end)
+        -- Try to resolve tooltip via PZ translation (getText returns the translated string)
+        if info.tooltip then
+            pcall(function()
+                local translated = getText(info.tooltip)
+                if translated and translated ~= info.tooltip and translated ~= "" then
+                    info.tooltipText = translated
+                end
+            end)
+            -- If getText didn't work, check if tooltip already contains plain text (not a key)
+            if not info.tooltipText and info.tooltip:find(" ") then
+                info.tooltipText = info.tooltip
+            end
+        end
         -- Get the translated name if available
         info.translatedName = safeStr(function() return opt:getTranslatedName() end)
+        -- Try getPageName for sub-category
+        info.pageName = safeStr(function() return opt:getPageName() end)
         -- Get value
         info.value = getOptionValue(opt)
         -- Get type info
@@ -3074,6 +3089,14 @@ handlers.setSandboxOption = function(args)
     end)
 
     PanelBridge.info("Sandbox option set", { name = optName, value = tostring(newValue), confirmed = tostring(confirmed) })
+
+    -- Trigger a world save so the changed option persists across restarts
+    pcall(function()
+        local world = getWorld()
+        if world and world.saveWorld then
+            world:saveWorld()
+        end
+    end)
 
     return true, {
         name = optName,
@@ -3589,13 +3612,26 @@ handlers.restoreUtilities = function(args)
         table.insert(debugInfo, "restoreDays=" .. tostring(restoreDays))
         
         if restorePower then
-            -- APPROACH: Try multiple methods to restore power
+            -- APPROACH: Clear shutdown timers + set modifiers to far future
             
-            -- Step 1: Set the global hydro power flag ON
+            -- Step 1: Clear ElecShutStart in GameTime modData
+            -- This is the ACTUAL value PZ checks to determine if power is off.
+            -- If ElecShutStart is set and currentHour >= ElecShutStart, power is off.
+            -- Setting to -1 means "never shut off".
+            local gameTimeModData = gameTime and gameTime:getModData() or nil
+            if gameTimeModData then
+                local oldElecShutStart = gameTimeModData.ElecShutStart
+                gameTimeModData.ElecShutStart = -1
+                table.insert(debugInfo, "ElecShutStart: " .. tostring(oldElecShutStart) .. " -> -1")
+            else
+                table.insert(debugInfo, "WARNING: Could not access GameTime modData")
+            end
+            
+            -- Step 2: Set the global hydro power flag ON
             world:setHydroPowerOn(true)
             table.insert(debugInfo, "setHydroPowerOn(true) called")
             
-            -- Step 2: Set sandbox options via Java API
+            -- Step 3: Set sandbox options via Java API
             local sandboxOptions = getSandboxOptions()
             if sandboxOptions then
                 local elecOption = sandboxOptions:getOptionByName("ElecShutModifier")
@@ -3605,11 +3641,11 @@ handlers.restoreUtilities = function(args)
                 end
             end
             
-            -- Step 3: Set Lua SandboxVars table
+            -- Step 4: Set Lua SandboxVars table
             SandboxVars.ElecShutModifier = restoreDays
             table.insert(debugInfo, "Set SandboxVars.ElecShutModifier = " .. tostring(restoreDays))
             
-            -- Step 4: Try to use GameServer.sendWorldState if available
+            -- Step 5: Try to use GameServer.sendWorldState if available
             local gs = GameServer
             if gs then
                 -- Try various GameServer methods
@@ -3757,6 +3793,14 @@ handlers.restoreUtilities = function(args)
         end
         
         if restoreWater then
+            -- Clear WaterShutStart in GameTime modData (same as ElecShutStart for power)
+            local gameTimeModData = gameTime and gameTime:getModData() or nil
+            if gameTimeModData then
+                local oldWaterShutStart = gameTimeModData.WaterShutStart
+                gameTimeModData.WaterShutStart = -1
+                table.insert(debugInfo, "WaterShutStart: " .. tostring(oldWaterShutStart) .. " -> -1")
+            end
+            
             -- Same pattern for water - set WaterShutModifier to far future
             SandboxVars.WaterShutModifier = restoreDays
             table.insert(debugInfo, "Set SandboxVars.WaterShutModifier = " .. tostring(restoreDays))
@@ -3784,6 +3828,12 @@ handlers.restoreUtilities = function(args)
         local isPowerOn = world:isHydroPowerOn()
         table.insert(debugInfo, "After restore: isHydroPowerOn = " .. tostring(isPowerOn))
         table.insert(debugInfo, "nightsSurvived < ElecShutModifier = " .. tostring(nightsSurvived < restoreDays))
+        
+        -- Save world so changes persist across server restarts
+        pcall(function()
+            world:saveWorld()
+            table.insert(debugInfo, "World saved")
+        end)
     end)
     
     if not success then
@@ -3824,7 +3874,15 @@ handlers.shutOffUtilities = function(args)
         table.insert(debugInfo, "nightsSurvived=" .. tostring(nightsSurvived))
         
         if shutPower then
-            -- Step 1: Turn off hydro power (same as BWOEvents.SetHydroPower)
+            -- Step 1: Set ElecShutStart in GameTime modData to current hour
+            -- This is the value PZ checks to determine if power is off
+            local gameTimeModData = gameTime and gameTime:getModData() or nil
+            if gameTimeModData then
+                gameTimeModData.ElecShutStart = nightsSurvived * 24
+                table.insert(debugInfo, "ElecShutStart set to " .. tostring(nightsSurvived * 24))
+            end
+            
+            -- Step 2: Turn off hydro power (same as BWOEvents.SetHydroPower)
             world:setHydroPowerOn(false)
             table.insert(debugInfo, "setHydroPowerOn(false) called")
             
@@ -3909,6 +3967,13 @@ handlers.shutOffUtilities = function(args)
         end
         
         if shutWater then
+            -- Set WaterShutStart in GameTime modData to current hour
+            local gameTimeModData = gameTime and gameTime:getModData() or nil
+            if gameTimeModData then
+                gameTimeModData.WaterShutStart = nightsSurvived * 24
+                table.insert(debugInfo, "WaterShutStart set to " .. tostring(nightsSurvived * 24))
+            end
+            
             -- Same pattern for water
             SandboxVars.WaterShutModifier = 0
             table.insert(debugInfo, "Set SandboxVars.WaterShutModifier = 0")
@@ -3935,6 +4000,12 @@ handlers.shutOffUtilities = function(args)
         -- Final verification
         local isPowerOn = world:isHydroPowerOn()
         table.insert(debugInfo, "After shutoff: isHydroPowerOn = " .. tostring(isPowerOn))
+        
+        -- Save world so changes persist across server restarts
+        pcall(function()
+            world:saveWorld()
+            table.insert(debugInfo, "World saved")
+        end)
     end)
     
     if not success then

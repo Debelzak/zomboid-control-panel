@@ -26,6 +26,13 @@ export const INI_CATEGORIES = [
   { id: 'voice', label: 'Voice Chat', icon: 'Mic' },
   { id: 'discord', label: 'Discord', icon: 'MessageCircle' },
   { id: 'rcon', label: 'RCON', icon: 'Terminal' },
+  { id: 'backups', label: 'Backups', icon: 'Archive' },
+  { id: 'vehicles', label: 'Vehicles', icon: 'Car' },
+  { id: 'anticheat', label: 'Anti-Cheat', icon: 'Shield' },
+  { id: 'moderation', label: 'Moderation', icon: 'Filter' },
+  { id: 'radio', label: 'Radio', icon: 'Radio' },
+  { id: 'war', label: 'Faction War', icon: 'Swords' },
+  { id: 'logging', label: 'Logging', icon: 'FileText' },
   { id: 'advanced', label: 'Advanced', icon: 'Wrench' },
 ]
 
@@ -668,7 +675,7 @@ export const INI_SCHEMA: IniSetting[] = [
   {
     key: 'DoLuaChecksum',
     label: 'Lua Checksum',
-    description: 'Verify client Lua matches server. Disable if getting kicked with mods.',
+    description: 'Verify client Lua matches server. Must be disabled when using PanelBridge — the mod modifies server-side Lua files, which causes checksum mismatches and prevents players from connecting.',
     type: 'boolean',
     default: true,
     category: 'mods'
@@ -876,6 +883,729 @@ export const INI_SCHEMA: IniSetting[] = [
     default: 0.5,
     category: 'advanced'
   },
+
+  // --- Missing settings from live server config ---
+
+  // General
+  {
+    key: 'AnnounceAnimalDeath',
+    label: 'Announce Animal Deaths',
+    description: 'Display a global chat message when an animal dies.',
+    type: 'boolean',
+    default: false,
+    category: 'general'
+  },
+  {
+    key: 'ServerImageLoginScreen',
+    label: 'Login Screen Image',
+    description: 'Custom image displayed on the login screen.',
+    type: 'string',
+    default: '',
+    category: 'general'
+  },
+  {
+    key: 'ServerImageLoadingScreen',
+    label: 'Loading Screen Image',
+    description: 'Custom image displayed on the loading screen.',
+    type: 'string',
+    default: '',
+    category: 'general'
+  },
+  {
+    key: 'ServerImageIcon',
+    label: 'Server Icon',
+    description: 'Custom server icon image.',
+    type: 'string',
+    default: '',
+    category: 'general'
+  },
+  {
+    key: 'Seed',
+    label: 'World Seed',
+    description: 'The worldgen seed used to generate the world. Changing this requires deleting map_worldgen.bin.',
+    type: 'string',
+    default: '',
+    category: 'general'
+  },
+
+  // Network
+  {
+    key: 'UDPPort',
+    label: 'UDP Port',
+    description: 'Second port used for UDP connections.',
+    type: 'number',
+    min: 0,
+    max: 65535,
+    default: 16262,
+    category: 'network'
+  },
+  {
+    key: 'LoginQueueEnabled',
+    label: 'Login Queue',
+    description: 'Enable a login queue when the server is full.',
+    type: 'boolean',
+    default: false,
+    category: 'network'
+  },
+  {
+    key: 'LoginQueueConnectTimeout',
+    label: 'Login Queue Timeout',
+    description: 'Seconds before a queued connection times out.',
+    type: 'number',
+    min: 20,
+    max: 1200,
+    default: 60,
+    category: 'network'
+  },
+  {
+    key: 'server_browser_announced_ip',
+    label: 'Announced IP',
+    description: 'IP address broadcast to the server browser. For multi-IP setups like server farms.',
+    type: 'string',
+    default: '',
+    category: 'network'
+  },
+  {
+    key: 'MultiplayerStatisticsPeriod',
+    label: 'Statistics Period',
+    description: 'Multiplayer statistics update period in seconds. 0 = disabled.',
+    type: 'number',
+    min: 0,
+    max: 10,
+    default: 1,
+    category: 'network'
+  },
+
+  // PvP
+  {
+    key: 'PVPLogToolChat',
+    label: 'Log PvP to Chat',
+    description: 'PvP events are logged to admin chat.',
+    type: 'boolean',
+    default: true,
+    category: 'pvp'
+  },
+  {
+    key: 'PVPLogToolFile',
+    label: 'Log PvP to File',
+    description: 'PvP events are logged to a file.',
+    type: 'boolean',
+    default: true,
+    category: 'pvp'
+  },
+  {
+    key: 'SafetyDisconnectDelay',
+    label: 'Safety Disconnect Delay',
+    description: 'Seconds before PvP safety mode resets on disconnect.',
+    type: 'number',
+    min: 0,
+    max: 60,
+    default: 60,
+    category: 'pvp'
+  },
+
+  // Chat
+  {
+    key: 'UsernameDisguises',
+    label: 'Username Disguises',
+    description: 'Allow players to disguise their username.',
+    type: 'boolean',
+    default: false,
+    category: 'chat'
+  },
+  {
+    key: 'HideDisguisedUserName',
+    label: 'Hide Disguised Names',
+    description: 'Hide the real username of disguised players.',
+    type: 'boolean',
+    default: false,
+    category: 'chat'
+  },
+  {
+    key: 'ChatMessageCharacterLimit',
+    label: 'Chat Character Limit',
+    description: 'Maximum characters per chat message.',
+    type: 'number',
+    min: 64,
+    max: 1024,
+    default: 200,
+    category: 'chat'
+  },
+  {
+    key: 'ChatMessageSlowModeTime',
+    label: 'Chat Slow Mode',
+    description: 'Seconds between allowed chat messages per player.',
+    type: 'number',
+    min: 1,
+    max: 30,
+    default: 3,
+    category: 'chat'
+  },
+
+  // Players
+  {
+    key: 'AllowCoop',
+    label: 'Allow Co-op',
+    description: 'Allow co-op/splitscreen players to join.',
+    type: 'boolean',
+    default: true,
+    category: 'players'
+  },
+  {
+    key: 'KnockedDownAllowed',
+    label: 'Knocked Down',
+    description: 'Allow players to be knocked down. WIP: may cause visual desync.',
+    type: 'boolean',
+    default: false,
+    category: 'players'
+  },
+  {
+    key: 'SneakModeHideFromOtherPlayers',
+    label: 'Sneak Hides From Players',
+    description: 'Players in sneak mode are hidden from other players.',
+    type: 'boolean',
+    default: true,
+    category: 'players'
+  },
+  {
+    key: 'MapRemotePlayerVisibility',
+    label: 'Map Player Visibility',
+    description: 'Who can see other players on the in-game map.',
+    type: 'select',
+    options: [
+      { value: '1', label: 'Hidden' },
+      { value: '2', label: 'Friends Only' },
+      { value: '3', label: 'Everyone' }
+    ],
+    default: '1',
+    category: 'players'
+  },
+  {
+    key: 'DisableScoreboard',
+    label: 'Disable Scoreboard',
+    description: 'Disable the in-game scoreboard.',
+    type: 'boolean',
+    default: false,
+    category: 'players'
+  },
+  {
+    key: 'HideAdminsInPlayerList',
+    label: 'Hide Admins in Player List',
+    description: 'Hide admin accounts from the player list.',
+    type: 'boolean',
+    default: false,
+    category: 'players'
+  },
+
+  // Safehouses
+  {
+    key: 'SafehouseAllowNonResidential',
+    label: 'Allow Non-Residential',
+    description: 'Allow players to claim non-residential buildings as safehouses.',
+    type: 'boolean',
+    default: false,
+    category: 'safehouse'
+  },
+  {
+    key: 'SafehouseDisableDisguises',
+    label: 'Disable Disguises in Safehouse',
+    description: 'Disable username disguises inside safehouses.',
+    type: 'boolean',
+    default: true,
+    category: 'safehouse'
+  },
+  {
+    key: 'MaxSafezoneSize',
+    label: 'Max Safezone Size',
+    description: 'Maximum tile size for safezones.',
+    type: 'number',
+    min: 0,
+    max: 2147483647,
+    default: 20000,
+    category: 'safehouse'
+  },
+
+  // Loot
+  {
+    key: 'SafehousePreventsLootRespawn',
+    label: 'Safehouse Blocks Loot Respawn',
+    description: 'Items will not respawn in buildings claimed as safehouses.',
+    type: 'boolean',
+    default: true,
+    category: 'loot'
+  },
+  {
+    key: 'SledgehammerOnlyInSafehouse',
+    label: 'Sledgehammer Only in Safehouse',
+    description: 'Restrict sledgehammer destruction to safehouses only. Requires Sledgehammer Destruction enabled.',
+    type: 'boolean',
+    default: false,
+    category: 'loot'
+  },
+
+  // Discord (missing channel fields)
+  {
+    key: 'DiscordChatChannel',
+    label: 'Discord Chat Channel',
+    description: 'The Discord channel name for game chat.',
+    type: 'string',
+    default: '',
+    category: 'discord'
+  },
+  {
+    key: 'DiscordLogChannel',
+    label: 'Discord Log Channel',
+    description: 'The Discord channel name for server logs.',
+    type: 'string',
+    default: '',
+    category: 'discord'
+  },
+  {
+    key: 'DiscordCommandChannel',
+    label: 'Discord Command Channel',
+    description: 'The Discord channel name for commands.',
+    type: 'string',
+    default: '',
+    category: 'discord'
+  },
+  {
+    key: 'WebhookAddress',
+    label: 'Webhook URL',
+    description: 'Slack/Discord incoming webhook URL for notifications.',
+    type: 'string',
+    default: '',
+    category: 'discord'
+  },
+
+  // Faction War
+  {
+    key: 'War',
+    label: 'Enable Faction War',
+    description: 'Enable faction war system.',
+    type: 'boolean',
+    default: true,
+    category: 'war'
+  },
+  {
+    key: 'WarStartDelay',
+    label: 'War Start Delay',
+    description: 'Seconds before war starts after being declared.',
+    type: 'number',
+    min: 60,
+    max: 2147483647,
+    default: 600,
+    category: 'war'
+  },
+  {
+    key: 'WarDuration',
+    label: 'War Duration',
+    description: 'War duration in seconds.',
+    type: 'number',
+    min: 60,
+    max: 2147483647,
+    default: 3600,
+    category: 'war'
+  },
+  {
+    key: 'WarSafehouseHitPoints',
+    label: 'War Safehouse Hit Points',
+    description: 'Safehouse hit points during faction war.',
+    type: 'number',
+    min: 0,
+    max: 2147483647,
+    default: 3,
+    category: 'war'
+  },
+
+  // Radio
+  {
+    key: 'DisableRadioStaff',
+    label: 'Disable Radio for Staff',
+    description: 'Disable radio transmissions from staff access level.',
+    type: 'boolean',
+    default: false,
+    category: 'radio'
+  },
+  {
+    key: 'DisableRadioAdmin',
+    label: 'Disable Radio for Admins',
+    description: 'Disable radio transmissions from admin access level.',
+    type: 'boolean',
+    default: true,
+    category: 'radio'
+  },
+  {
+    key: 'DisableRadioGM',
+    label: 'Disable Radio for GMs',
+    description: 'Disable radio transmissions from GM access level.',
+    type: 'boolean',
+    default: true,
+    category: 'radio'
+  },
+  {
+    key: 'DisableRadioOverseer',
+    label: 'Disable Radio for Overseers',
+    description: 'Disable radio transmissions from overseer access level.',
+    type: 'boolean',
+    default: false,
+    category: 'radio'
+  },
+  {
+    key: 'DisableRadioModerator',
+    label: 'Disable Radio for Moderators',
+    description: 'Disable radio transmissions from moderator access level.',
+    type: 'boolean',
+    default: false,
+    category: 'radio'
+  },
+  {
+    key: 'DisableRadioInvisible',
+    label: 'Disable Radio for Invisible',
+    description: 'Disable radio transmissions from invisible players.',
+    type: 'boolean',
+    default: true,
+    category: 'radio'
+  },
+
+  // Backups
+  {
+    key: 'BackupsCount',
+    label: 'Backup Count',
+    description: 'Number of backup copies to keep.',
+    type: 'number',
+    min: 1,
+    max: 300,
+    default: 5,
+    category: 'backups'
+  },
+  {
+    key: 'BackupsOnStart',
+    label: 'Backup on Start',
+    description: 'Create a backup when the server starts.',
+    type: 'boolean',
+    default: true,
+    category: 'backups'
+  },
+  {
+    key: 'BackupsOnVersionChange',
+    label: 'Backup on Version Change',
+    description: 'Create a backup when the game version changes.',
+    type: 'boolean',
+    default: true,
+    category: 'backups'
+  },
+  {
+    key: 'BackupsPeriod',
+    label: 'Backup Period',
+    description: 'Minutes between automatic backups. 0 = disabled.',
+    type: 'number',
+    min: 0,
+    max: 1500,
+    default: 0,
+    category: 'backups'
+  },
+
+  // Vehicles
+  {
+    key: 'DisableVehicleTowing',
+    label: 'Disable Vehicle Towing',
+    description: 'Disable vehicle towing.',
+    type: 'boolean',
+    default: false,
+    category: 'vehicles'
+  },
+  {
+    key: 'DisableTrailerTowing',
+    label: 'Disable Trailer Towing',
+    description: 'Disable trailer towing.',
+    type: 'boolean',
+    default: false,
+    category: 'vehicles'
+  },
+  {
+    key: 'DisableBurntTowing',
+    label: 'Disable Burnt Vehicle Towing',
+    description: 'Disable towing of burnt vehicles.',
+    type: 'boolean',
+    default: false,
+    category: 'vehicles'
+  },
+
+  // Moderation
+  {
+    key: 'BadWordListFile',
+    label: 'Bad Word List File',
+    description: 'Path to file with prohibited words, one per line.',
+    type: 'string',
+    default: '',
+    category: 'moderation'
+  },
+  {
+    key: 'GoodWordListFile',
+    label: 'Good Word List File',
+    description: 'Path to file with allowed words that may contain bad words, one per line.',
+    type: 'string',
+    default: '',
+    category: 'moderation'
+  },
+  {
+    key: 'BadWordPolicy',
+    label: 'Bad Word Policy',
+    description: 'Action taken when a bad word is detected in chat.',
+    type: 'select',
+    options: [
+      { value: '1', label: 'Ban' },
+      { value: '2', label: 'Kick' },
+      { value: '3', label: 'Record Violation' },
+      { value: '4', label: 'Mute' }
+    ],
+    default: '3',
+    category: 'moderation'
+  },
+  {
+    key: 'BadWordReplacement',
+    label: 'Bad Word Replacement',
+    description: 'Text that replaces bad words in chat.',
+    type: 'string',
+    default: '[HIDDEN]',
+    category: 'moderation'
+  },
+
+  // Anti-Cheat
+  {
+    key: 'AntiCheatSafety',
+    label: 'Safety System',
+    description: 'Anti-cheat protection for the safety system.',
+    type: 'select',
+    options: [
+      { value: '1', label: '1 - Disabled' },
+      { value: '2', label: '2 - Log Only' },
+      { value: '3', label: '3 - Log + Kick' },
+      { value: '4', label: '4 - Full Protection' }
+    ],
+    default: '4',
+    category: 'anticheat'
+  },
+  {
+    key: 'AntiCheatMovement',
+    label: 'Movement',
+    description: 'Anti-cheat protection for player movement.',
+    type: 'select',
+    options: [
+      { value: '1', label: '1 - Disabled' },
+      { value: '2', label: '2 - Log Only' },
+      { value: '3', label: '3 - Log + Kick' },
+      { value: '4', label: '4 - Full Protection' }
+    ],
+    default: '4',
+    category: 'anticheat'
+  },
+  {
+    key: 'AntiCheatHit',
+    label: 'Hit Detection',
+    description: 'Anti-cheat protection for character hits.',
+    type: 'select',
+    options: [
+      { value: '1', label: '1 - Disabled' },
+      { value: '2', label: '2 - Log Only' },
+      { value: '3', label: '3 - Log + Kick' },
+      { value: '4', label: '4 - Full Protection' }
+    ],
+    default: '4',
+    category: 'anticheat'
+  },
+  {
+    key: 'AntiCheatPacket',
+    label: 'Packet Validation',
+    description: 'Anti-cheat protection for network packets.',
+    type: 'select',
+    options: [
+      { value: '1', label: '1 - Disabled' },
+      { value: '2', label: '2 - Log Only' },
+      { value: '3', label: '3 - Log + Kick' },
+      { value: '4', label: '4 - Full Protection' }
+    ],
+    default: '4',
+    category: 'anticheat'
+  },
+  {
+    key: 'AntiCheatPermission',
+    label: 'Permissions',
+    description: 'Anti-cheat protection for player permissions.',
+    type: 'select',
+    options: [
+      { value: '1', label: '1 - Disabled' },
+      { value: '2', label: '2 - Log Only' },
+      { value: '3', label: '3 - Log + Kick' },
+      { value: '4', label: '4 - Full Protection' }
+    ],
+    default: '4',
+    category: 'anticheat'
+  },
+  {
+    key: 'AntiCheatXP',
+    label: 'XP Validation',
+    description: 'Anti-cheat protection for player XP.',
+    type: 'select',
+    options: [
+      { value: '1', label: '1 - Disabled' },
+      { value: '2', label: '2 - Log Only' },
+      { value: '3', label: '3 - Log + Kick' },
+      { value: '4', label: '4 - Full Protection' }
+    ],
+    default: '4',
+    category: 'anticheat'
+  },
+  {
+    key: 'AntiCheatFire',
+    label: 'Fire Checks',
+    description: 'Anti-cheat protection for fire actions.',
+    type: 'select',
+    options: [
+      { value: '1', label: '1 - Disabled' },
+      { value: '2', label: '2 - Log Only' },
+      { value: '3', label: '3 - Log + Kick' },
+      { value: '4', label: '4 - Full Protection' }
+    ],
+    default: '4',
+    category: 'anticheat'
+  },
+  {
+    key: 'AntiCheatSafeHouse',
+    label: 'Safehouse Protection',
+    description: 'Anti-cheat protection for safehouses.',
+    type: 'select',
+    options: [
+      { value: '1', label: '1 - Disabled' },
+      { value: '2', label: '2 - Log Only' },
+      { value: '3', label: '3 - Log + Kick' },
+      { value: '4', label: '4 - Full Protection' }
+    ],
+    default: '4',
+    category: 'anticheat'
+  },
+  {
+    key: 'AntiCheatRecipe',
+    label: 'Recipe Checks',
+    description: 'Anti-cheat protection for crafting recipes.',
+    type: 'select',
+    options: [
+      { value: '1', label: '1 - Disabled' },
+      { value: '2', label: '2 - Log Only' },
+      { value: '3', label: '3 - Log + Kick' },
+      { value: '4', label: '4 - Full Protection' }
+    ],
+    default: '4',
+    category: 'anticheat'
+  },
+  {
+    key: 'AntiCheatPlayer',
+    label: 'Player Validation',
+    description: 'Anti-cheat protection for player actions.',
+    type: 'select',
+    options: [
+      { value: '1', label: '1 - Disabled' },
+      { value: '2', label: '2 - Log Only' },
+      { value: '3', label: '3 - Log + Kick' },
+      { value: '4', label: '4 - Full Protection' }
+    ],
+    default: '4',
+    category: 'anticheat'
+  },
+  {
+    key: 'AntiCheatChecksum',
+    label: 'Checksum Validation',
+    description: 'Anti-cheat protection for file checksums.',
+    type: 'select',
+    options: [
+      { value: '1', label: '1 - Disabled' },
+      { value: '2', label: '2 - Log Only' },
+      { value: '3', label: '3 - Log + Kick' },
+      { value: '4', label: '4 - Full Protection' }
+    ],
+    default: '4',
+    category: 'anticheat'
+  },
+  {
+    key: 'AntiCheatItem',
+    label: 'Item Checks',
+    description: 'Anti-cheat protection for items.',
+    type: 'select',
+    options: [
+      { value: '1', label: '1 - Disabled' },
+      { value: '2', label: '2 - Log Only' },
+      { value: '3', label: '3 - Log + Kick' },
+      { value: '4', label: '4 - Full Protection' }
+    ],
+    default: '4',
+    category: 'anticheat'
+  },
+  {
+    key: 'AntiCheatServerCustomization',
+    label: 'Server Customization',
+    description: 'Anti-cheat protection for server customization.',
+    type: 'select',
+    options: [
+      { value: '1', label: '1 - Disabled' },
+      { value: '2', label: '2 - Log Only' },
+      { value: '3', label: '3 - Log + Kick' },
+      { value: '4', label: '4 - Full Protection' }
+    ],
+    default: '4',
+    category: 'anticheat'
+  },
+
+  // Logging
+  {
+    key: 'ClientCommandFilter',
+    label: 'Command Log Filter',
+    description: 'Semicolon-separated list of commands to exclude from cmd.txt log. Use -vehicle.* to exclude all vehicle, +vehicle.installPart to include specific.',
+    type: 'string',
+    default: '-vehicle.*;+vehicle.damageWindow;+vehicle.fixPart;+vehicle.installPart;+vehicle.uninstallPart',
+    category: 'logging'
+  },
+  {
+    key: 'ClientActionLogs',
+    label: 'Client Action Logs',
+    description: 'Semicolon-separated list of actions written to ClientActionLogs.txt.',
+    type: 'string',
+    default: 'ISEnterVehicle;ISExitVehicle;ISTakeEngineParts;',
+    category: 'logging'
+  },
+  {
+    key: 'PerkLogs',
+    label: 'Perk Level Logging',
+    description: 'Track changes in player perk levels in PerkLog.txt.',
+    type: 'boolean',
+    default: true,
+    category: 'logging'
+  },
+
+  // Advanced (additional)
+  {
+    key: 'SwitchZombiesOwnershipEachUpdate',
+    label: 'Switch Zombie Ownership',
+    description: 'Switch zombie ownership between players each update tick.',
+    type: 'boolean',
+    default: false,
+    category: 'advanced'
+  },
+  {
+    key: 'UltraSpeedDoesnotAffectToAnimals',
+    label: 'Ultra Speed Ignores Animals',
+    description: 'Ultra speed mode does not affect animal simulation.',
+    type: 'boolean',
+    default: false,
+    category: 'advanced'
+  },
+  {
+    key: 'UsePhysicsHitReaction',
+    label: 'Physics Hit Reaction',
+    description: 'Use physics-based hit reactions.',
+    type: 'boolean',
+    default: false,
+    category: 'advanced'
+  },
 ]
 
 // Sandbox settings schema
@@ -883,27 +1613,35 @@ export interface SandboxSetting {
   key: string
   label: string
   description: string
-  type: 'boolean' | 'number' | 'select'
+  type: 'boolean' | 'number' | 'select' | 'string'
   options?: { value: number; label: string }[]
   min?: number
   max?: number
-  default?: number | boolean
+  default?: number | boolean | string
   category: string
-  section?: 'settings' | 'ZombieLore' | 'ZombieConfig'
+  section?: 'settings' | 'ZombieLore' | 'ZombieConfig' | 'MultiplierConfig' | 'Map' | 'Basement'
 }
 
 export const SANDBOX_CATEGORIES = [
   { id: 'time', label: 'Time & Season', icon: 'Clock' },
-  { id: 'population', label: 'Population', icon: 'Users' },
+  { id: 'population', label: 'Population & Distribution', icon: 'Users' },
   { id: 'loot', label: 'Loot & Resources', icon: 'Package' },
-  { id: 'environment', label: 'Environment', icon: 'Cloud' },
-  { id: 'survival', label: 'Survival', icon: 'Heart' },
+  { id: 'lootRarity', label: 'Loot Rarity', icon: 'Gem' },
+  { id: 'environment', label: 'Environment & Weather', icon: 'Cloud' },
+  { id: 'survival', label: 'Survival & Health', icon: 'Heart' },
+  { id: 'combat', label: 'Combat & Firearms', icon: 'Crosshair' },
+  { id: 'vehicles', label: 'Vehicles', icon: 'Car' },
+  { id: 'animals', label: 'Animals & Farming', icon: 'Leaf' },
+  { id: 'world', label: 'World & Stories', icon: 'Map' },
+  { id: 'map', label: 'Map & Navigation', icon: 'Compass' },
   { id: 'zombieLore', label: 'Zombie Behavior', icon: 'Skull' },
   { id: 'zombiePopulation', label: 'Zombie Population', icon: 'TrendingUp' },
+  { id: 'xpMultipliers', label: 'XP Multipliers', icon: 'BarChart' },
+  { id: 'basement', label: 'Basements', icon: 'Layers' },
 ]
 
 export const SANDBOX_SCHEMA: SandboxSetting[] = [
-  // Time & Season
+  // ==================== Time & Season ====================
   {
     key: 'DayLength',
     label: 'Day Length',
@@ -913,14 +1651,32 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
       { value: 1, label: '15 minutes' },
       { value: 2, label: '30 minutes' },
       { value: 3, label: '1 hour' },
-      { value: 4, label: '2 hours' },
-      { value: 5, label: '3 hours' },
-      { value: 6, label: '4 hours' },
-      { value: 7, label: '5 hours' },
-      { value: 8, label: '12 hours' },
-      { value: 9, label: 'Real-time' }
+      { value: 4, label: '1 hour 30 minutes' },
+      { value: 5, label: '2 hours' },
+      { value: 6, label: '3 hours' },
+      { value: 7, label: '4 hours' },
+      { value: 8, label: '5 hours' },
+      { value: 9, label: '6 hours' },
+      { value: 10, label: '7 hours' },
+      { value: 11, label: '8 hours' },
+      { value: 12, label: '9 hours' },
+      { value: 13, label: '10 hours' },
+      { value: 14, label: '11 hours' },
+      { value: 15, label: '12 hours' },
+      { value: 16, label: '13 hours' },
+      { value: 17, label: '14 hours' },
+      { value: 18, label: '15 hours' },
+      { value: 19, label: '16 hours' },
+      { value: 20, label: '17 hours' },
+      { value: 21, label: '18 hours' },
+      { value: 22, label: '19 hours' },
+      { value: 23, label: '20 hours' },
+      { value: 24, label: '21 hours' },
+      { value: 25, label: '22 hours' },
+      { value: 26, label: '23 hours' },
+      { value: 27, label: 'Real-time' }
     ],
-    default: 3,
+    default: 4,
     category: 'time',
     section: 'settings'
   },
@@ -990,11 +1746,11 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
     section: 'settings'
   },
 
-  // Population
+  // ==================== Population & Distribution ====================
   {
     key: 'Zombies',
     label: 'Zombie Count',
-    description: 'Initial zombie population level.',
+    description: 'Initial zombie population level. Also sets Population Multiplier in Advanced Zombie Options.',
     type: 'select',
     options: [
       { value: 1, label: 'Insane' },
@@ -1011,7 +1767,7 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
   {
     key: 'Distribution',
     label: 'Distribution',
-    description: 'How zombies are distributed.',
+    description: 'How zombies are distributed across the map.',
     type: 'select',
     options: [
       { value: 1, label: 'Urban Focused' },
@@ -1021,62 +1777,548 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
     category: 'population',
     section: 'settings'
   },
-
-  // Loot
   {
-    key: 'FoodLoot',
+    key: 'ZombieVoronoiNoise',
+    label: 'Randomize Distribution',
+    description: 'Apply randomization to zombie distribution.',
+    type: 'boolean',
+    default: true,
+    category: 'population',
+    section: 'settings'
+  },
+  {
+    key: 'ZombieRespawn',
+    label: 'Zombie Respawn',
+    description: 'How frequently new zombies are added to the world.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'High' },
+      { value: 2, label: 'Normal' },
+      { value: 3, label: 'Low' },
+      { value: 4, label: 'None' }
+    ],
+    default: 4,
+    category: 'population',
+    section: 'settings'
+  },
+  {
+    key: 'ZombieMigrate',
+    label: 'Zombie Migration',
+    description: 'Zombies can migrate to empty cells.',
+    type: 'boolean',
+    default: true,
+    category: 'population',
+    section: 'settings'
+  },
+
+  // ==================== Loot & Resources ====================
+  {
+    key: 'FoodLootNew',
     label: 'Food Loot',
-    description: 'Amount of food found in containers.',
-    type: 'select',
-    options: [
-      { value: 1, label: 'Extremely Rare' },
-      { value: 2, label: 'Rare' },
-      { value: 3, label: 'Normal' },
-      { value: 4, label: 'Common' },
-      { value: 5, label: 'Abundant' }
-    ],
-    default: 3,
+    description: 'Any food that can rot or spoil.',
+    type: 'number',
+    min: 0,
+    max: 4,
+    default: 0.6,
     category: 'loot',
     section: 'settings'
   },
   {
-    key: 'WeaponLoot',
-    label: 'Weapon Loot',
-    description: 'Amount of weapons found in containers.',
-    type: 'select',
-    options: [
-      { value: 1, label: 'Extremely Rare' },
-      { value: 2, label: 'Rare' },
-      { value: 3, label: 'Normal' },
-      { value: 4, label: 'Common' },
-      { value: 5, label: 'Abundant' }
-    ],
-    default: 3,
+    key: 'CannedFoodLootNew',
+    label: 'Canned Food Loot',
+    description: 'Canned and dried food, beverages.',
+    type: 'number',
+    min: 0,
+    max: 4,
+    default: 0.6,
     category: 'loot',
     section: 'settings'
   },
   {
-    key: 'OtherLoot',
+    key: 'LiteratureLootNew',
+    label: 'Literature Loot',
+    description: 'All readable items including books, fliers, and newspapers.',
+    type: 'number',
+    min: 0,
+    max: 4,
+    default: 0.6,
+    category: 'loot',
+    section: 'settings'
+  },
+  {
+    key: 'SkillBookLoot',
+    label: 'Skill Book Loot',
+    description: 'Books that provide skill XP multipliers.',
+    type: 'number',
+    min: 0,
+    max: 4,
+    default: 0.6,
+    category: 'loot',
+    section: 'settings'
+  },
+  {
+    key: 'RecipeResourceLoot',
+    label: 'Recipe Loot',
+    description: 'Items that teach recipes.',
+    type: 'number',
+    min: 0,
+    max: 4,
+    default: 0.6,
+    category: 'loot',
+    section: 'settings'
+  },
+  {
+    key: 'MedicalLootNew',
+    label: 'Medical Loot',
+    description: 'Medicine, bandages, and first aid tools.',
+    type: 'number',
+    min: 0,
+    max: 4,
+    default: 0.6,
+    category: 'loot',
+    section: 'settings'
+  },
+  {
+    key: 'SurvivalGearsLootNew',
+    label: 'Survival Gear Loot',
+    description: 'Fishing rods, tents, camping gear.',
+    type: 'number',
+    min: 0,
+    max: 4,
+    default: 0.6,
+    category: 'loot',
+    section: 'settings'
+  },
+  {
+    key: 'WeaponLootNew',
+    label: 'Melee Weapon Loot',
+    description: 'Weapons that are not tools in other categories.',
+    type: 'number',
+    min: 0,
+    max: 4,
+    default: 0.6,
+    category: 'loot',
+    section: 'settings'
+  },
+  {
+    key: 'RangedWeaponLootNew',
+    label: 'Ranged Weapon Loot',
+    description: 'Ranged weapons and weapon attachments.',
+    type: 'number',
+    min: 0,
+    max: 4,
+    default: 2.0,
+    category: 'loot',
+    section: 'settings'
+  },
+  {
+    key: 'AmmoLootNew',
+    label: 'Ammo Loot',
+    description: 'Loose ammo, boxes, and magazines.',
+    type: 'number',
+    min: 0,
+    max: 4,
+    default: 0.6,
+    category: 'loot',
+    section: 'settings'
+  },
+  {
+    key: 'MechanicsLootNew',
+    label: 'Mechanics Loot',
+    description: 'Vehicle parts and installation tools.',
+    type: 'number',
+    min: 0,
+    max: 4,
+    default: 0.6,
+    category: 'loot',
+    section: 'settings'
+  },
+  {
+    key: 'ClothingLootNew',
+    label: 'Clothing Loot',
+    description: 'All wearable items that are not containers.',
+    type: 'number',
+    min: 0,
+    max: 4,
+    default: 0.6,
+    category: 'loot',
+    section: 'settings'
+  },
+  {
+    key: 'ContainerLootNew',
+    label: 'Container Loot',
+    description: 'Backpacks and wearable/equippable containers.',
+    type: 'number',
+    min: 0,
+    max: 4,
+    default: 0.6,
+    category: 'loot',
+    section: 'settings'
+  },
+  {
+    key: 'KeyLootNew',
+    label: 'Key Loot',
+    description: 'Keys for buildings/cars, key rings, and locks.',
+    type: 'number',
+    min: 0,
+    max: 4,
+    default: 0.4,
+    category: 'loot',
+    section: 'settings'
+  },
+  {
+    key: 'MediaLootNew',
+    label: 'Media Loot',
+    description: 'VHS tapes and CDs.',
+    type: 'number',
+    min: 0,
+    max: 4,
+    default: 0.6,
+    category: 'loot',
+    section: 'settings'
+  },
+  {
+    key: 'MementoLootNew',
+    label: 'Memento Loot',
+    description: 'Spiffo items, plushies, and collectible keepsakes.',
+    type: 'number',
+    min: 0,
+    max: 4,
+    default: 0.6,
+    category: 'loot',
+    section: 'settings'
+  },
+  {
+    key: 'CookwareLootNew',
+    label: 'Cookware Loot',
+    description: 'Cooking items including those that can be weapons. Does not include food.',
+    type: 'number',
+    min: 0,
+    max: 4,
+    default: 0.6,
+    category: 'loot',
+    section: 'settings'
+  },
+  {
+    key: 'MaterialLootNew',
+    label: 'Material Loot',
+    description: 'Crafting and building materials.',
+    type: 'number',
+    min: 0,
+    max: 4,
+    default: 0.6,
+    category: 'loot',
+    section: 'settings'
+  },
+  {
+    key: 'FarmingLootNew',
+    label: 'Farming Loot',
+    description: 'Seeds, trowels, shovels, and agriculture tools.',
+    type: 'number',
+    min: 0,
+    max: 4,
+    default: 0.6,
+    category: 'loot',
+    section: 'settings'
+  },
+  {
+    key: 'ToolLootNew',
+    label: 'Tool Loot',
+    description: 'Tools not in other categories like Mechanics or Farming.',
+    type: 'number',
+    min: 0,
+    max: 4,
+    default: 0.6,
+    category: 'loot',
+    section: 'settings'
+  },
+  {
+    key: 'OtherLootNew',
     label: 'Other Loot',
-    description: 'Amount of other items found in containers.',
-    type: 'select',
-    options: [
-      { value: 1, label: 'Extremely Rare' },
-      { value: 2, label: 'Rare' },
-      { value: 3, label: 'Normal' },
-      { value: 4, label: 'Common' },
-      { value: 5, label: 'Abundant' }
-    ],
-    default: 3,
+    description: 'Everything else. Also affects foraging in Town/Road zones.',
+    type: 'number',
+    min: 0,
+    max: 4,
+    default: 0.6,
+    category: 'loot',
+    section: 'settings'
+  },
+  {
+    key: 'RollsMultiplier',
+    label: 'Rolls Multiplier',
+    description: 'Multiplier for loot table rolls. Higher values may affect performance. NOT recommended to change.',
+    type: 'number',
+    min: 0.1,
+    max: 100,
+    default: 1.0,
+    category: 'loot',
+    section: 'settings'
+  },
+  {
+    key: 'LootItemRemovalList',
+    label: 'Loot Removal List',
+    description: 'Comma-separated list of item types that will not spawn as loot.',
+    type: 'string',
+    default: '',
+    category: 'loot',
+    section: 'settings'
+  },
+  {
+    key: 'RemoveStoryLoot',
+    label: 'Remove Story Loot',
+    description: 'Items on the removal list will not spawn in world stories.',
+    type: 'boolean',
+    default: false,
+    category: 'loot',
+    section: 'settings'
+  },
+  {
+    key: 'RemoveZombieLoot',
+    label: 'Remove Zombie Loot',
+    description: 'Items on the removal list will not spawn on zombies.',
+    type: 'boolean',
+    default: false,
+    category: 'loot',
+    section: 'settings'
+  },
+  {
+    key: 'ZombiePopLootEffect',
+    label: 'Zombie Pop Loot Effect',
+    description: 'If > 0, loot increases relative to nearby zombies, multiplied by this value.',
+    type: 'number',
+    min: 0,
+    max: 20,
+    default: 0,
+    category: 'loot',
+    section: 'settings'
+  },
+  {
+    key: 'HoursForLootRespawn',
+    label: 'Loot Respawn Hours',
+    description: 'Hours after which containers respawn loot. 0 = never.',
+    type: 'number',
+    min: 0,
+    max: 2147483647,
+    default: 0,
+    category: 'loot',
+    section: 'settings'
+  },
+  {
+    key: 'MaxItemsForLootRespawn',
+    label: 'Max Items for Respawn',
+    description: 'Containers with this many items or more will not respawn loot.',
+    type: 'number',
+    min: 0,
+    max: 2147483647,
+    default: 5,
+    category: 'loot',
+    section: 'settings'
+  },
+  {
+    key: 'ConstructionPreventsLootRespawn',
+    label: 'Construction Blocks Respawn',
+    description: 'Player constructions near containers prevent loot respawn.',
+    type: 'boolean',
+    default: true,
+    category: 'loot',
+    section: 'settings'
+  },
+  {
+    key: 'SeenHoursPreventLootRespawn',
+    label: 'Seen Hours Prevent Respawn',
+    description: 'Hours a zone must be unvisited before loot respawns. 0 = disabled.',
+    type: 'number',
+    min: 0,
+    max: 2147483647,
+    default: 0,
     category: 'loot',
     section: 'settings'
   },
 
-  // Environment
+  // ==================== Loot Rarity ====================
+  {
+    key: 'InsaneLootFactor',
+    label: 'Insane Rarity Factor',
+    description: 'Spawn rate for Insane rarity items.',
+    type: 'number',
+    min: 0,
+    max: 0.2,
+    default: 0.05,
+    category: 'lootRarity',
+    section: 'settings'
+  },
+  {
+    key: 'ExtremeLootFactor',
+    label: 'Extreme Rarity Factor',
+    description: 'Spawn rate for Extreme rarity items.',
+    type: 'number',
+    min: 0.05,
+    max: 0.6,
+    default: 0.2,
+    category: 'lootRarity',
+    section: 'settings'
+  },
+  {
+    key: 'RareLootFactor',
+    label: 'Rare Rarity Factor',
+    description: 'Spawn rate for Rare rarity items.',
+    type: 'number',
+    min: 0.2,
+    max: 1.0,
+    default: 0.6,
+    category: 'lootRarity',
+    section: 'settings'
+  },
+  {
+    key: 'NormalLootFactor',
+    label: 'Normal Rarity Factor',
+    description: 'Spawn rate for Normal rarity items.',
+    type: 'number',
+    min: 0.6,
+    max: 2.0,
+    default: 1.0,
+    category: 'lootRarity',
+    section: 'settings'
+  },
+  {
+    key: 'CommonLootFactor',
+    label: 'Common Rarity Factor',
+    description: 'Spawn rate for Common rarity items.',
+    type: 'number',
+    min: 1.0,
+    max: 3.0,
+    default: 2.0,
+    category: 'lootRarity',
+    section: 'settings'
+  },
+  {
+    key: 'AbundantLootFactor',
+    label: 'Abundant Rarity Factor',
+    description: 'Spawn rate for Abundant rarity items.',
+    type: 'number',
+    min: 2.0,
+    max: 4.0,
+    default: 3.0,
+    category: 'lootRarity',
+    section: 'settings'
+  },
+  {
+    key: 'MaximumLooted',
+    label: 'Max Looted Building Chance',
+    description: 'Chance that any building is already looted when found.',
+    type: 'number',
+    min: 0,
+    max: 200,
+    default: 25,
+    category: 'lootRarity',
+    section: 'settings'
+  },
+  {
+    key: 'DaysUntilMaximumLooted',
+    label: 'Days Until Max Looted',
+    description: 'Days before Maximum Looted Building Chance is reached.',
+    type: 'number',
+    min: 0,
+    max: 3650,
+    default: 90,
+    category: 'lootRarity',
+    section: 'settings'
+  },
+  {
+    key: 'RuralLooted',
+    label: 'Rural Looted Chance',
+    description: 'Chance that any rural building is already looted.',
+    type: 'number',
+    min: 0,
+    max: 2,
+    default: 0.5,
+    category: 'lootRarity',
+    section: 'settings'
+  },
+  {
+    key: 'MaximumDiminishedLoot',
+    label: 'Max Diminished Loot %',
+    description: 'Maximum loot that won\'t spawn when diminished days reached.',
+    type: 'number',
+    min: 0,
+    max: 100,
+    default: 20,
+    category: 'lootRarity',
+    section: 'settings'
+  },
+  {
+    key: 'DaysUntilMaximumDiminishedLoot',
+    label: 'Days Until Max Diminished',
+    description: 'Days before Maximum Diminished Loot is reached.',
+    type: 'number',
+    min: 0,
+    max: 3650,
+    default: 3650,
+    category: 'lootRarity',
+    section: 'settings'
+  },
+  {
+    key: 'MaximumLootedBuildingRooms',
+    label: 'Max Looted Building Rooms',
+    description: 'Buildings with more than this many rooms will not be auto-looted.',
+    type: 'number',
+    min: 0,
+    max: 200,
+    default: 50,
+    category: 'lootRarity',
+    section: 'settings'
+  },
+
+  // ==================== Environment & Weather ====================
+  {
+    key: 'DayNightCycle',
+    label: 'Day/Night Cycle',
+    description: 'Whether time of day changes naturally.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'Normal' },
+      { value: 2, label: 'Endless Day' },
+      { value: 3, label: 'Endless Night' }
+    ],
+    default: 1,
+    category: 'environment',
+    section: 'settings'
+  },
+  {
+    key: 'ClimateCycle',
+    label: 'Weather Cycle',
+    description: 'Whether weather changes or remains fixed.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'Normal' },
+      { value: 2, label: 'No Weather' },
+      { value: 3, label: 'Endless Rain' },
+      { value: 4, label: 'Endless Storm' },
+      { value: 5, label: 'Endless Snow' },
+      { value: 6, label: 'Endless Blizzard' }
+    ],
+    default: 1,
+    category: 'environment',
+    section: 'settings'
+  },
+  {
+    key: 'FogCycle',
+    label: 'Fog Cycle',
+    description: 'Whether fog occurs naturally.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'Normal' },
+      { value: 2, label: 'No Fog' },
+      { value: 3, label: 'Endless Fog' }
+    ],
+    default: 1,
+    category: 'environment',
+    section: 'settings'
+  },
   {
     key: 'WaterShut',
     label: 'Water Shutoff',
-    description: 'When water shuts off.',
+    description: 'When plumbing fixtures stop being infinite water sources.',
     type: 'select',
     options: [
       { value: 1, label: 'Instant' },
@@ -1085,7 +2327,9 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
       { value: 4, label: '0-6 Months' },
       { value: 5, label: '0-1 Year' },
       { value: 6, label: '0-5 Years' },
-      { value: 7, label: 'Never' }
+      { value: 7, label: '2-6 Months' },
+      { value: 8, label: '6-12 Months' },
+      { value: 9, label: 'Disabled' }
     ],
     default: 2,
     category: 'environment',
@@ -1094,7 +2338,27 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
   {
     key: 'ElecShut',
     label: 'Electricity Shutoff',
-    description: 'When electricity shuts off.',
+    description: 'When the world\'s electricity turns off.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'Instant' },
+      { value: 2, label: '14-30 Days' },
+      { value: 3, label: '14 Days-2 Months' },
+      { value: 4, label: '14 Days-6 Months' },
+      { value: 5, label: '14 Days-1 Year' },
+      { value: 6, label: '14 Days-5 Years' },
+      { value: 7, label: '2-6 Months' },
+      { value: 8, label: '6-12 Months' },
+      { value: 9, label: 'Disabled' }
+    ],
+    default: 2,
+    category: 'environment',
+    section: 'settings'
+  },
+  {
+    key: 'AlarmDecay',
+    label: 'Alarm Battery Decay',
+    description: 'How long alarm batteries last after power shuts off.',
     type: 'select',
     options: [
       { value: 1, label: 'Instant' },
@@ -1102,17 +2366,49 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
       { value: 3, label: '0-2 Months' },
       { value: 4, label: '0-6 Months' },
       { value: 5, label: '0-1 Year' },
-      { value: 6, label: '0-5 Years' },
-      { value: 7, label: 'Never' }
+      { value: 6, label: '0-5 Years' }
     ],
     default: 2,
     category: 'environment',
     section: 'settings'
   },
   {
+    key: 'WaterShutModifier',
+    label: 'Water Shutoff Modifier',
+    description: 'Fine-tune water shutoff timing in days.',
+    type: 'number',
+    min: -1,
+    max: 2147483647,
+    default: 14,
+    category: 'environment',
+    section: 'settings'
+  },
+  {
+    key: 'ElecShutModifier',
+    label: 'Electricity Shutoff Modifier',
+    description: 'Fine-tune electricity shutoff timing in days.',
+    type: 'number',
+    min: -1,
+    max: 2147483647,
+    default: 14,
+    category: 'environment',
+    section: 'settings'
+  },
+  {
+    key: 'AlarmDecayModifier',
+    label: 'Alarm Decay Modifier',
+    description: 'Fine-tune alarm battery decay timing in days.',
+    type: 'number',
+    min: -1,
+    max: 2147483647,
+    default: 14,
+    category: 'environment',
+    section: 'settings'
+  },
+  {
     key: 'Temperature',
     label: 'Temperature',
-    description: 'Overall temperature modifier.',
+    description: 'Global temperature setting.',
     type: 'select',
     options: [
       { value: 1, label: 'Very Cold' },
@@ -1143,37 +2439,131 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
   },
   {
     key: 'ErosionSpeed',
-    label: 'Nature Reclaims',
-    description: 'How fast nature takes over.',
+    label: 'Erosion Speed',
+    description: 'How fast nature reclaims the world.',
     type: 'select',
     options: [
-      { value: 1, label: 'Very Fast (20 days)' },
-      { value: 2, label: 'Fast (50 days)' },
-      { value: 3, label: 'Normal (100 days)' },
-      { value: 4, label: 'Slow (200 days)' },
-      { value: 5, label: 'Very Slow (500 days)' }
+      { value: 1, label: 'Very Fast (20 Days)' },
+      { value: 2, label: 'Fast (50 Days)' },
+      { value: 3, label: 'Normal (100 Days)' },
+      { value: 4, label: 'Slow (200 Days)' },
+      { value: 5, label: 'Very Slow (500 Days)' }
     ],
     default: 3,
     category: 'environment',
     section: 'settings'
   },
-
-  // Survival
   {
-    key: 'XpMultiplier',
-    label: 'XP Multiplier',
-    description: 'Experience gain multiplier.',
+    key: 'ErosionDays',
+    label: 'Custom Erosion Days',
+    description: 'Custom erosion days. 0 = use Erosion Speed option.',
     type: 'number',
-    min: 0.1,
-    max: 100,
-    default: 1.0,
-    category: 'survival',
+    min: -1,
+    max: 36500,
+    default: 0,
+    category: 'environment',
     section: 'settings'
   },
   {
+    key: 'MaxFogIntensity',
+    label: 'Max Fog Intensity',
+    description: 'Maximum intensity of fog.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'Normal' },
+      { value: 2, label: 'Moderate' },
+      { value: 3, label: 'Low' },
+      { value: 4, label: 'None' }
+    ],
+    default: 1,
+    category: 'environment',
+    section: 'settings'
+  },
+  {
+    key: 'MaxRainFxIntensity',
+    label: 'Max Rain FX Intensity',
+    description: 'Maximum intensity of rain effects.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'Normal' },
+      { value: 2, label: 'Moderate' },
+      { value: 3, label: 'Low' }
+    ],
+    default: 1,
+    category: 'environment',
+    section: 'settings'
+  },
+  {
+    key: 'EnableSnowOnGround',
+    label: 'Snow on Ground',
+    description: 'Whether snow accumulates on the ground.',
+    type: 'boolean',
+    default: true,
+    category: 'environment',
+    section: 'settings'
+  },
+  {
+    key: 'NightDarkness',
+    label: 'Night Darkness',
+    description: 'Ambient lighting level at night.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'Pitch Black' },
+      { value: 2, label: 'Dark' },
+      { value: 3, label: 'Normal' },
+      { value: 4, label: 'Bright' }
+    ],
+    default: 3,
+    category: 'environment',
+    section: 'settings'
+  },
+  {
+    key: 'NightLength',
+    label: 'Night Length',
+    description: 'Duration from dusk to dawn.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'Always Night' },
+      { value: 2, label: 'Long' },
+      { value: 3, label: 'Normal' },
+      { value: 4, label: 'Short' },
+      { value: 5, label: 'Always Day' }
+    ],
+    default: 3,
+    category: 'environment',
+    section: 'settings'
+  },
+  {
+    key: 'TimeSinceApo',
+    label: 'Time Since Apocalypse',
+    description: 'How long after the apocalypse the game begins. Affects erosion and food spoilage.',
+    type: 'select',
+    options: [
+      { value: 1, label: '0' }, { value: 2, label: '1' }, { value: 3, label: '2' },
+      { value: 4, label: '3' }, { value: 5, label: '4' }, { value: 6, label: '5' },
+      { value: 7, label: '6' }, { value: 8, label: '7' }, { value: 9, label: '8' },
+      { value: 10, label: '9' }, { value: 11, label: '10' }, { value: 12, label: '11' },
+      { value: 13, label: '12' }
+    ],
+    default: 1,
+    category: 'environment',
+    section: 'settings'
+  },
+  {
+    key: 'FireSpread',
+    label: 'Fire Spread',
+    description: 'Whether fires spread when started.',
+    type: 'boolean',
+    default: false,
+    category: 'environment',
+    section: 'settings'
+  },
+
+  // ==================== Survival & Health ====================
+  {
     key: 'StatsDecrease',
     label: 'Stats Decrease',
-    description: 'How fast needs (hunger, thirst, etc.) decrease.',
+    description: 'How fast hunger, thirst, and fatigue decrease.',
     type: 'select',
     options: [
       { value: 1, label: 'Very Fast' },
@@ -1183,13 +2573,22 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
       { value: 5, label: 'Very Slow' }
     ],
     default: 3,
+    category: 'survival',
+    section: 'settings'
+  },
+  {
+    key: 'Nutrition',
+    label: 'Nutrition',
+    description: 'Food nutrition affects player weight and condition.',
+    type: 'boolean',
+    default: true,
     category: 'survival',
     section: 'settings'
   },
   {
     key: 'FoodRotSpeed',
     label: 'Food Rot Speed',
-    description: 'How fast food rots.',
+    description: 'How fast food spoils.',
     type: 'select',
     options: [
       { value: 1, label: 'Very Fast' },
@@ -1197,6 +2596,23 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
       { value: 3, label: 'Normal' },
       { value: 4, label: 'Slow' },
       { value: 5, label: 'Very Slow' }
+    ],
+    default: 3,
+    category: 'survival',
+    section: 'settings'
+  },
+  {
+    key: 'FridgeFactor',
+    label: 'Fridge Effectiveness',
+    description: 'How effective fridges are at preserving food.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'Very Low' },
+      { value: 2, label: 'Low' },
+      { value: 3, label: 'Normal' },
+      { value: 4, label: 'High' },
+      { value: 5, label: 'Very High' },
+      { value: 6, label: 'No Decay' }
     ],
     default: 3,
     category: 'survival',
@@ -1205,16 +2621,358 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
   {
     key: 'StarterKit',
     label: 'Starter Kit',
-    description: 'Give players a starter kit.',
+    description: 'Spawn with chips, water bottle, backpack, bat, and hammer.',
     type: 'boolean',
     default: false,
     category: 'survival',
     section: 'settings'
   },
   {
+    key: 'CharacterFreePoints',
+    label: 'Free Character Points',
+    description: 'Extra free points during character creation.',
+    type: 'number',
+    min: -100,
+    max: 100,
+    default: 0,
+    category: 'survival',
+    section: 'settings'
+  },
+  {
+    key: 'BoneFracture',
+    label: 'Bone Fractures',
+    description: 'Survivors can get broken limbs from impacts, falls, etc.',
+    type: 'boolean',
+    default: true,
+    category: 'survival',
+    section: 'settings'
+  },
+  {
+    key: 'InjurySeverity',
+    label: 'Injury Severity',
+    description: 'Impact of injuries and healing time.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'Low' },
+      { value: 2, label: 'Normal' },
+      { value: 3, label: 'High' }
+    ],
+    default: 2,
+    category: 'survival',
+    section: 'settings'
+  },
+  {
+    key: 'EndRegen',
+    label: 'Endurance Recovery',
+    description: 'Recovery from tiredness after actions.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'Very Fast' },
+      { value: 2, label: 'Fast' },
+      { value: 3, label: 'Normal' },
+      { value: 4, label: 'Slow' },
+      { value: 5, label: 'Very Slow' }
+    ],
+    default: 3,
+    category: 'survival',
+    section: 'settings'
+  },
+  {
+    key: 'HoursForCorpseRemoval',
+    label: 'Corpse Removal Hours',
+    description: 'Hours before zombie corpses disappear. 0 = no maggots spawn.',
+    type: 'number',
+    min: -1,
+    max: 2147483647,
+    default: 216,
+    category: 'survival',
+    section: 'settings'
+  },
+  {
+    key: 'DecayingCorpseHealthImpact',
+    label: 'Corpse Health Impact',
+    description: 'Impact of nearby decaying bodies on health/emotions.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'None' },
+      { value: 2, label: 'Low' },
+      { value: 3, label: 'Normal' },
+      { value: 4, label: 'High' },
+      { value: 5, label: 'Insane' }
+    ],
+    default: 3,
+    category: 'survival',
+    section: 'settings'
+  },
+  {
+    key: 'ZombieHealthImpact',
+    label: 'Zombie Health Impact',
+    description: 'Whether living zombies also affect player health/emotions.',
+    type: 'boolean',
+    default: false,
+    category: 'survival',
+    section: 'settings'
+  },
+  {
+    key: 'BloodLevel',
+    label: 'Blood Level',
+    description: 'How much blood sprays on surfaces.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'None' },
+      { value: 2, label: 'Low' },
+      { value: 3, label: 'Normal' },
+      { value: 4, label: 'High' },
+      { value: 5, label: 'Ultra Gore' }
+    ],
+    default: 3,
+    category: 'survival',
+    section: 'settings'
+  },
+  {
+    key: 'ClothingDegradation',
+    label: 'Clothing Degradation',
+    description: 'How quickly clothing degrades and gets dirty.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'Disabled' },
+      { value: 2, label: 'Slow' },
+      { value: 3, label: 'Normal' },
+      { value: 4, label: 'Fast' }
+    ],
+    default: 3,
+    category: 'survival',
+    section: 'settings'
+  },
+  {
+    key: 'DaysForRottenFoodRemoval',
+    label: 'Rotten Food Removal Days',
+    description: 'Days before rotten food is removed. -1 = never.',
+    type: 'number',
+    min: -1,
+    max: 2147483647,
+    default: -1,
+    category: 'survival',
+    section: 'settings'
+  },
+  {
+    key: 'AllClothesUnlocked',
+    label: 'All Clothes Unlocked',
+    description: 'Select from every clothing item during character creation.',
+    type: 'boolean',
+    default: false,
+    category: 'survival',
+    section: 'settings'
+  },
+  {
+    key: 'EnableTaintedWaterText',
+    label: 'Tainted Water Warning',
+    description: 'Show warning marking tainted water.',
+    type: 'boolean',
+    default: true,
+    category: 'survival',
+    section: 'settings'
+  },
+  {
+    key: 'EnablePoisoning',
+    label: 'Enable Poisoning',
+    description: 'Whether poison can be added to food.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'True' },
+      { value: 2, label: 'False' },
+      { value: 3, label: 'Only Bleach Disabled' }
+    ],
+    default: 1,
+    category: 'survival',
+    section: 'settings'
+  },
+  {
+    key: 'MaggotSpawn',
+    label: 'Maggot Spawn',
+    description: 'When maggots spawn in corpses.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'In and Around Bodies' },
+      { value: 2, label: 'In Bodies Only' },
+      { value: 3, label: 'Never' }
+    ],
+    default: 1,
+    category: 'survival',
+    section: 'settings'
+  },
+  {
+    key: 'MuscleStrainFactor',
+    label: 'Muscle Strain Factor',
+    description: 'Multiplier for muscle strain from swinging weapons or carrying heavy loads.',
+    type: 'number',
+    min: 0,
+    max: 10,
+    default: 0.7,
+    category: 'survival',
+    section: 'settings'
+  },
+  {
+    key: 'DiscomfortFactor',
+    label: 'Discomfort Factor',
+    description: 'Multiplier for discomfort from worn items.',
+    type: 'number',
+    min: 0,
+    max: 10,
+    default: 0.8,
+    category: 'survival',
+    section: 'settings'
+  },
+  {
+    key: 'WoundInfectionFactor',
+    label: 'Wound Infection Factor',
+    description: 'Damage from serious wound infections. 0 = disabled.',
+    type: 'number',
+    min: 0,
+    max: 10,
+    default: 0,
+    category: 'survival',
+    section: 'settings'
+  },
+  {
+    key: 'NoBlackClothes',
+    label: 'No Black Clothes',
+    description: 'Prevent randomized clothing from becoming near-black.',
+    type: 'boolean',
+    default: true,
+    category: 'survival',
+    section: 'settings'
+  },
+  {
+    key: 'EasyClimbing',
+    label: 'Easy Climbing',
+    description: 'Disable failure chances when climbing sheet ropes or walls.',
+    type: 'boolean',
+    default: false,
+    category: 'survival',
+    section: 'settings'
+  },
+  {
+    key: 'NegativeTraitsPenalty',
+    label: 'Negative Traits Penalty',
+    description: 'Diminishing returns on bonus points from negative traits.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'None' },
+      { value: 2, label: '1 pt per 3 negative traits' },
+      { value: 3, label: '1 pt per 2 negative traits' },
+      { value: 4, label: '1 pt per negative trait after first' }
+    ],
+    default: 1,
+    category: 'survival',
+    section: 'settings'
+  },
+  {
+    key: 'MinutesPerPage',
+    label: 'Minutes Per Page',
+    description: 'In-game minutes to read one page of a skill book.',
+    type: 'number',
+    min: 0,
+    max: 60,
+    default: 2,
+    category: 'survival',
+    section: 'settings'
+  },
+  {
+    key: 'LiteratureCooldown',
+    label: 'Literature Cooldown',
+    description: 'Days before previously read literature can benefit again.',
+    type: 'number',
+    min: 1,
+    max: 365,
+    default: 45,
+    category: 'survival',
+    section: 'settings'
+  },
+  {
+    key: 'LevelForMediaXPCutoff',
+    label: 'Media XP Cutoff Level',
+    description: 'Skill level at which TV/VHS/media no longer provides XP.',
+    type: 'number',
+    min: 0,
+    max: 10,
+    default: 3,
+    category: 'survival',
+    section: 'settings'
+  },
+  {
+    key: 'LevelForDismantleXPCutoff',
+    label: 'Dismantle XP Cutoff Level',
+    description: 'Skill level at which scrapping furniture gives no XP.',
+    type: 'number',
+    min: 0,
+    max: 10,
+    default: 0,
+    category: 'survival',
+    section: 'settings'
+  },
+  {
+    key: 'BloodSplatLifespanDays',
+    label: 'Blood Splat Lifespan',
+    description: 'Days before blood splats disappear. 0 = never.',
+    type: 'number',
+    min: 0,
+    max: 365,
+    default: 0,
+    category: 'survival',
+    section: 'settings'
+  },
+  {
+    key: 'MetaKnowledge',
+    label: 'Meta Knowledge',
+    description: 'How unseen/unread media is displayed.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'Fully Revealed' },
+      { value: 2, label: 'Shown as ???' },
+      { value: 3, label: 'Completely Hidden' }
+    ],
+    default: 3,
+    category: 'survival',
+    section: 'settings'
+  },
+  {
+    key: 'SeeNotLearntRecipe',
+    label: 'See Unlearned Recipes',
+    description: 'See station recipes even if not yet learned.',
+    type: 'boolean',
+    default: true,
+    category: 'survival',
+    section: 'settings'
+  },
+  {
+    key: 'LightBulbLifespan',
+    label: 'Light Bulb Lifespan',
+    description: 'Higher = bulbs last longer. 0 = never break.',
+    type: 'number',
+    min: 0,
+    max: 1000,
+    default: 2,
+    category: 'survival',
+    section: 'settings'
+  },
+  {
+    key: 'MaximumFireFuelHours',
+    label: 'Max Fire Fuel Hours',
+    description: 'Max hours of fuel for campfires, wood stoves, etc.',
+    type: 'number',
+    min: 1,
+    max: 168,
+    default: 8,
+    category: 'survival',
+    section: 'settings'
+  },
+
+  // ==================== Alarms & Events ====================
+  {
     key: 'Alarm',
     label: 'House Alarms',
-    description: 'Frequency of house alarms.',
+    description: 'Frequency of residential alarms.',
     type: 'select',
     options: [
       { value: 1, label: 'Never' },
@@ -1245,8 +3003,918 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
     category: 'survival',
     section: 'settings'
   },
+  {
+    key: 'Helicopter',
+    label: 'Helicopter Events',
+    description: 'Helicopter frequency.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'Never' },
+      { value: 2, label: 'Once' },
+      { value: 3, label: 'Sometimes' }
+    ],
+    default: 3,
+    category: 'survival',
+    section: 'settings'
+  },
+  {
+    key: 'MetaEvent',
+    label: 'Meta Events',
+    description: 'Distant gunshots, screams, etc.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'Never' },
+      { value: 2, label: 'Sometimes' }
+    ],
+    default: 2,
+    category: 'survival',
+    section: 'settings'
+  },
+  {
+    key: 'SleepingEvent',
+    label: 'Sleeping Events',
+    description: 'Events that happen while sleeping.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'Never' },
+      { value: 2, label: 'Sometimes' }
+    ],
+    default: 2,
+    category: 'survival',
+    section: 'settings'
+  },
+  {
+    key: 'NatureAbundance',
+    label: 'Nature Abundance',
+    description: 'Governs abundance of wild foods, medicinal plants, etc.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'Very Poor' },
+      { value: 2, label: 'Poor' },
+      { value: 3, label: 'Normal' },
+      { value: 4, label: 'Abundant' },
+      { value: 5, label: 'Very Abundant' }
+    ],
+    default: 3,
+    category: 'survival',
+    section: 'settings'
+  },
+  {
+    key: 'FishAbundance',
+    label: 'Fish Abundance',
+    description: 'Governs abundance of fish.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'Very Poor' },
+      { value: 2, label: 'Poor' },
+      { value: 3, label: 'Normal' },
+      { value: 4, label: 'Abundant' },
+      { value: 5, label: 'Very Abundant' }
+    ],
+    default: 3,
+    category: 'survival',
+    section: 'settings'
+  },
+  {
+    key: 'AnnotatedMapChance',
+    label: 'Annotated Map Chance',
+    description: 'Chance of finding maps annotated with local features.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'Never' },
+      { value: 2, label: 'Extremely Rare' },
+      { value: 3, label: 'Rare' },
+      { value: 4, label: 'Sometimes' },
+      { value: 5, label: 'Often' },
+      { value: 6, label: 'Very Often' }
+    ],
+    default: 4,
+    category: 'survival',
+    section: 'settings'
+  },
+  {
+    key: 'ConstructionBonusPoints',
+    label: 'Construction Bonus Points',
+    description: 'Extra points for carpentry/metalworking constructions.',
+    type: 'number',
+    min: 0,
+    max: 100,
+    default: 0,
+    category: 'survival',
+    section: 'settings'
+  },
+  {
+    key: 'GeneratorSpawning',
+    label: 'Generator Spawning',
+    description: 'How many generators spawn in the world.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'Very Rare' },
+      { value: 2, label: 'Rare' },
+      { value: 3, label: 'Sometimes' },
+      { value: 4, label: 'Often' },
+      { value: 5, label: 'Very Often' }
+    ],
+    default: 3,
+    category: 'survival',
+    section: 'settings'
+  },
+  {
+    key: 'GeneratorFuelConsumption',
+    label: 'Generator Fuel Consumption',
+    description: 'How fast generators consume fuel.',
+    type: 'number',
+    min: 0,
+    max: 100,
+    default: 1.0,
+    category: 'survival',
+    section: 'settings'
+  },
+  {
+    key: 'AllowExteriorGenerator',
+    label: 'Allow Exterior Generator',
+    description: 'Generators can be placed outdoors and inside tents.',
+    type: 'boolean',
+    default: true,
+    category: 'survival',
+    section: 'settings'
+  },
+  {
+    key: 'GeneratorTileRange',
+    label: 'Generator Tile Range',
+    description: 'Horizontal range of generators in tiles.',
+    type: 'number',
+    min: 1,
+    max: 50,
+    default: 5,
+    category: 'survival',
+    section: 'settings'
+  },
+  {
+    key: 'GeneratorVerticalPowerRange',
+    label: 'Generator Vertical Range',
+    description: 'Vertical range of generators in floors.',
+    type: 'number',
+    min: 0,
+    max: 10,
+    default: 0,
+    category: 'survival',
+    section: 'settings'
+  },
+  {
+    key: 'CompostTime',
+    label: 'Compost Time',
+    description: 'How long composting takes.',
+    type: 'select',
+    options: [
+      { value: 1, label: '1 Week' },
+      { value: 2, label: '2 Weeks' },
+      { value: 3, label: '3 Weeks' },
+      { value: 4, label: '4 Weeks' },
+      { value: 5, label: '6 Weeks' },
+      { value: 6, label: '8 Weeks' },
+      { value: 7, label: '10 Weeks' },
+      { value: 8, label: '12 Weeks' }
+    ],
+    default: 2,
+    category: 'survival',
+    section: 'settings'
+  },
+  {
+    key: 'AttackBlockMovements',
+    label: 'Attack Block Movements',
+    description: 'Player can\'t move while performing melee attacks.',
+    type: 'boolean',
+    default: true,
+    category: 'survival',
+    section: 'settings'
+  },
+  {
+    key: 'WorldItemRemovalList',
+    label: 'World Item Removal List',
+    description: 'Types of items removed from world (comma separated, e.g. Base.Vest).',
+    type: 'string',
+    default: '',
+    category: 'survival',
+    section: 'settings'
+  },
+  {
+    key: 'HoursForWorldItemRemoval',
+    label: 'World Item Removal Hours',
+    description: 'Hours before listed items disappear from world. 0 = disabled.',
+    type: 'number',
+    min: 0,
+    max: 8760,
+    default: 0,
+    category: 'survival',
+    section: 'settings'
+  },
+  {
+    key: 'ItemRemovalListBlacklistToggle',
+    label: 'Item Removal Blacklist Toggle',
+    description: 'If true, removal list acts as blacklist (remove everything except listed). Default is whitelist.',
+    type: 'boolean',
+    default: false,
+    category: 'survival',
+    section: 'settings'
+  },
 
-  // Zombie Lore (Behavior)
+  // ==================== Combat & Firearms ====================
+  {
+    key: 'MultiHitZombies',
+    label: 'Multi-Hit Zombies',
+    description: 'A melee weapon can hit multiple zombies in one swing.',
+    type: 'boolean',
+    default: false,
+    category: 'combat',
+    section: 'settings'
+  },
+  {
+    key: 'RearVulnerability',
+    label: 'Rear Vulnerability',
+    description: 'Zombies take more damage when attacked from behind.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'Low' },
+      { value: 2, label: 'Medium' },
+      { value: 3, label: 'High' }
+    ],
+    default: 3,
+    category: 'combat',
+    section: 'settings'
+  },
+  {
+    key: 'FirearmUseDamageChance',
+    label: 'Firearm Use Damage Chance',
+    description: 'Chance of weapon condition loss per use. 0 = never.',
+    type: 'number',
+    min: 0,
+    max: 100,
+    default: 0.15,
+    category: 'combat',
+    section: 'settings'
+  },
+  {
+    key: 'FirearmNoiseMultiplier',
+    label: 'Firearm Noise Multiplier',
+    description: 'Multiplier for gun noise attracting zombies.',
+    type: 'number',
+    min: 0,
+    max: 100,
+    default: 1.0,
+    category: 'combat',
+    section: 'settings'
+  },
+  {
+    key: 'FirearmJamMultiplier',
+    label: 'Firearm Jam Multiplier',
+    description: 'Multiplier for jamming chance.',
+    type: 'number',
+    min: 0,
+    max: 100,
+    default: 1.0,
+    category: 'combat',
+    section: 'settings'
+  },
+  {
+    key: 'FirearmMoodleMultiplier',
+    label: 'Firearm Moodle Multiplier',
+    description: 'Multiplier for panic/stress from gun use.',
+    type: 'number',
+    min: 0,
+    max: 100,
+    default: 1.0,
+    category: 'combat',
+    section: 'settings'
+  },
+  {
+    key: 'FirearmWeatherMultiplier',
+    label: 'Firearm Weather Multiplier',
+    description: 'Multiplier for rain affecting gun condition.',
+    type: 'number',
+    min: 0,
+    max: 100,
+    default: 1.0,
+    category: 'combat',
+    section: 'settings'
+  },
+  {
+    key: 'FirearmHeadGearEffect',
+    label: 'Firearm Head Gear Effect',
+    description: 'How much head-covering gear like helmets affects firearm aim/shoulder.',
+    type: 'number',
+    min: 0,
+    max: 100,
+    default: 1.0,
+    category: 'combat',
+    section: 'settings'
+  },
+
+  // ==================== Vehicles ====================
+  {
+    key: 'EnableVehicles',
+    label: 'Enable Vehicles',
+    description: 'Whether vehicles spawn and can be used.',
+    type: 'boolean',
+    default: true,
+    category: 'vehicles',
+    section: 'settings'
+  },
+  {
+    key: 'CarSpawnRate',
+    label: 'Car Spawn Rate',
+    description: 'How many vehicles spawn.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'None' },
+      { value: 2, label: 'Very Low' },
+      { value: 3, label: 'Low' },
+      { value: 4, label: 'Normal' },
+      { value: 5, label: 'High' }
+    ],
+    default: 4,
+    category: 'vehicles',
+    section: 'settings'
+  },
+  {
+    key: 'VehicleEasyUse',
+    label: 'Vehicle Easy Use',
+    description: 'All vehicles are automatic and easy to start.',
+    type: 'boolean',
+    default: false,
+    category: 'vehicles',
+    section: 'settings'
+  },
+  {
+    key: 'InitialGas',
+    label: 'Initial Gas',
+    description: 'Starting gas in discovered vehicles.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'Empty' },
+      { value: 2, label: 'Super Low' },
+      { value: 3, label: 'Very Low' },
+      { value: 4, label: 'Low' },
+      { value: 5, label: 'Normal' },
+      { value: 6, label: 'High' },
+      { value: 7, label: 'Very High' },
+      { value: 8, label: 'Full' }
+    ],
+    default: 5,
+    category: 'vehicles',
+    section: 'settings'
+  },
+  {
+    key: 'FuelStationGas',
+    label: 'Fuel Station Gas',
+    description: 'Starting fuel at gas stations.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'Empty' },
+      { value: 2, label: 'Super Low' },
+      { value: 3, label: 'Very Low' },
+      { value: 4, label: 'Low' },
+      { value: 5, label: 'Normal' },
+      { value: 6, label: 'High' },
+      { value: 7, label: 'Very High' },
+      { value: 8, label: 'Full' },
+      { value: 9, label: 'Infinite' }
+    ],
+    default: 5,
+    category: 'vehicles',
+    section: 'settings'
+  },
+  {
+    key: 'LockedCar',
+    label: 'Locked Car Chance',
+    description: 'Chance of vehicle doors being locked.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'Never' },
+      { value: 2, label: 'Extremely Rare' },
+      { value: 3, label: 'Rare' },
+      { value: 4, label: 'Sometimes' },
+      { value: 5, label: 'Often' },
+      { value: 6, label: 'Very Often' }
+    ],
+    default: 4,
+    category: 'vehicles',
+    section: 'settings'
+  },
+  {
+    key: 'CarGasConsumption',
+    label: 'Gas Consumption',
+    description: 'Rate of fuel consumption in vehicles.',
+    type: 'number',
+    min: 0,
+    max: 100,
+    default: 1.0,
+    category: 'vehicles',
+    section: 'settings'
+  },
+  {
+    key: 'CarGeneralCondition',
+    label: 'Car General Condition',
+    description: 'Initial condition of discovered vehicles.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'Very Low' },
+      { value: 2, label: 'Low' },
+      { value: 3, label: 'Normal' },
+      { value: 4, label: 'High' },
+      { value: 5, label: 'Very High' }
+    ],
+    default: 3,
+    category: 'vehicles',
+    section: 'settings'
+  },
+  {
+    key: 'CarDamageOnImpact',
+    label: 'Car Damage on Impact',
+    description: 'Damage vehicles take from collisions.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'Very Low' },
+      { value: 2, label: 'Low' },
+      { value: 3, label: 'Normal' },
+      { value: 4, label: 'High' },
+      { value: 5, label: 'Very High' }
+    ],
+    default: 3,
+    category: 'vehicles',
+    section: 'settings'
+  },
+  {
+    key: 'DamageToPlayerFromHitByACar',
+    label: 'Car Damage to Player',
+    description: 'How much damage players receive from vehicle impacts.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'None' },
+      { value: 2, label: 'Low' },
+      { value: 3, label: 'Normal' },
+      { value: 4, label: 'High' },
+      { value: 5, label: 'Very High' }
+    ],
+    default: 3,
+    category: 'vehicles',
+    section: 'settings'
+  },
+  {
+    key: 'TrafficJam',
+    label: 'Traffic Jams',
+    description: 'Whether traffic jams spawn on roads.',
+    type: 'boolean',
+    default: true,
+    category: 'vehicles',
+    section: 'settings'
+  },
+  {
+    key: 'CarAlarm',
+    label: 'Car Alarms',
+    description: 'Chance of vehicles having active alarms.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'Never' },
+      { value: 2, label: 'Extremely Rare' },
+      { value: 3, label: 'Rare' },
+      { value: 4, label: 'Sometimes' },
+      { value: 5, label: 'Often' },
+      { value: 6, label: 'Very Often' }
+    ],
+    default: 4,
+    category: 'vehicles',
+    section: 'settings'
+  },
+  {
+    key: 'PlayerDamageFromCrash',
+    label: 'Crash Damage to Player',
+    description: 'Damage to the driver when crashing at high speed.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'None' },
+      { value: 2, label: 'Low' },
+      { value: 3, label: 'Normal' },
+      { value: 4, label: 'High' },
+      { value: 5, label: 'Very High' }
+    ],
+    default: 3,
+    category: 'vehicles',
+    section: 'settings'
+  },
+  {
+    key: 'SirenShutoffHours',
+    label: 'Siren Shutoff Hours',
+    description: 'Hours before vehicle siren batteries die. 0 = instant.',
+    type: 'number',
+    min: 0,
+    max: 168,
+    default: 0,
+    category: 'vehicles',
+    section: 'settings'
+  },
+  {
+    key: 'ChanceHasGas',
+    label: 'Chance Has Gas',
+    description: 'Chance a vehicle spawns with gas. -1 = default vehicle spawn rules.',
+    type: 'number',
+    min: -1,
+    max: 100,
+    default: -1,
+    category: 'vehicles',
+    section: 'settings'
+  },
+  {
+    key: 'RecentlySurvivorVehicles',
+    label: 'Recently Survivor Vehicles',
+    description: 'Amount of customized survivor vehicles spawning. 0 = none.',
+    type: 'number',
+    min: 0,
+    max: 100,
+    default: 0,
+    category: 'vehicles',
+    section: 'settings'
+  },
+  {
+    key: 'ZombieAttractionMultiplier',
+    label: 'Vehicle Zombie Attraction',
+    description: 'Multiplier for vehicle sounds attracting zombies.',
+    type: 'number',
+    min: 0,
+    max: 100,
+    default: 1.0,
+    category: 'vehicles',
+    section: 'settings'
+  },
+  {
+    key: 'SirenEffectsZombies',
+    label: 'Siren Effects Zombies',
+    description: 'Siren radius for attracting zombies. 0 = disabled.',
+    type: 'number',
+    min: 0,
+    max: 500,
+    default: 0,
+    category: 'vehicles',
+    section: 'settings'
+  },
+  {
+    key: 'FuelStationGasModifier',
+    label: 'Fuel Station Gas Modifier',
+    description: 'Value override for fuel station gas level. -1 = use preset.',
+    type: 'number',
+    min: -1,
+    max: 50000,
+    default: -1,
+    category: 'vehicles',
+    section: 'settings'
+  },
+
+  // ==================== Animals & Farming ====================
+  {
+    key: 'AnimalStatsModifier',
+    label: 'Animal Stats Modifier',
+    description: 'Multiplier for animal health/taming speed. Higher = easier.',
+    type: 'number',
+    min: 0.01,
+    max: 10,
+    default: 1.0,
+    category: 'animals',
+    section: 'settings'
+  },
+  {
+    key: 'AnimalMetaStatsModifier',
+    label: 'Animal Meta Stats',
+    description: 'Multiplier for meta/overworld animal populations.',
+    type: 'number',
+    min: 0.01,
+    max: 10,
+    default: 1.0,
+    category: 'animals',
+    section: 'settings'
+  },
+  {
+    key: 'AnimalPregnancyTime',
+    label: 'Animal Pregnancy Time',
+    description: 'Multiplier for animal pregnancy duration. Lower = faster.',
+    type: 'number',
+    min: 0.01,
+    max: 10,
+    default: 1.0,
+    category: 'animals',
+    section: 'settings'
+  },
+  {
+    key: 'AnimalAgeModifier',
+    label: 'Animal Age Modifier',
+    description: 'Multiplier for animal aging speed. Lower = faster.',
+    type: 'number',
+    min: 0.01,
+    max: 10,
+    default: 1.0,
+    category: 'animals',
+    section: 'settings'
+  },
+  {
+    key: 'AnimalMilkIncModifier',
+    label: 'Milk Production Modifier',
+    description: 'Multiplier for milk increments.',
+    type: 'number',
+    min: 0.01,
+    max: 10,
+    default: 1.0,
+    category: 'animals',
+    section: 'settings'
+  },
+  {
+    key: 'AnimalWoolIncModifier',
+    label: 'Wool Production Modifier',
+    description: 'Multiplier for wool increments.',
+    type: 'number',
+    min: 0.01,
+    max: 10,
+    default: 1.0,
+    category: 'animals',
+    section: 'settings'
+  },
+  {
+    key: 'AnimalRanchChance',
+    label: 'Animal Ranch Chance',
+    description: 'Multiplier for finding animals at ranch locations.',
+    type: 'number',
+    min: 0,
+    max: 10,
+    default: 1.0,
+    category: 'animals',
+    section: 'settings'
+  },
+  {
+    key: 'AnimalGrassRegrowTime',
+    label: 'Grass Regrow Time',
+    description: 'Multiplier for pen grass regrowth. Lower = faster.',
+    type: 'number',
+    min: 0.01,
+    max: 10,
+    default: 1.0,
+    category: 'animals',
+    section: 'settings'
+  },
+  {
+    key: 'AnimalMetaPredator',
+    label: 'Meta Predator Level',
+    description: 'Multiplier for meta predator spawning. 0 = no predators.',
+    type: 'number',
+    min: 0,
+    max: 10,
+    default: 1.0,
+    category: 'animals',
+    section: 'settings'
+  },
+  {
+    key: 'AnimalMatingSeason',
+    label: 'Mating Season',
+    description: 'Restrict mating to spring/early summer or allow year-round.',
+    type: 'boolean',
+    default: true,
+    category: 'animals',
+    section: 'settings'
+  },
+  {
+    key: 'AnimalEggHatch',
+    label: 'Egg Hatch Modifier',
+    description: 'Multiplier for egg hatch time. Lower = faster.',
+    type: 'number',
+    min: 0.01,
+    max: 10,
+    default: 1.0,
+    category: 'animals',
+    section: 'settings'
+  },
+  {
+    key: 'AnimalSoundAttractZombies',
+    label: 'Animal Sound Attracts Zombies',
+    description: 'Multiplier for how much animal sounds attract zombies. 0 = disabled.',
+    type: 'number',
+    min: 0,
+    max: 10,
+    default: 1.0,
+    category: 'animals',
+    section: 'settings'
+  },
+  {
+    key: 'AnimalTrackChance',
+    label: 'Animal Track Chance',
+    description: 'Multiplier for finding animal tracks while foraging.',
+    type: 'number',
+    min: 0,
+    max: 10,
+    default: 1.0,
+    category: 'animals',
+    section: 'settings'
+  },
+  {
+    key: 'AnimalPathChance',
+    label: 'Animal Path Chance',
+    description: 'Multiplier for finding animal paths while foraging.',
+    type: 'number',
+    min: 0,
+    max: 10,
+    default: 1.0,
+    category: 'animals',
+    section: 'settings'
+  },
+  {
+    key: 'MaximumRatIndex',
+    label: 'Maximum Rat Index',
+    description: 'Maximum rat infestation level. 0 = no rats.',
+    type: 'number',
+    min: 0,
+    max: 100,
+    default: 100,
+    category: 'animals',
+    section: 'settings'
+  },
+  {
+    key: 'DaysUntilMaximumRatIndex',
+    label: 'Days Until Max Rat Index',
+    description: 'How many days until rat population peaks.',
+    type: 'number',
+    min: 1,
+    max: 3650,
+    default: 120,
+    category: 'animals',
+    section: 'settings'
+  },
+  {
+    key: 'Farming',
+    label: 'Farming',
+    description: 'Whether farming is enabled.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'Enabled' },
+      { value: 2, label: 'Disabled' }
+    ],
+    default: 1,
+    category: 'animals',
+    section: 'settings'
+  },
+  {
+    key: 'PlantResilience',
+    label: 'Plant Resilience',
+    description: 'How tough crops are.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'Very Low' },
+      { value: 2, label: 'Low' },
+      { value: 3, label: 'Normal' },
+      { value: 4, label: 'High' },
+      { value: 5, label: 'Very High' }
+    ],
+    default: 3,
+    category: 'animals',
+    section: 'settings'
+  },
+  {
+    key: 'PlantAbundance',
+    label: 'Plant Abundance',
+    description: 'How much food crops produce.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'Very Poor' },
+      { value: 2, label: 'Poor' },
+      { value: 3, label: 'Normal' },
+      { value: 4, label: 'Abundant' },
+      { value: 5, label: 'Very Abundant' }
+    ],
+    default: 3,
+    category: 'animals',
+    section: 'settings'
+  },
+  {
+    key: 'KillInsideCrops',
+    label: 'Kill Indoor Crops',
+    description: 'Whether stepping on indoor crops destroys them.',
+    type: 'boolean',
+    default: true,
+    category: 'animals',
+    section: 'settings'
+  },
+  {
+    key: 'PlantGrowingSeasons',
+    label: 'Plant Growing Seasons',
+    description: 'Restrict crop growth to appropriate seasons.',
+    type: 'boolean',
+    default: true,
+    category: 'animals',
+    section: 'settings'
+  },
+  {
+    key: 'PlaceDirtAboveground',
+    label: 'Place Dirt Aboveground',
+    description: 'Allow placing dirt on built floors above ground.',
+    type: 'boolean',
+    default: false,
+    category: 'animals',
+    section: 'settings'
+  },
+  {
+    key: 'FarmingSpeedNew',
+    label: 'Farming Speed',
+    description: 'Growth speed multiplier. Lower = faster.',
+    type: 'number',
+    min: 0.01,
+    max: 100,
+    default: 1.0,
+    category: 'animals',
+    section: 'settings'
+  },
+  {
+    key: 'FarmingAmountNew',
+    label: 'Farming Amount',
+    description: 'Multiplier for number of crops harvested.',
+    type: 'number',
+    min: 0.01,
+    max: 100,
+    default: 1.0,
+    category: 'animals',
+    section: 'settings'
+  },
+  {
+    key: 'ClayLakeChance',
+    label: 'Clay Lake Chance',
+    description: 'Chance of finding clay when digging near lakes.',
+    type: 'number',
+    min: 0,
+    max: 100,
+    default: 100,
+    category: 'animals',
+    section: 'settings'
+  },
+  {
+    key: 'ClayRiverChance',
+    label: 'Clay River Chance',
+    description: 'Chance of finding clay when digging near rivers.',
+    type: 'number',
+    min: 0,
+    max: 100,
+    default: 100,
+    category: 'animals',
+    section: 'settings'
+  },
+
+  // ==================== World & Stories ====================
+  {
+    key: 'SurvivorHouseChance',
+    label: 'Survivor House Chance',
+    description: 'Chance of finding survivor-modified houses.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'Never' },
+      { value: 2, label: 'Extremely Rare' },
+      { value: 3, label: 'Rare' },
+      { value: 4, label: 'Sometimes' },
+      { value: 5, label: 'Often' },
+      { value: 6, label: 'Very Often' }
+    ],
+    default: 4,
+    category: 'world',
+    section: 'settings'
+  },
+  {
+    key: 'VehicleStoryChance',
+    label: 'Vehicle Story Chance',
+    description: 'Chance of finding story-decorated vehicles.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'Never' },
+      { value: 2, label: 'Extremely Rare' },
+      { value: 3, label: 'Rare' },
+      { value: 4, label: 'Sometimes' },
+      { value: 5, label: 'Often' },
+      { value: 6, label: 'Very Often' }
+    ],
+    default: 4,
+    category: 'world',
+    section: 'settings'
+  },
+  {
+    key: 'ZoneStoryChance',
+    label: 'Zone Story Chance',
+    description: 'Chance of encountering zone-based story setups.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'Never' },
+      { value: 2, label: 'Extremely Rare' },
+      { value: 3, label: 'Rare' },
+      { value: 4, label: 'Sometimes' },
+      { value: 5, label: 'Often' },
+      { value: 6, label: 'Very Often' }
+    ],
+    default: 4,
+    category: 'world',
+    section: 'settings'
+  },
+
+  // ==================== Zombie Lore (Behavior) ====================
   {
     key: 'Speed',
     label: 'Zombie Speed',
@@ -1255,7 +3923,8 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
     options: [
       { value: 1, label: 'Sprinters' },
       { value: 2, label: 'Fast Shamblers' },
-      { value: 3, label: 'Shamblers' }
+      { value: 3, label: 'Shamblers' },
+      { value: 4, label: 'Random' }
     ],
     default: 3,
     category: 'zombieLore',
@@ -1269,7 +3938,8 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
     options: [
       { value: 1, label: 'Superhuman' },
       { value: 2, label: 'Normal' },
-      { value: 3, label: 'Weak' }
+      { value: 3, label: 'Weak' },
+      { value: 4, label: 'Random' }
     ],
     default: 2,
     category: 'zombieLore',
@@ -1283,7 +3953,8 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
     options: [
       { value: 1, label: 'Tough' },
       { value: 2, label: 'Normal' },
-      { value: 3, label: 'Fragile' }
+      { value: 3, label: 'Fragile' },
+      { value: 4, label: 'Random' }
     ],
     default: 2,
     category: 'zombieLore',
@@ -1292,7 +3963,7 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
   {
     key: 'Transmission',
     label: 'Infection Transmission',
-    description: 'How the infection spreads.',
+    description: 'How the zombie infection spreads.',
     type: 'select',
     options: [
       { value: 1, label: 'Blood + Saliva' },
@@ -1311,11 +3982,12 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
     type: 'select',
     options: [
       { value: 1, label: 'Instant' },
-      { value: 2, label: '0-30 seconds' },
-      { value: 3, label: '0-1 minute' },
-      { value: 4, label: '0-12 hours' },
-      { value: 5, label: '2-3 days' },
-      { value: 6, label: '1-2 weeks' }
+      { value: 2, label: '0-30 Seconds' },
+      { value: 3, label: '0-1 Minute' },
+      { value: 4, label: '0-12 Hours' },
+      { value: 5, label: '2-3 Days' },
+      { value: 6, label: '1-2 Weeks' },
+      { value: 7, label: '7-14 Days' }
     ],
     default: 5,
     category: 'zombieLore',
@@ -1324,12 +3996,13 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
   {
     key: 'Cognition',
     label: 'Zombie Intelligence',
-    description: 'How smart zombies are.',
+    description: 'What zombies can interact with.',
     type: 'select',
     options: [
       { value: 1, label: 'Navigate + Use Doors' },
       { value: 2, label: 'Navigate' },
-      { value: 3, label: 'Basic Navigation' }
+      { value: 3, label: 'Basic Navigation' },
+      { value: 4, label: 'Random' }
     ],
     default: 3,
     category: 'zombieLore',
@@ -1338,13 +4011,13 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
   {
     key: 'Memory',
     label: 'Zombie Memory',
-    description: 'How long zombies remember.',
+    description: 'How long zombies remember where they last saw a target.',
     type: 'select',
     options: [
-      { value: 1, label: 'Long' },
-      { value: 2, label: 'Normal' },
-      { value: 3, label: 'Short' },
-      { value: 4, label: 'None' }
+      { value: 1, label: 'Long (2500)' },
+      { value: 2, label: 'Normal (750)' },
+      { value: 3, label: 'Short (500)' },
+      { value: 4, label: 'None (25)' }
     ],
     default: 2,
     category: 'zombieLore',
@@ -1353,7 +4026,7 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
   {
     key: 'Sight',
     label: 'Zombie Sight',
-    description: 'How well zombies can see.',
+    description: 'How far zombies can see targets.',
     type: 'select',
     options: [
       { value: 1, label: 'Eagle-eyed' },
@@ -1367,7 +4040,7 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
   {
     key: 'Hearing',
     label: 'Zombie Hearing',
-    description: 'How well zombies can hear.',
+    description: 'How well zombies can hear sounds.',
     type: 'select',
     options: [
       { value: 1, label: 'Pinpoint' },
@@ -1378,8 +4051,229 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
     category: 'zombieLore',
     section: 'ZombieLore'
   },
+  {
+    key: 'SpottedLogic',
+    label: 'Spotted Logic',
+    description: 'How zombies decide to chase their targets.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'Instant (B41 default)' },
+      { value: 2, label: 'Line of Sight + Sound' },
+      { value: 3, label: 'Sound Only' }
+    ],
+    default: 1,
+    category: 'zombieLore',
+    section: 'ZombieLore'
+  },
+  {
+    key: 'ThumpNoChasing',
+    label: 'Thump No Chasing',
+    description: 'Zombies that weren\'t chasing a player will not thump constructions.',
+    type: 'boolean',
+    default: false,
+    category: 'zombieLore',
+    section: 'ZombieLore'
+  },
+  {
+    key: 'ThumpOnConstruction',
+    label: 'Thump on Constructions',
+    description: 'Zombies thump player-built structures.',
+    type: 'boolean',
+    default: true,
+    category: 'zombieLore',
+    section: 'ZombieLore'
+  },
+  {
+    key: 'ActiveOnly',
+    label: 'Active Only',
+    description: 'Zombies active during specific times.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'Both (Always Active)' },
+      { value: 2, label: 'Night Only' },
+      { value: 3, label: 'Day Only' }
+    ],
+    default: 1,
+    category: 'zombieLore',
+    section: 'ZombieLore'
+  },
+  {
+    key: 'TriggerHouseAlarm',
+    label: 'Trigger House Alarms',
+    description: 'Whether zombies can randomly trigger house alarms.',
+    type: 'boolean',
+    default: true,
+    category: 'zombieLore',
+    section: 'ZombieLore'
+  },
+  {
+    key: 'ZombiesDragDown',
+    label: 'Zombies Drag Down',
+    description: 'Multiple zombies can pull player to ground.',
+    type: 'boolean',
+    default: true,
+    category: 'zombieLore',
+    section: 'ZombieLore'
+  },
+  {
+    key: 'ZombiesCrawlersDragDown',
+    label: 'Crawlers Drag Down',
+    description: 'Crawlers can drag players down.',
+    type: 'boolean',
+    default: false,
+    category: 'zombieLore',
+    section: 'ZombieLore'
+  },
+  {
+    key: 'ZombiesFenceLunge',
+    label: 'Fence Lunge',
+    description: 'Zombies can lunge at you over fences.',
+    type: 'boolean',
+    default: true,
+    category: 'zombieLore',
+    section: 'ZombieLore'
+  },
+  {
+    key: 'ZombiesArmorFactor',
+    label: 'Zombies Armor Factor',
+    description: 'Multiplier for zombie armor from clothing. Higher = harder to kill.',
+    type: 'number',
+    min: 0,
+    max: 100,
+    default: 1.0,
+    category: 'zombieLore',
+    section: 'ZombieLore'
+  },
+  {
+    key: 'ZombiesMaxDefense',
+    label: 'Zombies Max Defense',
+    description: 'Maximum defense value zombies can have.',
+    type: 'number',
+    min: 0,
+    max: 100,
+    default: 100.0,
+    category: 'zombieLore',
+    section: 'ZombieLore'
+  },
+  {
+    key: 'ChanceOfAttachedWeapon',
+    label: 'Attached Weapon Chance',
+    description: 'Chance a zombie has a weapon stuck in them.',
+    type: 'number',
+    min: 0,
+    max: 100,
+    default: 1,
+    category: 'zombieLore',
+    section: 'ZombieLore'
+  },
+  {
+    key: 'ZombiesFallDamage',
+    label: 'Zombies Fall Damage',
+    description: 'Whether zombies can die from falling.',
+    type: 'boolean',
+    default: true,
+    category: 'zombieLore',
+    section: 'ZombieLore'
+  },
+  {
+    key: 'DisableFakeDead',
+    label: 'Disable Fake Dead',
+    description: 'No zombies will pretend to be dead.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'Enabled' },
+      { value: 2, label: 'Disabled' },
+      { value: 3, label: 'Force Enabled' }
+    ],
+    default: 1,
+    category: 'zombieLore',
+    section: 'ZombieLore'
+  },
+  {
+    key: 'PlayerSpawnZombieRemoval',
+    label: 'Spawn Zone Clear',
+    description: 'Distance around spawn points cleared of zombies.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'None' },
+      { value: 2, label: 'Small' },
+      { value: 3, label: 'Medium' },
+      { value: 4, label: 'Large' },
+      { value: 5, label: 'Very Large' }
+    ],
+    default: 3,
+    category: 'zombieLore',
+    section: 'ZombieLore'
+  },
+  {
+    key: 'FenceThumpersRequired',
+    label: 'Fence Thumpers Required',
+    description: 'Minimum zombies needed to damage a fence.',
+    type: 'number',
+    min: 1,
+    max: 100,
+    default: 2,
+    category: 'zombieLore',
+    section: 'ZombieLore'
+  },
+  {
+    key: 'FenceDamageMultiplier',
+    label: 'Fence Damage Multiplier',
+    description: 'Multiplier for damage zombies do to fences.',
+    type: 'number',
+    min: 0,
+    max: 100,
+    default: 1.0,
+    category: 'zombieLore',
+    section: 'ZombieLore'
+  },
+  {
+    key: 'DoorOpeningPercentage',
+    label: 'Door Opening Percentage',
+    description: 'Percentage of zombies that can open doors when cognition allows it.',
+    type: 'number',
+    min: 0,
+    max: 100,
+    default: 50,
+    category: 'zombieLore',
+    section: 'ZombieLore'
+  },
+  {
+    key: 'CrawlUnderVehicle',
+    label: 'Crawl Under Vehicle',
+    description: 'Crawler zombies can crawl under vehicles.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'Crawlers Only' },
+      { value: 2, label: 'All Zombies' },
+      { value: 3, label: 'Disabled' }
+    ],
+    default: 1,
+    category: 'zombieLore',
+    section: 'ZombieLore'
+  },
+  {
+    key: 'SprinterPercentage',
+    label: 'Sprinter Percentage',
+    description: 'Percentage of sprinter zombies when Speed is set to Random.',
+    type: 'number',
+    min: 0,
+    max: 100,
+    default: 30,
+    category: 'zombieLore',
+    section: 'ZombieLore'
+  },
+  {
+    key: 'Reanimate',
+    label: 'Reanimate',
+    description: 'Dead zombies can get back up after being killed.',
+    type: 'boolean',
+    default: false,
+    category: 'zombieLore',
+    section: 'ZombieLore'
+  },
 
-  // Zombie Config (Population)
+  // ==================== Zombie Config (Population) ====================
   {
     key: 'PopulationMultiplier',
     label: 'Population Multiplier',
@@ -1419,7 +4313,7 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
     description: 'Day when zombie population peaks.',
     type: 'number',
     min: 1,
-    max: 365,
+    max: 3650,
     default: 28,
     category: 'zombiePopulation',
     section: 'ZombieConfig'
@@ -1456,6 +4350,400 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
     default: 0.1,
     category: 'zombiePopulation',
     section: 'ZombieConfig'
+  },
+  {
+    key: 'RedistributeHours',
+    label: 'Redistribute Hours',
+    description: 'Hours between zombie redistribution across the map.',
+    type: 'number',
+    min: 0,
+    max: 8760,
+    default: 12,
+    category: 'zombiePopulation',
+    section: 'ZombieConfig'
+  },
+  {
+    key: 'FollowSoundDistance',
+    label: 'Follow Sound Distance',
+    description: 'How far zombies will follow sounds in cells.',
+    type: 'number',
+    min: 1,
+    max: 1000,
+    default: 100,
+    category: 'zombiePopulation',
+    section: 'ZombieConfig'
+  },
+  {
+    key: 'RallyGroupSize',
+    label: 'Rally Group Size',
+    description: 'Base number of zombies in rally groups.',
+    type: 'number',
+    min: 1,
+    max: 1000,
+    default: 20,
+    category: 'zombiePopulation',
+    section: 'ZombieConfig'
+  },
+  {
+    key: 'RallyTravelDistance',
+    label: 'Rally Travel Distance',
+    description: 'How far rally groups travel in cells.',
+    type: 'number',
+    min: 5,
+    max: 50,
+    default: 20,
+    category: 'zombiePopulation',
+    section: 'ZombieConfig'
+  },
+  {
+    key: 'RallyGroupSeparation',
+    label: 'Rally Group Separation',
+    description: 'Minimum distance between rally groups.',
+    type: 'number',
+    min: 1,
+    max: 25,
+    default: 15,
+    category: 'zombiePopulation',
+    section: 'ZombieConfig'
+  },
+  {
+    key: 'RallyGroupRadius',
+    label: 'Rally Group Radius',
+    description: 'Radius of area a rally group spreads across.',
+    type: 'number',
+    min: 1,
+    max: 25,
+    default: 3,
+    category: 'zombiePopulation',
+    section: 'ZombieConfig'
+  },
+
+  // ==================== XP Multipliers ====================
+  {
+    key: 'XPMultiplier',
+    label: 'Global XP Multiplier',
+    description: 'Global experience gain multiplier.',
+    type: 'number',
+    min: 0.001,
+    max: 1000,
+    default: 1.0,
+    category: 'xpMultipliers',
+    section: 'MultiplierConfig'
+  },
+  {
+    key: 'XPMultiplierAffectsQuest',
+    label: 'XP Multiplier Affects Quests',
+    description: 'Whether the global XP multiplier applies to quest XP.',
+    type: 'boolean',
+    default: true,
+    category: 'xpMultipliers',
+    section: 'MultiplierConfig'
+  },
+  {
+    key: 'Sprinting',
+    label: 'Sprinting XP',
+    type: 'number', min: 0.001, max: 1000, default: 1.0,
+    description: 'XP multiplier for Sprinting skill.',
+    category: 'xpMultipliers',
+    section: 'MultiplierConfig'
+  },
+  {
+    key: 'Lightfoot',
+    label: 'Lightfoot XP',
+    type: 'number', min: 0.001, max: 1000, default: 1.0,
+    description: 'XP multiplier for Lightfoot skill.',
+    category: 'xpMultipliers',
+    section: 'MultiplierConfig'
+  },
+  {
+    key: 'Nimble',
+    label: 'Nimble XP',
+    type: 'number', min: 0.001, max: 1000, default: 1.0,
+    description: 'XP multiplier for Nimble skill.',
+    category: 'xpMultipliers',
+    section: 'MultiplierConfig'
+  },
+  {
+    key: 'Sneaking',
+    label: 'Sneaking XP',
+    type: 'number', min: 0.001, max: 1000, default: 1.0,
+    description: 'XP multiplier for Sneaking skill.',
+    category: 'xpMultipliers',
+    section: 'MultiplierConfig'
+  },
+  {
+    key: 'Axe',
+    label: 'Axe XP',
+    type: 'number', min: 0.001, max: 1000, default: 1.0,
+    description: 'XP multiplier for Axe skill.',
+    category: 'xpMultipliers',
+    section: 'MultiplierConfig'
+  },
+  {
+    key: 'Blunt',
+    label: 'Blunt XP',
+    type: 'number', min: 0.001, max: 1000, default: 1.0,
+    description: 'XP multiplier for Blunt skill.',
+    category: 'xpMultipliers',
+    section: 'MultiplierConfig'
+  },
+  {
+    key: 'SmallBlade',
+    label: 'Small Blade XP',
+    type: 'number', min: 0.001, max: 1000, default: 1.0,
+    description: 'XP multiplier for Small Blade skill.',
+    category: 'xpMultipliers',
+    section: 'MultiplierConfig'
+  },
+  {
+    key: 'LongBlade',
+    label: 'Long Blade XP',
+    type: 'number', min: 0.001, max: 1000, default: 1.0,
+    description: 'XP multiplier for Long Blade skill.',
+    category: 'xpMultipliers',
+    section: 'MultiplierConfig'
+  },
+  {
+    key: 'SmallBlunt',
+    label: 'Small Blunt XP',
+    type: 'number', min: 0.001, max: 1000, default: 1.0,
+    description: 'XP multiplier for Small Blunt skill.',
+    category: 'xpMultipliers',
+    section: 'MultiplierConfig'
+  },
+  {
+    key: 'Aiming',
+    label: 'Aiming XP',
+    type: 'number', min: 0.001, max: 1000, default: 1.0,
+    description: 'XP multiplier for Aiming skill.',
+    category: 'xpMultipliers',
+    section: 'MultiplierConfig'
+  },
+  {
+    key: 'Reloading',
+    label: 'Reloading XP',
+    type: 'number', min: 0.001, max: 1000, default: 1.0,
+    description: 'XP multiplier for Reloading skill.',
+    category: 'xpMultipliers',
+    section: 'MultiplierConfig'
+  },
+  {
+    key: 'Fishing',
+    label: 'Fishing XP',
+    type: 'number', min: 0.001, max: 1000, default: 1.0,
+    description: 'XP multiplier for Fishing skill.',
+    category: 'xpMultipliers',
+    section: 'MultiplierConfig'
+  },
+  {
+    key: 'Trapping',
+    label: 'Trapping XP',
+    type: 'number', min: 0.001, max: 1000, default: 1.0,
+    description: 'XP multiplier for Trapping skill.',
+    category: 'xpMultipliers',
+    section: 'MultiplierConfig'
+  },
+  {
+    key: 'Woodwork',
+    label: 'Carpentry XP',
+    type: 'number', min: 0.001, max: 1000, default: 1.0,
+    description: 'XP multiplier for Carpentry skill.',
+    category: 'xpMultipliers',
+    section: 'MultiplierConfig'
+  },
+  {
+    key: 'Cooking',
+    label: 'Cooking XP',
+    type: 'number', min: 0.001, max: 1000, default: 1.0,
+    description: 'XP multiplier for Cooking skill.',
+    category: 'xpMultipliers',
+    section: 'MultiplierConfig'
+  },
+  {
+    key: 'Farming',
+    label: 'Farming XP',
+    type: 'number', min: 0.001, max: 1000, default: 1.0,
+    description: 'XP multiplier for Farming skill.',
+    category: 'xpMultipliers',
+    section: 'MultiplierConfig'
+  },
+  {
+    key: 'Doctor',
+    label: 'First Aid XP',
+    type: 'number', min: 0.001, max: 1000, default: 1.0,
+    description: 'XP multiplier for First Aid skill.',
+    category: 'xpMultipliers',
+    section: 'MultiplierConfig'
+  },
+  {
+    key: 'Electricity',
+    label: 'Electricity XP',
+    type: 'number', min: 0.001, max: 1000, default: 1.0,
+    description: 'XP multiplier for Electricity skill.',
+    category: 'xpMultipliers',
+    section: 'MultiplierConfig'
+  },
+  {
+    key: 'MetalWelding',
+    label: 'Metalworking XP',
+    type: 'number', min: 0.001, max: 1000, default: 1.0,
+    description: 'XP multiplier for Metalworking skill.',
+    category: 'xpMultipliers',
+    section: 'MultiplierConfig'
+  },
+  {
+    key: 'Mechanics',
+    label: 'Mechanics XP',
+    type: 'number', min: 0.001, max: 1000, default: 1.0,
+    description: 'XP multiplier for Mechanics skill.',
+    category: 'xpMultipliers',
+    section: 'MultiplierConfig'
+  },
+  {
+    key: 'Tailoring',
+    label: 'Tailoring XP',
+    type: 'number', min: 0.001, max: 1000, default: 1.0,
+    description: 'XP multiplier for Tailoring skill.',
+    category: 'xpMultipliers',
+    section: 'MultiplierConfig'
+  },
+  {
+    key: 'Maintenance',
+    label: 'Maintenance XP',
+    type: 'number', min: 0.001, max: 1000, default: 1.0,
+    description: 'XP multiplier for Maintenance skill.',
+    category: 'xpMultipliers',
+    section: 'MultiplierConfig'
+  },
+  {
+    key: 'PlantScavenging',
+    label: 'Foraging XP',
+    type: 'number', min: 0.001, max: 1000, default: 1.0,
+    description: 'XP multiplier for Foraging skill.',
+    category: 'xpMultipliers',
+    section: 'MultiplierConfig'
+  },
+  {
+    key: 'Fitness',
+    label: 'Fitness XP',
+    type: 'number', min: 0.001, max: 1000, default: 1.0,
+    description: 'XP multiplier for Fitness skill.',
+    category: 'xpMultipliers',
+    section: 'MultiplierConfig'
+  },
+  {
+    key: 'Strength',
+    label: 'Strength XP',
+    type: 'number', min: 0.001, max: 1000, default: 1.0,
+    description: 'XP multiplier for Strength skill.',
+    category: 'xpMultipliers',
+    section: 'MultiplierConfig'
+  },
+  {
+    key: 'Combat',
+    label: 'Combat XP',
+    type: 'number', min: 0.001, max: 1000, default: 1.0,
+    description: 'XP multiplier for Combat skill.',
+    category: 'xpMultipliers',
+    section: 'MultiplierConfig'
+  },
+  {
+    key: 'Husbandry',
+    label: 'Animal Husbandry XP',
+    type: 'number', min: 0.001, max: 1000, default: 1.0,
+    description: 'XP multiplier for Animal Husbandry skill.',
+    category: 'xpMultipliers',
+    section: 'MultiplierConfig'
+  },
+  {
+    key: 'Spear',
+    label: 'Spear XP',
+    type: 'number', min: 0.001, max: 1000, default: 1.0,
+    description: 'XP multiplier for Spear skill.',
+    category: 'xpMultipliers',
+    section: 'MultiplierConfig'
+  },
+  {
+    key: 'Masonry',
+    label: 'Masonry XP',
+    type: 'number', min: 0.001, max: 1000, default: 1.0,
+    description: 'XP multiplier for Masonry skill.',
+    category: 'xpMultipliers',
+    section: 'MultiplierConfig'
+  },
+  {
+    key: 'Pottery',
+    label: 'Pottery XP',
+    type: 'number', min: 0.001, max: 1000, default: 1.0,
+    description: 'XP multiplier for Pottery skill.',
+    category: 'xpMultipliers',
+    section: 'MultiplierConfig'
+  },
+  {
+    key: 'Blacksmith',
+    label: 'Blacksmith XP',
+    type: 'number', min: 0.001, max: 1000, default: 1.0,
+    description: 'XP multiplier for Blacksmith skill.',
+    category: 'xpMultipliers',
+    section: 'MultiplierConfig'
+  },
+
+  // ==================== Map & Navigation ====================
+  {
+    key: 'AllowMiniMap',
+    label: 'Allow Mini Map',
+    description: 'Whether the in-game mini map is available.',
+    type: 'boolean',
+    default: false,
+    category: 'map',
+    section: 'Map'
+  },
+  {
+    key: 'AllowWorldMap',
+    label: 'Allow World Map',
+    description: 'Whether the in-game world map is available.',
+    type: 'boolean',
+    default: true,
+    category: 'map',
+    section: 'Map'
+  },
+  {
+    key: 'MapAllKnown',
+    label: 'Map All Known',
+    description: 'The entire map is revealed from the start.',
+    type: 'boolean',
+    default: false,
+    category: 'map',
+    section: 'Map'
+  },
+  {
+    key: 'MapNeedsLight',
+    label: 'Map Needs Light',
+    description: 'Map can only be used when there is enough light.',
+    type: 'boolean',
+    default: true,
+    category: 'map',
+    section: 'Map'
+  },
+
+  // ==================== Basements ====================
+  {
+    key: 'SpawnFrequency',
+    label: 'Basement Spawn Frequency',
+    description: 'How often basements appear in buildings.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'None' },
+      { value: 2, label: 'Very Rare' },
+      { value: 3, label: 'Rare' },
+      { value: 4, label: 'Sometimes' },
+      { value: 5, label: 'Often' },
+      { value: 6, label: 'Very Often' },
+      { value: 7, label: 'Always' }
+    ],
+    default: 4,
+    category: 'basement',
+    section: 'Basement'
   },
 ]
 

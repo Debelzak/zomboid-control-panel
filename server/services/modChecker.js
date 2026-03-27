@@ -30,6 +30,8 @@ export class ModChecker extends EventEmitter {
     
     // Performance: Cache mod names to avoid repeated disk reads
     this.modNameCache = new Map(); // WorkshopID -> { name, timestamp }
+    this.checkInProgress = false; // Prevent concurrent update checks
+    this.lastSteamTimestamps = new Map(); // Cache Steam API results between checks
   }
 
   // Initialize with scheduler and restore saved settings
@@ -52,7 +54,7 @@ export class ModChecker extends EventEmitter {
       if (savedWarningMinutes !== null) this.restartWarningMinutes = savedWarningMinutes;
       if (savedDelayIfPlayers !== null) this.delayIfPlayersOnline = savedDelayIfPlayers;
       if (savedMaxDelay !== null) this.maxDelayMinutes = savedMaxDelay;
-      if (savedCheckInterval !== null) this.checkInterval = savedCheckInterval;
+      if (savedCheckInterval !== null) this.checkInterval = Math.max(60000, savedCheckInterval);
       
       if (savedAutoRestart === true) {
         this.autoRestartEnabled = true;
@@ -129,38 +131,61 @@ export class ModChecker extends EventEmitter {
     if (!content) return result;
 
     try {
-      // Basic VDF Parser
+      // VDF Parser — handles both "Key" { (same line) and "Key"\n{ (separate lines)
       const lines = content.split(/\r?\n/);
       const stack = [];
       let current = {};
       const root = current;
+      let pendingKey = null; // Key waiting for opening brace on next line
 
       for (let line of lines) {
         line = line.trim();
-        if (!line || line.startsWith('//')) continue; // Skip empty lines and comments
+        if (!line || line.startsWith('//')) continue;
 
-        // Check for "Key" { start of block
-        if (line.endsWith('{')) {
-          const keyMatch = line.match(/"([^"]+)"/);
-          const key = keyMatch ? keyMatch[1] : 'unknown';
-          
+        // Lone opening brace — use pending key from previous line
+        if (line === '{') {
+          const key = pendingKey || 'unknown';
+          pendingKey = null;
           const newObj = {};
           current[key] = newObj;
           stack.push(current);
           current = newObj;
-        } 
-        // Check for } end of block
-        else if (line === '}') {
+          continue;
+        }
+
+        // "Key" { on the same line
+        if (line.endsWith('{')) {
+          pendingKey = null;
+          const keyMatch = line.match(/"([^"]+)"/);
+          const key = keyMatch ? keyMatch[1] : 'unknown';
+          const newObj = {};
+          current[key] = newObj;
+          stack.push(current);
+          current = newObj;
+          continue;
+        }
+
+        // Closing brace
+        if (line === '}') {
+          pendingKey = null;
           if (stack.length > 0) {
             current = stack.pop();
           }
-        } 
-        // Key-Value pair "Key" "Value"
-        else {
-          const match = line.match(/"([^"]+)"\s+"([^"]*)"/);
-          if (match) {
-            current[match[1]] = match[2];
-          }
+          continue;
+        }
+
+        // Key-Value pair: "Key" "Value"
+        const kvMatch = line.match(/"([^"]+)"\s+"([^"]*)"/);
+        if (kvMatch) {
+          pendingKey = null;
+          current[kvMatch[1]] = kvMatch[2];
+          continue;
+        }
+
+        // Standalone quoted key — opening brace expected on next line
+        const keyOnly = line.match(/^"([^"]+)"$/);
+        if (keyOnly) {
+          pendingKey = keyOnly[1];
         }
       }
 
@@ -382,6 +407,12 @@ export class ModChecker extends EventEmitter {
 
   // Handle mod update detection
   async handleModUpdate(updatedMods) {
+    // Guard against re-entry — don't start duplicate restarts
+    if (this.pendingRestart) {
+      log.debug('Restart already pending, ignoring handleModUpdate');
+      return;
+    }
+
     this.lastUpdateDetected = new Date();
     
     // Emit socket event
@@ -530,7 +561,72 @@ export class ModChecker extends EventEmitter {
 
   // Check for mod updates using local workshop ACF file
   // This compares timeupdated vs latest_timeupdated in Steam's cache
+  // Query Steam Web API for latest workshop item timestamps
+  // Uses ISteamRemoteStorage/GetPublishedFileDetails (no API key required)
+  async fetchSteamTimestamps(workshopIds) {
+    const result = new Map(); // workshopId -> { time_updated, title }
+    if (!workshopIds.length) return result;
+
+    // Steam API accepts batches — process in chunks of 100
+    const BATCH = 100;
+    for (let i = 0; i < workshopIds.length; i += BATCH) {
+      const batch = workshopIds.slice(i, i + BATCH);
+      let timeout;
+      try {
+        const params = new URLSearchParams();
+        params.set('itemcount', String(batch.length));
+        batch.forEach((id, idx) => params.set(`publishedfileids[${idx}]`, id));
+
+        const controller = new AbortController();
+        timeout = setTimeout(() => controller.abort(), 15000);
+
+        const res = await fetch(
+          'https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/',
+          { method: 'POST', body: params, signal: controller.signal }
+        );
+        clearTimeout(timeout);
+        timeout = null;
+
+        if (!res.ok) {
+          log.warn(`Steam API returned ${res.status} for batch ${i / BATCH + 1}`);
+          continue;
+        }
+
+        const data = await res.json();
+        const items = data?.response?.publishedfiledetails || [];
+        for (const item of items) {
+          if (item.result === 1 && item.publishedfileid) {
+            result.set(item.publishedfileid, {
+              time_updated: item.time_updated || 0,
+              title: item.title || null
+            });
+          }
+        }
+      } catch (err) {
+        if (timeout) clearTimeout(timeout);
+        if (err.name === 'AbortError') {
+          log.warn(`Steam API timeout for batch ${i / BATCH + 1}`);
+        } else {
+          log.warn(`Steam API error for batch ${i / BATCH + 1}: ${err.message}`);
+        }
+      }
+    }
+
+    if (result.size > 0 && result.size < workshopIds.length) {
+      log.info(`Steam API returned data for ${result.size}/${workshopIds.length} mods (partial)`);
+    }
+
+    return result;
+  }
+
   async checkForUpdates() {
+    // Prevent concurrent checks (interval can fire while API call is in flight)
+    if (this.checkInProgress) {
+      log.debug('Update check already in progress, skipping');
+      return { updated: false, mods: [], skipped: true };
+    }
+    this.checkInProgress = true;
+
     try {
       // Make sure we have the ACF path
       if (!this.workshopAcfPath) {
@@ -542,61 +638,97 @@ export class ModChecker extends EventEmitter {
         return { updated: false, mods: [], error: 'Workshop ACF file not found' };
       }
       
-      // Read and parse the ACF file
+      // Read and parse the ACF file for local timestamps
       const content = fs.readFileSync(this.workshopAcfPath, 'utf-8');
       const parsed = this.parseAcfFile(content);
       
-      const modCount = Object.keys(parsed.modDetails).length;
-      if (modCount > 0) {
-        log.info(`Checking ${modCount} workshop mods for updates...`);
-      } else {
-        log.debug('No workshop mods to check for updates');
+      // Build local timestamp map from WorkshopItemsInstalled (most complete section)
+      // Fall back to WorkshopItemDetails if a mod only exists there
+      const localTimestamps = new Map(); // workshopId -> timeupdated (local)
+      for (const [id, data] of Object.entries(parsed.installedMods)) {
+        localTimestamps.set(id, data.timeupdated);
       }
-      
+      for (const [id, data] of Object.entries(parsed.modDetails)) {
+        if (!localTimestamps.has(id)) {
+          localTimestamps.set(id, data.timeupdated);
+        }
+      }
+
+      const modCount = localTimestamps.size;
+      if (modCount === 0) {
+        log.debug('No workshop mods found in ACF file');
+        return { updated: false, mods: [] };
+      }
+
+      log.debug(`Checking ${modCount} workshop mods for updates via Steam API...`);
+
       const updatedMods = [];
       const trackedMods = await getTrackedMods() || [];
-      
-      // Build a map of tracked mods for quick lookup
       const trackedMap = new Map();
       for (const mod of trackedMods) {
         trackedMap.set(mod.workshop_id, mod);
       }
 
-      // Check each mod in the ACF file
-      for (const [workshopId, details] of Object.entries(parsed.modDetails)) {
-        const { timeupdated, latest_timeupdated } = details;
-        
-        // If latest_timeupdated is newer than timeupdated, an update is available
-        if (latest_timeupdated > timeupdated) {
-          const trackedMod = trackedMap.get(workshopId);
-          // Try to resolve real name from disk, fall back to tracked name, then generic
-          const nameFromDisk = this.resolveModNameFromDisk(workshopId);
-          const modName = nameFromDisk || trackedMod?.name || `Workshop Mod ${workshopId}`;
-          
-          // Update tracked mod name if we resolved a better one
-          if (trackedMod && nameFromDisk && trackedMod.name !== nameFromDisk) {
-            trackedMod.name = nameFromDisk;
-            await addTrackedMod(workshopId, nameFromDisk);
+      // Query Steam Web API for latest timestamps
+      const workshopIds = [...localTimestamps.keys()];
+      const steamData = await this.fetchSteamTimestamps(workshopIds);
+
+      // Cache steam data for getStatus() / getWorkshopInfo()
+      if (steamData.size > 0) {
+        this.lastSteamTimestamps = steamData;
+      }
+
+      if (steamData.size === 0) {
+        // API failed entirely — fall back to ACF-only comparison
+        log.warn('Steam API returned no data, falling back to ACF-only check');
+        for (const [workshopId, details] of Object.entries(parsed.modDetails)) {
+          const { timeupdated, latest_timeupdated } = details;
+          if (latest_timeupdated > timeupdated) {
+            const trackedMod = trackedMap.get(workshopId);
+            const nameFromDisk = this.resolveModNameFromDisk(workshopId);
+            const modName = nameFromDisk || trackedMod?.name || `Workshop Mod ${workshopId}`;
+            log.info(`Mod update available (ACF): ${modName} (${workshopId})`);
+            updatedMods.push({
+              workshopId, name: modName,
+              localTimestamp: new Date(timeupdated * 1000),
+              latestTimestamp: new Date(latest_timeupdated * 1000)
+            });
           }
-          
-          log.info(`Mod update available: ${modName} (${workshopId}) - local: ${timeupdated}, latest: ${latest_timeupdated}`);
-          
-          updatedMods.push({
-            workshopId,
-            name: modName,
-            localTimestamp: new Date(timeupdated * 1000),
-            latestTimestamp: new Date(latest_timeupdated * 1000)
-          });
-          
-          // Add to tracking if not already tracked
-          if (!trackedMod) {
-            await addTrackedMod(workshopId, modName);
-            trackedMap.set(workshopId, { workshop_id: workshopId, name: modName });
-          }
-          
-          // Invalidate name cache as files might change after update
-          if (this.modNameCache.has(workshopId)) {
-            this.modNameCache.delete(workshopId);
+        }
+      } else {
+        // Compare local timestamps against Steam API timestamps
+        for (const [workshopId, localTime] of localTimestamps) {
+          const steam = steamData.get(workshopId);
+          if (!steam) continue; // Not found on Steam (deleted/hidden)
+
+          if (steam.time_updated > localTime) {
+            const trackedMod = trackedMap.get(workshopId);
+            const nameFromDisk = this.resolveModNameFromDisk(workshopId);
+            const modName = nameFromDisk || steam.title || trackedMod?.name || `Workshop Mod ${workshopId}`;
+
+            // Update tracked mod name if we resolved a better one
+            if (trackedMod && nameFromDisk && trackedMod.name !== nameFromDisk) {
+              trackedMod.name = nameFromDisk;
+              await addTrackedMod(workshopId, nameFromDisk);
+            }
+
+            log.info(`Mod update available: ${modName} (${workshopId}) - local: ${localTime}, steam: ${steam.time_updated}`);
+
+            updatedMods.push({
+              workshopId,
+              name: modName,
+              localTimestamp: new Date(localTime * 1000),
+              latestTimestamp: new Date(steam.time_updated * 1000)
+            });
+
+            if (!trackedMod) {
+              await addTrackedMod(workshopId, modName);
+              trackedMap.set(workshopId, { workshop_id: workshopId, name: modName });
+            }
+
+            if (this.modNameCache.has(workshopId)) {
+              this.modNameCache.delete(workshopId);
+            }
           }
         }
       }
@@ -608,7 +740,6 @@ export class ModChecker extends EventEmitter {
         log.info(`${updatedMods.length} mod(s) have updates available`);
         await logServerEvent('mod_update_detected', JSON.stringify(updatedMods.map(m => m.name)));
         
-        // Emit socket event
         if (this.io) {
           this.io.emit('mods:updates_available', { 
             count: updatedMods.length,
@@ -616,12 +747,15 @@ export class ModChecker extends EventEmitter {
           });
         }
         
-        if (this.onUpdateCallback) {
+        // Only trigger callback if NOT already pending a restart
+        if (this.onUpdateCallback && !this.pendingRestart) {
           try {
             await this.onUpdateCallback(updatedMods);
           } catch (callbackError) {
             log.error(`Mod update callback failed: ${callbackError.message}`);
           }
+        } else if (this.pendingRestart) {
+          log.debug('Restart already pending, skipping callback');
         }
       } else {
         log.debug('No mod updates available');
@@ -631,10 +765,12 @@ export class ModChecker extends EventEmitter {
     } catch (error) {
       log.error(`Mod update check failed: ${error.message}`);
       return { updated: false, mods: [], error: error.message };
+    } finally {
+      this.checkInProgress = false;
     }
   }
 
-  // Get workshop info from ACF file (replaces Steam API)
+  // Get workshop info from ACF file, enriched with cached Steam API data
   async getWorkshopInfo() {
     if (!this.workshopAcfPath || !fs.existsSync(this.workshopAcfPath)) {
       return {};
@@ -647,11 +783,14 @@ export class ModChecker extends EventEmitter {
       const result = {};
       for (const [workshopId, installed] of Object.entries(parsed.installedMods)) {
         const details = parsed.modDetails[workshopId] || {};
+        const steamInfo = this.lastSteamTimestamps.get(workshopId);
+        // Prefer Steam API timestamp, fall back to ACF latest_timeupdated
+        const latestTime = steamInfo?.time_updated || details.latest_timeupdated || installed.timeupdated;
         result[workshopId] = {
           size: installed.size,
           timeupdated: installed.timeupdated,
-          latest_timeupdated: details.latest_timeupdated || installed.timeupdated,
-          needsUpdate: details.latest_timeupdated > installed.timeupdated
+          latest_timeupdated: latestTime,
+          needsUpdate: latestTime > installed.timeupdated
         };
       }
       
