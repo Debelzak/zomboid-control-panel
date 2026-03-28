@@ -8,6 +8,23 @@ import { logServerEvent, getSetting, getActiveServer } from '../database/init.js
 
 const isWindows = process.platform === 'win32';
 
+// Allowed extensions for custom start commands
+const ALLOWED_CMD_EXTENSIONS = isWindows
+  ? ['.bat', '.cmd', '.exe']
+  : ['.sh', ''];
+
+// Validate a custom start command string for safety
+function validateStartCommand(cmd) {
+  if (!cmd || typeof cmd !== 'string') return { valid: false, reason: 'Command is empty' };
+  if (cmd.length > 1024) return { valid: false, reason: 'Command exceeds 1024 characters' };
+  // Block obvious shell metacharacters that enable chaining/injection
+  // Allow quotes, spaces, hyphens, equals, slashes, dots, colons (drive letters)
+  if (/[&|;<>`${}()!\[\]\n\r]/.test(cmd)) {
+    return { valid: false, reason: 'Command contains disallowed shell characters: & | ; < > ` $ { } ( ) ! [ ]' };
+  }
+  return { valid: true };
+}
+
 // Helper function to escape regex special characters
 function escapeRegExp(str) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -205,54 +222,79 @@ export class ServerManager {
   }
 
   async startServer({ skipRunningCheck = false } = {}) {
-    // Force reload config from database before starting (settings may have changed)
-    this.configLoaded = false;
-    await this.loadConfig();
-    
-    if (!this.startCommand && !this.serverPath) {
-      throw new Error('Server path not configured');
+    // Prevent concurrent start attempts
+    if (this._starting) {
+      throw new Error('Server start already in progress');
     }
+    this._starting = true;
 
-    if (!skipRunningCheck) {
-      const isRunning = await this.checkServerRunning();
-      if (isRunning) {
-        throw new Error('Server is already running');
+    try {
+      // Force reload config from database before starting (settings may have changed)
+      this.configLoaded = false;
+      await this.loadConfig();
+      
+      if (!this.startCommand && !this.serverPath) {
+        throw new Error('Server path not configured');
       }
-    }
 
-    // Start the server process
-    log.info('Starting server process');
+      if (!skipRunningCheck) {
+        const isRunning = await this.checkServerRunning();
+        if (isRunning) {
+          throw new Error('Server is already running');
+        }
+      }
 
-    if (this.startCommand) {
-      // Custom start command — split into command and arguments
-      const parts = this.startCommand.match(/(?:[^\s"]+|"[^"]*")+/g) || [this.startCommand];
-      const cmd = parts[0].replace(/^"|"$/g, '');
-      const args = parts.slice(1).map(a => a.replace(/^"|"$/g, ''));
-      const cwd = this.serverPath || path.dirname(cmd);
+      // Start the server process
+      log.info('Starting server process');
 
-      log.info(`Using custom start command: ${cmd} ${args.join(' ')}`);
+      if (this.startCommand) {
+        // Validate the custom command before executing
+        const validation = validateStartCommand(this.startCommand);
+        if (!validation.valid) {
+          throw new Error(`Invalid start command: ${validation.reason}`);
+        }
 
-      if (isWindows && (cmd.endsWith('.bat') || cmd.endsWith('.cmd'))) {
-        this.serverProcess = spawn('cmd.exe', ['/c', cmd, ...args], {
-          cwd,
-          detached: true,
-          stdio: 'ignore'
-        });
-      } else if (!isWindows && cmd.endsWith('.sh')) {
-        try { fs.chmodSync(cmd, 0o750); } catch (e) { /* ok */ }
-        this.serverProcess = spawn('bash', [cmd, ...args], {
-          cwd,
-          detached: true,
-          stdio: 'ignore'
-        });
+        // Custom start command — split into command and arguments
+        const parts = this.startCommand.match(/(?:[^\s"]+|"[^"]*")+/g) || [this.startCommand];
+        const cmd = parts[0].replace(/^"|"$/g, '');
+        const args = parts.slice(1).map(a => a.replace(/^"|"$/g, ''));
+        const cwd = this.serverPath || path.dirname(path.resolve(cmd));
+
+        // Validate the command file extension is allowed
+        const ext = path.extname(cmd).toLowerCase();
+        if (!ALLOWED_CMD_EXTENSIONS.includes(ext)) {
+          throw new Error(`Start command has disallowed extension '${ext}'. Allowed: ${ALLOWED_CMD_EXTENSIONS.join(', ')}`);
+        }
+
+        // Resolve to absolute path and verify it exists
+        const resolvedCmd = path.isAbsolute(cmd) ? cmd : path.resolve(cwd, cmd);
+        if (!fs.existsSync(resolvedCmd)) {
+          throw new Error(`Start command not found: ${resolvedCmd}`);
+        }
+
+        log.info(`Using custom start command: ${resolvedCmd} ${args.join(' ')}`);
+
+        if (isWindows && (ext === '.bat' || ext === '.cmd')) {
+          this.serverProcess = spawn('cmd.exe', ['/c', resolvedCmd, ...args], {
+            cwd,
+            detached: true,
+            stdio: 'ignore'
+          });
+        } else if (!isWindows && ext === '.sh') {
+          try { fs.chmodSync(resolvedCmd, 0o750); } catch (e) { /* ok */ }
+          this.serverProcess = spawn('bash', [resolvedCmd, ...args], {
+            cwd,
+            detached: true,
+            stdio: 'ignore'
+          });
+        } else {
+          this.serverProcess = spawn(resolvedCmd, args, {
+            cwd,
+            detached: true,
+            stdio: 'ignore'
+          });
+        }
       } else {
-        this.serverProcess = spawn(cmd, args, {
-          cwd,
-          detached: true,
-          stdio: 'ignore'
-        });
-      }
-    } else {
       const batPath = path.join(this.serverPath, this.serverBat);
     
       if (!fs.existsSync(batPath)) {
@@ -295,6 +337,9 @@ export class ServerManager {
     log.info('Server start command executed');
     
     return { success: true, message: 'Server start command executed' };
+    } finally {
+      this._starting = false;
+    }
   }
 
   async stopServer(graceful = true) {

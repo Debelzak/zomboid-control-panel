@@ -166,6 +166,7 @@ export default function Servers() {
   const [servers, setServers] = useState<ServerInstance[]>([])
   const [loading, setLoading] = useState(true)
   const [editingServer, setEditingServer] = useState<ServerInstance | null>(null)
+  const [savingEdit, setSavingEdit] = useState(false)
   const [deleteServer, setDeleteServer] = useState<ServerInstance | null>(null)
   const [deleteFiles, setDeleteFiles] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -574,8 +575,15 @@ export default function Servers() {
   }
 
   const handleSaveEdit = async () => {
-    if (!editingServer) return
+    if (!editingServer || savingEdit) return
     
+    // Validate port range
+    if (editingServer.rconPort < 1 || editingServer.rconPort > 65535) {
+      toast({ title: 'Error', description: 'RCON port must be between 1 and 65535', variant: 'destructive' })
+      return
+    }
+    
+    setSavingEdit(true)
     try {
       await serversApi.update(editingServer.id, editingServer)
       toast({ title: 'Saved', description: 'Server settings updated' })
@@ -587,6 +595,8 @@ export default function Servers() {
         description: error instanceof Error ? error.message : 'Failed to update server',
         variant: 'destructive'
       })
+    } finally {
+      setSavingEdit(false)
     }
   }
 
@@ -1479,6 +1489,7 @@ export default function Servers() {
                   <Input
                     value={editingServer.name}
                     onChange={e => setEditingServer({ ...editingServer, name: e.target.value })}
+                    maxLength={100}
                   />
                 </div>
                 <div className="space-y-2">
@@ -1486,6 +1497,7 @@ export default function Servers() {
                   <Input
                     value={editingServer.serverName}
                     onChange={e => setEditingServer({ ...editingServer, serverName: e.target.value })}
+                    maxLength={64}
                   />
                 </div>
               </div>
@@ -1528,7 +1540,11 @@ export default function Servers() {
                   onChange={e => setEditingServer({ ...editingServer, startCommand: e.target.value })}
                   className="font-mono text-sm"
                   placeholder="e.g. ./start-server.sh -servername MyServer"
+                  maxLength={1024}
                 />
+                {editingServer.startCommand && /[&|;<>`${}()!\[\]]/.test(editingServer.startCommand) && (
+                  <p className="text-xs text-destructive">Command contains disallowed shell characters</p>
+                )}
               </div>
               </>
               )}
@@ -1555,19 +1571,47 @@ export default function Servers() {
                   <Label>RCON Port</Label>
                   <Input
                     type="number"
+                    min={1}
+                    max={65535}
                     value={editingServer.rconPort}
-                    onChange={e => setEditingServer({ ...editingServer, rconPort: parseInt(e.target.value) || 27015 })}
+                    onChange={e => {
+                      const val = parseInt(e.target.value)
+                      if (!isNaN(val)) setEditingServer({ ...editingServer, rconPort: Math.min(65535, Math.max(1, val)) })
+                    }}
                   />
                 </div>
               </div>
               
-              <div className="space-y-2">
-                <Label>RCON Password</Label>
-                <Input
-                  type="password"
-                  value={editingServer.rconPassword}
-                  onChange={e => setEditingServer({ ...editingServer, rconPassword: e.target.value })}
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>RCON Password</Label>
+                  <Input
+                    type="password"
+                    value={editingServer.rconPassword}
+                    onChange={e => setEditingServer({ ...editingServer, rconPassword: e.target.value })}
+                  />
+                </div>
+                {!editingServer.isRemote && (
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-1.5">
+                    Admin Password
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Info className="w-3.5 h-3.5 text-muted-foreground cursor-help" />
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-[240px]">
+                        <p className="text-xs">Server admin password passed as -adminpassword launch argument. Takes effect on next server start.</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </Label>
+                  <Input
+                    type="password"
+                    value={editingServer.adminPassword || ''}
+                    onChange={e => setEditingServer({ ...editingServer, adminPassword: e.target.value })}
+                    placeholder="Set admin password"
+                  />
+                </div>
+                )}
               </div>
               
               <div className={editingServer.isRemote ? "grid grid-cols-1 gap-4" : "grid grid-cols-1 sm:grid-cols-3 gap-4"}>
@@ -1611,8 +1655,8 @@ export default function Servers() {
             <Button variant="outline" onClick={() => setEditingServer(null)}>
               Cancel
             </Button>
-            <Button onClick={handleSaveEdit}>
-              <Check className="w-4 h-4 mr-2" /> Save Changes
+            <Button onClick={handleSaveEdit} disabled={savingEdit}>
+              <Check className="w-4 h-4 mr-2" /> {savingEdit ? 'Saving...' : 'Save Changes'}
             </Button>
           </DialogFooter>
         </DialogContent>

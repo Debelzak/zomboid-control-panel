@@ -260,9 +260,12 @@ function parseSandboxVars(content) {
       
       if (blockMatch) {
         const blockContent = blockMatch[1];
+        // Strip Lua comment lines to avoid parsing comment text as keys
+        // (e.g. "-- 1 = Sprinters" or "-- Default = Random")
+        const strippedContent = blockContent.replace(/^\s*--.*$/gm, '');
         const valuePattern = /(\w+)\s*=\s*([^,\n]+)/g;
         let valueMatch;
-        while ((valueMatch = valuePattern.exec(blockContent)) !== null) {
+        while ((valueMatch = valuePattern.exec(strippedContent)) !== null) {
           let value = valueMatch[2].trim();
           // Remove trailing comma if present
           value = value.replace(/,\s*$/, '');
@@ -287,6 +290,16 @@ function parseSandboxVars(content) {
   return result;
 }
 
+// Format a number for Lua, preserving the original file's decimal format
+function formatLuaNumber(newValue, originalValueStr) {
+  const trimmed = originalValueStr ? originalValueStr.trim().replace(/,\s*$/, '') : '';
+  // If the original value had a decimal point and the new value is a whole number, add .0
+  if (Number.isInteger(newValue) && trimmed.includes('.')) {
+    return newValue.toFixed(1);
+  }
+  return newValue.toString();
+}
+
 // Modify a single value in the SandboxVars file content in-place
 // Preserves all comments and file structure
 function modifySandboxValue(originalContent, key, newValue, nestedBlock = null) {
@@ -298,14 +311,15 @@ function modifySandboxValue(originalContent, key, newValue, nestedBlock = null) 
     return content;
   }
   
-  // Format the value for Lua
-  let formattedValue;
-  if (typeof newValue === 'boolean') {
-    formattedValue = newValue.toString();
-  } else if (typeof newValue === 'number') {
-    formattedValue = newValue.toString();
-  } else {
-    formattedValue = `"${escapeLuaString(String(newValue))}"`;
+  // Format the value for Lua (base format, may be refined by context)
+  function formatValue(originalValueStr) {
+    if (typeof newValue === 'boolean') {
+      return newValue.toString();
+    } else if (typeof newValue === 'number') {
+      return formatLuaNumber(newValue, originalValueStr);
+    } else {
+      return `"${escapeLuaString(String(newValue))}"`;
+    }
   }
   
   // Escape key for use in regex (even though we validate, this is defense in depth)
@@ -313,19 +327,32 @@ function modifySandboxValue(originalContent, key, newValue, nestedBlock = null) 
   
   if (nestedBlock) {
     // For nested blocks (ZombieLore, ZombieConfig, etc.)
-    // Find the block first, then replace the value within it
+    // Only match actual assignment lines (not comment lines starting with --)
     const escapedBlock = escapeRegExp(nestedBlock);
-    const blockPattern = new RegExp(`(${escapedBlock}\\s*=\\s*\\{[^}]*?)(${escapedKey}\\s*=\\s*)([^,\\n}]+)(,?)`, 's');
-    const match = content.match(blockPattern);
-    if (match) {
-      content = content.replace(blockPattern, `$1$2${formattedValue}$4`);
+    const blockStartPattern = new RegExp(`${escapedBlock}\\s*=\\s*\\{`);
+    const blockStartMatch = content.match(blockStartPattern);
+    if (blockStartMatch) {
+      const blockStart = blockStartMatch.index;
+      const blockEnd = content.indexOf('}', blockStart + blockStartMatch[0].length);
+      if (blockEnd !== -1) {
+        const before = content.substring(0, blockStart);
+        const blockSection = content.substring(blockStart, blockEnd + 1);
+        const after = content.substring(blockEnd + 1);
+        // Replace only on non-comment lines within the block
+        const updatedBlock = blockSection.replace(
+          new RegExp(`(^(?!\\s*--)[^\\n]*?)(${escapedKey})(\\s*=\\s*)([^,\\n}]+)(,?)`, 'm'),
+          (_, prefix, k, eq, oldVal, comma) => `${prefix}${k}${eq}${formatValue(oldVal)}${comma}`
+        );
+        content = before + updatedBlock + after;
+      }
     }
   } else {
     // For top-level settings, match the key = value pattern
-    // Be careful not to match inside nested blocks
     // Pattern: key = value, (with optional trailing comma and comment)
     const pattern = new RegExp(`(^\\s*)(${escapedKey})(\\s*=\\s*)([^,\\n}]+)(,?)(\\s*(?:--.*)?$)`, 'gm');
-    content = content.replace(pattern, `$1$2$3${formattedValue}$5$6`);
+    content = content.replace(pattern, (_, indent, k, eq, oldVal, comma, comment) => 
+      `${indent}${k}${eq}${formatValue(oldVal)}${comma}${comment}`
+    );
   }
   
   return content;
@@ -671,6 +698,30 @@ router.put('/sandbox', async (req, res) => {
     
     if (!sandbox || typeof sandbox !== 'object') {
       return res.status(400).json({ error: 'Sandbox object required' });
+    }
+    
+    // Guard against prototype pollution
+    if (Object.prototype.hasOwnProperty.call(sandbox, '__proto__') ||
+        Object.prototype.hasOwnProperty.call(sandbox, 'constructor') ||
+        Object.prototype.hasOwnProperty.call(sandbox, 'prototype')) {
+      return res.status(400).json({ error: 'Invalid sandbox data' });
+    }
+    
+    // Guard nested sections against prototype pollution
+    for (const section of Object.values(sandbox)) {
+      if (section && typeof section === 'object') {
+        if (Object.prototype.hasOwnProperty.call(section, '__proto__') ||
+            Object.prototype.hasOwnProperty.call(section, 'constructor') ||
+            Object.prototype.hasOwnProperty.call(section, 'prototype')) {
+          return res.status(400).json({ error: 'Invalid sandbox data' });
+        }
+      }
+    }
+    
+    // Size limit: reject payloads > 1MB
+    const payloadSize = JSON.stringify(sandbox).length;
+    if (payloadSize > 1024 * 1024) {
+      return res.status(400).json({ error: 'Sandbox data too large (max 1MB)' });
     }
     
     if (!fs.existsSync(filePath)) {
@@ -1229,6 +1280,116 @@ router.delete('/templates/:id', async (req, res) => {
     res.json({ success: true, message: 'Template deleted' });
   } catch (error) {
     log.error('Failed to delete template:', error);
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
+// ===== FILE BROWSER (for image path fields) =====
+
+const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp']);
+
+// GET /browse-files - List directories and files at a given path
+router.get('/browse-files', async (req, res) => {
+  try {
+    const browsePath = req.query.path ? String(req.query.path) : null;
+    const filterExts = req.query.extensions ? String(req.query.extensions).split(',').map(e => e.toLowerCase().trim()) : null;
+    
+    let targetPath;
+    if (browsePath) {
+      targetPath = path.resolve(browsePath);
+    } else {
+      // Default to the server config directory
+      const configPath = await getServerConfigPath();
+      targetPath = configPath || '';
+    }
+    
+    if (!targetPath) {
+      return res.status(400).json({ error: 'No path provided and server config path not set' });
+    }
+    
+    if (!fs.existsSync(targetPath)) {
+      return res.status(400).json({ error: 'Path does not exist' });
+    }
+    
+    const stat = await fs.promises.stat(targetPath);
+    if (!stat.isDirectory()) {
+      return res.status(400).json({ error: 'Path is not a directory' });
+    }
+    
+    const entries = await fs.promises.readdir(targetPath, { withFileTypes: true });
+    
+    const directories = [];
+    const files = [];
+    
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        // Skip hidden/system directories
+        if (!entry.name.startsWith('.') && entry.name !== 'node_modules') {
+          directories.push(entry.name);
+        }
+      } else if (entry.isFile()) {
+        const ext = path.extname(entry.name).toLowerCase();
+        // If extension filter is provided, only show matching files
+        if (filterExts) {
+          if (filterExts.includes(ext)) {
+            files.push({ name: entry.name, ext });
+          }
+        } else {
+          // Default: show image files only
+          if (IMAGE_EXTENSIONS.has(ext)) {
+            files.push({ name: entry.name, ext });
+          }
+        }
+      }
+    }
+    
+    directories.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+    files.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+    
+    res.json({
+      currentPath: targetPath,
+      parent: path.dirname(targetPath) !== targetPath ? path.dirname(targetPath) : null,
+      directories,
+      files
+    });
+  } catch (error) {
+    log.error(`Failed to browse files: ${error.message}`);
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
+// GET /image-preview - Serve an image file for preview (limited to image types, max 5MB)
+router.get('/image-preview', async (req, res) => {
+  try {
+    const filePath = req.query.path ? String(req.query.path) : null;
+    if (!filePath) {
+      return res.status(400).json({ error: 'Path is required' });
+    }
+    
+    const resolved = path.resolve(filePath);
+    
+    if (!fs.existsSync(resolved)) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+    
+    const ext = path.extname(resolved).toLowerCase();
+    if (!IMAGE_EXTENSIONS.has(ext)) {
+      return res.status(400).json({ error: 'Not an image file' });
+    }
+    
+    const stat = await fs.promises.stat(resolved);
+    if (stat.size > 5 * 1024 * 1024) {
+      return res.status(400).json({ error: 'Image file exceeds 5MB limit' });
+    }
+    
+    const mimeMap = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.bmp': 'image/bmp', '.webp': 'image/webp' };
+    const contentType = mimeMap[ext] || 'application/octet-stream';
+    
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', 'private, max-age=60');
+    fs.createReadStream(resolved).pipe(res);
+  } catch (error) {
+    log.error(`Failed to serve image preview: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });
   }
 });

@@ -443,7 +443,7 @@ const ALLOWED_SERVER_UPDATE_FIELDS = [
   'name', 'serverName', 'installPath', 'serverPath', 'zomboidDataPath',
   'serverConfigPath', 'branch', 'rconHost', 'rconPort', 'rconPassword',
   'serverPort', 'minMemory', 'maxMemory', 'useNoSteam', 'useDebug', 'isRemote',
-  'startBat', 'batFile', 'description'
+  'startBat', 'batFile', 'description', 'adminPassword'
 ];
 
 // Update a server

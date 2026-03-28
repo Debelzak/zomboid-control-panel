@@ -5,12 +5,14 @@ export interface IniSetting {
   key: string
   label: string
   description: string
-  type: 'boolean' | 'number' | 'string' | 'select' | 'multiline'
+  type: 'boolean' | 'number' | 'string' | 'select' | 'multiline' | 'filepath'
   options?: { value: string; label: string }[]
   min?: number
   max?: number
   default?: string | number | boolean
   category: string
+  /** File extension filter for 'filepath' type, e.g. ['.png', '.jpg'] */
+  fileExtensions?: string[]
 }
 
 export const INI_CATEGORIES = [
@@ -898,26 +900,29 @@ export const INI_SCHEMA: IniSetting[] = [
   {
     key: 'ServerImageLoginScreen',
     label: 'Login Screen Image',
-    description: 'Custom image displayed on the login screen.',
-    type: 'string',
+    description: 'Custom image displayed on the login screen. PNG file, recommended 1920×1080. Path relative to the server folder or absolute.',
+    type: 'filepath',
     default: '',
-    category: 'general'
+    category: 'general',
+    fileExtensions: ['.png']
   },
   {
     key: 'ServerImageLoadingScreen',
     label: 'Loading Screen Image',
-    description: 'Custom image displayed on the loading screen.',
-    type: 'string',
+    description: 'Custom image displayed while loading into the server. PNG file, recommended 1920×1080. Path relative to the server folder or absolute.',
+    type: 'filepath',
     default: '',
-    category: 'general'
+    category: 'general',
+    fileExtensions: ['.png']
   },
   {
     key: 'ServerImageIcon',
     label: 'Server Icon',
-    description: 'Custom server icon image.',
-    type: 'string',
+    description: 'Custom server icon shown in the server browser. Square PNG, recommended 256×256. Displayed in a circular mask at 42×42px in the list and ~87×87px in the detail panel.',
+    type: 'filepath',
     default: '',
-    category: 'general'
+    category: 'general',
+    fileExtensions: ['.png']
   },
   {
     key: 'Seed',

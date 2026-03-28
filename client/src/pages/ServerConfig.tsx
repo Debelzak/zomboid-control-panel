@@ -85,6 +85,28 @@ type EditorMode = 'structured' | 'raw'
 type SandboxScalar = string | number | boolean | null | undefined
 type SandboxRecord = Record<string, SandboxScalar>
 
+// Auth-aware image preview (img tags can't send Bearer tokens)
+function AuthImage({ filePath, alt, className }: { filePath: string; alt?: string; className?: string }) {
+  const [blobUrl, setBlobUrl] = useState<string | null>(null)
+  const blobRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!filePath) return
+    let cancelled = false
+    serverFilesApi.fetchImagePreview(filePath).then(url => {
+      if (cancelled) { URL.revokeObjectURL(url); return }
+      if (blobRef.current) URL.revokeObjectURL(blobRef.current)
+      blobRef.current = url
+      setBlobUrl(url)
+    }).catch(() => {})
+    return () => {
+      cancelled = true
+      if (blobRef.current) { URL.revokeObjectURL(blobRef.current); blobRef.current = null }
+    }
+  }, [filePath])
+  if (!blobUrl) return null
+  return <img src={blobUrl} alt={alt || 'Preview'} className={className} />
+}
+
 // --- Optimized Row Components ---
 
 const IniSettingRow = memo(({ 
@@ -92,13 +114,15 @@ const IniSettingRow = memo(({
   value, 
   originalValue,
   onChange,
-  onReset
+  onReset,
+  onBrowse
 }: { 
   setting: IniSetting; 
   value: string;
   originalValue?: string;
   onChange: (key: string, value: string) => void;
   onReset?: (key: string) => void;
+  onBrowse?: (key: string, extensions?: string[]) => void;
 }) => {
   const isModified = originalValue !== undefined && value !== originalValue
   const isDifferentFromDefault = setting.default !== undefined && String(value) !== String(setting.default)
@@ -163,7 +187,7 @@ const IniSettingRow = memo(({
               </Tooltip>
             </TooltipProvider>
           )}
-          <div className="w-full sm:w-48">
+          <div className={`w-full ${setting.type === 'filepath' ? 'sm:w-72' : 'sm:w-48'}`}>
             {setting.type === 'boolean' ? (
               <div className="flex items-center gap-2 justify-end">
                 <span className="text-xs text-muted-foreground">{String(value).toLowerCase() === 'true' ? 'On' : 'Off'}</span>
@@ -210,6 +234,49 @@ const IniSettingRow = memo(({
                   </div>
                 )}
               </div>
+            ) : setting.type === 'filepath' ? (
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center gap-1.5">
+                  <Input
+                    value={String(value)}
+                    onChange={(e) => onChange(setting.key, e.target.value)}
+                    className={`flex-1 font-mono text-xs ${isModified ? 'border-warning/40' : ''}`}
+                    placeholder="No image selected"
+                    maxLength={512}
+                  />
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button variant="outline" size="icon" className="h-9 w-9 shrink-0" onClick={() => onBrowse?.(setting.key, setting.fileExtensions)}>
+                          <FolderOpen className="w-3.5 h-3.5" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Browse for file</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                  {value && (
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0 text-muted-foreground hover:text-destructive" onClick={() => onChange(setting.key, '')}>
+                            <X className="w-3.5 h-3.5" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Clear image</TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  )}
+                </div>
+                {value && (
+                  <div className="rounded-md border bg-muted/30 p-1.5 max-w-[200px]">
+                    <AuthImage
+                      filePath={value}
+                      alt={setting.label}
+                      className="rounded max-h-[80px] w-auto object-contain"
+                    />
+                  </div>
+                )}
+              </div>
             ) : (
               <Input
                 value={String(value)}
@@ -230,7 +297,7 @@ const IniSettingRow = memo(({
     </div>
   )
 }, (prev, next) => {
-  return prev.value === next.value && prev.setting === next.setting && prev.originalValue === next.originalValue
+  return prev.value === next.value && prev.setting === next.setting && prev.originalValue === next.originalValue && prev.onBrowse === next.onBrowse
 })
 IniSettingRow.displayName = 'IniSettingRow'
 
@@ -453,7 +520,18 @@ export default function ServerConfig() {
   const [copied, setCopied] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const copiedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  
+
+  // File browser state (for image path fields)
+  const [fileBrowserOpen, setFileBrowserOpen] = useState(false)
+  const [fileBrowserKey, setFileBrowserKey] = useState('')  // which INI key we're picking a file for
+  const [fileBrowserPath, setFileBrowserPath] = useState('')
+  const [fileBrowserDirs, setFileBrowserDirs] = useState<string[]>([])
+  const [fileBrowserFiles, setFileBrowserFiles] = useState<{ name: string; ext: string }[]>([])
+  const [fileBrowserParent, setFileBrowserParent] = useState<string | null>(null)
+  const [fileBrowserLoading, setFileBrowserLoading] = useState(false)
+  const [fileBrowserExtensions, setFileBrowserExtensions] = useState<string[]>([])
+  const [fileBrowserSelected, setFileBrowserSelected] = useState<string | null>(null)
+
   const { toast } = useToast()
 
   // Load initial data
@@ -689,6 +767,59 @@ export default function ServerConfig() {
       })
     }
   }, [toast])
+
+  // File browser: open the dialog for a specific INI key
+  const openFileBrowser = useCallback(async (key: string, extensions?: string[]) => {
+    setFileBrowserKey(key)
+    setFileBrowserExtensions(extensions || ['.png', '.jpg', '.jpeg'])
+    setFileBrowserSelected(null)
+    setFileBrowserOpen(true)
+    setFileBrowserLoading(true)
+    try {
+      // Start browsing from server config path (or current value's directory)
+      const currentValue = iniSettings[key]
+      let startPath: string | undefined
+      if (currentValue) {
+        // Try the directory of the current value
+        const lastSlash = Math.max(currentValue.lastIndexOf('/'), currentValue.lastIndexOf('\\'))
+        if (lastSlash > 0) startPath = currentValue.substring(0, lastSlash)
+      }
+      const data = await serverFilesApi.browseFiles(startPath, extensions)
+      setFileBrowserPath(data.currentPath)
+      setFileBrowserDirs(data.directories)
+      setFileBrowserFiles(data.files)
+      setFileBrowserParent(data.parent)
+    } catch {
+      toast({ title: 'Error', description: 'Failed to browse files', variant: 'destructive' })
+    } finally {
+      setFileBrowserLoading(false)
+    }
+  }, [iniSettings, toast])
+
+  // File browser: navigate to a directory
+  const browseTo = useCallback(async (dirPath: string) => {
+    setFileBrowserLoading(true)
+    setFileBrowserSelected(null)
+    try {
+      const data = await serverFilesApi.browseFiles(dirPath, fileBrowserExtensions)
+      setFileBrowserPath(data.currentPath)
+      setFileBrowserDirs(data.directories)
+      setFileBrowserFiles(data.files)
+      setFileBrowserParent(data.parent)
+    } catch {
+      toast({ title: 'Error', description: 'Failed to navigate', variant: 'destructive' })
+    } finally {
+      setFileBrowserLoading(false)
+    }
+  }, [fileBrowserExtensions, toast])
+
+  // File browser: confirm selection
+  const confirmFileBrowserSelection = useCallback(() => {
+    if (fileBrowserSelected && fileBrowserKey) {
+      setIniSettings(prev => ({ ...prev, [fileBrowserKey]: fileBrowserSelected }))
+      setFileBrowserOpen(false)
+    }
+  }, [fileBrowserSelected, fileBrowserKey])
 
   const handleSaveIni = async () => {
     setSaving(true)
@@ -1492,6 +1623,7 @@ export default function ServerConfig() {
                                 originalValue={originalIniSettings[setting.key]}
                                 onChange={updateIniValue}
                                 onReset={resetIniValue}
+                                onBrowse={openFileBrowser}
                               />
                             ))}
                           </div>
@@ -1658,10 +1790,10 @@ export default function ServerConfig() {
                             return (
                               <div key={`${section}.${key}`} className={`flex items-center justify-between py-2 px-3 rounded-md transition-colors ${isModified ? 'bg-amber-500/10 border border-amber-500/20' : 'hover:bg-muted/50'}`}>
                                 <div className="flex-1 min-w-0 mr-4">
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-sm font-medium">{key}</span>
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <span className="text-sm font-medium truncate" title={key}>{key}</span>
                                     {section !== 'settings' && (
-                                      <code className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{section}</code>
+                                      <code className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground flex-shrink-0">{section}</code>
                                     )}
                                     {isModified && (
                                       <button
@@ -1682,8 +1814,9 @@ export default function ServerConfig() {
                                   </div>
                                 </div>
                                 <Input
-                                  className="w-48 h-8 text-sm"
+                                  className="w-48 h-8 text-sm flex-shrink-0"
                                   value={String(value)}
+                                  maxLength={500}
                                   onChange={e => {
                                     const raw = e.target.value
                                     let parsed: string | number | boolean = raw
@@ -2603,6 +2736,123 @@ export default function ServerConfig() {
                 <Save className="w-4 h-4 mr-2" />
               )}
               Save Template
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* File Browser Dialog */}
+      <Dialog open={fileBrowserOpen} onOpenChange={setFileBrowserOpen}>
+        <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FolderOpen className="w-5 h-5" />
+              Select Image File
+            </DialogTitle>
+            <DialogDescription>
+              Browse to find a PNG image file for your server.
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* Current path breadcrumb */}
+          <div className="flex items-center gap-1.5 text-xs font-mono bg-muted/50 rounded-md px-3 py-2 overflow-x-auto">
+            <span className="text-muted-foreground truncate" title={fileBrowserPath}>{fileBrowserPath || 'Loading...'}</span>
+          </div>
+
+          {/* File listing */}
+          <ScrollArea className="flex-1 min-h-[300px] max-h-[400px] border rounded-md">
+            {fileBrowserLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : (
+              <div className="p-2 space-y-0.5">
+                {/* Parent directory */}
+                {fileBrowserParent && (
+                  <button
+                    onClick={() => browseTo(fileBrowserParent!)}
+                    className="flex items-center gap-2 w-full px-3 py-2 rounded-md hover:bg-muted/70 text-sm transition-colors"
+                  >
+                    <FolderOpen className="w-4 h-4 text-amber-500 shrink-0" />
+                    <span className="text-muted-foreground">..</span>
+                  </button>
+                )}
+
+                {/* Directories */}
+                {fileBrowserDirs.map(dir => (
+                  <button
+                    key={`d-${dir}`}
+                    onClick={() => browseTo(fileBrowserPath + (fileBrowserPath.endsWith('/') || fileBrowserPath.endsWith('\\') ? '' : (fileBrowserPath.includes('/') ? '/' : '\\')) + dir)}
+                    className="flex items-center gap-2 w-full px-3 py-2 rounded-md hover:bg-muted/70 text-sm transition-colors"
+                  >
+                    <FolderOpen className="w-4 h-4 text-amber-500 shrink-0" />
+                    <span className="truncate">{dir}</span>
+                  </button>
+                ))}
+
+                {/* Files */}
+                {fileBrowserFiles.map(file => {
+                  const fullPath = fileBrowserPath + (fileBrowserPath.endsWith('/') || fileBrowserPath.endsWith('\\') ? '' : (fileBrowserPath.includes('/') ? '/' : '\\')) + file.name
+                  const isSelected = fileBrowserSelected === fullPath
+                  return (
+                    <button
+                      key={`f-${file.name}`}
+                      onClick={() => setFileBrowserSelected(fullPath)}
+                      onDoubleClick={() => {
+                        setFileBrowserSelected(fullPath)
+                        setIniSettings(prev => ({ ...prev, [fileBrowserKey]: fullPath }))
+                        setFileBrowserOpen(false)
+                      }}
+                      className={`flex items-center gap-2 w-full px-3 py-2 rounded-md text-sm transition-colors ${
+                        isSelected ? 'bg-primary/15 border border-primary/30 ring-1 ring-primary/20' : 'hover:bg-muted/70'
+                      }`}
+                    >
+                      <FileText className="w-4 h-4 text-primary shrink-0" />
+                      <span className="truncate flex-1 text-left">{file.name}</span>
+                      <span className="text-xs text-muted-foreground shrink-0">{file.ext}</span>
+                    </button>
+                  )
+                })}
+
+                {/* Empty state */}
+                {fileBrowserDirs.length === 0 && fileBrowserFiles.length === 0 && !fileBrowserParent && (
+                  <div className="text-center py-8 text-sm text-muted-foreground">
+                    No image files found in this directory
+                  </div>
+                )}
+                {fileBrowserDirs.length === 0 && fileBrowserFiles.length === 0 && fileBrowserParent && (
+                  <div className="text-center py-4 text-sm text-muted-foreground">
+                    No image files here &mdash; try a different folder
+                  </div>
+                )}
+              </div>
+            )}
+          </ScrollArea>
+
+          {/* Preview + selection info */}
+          {fileBrowserSelected && (
+            <div className="flex items-start gap-3 bg-muted/30 rounded-md p-3 border">
+              <div className="rounded-md border bg-background p-1 shrink-0">
+                <AuthImage
+                  filePath={fileBrowserSelected}
+                  alt="Preview"
+                  className="max-h-[64px] max-w-[120px] object-contain rounded"
+                />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">{fileBrowserSelected.split(/[/\\]/).pop()}</p>
+                <p className="text-xs text-muted-foreground font-mono truncate mt-0.5" title={fileBrowserSelected}>{fileBrowserSelected}</p>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setFileBrowserOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={confirmFileBrowserSelection} disabled={!fileBrowserSelected}>
+              <Check className="w-4 h-4 mr-2" />
+              Select File
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -330,6 +330,30 @@ router.post('/start', async (req, res) => {
       log.warn(`RCON pre-configuration failed: ${rconErr.message}`);
     }
     
+    // Regenerate startup scripts so any config changes (admin password, memory, etc.) take effect
+    if (activeServer && !activeServer.startCommand && activeServer.installPath) {
+      try {
+        const scripts = generateStartupScripts({
+          installPath: activeServer.installPath,
+          serverName: activeServer.serverName,
+          minMemory: activeServer.minMemory || 4,
+          maxMemory: activeServer.maxMemory || 8,
+          zomboidDataPath: activeServer.zomboidDataPath || '',
+          adminPassword: activeServer.adminPassword || '',
+          serverPort: activeServer.serverPort || 16261,
+          useNoSteam: activeServer.useNoSteam || false,
+          useDebug: activeServer.useDebug || false
+        });
+        const batPath = path.join(activeServer.installPath, `StartServer_${activeServer.serverName}.bat`);
+        fs.writeFileSync(batPath, scripts.bat, 'utf8');
+        const shPath = path.join(activeServer.installPath, `start-server_${activeServer.serverName}.sh`);
+        fs.writeFileSync(shPath, scripts.sh.replace(/\r\n/g, '\n'), { encoding: 'utf8', mode: 0o750 });
+        log.info('Regenerated startup scripts with current server config');
+      } catch (scriptErr) {
+        log.warn(`Could not regenerate startup scripts: ${scriptErr.message}`);
+      }
+    }
+    
     const result = await serverManager.startServer();
     
     // Emit status update via Socket.IO
@@ -578,7 +602,10 @@ router.post('/message', async (req, res) => {
       return res.status(400).json({ error: 'Message must be a string under 1000 characters' });
     }
     
-    const result = await rconService.serverMessage(message);
+    // Strip newlines/carriage returns to prevent RCON protocol injection
+    const safeMessage = message.replace(/[\r\n]/g, ' ');
+    
+    const result = await rconService.serverMessage(safeMessage);
     res.json(result);
   } catch (error) {
     log.error(`Failed to send message: ${error.message}`);

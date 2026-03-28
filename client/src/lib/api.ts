@@ -878,6 +878,7 @@ export interface ServerInstance {
   isRemote: boolean
   isActive: boolean
   startCommand: string
+  adminPassword: string
   createdAt: string
 }
 
@@ -1021,6 +1022,25 @@ export const serverFilesApi = {
   updateTemplate: (id: string, data: { name?: string; description?: string }) =>
     apiPut(`/server-files/templates/${id}`, data),
   deleteTemplate: (id: string) => apiDelete(`/server-files/templates/${id}`),
+
+  // File browser (for image path fields)
+  browseFiles: (browsePath?: string, extensions?: string[]) => {
+    const params = new URLSearchParams()
+    if (browsePath) params.set('path', browsePath)
+    if (extensions?.length) params.set('extensions', extensions.join(','))
+    return apiGet(`/server-files/browse-files?${params}`) as Promise<{
+      currentPath: string
+      parent: string | null
+      directories: string[]
+      files: { name: string; ext: string }[]
+    }>
+  },
+  fetchImagePreview: async (filePath: string): Promise<string> => {
+    const response = await apiFetch(`/server-files/image-preview?path=${encodeURIComponent(filePath)}`)
+    if (!response.ok) throw new ApiError('Failed to load image preview', { status: response.status })
+    const blob = await response.blob()
+    return URL.createObjectURL(blob)
+  },
 }
 
 // Panel Bridge API (for direct Lua mod communication)
