@@ -168,12 +168,12 @@ router.post('/track', async (req, res) => {
       return res.status(400).json({ error: 'Workshop ID is required' });
     }
     
-    // Validate workshopId is a string or number
-    if (typeof workshopId !== 'string' && typeof workshopId !== 'number') {
-      return res.status(400).json({ error: 'Workshop ID must be a string or number' });
+    const workshopIdStr = String(workshopId);
+    if (!/^\d{1,15}$/.test(workshopIdStr)) {
+      return res.status(400).json({ error: 'Invalid Workshop ID format' });
     }
     
-    const result = await modChecker.addModToTrack(String(workshopId));
+    const result = await modChecker.addModToTrack(workshopIdStr);
     res.json(result);
   } catch (error) {
     log.error(`Failed to add mod to track: ${error.message}`);
@@ -599,6 +599,11 @@ router.post('/get-mod-info', async (req, res) => {
     
     if (!workshopId) {
       return res.status(400).json({ error: 'Workshop ID is required' });
+    }
+    
+    const workshopIdStr = String(workshopId);
+    if (!/^\d{1,15}$/.test(workshopIdStr)) {
+      return res.status(400).json({ error: 'Invalid Workshop ID format' });
     }
     
     const infoAbort = new AbortController();

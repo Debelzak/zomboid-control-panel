@@ -507,6 +507,7 @@ export default function Backups() {
               <Switch
                 checked={backupStatus?.enabled || false}
                 onCheckedChange={toggleBackupEnabled}
+                aria-label="Toggle scheduled backups"
               />
             </div>
           </CardContent>

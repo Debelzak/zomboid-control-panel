@@ -650,7 +650,7 @@ export default function Debug() {
         <TabsContent value="logs" className="space-y-4">
           {/* Stats Bar */}
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
-            <Card className="cursor-pointer hover:bg-accent/50 transition-colors" onClick={() => setLevelFilter('all')}>
+            <Card className="cursor-pointer hover:bg-accent/50 transition-colors" onClick={() => setLevelFilter('all')} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setLevelFilter('all') } }} aria-label="Filter: show all logs">
               <CardContent className="p-4 flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Total</p>
@@ -659,7 +659,7 @@ export default function Debug() {
                 <Terminal className="w-8 h-8 text-muted-foreground" />
               </CardContent>
             </Card>
-            <Card className="cursor-pointer transition-colors hover:bg-destructive/8" onClick={() => setLevelFilter('error')}>
+            <Card className="cursor-pointer transition-colors hover:bg-destructive/8" onClick={() => setLevelFilter('error')} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setLevelFilter('error') } }} aria-label="Filter: show errors only">
               <CardContent className="p-4 flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Errors</p>
@@ -668,7 +668,7 @@ export default function Debug() {
                 <AlertCircle className="w-8 h-8 text-destructive" />
               </CardContent>
             </Card>
-            <Card className="cursor-pointer transition-colors hover:bg-warning/8" onClick={() => setLevelFilter('warn')}>
+            <Card className="cursor-pointer transition-colors hover:bg-warning/8" onClick={() => setLevelFilter('warn')} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setLevelFilter('warn') } }} aria-label="Filter: show warnings only">
               <CardContent className="p-4 flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Warnings</p>
@@ -677,7 +677,7 @@ export default function Debug() {
                 <AlertTriangle className="w-8 h-8 text-warning" />
               </CardContent>
             </Card>
-            <Card className="cursor-pointer transition-colors hover:bg-primary/8" onClick={() => setLevelFilter('info')}>
+            <Card className="cursor-pointer transition-colors hover:bg-primary/8" onClick={() => setLevelFilter('info')} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setLevelFilter('info') } }} aria-label="Filter: show info only">
               <CardContent className="p-4 flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Info</p>
@@ -686,7 +686,7 @@ export default function Debug() {
                 <Info className="w-8 h-8 text-primary" />
               </CardContent>
             </Card>
-            <Card className="cursor-pointer hover:bg-accent/50 transition-colors" onClick={() => setLevelFilter('debug')}>
+            <Card className="cursor-pointer hover:bg-accent/50 transition-colors" onClick={() => setLevelFilter('debug')} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setLevelFilter('debug') } }} aria-label="Filter: show debug only">
               <CardContent className="p-4 flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Debug</p>

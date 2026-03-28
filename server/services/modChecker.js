@@ -259,7 +259,8 @@ export class ModChecker extends EventEmitter {
          for (const folder of modFolders) {
             const modInfoPath = path.join(modsDir, folder, 'mod.info');
             if (fs.existsSync(modInfoPath)) {
-               const content = fs.readFileSync(modInfoPath, 'utf-8');
+               let content = fs.readFileSync(modInfoPath, 'utf-8');
+               if (content.charCodeAt(0) === 0xFEFF) content = content.slice(1);
                const nameMatch = content.match(/name=(.+)/);
                if (nameMatch && nameMatch[1]) {
                    const name = nameMatch[1].trim();
@@ -305,7 +306,8 @@ export class ModChecker extends EventEmitter {
       }
       
       // Read and parse the ACF file
-      const content = fs.readFileSync(this.workshopAcfPath, 'utf-8');
+      let content = fs.readFileSync(this.workshopAcfPath, 'utf-8');
+      if (content.charCodeAt(0) === 0xFEFF) content = content.slice(1);
       const parsed = this.parseAcfFile(content);
       
       const workshopIds = Object.keys(parsed.installedMods);
@@ -381,19 +383,27 @@ export class ModChecker extends EventEmitter {
   // Configure restart options
   async setRestartOptions(options) {
     if (options.warningMinutes !== undefined) {
-      this.restartWarningMinutes = Math.max(0, Math.min(30, options.warningMinutes));
-      await setSetting('modRestartWarningMinutes', this.restartWarningMinutes);
+      const val = Number(options.warningMinutes);
+      if (!isNaN(val)) {
+        this.restartWarningMinutes = Math.max(0, Math.min(30, val));
+        await setSetting('modRestartWarningMinutes', this.restartWarningMinutes);
+      }
     }
     if (options.delayIfPlayersOnline !== undefined) {
       this.delayIfPlayersOnline = !!options.delayIfPlayersOnline;
       await setSetting('modDelayIfPlayersOnline', this.delayIfPlayersOnline);
     }
     if (options.maxDelayMinutes !== undefined) {
-      this.maxDelayMinutes = Math.max(5, Math.min(120, options.maxDelayMinutes));
-      await setSetting('modMaxDelayMinutes', this.maxDelayMinutes);
+      const val = Number(options.maxDelayMinutes);
+      if (!isNaN(val)) {
+        this.maxDelayMinutes = Math.max(5, Math.min(120, val));
+        await setSetting('modMaxDelayMinutes', this.maxDelayMinutes);
+      }
     }
     if (options.checkInterval !== undefined) {
-      this.checkInterval = Math.max(60000, options.checkInterval);
+      const val = Number(options.checkInterval);
+      if (isNaN(val)) return;
+      this.checkInterval = Math.max(60000, val);
       await setSetting('modCheckInterval', this.checkInterval);
       // Restart with new interval
       if (this.intervalId) {
@@ -413,6 +423,9 @@ export class ModChecker extends EventEmitter {
       return;
     }
 
+    // Set flag immediately to prevent concurrent calls from slipping through
+    this.pendingRestart = true;
+
     this.lastUpdateDetected = new Date();
     
     // Emit socket event
@@ -428,6 +441,7 @@ export class ModChecker extends EventEmitter {
     
     if (!this.scheduler) {
       log.warn('Scheduler not available, cannot trigger restart');
+      this.pendingRestart = false;
       return;
     }
     
@@ -460,7 +474,11 @@ export class ModChecker extends EventEmitter {
     }
     
     // No delay, trigger restart immediately
-    await this.triggerModRestart(updatedMods);
+    try {
+      await this.triggerModRestart(updatedMods);
+    } finally {
+      this.pendingRestart = false;
+    }
   }
 
   // Get online player count
@@ -497,8 +515,11 @@ export class ModChecker extends EventEmitter {
           log.info('Max delay exceeded, forcing restart');
           clearInterval(this.playerCheckInterval);
           this.playerCheckInterval = null;
-          this.pendingRestart = false;
-          await this.triggerModRestart(updatedMods);
+          try {
+            await this.triggerModRestart(updatedMods);
+          } finally {
+            this.pendingRestart = false;
+          }
           return;
         }
         
@@ -509,8 +530,11 @@ export class ModChecker extends EventEmitter {
           log.info('No players online, triggering restart');
           clearInterval(this.playerCheckInterval);
           this.playerCheckInterval = null;
-          this.pendingRestart = false;
-          await this.triggerModRestart(updatedMods);
+          try {
+            await this.triggerModRestart(updatedMods);
+          } finally {
+            this.pendingRestart = false;
+          }
         } else {
           const remainingMin = Math.round((maxWaitMs - elapsed) / 60000);
           log.debug(`${playerCount} players still online, ${remainingMin} min remaining`);
@@ -521,14 +545,14 @@ export class ModChecker extends EventEmitter {
         this.playerCheckInterval = null;
         this.pendingRestart = false;
       }
-    }, 30000); // Check every 30 seconds
+    }, 120000); // Check every 2 minutes
   }
 
   // Trigger the actual restart
   async triggerModRestart(updatedMods) {
     log.info(`Triggering restart for ${updatedMods.length} updated mod(s)`);
     
-    const modNames = updatedMods.map(m => m.name).join(', ');
+    const modNames = updatedMods.map(m => String(m.name || 'Unknown').replace(/[\r\n]/g, '')).join(', ');
     
     if (this.io) {
       this.io.emit('mods:restart_starting', { 
@@ -544,7 +568,15 @@ export class ModChecker extends EventEmitter {
       );
       
       // Perform restart with configured warning time
-      await this.scheduler.performRestart(this.restartWarningMinutes);
+      const result = await this.scheduler.performRestart(this.restartWarningMinutes);
+      
+      if (result && result.success === false) {
+        log.warn(`Mod restart did not complete: ${result.message || 'unknown reason'}`);
+        if (this.io) {
+          this.io.emit('mods:restart_failed', { error: result.message || 'Restart did not complete' });
+        }
+        return;
+      }
       
       await logServerEvent('mod_update_restart', `Restarted for mod updates: ${modNames}`);
       
@@ -639,7 +671,8 @@ export class ModChecker extends EventEmitter {
       }
       
       // Read and parse the ACF file for local timestamps
-      const content = fs.readFileSync(this.workshopAcfPath, 'utf-8');
+      let content = fs.readFileSync(this.workshopAcfPath, 'utf-8');
+      if (content.charCodeAt(0) === 0xFEFF) content = content.slice(1);
       const parsed = this.parseAcfFile(content);
       
       // Build local timestamp map from WorkshopItemsInstalled (most complete section)
@@ -777,7 +810,8 @@ export class ModChecker extends EventEmitter {
     }
     
     try {
-      const content = fs.readFileSync(this.workshopAcfPath, 'utf-8');
+      let content = fs.readFileSync(this.workshopAcfPath, 'utf-8');
+      if (content.charCodeAt(0) === 0xFEFF) content = content.slice(1);
       const parsed = this.parseAcfFile(content);
       
       const result = {};
@@ -870,6 +904,8 @@ export class ModChecker extends EventEmitter {
       this.playerCheckInterval = null;
     }
     this.pendingRestart = false;
+    // Also cancel any in-progress scheduler countdown
+    this.scheduler?.cancelRestart();
     log.info('Pending restart cancelled');
     
     if (this.io) {

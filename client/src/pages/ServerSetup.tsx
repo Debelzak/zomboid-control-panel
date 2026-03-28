@@ -648,7 +648,7 @@ export default function ServerSetup() {
         </div>
 
         {/* Quick Tips */}
-        <Card className="bg-gradient-to-br from-secondary/80 via-card to-accent/18 border-border/70 shadow-sm">
+        <Card className="bg-secondary/40 border-border/70 shadow-sm">
           <CardContent className="pt-6">
             <div className="flex items-start gap-4">
               <div className="w-10 h-10 rounded-lg border border-primary/20 bg-primary/10 flex items-center justify-center shrink-0">
@@ -740,7 +740,7 @@ export default function ServerSetup() {
       {!hasSteamCmd ? (
         <div className="space-y-6">
           {/* One-Click Setup */}
-          <Card className="border-primary/35 bg-gradient-to-br from-primary/10 via-card to-accent/12 shadow-sm">
+          <Card className="border-primary/35 bg-card shadow-sm">
             <CardContent className="pt-6">
               <div className="flex items-start gap-4">
                 <div className="w-12 h-12 rounded-xl bg-primary/20 flex items-center justify-center shrink-0">
@@ -860,7 +860,7 @@ export default function ServerSetup() {
           </Accordion>
         </div>
       ) : (
-        <Card className="border-primary/30 bg-gradient-to-r from-primary/10 via-secondary/45 to-card shadow-sm">
+        <Card className="border-primary/30 bg-card shadow-sm">
           <CardContent className="pt-6">
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 rounded-xl border border-primary/25 bg-primary/14 flex items-center justify-center">
@@ -1017,7 +1017,7 @@ export default function ServerSetup() {
       </div>
 
       {/* RCON Section - Critical */}
-      <Card className="border-primary/35 bg-gradient-to-br from-primary/10 via-card to-accent/12 shadow-sm">
+      <Card className="border-primary/35 bg-card shadow-sm">
         <CardHeader className="pb-4">
           <div className="flex items-center gap-2">
             <Shield className="w-5 h-5 text-primary" />
@@ -1202,7 +1202,7 @@ export default function ServerSetup() {
                   <p className="text-sm font-medium">UPnP</p>
                   <p className="text-xs text-muted-foreground">Attempt automatic router port forwarding</p>
                 </div>
-                <Switch checked={useUpnp} onCheckedChange={setUseUpnp} />
+                <Switch checked={useUpnp} onCheckedChange={setUseUpnp} aria-label="Enable UPnP" />
               </div>
 
               <div className="flex items-center justify-between p-3 border rounded-lg">
@@ -1210,7 +1210,7 @@ export default function ServerSetup() {
                   <p className="text-sm font-medium">No Steam</p>
                   <p className="text-xs text-muted-foreground">Use non-Steam mode (for GOG and LAN setups)</p>
                 </div>
-                <Switch checked={useNoSteam} onCheckedChange={setUseNoSteam} />
+                <Switch checked={useNoSteam} onCheckedChange={setUseNoSteam} aria-label="Enable no-Steam mode" />
               </div>
 
               <div className="flex items-center justify-between p-3 border rounded-lg">
@@ -1218,7 +1218,7 @@ export default function ServerSetup() {
                   <p className="text-sm font-medium">Debug</p>
                   <p className="text-xs text-muted-foreground">Enable verbose startup and runtime logs</p>
                 </div>
-                <Switch checked={useDebug} onCheckedChange={setUseDebug} />
+                <Switch checked={useDebug} onCheckedChange={setUseDebug} aria-label="Enable debug mode" />
               </div>
             </div>
           </AccordionContent>
@@ -1270,7 +1270,7 @@ export default function ServerSetup() {
       </Card>
 
       {/* Port Info */}
-      <div className="bg-gradient-to-r from-primary/10 via-secondary/50 to-accent/14 border border-primary/28 rounded-lg p-4 text-sm shadow-sm">
+      <div className="bg-muted/50 border border-border/60 rounded-lg p-4 text-sm shadow-sm">
         <p className="font-medium flex items-center gap-2">
           <Info className="w-4 h-4 text-primary" />
           Firewall / Port Forwarding
@@ -1422,7 +1422,7 @@ export default function ServerSetup() {
         </p>
       </div>
 
-      <Card className="bg-gradient-to-r from-secondary/80 via-card to-primary/10 border-primary/24 shadow-sm">
+      <Card className="bg-secondary/40 border-primary/24 shadow-sm">
         <CardContent className="pt-6">
           <div className="flex items-start gap-4">
             <div className="w-10 h-10 rounded-lg border border-primary/20 bg-primary/10 flex items-center justify-center shrink-0">
@@ -1498,7 +1498,7 @@ export default function ServerSetup() {
         </div>
 
         {/* RCON - Critical */}
-        <Card className="border-primary/35 bg-gradient-to-br from-primary/10 via-card to-accent/12 shadow-sm">
+        <Card className="border-primary/35 bg-card shadow-sm">
           <CardHeader className="pb-4">
             <div className="flex items-center gap-2">
               <Shield className="w-5 h-5 text-primary" />
@@ -1701,21 +1701,21 @@ export default function ServerSetup() {
                     <p className="text-sm font-medium">UPnP</p>
                     <p className="text-xs text-muted-foreground">Attempt automatic router port forwarding</p>
                   </div>
-                  <Switch checked={useUpnp} onCheckedChange={setUseUpnp} />
+                  <Switch checked={useUpnp} onCheckedChange={setUseUpnp} aria-label="Enable UPnP" />
                 </div>
                 <div className="flex items-center justify-between p-3 border rounded-lg">
                   <div>
                     <p className="text-sm font-medium">No Steam</p>
                     <p className="text-xs text-muted-foreground">Use non-Steam mode (for GOG and LAN setups)</p>
                   </div>
-                  <Switch checked={useNoSteam} onCheckedChange={setUseNoSteam} />
+                  <Switch checked={useNoSteam} onCheckedChange={setUseNoSteam} aria-label="Enable no-Steam mode" />
                 </div>
                 <div className="flex items-center justify-between p-3 border rounded-lg">
                   <div>
                     <p className="text-sm font-medium">Debug</p>
                     <p className="text-xs text-muted-foreground">Enable verbose startup and runtime logs</p>
                   </div>
-                  <Switch checked={useDebug} onCheckedChange={setUseDebug} />
+                  <Switch checked={useDebug} onCheckedChange={setUseDebug} aria-label="Enable debug mode" />
                 </div>
               </div>
             </AccordionContent>

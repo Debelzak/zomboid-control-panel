@@ -1008,7 +1008,7 @@ export default function Events() {
   }, [bridgeConnected, bridgeOptionsRefreshTick])
 
   // Bridge weather commands
-  const handleBridgeAction = async (action: string, fn: () => Promise<unknown>) => {
+  const handleBridgeAction = useCallback(async (action: string, fn: () => Promise<unknown>) => {
     setBridgeLoading(action)
     try {
       await fn()
@@ -1028,7 +1028,7 @@ export default function Events() {
     } finally {
       setBridgeLoading(null)
     }
-  }
+  }, [toast])
 
   // Utilities action handler with status refresh
   const handleUtilitiesAction = async (action: string, fn: () => Promise<unknown>) => {
@@ -1046,15 +1046,15 @@ export default function Events() {
     })
   }
 
-  const executeCommand = async (command: string) => {
+  const executeCommand = useCallback(async (command: string) => {
     const result = await rconApi.execute(command)
     if (!result.success) {
       throw new Error(result.error || 'Command failed')
     }
     return result
-  }
+  }, [])
 
-  const handleAction = async (action: string, fn: () => Promise<unknown>) => {
+  const handleAction = useCallback(async (action: string, fn: () => Promise<unknown>) => {
     setLoading(action)
     try {
       await fn()
@@ -1074,9 +1074,9 @@ export default function Events() {
     } finally {
       setLoading(null)
     }
-  }
+  }, [toast])
 
-  const getTargetPlayer = () => targetAll ? undefined : selectedPlayer || undefined
+  const getTargetPlayer = useCallback(() => targetAll ? undefined : selectedPlayer || undefined, [targetAll, selectedPlayer])
   const parseCoord = (value: string): number | null => {
     const n = Number(value)
     return Number.isFinite(n) ? Math.floor(n) : null

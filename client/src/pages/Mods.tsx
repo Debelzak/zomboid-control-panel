@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
+import { useSocket } from '@/contexts/SocketContext'
 import { 
   Package, 
   RefreshCw, 
@@ -373,6 +374,7 @@ export default function Mods() {
         clearTimeout(modSearchTimerRef.current)
       }
       discoverAbortRef.current?.abort()
+      discoverAbortRef.current = null
       // Cancel any in-flight conflict scan
       eventSourceRef.current?.close()
     }
@@ -454,6 +456,29 @@ export default function Mods() {
   }, [])
   
   // Initial data fetch + auto sync from server
+  // Subscribe to Socket.IO mod events for real-time status updates
+  const socket = useSocket()
+  useEffect(() => {
+    if (!socket) return
+    const refresh = () => { fetchData() }
+    socket.on('mods:update_detected', refresh)
+    socket.on('mods:restart_pending', refresh)
+    socket.on('mods:restart_starting', refresh)
+    socket.on('mods:restart_cancelled', refresh)
+    socket.on('mods:restart_failed', refresh)
+    socket.on('mods:restart_complete', refresh)
+    socket.on('mods:updates_available', refresh)
+    return () => {
+      socket.off('mods:update_detected', refresh)
+      socket.off('mods:restart_pending', refresh)
+      socket.off('mods:restart_starting', refresh)
+      socket.off('mods:restart_cancelled', refresh)
+      socket.off('mods:restart_failed', refresh)
+      socket.off('mods:restart_complete', refresh)
+      socket.off('mods:updates_available', refresh)
+    }
+  }, [socket, fetchData])
+
   useEffect(() => {
     let mounted = true
     const initializeData = async () => {
@@ -920,6 +945,16 @@ export default function Mods() {
       toast({
         title: 'No URL entered',
         description: 'Paste a Steam Workshop collection URL or numeric ID to import.',
+        variant: 'destructive',
+      })
+      return
+    }
+    // Validate format before sending to API
+    const trimmed = collectionUrl.trim()
+    if (!/^\d{1,15}$/.test(trimmed) && !trimmed.includes('steamcommunity.com')) {
+      toast({
+        title: 'Invalid format',
+        description: 'Enter a Steam Workshop collection URL or a numeric collection ID.',
         variant: 'destructive',
       })
       return
@@ -1676,14 +1711,14 @@ export default function Mods() {
           <div className="ml-auto flex items-center gap-2">
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="outline" size="sm" onClick={handleSyncFromServer} disabled={loading}>
+                <Button variant="outline" size="sm" className="min-h-[44px] sm:min-h-0" onClick={handleSyncFromServer} disabled={loading}>
                   <Download className="w-3.5 h-3.5 mr-1.5" />
                   Sync
                 </Button>
               </TooltipTrigger>
               <TooltipContent>Sync tracked mods from server INI config</TooltipContent>
             </Tooltip>
-            <Button variant="outline" size="sm" onClick={handleCheckUpdates} disabled={checking}>
+            <Button variant="outline" size="sm" className="min-h-[44px] sm:min-h-0" onClick={handleCheckUpdates} disabled={checking}>
               <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${checking ? 'animate-spin' : ''}`} />
               Check Updates
             </Button>
@@ -1710,6 +1745,7 @@ export default function Mods() {
                       checked={status?.autoRestartEnabled || false}
                       onCheckedChange={handleToggleAutoRestart}
                       disabled={loading}
+                      aria-label="Toggle auto-restart on mod update"
                     />
                   </div>
                 </DropdownMenuItem>
@@ -1731,7 +1767,7 @@ export default function Mods() {
                 </p>
               </div>
             </div>
-            <Button variant="outline" size="sm" onClick={handleCancelPendingRestart} disabled={loading}>
+            <Button variant="outline" size="sm" onClick={handleCancelPendingRestart} disabled={loading} aria-label="Cancel pending restart">
               Cancel
             </Button>
           </div>
@@ -1784,6 +1820,7 @@ export default function Mods() {
                           onChange={(e) => setCollectionUrl(e.target.value)}
                           placeholder="https://steamcommunity.com/sharedfiles/filedetails/?id=..."
                           maxLength={200}
+                          autoFocus
                         />
                         <Button onClick={handleImportCollection} disabled={importingCollection} className="w-full sm:w-auto">
                           {importingCollection ? (
@@ -2962,10 +2999,10 @@ export default function Mods() {
                                   {displayName && <span className="text-[11px] text-muted-foreground/60 truncate flex-1">{displayName}</span>}
                                   {!displayName && <span className="flex-1" />}
                                   <div className="flex shrink-0">
-                                    <button onClick={() => moveModUp(idx)} disabled={idx === 0} className="p-1.5 min-w-[36px] min-h-[36px] flex items-center justify-center hover:bg-muted/30 disabled:opacity-30 rounded transition-colors duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/50" aria-label="Move up">
+                                    <button onClick={() => moveModUp(idx)} disabled={idx === 0} className="p-1.5 min-w-[44px] min-h-[44px] flex items-center justify-center hover:bg-muted/30 disabled:opacity-30 rounded transition-colors duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/50" aria-label="Move up">
                                       <ChevronRight className="w-3.5 h-3.5 -rotate-90" />
                                     </button>
-                                    <button onClick={() => moveModDown(idx)} disabled={idx === orderedModIds.length - 1} className="p-1.5 min-w-[36px] min-h-[36px] flex items-center justify-center hover:bg-muted/30 disabled:opacity-30 rounded transition-colors duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/50" aria-label="Move down">
+                                    <button onClick={() => moveModDown(idx)} disabled={idx === orderedModIds.length - 1} className="p-1.5 min-w-[44px] min-h-[44px] flex items-center justify-center hover:bg-muted/30 disabled:opacity-30 rounded transition-colors duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/50" aria-label="Move down">
                                       <ChevronRight className="w-3.5 h-3.5 rotate-90" />
                                     </button>
                                   </div>

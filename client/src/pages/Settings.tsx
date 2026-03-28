@@ -1298,6 +1298,7 @@ export default function Settings() {
               <Switch
                 checked={settings.corsAllowPrivateNetworks}
                 onCheckedChange={(value) => updateSetting('corsAllowPrivateNetworks', value)}
+                aria-label="Allow private and LAN origins"
               />
             </div>
 
@@ -1326,6 +1327,7 @@ export default function Settings() {
               <Switch
                 checked={settings.corsAllowAll}
                 onCheckedChange={(value) => updateSetting('corsAllowAll', value)}
+                aria-label="Allow all origins"
               />
             </div>
 
@@ -1337,6 +1339,7 @@ export default function Settings() {
               <Switch
                 checked={settings.corsDebug}
                 onCheckedChange={(value) => updateSetting('corsDebug', value)}
+                aria-label="Enable CORS debug logging"
               />
             </div>
 
@@ -1601,6 +1604,7 @@ export default function Settings() {
             <Switch
               checked={settings.httpsEnabled}
               onCheckedChange={(value) => updateSetting('httpsEnabled', value)}
+              aria-label="Enable HTTPS"
             />
             <div>
               <Label className="text-base">Enable HTTPS</Label>
@@ -1718,6 +1722,7 @@ export default function Settings() {
               <Switch
                 checked={settings.autoReconnect}
                 onCheckedChange={(value) => updateSetting('autoReconnect', value)}
+                aria-label="Auto-reconnect RCON on disconnect"
               />
               <Label>Auto-reconnect on disconnect</Label>
             </div>
@@ -2055,6 +2060,7 @@ export default function Settings() {
             <Switch
               checked={settings.modAutoRestart}
               onCheckedChange={(value) => updateSetting('modAutoRestart', value)}
+              aria-label="Auto-restart server when mods update"
             />
             <div>
               <Label className="text-base">Auto-restart server when mods update</Label>
@@ -2201,6 +2207,7 @@ export default function Settings() {
                 checked={backupStatus?.enabled || false}
                 onCheckedChange={toggleBackupEnabled}
                 disabled={backupLoading}
+                aria-label="Enable scheduled backups"
               />
             </div>
 

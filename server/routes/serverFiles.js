@@ -233,10 +233,21 @@ function parseSandboxVars(content) {
       result.VERSION = parseInt(versionMatch[1], 10);
     }
     
-    // Parse simple key=value pairs (top-level settings)
+    // Strip nested block regions from content so the top-level regex
+    // doesn't accidentally capture keys that belong inside ZombieLore,
+    // ZombieConfig, MultiplierConfig, Map, or Basement.
+    let topLevelContent = content;
+    for (const blockName of nestedBlocks) {
+      const blockPattern = new RegExp(
+        escapeRegExp(blockName) + '\\s*=\\s*\\{[\\s\\S]*?\\n\\s*\\}', 'm'
+      );
+      topLevelContent = topLevelContent.replace(blockPattern, '');
+    }
+    
+    // Parse simple key=value pairs (top-level settings only)
     const simplePattern = /^\s*(\w+)\s*=\s*([^,{}\n]+),?\s*(?:--.*)?$/gm;
     let match;
-    while ((match = simplePattern.exec(content)) !== null) {
+    while ((match = simplePattern.exec(topLevelContent)) !== null) {
       const key = match[1];
       let value = match[2].trim();
       
@@ -347,12 +358,28 @@ function modifySandboxValue(originalContent, key, newValue, nestedBlock = null) 
       }
     }
   } else {
-    // For top-level settings, match the key = value pattern
-    // Pattern: key = value, (with optional trailing comma and comment)
+    // For top-level settings, only replace occurrences OUTSIDE nested blocks
+    // to avoid accidentally modifying keys that share a name with a nested key.
+    const knownBlocks = ['ZombieLore', 'ZombieConfig', 'MultiplierConfig', 'Map', 'Basement'];
+    const blockRanges = [];
+    for (const bn of knownBlocks) {
+      const bp = new RegExp(escapeRegExp(bn) + '\\s*=\\s*\\{');
+      const bm = content.match(bp);
+      if (bm) {
+        const start = bm.index;
+        const end = content.indexOf('}', start + bm[0].length);
+        if (end !== -1) blockRanges.push({ start, end: end + 1 });
+      }
+    }
+
     const pattern = new RegExp(`(^\\s*)(${escapedKey})(\\s*=\\s*)([^,\\n}]+)(,?)(\\s*(?:--.*)?$)`, 'gm');
-    content = content.replace(pattern, (_, indent, k, eq, oldVal, comma, comment) => 
-      `${indent}${k}${eq}${formatValue(oldVal)}${comma}${comment}`
-    );
+    content = content.replace(pattern, (fullMatch, indent, k, eq, oldVal, comma, comment, offset) => {
+      // Skip matches inside nested blocks
+      for (const range of blockRanges) {
+        if (offset >= range.start && offset < range.end) return fullMatch;
+      }
+      return `${indent}${k}${eq}${formatValue(oldVal)}${comma}${comment}`;
+    });
   }
   
   return content;

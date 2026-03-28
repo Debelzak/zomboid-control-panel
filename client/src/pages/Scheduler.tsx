@@ -515,9 +515,11 @@ export default function Scheduler() {
                         placeholder="e.g., 0 */2 * * *"
                         className="font-mono"
                         maxLength={100}
+                        aria-label="Cron expression"
+                        aria-describedby="cron-format-hint"
                       />
                     </div>
-                    <p className="text-xs text-muted-foreground">
+                    <p id="cron-format-hint" className="text-xs text-muted-foreground">
                       Format: minute hour day month weekday
                     </p>
                   </TabsContent>
@@ -778,6 +780,7 @@ export default function Scheduler() {
                           onClick={() => handleRunNow(task)}
                           disabled={loading || runningTaskId !== null}
                           title="Run task now"
+                          aria-label={`Run ${task.name} now`}
                         >
                           {runningTaskId === task.id ? (
                             <Loader2 className="w-4 h-4 animate-spin" />
@@ -789,6 +792,7 @@ export default function Scheduler() {
                           checked={!!task.enabled}
                           onCheckedChange={() => handleToggleTask(task)}
                           disabled={loading}
+                          aria-label={`Toggle ${task.name}`}
                         />
                         <AlertDialog>
                           <AlertDialogTrigger asChild>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext, useRef } from 'react'
+import { useState, useEffect, useContext, useRef, useCallback } from 'react'
 import { 
   Server, 
   Plus, 
@@ -213,7 +213,7 @@ export default function Servers() {
 
 
   // Fetch servers
-  const fetchServers = async () => {
+  const fetchServers = useCallback(async () => {
     try {
       const data = await serversApi.getAll()
       setServers(data.servers || [])
@@ -223,7 +223,7 @@ export default function Servers() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [toast])
 
   // Load steamcmd path and servers on mount
   useEffect(() => {
@@ -487,7 +487,7 @@ export default function Servers() {
     }
   }
 
-  const handleActivateServer = async (server: ServerInstance) => {
+  const handleActivateServer = useCallback(async (server: ServerInstance) => {
     if (server.isActive) return
     
     setActivating(server.id)
@@ -507,7 +507,7 @@ export default function Servers() {
     } finally {
       setActivating(null)
     }
-  }
+  }, [toast, fetchServers])
 
   const handleDeleteServer = async () => {
     if (!deleteServer) return

@@ -194,6 +194,7 @@ const IniSettingRow = memo(({
                 <Switch
                   checked={String(value).toLowerCase() === 'true'}
                   onCheckedChange={(checked) => onChange(setting.key, checked ? 'true' : 'false')}
+                  aria-label={setting.label || setting.key}
                 />
               </div>
             ) : setting.type === 'select' && setting.options ? (
@@ -247,7 +248,7 @@ const IniSettingRow = memo(({
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Button variant="outline" size="icon" className="h-9 w-9 shrink-0" onClick={() => onBrowse?.(setting.key, setting.fileExtensions)}>
+                        <Button variant="outline" size="icon" className="h-9 w-9 shrink-0" onClick={() => onBrowse?.(setting.key, setting.fileExtensions)} aria-label="Browse for file">
                           <FolderOpen className="w-3.5 h-3.5" />
                         </Button>
                       </TooltipTrigger>
@@ -258,7 +259,7 @@ const IniSettingRow = memo(({
                     <TooltipProvider>
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0 text-muted-foreground hover:text-destructive" onClick={() => onChange(setting.key, '')}>
+                          <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0 text-muted-foreground hover:text-destructive" onClick={() => onChange(setting.key, '')} aria-label="Clear image">
                             <X className="w-3.5 h-3.5" />
                           </Button>
                         </TooltipTrigger>
@@ -357,6 +358,7 @@ const SandboxSettingRow = memo(({
                 <Switch
                   checked={Boolean(value)}
                   onCheckedChange={(checked) => onChange(setting.key, checked)}
+                  aria-label={setting.label || setting.key}
                 />
               </div>
             ) : setting.type === 'select' && setting.options ? (
@@ -841,9 +843,16 @@ export default function ServerConfig() {
         toast({ title: 'Saved', description: 'Settings saved. Restart server to apply changes.' })
       }
       
-      if (editorMode === 'raw') {
-        loadData() // Refresh structured data
-      }
+      // Refresh from server to ensure frontend matches the saved file
+      try {
+        if (editorMode === 'raw') {
+          loadData()
+        } else {
+          const iniData = await serverFilesApi.getIni()
+          setIniSettings(iniData.settings)
+          setOriginalIniSettings(iniData.settings)
+        }
+      } catch { /* silent refresh — local state is still valid */ }
     } catch (error) {
       toast({
         title: 'Error',
@@ -895,9 +904,16 @@ export default function ServerConfig() {
         toast({ title: 'Saved', description: 'Settings saved. Restart server to apply changes.' })
       }
       
-      if (editorMode === 'raw') {
-        loadData()
-      }
+      // Refresh from server to ensure frontend matches the saved file
+      try {
+        if (editorMode === 'raw') {
+          loadData()
+        } else {
+          const sandboxRes = await serverFilesApi.getSandbox()
+          setSandboxData(sandboxRes.sandbox)
+          setOriginalSandboxData(sandboxRes.sandbox)
+        }
+      } catch { /* silent refresh — local state is still valid */ }
     } catch (error) {
       toast({
         title: 'Error',
@@ -2707,6 +2723,7 @@ export default function ServerConfig() {
                 <Switch
                   checked={saveTemplateIni}
                   onCheckedChange={setSaveTemplateIni}
+                  aria-label="Include server settings in template"
                 />
               </div>
               <div className="flex items-center justify-between p-3 border rounded-lg">
@@ -2717,6 +2734,7 @@ export default function ServerConfig() {
                 <Switch
                   checked={saveTemplateSandbox}
                   onCheckedChange={setSaveTemplateSandbox}
+                  aria-label="Include sandbox settings in template"
                 />
               </div>
             </div>

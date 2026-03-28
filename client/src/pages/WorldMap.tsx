@@ -145,6 +145,35 @@ const MAX_SCALE = 1.0           // canvas px per DZI px (zoomed way in)
 const POLL_INTERVAL = 3000
 const MARKER_HIT_RADIUS = 14
 
+// ─── Canvas color palette ─────────────────────────────────
+const MAP_COLORS = {
+  background: '#0a0c0b',
+  // Landmarks
+  landmarkGlow: 'rgba(255,255,255,0.04)',
+  landmarkDiamond: 'rgba(255,255,255,0.35)',
+  landmarkLabel: 'rgba(255,255,255,0.65)',
+  // Shadows
+  shadowLight: 'rgba(0,0,0,0.4)',
+  shadowMedium: 'rgba(0,0,0,0.45)',
+  shadowStrong: 'rgba(0,0,0,0.6)',
+  shadowDarker: 'rgba(0,0,0,0.7)',
+  shadowOpaque: 'rgba(0,0,0,1)',
+  // Player markers
+  headHighlight: 'rgba(255,255,255,0.3)',
+  adminStar: 'rgba(251,191,36,0.9)',
+  healthBarBg: 'rgba(0,0,0,0.5)',
+  healthGood: 'rgba(74,222,128,0.8)',
+  healthWarning: 'rgba(251,191,36,0.8)',
+  healthCritical: 'rgba(248,113,113,0.8)',
+  // Airdrop
+  crateBody: 'rgba(140,100,40,0.92)',
+  crateBorder: 'rgba(90,65,20,0.95)',
+  crateStraps: 'rgba(200,160,60,0.7)',
+  // Empty state
+  emptyTitle: 'rgba(255,255,255,0.15)',
+  emptySubtitle: 'rgba(255,255,255,0.08)',
+} as const
+
 // Known PZ landmarks (game-tile coordinates)
 const PZ_LANDMARKS = [
   { name: 'Muldraugh',      gx: 10630, gy:  9800 },
@@ -400,7 +429,7 @@ export default function WorldMap() {
     ctx.imageSmoothingQuality = 'high'
 
     // Dark background
-    ctx.fillStyle = '#0a0c0b'
+    ctx.fillStyle = MAP_COLORS.background
     ctx.fillRect(0, 0, W, H)
 
     // ── DZI map tiles ──
@@ -452,7 +481,7 @@ export default function WorldMap() {
       // Glow
       ctx.beginPath()
       ctx.arc(p.x, p.y, markerSize * 2, 0, Math.PI * 2)
-      ctx.fillStyle = 'rgba(255,255,255,0.04)'
+      ctx.fillStyle = MAP_COLORS.landmarkGlow
       ctx.fill()
 
       // Diamond
@@ -462,11 +491,11 @@ export default function WorldMap() {
       ctx.lineTo(p.x, p.y + markerSize * 0.7)
       ctx.lineTo(p.x - markerSize * 0.7, p.y)
       ctx.closePath()
-      ctx.fillStyle = 'rgba(255,255,255,0.35)'
+      ctx.fillStyle = MAP_COLORS.landmarkDiamond
       ctx.fill()
 
       // Label
-      ctx.fillStyle = 'rgba(255,255,255,0.65)'
+      ctx.fillStyle = MAP_COLORS.landmarkLabel
       ctx.fillText(lm.name, p.x, p.y - markerSize - 4)
     }
 
@@ -519,7 +548,7 @@ export default function WorldMap() {
 
       // Drop shadow
       ctx.save()
-      ctx.shadowColor = 'rgba(0,0,0,0.45)'
+      ctx.shadowColor = MAP_COLORS.shadowMedium
       ctx.shadowBlur = 5
       ctx.shadowOffsetX = 1
       ctx.shadowOffsetY = 2
@@ -550,19 +579,19 @@ export default function WorldMap() {
       ctx.lineTo(p.x + bodyW, pinCenterY)
       ctx.closePath()
       ctx.arc(p.x, pinCenterY - headR * 0.4, headR, 0, Math.PI * 2)
-      ctx.strokeStyle = 'rgba(0,0,0,0.4)'
+      ctx.strokeStyle = MAP_COLORS.shadowLight
       ctx.lineWidth = 1
       ctx.stroke()
 
       // Inner head highlight
       ctx.beginPath()
       ctx.arc(p.x - headR * 0.25, pinCenterY - headR * 0.65, headR * 0.35, 0, Math.PI * 2)
-      ctx.fillStyle = 'rgba(255,255,255,0.3)'
+      ctx.fillStyle = MAP_COLORS.headHighlight
       ctx.fill()
 
       // Admin star
       if (isAdmin) {
-        ctx.fillStyle = 'rgba(251,191,36,0.9)'
+        ctx.fillStyle = MAP_COLORS.adminStar
         drawStar(ctx, p.x + mRadius + 4, pinCenterY - headR - 3, 3.5, 5)
       }
 
@@ -572,7 +601,7 @@ export default function WorldMap() {
       ctx.font = `600 ${Math.max(10, Math.min(13, s * 2500))}px ui-sans-serif, system-ui, sans-serif`
       ctx.textAlign = 'center'
       ctx.save()
-      ctx.shadowColor = 'rgba(0,0,0,0.6)'
+      ctx.shadowColor = MAP_COLORS.shadowStrong
       ctx.shadowBlur = 3
       ctx.shadowOffsetY = 1
       ctx.fillStyle = `rgba(255,255,255,${labelAlpha})`
@@ -587,14 +616,14 @@ export default function WorldMap() {
         const barY = pinCenterY + bodyH + headR + 4
         const healthPct = Math.max(0, Math.min(100, player.health)) / 100
 
-        ctx.fillStyle = 'rgba(0,0,0,0.5)'
+        ctx.fillStyle = MAP_COLORS.healthBarBg
         ctx.beginPath()
         ctx.roundRect(barX, barY, barW, barH, 1.5)
         ctx.fill()
         ctx.fillStyle =
-          healthPct > 0.5 ? 'rgba(74,222,128,0.8)' :
-          healthPct > 0.25 ? 'rgba(251,191,36,0.8)' :
-          'rgba(248,113,113,0.8)'
+          healthPct > 0.5 ? MAP_COLORS.healthGood :
+          healthPct > 0.25 ? MAP_COLORS.healthWarning :
+          MAP_COLORS.healthCritical
         ctx.beginPath()
         ctx.roundRect(barX, barY, barW * healthPct, barH, 1.5)
         ctx.fill()
@@ -630,7 +659,7 @@ export default function WorldMap() {
       ctx.globalAlpha = fadeAlpha * 0.25
       ctx.beginPath()
       ctx.ellipse(ap.x, ap.y + dropSize * 1.1, dropSize * 1.2, dropSize * 0.3, 0, 0, Math.PI * 2)
-      ctx.fillStyle = 'rgba(0,0,0,1)'
+      ctx.fillStyle = MAP_COLORS.shadowOpaque
       ctx.fill()
       ctx.restore()
 
@@ -645,9 +674,9 @@ export default function WorldMap() {
       // Crate body (rounded rect)
       ctx.beginPath()
       ctx.roundRect(ap.x - bs, crateTop, bs * 2, crateH, 2)
-      ctx.fillStyle = 'rgba(140,100,40,0.92)'
+      ctx.fillStyle = MAP_COLORS.crateBody
       ctx.fill()
-      ctx.strokeStyle = 'rgba(90,65,20,0.95)'
+      ctx.strokeStyle = MAP_COLORS.crateBorder
       ctx.lineWidth = 1.5
       ctx.stroke()
 
@@ -657,7 +686,7 @@ export default function WorldMap() {
       ctx.lineTo(ap.x, crateBottom)
       ctx.moveTo(ap.x - bs, crateTop + crateH * 0.45)
       ctx.lineTo(ap.x + bs, crateTop + crateH * 0.45)
-      ctx.strokeStyle = 'rgba(200,160,60,0.7)'
+      ctx.strokeStyle = MAP_COLORS.crateStraps
       ctx.lineWidth = 1
       ctx.stroke()
 
@@ -701,7 +730,7 @@ export default function WorldMap() {
         const fontSize = Math.max(9, Math.min(12, s * 2200))
         ctx.font = `600 ${fontSize}px ui-sans-serif, system-ui, sans-serif`
         ctx.textAlign = 'center'
-        ctx.shadowColor = 'rgba(0,0,0,0.7)'
+        ctx.shadowColor = MAP_COLORS.shadowDarker
         ctx.shadowBlur = 3
         ctx.shadowOffsetY = 1
         ctx.fillStyle = `rgba(251,191,36,${0.9 * fadeAlpha})`
@@ -713,11 +742,11 @@ export default function WorldMap() {
     // Empty state
     if (currentPlayers.length === 0) {
       ctx.textAlign = 'center'
-      ctx.fillStyle = 'rgba(255,255,255,0.15)'
+      ctx.fillStyle = MAP_COLORS.emptyTitle
       ctx.font = '600 14px ui-sans-serif, system-ui, sans-serif'
       ctx.fillText('No players on the map', W / 2, H / 2 - 8)
       ctx.font = '400 11px ui-sans-serif, system-ui, sans-serif'
-      ctx.fillStyle = 'rgba(255,255,255,0.08)'
+      ctx.fillStyle = MAP_COLORS.emptySubtitle
       ctx.fillText('Player positions appear when PanelBridge is connected', W / 2, H / 2 + 10)
     }
 

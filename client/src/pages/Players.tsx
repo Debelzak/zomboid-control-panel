@@ -668,7 +668,10 @@ export default function Players() {
   }
 
   // Get selected player's current powers
-  const selectedPlayerPowers = selectedPlayer ? playerPowers[selectedPlayer] : null
+  const selectedPlayerPowers = useMemo(() => 
+    selectedPlayer ? playerPowers[selectedPlayer] : null,
+    [selectedPlayer, playerPowers]
+  )
 
   return (
     <div className="space-y-6 page-transition">
@@ -874,6 +877,7 @@ export default function Players() {
                     onClick={() => setKickDialogOpen(true)}
                     className="gap-1"
                     title="Kick"
+                    aria-label="Kick player"
                   >
                     <UserX className="w-4 h-4" />
                     <span className="hidden sm:inline">Kick</span>
@@ -884,13 +888,14 @@ export default function Players() {
                     onClick={() => setTeleportDialogOpen(true)}
                     className="gap-1"
                     title="Teleport"
+                    aria-label="Teleport player"
                   >
                     <MapPin className="w-4 h-4" />
                     <span className="hidden sm:inline">Teleport</span>
                   </Button>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="outline" size="sm">
+                      <Button variant="outline" size="sm" aria-label="More player actions">
                         <MoreHorizontal className="w-4 h-4" />
                       </Button>
                     </DropdownMenuTrigger>
