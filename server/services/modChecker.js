@@ -32,6 +32,14 @@ export class ModChecker extends EventEmitter {
     this.modNameCache = new Map(); // WorkshopID -> { name, timestamp }
     this.checkInProgress = false; // Prevent concurrent update checks
     this.lastSteamTimestamps = new Map(); // Cache Steam API results between checks
+    
+    // Startup grace period — skip auto-restart triggers for the first N seconds after start()
+    this.startupGraceMs = 120000; // 2 minutes grace period after start()
+    this.startedAt = null; // Set when start() is called
+    
+    // Update dedup — track which mod+timestamp combos have already triggered a restart
+    // Prevents the same stale update from re-triggering every poll cycle
+    this.processedUpdates = new Map(); // workshopId -> steamTimestamp that was already handled
   }
 
   // Initialize with scheduler and restore saved settings
@@ -55,6 +63,8 @@ export class ModChecker extends EventEmitter {
       if (savedDelayIfPlayers !== null) this.delayIfPlayersOnline = savedDelayIfPlayers;
       if (savedMaxDelay !== null) this.maxDelayMinutes = savedMaxDelay;
       if (savedCheckInterval !== null) this.checkInterval = Math.max(60000, savedCheckInterval);
+      
+      log.info(`Mod checker settings restored: autoRestart=${savedAutoRestart}, warning=${this.restartWarningMinutes}min, delayIfPlayers=${this.delayIfPlayersOnline}, maxDelay=${this.maxDelayMinutes}min, checkInterval=${this.checkInterval}ms`);
       
       if (savedAutoRestart === true) {
         this.autoRestartEnabled = true;
@@ -353,11 +363,13 @@ export class ModChecker extends EventEmitter {
       clearInterval(this.intervalId);
     }
 
+    this.startedAt = Date.now();
     this.intervalId = setInterval(() => this.checkForUpdates(), this.checkInterval);
-    log.info(`Mod checker started - checking every ${Math.round(this.checkInterval / 1000)}s`);
+    log.info(`Mod checker started - checking every ${Math.round(this.checkInterval / 1000)}s (grace period: ${this.startupGraceMs / 1000}s)`);
     
-    // Run initial check
-    this.checkForUpdates();
+    // Run initial check after a short delay (30s) to let RCON connect first
+    // The grace period still prevents auto-restart triggers during the first 2 minutes
+    setTimeout(() => this.checkForUpdates(), 30000);
     return true;
   }
 
@@ -419,9 +431,11 @@ export class ModChecker extends EventEmitter {
   async handleModUpdate(updatedMods) {
     // Guard against re-entry — don't start duplicate restarts
     if (this.pendingRestart) {
-      log.debug('Restart already pending, ignoring handleModUpdate');
+      log.info('Restart already pending, ignoring handleModUpdate');
       return;
     }
+
+    log.info(`handleModUpdate called with ${updatedMods.length} mod(s): ${updatedMods.map(m => m.name).join(', ')}`);
 
     // Set flag immediately to prevent concurrent calls from slipping through
     this.pendingRestart = true;
@@ -476,7 +490,8 @@ export class ModChecker extends EventEmitter {
     // No delay, trigger restart immediately
     try {
       await this.triggerModRestart(updatedMods);
-    } finally {
+    } catch (e) {
+      log.error(`handleModUpdate: triggerModRestart threw: ${e.message}`);
       this.pendingRestart = false;
     }
   }
@@ -517,7 +532,8 @@ export class ModChecker extends EventEmitter {
           this.playerCheckInterval = null;
           try {
             await this.triggerModRestart(updatedMods);
-          } finally {
+          } catch (e) {
+            log.error(`Player monitor: triggerModRestart threw: ${e.message}`);
             this.pendingRestart = false;
           }
           return;
@@ -532,7 +548,8 @@ export class ModChecker extends EventEmitter {
           this.playerCheckInterval = null;
           try {
             await this.triggerModRestart(updatedMods);
-          } finally {
+          } catch (e) {
+            log.error(`Player monitor: triggerModRestart threw: ${e.message}`);
             this.pendingRestart = false;
           }
         } else {
@@ -552,6 +569,18 @@ export class ModChecker extends EventEmitter {
   async triggerModRestart(updatedMods) {
     log.info(`Triggering restart for ${updatedMods.length} updated mod(s)`);
     
+    // RCON readiness gate — verify RCON is connected before attempting restart
+    const rconService = this.scheduler?.rconService;
+    if (!rconService || !rconService.connected) {
+      log.warn('RCON not connected — cannot trigger mod restart safely. Will retry on next check cycle.');
+      // Clear processed updates so they'll be re-detected on next cycle when RCON may be ready
+      for (const m of updatedMods) {
+        this.processedUpdates.delete(m.workshopId);
+      }
+      this.pendingRestart = false;
+      return;
+    }
+    
     const modNames = updatedMods.map(m => String(m.name || 'Unknown').replace(/[\r\n]/g, '')).join(', ');
     
     if (this.io) {
@@ -563,11 +592,13 @@ export class ModChecker extends EventEmitter {
     
     try {
       // Send warning message
+      log.info(`Sending RCON warning: ${modNames.substring(0, 100)} — restart in ${this.restartWarningMinutes} min`);
       await this.scheduler.rconService?.serverMessage(
         `🔧 Mod updates detected: ${modNames.substring(0, 100)}${modNames.length > 100 ? '...' : ''}. Server will restart in ${this.restartWarningMinutes} minute(s).`
       );
       
       // Perform restart with configured warning time
+      log.info(`Calling scheduler.performRestart(${this.restartWarningMinutes})`);
       const result = await this.scheduler.performRestart(this.restartWarningMinutes);
       
       if (result && result.success === false) {
@@ -575,9 +606,14 @@ export class ModChecker extends EventEmitter {
         if (this.io) {
           this.io.emit('mods:restart_failed', { error: result.message || 'Restart did not complete' });
         }
+        // Clear processed updates so we can retry on next cycle
+        for (const m of updatedMods) {
+          this.processedUpdates.delete(m.workshopId);
+        }
         return;
       }
       
+      log.info(`Mod restart completed successfully for: ${modNames.substring(0, 200)}`);
       await logServerEvent('mod_update_restart', `Restarted for mod updates: ${modNames}`);
       
       if (this.io) {
@@ -588,6 +624,13 @@ export class ModChecker extends EventEmitter {
       if (this.io) {
         this.io.emit('mods:restart_failed', { error: sanitizeError(error.message) });
       }
+      // Clear processed updates so we can retry on next cycle
+      for (const m of updatedMods) {
+        this.processedUpdates.delete(m.workshopId);
+      }
+    } finally {
+      // Always clear pendingRestart when triggerModRestart finishes
+      this.pendingRestart = false;
     }
   }
 
@@ -780,10 +823,41 @@ export class ModChecker extends EventEmitter {
           });
         }
         
-        // Only trigger callback if NOT already pending a restart
-        if (this.onUpdateCallback && !this.pendingRestart) {
+        // Filter out mods whose exact steam timestamp was already processed (dedup)
+        const newUpdates = updatedMods.filter(m => {
+          const steamTs = m.latestTimestamp?.getTime?.() || 0;
+          const prevTs = this.processedUpdates.get(m.workshopId);
+          if (prevTs && prevTs === steamTs) {
+            log.debug(`Skipping already-processed update for ${m.name} (${m.workshopId}) — steam ts: ${steamTs}`);
+            return false;
+          }
+          return true;
+        });
+        
+        if (newUpdates.length === 0 && updatedMods.length > 0) {
+          log.info(`All ${updatedMods.length} update(s) already processed — skipping callback`);
+        }
+        
+        // Check startup grace period — don't trigger auto-restart too soon after startup
+        const inGracePeriod = this.startedAt && (Date.now() - this.startedAt < this.startupGraceMs);
+        if (inGracePeriod && newUpdates.length > 0) {
+          const remaining = Math.round((this.startupGraceMs - (Date.now() - this.startedAt)) / 1000);
+          log.info(`Startup grace period active (${remaining}s remaining) — skipping auto-restart for ${newUpdates.length} update(s)`);
+          newUpdates.length = 0; // Clear — don't trigger callback during grace
+        }
+        
+        // Only trigger callback if NOT already pending a restart AND there are genuinely new updates
+        if (this.onUpdateCallback && !this.pendingRestart && newUpdates.length > 0) {
           try {
-            await this.onUpdateCallback(updatedMods);
+            log.info(`Triggering auto-restart callback for ${newUpdates.length} new update(s)`);
+            await this.onUpdateCallback(newUpdates);
+            // Mark these updates as processed so we don't re-trigger
+            for (const m of newUpdates) {
+              const steamTs = m.latestTimestamp?.getTime?.() || 0;
+              if (steamTs) {
+                this.processedUpdates.set(m.workshopId, steamTs);
+              }
+            }
           } catch (callbackError) {
             log.error(`Mod update callback failed: ${callbackError.message}`);
           }
