@@ -1185,6 +1185,21 @@ async function start() {
       }
       logReady(urls);
       
+      // Linux/CentOS: Check for common issues at startup
+      if (process.platform !== 'win32') {
+        // Warn if running as root
+        if (process.getuid && process.getuid() === 0) {
+          log.warn('Running as root is not recommended. Create a dedicated user: useradd -r -m pzuser');
+        }
+        // Check inotify limits (CentOS default is often too low)
+        try {
+          const maxWatches = fs.readFileSync('/proc/sys/fs/inotify/max_user_watches', 'utf8').trim();
+          if (parseInt(maxWatches, 10) < 65536) {
+            log.warn(`Low inotify limit (${maxWatches}). File watching may fail. Fix: sudo sysctl -w fs.inotify.max_user_watches=524288`);
+          }
+        } catch { /* /proc not available (container) — skip */ }
+      }
+      
       // Auto-open browser when running as packaged exe
       if (typeof process.pkg !== 'undefined') {
         const protocol = httpsServer ? 'https' : 'http';

@@ -8,6 +8,20 @@ import { logServerEvent, getSetting, getActiveServer } from '../database/init.js
 
 const isWindows = process.platform === 'win32';
 
+// Build LD_LIBRARY_PATH from server directory, filtering to only existing paths
+function buildLdLibraryPath(serverDir) {
+  const candidates = [
+    path.join(serverDir, 'linux64'),
+    path.join(serverDir, 'natives', 'linux64'),
+    path.join(serverDir, 'natives'),
+    serverDir,
+    path.join(serverDir, 'jre64', 'lib', 'amd64'),
+  ];
+  const existing = candidates.filter(p => { try { return fs.existsSync(p); } catch { return false; } });
+  const extra = process.env.LD_LIBRARY_PATH || '';
+  return [...existing, extra].filter(Boolean).join(':');
+}
+
 // Allowed extensions for custom start commands
 const ALLOWED_CMD_EXTENSIONS = isWindows
   ? ['.bat', '.cmd', '.exe']
@@ -202,20 +216,30 @@ export class ServerManager {
         // Linux/macOS: Use ps + grep to find the PZ server process
         // Check both the Java class name (zombie.network.GameServer) and
         // the native launcher (ProjectZomboid64 / projectzomboid64)
-        exec('ps aux -ww', { timeout: 8000 }, (err, stdout) => {
-          clearTimeout(timeout);
-          if (err || !stdout) {
-            this.isRunning = false;
-            resolve(false);
+        // Use pgrep first (more reliable), fall back to ps aux
+        exec('pgrep -af "zombie.network.[Gg]ame[Ss]erver|[Pp]roject[Zz]omboid64|[Pp]roject[Zz]omboid32"', { timeout: 8000 }, (pgrepErr, pgrepOut) => {
+          if (!pgrepErr && pgrepOut && pgrepOut.trim()) {
+            clearTimeout(timeout);
+            this.isRunning = true;
+            resolve(true);
             return;
           }
-          
-          const lines = stdout.toLowerCase();
-          const isPZServer = lines.includes('zombie.network.gameserver') ||
-                            lines.includes('projectzomboid64') ||
-                            lines.includes('projectzomboid32');
-          this.isRunning = isPZServer;
-          resolve(isPZServer);
+          // Fallback: ps aux (works on all distros including CentOS minimal)
+          exec('ps aux -ww', { timeout: 8000 }, (err, stdout) => {
+            clearTimeout(timeout);
+            if (err || !stdout) {
+              this.isRunning = false;
+              resolve(false);
+              return;
+            }
+            
+            const lines = stdout.toLowerCase();
+            const isPZServer = lines.includes('zombie.network.gameserver') ||
+                              lines.includes('projectzomboid64') ||
+                              lines.includes('projectzomboid32');
+            this.isRunning = isPZServer;
+            resolve(isPZServer);
+          });
         });
       }
     });
@@ -282,16 +306,23 @@ export class ServerManager {
           });
         } else if (!isWindows && ext === '.sh') {
           try { fs.chmodSync(resolvedCmd, 0o750); } catch (e) { /* ok */ }
+          const serverAbsPath = path.resolve(cwd);
           this.serverProcess = spawn('bash', [resolvedCmd, ...args], {
             cwd,
             detached: true,
-            stdio: 'ignore'
+            stdio: 'ignore',
+            env: { ...process.env, LD_LIBRARY_PATH: buildLdLibraryPath(serverAbsPath) }
           });
         } else {
+          const spawnEnv = isWindows ? process.env : (() => {
+            const serverAbsPath = path.resolve(cwd);
+            return { ...process.env, LD_LIBRARY_PATH: buildLdLibraryPath(serverAbsPath) };
+          })();
           this.serverProcess = spawn(resolvedCmd, args, {
             cwd,
             detached: true,
-            stdio: 'ignore'
+            stdio: 'ignore',
+            env: spawnEnv
           });
         }
       } else {
@@ -314,10 +345,16 @@ export class ServerManager {
         } catch (e) {
           log.warn(`Could not chmod startup script: ${e.message}`);
         }
+        // On Linux, ensure LD_LIBRARY_PATH includes the server's native library dirs
+        // so the JVM can find libsteam_api.so and its transitive dependencies.
+        // Without this, services/non-login shells won't have the paths set.
+        const serverAbsPath = path.resolve(this.serverPath);
+
         this.serverProcess = spawn('bash', [this.serverBat], {
           cwd: this.serverPath,
           detached: true,
-          stdio: 'ignore'
+          stdio: 'ignore',
+          env: { ...process.env, LD_LIBRARY_PATH: buildLdLibraryPath(serverAbsPath) }
         });
       }
     }
@@ -379,14 +416,29 @@ export class ServerManager {
         });
       } else {
         // Linux: Find and kill the PZ server process
-        // Check both Java class name and native launcher (projectzomboid64)
-        exec("ps aux -ww | grep -iE '[z]ombie.network.GameServer|[p]rojectzomboid64|[p]rojectzomboid32' | awk '{print $2}'", (err, stdout) => {
-          const pids = (stdout || '').trim().split('\n').filter(p => /^\d+$/.test(p));
+        // Use pgrep for reliable process matching (avoids false grep matches)
+        exec("pgrep -f 'zombie.network.[Gg]ame[Ss]erver|[Pp]roject[Zz]omboid64|[Pp]roject[Zz]omboid32'", (pgrepErr, pgrepOut) => {
+          let pids = (pgrepOut || '').trim().split('\n').filter(p => /^\d+$/.test(p));
           
+          // Fallback to ps+grep if pgrep not available
+          if (pids.length === 0) {
+            exec("ps aux -ww | grep -iE '[z]ombie.network.GameServer|[p]rojectzomboid64|[p]rojectzomboid32' | awk '{print $2}'", (err, stdout) => {
+              pids = (stdout || '').trim().split('\n').filter(p => /^\d+$/.test(p));
+              killPids(pids);
+            });
+            return;
+          }
+          
+          killPids(pids);
+        });
+        
+        const killPids = (pids) => {
           if (pids.length === 0) {
             resolve({ success: true, message: 'Server was not running' });
             return;
           }
+          
+          log.info(`Killing PZ server PIDs: ${pids.join(', ')}`);
           
           // Kill each matching PID using execFile to avoid shell injection
           execFile('kill', ['-9', ...pids], (killErr) => {
@@ -399,7 +451,7 @@ export class ServerManager {
             
             resolve({ success: true, message: 'Server stopped' });
           });
-        });
+        };
       }
     });
   }

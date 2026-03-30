@@ -138,7 +138,19 @@ export class UpdateChecker {
    * Get latest build info from Steam for a specific branch
    */
   async getLatestBuildInfo(steamcmdPath, branch = 'public') {
-    const steamcmdExe = path.join(steamcmdPath, process.platform === 'win32' ? 'steamcmd.exe' : 'steamcmd.sh');
+    let steamcmdExe;
+    if (process.platform === 'win32') {
+      steamcmdExe = path.join(steamcmdPath, 'steamcmd.exe');
+    } else {
+      // Try steamcmd.sh first (tar.gz extract), then plain steamcmd (package-manager install)
+      const shPath = path.join(steamcmdPath, 'steamcmd.sh');
+      const binPath = path.join(steamcmdPath, 'steamcmd');
+      try { await fs.promises.access(shPath); steamcmdExe = shPath; } catch {
+        try { await fs.promises.access(binPath); steamcmdExe = binPath; } catch {
+          throw new Error('SteamCMD not found');
+        }
+      }
+    }
       
     try {
         await fs.promises.access(steamcmdExe);
@@ -154,9 +166,19 @@ export class UpdateChecker {
         '+quit'
       ];
 
-      const steamcmd = spawn(steamcmdExe, args, {
-        cwd: steamcmdPath
-      });
+      // On Linux, set LD_LIBRARY_PATH for SteamCMD's 32-bit libraries
+      const spawnOpts = { cwd: steamcmdPath };
+      if (process.platform !== 'win32') {
+        const ldPaths = [
+          path.join(steamcmdPath, 'linux32'),
+          path.join(steamcmdPath, 'linux64'),
+          steamcmdPath,
+          process.env.LD_LIBRARY_PATH || ''
+        ].filter(Boolean).join(':');
+        spawnOpts.env = { ...process.env, LD_LIBRARY_PATH: ldPaths };
+      }
+
+      const steamcmd = spawn(steamcmdExe, args, spawnOpts);
 
       let output = '';
       const timeout = setTimeout(() => {

@@ -278,7 +278,8 @@ if [ ! -f "$JAVA_CMD" ]; then
   JAVA_CMD="java"
 fi
 
-export LD_LIBRARY_PATH="natives/:natives/linux64/:."
+INSTDIR="$(dirname "$0")"
+export LD_LIBRARY_PATH="${INSTDIR}/natives/:${INSTDIR}/natives/linux64/:${INSTDIR}/linux64/:${INSTDIR}:${INSTDIR}/jre64/lib/amd64:${LD_LIBRARY_PATH}"
 
 "$JAVA_CMD" ${jvmArgs.join(' ')} -Djava.library.path=natives/:natives/linux64/:. -cp "$PZ_CLASSPATH" zombie.network.GameServer ${gameArgs.join(' ')}
 `;
@@ -761,10 +762,18 @@ router.get('/branches', async (req, res) => {
     ];
     
     const result = await new Promise((resolve, reject) => {
-      const steamcmd = spawn(steamcmdExe, steamcmdArgs, {
-        cwd: steamcmdPath,
-        timeout: 60000
-      });
+      // On Linux, set LD_LIBRARY_PATH for SteamCMD's 32-bit libraries
+      const branchSpawnOpts = { cwd: steamcmdPath, timeout: 60000 };
+      if (!isWindows) {
+        const ldPaths = [
+          path.join(steamcmdPath, 'linux32'),
+          path.join(steamcmdPath, 'linux64'),
+          steamcmdPath,
+          process.env.LD_LIBRARY_PATH || ''
+        ].filter(Boolean).join(':');
+        branchSpawnOpts.env = { ...process.env, LD_LIBRARY_PATH: ldPaths };
+      }
+      const steamcmd = spawn(steamcmdExe, steamcmdArgs, branchSpawnOpts);
       
       let stdout = '';
       let stderr = '';
@@ -1022,9 +1031,18 @@ router.post('/install', async (req, res) => {
     const io = req.app.get('io');
     
     // Spawn SteamCMD process
-    const steamcmd = spawn(steamcmdExe, steamcmdArgs, {
-      cwd: steamcmdPath
-    });
+    // On Linux, set LD_LIBRARY_PATH so SteamCMD can find its 32-bit libraries
+    const spawnOpts = { cwd: steamcmdPath };
+    if (!isWindows) {
+      const ldPaths = [
+        path.join(steamcmdPath, 'linux32'),
+        path.join(steamcmdPath, 'linux64'),
+        steamcmdPath,
+        process.env.LD_LIBRARY_PATH || ''
+      ].filter(Boolean).join(':');
+      spawnOpts.env = { ...process.env, LD_LIBRARY_PATH: ldPaths };
+    }
+    const steamcmd = spawn(steamcmdExe, steamcmdArgs, spawnOpts);
     
     let output = '';
     let stdoutBuffer = '';
@@ -1777,9 +1795,18 @@ router.post('/steam-update', async (req, res) => {
       message: validateFiles ? 'Verifying game files...' : 'Updating server...'
     });
     
-    const steamcmd = spawn(steamcmdExe, steamcmdArgs, {
-      cwd: steamcmdPath
-    });
+    // On Linux, set LD_LIBRARY_PATH so SteamCMD can find its 32-bit libraries
+    const updateSpawnOpts = { cwd: steamcmdPath };
+    if (!isWindows) {
+      const ldPaths = [
+        path.join(steamcmdPath, 'linux32'),
+        path.join(steamcmdPath, 'linux64'),
+        steamcmdPath,
+        process.env.LD_LIBRARY_PATH || ''
+      ].filter(Boolean).join(':');
+      updateSpawnOpts.env = { ...process.env, LD_LIBRARY_PATH: ldPaths };
+    }
+    const steamcmd = spawn(steamcmdExe, steamcmdArgs, updateSpawnOpts);
     
     let output = '';
     let stdoutBuffer = '';
@@ -1964,19 +1991,37 @@ router.post('/steamcmd/download', async (req, res) => {
       io.emit('steamcmd:status', { status: 'downloading', message: 'Downloading SteamCMD for Linux...' });
       log.info(`Downloading SteamCMD (Linux) to ${installPath}`);
       
-      // Use curl or wget to download
-      const downloadCmd = `curl -sSL -o "${tarPath}" "${tarUrl}"`;
-      execCb(downloadCmd, { timeout: 60000 }, (dlErr) => {
-        if (dlErr) {
-          io.emit('steamcmd:status', { status: 'error', message: `Download failed: ${dlErr.message}` });
-          log.error(`SteamCMD download failed: ${dlErr.message}`);
-          return;
-        }
+      // Try curl first, fall back to wget (CentOS minimal may lack curl)
+      const safeTarPath = tarPath.replace(/'/g, "'\\''");
+      const safeTarUrl = tarUrl.replace(/'/g, "'\\''");
+      const curlCmd = `curl -sSL -o '${safeTarPath}' '${safeTarUrl}'`;
+      const wgetCmd = `wget -q -O '${safeTarPath}' '${safeTarUrl}'`;
+      
+      const tryDownload = (cmd, fallbackCmd) => {
+        execCb(cmd, { timeout: 120000 }, (dlErr) => {
+          if (dlErr && fallbackCmd) {
+            log.warn(`Download with ${cmd.split(' ')[0]} failed, trying fallback...`);
+            tryDownload(fallbackCmd, null);
+            return;
+          }
+          if (dlErr) {
+            io.emit('steamcmd:status', { status: 'error', message: `Download failed: ${dlErr.message}. Ensure curl or wget is installed.` });
+            log.error(`SteamCMD download failed: ${dlErr.message}`);
+            return;
+          }
+          afterDownload();
+        });
+      };
+      
+      tryDownload(curlCmd, wgetCmd);
+      
+      function afterDownload() {
         
         io.emit('steamcmd:status', { status: 'extracting', message: 'Extracting SteamCMD...' });
         log.info('Extracting SteamCMD...');
         
-        execCb(`tar -xzf "${tarPath}" -C "${installPath}"`, { timeout: 30000 }, (tarErr) => {
+        const safeInstallPath = installPath.replace(/'/g, "'\\''");
+        execCb(`tar -xzf '${safeTarPath}' -C '${safeInstallPath}'`, { timeout: 30000 }, (tarErr) => {
           // Clean up tar file regardless
           try { fs.unlinkSync(tarPath); } catch (e) { /* ignore */ }
           
@@ -1989,10 +2034,21 @@ router.post('/steamcmd/download', async (req, res) => {
           // Make steamcmd.sh executable
           const steamcmdSh = path.join(installPath, 'steamcmd.sh');
           try { fs.chmodSync(steamcmdSh, 0o755); } catch (e) { /* ignore */ }
+          // Also make the actual binary executable
+          const steamcmdBin = path.join(installPath, 'steamcmd');
+          try { fs.chmodSync(steamcmdBin, 0o755); } catch (e) { /* ignore */ }
           
-          runFirstTimeSetup();
+          // Install 32-bit libraries if missing (SteamCMD requires them on 64-bit CentOS/RHEL)
+          log.info('Checking for required 32-bit libraries (SteamCMD dependency)...');
+          execCb('ldconfig -p | grep -c libc.so.6', { timeout: 5000 }, (ldErr) => {
+            if (ldErr) {
+              log.warn('Could not verify 32-bit libraries. SteamCMD may fail if glibc.i686 / lib32gcc is not installed.');
+              io.emit('steamcmd:log', { type: 'stderr', text: 'Warning: Could not verify 32-bit libraries. If SteamCMD fails, install: yum install glibc.i686 libstdc++.i686 (CentOS/RHEL) or apt install lib32gcc-s1 (Debian/Ubuntu)' });
+            }
+            runFirstTimeSetup();
+          });
         });
-      });
+      }
     }
     
     function runFirstTimeSetup() {
@@ -2000,9 +2056,18 @@ router.post('/steamcmd/download', async (req, res) => {
       log.info('Running SteamCMD first-time setup...');
       
       const steamcmdExe = getSteamCmdExe(installPath);
-      const steamcmd = spawn(steamcmdExe, ['+quit'], {
-        cwd: installPath
-      });
+      // On Linux, set LD_LIBRARY_PATH for SteamCMD's 32-bit libraries
+      const firstRunOpts = { cwd: installPath };
+      if (!isWindows) {
+        const ldPaths = [
+          path.join(installPath, 'linux32'),
+          path.join(installPath, 'linux64'),
+          installPath,
+          process.env.LD_LIBRARY_PATH || ''
+        ].filter(Boolean).join(':');
+        firstRunOpts.env = { ...process.env, LD_LIBRARY_PATH: ldPaths };
+      }
+      const steamcmd = spawn(steamcmdExe, ['+quit'], firstRunOpts);
       
       steamcmd.stdout.on('data', (data) => {
         io.emit('steamcmd:log', { type: 'stdout', text: data.toString() });

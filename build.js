@@ -91,15 +91,28 @@ function writeReleaseReadme() {
 
 ## Linux Troubleshooting
 - If you see "Permission denied": chmod +x ZomboidControlPanel start.sh
-- If launch fails with glibc errors, run on Ubuntu 20.04+ or use Docker.
+- If launch fails with glibc errors: requires glibc 2.28+ (CentOS Stream 8+, Rocky 8+, Ubuntu 20.04+).
+  CentOS 7 is NOT supported (glibc 2.17 is too old). Use Docker instead.
 - The binary is self-contained — Node.js is NOT required.
+
+## CentOS / RHEL Notes
+- Open firewall: sudo firewall-cmd --permanent --add-port=3001/tcp && sudo firewall-cmd --reload
+- SELinux: If blocked, run: sudo semanage fcontext -a -t admin_home_t "/opt/zomboid-panel(/.*)?" && sudo restorecon -Rv /opt/zomboid-panel
+- SteamCMD requires 32-bit libs: sudo yum install glibc.i686 libstdc++.i686
+- Increase inotify limit: sudo sysctl -w fs.inotify.max_user_watches=524288
+  (make permanent: echo 'fs.inotify.max_user_watches=524288' | sudo tee -a /etc/sysctl.conf)
 
 ## Running as a Service (Linux)
 A systemd unit file is included:
+  sudo useradd -r -m -s /bin/false pzuser      # Create dedicated user (if needed)
+  sudo mkdir -p /opt/zomboid-panel
+  sudo cp -r ./* /opt/zomboid-panel/
+  sudo chown -R pzuser:pzuser /opt/zomboid-panel
   sudo cp zomboid-panel.service /etc/systemd/system/
   sudo systemctl daemon-reload
   sudo systemctl enable --now zomboid-panel
 Edit the service file to match your install path and user.
+See the service file comments for SELinux and firewall setup.
 
 ## Docker
   docker compose up -d
@@ -292,14 +305,38 @@ pause
   fs.writeFileSync('./release/Start.bat', startBat);
 
   const startSh = `#!/bin/bash
+# Zomboid Control Panel — Linux launcher
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR"
+
 echo "Starting Zomboid Control Panel..."
 echo ""
 echo "Open your browser to: http://localhost:3001"
 echo ""
+
 if [ ! -f "./ZomboidControlPanel" ]; then
   echo "ERROR: ./ZomboidControlPanel was not found in this folder."
   exit 1
 fi
+
+# Check glibc version (panel requires glibc 2.28+)
+if command -v ldd >/dev/null 2>&1; then
+  GLIBC_VER=$(ldd --version 2>&1 | head -1 | grep -oP '\\d+\\.\\d+$' || true)
+  if [ -n "$GLIBC_VER" ]; then
+    MAJOR=$(echo "$GLIBC_VER" | cut -d. -f1)
+    MINOR=$(echo "$GLIBC_VER" | cut -d. -f2)
+    if [ "$MAJOR" -lt 2 ] || { [ "$MAJOR" -eq 2 ] && [ "$MINOR" -lt 28 ]; }; then
+      echo "WARNING: glibc $GLIBC_VER detected. This binary requires glibc 2.28+."
+      echo "CentOS 7 (glibc 2.17) is not supported. Use CentOS Stream 8+, Rocky 8+, or Docker."
+    fi
+  fi
+fi
+
+# Warn if running as root
+if [ "$(id -u)" = "0" ]; then
+  echo "WARNING: Running as root is not recommended. Consider creating a dedicated user."
+fi
+
 ./ZomboidControlPanel
 `;
   fs.writeFileSync('./release/start.sh', startSh.replace(/\r\n/g, '\n'), { mode: 0o755 });
