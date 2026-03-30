@@ -19,6 +19,12 @@ function getSteamCmdExe(steamcmdPath) {
   // Fallback: plain 'steamcmd' binary (package-manager installs on Linux)
   const fallback = path.join(steamcmdPath, 'steamcmd');
   if (!isWindows && fs.existsSync(fallback)) return fallback;
+  // System-wide fallback (CentOS/Ubuntu package manager installs)
+  if (!isWindows) {
+    for (const sysPath of ['/usr/games/steamcmd', '/usr/bin/steamcmd', '/usr/local/bin/steamcmd']) {
+      if (fs.existsSync(sysPath)) return sysPath;
+    }
+  }
   return primary; // Return primary path even if not found — let caller handle the error
 }
 
@@ -275,11 +281,26 @@ PZ_CLASSPATH="java/:java/projectzomboid.jar"
 
 JAVA_CMD="./jre64/bin/java"
 if [ ! -f "$JAVA_CMD" ]; then
-  JAVA_CMD="java"
+  # Try common system Java locations (CentOS, Ubuntu, etc.)
+  for JPATH in /usr/bin/java /usr/local/bin/java /usr/lib/jvm/jre/bin/java; do
+    if [ -f "$JPATH" ]; then
+      JAVA_CMD="$JPATH"
+      break
+    fi
+  done
+  if [ ! -f "$JAVA_CMD" ]; then
+    JAVA_CMD="java"
+  fi
+fi
+
+# Verify Java is actually available
+if ! command -v "$JAVA_CMD" >/dev/null 2>&1; then
+  echo "ERROR: Java not found. Install OpenJDK: sudo yum install java-17-openjdk (CentOS) or sudo apt install openjdk-17-jre (Ubuntu)"
+  exit 1
 fi
 
 INSTDIR="$(dirname "$0")"
-export LD_LIBRARY_PATH="\${INSTDIR}/natives/:\${INSTDIR}/natives/linux64/:\${INSTDIR}/linux64/:\${INSTDIR}:\${INSTDIR}/jre64/lib/amd64:\${LD_LIBRARY_PATH}"
+export LD_LIBRARY_PATH="\${INSTDIR}/natives/:\${INSTDIR}/natives/linux64/:\${INSTDIR}/linux64/:\${INSTDIR}:\${INSTDIR}/jre64/lib/amd64:\${INSTDIR}/jre64/lib/x86_64:/usr/lib64:\${LD_LIBRARY_PATH}"
 
 "$JAVA_CMD" ${jvmArgs.join(' ')} -Djava.library.path=natives/:natives/linux64/:linux64/:. -cp "$PZ_CLASSPATH" zombie.network.GameServer ${gameArgs.join(' ')}
 `;

@@ -11,7 +11,7 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { fileURLToPath } from 'url';
-import { exec, spawn } from 'child_process';
+import { exec, execSync, spawn } from 'child_process';
 import cookieParser from 'cookie-parser';
 
 import { logger, onLog, createLogger, logSection, logBlank, logBanner, logReady } from './utils/logger.js';
@@ -1198,6 +1198,30 @@ async function start() {
             log.warn(`Low inotify limit (${maxWatches}). File watching may fail. Fix: sudo sysctl -w fs.inotify.max_user_watches=524288`);
           }
         } catch { /* /proc not available (container) — skip */ }
+        // Check glibc version (panel binary requires 2.28+)
+        try {
+          const lddOut = execSync('ldd --version 2>&1 || true', { encoding: 'utf8', timeout: 5000 });
+          const glibcMatch = lddOut.match(/(\d+)\.(\d+)/);
+          if (glibcMatch) {
+            const major = parseInt(glibcMatch[1], 10);
+            const minor = parseInt(glibcMatch[2], 10);
+            if (major < 2 || (major === 2 && minor < 28)) {
+              log.warn(`glibc ${major}.${minor} detected — panel requires glibc 2.28+. CentOS 7 is not supported, use CentOS Stream 8+ or Docker.`);
+            } else {
+              log.info(`glibc ${major}.${minor} detected`);
+            }
+          }
+        } catch { /* not critical */ }
+        // Check if /proc is available (containers may restrict it)
+        if (!fs.existsSync('/proc/self/status')) {
+          log.warn('/proc not fully available — process detection may be limited (containerized environment?)');
+        }
+        // Check for 32-bit libs (needed by SteamCMD)
+        try {
+          if (!fs.existsSync('/lib/ld-linux.so.2') && !fs.existsSync('/usr/lib/ld-linux.so.2')) {
+            log.warn('32-bit glibc not found (ld-linux.so.2). SteamCMD requires: sudo yum install glibc.i686 libstdc++.i686 (CentOS) or sudo dpkg --add-architecture i386 && sudo apt install lib32gcc-s1 (Ubuntu)');
+          }
+        } catch { /* not critical */ }
       }
       
       // Auto-open browser when running as packaged exe

@@ -41,8 +41,14 @@ export class LogTailer extends EventEmitter {
         // server-console.txt (B41 chat via [chat] markers, also general log tailing)
         const consoleLogPath = path.join(basePath, 'server-console.txt');
         if (fs.existsSync(consoleLogPath)) {
-            this.logPath = consoleLogPath;
-            log.info(`Found console log at ${consoleLogPath}`);
+            // Verify we can actually read the file (ownership/permissions may differ on Linux)
+            try {
+                fs.accessSync(consoleLogPath, fs.constants.R_OK);
+                this.logPath = consoleLogPath;
+                log.info(`Found console log at ${consoleLogPath}`);
+            } catch (e) {
+                log.warn(`Console log exists but is not readable (check permissions): ${consoleLogPath}`);
+            }
         } else {
             log.warn(`Could not find server-console.txt at ${consoleLogPath}`);
         }

@@ -17,6 +17,8 @@ function buildLdLibraryPath(serverDir) {
     path.join(serverDir, 'natives'),
     serverDir,
     path.join(serverDir, 'jre64', 'lib', 'amd64'),
+    path.join(serverDir, 'jre64', 'lib', 'x86_64'),   // CentOS uses x86_64 instead of amd64
+    '/usr/lib64',                                       // CentOS system 64-bit libs
   ];
   const existing = candidates.filter(p => { try { return fs.existsSync(p); } catch { return false; } });
   const extra = process.env.LD_LIBRARY_PATH || '';
@@ -455,12 +457,15 @@ export class ServerManager {
           
           // Kill each matching PID using execFile to avoid shell injection
           execFile('kill', ['-9', ...pids], (killErr) => {
+            if (killErr) {
+              log.warn(`Kill returned error (may be normal if process already exited): ${killErr.message}`);
+            }
             this.isRunning = false;
             this.serverProcess = null;
             this.startTime = null;
             
-            logServerEvent('server_stop', 'Server force stopped').catch(e => log.warn(`Failed to log event: ${e.message}`));
-            log.info('Server force stopped');
+            logServerEvent('server_stop', `Server force stopped (killed PIDs: ${pids.join(', ')})`).catch(e => log.warn(`Failed to log event: ${e.message}`));
+            log.info(`Server force stopped (killed ${pids.length} process(es): ${pids.join(', ')})`);
             
             resolve({ success: true, message: 'Server stopped' });
           });

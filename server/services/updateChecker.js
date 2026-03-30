@@ -142,14 +142,23 @@ export class UpdateChecker {
     if (process.platform === 'win32') {
       steamcmdExe = path.join(steamcmdPath, 'steamcmd.exe');
     } else {
-      // Try steamcmd.sh first (tar.gz extract), then plain steamcmd (package-manager install)
+      // Try steamcmd.sh first (tar.gz extract), then plain steamcmd (package-manager install),
+      // then system-wide paths (CentOS/Ubuntu package manager installs to /usr/games/)
       const shPath = path.join(steamcmdPath, 'steamcmd.sh');
       const binPath = path.join(steamcmdPath, 'steamcmd');
       try { await fs.promises.access(shPath); steamcmdExe = shPath; } catch {
         try { await fs.promises.access(binPath); steamcmdExe = binPath; } catch {
-          throw new Error('SteamCMD not found');
+          // Try system-wide locations
+          for (const sysPath of ['/usr/games/steamcmd', '/usr/bin/steamcmd', '/usr/local/bin/steamcmd']) {
+            try { await fs.promises.access(sysPath); steamcmdExe = sysPath; break; } catch { /* try next */ }
+          }
+          if (!steamcmdExe) {
+            log.warn(`SteamCMD not found at: ${shPath}, ${binPath}, /usr/games/steamcmd`);
+            throw new Error('SteamCMD not found');
+          }
         }
       }
+      log.debug(`Using SteamCMD executable: ${steamcmdExe}`);
     }
       
     try {
@@ -173,9 +182,11 @@ export class UpdateChecker {
           path.join(steamcmdPath, 'linux32'),
           path.join(steamcmdPath, 'linux64'),
           steamcmdPath,
+          '/usr/lib64',
           process.env.LD_LIBRARY_PATH || ''
         ].filter(Boolean).join(':');
         spawnOpts.env = { ...process.env, LD_LIBRARY_PATH: ldPaths };
+        log.debug(`SteamCMD spawn: exe=${steamcmdExe}, LD_LIBRARY_PATH=${ldPaths}`);
       }
 
       const steamcmd = spawn(steamcmdExe, args, spawnOpts);

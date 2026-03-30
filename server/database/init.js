@@ -102,7 +102,13 @@ async function flushWrites() {
 
   _writePromise = (async () => {
     try {
-      await db.write();
+      // Atomic write: write to temp file first, then rename
+      // This prevents corruption on NFS/SMB mounts or if process is killed mid-write
+      const tmpPath = dbPath + '.tmp';
+      const data = JSON.stringify(db.data, null, 2);
+      fs.writeFileSync(tmpPath, data, 'utf-8');
+      fs.renameSync(tmpPath, dbPath);
+      log.debug(`DB flushed (${Math.round(data.length / 1024)}KB)`);
     } catch (err) {
       log.error(`Write error: ${err.message}`);
       _dirty = true; // Re-mark dirty so next scheduleWrite retries
@@ -259,22 +265,22 @@ export async function getDb() {
     try {
       await db.read();
     } catch (err) {
-      console.error('[DB] Failed to read database:', err.message);
+      log.error(`Failed to read database: ${err.message}`);
 
       // Attempt recovery from backup
       const backup = getLatestBackup();
       if (backup) {
-        console.log(`[DB] Attempting recovery from ${path.basename(backup)}...`);
+        log.warn(`Attempting recovery from ${path.basename(backup)}...`);
         try {
           fs.copyFileSync(backup, dbPath);
           await db.read();
-          console.log('[DB] Recovery successful!');
+          log.info('Database recovery successful!');
         } catch (recoverErr) {
-          console.error('[DB] Recovery failed:', recoverErr.message);
+          log.error(`Recovery failed: ${recoverErr.message} — starting fresh`);
           db.data = { ...defaultData };
         }
       } else {
-        console.log('[DB] No backup found, starting fresh.');
+        log.warn('No backup found, starting with fresh database.');
         db.data = { ...defaultData };
       }
     }

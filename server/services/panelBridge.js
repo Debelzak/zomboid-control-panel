@@ -847,10 +847,13 @@ class PanelBridge extends EventEmitter {
     if (pending) {
       clearTimeout(pending.timeout);
       this.pendingCommands.delete(result.id);
+      const elapsed = Date.now() - pending.timestamp;
 
       if (result.success) {
+        log.debug(`PanelBridge result: action=${pending.action} success=true (${elapsed}ms)`);
         pending.resolve({ success: true, data: result.data });
       } else {
+        log.warn(`PanelBridge result: action=${pending.action} failed: ${result.error || 'unknown'} (${elapsed}ms)`);
         pending.reject(new Error(result.error || 'Command failed'));
       }
     }
