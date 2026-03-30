@@ -95,6 +95,7 @@ router.post('/kick', async (req, res) => {
     }
     
     const result = await rconService.kickPlayer(username, reason);
+    log.info(`POST /kick: ${username} (reason=${reason || 'none'})`);
     await logPlayerAction(username, 'kick', reason);
     
     res.json(result);
@@ -123,6 +124,7 @@ router.post('/ban', async (req, res) => {
     }
     
     const result = await rconService.banPlayer(username, banIp, reason);
+    log.info(`POST /ban: ${username} (banIp=${banIp}, reason=${reason || 'none'})`);
     await logPlayerAction(username, 'ban', `IP: ${banIp}, Reason: ${reason}`);
     
     res.json(result);
@@ -147,6 +149,7 @@ router.post('/unban', async (req, res) => {
     }
     
     const result = await rconService.unbanPlayer(username);
+    log.info(`POST /unban: ${username}`);
     await logPlayerAction(username, 'unban', null);
     
     res.json(result);
@@ -175,6 +178,7 @@ router.post('/access-level', async (req, res) => {
     }
     
     const result = await rconService.setAccessLevel(username, level);
+    log.info(`POST /access-level: ${username} → ${level}`);
     await logPlayerAction(username, 'access_level', level);
     
     res.json(result);
@@ -199,6 +203,7 @@ router.post('/whitelist/add', async (req, res) => {
     }
     
     const result = await rconService.addToWhitelist(username);
+    log.info(`POST /whitelist/add: ${username}`);
     await logPlayerAction(username, 'whitelist_add', null);
     
     res.json(result);
@@ -223,6 +228,7 @@ router.post('/whitelist/remove', async (req, res) => {
     }
     
     const result = await rconService.removeFromWhitelist(username);
+    log.info(`POST /whitelist/remove: ${username}`);
     await logPlayerAction(username, 'whitelist_remove', null);
     
     res.json(result);
@@ -255,6 +261,7 @@ router.post('/teleport', async (req, res) => {
         return res.status(400).json({ error: 'Invalid coordinates' });
       }
       if (player1) {
+        log.info(`POST /teleport: ${player1} → coords(${x}, ${y}, ${z}) via PanelBridge`);
         // Teleport a specific player to coordinates — requires PanelBridge
         // (RCON 'teleportto' is a self-teleport and doesn't accept a target player)
         if (!isValidUsername(player1)) {
@@ -310,6 +317,7 @@ router.post('/add-item', async (req, res) => {
     }
     
     const result = await rconService.addItem(username, item, count || 1);
+    log.info(`POST /add-item: ${item} x${count || 1} to ${username || 'self'}`);
     if (username) {
       await logPlayerAction(username, 'add_item', `${item} x${count || 1}`);
     }
@@ -344,6 +352,7 @@ router.post('/add-xp', async (req, res) => {
     }
     
     const result = await rconService.addXp(username, perk, amount);
+    log.info(`POST /add-xp: ${perk}=${amount} to ${username}`);
     await logPlayerAction(username, 'add_xp', `${perk}=${amount}`);
     
     res.json(result);
@@ -372,6 +381,7 @@ router.post('/add-vehicle', async (req, res) => {
     }
     
     const result = await rconService.addVehicle(vehicle, username);
+    log.info(`POST /add-vehicle: ${vehicle} for ${username || 'self'}`);
     if (username) {
       await logPlayerAction(username, 'add_vehicle', vehicle);
     }
@@ -394,6 +404,7 @@ router.post('/godmode', async (req, res) => {
     }
     
     const result = await rconService.setGodMode(username, enabled);
+    log.info(`POST /godmode: ${username || 'self'} → ${enabled ? 'ON' : 'OFF'}`);
     if (username) {
       await logPlayerAction(username, 'godmode', enabled ? 'enabled' : 'disabled');
     }
@@ -416,6 +427,7 @@ router.post('/invisible', async (req, res) => {
     }
     
     const result = await rconService.setInvisible(username, enabled);
+    log.info(`POST /invisible: ${username || 'self'} → ${enabled ? 'ON' : 'OFF'}`);
     if (username) {
       await logPlayerAction(username, 'invisible', enabled ? 'enabled' : 'disabled');
     }
@@ -438,6 +450,7 @@ router.post('/noclip', async (req, res) => {
     }
     
     const result = await rconService.setNoclip(username, enabled);
+    log.info(`POST /noclip: ${username || 'self'} → ${enabled ? 'ON' : 'OFF'}`);
     if (username) {
       await logPlayerAction(username, 'noclip', enabled ? 'enabled' : 'disabled');
     }
@@ -491,6 +504,7 @@ router.post('/banid', async (req, res) => {
     }
     
     const result = await rconService.banSteamId(steamId);
+    log.info(`POST /banid: SteamID ${steamId}`);
     await addSteamIdBan(steamId);
     await logPlayerAction(steamId, 'banid', null);
     
@@ -516,6 +530,7 @@ router.post('/unbanid', async (req, res) => {
     }
     
     const result = await rconService.unbanSteamId(steamId);
+    log.info(`POST /unbanid: SteamID ${steamId}`);
     await removeSteamIdBan(steamId);
     await logPlayerAction(steamId, 'unbanid', null);
     
@@ -541,6 +556,7 @@ router.post('/voiceban', async (req, res) => {
     }
     
     const result = await rconService.voiceBan(username, enabled);
+    log.info(`POST /voiceban: ${username} → ${enabled ? 'ON' : 'OFF'}`);
     await logPlayerAction(username, 'voiceban', enabled ? 'enabled' : 'disabled');
     
     res.json(result);

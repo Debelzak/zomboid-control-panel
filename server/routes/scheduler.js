@@ -62,6 +62,7 @@ router.post('/tasks', async (req, res) => {
   try {
     const scheduler = req.app.get('scheduler');
     const { name, cronExpression, command } = req.body;
+    log.info(`POST /tasks: name=${name}, cron=${cronExpression}, command=${(command || '').substring(0, 80)}`);
     
     if (!name || !cronExpression || !command) {
       return res.status(400).json({ error: 'Name, cronExpression, and command are required' });
@@ -114,6 +115,7 @@ router.put('/tasks/:id', async (req, res) => {
     const scheduler = req.app.get('scheduler');
     const { id } = req.params;
     const { name, cronExpression, command, enabled } = req.body;
+    log.info(`PUT /tasks/${id}: name=${name}, cron=${cronExpression}, enabled=${enabled}`);
     
     const taskId = parseInt(id, 10);
     if (isNaN(taskId)) {
@@ -167,6 +169,7 @@ router.delete('/tasks/:id', async (req, res) => {
   try {
     const scheduler = req.app.get('scheduler');
     const { id } = req.params;
+    log.info(`DELETE /tasks/${id}`);
     
     const taskId = parseInt(id, 10);
     if (isNaN(taskId)) {
@@ -196,6 +199,7 @@ router.post('/restart-now', async (req, res) => {
     
     // Parse and validate warningMinutes (0-60 range)
     let parsedWarningMinutes = parseInt(warningMinutes, 10);
+    log.info(`POST /restart-now: warningMinutes=${warningMinutes}`);
     if (isNaN(parsedWarningMinutes) || parsedWarningMinutes < 0) {
       parsedWarningMinutes = 5; // Default
     } else if (parsedWarningMinutes > 60) {

@@ -228,6 +228,7 @@ router.post('/auto-scan', async (req, res) => {
 router.post('/detect', async (req, res) => {
   try {
     const { dataPath, installPath } = req.body;
+    log.info(`POST /detect: dataPath=${dataPath}, installPath=${installPath || 'auto'}`);
     
     if (!dataPath) {
       return res.status(400).json({ error: 'Data path is required' });
@@ -375,6 +376,7 @@ router.get('/:id', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const config = req.body;
+    log.info(`POST / — creating server: name=${config?.name}, remote=${!!config?.isRemote}`);
     
     // Validate required fields - installPath not required for remote servers
     const isRemote = !!config.isRemote;

@@ -48,6 +48,7 @@ export class DiscordBot {
       // Use dedicated chat relay channel if set, otherwise fall back to main channel
       const targetChannelId = this.chatRelayChannelId || this.channelId;
       if (!targetChannelId) return;
+      log.debug(`Relaying game chat from ${data?.author || 'unknown'} to Discord`);
       
       try {
           const channel = await this.client.channels.fetch(targetChannelId);
@@ -61,6 +62,7 @@ export class DiscordBot {
   }
 
   async loadConfig() {
+    log.info('Loading Discord bot config...');
     this.token = await getSetting('discordBotToken');
     this.guildId = await getSetting('discordGuildId');
     this.adminRoleId = await getSetting('discordAdminRoleId');
@@ -308,6 +310,7 @@ export class DiscordBot {
     if (!interaction.isChatInputCommand()) return;
 
     const { commandName } = interaction;
+    log.info(`Discord command: /${commandName} by ${interaction.user?.tag || 'unknown'}`);
     
     // Check permission based on command's configured tier
     if (!this.checkPermission(interaction, commandName)) {
@@ -563,6 +566,7 @@ export class DiscordBot {
 
   async sendNotification(message) {
     if (!this.channelId || !this.client) return;
+    log.info(`Sending Discord notification: ${String(message).substring(0, 80)}`);
     
     try {
       const channel = await this.client.channels.fetch(this.channelId);

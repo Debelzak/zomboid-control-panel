@@ -388,6 +388,7 @@ export class ModChecker extends EventEmitter {
   async setUpdateCallback(callback) {
     this.onUpdateCallback = callback;
     this.autoRestartEnabled = !!callback;
+    log.info(`Mod auto-restart ${this.autoRestartEnabled ? 'enabled' : 'disabled'}`);
     // Persist to database
     await setSetting('modAutoRestartEnabled', this.autoRestartEnabled);
   }

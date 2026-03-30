@@ -279,9 +279,9 @@ if [ ! -f "$JAVA_CMD" ]; then
 fi
 
 INSTDIR="$(dirname "$0")"
-export LD_LIBRARY_PATH="${INSTDIR}/natives/:${INSTDIR}/natives/linux64/:${INSTDIR}/linux64/:${INSTDIR}:${INSTDIR}/jre64/lib/amd64:${LD_LIBRARY_PATH}"
+export LD_LIBRARY_PATH="\${INSTDIR}/natives/:\${INSTDIR}/natives/linux64/:\${INSTDIR}/linux64/:\${INSTDIR}:\${INSTDIR}/jre64/lib/amd64:\${LD_LIBRARY_PATH}"
 
-"$JAVA_CMD" ${jvmArgs.join(' ')} -Djava.library.path=natives/:natives/linux64/:. -cp "$PZ_CLASSPATH" zombie.network.GameServer ${gameArgs.join(' ')}
+"$JAVA_CMD" ${jvmArgs.join(' ')} -Djava.library.path=natives/:natives/linux64/:linux64/:. -cp "$PZ_CLASSPATH" zombie.network.GameServer ${gameArgs.join(' ')}
 `;
 
   return { bat: batchContent, sh: shellContent };
@@ -292,6 +292,7 @@ router.get('/status', async (req, res) => {
   try {
     const serverManager = req.app.get('serverManager');
     const rconService = req.app.get('rconService');
+    log.debug('GET /status');
     
     const status = await serverManager.getServerStatus();
     const rconStatus = rconService.getConfig();
@@ -310,6 +311,7 @@ router.get('/status', async (req, res) => {
 router.post('/start', async (req, res) => {
   try {
     const activeServer = await getActiveServer();
+    log.info(`POST /start (server=${activeServer?.name || 'unknown'}, remote=${activeServer?.isRemote || false})`);
     if (activeServer?.isRemote) {
       return res.status(400).json({ error: 'Cannot start a remote server. Remote servers are managed externally — use RCON to interact.' });
     }
@@ -503,6 +505,7 @@ router.post('/start', async (req, res) => {
 router.post('/stop', async (req, res) => {
   try {
     const rconService = req.app.get('rconService');
+    log.info('POST /stop — graceful shutdown requested');
     
     // Check if RCON is connected first
     if (!rconService.connected) {
@@ -530,6 +533,7 @@ router.post('/stop', async (req, res) => {
 // Force stop server
   router.post('/force-stop', async (req, res) => {
   try {
+    log.info('POST /force-stop — force kill requested');
     const activeServer = await getActiveServer();
     if (activeServer?.isRemote) {
       return res.status(400).json({ error: 'Cannot force-stop a remote server. The process is not managed by this panel.' });
@@ -734,6 +738,7 @@ const FALLBACK_BRANCHES = [
 router.get('/branches', async (req, res) => {
   try {
     const steamcmdPath = req.query.steamcmdPath || await getSetting('steamcmdPath');
+    log.info(`GET /branches (steamcmdPath=${steamcmdPath || 'not configured'})`);
     
     if (!steamcmdPath) {
       // Return fallback branches if no SteamCMD configured
@@ -953,6 +958,7 @@ router.post('/install', async (req, res) => {
     
     // Determine branch - support both new 'branch' param and legacy 'useUnstable'
     const selectedBranch = branch || (useUnstable ? 'unstable' : 'stable');
+    log.info(`POST /install (steamcmd=${steamcmdPath}, install=${installPath}, server=${serverName}, branch=${selectedBranch}, noSteam=${useNoSteam}, debug=${useDebug})`);
     
     // Validate paths - Security check for path traversal
     if (!steamcmdPath || !installPath || !serverName) {
@@ -1910,6 +1916,7 @@ router.post('/steam-update', async (req, res) => {
 // Auto-download and install SteamCMD
 router.post('/steamcmd/download', async (req, res) => {
   try {
+    log.info(`POST /steamcmd/download (platform=${process.platform})`);
     const defaultPath = isWindows 
       ? 'C:\\SteamCMD' 
       : ['/usr/games', '/usr/bin', path.join(os.homedir(), 'steamcmd'), '/opt/steamcmd', '/usr/local/bin']

@@ -77,6 +77,7 @@ router.post('/settings', async (req, res) => {
 // Create a manual backup
 router.post('/create', async (req, res) => {
   try {
+    log.info('POST /create — creating manual backup');
     const activeServer = await getActiveServer();
     if (activeServer?.isRemote) {
       return res.status(400).json({ error: 'Backups are not available for remote servers. The server filesystem is not accessible from this panel.' });
@@ -102,6 +103,7 @@ router.post('/create', async (req, res) => {
 // Delete a backup
 router.delete('/:name', async (req, res) => {
   try {
+    log.info(`DELETE /${req.params.name}`);
     const backupService = req.app.get('backupService');
     const result = await backupService.deleteBackup(req.params.name);
     

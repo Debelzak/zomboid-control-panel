@@ -60,6 +60,7 @@ router.get('/config', async (req, res) => {
 router.put('/config', async (req, res) => {
   try {
     const { token, guildId, adminRoleId, modRoleId, channelId, autoStart, chatRelayEnabled, chatRelayChannelId } = req.body;
+    log.info(`PUT /config: guildId=${guildId}, token=${token ? (token === 'KEEP_EXISTING' ? 'KEEP' : '***') : 'none'}, autoStart=${autoStart}`);
     
     const discordBot = req.app.get('discordBot');
     if (!discordBot) {
@@ -119,6 +120,7 @@ router.put('/config', async (req, res) => {
 // Start Discord bot
 router.post('/start', async (req, res) => {
   try {
+    log.info('POST /start — starting Discord bot');
     const discordBot = req.app.get('discordBot');
     if (!discordBot) {
       return res.status(500).json({ error: 'Discord bot not initialized' });

@@ -107,6 +107,7 @@ export class LogTailer extends EventEmitter {
   }
 
   stopWatching() {
+     log.info('LogTailer stopping...');
      if (this.checkTimer) {
          clearTimeout(this.checkTimer);
          this.checkTimer = null;
@@ -150,7 +151,13 @@ export class LogTailer extends EventEmitter {
   // Tail the active B42 *_chat.txt file
   async checkChatLog() {
      // Re-discover latest chat log periodically (PZ creates new ones on restart)
-     if (this.logsDir) this.findLatestChatLog();
+     if (this.logsDir) {
+       const prevChatLog = this.chatLogPath;
+       this.findLatestChatLog();
+       if (this.chatLogPath && this.chatLogPath !== prevChatLog) {
+         log.info(`LogTailer: new chat log discovered: ${this.chatLogPath}`);
+       }
+     }
      if (!this.chatLogPath) return;
 
      try {

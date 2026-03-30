@@ -12,6 +12,7 @@ router.post('/execute', async (req, res) => {
   try {
     const rconService = req.app.get('rconService');
     const { command } = req.body;
+    log.info(`POST /execute: ${(command || '').substring(0, 100)}`);
     
     if (!command) {
       return res.status(400).json({ error: 'Command is required' });
@@ -56,6 +57,7 @@ router.post('/connect', async (req, res) => {
   try {
     const rconService = req.app.get('rconService');
     const { host, port, password } = req.body;
+    log.info(`POST /connect (host=${host || 'default'}, port=${port || 'default'}, password=${password ? '***' : 'none'})`);
     
     // Validate host format if provided (only alphanumeric, dots, hyphens)
     if (host !== undefined) {
@@ -115,6 +117,7 @@ router.get('/health', async (req, res) => {
 // Disconnect from RCON
 router.post('/disconnect', async (req, res) => {
   try {
+    log.info('POST /disconnect');
     const rconService = req.app.get('rconService');
     await rconService.disconnect();
     res.json({ success: true, message: 'Disconnected from RCON' });

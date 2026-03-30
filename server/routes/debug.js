@@ -177,6 +177,7 @@ router.get('/logs/download/:filename', async (req, res) => {
   try {
     const paths = getDataPaths();
     const filename = req.params.filename;
+    log.info(`GET /logs/download/${filename}`);
     
     // Security: prevent path traversal
     if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
@@ -209,6 +210,7 @@ router.get('/logs/download/:filename', async (req, res) => {
 // Clear in-memory log buffer
 router.post('/logs/clear', async (req, res) => {
   try {
+    log.info('POST /logs/clear');
     logBuffer.length = 0;
     res.json({ success: true, message: 'Log buffer cleared' });
   } catch (error) {
@@ -332,6 +334,7 @@ router.get('/database', async (req, res) => {
 // Create manual database backup
 router.post('/database/backup', async (req, res) => {
   try {
+    log.info('POST /database/backup');
     const result = await createDatabaseBackup();
     res.json(result);
   } catch (error) {
@@ -343,6 +346,7 @@ router.post('/database/backup', async (req, res) => {
 // Compact database (apply retention policies)
 router.post('/database/compact', async (req, res) => {
   try {
+    log.info('POST /database/compact');
     const result = await compactDatabase();
     res.json(result);
   } catch (error) {

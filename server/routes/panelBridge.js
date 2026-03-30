@@ -87,6 +87,7 @@ router.get('/status', async (req, res) => {
 router.post('/auto-configure', async (req, res) => {
   try {
     const { serverId } = req.body;
+    log.info(`POST /auto-configure (serverId=${serverId || 'active'})`);
     
     // Get specified server or active server
     let targetServer;
@@ -281,6 +282,7 @@ router.post('/auto-configure', async (req, res) => {
       modInstalled,
       searchedPaths: searchedLocations
     });
+    log.info(`Bridge auto-configured: path=${foundPath.path} source=${foundPath.source} hasStatus=${foundPath.hasStatus} modInstalled=${modInstalled}`);
   } catch (error) {
     res.status(500).json({ error: sanitizeError(error.message) });
   }
@@ -717,7 +719,9 @@ router.post('/command', async (req, res) => {
   }
   
   try {
+    log.info(`POST /command: action=${action} args=${JSON.stringify(args || {}).substring(0, 200)}`);
     const result = await bridge.sendCommand(action, args || {});
+    log.debug(`POST /command: action=${action} completed successfully`);
     res.json(result);
   } catch (error) {
     const message = sanitizeError(error?.message || 'Bridge command failed');

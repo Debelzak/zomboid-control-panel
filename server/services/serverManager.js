@@ -10,6 +10,7 @@ const isWindows = process.platform === 'win32';
 
 // Build LD_LIBRARY_PATH from server directory, filtering to only existing paths
 function buildLdLibraryPath(serverDir) {
+  log.debug(`buildLdLibraryPath: scanning candidates for serverDir=${serverDir}`);
   const candidates = [
     path.join(serverDir, 'linux64'),
     path.join(serverDir, 'natives', 'linux64'),
@@ -19,7 +20,9 @@ function buildLdLibraryPath(serverDir) {
   ];
   const existing = candidates.filter(p => { try { return fs.existsSync(p); } catch { return false; } });
   const extra = process.env.LD_LIBRARY_PATH || '';
-  return [...existing, extra].filter(Boolean).join(':');
+  const result = [...existing, extra].filter(Boolean).join(':');
+  log.debug(`buildLdLibraryPath: ${existing.length}/${candidates.length} dirs exist → LD_LIBRARY_PATH=${result}`);
+  return result;
 }
 
 // Allowed extensions for custom start commands
@@ -175,6 +178,7 @@ export class ServerManager {
     return new Promise((resolve) => {
       // Check if ProjectZomboid DEDICATED SERVER is running
       // The dedicated server runs as java with zombie.network.GameServer class
+      log.debug(`checkServerRunning: starting detection (platform=${process.platform})`);
       
       const timeout = setTimeout(() => {
         log.warn('checkServerRunning: Process detection timed out, assuming server is not running');
@@ -217,14 +221,17 @@ export class ServerManager {
         // Check both the Java class name (zombie.network.GameServer) and
         // the native launcher (ProjectZomboid64 / projectzomboid64)
         // Use pgrep first (more reliable), fall back to ps aux
+        log.debug('checkServerRunning: trying pgrep -af first...');
         exec('pgrep -af "zombie.network.[Gg]ame[Ss]erver|[Pp]roject[Zz]omboid64|[Pp]roject[Zz]omboid32"', { timeout: 8000 }, (pgrepErr, pgrepOut) => {
           if (!pgrepErr && pgrepOut && pgrepOut.trim()) {
+            log.debug(`checkServerRunning: pgrep found PZ server process: ${pgrepOut.trim().substring(0, 200)}`);
             clearTimeout(timeout);
             this.isRunning = true;
             resolve(true);
             return;
           }
           // Fallback: ps aux (works on all distros including CentOS minimal)
+          log.debug('checkServerRunning: pgrep failed or empty, falling back to ps aux -ww');
           exec('ps aux -ww', { timeout: 8000 }, (err, stdout) => {
             clearTimeout(timeout);
             if (err || !stdout) {
@@ -269,7 +276,7 @@ export class ServerManager {
       }
 
       // Start the server process
-      log.info('Starting server process');
+      log.info(`Starting server process (platform=${process.platform}, serverPath=${this.serverPath}, startCommand=${this.startCommand || 'none'}, serverBat=${this.serverBat})`);
 
       if (this.startCommand) {
         // Validate the custom command before executing
@@ -296,7 +303,7 @@ export class ServerManager {
           throw new Error(`Start command not found: ${resolvedCmd}`);
         }
 
-        log.info(`Using custom start command: ${resolvedCmd} ${args.join(' ')}`);
+        log.info(`Using custom start command: ${resolvedCmd} ${args.join(' ')} (ext=${ext}, cwd=${cwd})`);
 
         if (isWindows && (ext === '.bat' || ext === '.cmd')) {
           this.serverProcess = spawn('cmd.exe', ['/c', resolvedCmd, ...args], {
@@ -305,13 +312,15 @@ export class ServerManager {
             stdio: 'ignore'
           });
         } else if (!isWindows && ext === '.sh') {
-          try { fs.chmodSync(resolvedCmd, 0o750); } catch (e) { /* ok */ }
+          try { fs.chmodSync(resolvedCmd, 0o750); } catch (e) { log.debug(`chmod on custom .sh failed: ${e.message}`); }
           const serverAbsPath = path.resolve(cwd);
+          const ldPath = buildLdLibraryPath(serverAbsPath);
+          log.debug(`Spawning custom .sh: bash ${resolvedCmd} ${args.join(' ')} (cwd=${cwd}, LD_LIBRARY_PATH=${ldPath})`);
           this.serverProcess = spawn('bash', [resolvedCmd, ...args], {
             cwd,
             detached: true,
             stdio: 'ignore',
-            env: { ...process.env, LD_LIBRARY_PATH: buildLdLibraryPath(serverAbsPath) }
+            env: { ...process.env, LD_LIBRARY_PATH: ldPath }
           });
         } else {
           const spawnEnv = isWindows ? process.env : (() => {
@@ -349,12 +358,14 @@ export class ServerManager {
         // so the JVM can find libsteam_api.so and its transitive dependencies.
         // Without this, services/non-login shells won't have the paths set.
         const serverAbsPath = path.resolve(this.serverPath);
+        const ldPath = buildLdLibraryPath(serverAbsPath);
+        log.debug(`Spawning default .sh: bash ${this.serverBat} (cwd=${this.serverPath}, LD_LIBRARY_PATH=${ldPath})`);
 
         this.serverProcess = spawn('bash', [this.serverBat], {
           cwd: this.serverPath,
           detached: true,
           stdio: 'ignore',
-          env: { ...process.env, LD_LIBRARY_PATH: buildLdLibraryPath(serverAbsPath) }
+          env: { ...process.env, LD_LIBRARY_PATH: ldPath }
         });
       }
     }
@@ -417,8 +428,10 @@ export class ServerManager {
       } else {
         // Linux: Find and kill the PZ server process
         // Use pgrep for reliable process matching (avoids false grep matches)
+        log.debug('stopServer: looking for PZ server PIDs via pgrep...');
         exec("pgrep -f 'zombie.network.[Gg]ame[Ss]erver|[Pp]roject[Zz]omboid64|[Pp]roject[Zz]omboid32'", (pgrepErr, pgrepOut) => {
           let pids = (pgrepOut || '').trim().split('\n').filter(p => /^\d+$/.test(p));
+          log.debug(`stopServer: pgrep returned ${pids.length} PIDs: [${pids.join(', ')}]`);
           
           // Fallback to ps+grep if pgrep not available
           if (pids.length === 0) {

@@ -507,6 +507,7 @@ class PanelBridge extends EventEmitter {
    * @returns {Promise<object>} - Command result
    */
   async sendCommand(action, args = {}) {
+    log.debug(`sendCommand: action=${action} args=${JSON.stringify(args).substring(0, 200)}`);
     if (!this.bridgePath) {
       throw new Error('Bridge not configured');
     }
@@ -560,6 +561,7 @@ class PanelBridge extends EventEmitter {
         action,
         timestamp: Date.now()
       });
+      log.debug(`sendCommand: queued action=${action} id=${id} (pending=${this.pendingCommands.size})`);
     });
   }
 

@@ -612,6 +612,7 @@ function toSpawnRegions(regions, serverName) {
 // Get server file paths info
 router.get('/paths', async (req, res) => {
   try {
+    log.info('GET /paths');
     const configPath = await getServerConfigPath();
     const serverName = await getServerName();
     
@@ -662,6 +663,7 @@ router.put('/ini', async (req, res) => {
   try {
     const configPath = await getServerConfigPath();
     const serverName = await getServerName();
+    log.info(`PUT /ini: serverName=${serverName}, keys=${Object.keys(req.body.settings || {}).length}`);
     const filePath = path.join(configPath, `${serverName}.ini`);
     const { settings } = req.body;
     
@@ -718,6 +720,7 @@ router.get('/sandbox', async (req, res) => {
 // Save SandboxVars
 router.put('/sandbox', async (req, res) => {
   try {
+    log.info('PUT /sandbox');
     const configPath = await getServerConfigPath();
     const serverName = await getServerName();
     const filePath = path.join(configPath, `${serverName}_SandboxVars.lua`);
@@ -794,6 +797,7 @@ router.get('/spawnpoints', async (req, res) => {
 // Save spawn points
 router.put('/spawnpoints', async (req, res) => {
   try {
+    log.info('PUT /spawnpoints');
     const configPath = await getServerConfigPath();
     const serverName = await getServerName();
     const filePath = path.join(configPath, `${serverName}_spawnpoints.lua`);
@@ -868,6 +872,7 @@ router.put('/spawnregions', async (req, res) => {
 
 // Get raw file content
 router.get('/raw/:type', async (req, res) => {
+  log.info(`GET /raw/${req.params.type}`);
   try {
     const configPath = await getServerConfigPath();
     const serverName = await getServerName();
@@ -905,6 +910,7 @@ router.put('/raw/:type', async (req, res) => {
     const serverName = await getServerName();
     const type = req.params.type;
     const { content } = req.body;
+    log.info(`PUT /raw/${type}: contentLength=${content?.length || 0}`);
     
     const fileMap = {
       ini: `${serverName}.ini`,
@@ -988,6 +994,7 @@ router.post('/restore/:filename', async (req, res) => {
     
     // Sanitize filename to prevent path traversal
     const filename = path.basename(req.params.filename);
+    log.info(`POST /restore: filename=${filename}`);
     
     if (!filename.endsWith('.bak')) {
       return res.status(400).json({ error: 'Invalid backup file extension' });
@@ -1030,6 +1037,7 @@ router.post('/restore/:filename', async (req, res) => {
 // Save and reload (calls RCON reloadoptions)
 router.post('/save-and-reload', async (req, res) => {
   try {
+    log.info('POST /save-and-reload');
     const rconService = req.app.get('rconService');
     
     if (!rconService || !rconService.isConnected()) {
@@ -1123,6 +1131,7 @@ router.get('/templates/:id', async (req, res) => {
 
 // POST /templates - Save current config as a template
 router.post('/templates', async (req, res) => {
+  log.info('POST /templates (create)');
   try {
     const { name, description, includeIni = true, includeSandbox = true } = req.body;
     
@@ -1189,6 +1198,7 @@ router.post('/templates', async (req, res) => {
 
 // POST /templates/:id/apply - Apply a template to current config
 router.post('/templates/:id/apply', async (req, res) => {
+  log.info(`POST /templates/${req.params.id}/apply`);
   try {
     // Sanitize template ID to prevent path traversal
     const safeId = path.basename(req.params.id).replace(/[^a-z0-9_-]/gi, '');
@@ -1287,6 +1297,7 @@ router.put('/templates/:id', async (req, res) => {
 
 // DELETE /templates/:id - Delete a template
 router.delete('/templates/:id', async (req, res) => {
+  log.info(`DELETE /templates/${req.params.id}`);
   try {
     // Sanitize template ID to prevent path traversal
     const safeId = path.basename(req.params.id).replace(/[^a-z0-9_-]/gi, '');

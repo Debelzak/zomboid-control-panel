@@ -350,6 +350,7 @@ async function getServersFromSteamAPI(apiKey, useCache = true) {
  */
 router.get('/', async (req, res) => {
   try {
+    log.info(`GET / (server finder): refresh=${req.query.refresh || 'false'}`);
     let servers = [];
     let source = 'steam_api';
     const steamApiKey = await getSetting('steamApiKey');
@@ -475,6 +476,7 @@ router.get('/', async (req, res) => {
  */
 router.get('/query', async (req, res) => {
   const { ip, port } = req.query;
+  log.info(`GET /query: ip=${ip}, port=${port}`);
   
   if (!ip || !port) {
     return res.status(400).json({

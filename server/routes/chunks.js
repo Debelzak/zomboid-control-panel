@@ -402,6 +402,7 @@ router.get('/chunks/:saveName', async (req, res) => {
 router.post('/delete-chunks', async (req, res) => {
   try {
     const { saveName, chunks, createBackup = true, customPath = null } = req.body;
+    log.info(`POST /delete-chunks: saveName=${saveName}, chunkCount=${chunks?.length || 0}, createBackup=${createBackup}`);
     
     if (!saveName || !chunks || !Array.isArray(chunks) || chunks.length === 0) {
       return res.status(400).json({ error: 'Save name and chunks array required' });

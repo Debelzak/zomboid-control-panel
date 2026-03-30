@@ -163,6 +163,7 @@ router.post('/track', async (req, res) => {
     if (!modChecker) return;
     
     const { workshopId } = req.body;
+    log.info(`POST /track: workshopId=${workshopId}`);
     
     if (!workshopId) {
       return res.status(400).json({ error: 'Workshop ID is required' });
@@ -651,6 +652,7 @@ router.post('/get-mod-info', async (req, res) => {
 router.post('/write-to-ini', async (req, res) => {
   try {
     const { mods, mapFolders } = req.body;
+    log.info(`POST /write-to-ini: ${mods?.length || 0} mods, ${mapFolders?.length || 0} map folders`);
     // mods: array of { workshopId, modId } where modId is the mod loading ID (from info.txt)
     // mapFolders: optional array of map folder names for map mods
     

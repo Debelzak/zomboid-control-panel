@@ -86,6 +86,7 @@ router.get('/', async (req, res) => {
 // Update server configuration
 router.put('/', async (req, res) => {
   try {
+    log.info('PUT /config — saving server config');
     const serverManager = req.app.get('serverManager');
     const { config } = req.body;
     
@@ -130,6 +131,7 @@ router.post('/option', async (req, res) => {
   try {
     const rconService = req.app.get('rconService');
     const { name, value } = req.body;
+    log.info(`POST /option: ${name}=${value}`);
     
     if (!name || value === undefined) {
       return res.status(400).json({ error: 'Option name and value are required' });
@@ -180,6 +182,7 @@ router.get('/app-settings', async (req, res) => {
 router.put('/app-settings', async (req, res) => {
   try {
     const { settings } = req.body;
+    log.info(`PUT /app-settings — updating ${settings ? Object.keys(settings).length : 0} keys: [${settings ? Object.keys(settings).join(', ') : ''}]`);
     
     if (!settings || typeof settings !== 'object') {
       return res.status(400).json({ error: 'Settings are required' });
