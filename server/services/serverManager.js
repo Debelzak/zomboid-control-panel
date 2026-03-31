@@ -565,10 +565,10 @@ export class ServerManager {
     
     // Lazy load port and IP
     if (!this.gamePort) {
-      this.loadGamePort().catch(() => {});
+      this.loadGamePort().catch(err => log.debug(`Failed to load game port: ${err.message}`));
     }
     if (!this.publicIp && !this.fetchingIp) {
-      this.fetchPublicIp().catch(() => {});
+      this.fetchPublicIp().catch(err => log.debug(`Failed to fetch public IP: ${err.message}`));
     }
 
     const isRunning = await this.checkServerRunning();

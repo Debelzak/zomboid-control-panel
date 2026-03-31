@@ -579,6 +579,7 @@ class PanelBridge extends EventEmitter {
         }
       }
     } catch (e) {
+      log.debug(`Failed to parse commands file ${commandsFile}: ${e.message}`);
       commands = { commands: [] };
     }
 
@@ -679,8 +680,8 @@ class PanelBridge extends EventEmitter {
 
       try {
         fs.writeFileSync(resultFile, '', { mode: 0o600 });
-      } catch (_) {
-        // Ignore cleanup write errors.
+      } catch (cleanupErr) {
+        log.debug(`Failed to clear result file seq ${seq}: ${cleanupErr.message}`);
       }
     }
 
@@ -982,8 +983,8 @@ class PanelBridge extends EventEmitter {
     // Find players who joined (in current but not in previous)
     for (const player of current) {
       if (!previous.has(player)) {
-        logPlayerAction(player, 'connect', 'Player connected to server').catch(() => {});
-        recordPlayerSession(player, 'connect').catch(() => {});
+        logPlayerAction(player, 'connect', 'Player connected to server').catch(err => log.debug(`Failed to log player connect: ${err.message}`));
+        recordPlayerSession(player, 'connect').catch(err => log.debug(`Failed to record player connect session: ${err.message}`));
         this.emit('playerConnect', player);
       }
     }
@@ -991,8 +992,8 @@ class PanelBridge extends EventEmitter {
     // Find players who left (in previous but not in current)
     for (const player of previous) {
       if (!current.has(player)) {
-        logPlayerAction(player, 'disconnect', 'Player disconnected from server').catch(() => {});
-        recordPlayerSession(player, 'disconnect').catch(() => {});
+        logPlayerAction(player, 'disconnect', 'Player disconnected from server').catch(err => log.debug(`Failed to log player disconnect: ${err.message}`));
+        recordPlayerSession(player, 'disconnect').catch(err => log.debug(`Failed to record player disconnect session: ${err.message}`));
         this.emit('playerDisconnect', player);
       }
     }

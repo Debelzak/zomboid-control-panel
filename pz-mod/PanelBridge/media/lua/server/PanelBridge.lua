@@ -1,11 +1,15 @@
 ---@diagnostic disable: undefined-global, deprecated
 --[[
     PanelBridge - Server-side mod for Zomboid Control Panel
-    Version: 1.7.0
+    Version: 1.7.1
     
     This mod enables external control panel communication with the PZ server.
     Communication happens via JSON files in the server save folder.
     
+    v1.7.1 Changes:
+    - Item catalog now excludes vehicle entries (vehicles served separately)
+    - Removed debug logging from catalog handler registration
+
     v1.7.0 Changes:
     - Added getAllSandboxOptions handler: enumerates ALL sandbox options (vanilla + mod-registered)
       with metadata (type, min/max, default, enum values), grouped by mod/table name
@@ -92,7 +96,7 @@
 local json
 
 local PanelBridge = {
-    VERSION = "1.7.0",
+    VERSION = "1.7.1",
     PROTOCOL_VERSION = "queue-v1",
     CHECK_INTERVAL = 250, -- milliseconds (fast command polling)
     lastCheck = 0,
@@ -5422,6 +5426,190 @@ handlers.moderationBanSteamID = function(args)
         steamId = steamId,
         details = resultOrErr
     }
+end
+
+-- ============================================
+-- CATALOG HANDLERS (item + vehicle enumeration)
+-- ============================================
+
+-- Debug: probe what category methods exist on item scripts
+handlers.debugItemScript = function(args)
+    local sm = ScriptManager and ScriptManager.instance
+    if not sm then return false, nil, "ScriptManager not available" end
+
+    local allItems = nil
+    pcall(function() allItems = sm:getAllItems() end)
+    if not allItems or allItems:size() == 0 then
+        return false, nil, "No items found"
+    end
+
+    -- Test first 3 items
+    local probes = {}
+    local limit = math.min(3, allItems:size())
+    for i = 0, limit - 1 do
+        local script = allItems:get(i)
+        if script then
+            local probe = {}
+            local nameOk, name = pcall(function() return script:getFullName() end)
+            probe.id = nameOk and tostring(name) or "?"
+
+            -- Try every possible category method
+            local methods = {"getTypeString", "getType", "getCategory", "getDisplayCategory",
+                             "getBodyLocation", "getSubCategory", "getCategories",
+                             "getTypeToItem", "getScriptObjectType"}
+            for _, m in ipairs(methods) do
+                local ok, val = pcall(function()
+                    if script[m] then
+                        return script[m](script)
+                    end
+                    return nil
+                end)
+                if ok and val ~= nil then
+                    probe[m] = tostring(val)
+                else
+                    probe[m] = ok and "nil" or ("ERROR: " .. tostring(val))
+                end
+            end
+            table.insert(probes, probe)
+        end
+    end
+    return true, { probes = probes }
+end
+
+handlers.getItemCatalog = function(args)
+    local sm = ScriptManager and ScriptManager.instance
+    if not sm then
+        return false, nil, "ScriptManager not available"
+    end
+
+    local allItems = nil
+    local ok, err = pcall(function()
+        allItems = sm:getAllItems()
+    end)
+    if not ok or not allItems then
+        return false, nil, "Failed to enumerate items: " .. tostring(err)
+    end
+
+    local catalog = {}
+    local count = allItems:size()
+    for i = 0, count - 1 do
+        local script = allItems:get(i)
+        if script then
+            local entry = {}
+            -- fullType is the ID used by AddItem / additem RCON
+            local fullOk, fullType = pcall(function() return script:getFullName() end)
+            if not fullOk or not fullType then
+                fullOk, fullType = pcall(function() return script:getName() end)
+            end
+            if fullOk and fullType then
+                entry.id = fullType
+
+                local nameOk, displayName = pcall(function() return script:getDisplayName() end)
+                entry.name = (nameOk and displayName) or fullType
+
+                -- Category / type tag for grouping
+                local cat = nil
+
+                -- Method 1: getTypeString()
+                local tsOk, tsVal = pcall(function() return script:getTypeString() end)
+                if tsOk and tsVal and tostring(tsVal) ~= "" then
+                    cat = tostring(tsVal)
+                end
+
+                -- Method 2: getType() — returns Java enum, try tostring first
+                if not cat then
+                    local tOk, tVal = pcall(function() return script:getType() end)
+                    if tOk and tVal then
+                        local s = tostring(tVal)
+                        if s and s ~= "" and s ~= "userdata" then
+                            -- Clean up Java enum string (e.g. "Normal", "Weapon", or "Item$Type: Normal")
+                            local cleaned = s:match(":%s*(.+)$") or s
+                            cleaned = cleaned:match("^%s*(.-)%s*$") -- trim
+                            if cleaned ~= "" then cat = cleaned end
+                        end
+                    end
+                end
+
+                -- Method 3: getCategory() — some B42 scripts have this
+                if not cat then
+                    local cOk, cVal = pcall(function() return script:getCategory() end)
+                    if cOk and cVal and tostring(cVal) ~= "" then
+                        cat = tostring(cVal)
+                    end
+                end
+
+                -- Method 4: Check display category
+                if not cat then
+                    local dcOk, dcVal = pcall(function() return script:getDisplayCategory() end)
+                    if dcOk and dcVal and tostring(dcVal) ~= "" then
+                        cat = tostring(dcVal)
+                    end
+                end
+
+                entry.category = cat or "Other"
+
+                -- Weight for display
+                local wOk, w = pcall(function() return script:getActualWeight() end)
+                if wOk and w then entry.weight = w end
+
+                table.insert(catalog, entry)
+            end
+        end
+    end
+
+    PanelBridge.info("Item catalog scanned", { count = #catalog })
+    return true, { items = catalog, count = #catalog }
+end
+
+handlers.getVehicleCatalog = function(args)
+    local sm = ScriptManager and ScriptManager.instance
+    if not sm then
+        return false, nil, "ScriptManager not available"
+    end
+
+    local allVehicles = nil
+    local ok, err = pcall(function()
+        -- Try B42 method first, then B41 fallback
+        if sm.getAllVehicleScripts then
+            allVehicles = sm:getAllVehicleScripts()
+        elseif sm.getAllVehicles then
+            allVehicles = sm:getAllVehicles()
+        end
+    end)
+    if not ok or not allVehicles then
+        return false, nil, "Failed to enumerate vehicles: " .. tostring(err or "API not available")
+    end
+
+    local catalog = {}
+    local count = allVehicles:size()
+    for i = 0, count - 1 do
+        local script = allVehicles:get(i)
+        if script then
+            local entry = {}
+            local nameOk, fullName = pcall(function() return script:getFullName() end)
+            if not nameOk or not fullName then
+                nameOk, fullName = pcall(function() return script:getName() end)
+            end
+            if nameOk and fullName then
+                entry.id = fullName
+
+                local dispOk, disp = pcall(function() return script:getDisplayName() end)
+                entry.name = (dispOk and disp) or fullName
+
+                -- Grab mechanics info if available
+                local massOk, mass = pcall(function() return script:getMass() end)
+                if massOk and mass then entry.mass = mass end
+
+                local seatOk, seats = pcall(function() return script:getSeatNumber() end)
+                if seatOk and seats then entry.seats = seats end
+
+                table.insert(catalog, entry)
+            end
+        end
+    end
+
+    PanelBridge.info("Vehicle catalog scanned", { count = #catalog })
+    return true, { vehicles = catalog, count = #catalog }
 end
 
 -- ============================================

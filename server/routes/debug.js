@@ -117,7 +117,8 @@ router.get('/logs/files', async (req, res) => {
     
     try {
         await fs.promises.access(logsDir);
-    } catch {
+    } catch (e) {
+        log.debug(`Logs directory not accessible (${logsDir}): ${e.message}`);
         return res.json({ files: [] });
     }
     
@@ -134,7 +135,10 @@ router.get('/logs/files', async (req, res) => {
             size: stats.size,
             modified: stats.mtime.toISOString()
             };
-        } catch(e) { return null; }
+        } catch(e) {
+            log.debug(`Stat failed for log file ${name}: ${e.message}`);
+            return null;
+        }
       })))
       .filter(f => f !== null)
       .sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime());
@@ -375,7 +379,10 @@ router.get('/crash-logs', async (req, res) => {
     for (const dir of crashDirs) {
       try {
         // Check dir exists
-        try { await fs.promises.access(dir); } catch { continue; }
+        try { await fs.promises.access(dir); } catch (e) {
+          log.debug(`Crash log dir not accessible (${dir}): ${e.message}`);
+          continue;
+        }
 
         const files = await fs.promises.readdir(dir);
         
@@ -400,11 +407,13 @@ router.get('/crash-logs', async (req, res) => {
                         modified: stats.mtime.toISOString()
                         });
                     }
-                } catch(e) {}
+                } catch(e) {
+                  log.debug(`Stat failed for crash log ${file}: ${e.message}`);
+                }
             }
         }));
       } catch (e) {
-        // Directory not accessible
+        log.debug(`Directory not accessible for crash logs: ${dir} — ${e.message}`);
       }
     }
     

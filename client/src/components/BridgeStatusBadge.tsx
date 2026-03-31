@@ -7,13 +7,15 @@ interface BridgeStatusBadgeProps {
   connected: boolean
   running?: boolean
   loading?: boolean
+  bridgePath?: string | null
+  summary?: string | null
   className?: string
 }
 
-export function BridgeStatusBadge({ connected, running, loading, className }: BridgeStatusBadgeProps) {
+export function BridgeStatusBadge({ connected, running, loading, bridgePath, summary, className }: BridgeStatusBadgeProps) {
   const state: BridgeState = loading ? 'loading' : connected ? 'connected' : running ? 'waiting' : 'offline'
 
-  const config: Record<BridgeState, { surface: string; dot: string; label: string }> = {
+  const config: Record<BridgeState, { surface: string; dot: string; label: string; hint?: string }> = {
     connected: {
       surface: 'border-primary/15 bg-primary/8',
       dot: 'bg-primary',
@@ -23,11 +25,13 @@ export function BridgeStatusBadge({ connected, running, loading, className }: Br
       surface: 'border-warning/20 bg-warning/8',
       dot: 'bg-warning animate-pulse',
       label: 'Bridge waiting',
+      hint: 'Watching for PZ mod — start/restart the server',
     },
     offline: {
       surface: 'border-destructive/20 bg-destructive/8',
       dot: 'bg-destructive',
       label: 'Bridge offline',
+      hint: 'Go to Settings → Bridge to configure',
     },
     loading: {
       surface: 'border-border/40 bg-muted/30',
@@ -37,9 +41,18 @@ export function BridgeStatusBadge({ connected, running, loading, className }: Br
   }
 
   const c = config[state]
+  const tooltip = [
+    summary || c.hint,
+    bridgePath ? `Path: ${bridgePath}` : null,
+  ].filter(Boolean).join('\n')
 
   return (
-    <div role="status" aria-live="polite" className={cn('flex items-center gap-2 rounded-lg border px-3 py-1.5', c.surface, className)}>
+    <div
+      role="status"
+      aria-live="polite"
+      title={tooltip || undefined}
+      className={cn('flex items-center gap-2 rounded-lg border px-3 py-1.5 cursor-default', c.surface, className)}
+    >
       {state === 'loading' ? (
         <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
       ) : (

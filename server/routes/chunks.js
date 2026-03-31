@@ -131,7 +131,9 @@ router.get('/saves', async (req, res) => {
           try {
             const rootEntries = await fs.promises.readdir(savePath);
             chunkCount = rootEntries.filter(f => B41_CHUNK_REGEX.test(f)).length;
-          } catch (e) {}
+          } catch (e) {
+            log.debug(`B41 chunk count fallback failed for ${savePath}: ${e.message}`);
+          }
         }
         
         // Get save size
@@ -247,7 +249,10 @@ router.get('/chunks/:saveName', async (req, res) => {
                     size: stats.size,
                     modified: stats.mtime
                  };
-               } catch (e) { return null; }
+               } catch (e) {
+                 log.debug(`Stat failed for chunk ${x}/${yFile}: ${e.message}`);
+                 return null;
+               }
             });
 
           const results = await Promise.all(filePromises);
@@ -282,7 +287,10 @@ router.get('/chunks/:saveName', async (req, res) => {
               return {
                 file, x, y, size: stats.size, modified: stats.mtime
               };
-          } catch(e) { return null; }
+          } catch(e) {
+            log.debug(`Stat failed for legacy chunk ${file}: ${e.message}`);
+            return null;
+          }
         }
         return null;
       });
@@ -318,7 +326,10 @@ router.get('/chunks/:saveName', async (req, res) => {
           try {
             const stats = await fs.promises.stat(path.join(savePath, entry.name));
             return { file: entry.name, x, y, size: stats.size, modified: stats.mtime, source: 'saveroot' };
-          } catch (e) { return null; }
+          } catch (e) {
+            log.debug(`Stat failed for B41 root chunk ${entry.name}: ${e.message}`);
+            return null;
+          }
         });
         
         const rootResults = await Promise.all(rootPromises);
@@ -359,7 +370,10 @@ router.get('/chunks/:saveName', async (req, res) => {
                   return {
                     file, x, y, size: stats.size, modified: stats.mtime, source: 'chunkdata'
                   };
-              } catch(e) { return null; }
+              } catch(e) {
+                log.debug(`Stat failed for chunkdata ${file}: ${e.message}`);
+                return null;
+              }
             }
           }
           return null;
@@ -531,15 +545,21 @@ router.post('/delete-chunks', async (req, res) => {
         // Related data folders use flat file naming: prefix_X_Y.bin
         // Unlike map/ which uses B42's subdirectory structure (X/Y.bin)
         const chunkDataFile = path.join(savePath, 'chunkdata', `chunkdata_${chunk.x}_${chunk.y}.bin`);
-        try { await fs.promises.unlink(chunkDataFile); } catch (e) {}
+        try { await fs.promises.unlink(chunkDataFile); } catch (e) {
+          if (e.code !== 'ENOENT') log.debug(`Failed to delete chunkdata ${chunk.x}_${chunk.y}: ${e.message}`);
+        }
         
         // isoregiondata uses datachunk_X_Y.bin format
         const isoFile = path.join(savePath, 'isoregiondata', `datachunk_${chunk.x}_${chunk.y}.bin`);
-        try { await fs.promises.unlink(isoFile); } catch (e) {}
+        try { await fs.promises.unlink(isoFile); } catch (e) {
+          if (e.code !== 'ENOENT') log.debug(`Failed to delete isoregiondata ${chunk.x}_${chunk.y}: ${e.message}`);
+        }
         
         // zpop uses zpop_X_Y.bin format
         const zpopFile = path.join(savePath, 'zpop', `zpop_${chunk.x}_${chunk.y}.bin`);
-        try { await fs.promises.unlink(zpopFile); } catch (e) {}
+        try { await fs.promises.unlink(zpopFile); } catch (e) {
+          if (e.code !== 'ENOENT') log.debug(`Failed to delete zpop ${chunk.x}_${chunk.y}: ${e.message}`);
+        }
         
         return { success: true, wasDeleted };
       } catch (err) {
@@ -766,7 +786,9 @@ router.post('/delete-region', async (req, res) => {
             try {
                 const relatedPath = path.join(savePath, folder, file);
                 await fs.promises.unlink(relatedPath);
-            } catch(e) {}
+            } catch(e) {
+              if (e.code !== 'ENOENT') log.debug(`Failed to delete related ${folder}/${file}: ${e.message}`);
+            }
         }));
       } catch (err) {
         log.warn(`Failed to delete chunk ${chunk.file}: ${err.message}`);
@@ -784,7 +806,9 @@ router.post('/delete-region', async (req, res) => {
         const xDirPath = path.join(mapPath, xDir);
         const remaining = await fs.promises.readdir(xDirPath);
         if (remaining.length === 0) await fs.promises.rmdir(xDirPath);
-      } catch (e) { /* ignore */ }
+      } catch (e) {
+        if (e.code !== 'ENOENT') log.debug(`Failed to clean up empty dir ${xDir}: ${e.message}`);
+      }
     }
     
     log.info(`Deleted ${deleted} chunks in region [${minX},${minY}]-[${maxX},${maxY}] from ${sanitizedSaveName}`);
@@ -853,7 +877,9 @@ router.get('/stats/:saveName', async (req, res) => {
             sizeFormatted: formatBytes(size)
             };
         }
-      } catch (e) {}
+      } catch (e) {
+        log.debug(`Failed to stat folder ${folder}: ${e.message}`);
+      }
     }
     
     // B41 root chunk files: count map_X_Y.bin in save root when map/ has no chunks
@@ -868,7 +894,9 @@ router.get('/stats/:saveName', async (req, res) => {
             try {
               const s = await fs.promises.stat(path.join(savePath, f.name));
               rootChunkSize += s.size;
-            } catch (e) {}
+            } catch (e) {
+              log.debug(`Stat failed for root chunk ${f.name}: ${e.message}`);
+            }
           }
           stats.folders['map (root)'] = {
             fileCount: rootChunks.length,
@@ -876,7 +904,9 @@ router.get('/stats/:saveName', async (req, res) => {
             sizeFormatted: formatBytes(rootChunkSize)
           };
         }
-      } catch (e) {}
+      } catch (e) {
+        log.debug(`B41 root chunk scan failed: ${e.message}`);
+      }
     }
     
     // Players count
@@ -885,7 +915,9 @@ router.get('/stats/:saveName', async (req, res) => {
       try {
         const s = await fs.promises.stat(playersDb);
         stats.playersDbSize = s.size;
-      } catch (e) {}
+      } catch (e) {
+        log.debug(`Stat failed for players.db: ${e.message}`);
+      }
     }
     
     // Vehicles db
@@ -894,7 +926,9 @@ router.get('/stats/:saveName', async (req, res) => {
       try {
         const s = await fs.promises.stat(vehiclesDb);
         stats.vehiclesDbSize = s.size;
-      } catch (e) {}
+      } catch (e) {
+        log.debug(`Stat failed for vehicles.db: ${e.message}`);
+      }
     }
     
     stats.totalSizeFormatted = formatBytes(stats.totalSize);
@@ -921,11 +955,13 @@ async function getDirSize(dirPath) {
          try {
            const stats = await fs.promises.stat(filePath);
            totalSize += stats.size;
-         } catch (e) {}
+         } catch (e) {
+           // Stat failure for individual file in size calculation
+         }
       }
     }
   } catch (err) {
-    // Ignore errors (permission denied, etc)
+    if (err.code !== 'EACCES' && err.code !== 'ENOENT') log.debug(`getDirSize error for ${dirPath}: ${err.message}`);
   }
   return totalSize;
 }
@@ -943,7 +979,7 @@ async function countFiles(dirPath) {
       }
     }
   } catch (err) {
-    // Ignore errors
+    if (err.code !== 'EACCES' && err.code !== 'ENOENT') log.debug(`countFiles error for ${dirPath}: ${err.message}`);
   }
   return count;
 }
@@ -1006,7 +1042,10 @@ router.get('/browse', async (req, res) => {
       try {
         const childFiles = fs.readdirSync(childPath);
         return childFiles.some(f => B41_ROOT_REGEX.test(f));
-      } catch (e) { return false; }
+      } catch (e) {
+        log.debug(`B41 check failed for ${d}: ${e.message}`);
+        return false;
+      }
     });
     
     res.json({

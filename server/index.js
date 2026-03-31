@@ -701,6 +701,7 @@ app.get('/api/panel/update-check', async (req, res) => {
     const status = await checker.checkForUpdate();
     res.json(status);
   } catch (error) {
+    log.error(`Panel update check failed: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
@@ -718,6 +719,7 @@ app.post('/api/panel/update-download', async (req, res) => {
     const result = await checker.downloadUpdate();
     res.json(result);
   } catch (error) {
+    log.error(`Panel update download failed: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
@@ -876,10 +878,10 @@ function startPlayerPolling() {
           // who were already online before the panel started).
           if (lastSet.size > 0) {
             for (const p of joined) {
-              discordBot.sendEventNotification('playerJoin', { player: p.name }).catch(() => {});
+              discordBot.sendEventNotification('playerJoin', { player: p.name }).catch(err => log.debug(`Discord playerJoin notification failed: ${err.message}`));
             }
             for (const p of left) {
-              discordBot.sendEventNotification('playerLeave', { player: p.name }).catch(() => {});
+              discordBot.sendEventNotification('playerLeave', { player: p.name }).catch(err => log.debug(`Discord playerLeave notification failed: ${err.message}`));
             }
           }
         }
@@ -1197,7 +1199,9 @@ async function start() {
           if (parseInt(maxWatches, 10) < 65536) {
             log.warn(`Low inotify limit (${maxWatches}). File watching may fail. Fix: sudo sysctl -w fs.inotify.max_user_watches=524288`);
           }
-        } catch { /* /proc not available (container) — skip */ }
+        } catch (e) {
+          log.debug(`inotify check skipped: ${e.message}`);
+        }
         // Check glibc version (panel binary requires 2.28+)
         try {
           const lddOut = execSync('ldd --version 2>&1 || true', { encoding: 'utf8', timeout: 5000 });
@@ -1211,8 +1215,9 @@ async function start() {
               log.info(`glibc ${major}.${minor} detected`);
             }
           }
-        } catch { /* not critical */ }
-        // Check if /proc is available (containers may restrict it)
+        } catch (e) {
+          log.debug(`glibc version check skipped: ${e.message}`);
+        }
         if (!fs.existsSync('/proc/self/status')) {
           log.warn('/proc not fully available — process detection may be limited (containerized environment?)');
         }
@@ -1221,7 +1226,9 @@ async function start() {
           if (!fs.existsSync('/lib/ld-linux.so.2') && !fs.existsSync('/usr/lib/ld-linux.so.2')) {
             log.warn('32-bit glibc not found (ld-linux.so.2). SteamCMD requires: sudo yum install glibc.i686 libstdc++.i686 (CentOS) or sudo dpkg --add-architecture i386 && sudo apt install lib32gcc-s1 (Ubuntu)');
           }
-        } catch { /* not critical */ }
+        } catch (e) {
+          log.debug(`32-bit libs check skipped: ${e.message}`);
+        }
       }
       
       // Auto-open browser when running as packaged exe

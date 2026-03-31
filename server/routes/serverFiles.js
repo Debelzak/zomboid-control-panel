@@ -88,7 +88,8 @@ async function createBackup(filename) {
     // Check file existence asynchronously
     try {
       await fs.promises.access(filePath);
-    } catch {
+    } catch (e) {
+      log.debug(`Config backup source not found: ${filePath} — ${e.message}`);
       return null;
     }
     
@@ -967,7 +968,10 @@ router.get('/backups', async (req, res) => {
             size: stats.size,
             created: stats.birthtime
           };
-        } catch (e) { return null; }
+        } catch (e) {
+          log.debug(`Stat failed for backup file ${filename}: ${e.message}`);
+          return null;
+        }
       })))
       .filter(f => f !== null)
       .sort((a, b) => {
@@ -1091,8 +1095,9 @@ router.get('/templates', async (req, res) => {
             hasIni: !!content.ini,
             hasSandbox: !!content.sandbox
           };
-        } catch {
-          return null; // Skip files deleted or unreadable between readdir and read
+        } catch (e) {
+          log.debug(`Template read failed for ${f}: ${e.message}`);
+          return null;
         }
       })
       .filter(Boolean)

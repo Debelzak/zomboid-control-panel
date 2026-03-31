@@ -81,6 +81,8 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { useToast } from '@/components/ui/use-toast'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { EmptyState } from '@/components/EmptyState'
+import { ItemPicker } from '@/components/ItemPicker'
+import { VehiclePicker } from '@/components/VehiclePicker'
 import { playersApi, panelBridgeApi } from '@/lib/api'
 import { PageHeader } from '@/components/PageHeader'
 import { cn, copyText } from '@/lib/utils'
@@ -160,7 +162,6 @@ function ActionTile({
 
 export default function Players() {
   const [players, setPlayers] = useState<Player[]>([])
-  const [vehicles, setVehicles] = useState<string[]>([])
   const [perks, setPerks] = useState<string[]>([])
   const [selectedPlayer, setSelectedPlayer] = useState<string>('')
   const [loading, setLoading] = useState(false)
@@ -441,11 +442,7 @@ export default function Players() {
 
   const fetchData = useCallback(async () => {
     try {
-      const [vehiclesData, perksData] = await Promise.all([
-        playersApi.getVehicles(),
-        playersApi.getPerks()
-      ])
-      setVehicles(vehiclesData.vehicles || [])
+      const perksData = await playersApi.getPerks()
       setPerks(perksData.perks || [])
       setToolsLoadError(null)
     } catch (error) {
@@ -613,9 +610,10 @@ export default function Players() {
     if (!itemName) return
     const name = itemName
     const count = itemCount
-    setItemName('')
-    setItemCount(1)
-    await handleAction('Add item', () => playersApi.addItem(selectedPlayer || null, name, count))
+    await handleAction('Add item', () => playersApi.addItem(selectedPlayer || null, name, count), () => {
+      setItemName('')
+      setItemCount(1)
+    })
   }
 
   const handleAddXp = () => {
@@ -1476,11 +1474,11 @@ export default function Players() {
                     <CardContent className="space-y-3">
                       <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                         <div className="sm:col-span-2">
-                          <Label className="text-xs">Item Name</Label>
-                          <Input
+                          <Label className="text-xs">Item</Label>
+                          <ItemPicker
                             value={itemName}
-                            onChange={(e) => setItemName(e.target.value)}
-                            placeholder="e.g., Base.Axe"
+                            onChange={setItemName}
+                            disabled={loading}
                           />
                         </div>
                         <div>
@@ -1488,7 +1486,10 @@ export default function Players() {
                           <Input
                             type="number"
                             value={itemCount}
-                            onChange={(e) => setItemCount(parseInt(e.target.value) || 1)}
+                            onChange={(e) => {
+                              const v = parseInt(e.target.value)
+                              setItemCount(Number.isNaN(v) ? 1 : Math.max(1, Math.min(100, v)))
+                            }}
                             min={1}
                             max={100}
                           />
@@ -1563,18 +1564,11 @@ export default function Players() {
                   <CardContent className="space-y-3">
                     <div>
                       <Label className="text-xs">Vehicle Type</Label>
-                      <Select value={selectedVehicle} onValueChange={setSelectedVehicle}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select vehicle..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {vehicles.map((vehicle) => (
-                            <SelectItem key={vehicle} value={vehicle}>
-                              {vehicle.replace('Base.', '')}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <VehiclePicker
+                        value={selectedVehicle}
+                        onChange={setSelectedVehicle}
+                        disabled={loading}
+                      />
                     </div>
                     <Button onClick={handleAddVehicle} disabled={loading || !selectedVehicle} size="sm">
                       <Car className="w-4 h-4 mr-2" />

@@ -61,7 +61,7 @@ export class LogTailer extends EventEmitter {
         }
 
     } catch (e) {
-        log.error(`Error finding log path: ${e.message}`);
+        log.error(`Error finding log path: ${e.stack || e.message}`);
     }
   }
 
@@ -84,7 +84,10 @@ export class LogTailer extends EventEmitter {
             if (latest !== this.chatLogPath) {
                 this.chatLogPath = latest;
                 // Start from end so we don't replay old messages on startup
-                try { this.chatLogSize = fs.statSync(latest).size; } catch { this.chatLogSize = 0; }
+                try { this.chatLogSize = fs.statSync(latest).size; } catch (e) {
+      log.debug(`LogTailer: initial chat log stat failed: ${e.message}`);
+      this.chatLogSize = 0;
+    }
                 log.info(`Tailing B42 chat log: ${latest}`);
             }
         }
@@ -137,7 +140,10 @@ export class LogTailer extends EventEmitter {
      if (!this.logPath) return;
      try {
          let stats;
-         try { stats = await fs.promises.stat(this.logPath); } catch { return; }
+         try { stats = await fs.promises.stat(this.logPath); } catch (e) {
+           log.debug(`LogTailer: console log stat failed: ${e.message}`);
+           return;
+         }
          
          if (stats.size > this.currentSize) {
              const bytesToRead = stats.size - this.currentSize;
@@ -151,7 +157,9 @@ export class LogTailer extends EventEmitter {
          } else if (stats.size < this.currentSize) {
              this.currentSize = 0;
          }
-     } catch { /* polling error */ }
+     } catch (e) {
+       log.debug(`LogTailer: console log polling error: ${e.message}`);
+     }
   }
 
   // Tail the active B42 *_chat.txt file
@@ -168,7 +176,10 @@ export class LogTailer extends EventEmitter {
 
      try {
          let stats;
-         try { stats = await fs.promises.stat(this.chatLogPath); } catch { return; }
+         try { stats = await fs.promises.stat(this.chatLogPath); } catch (e) {
+           log.debug(`LogTailer: chat log stat failed: ${e.message}`);
+           return;
+         }
          
          if (stats.size > this.chatLogSize) {
              const bytesToRead = stats.size - this.chatLogSize;
@@ -182,7 +193,9 @@ export class LogTailer extends EventEmitter {
          } else if (stats.size < this.chatLogSize) {
              this.chatLogSize = 0;
          }
-     } catch { /* polling error */ }
+     } catch (e) {
+       log.debug(`LogTailer: chat log polling error: ${e.message}`);
+     }
   }
 
   readChunk(filePath, start, end) {

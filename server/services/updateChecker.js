@@ -99,7 +99,8 @@ export class UpdateChecker {
       const firstLine = buf.toString('utf8').split(/\r?\n/)[0];
       const match = firstLine.match(/version=(\d+\.\d+(?:\.\d+)?)/);
       return match ? match[1] : null;
-    } catch {
+    } catch (e) {
+      log.debug(`Failed to read PZ version from ${consolePath}: ${e.message}`);
       return null;
     }
   }
@@ -146,11 +147,15 @@ export class UpdateChecker {
       // then system-wide paths (CentOS/Ubuntu package manager installs to /usr/games/)
       const shPath = path.join(steamcmdPath, 'steamcmd.sh');
       const binPath = path.join(steamcmdPath, 'steamcmd');
-      try { await fs.promises.access(shPath); steamcmdExe = shPath; } catch {
-        try { await fs.promises.access(binPath); steamcmdExe = binPath; } catch {
+      try { await fs.promises.access(shPath); steamcmdExe = shPath; } catch (e1) {
+        log.debug(`SteamCMD not at ${shPath}: ${e1.message}`);
+        try { await fs.promises.access(binPath); steamcmdExe = binPath; } catch (e2) {
+          log.debug(`SteamCMD not at ${binPath}: ${e2.message}`);
           // Try system-wide locations
           for (const sysPath of ['/usr/games/steamcmd', '/usr/bin/steamcmd', '/usr/local/bin/steamcmd']) {
-            try { await fs.promises.access(sysPath); steamcmdExe = sysPath; break; } catch { /* try next */ }
+            try { await fs.promises.access(sysPath); steamcmdExe = sysPath; break; } catch (e3) {
+              log.debug(`SteamCMD not at ${sysPath}: ${e3.message}`);
+            }
           }
           if (!steamcmdExe) {
             log.warn(`SteamCMD not found at: ${shPath}, ${binPath}, /usr/games/steamcmd`);

@@ -308,7 +308,7 @@ export class BackupService {
           
            // Notify Discord of completed backup
            if (this.discordBot) {
-             this.discordBot.sendEventNotification('backupComplete', {}).catch(() => {});
+             this.discordBot.sendEventNotification('backupComplete', {}).catch(err => log.debug(`Discord backupComplete notification failed: ${err.message}`));
            }
 
           resolve({

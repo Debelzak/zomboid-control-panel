@@ -27,7 +27,8 @@ import {
   Lock,
   User,
   ExternalLink,
-  FolderOpen
+  FolderOpen,
+  Palette
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { reportClientError } from '@/lib/client-errors'
@@ -68,6 +69,7 @@ import {
 } from '@/lib/api'
 import { useSocket } from '@/contexts/SocketContext'
 import { useAuth } from '@/contexts/AuthContext'
+import { useTheme, type ThemeName } from '@/contexts/ThemeContext'
 import { BridgeStatusBadge } from '@/components/BridgeStatusBadge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
@@ -130,6 +132,21 @@ interface CorsDiagnostics {
 const MAX_CORS_ALLOWED_ORIGINS = 100
 const MAX_CORS_ORIGIN_LENGTH = 256
 
+function ThemeSelect() {
+  const { theme, setTheme } = useTheme()
+  return (
+    <Select value={theme} onValueChange={(v) => setTheme(v as ThemeName)}>
+      <SelectTrigger className="w-[160px]">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="survival">Survival (Dark)</SelectItem>
+        <SelectItem value="light">Light</SelectItem>
+      </SelectContent>
+    </Select>
+  )
+}
+
 export default function Settings() {
   const socket = useSocket()
   const [settings, setSettings] = useState<AppSettings>({
@@ -190,6 +207,13 @@ export default function Settings() {
       statusStaleMs: number
       pollIntervalMs: number
       statusCheckMs: number
+    }
+    connection?: {
+      healthy: boolean
+      canSendCommands: boolean
+      summary: string
+      issues: string[]
+      checks: Record<string, boolean | number | null>
     }
     statusFile?: {
       exists: boolean
@@ -1274,6 +1298,21 @@ export default function Settings() {
 
           <div className="rounded-xl border border-border/70 bg-background/40 p-4 space-y-4">
             <div className="space-y-1">
+              <p className="text-sm font-medium flex items-center gap-2"><Palette className="w-4 h-4 text-primary" />Appearance</p>
+              <p className="text-xs text-muted-foreground">Panel theme and visual style.</p>
+            </div>
+
+            <div className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/25 p-3">
+              <div>
+                <Label className="text-sm font-medium">Theme</Label>
+                <p className="text-xs text-muted-foreground">Choose between the gritty survival look or a clean light theme.</p>
+              </div>
+              <ThemeSelect />
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-border/70 bg-background/40 p-4 space-y-4">
+            <div className="space-y-1">
               <p className="text-sm font-medium">Remote Access (CORS)</p>
               <p className="text-xs text-muted-foreground">
                 Allow browsers on other machines or public hostnames to reach this panel.
@@ -1855,6 +1894,8 @@ export default function Settings() {
                 connected={bridgeStatus.modConnected}
                 running={bridgeStatus.isRunning}
                 loading={bridgeLoading}
+                bridgePath={bridgeStatus.bridgePath}
+                summary={bridgeStatus.connection?.summary}
               />
             )}
           </div>
@@ -1942,6 +1983,87 @@ export default function Settings() {
                 )}
               </AlertDescription>
             </Alert>
+          )}
+
+          {/* Connection Diagnostics — shown when bridge is running but has issues */}
+          {bridgeStatus?.isRunning && !bridgeStatus?.modConnected && bridgeStatus?.connection && (
+            <div className="rounded-lg border border-border/60 bg-muted/30 overflow-hidden">
+              <div className="flex items-center gap-2 px-3 py-2 bg-muted/50 border-b border-border/40">
+                <Info className="w-3.5 h-3.5 text-muted-foreground" />
+                <span className="text-xs font-medium text-foreground">Connection Diagnostics</span>
+                {bridgeStatus.consecutiveFailures != null && bridgeStatus.consecutiveFailures > 0 && (
+                  <span className="ml-auto text-[10px] tabular-nums text-warning">{bridgeStatus.consecutiveFailures} consecutive failures</span>
+                )}
+              </div>
+              <div className="p-3 space-y-3">
+                {/* Summary */}
+                <p className="text-xs text-muted-foreground">{bridgeStatus.connection.summary}</p>
+
+                {/* Issues list */}
+                {bridgeStatus.connection.issues && bridgeStatus.connection.issues.length > 0 && (
+                  <div className="space-y-1">
+                    {bridgeStatus.connection.issues.map((issue: string, i: number) => (
+                      <div key={i} className="flex items-start gap-1.5 text-xs text-destructive">
+                        <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
+                        <span>{issue}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* File checks grid */}
+                {bridgeStatus.connection.checks && (
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
+                    {Object.entries(bridgeStatus.connection.checks).map(([key, val]) => {
+                      if (key === 'statusAgeMs') return null
+                      const label = key
+                        .replace(/([A-Z])/g, ' $1')
+                        .replace(/^./, s => s.toUpperCase())
+                        .trim()
+                      const passed = val === true
+                      return (
+                        <div key={key} className="flex items-center gap-1.5">
+                          <div className={cn('w-1.5 h-1.5 rounded-full shrink-0', passed ? 'bg-primary' : 'bg-destructive/60')} />
+                          <span className={cn(passed ? 'text-muted-foreground' : 'text-destructive/80')}>{label}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+
+                {/* Status file info */}
+                {bridgeStatus.statusFile && (
+                  <div className="text-[11px] text-muted-foreground space-y-0.5 pt-1 border-t border-border/30">
+                    <div className="flex items-center gap-1.5">
+                      <span className="opacity-60">Status file:</span>
+                      <span className={bridgeStatus.statusFile.exists ? 'text-foreground' : 'text-destructive/70'}>
+                        {bridgeStatus.statusFile.exists ? 'Present' : 'Not found'}
+                      </span>
+                      {bridgeStatus.statusFile.ageSeconds != null && (
+                        <span className="opacity-50">({bridgeStatus.statusFile.ageSeconds}s ago)</span>
+                      )}
+                    </div>
+                    {bridgeStatus.statusFile.path && (
+                      <div className="break-all opacity-50">
+                        <code className="text-[10px]">{bridgeStatus.statusFile.path}</code>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* File watcher status */}
+                <div className="flex items-center gap-3 text-[11px] text-muted-foreground pt-1 border-t border-border/30">
+                  <span>
+                    File watcher: {bridgeStatus.hasFileWatcher
+                      ? <span className="text-primary">Active</span>
+                      : <span className="text-warning">Polling only</span>}
+                  </span>
+                  {bridgeStatus.pendingCommands > 0 && (
+                    <span>Pending: <span className="text-warning tabular-nums">{bridgeStatus.pendingCommands}</span></span>
+                  )}
+                </div>
+              </div>
+            </div>
           )}
 
           {/* Error display */}

@@ -1406,6 +1406,38 @@ export const panelBridgeApi = {
   // Clear ALL zombies from loaded cells
   clearAllZombies: () =>
     apiPost('/panel-bridge/zombies/clear-all'),
+
+  // =============================================
+  // ITEM & VEHICLE CATALOG
+  // =============================================
+
+  // Get cached item catalog
+  getCatalogItems: () => apiGet('/panel-bridge/catalog/items') as Promise<{
+    items: Array<{ id: string; name: string; category: string; weight: number }>
+    count: number
+    scannedAt: string | null
+  }>,
+
+  // Get cached vehicle catalog
+  getCatalogVehicles: () => apiGet('/panel-bridge/catalog/vehicles') as Promise<{
+    vehicles: Array<{ id: string; name: string; mass: number; seats: number }>
+    count: number
+    scannedAt: string | null
+  }>,
+
+  // Trigger item catalog scan (requires running server)
+  scanCatalogItems: () => apiPost('/panel-bridge/catalog/scan-items') as Promise<{
+    items: Array<{ id: string; name: string; category: string; weight: number }>
+    count: number
+    scannedAt: string
+  }>,
+
+  // Trigger vehicle catalog scan (requires running server)
+  scanCatalogVehicles: () => apiPost('/panel-bridge/catalog/scan-vehicles') as Promise<{
+    vehicles: Array<{ id: string; name: string; mass: number; seats: number }>
+    count: number
+    scannedAt: string
+  }>,
 }
 
 // =============================================

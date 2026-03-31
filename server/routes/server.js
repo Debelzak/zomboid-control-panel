@@ -406,7 +406,7 @@ router.post('/start', async (req, res) => {
           pollCleared = true;
           clearInterval(pollInterval);
           if (io) io.emit('server:status', { running: true });
-           req.app.get('discordBot')?.sendEventNotification('serverStart', {}).catch(() => {});
+           req.app.get('discordBot')?.sendEventNotification('serverStart', {}).catch(err => log.debug(`Discord serverStart notification failed: ${err.message}`));
           log.info('Server detected as running');
           
           // Wait for RCON to be ready (PZ takes 60-180s to fully start)
@@ -543,7 +543,7 @@ router.post('/stop', async (req, res) => {
     if (io) io.to('server-status').emit('server:status', { running: false });
     
     await logServerEvent('server_stop', 'Server stopped via web UI');
-     req.app.get('discordBot')?.sendEventNotification('serverStop', {}).catch(() => {});
+     req.app.get('discordBot')?.sendEventNotification('serverStop', {}).catch(err => log.debug(`Discord serverStop notification failed: ${err.message}`));
     res.json(result);
   } catch (error) {
     log.error(`Failed to stop server: ${error.message}`);
@@ -2229,9 +2229,13 @@ router.post('/list-directory', async (req, res) => {
               const totalGB = (stats.bsize * stats.blocks / (1024 ** 3)).toFixed(1);
               const freeGB = (stats.bsize * stats.bfree / (1024 ** 3)).toFixed(1);
               label = `${letter}: — ${freeGB} GB free of ${totalGB} GB`;
-            } catch {}
+            } catch (e) {
+              log.debug(`Drive stat failed for ${letter}: ${e.message}`);
+            }
             drives.push({ name: `${letter}:`, path: drivePath, label, isDrive: true });
-          } catch {}
+          } catch (e) {
+            // Drive not accessible
+          }
         }
         return res.json({ entries: drives, currentPath: null, parentPath: null });
       } else {
@@ -2755,10 +2759,14 @@ router.post('/wipe/preview', async (req, res) => {
             size += sub.size;
           } else {
             files++;
-            try { size += fs.statSync(fullPath).size; } catch {}
+            try { size += fs.statSync(fullPath).size; } catch (e) {
+              log.debug(`Stat failed for ${fullPath}: ${e.message}`);
+            }
           }
         }
-      } catch {}
+      } catch (e) {
+        log.debug(`countDir readdir failed for ${dir}: ${e.message}`);
+      }
       return { files, size };
     };
 
@@ -2785,10 +2793,14 @@ router.post('/wipe/preview', async (req, res) => {
         for (const entry of rootEntries) {
           if (!entry.isDirectory() && /^(map_p\.bin|map_zone\.bin)$/i.test(entry.name)) {
             playerFiles++;
-            try { playerSize += fs.statSync(path.join(saveDir, entry.name)).size; } catch {}
+            try { playerSize += fs.statSync(path.join(saveDir, entry.name)).size; } catch (e) {
+              log.debug(`Stat failed for player file ${entry.name}: ${e.message}`);
+            }
           }
         }
-      } catch {}
+      } catch (e) {
+        log.debug(`Player file scan failed: ${e.message}`);
+      }
       preview.players = { path: playersDir, exists: fs.existsSync(playersDir), files: playerFiles, size: playerSize };
       totalFiles += playerFiles;
       totalSize += playerSize;
@@ -2803,10 +2815,14 @@ router.post('/wipe/preview', async (req, res) => {
         for (const entry of rootEntries) {
           if (!entry.isDirectory() && /\.(ini|vars|lua|txt)$/i.test(entry.name)) {
             configFiles++;
-            try { configSize += fs.statSync(path.join(saveDir, entry.name)).size; } catch {}
+            try { configSize += fs.statSync(path.join(saveDir, entry.name)).size; } catch (e) {
+              log.debug(`Stat failed for config file ${entry.name}: ${e.message}`);
+            }
           }
         }
-      } catch {}
+      } catch (e) {
+        log.debug(`Config file scan failed: ${e.message}`);
+      }
       preview.config = { path: saveDir, files: configFiles, size: configSize };
       totalFiles += configFiles;
       totalSize += configSize;
@@ -2913,7 +2929,9 @@ router.post('/wipe', async (req, res) => {
               deletedCount++;
             }
           }
-        } catch {}
+        } catch (e) {
+          log.warn(`WIPE: Failed to clean player root files: ${e.message}`);
+        }
         results.players = deletedCount > 0 ? 'deleted' : 'not found';
       }
 

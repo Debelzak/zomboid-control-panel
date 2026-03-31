@@ -376,7 +376,7 @@ export class Scheduler {
       
        // Notify Discord at the start of the restart sequence
        if (this.discordBot) {
-         this.discordBot.sendEventNotification('scheduledRestart', { minutes: warningMinutes }).catch(() => {});
+         this.discordBot.sendEventNotification('scheduledRestart', { minutes: warningMinutes }).catch(err => log.debug(`Discord scheduledRestart notification failed: ${err.message}`));
        }
 
       if (warningMinutes > 0) {

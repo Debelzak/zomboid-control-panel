@@ -1,0 +1,424 @@
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
+import { Search, RefreshCw, Loader2, X, ChevronDown, AlertCircle, SearchX, Car, Users } from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
+import { panelBridgeApi } from '@/lib/api'
+import { useToast } from '@/components/ui/use-toast'
+
+export interface CatalogVehicle {
+  id: string
+  name: string
+  mass: number
+  seats: number
+}
+
+interface VehiclePickerProps {
+  value: string
+  onChange: (vehicleId: string) => void
+  disabled?: boolean
+  placeholder?: string
+}
+
+// Classify vehicles into types by name/id patterns
+function getVehicleType(v: CatalogVehicle): string {
+  const n = (v.name || v.id).toLowerCase()
+  if (n.includes('trailer') || n.includes('cart')) return 'Trailers'
+  if (n.includes('van') || n.includes('bus') || n.includes('ambulance')) return 'Vans & Buses'
+  if (n.includes('truck') || n.includes('pickup') || n.includes('semi') || n.includes('tow')) return 'Trucks'
+  if (n.includes('sport') || n.includes('muscle') || n.includes('race') || n.includes('fast')) return 'Performance'
+  if (n.includes('suv') || n.includes('offroad') || n.includes('4x4') || n.includes('jeep')) return 'SUVs & Off-road'
+  if (n.includes('police') || n.includes('fire') || n.includes('military') || n.includes('army')) return 'Emergency & Military'
+  if (n.includes('taxi') || n.includes('cab')) return 'Sedans'
+  return 'Sedans'
+}
+
+const TYPE_ORDER: Record<string, number> = {
+  'Sedans': 0, 'Performance': 1, 'SUVs & Off-road': 2,
+  'Trucks': 3, 'Vans & Buses': 4, 'Emergency & Military': 5, 'Trailers': 6,
+}
+
+const MAX_VISIBLE = 100
+
+export function VehiclePicker({ value, onChange, disabled, placeholder = 'Search vehicles...' }: VehiclePickerProps) {
+  const [vehicles, setVehicles] = useState<CatalogVehicle[]>([])
+  const [initialLoad, setInitialLoad] = useState(true)
+  const [scanning, setScanning] = useState(false)
+  const [scanError, setScanError] = useState<string | null>(null)
+  const [search, setSearch] = useState('')
+  const [open, setOpen] = useState(false)
+  const [highlightIndex, setHighlightIndex] = useState(-1)
+  const [scannedAt, setScannedAt] = useState<string | null>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
+  const [dropUp, setDropUp] = useState(false)
+  const { toast } = useToast()
+
+  // Load cached catalog
+  useEffect(() => {
+    const ctrl = new AbortController()
+    ;(async () => {
+      try {
+        const data = await panelBridgeApi.getCatalogVehicles()
+        if (ctrl.signal.aborted) return
+        setVehicles(data.vehicles || [])
+        setScannedAt(data.scannedAt)
+      } catch {
+        // No catalog yet
+      } finally {
+        if (!ctrl.signal.aborted) setInitialLoad(false)
+      }
+    })()
+    return () => ctrl.abort()
+  }, [])
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  useEffect(() => { setHighlightIndex(-1) }, [search])
+
+  useEffect(() => {
+    if (!open || !containerRef.current) return
+    const rect = containerRef.current.getBoundingClientRect()
+    setDropUp(window.innerHeight - rect.bottom < 340)
+  }, [open])
+
+  const handleScan = useCallback(async () => {
+    if (scanning) return
+    setScanning(true)
+    setScanError(null)
+    try {
+      const data = await panelBridgeApi.scanCatalogVehicles()
+      setVehicles(data.vehicles || [])
+      setScannedAt(data.scannedAt)
+      toast({ title: 'Vehicle catalog updated', description: `Found ${data.count || 0} vehicles` })
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Scan failed'
+      setScanError(msg)
+      toast({
+        title: 'Vehicle scan failed',
+        description: msg.includes('Bridge not running')
+          ? 'Server must be online with PanelBridge mod active'
+          : msg,
+        variant: 'destructive',
+      })
+    } finally {
+      setScanning(false)
+    }
+  }, [scanning, toast])
+
+  const { visibleVehicles, totalFiltered, capped, groupedVehicles } = useMemo(() => {
+    const q = search.toLowerCase().trim()
+    let filtered = vehicles
+
+    if (q) {
+      filtered = filtered.filter(
+        v => v.id.toLowerCase().includes(q) || v.name.toLowerCase().includes(q)
+      )
+    }
+
+    filtered = [...filtered].sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id))
+
+    const total = filtered.length
+    const isCapped = total > MAX_VISIBLE
+    const visible = isCapped ? filtered.slice(0, MAX_VISIBLE) : filtered
+
+    // Group by type for display
+    const groups = new Map<string, CatalogVehicle[]>()
+    for (const v of visible) {
+      const type = getVehicleType(v)
+      if (!groups.has(type)) groups.set(type, [])
+      groups.get(type)!.push(v)
+    }
+    const sorted = Array.from(groups.entries())
+      .sort(([a], [b]) => (TYPE_ORDER[a] ?? 99) - (TYPE_ORDER[b] ?? 99))
+
+    return { visibleVehicles: visible, totalFiltered: total, capped: isCapped, groupedVehicles: sorted }
+  }, [vehicles, search])
+
+  const selectedVehicle = useMemo(() => vehicles.find(v => v.id === value), [vehicles, value])
+
+  const handleSelect = (id: string) => {
+    onChange(id)
+    setOpen(false)
+    setSearch('')
+    setHighlightIndex(-1)
+  }
+
+  const handleClear = () => {
+    onChange('')
+    setSearch('')
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (!open) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') {
+        e.preventDefault()
+        setOpen(true)
+      }
+      return
+    }
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault()
+        setHighlightIndex(prev => Math.min(prev + 1, visibleVehicles.length - 1))
+        break
+      case 'ArrowUp':
+        e.preventDefault()
+        setHighlightIndex(prev => Math.max(prev - 1, 0))
+        break
+      case 'Enter':
+        e.preventDefault()
+        if (highlightIndex >= 0 && highlightIndex < visibleVehicles.length) {
+          handleSelect(visibleVehicles[highlightIndex].id)
+        } else if (visibleVehicles.length > 0) {
+          handleSelect(visibleVehicles[0].id)
+        }
+        break
+      case 'Escape':
+        e.preventDefault()
+        setOpen(false)
+        setHighlightIndex(-1)
+        break
+    }
+  }
+
+  useEffect(() => {
+    if (highlightIndex < 0 || !listRef.current) return
+    const el = listRef.current.querySelector(`[data-veh-index="${highlightIndex}"]`)
+    el?.scrollIntoView({ block: 'nearest' })
+  }, [highlightIndex])
+
+  if (initialLoad) {
+    return (
+      <div className="flex items-center gap-2 h-11 sm:h-9 rounded-md border border-input bg-background px-3 text-sm">
+        <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground shrink-0" />
+        <span className="text-muted-foreground truncate">Loading vehicles...</span>
+      </div>
+    )
+  }
+
+  if (vehicles.length === 0) {
+    return (
+      <div className="space-y-2">
+        <div className="flex gap-2">
+          <Input
+            value={value}
+            onChange={e => onChange(e.target.value)}
+            placeholder="e.g., Base.CarNormal"
+            disabled={disabled || scanning}
+            className="flex-1 min-w-0"
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleScan}
+            disabled={scanning || disabled}
+            title="Scan server for vehicles (requires running server with PanelBridge)"
+            className="shrink-0"
+          >
+            {scanning ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+            <span className="ml-1.5 hidden sm:inline">Scan</span>
+          </Button>
+        </div>
+        {scanError ? (
+          <p className="text-[11px] text-destructive flex items-center gap-1">
+            <AlertCircle className="w-3 h-3 shrink-0" />
+            <span className="truncate">{scanError}</span>
+          </p>
+        ) : (
+          <p className="text-[11px] text-muted-foreground">
+            {scanning ? 'Scanning server vehicles…' : 'Enter vehicle ID manually, or scan while the server is running'}
+          </p>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div ref={containerRef} className="relative" onKeyDown={handleKeyDown}>
+      {/* Trigger */}
+      <div
+        role="combobox"
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        aria-controls={open ? 'vehpicker-listbox' : undefined}
+        aria-label="Select vehicle"
+        tabIndex={disabled ? -1 : 0}
+        className={cn(
+          'flex items-center gap-2 h-11 sm:h-9 rounded-md border border-input bg-background px-3 text-sm cursor-pointer',
+          'motion-safe:transition-colors duration-150',
+          'hover:border-primary/40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
+          open && 'border-primary/60 ring-1 ring-primary/20',
+          disabled && 'opacity-50 cursor-not-allowed pointer-events-none'
+        )}
+        onClick={() => !disabled && setOpen(!open)}
+      >
+        <Car className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0" />
+        {selectedVehicle ? (
+          <span className="flex-1 min-w-0 truncate">
+            <span className="font-medium">{selectedVehicle.name || selectedVehicle.id}</span>
+            {selectedVehicle.seats > 0 && (
+              <span className="inline-flex items-center gap-0.5 text-muted-foreground ml-2 text-xs">
+                <Users className="w-3 h-3" />
+                {selectedVehicle.seats}
+              </span>
+            )}
+          </span>
+        ) : value ? (
+          <span className="flex-1 min-w-0 truncate text-foreground">{value.replace('Base.', '')}</span>
+        ) : (
+          <span className="flex-1 min-w-0 truncate text-muted-foreground">{placeholder}</span>
+        )}
+        {value && !disabled && (
+          <button
+            type="button"
+            onClick={e => { e.stopPropagation(); handleClear() }}
+            className="-mr-1 flex items-center justify-center w-6 h-6 rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0 motion-safe:transition-colors"
+            aria-label="Clear selection"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        )}
+        <ChevronDown
+          className={cn(
+            'w-3.5 h-3.5 text-muted-foreground shrink-0 motion-safe:transition-transform duration-200',
+            open && 'rotate-180'
+          )}
+        />
+      </div>
+
+      {/* Dropdown */}
+      {open && (
+        <div
+          className={cn(
+            'absolute z-50 rounded-lg border border-border bg-popover shadow-lg',
+            'motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-[0.98] motion-safe:duration-150',
+            dropUp ? 'bottom-full mb-1 motion-safe:slide-in-from-bottom-1' : 'top-full mt-1 motion-safe:slide-in-from-top-1'
+          )}
+          style={{ width: 'max(100%, 400px)' }}
+        >
+          {/* Search */}
+          <div className="flex items-center gap-2 border-b border-border px-3 h-11">
+            <Search className="w-4 h-4 text-muted-foreground shrink-0" />
+            <input
+              ref={inputRef}
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder={`Search ${vehicles.length} vehicles...`}
+              className="flex-1 min-w-0 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+              aria-label="Filter vehicles"
+              autoFocus
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                className="flex items-center justify-center w-5 h-5 rounded text-muted-foreground hover:text-foreground shrink-0"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={e => { e.stopPropagation(); handleScan() }}
+              disabled={scanning}
+              className="h-7 w-7 p-0 shrink-0"
+              title="Re-scan server vehicles"
+            >
+              {scanning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+            </Button>
+          </div>
+
+          {/* Vehicle list — grouped by type */}
+          <div className="max-h-[320px] overflow-y-auto overscroll-contain" role="listbox" id="vehpicker-listbox" aria-label="Vehicle list">
+            {totalFiltered === 0 ? (
+              <div className="py-10 text-center text-muted-foreground">
+                <SearchX className="w-6 h-6 mx-auto mb-2 opacity-30" />
+                <p className="text-sm">
+                  {search ? <>No vehicles match &ldquo;{search}&rdquo;</> : 'No vehicles found'}
+                </p>
+              </div>
+            ) : (
+              <div ref={listRef} className="py-0.5">
+                {groupedVehicles.map(([type, vehs]) => (
+                  <div key={type}>
+                    {/* Group header — only show when not searching */}
+                    {!search && groupedVehicles.length > 1 && (
+                      <div className="sticky top-0 z-10 flex items-center gap-2 px-3 h-7 bg-muted/50 backdrop-blur-sm text-[11px] text-muted-foreground font-medium border-b border-border/20">
+                        <Car className="w-3 h-3 opacity-50" />
+                        {type}
+                        <span className="opacity-40 tabular-nums">({vehs.length})</span>
+                      </div>
+                    )}
+                    {vehs.map((veh) => {
+                      const globalIdx = visibleVehicles.indexOf(veh)
+                      return (
+                        <button
+                          key={veh.id}
+                          type="button"
+                          role="option"
+                          aria-selected={veh.id === value}
+                          data-veh-index={globalIdx}
+                          onClick={() => handleSelect(veh.id)}
+                          className={cn(
+                            'w-full flex items-center gap-2.5 px-3 h-9 text-sm text-left',
+                            'motion-safe:transition-colors duration-75',
+                            'hover:bg-accent/10',
+                            veh.id === value && 'bg-primary/10 text-primary',
+                            globalIdx === highlightIndex && 'bg-accent/15 outline-none'
+                          )}
+                        >
+                          <span className="flex-1 min-w-0 truncate font-medium">{veh.name || veh.id.replace('Base.', '')}</span>
+                          {veh.seats > 0 && (
+                            <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground/60 shrink-0 tabular-nums" title={`${veh.seats} seats`}>
+                              <Users className="w-2.5 h-2.5" />
+                              {veh.seats}
+                            </span>
+                          )}
+                          {veh.mass > 0 && (
+                            <span className="text-[10px] text-muted-foreground/40 shrink-0 tabular-nums" title={`${veh.mass}kg`}>
+                              {(veh.mass / 1000).toFixed(1)}t
+                            </span>
+                          )}
+                          <span className="text-[10px] text-muted-foreground/40 shrink-0 max-w-[30%] truncate font-mono">{veh.id}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Footer */}
+          <div className="border-t border-border/40 px-3 h-8 flex items-center justify-between gap-3 text-[11px] text-muted-foreground bg-card/30">
+            <span className="shrink-0 tabular-nums">
+              {capped
+                ? <><span className="text-warning">{MAX_VISIBLE}</span> of {totalFiltered} — type to filter</>
+                : `${totalFiltered} vehicles`}
+            </span>
+            <div className="flex items-center gap-3 text-[10px] opacity-60">
+              <span>↑↓ navigate</span>
+              <span>↵ select</span>
+              <span>esc close</span>
+            </div>
+            {scannedAt && (
+              <span className="truncate text-right opacity-50">
+                {new Date(scannedAt).toLocaleDateString()}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}

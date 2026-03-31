@@ -150,7 +150,9 @@ function pruneBackups() {
     for (const file of files.slice(MAX_BACKUPS)) {
       fs.unlinkSync(path.join(backupDir, file));
     }
-  } catch { /* best effort */ }
+  } catch (err) {
+    log.debug(`Backup pruning error: ${err.message}`);
+  }
 }
 
 function getLatestBackup() {
@@ -161,6 +163,7 @@ function getLatestBackup() {
       .reverse();
     return files.length > 0 ? path.join(backupDir, files[0]) : null;
   } catch {
+    log.debug(`No backups found to list`);
     return null;
   }
 }
@@ -312,12 +315,16 @@ export async function initDatabase() {
 function getDatabaseStatsSync() {
   const data = db?.data || defaultData;
   let fileSize = 0;
-  try { fileSize = fs.statSync(dbPath).size; } catch { /* file may not exist yet */ }
+  try { fileSize = fs.statSync(dbPath).size; } catch (e) {
+    log.debug(`DB file stat failed (may not exist yet): ${e.message}`);
+  }
 
   let backupCount = 0;
   try {
     backupCount = fs.readdirSync(backupDir).filter(f => f.startsWith('db-') && f.endsWith('.json')).length;
-  } catch { /* dir may not exist */ }
+  } catch (e) {
+    log.debug(`Backup dir read failed: ${e.message}`);
+  }
 
   return {
     fileSizeBytes: fileSize,

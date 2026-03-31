@@ -484,7 +484,7 @@ export default function Layout({ children }: LayoutProps) {
         {/* Project Zomboid Banner with Spiffo */}
         <div className={cn(
           "relative overflow-hidden sidebar-header",
-          "bg-gradient-to-b from-amber-950/28 via-stone-950/94 to-card border-b border-amber-900/24"
+          "bg-gradient-to-b from-accent/20 via-card to-card border-b border-border/40"
         )}>
           <div className="relative p-4">
             <PanelBrand />

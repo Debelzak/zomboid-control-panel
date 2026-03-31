@@ -260,7 +260,7 @@ export class DiscordBot {
       );
       log.info(`Registered ${commands.length} Discord commands`);
     } catch (error) {
-      log.error(`Failed to register Discord commands: ${error.message}`);
+      log.error(`Failed to register Discord commands: ${error.stack || error.message}`);
       throw error;
     }
   }
@@ -356,7 +356,7 @@ export class DiscordBot {
           await interaction.reply({ content: 'Unknown command', ephemeral: true });
       }
     } catch (error) {
-      log.error(`command error: ${error.message}`);
+      log.error(`command error: ${error.stack || error.message}`);
       try {
         const content = `❌ Error: ${sanitizeError(error.message)}`;
         if (interaction.replied || interaction.deferred) {
@@ -365,7 +365,7 @@ export class DiscordBot {
           await interaction.reply({ content, ephemeral: true });
         }
       } catch (replyError) {
-        log.error(`Failed to send error reply: ${replyError.message}`);
+        log.error(`Failed to send error reply: ${replyError.stack || replyError.message}`);
       }
     }
   }
@@ -403,8 +403,8 @@ export class DiscordBot {
             inline: true 
           });
         }
-      } catch {
-        // Ignore RCON errors for status
+      } catch (e) {
+        log.debug(`Discord status: RCON error for player count: ${e.message}`);
       }
     }
     
@@ -631,7 +631,7 @@ export class DiscordBot {
     });
 
     this.client.on('error', (error) => {
-      log.error(`client error: ${error.message}`);
+      log.error(`client error: ${error.stack || error.message}`);
     });
 
      try {
@@ -662,7 +662,7 @@ export class DiscordBot {
      } catch (error) {
        log.error(`Failed to start Discord bot: ${error.message}`);
        if (this.client) {
-         this.client.destroy().catch(() => {});
+         this.client.destroy().catch(err => log.debug(`Discord client destroy failed: ${err.message}`));
          this.client = null;
        }
        this.isRunning = false;

@@ -150,7 +150,7 @@ router.put('/tasks/:id', async (req, res) => {
       } catch (schedErr) {
         log.error(`Failed to reschedule task ${taskId}, reverting DB: ${schedErr.message}`);
         // Revert: re-save the old enabled state to avoid phantom active task in DB
-        await updateScheduledTask(taskId, name, cronExpression, command, 0).catch(() => {});
+        await updateScheduledTask(taskId, name, cronExpression, command, 0).catch(err => log.debug(`Failed to revert task ${taskId}: ${err.message}`));
         return res.status(500).json({ error: 'Failed to reschedule task: ' + sanitizeError(schedErr.message) });
       }
     } else {

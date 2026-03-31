@@ -372,8 +372,10 @@ router.post('/add-vehicle', async (req, res) => {
       return res.status(400).json({ error: 'Vehicle is required' });
     }
     
-    if (!VEHICLES.includes(vehicle)) {
-      return res.status(400).json({ error: 'Invalid vehicle type' });
+    // Validate vehicle ID format (e.g., "Base.CarNormal", "mod.VehicleName")
+    // Allows catalog-scanned vehicles beyond the static VEHICLES list
+    if (!/^[A-Za-z0-9_]+\.[A-Za-z0-9_]+$/.test(vehicle)) {
+      return res.status(400).json({ error: 'Invalid vehicle ID format' });
     }
     
     if (username && !isValidUsername(username)) {

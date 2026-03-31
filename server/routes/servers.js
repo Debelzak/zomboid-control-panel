@@ -112,12 +112,12 @@ function scanForPzPaths(rootPath, maxDepth = 3) {
           if (fs.statSync(itemPath).isDirectory()) {
             scan(itemPath, depth + 1);
           }
-        } catch {
-          // Skip inaccessible folders
+        } catch (e) {
+          log.debug(`Skipping inaccessible path ${itemPath}: ${e.message}`);
         }
       }
-    } catch {
-      // Skip inaccessible folders
+    } catch (e) {
+      log.debug(`Skipping inaccessible folder ${currentPath}: ${e.message}`);
     }
   }
   

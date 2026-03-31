@@ -40,7 +40,7 @@ export function getDataPaths() {
       const configData = fs.readFileSync(configPath, 'utf8');
       config = JSON.parse(configData);
     } catch (e) {
-      console.error('Failed to load paths config:', e.message);
+      console.error(`[PATHS] Failed to load paths config (${configPath}): ${e.stack || e.message}`);
     }
   }
   

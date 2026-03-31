@@ -1451,7 +1451,10 @@ function getModDetailsFromWorkshop(workshopId, serverPath) {
               candidatePaths.push(path.join(modDir, sub.name, 'mod.info'));
             }
           }
-        } catch { /* ignore read errors */ }
+        } catch (e) {
+          log.debug(`Failed to scan B42 versioned subdirs for ${modDir}: ${e.message}`);
+        }
+
         
         const modInfoPath = candidatePaths.find(p => fs.existsSync(p));
         if (modInfoPath) {

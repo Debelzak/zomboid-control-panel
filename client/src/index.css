@@ -77,6 +77,47 @@ input[type="number"] {
      No overrides needed — :root already defines the survival palette. */
 }
 
+/* ==========================================
+   THEME: LIGHT — clean white daylight
+   Outside @layer base so Tailwind won't purge it
+   ========================================== */
+.theme-light {
+  --background: 40 6% 88%;
+  --foreground: 24 10% 14%;
+  --card: 40 5% 92%;
+  --card-foreground: 24 10% 14%;
+  --popover: 40 5% 93%;
+  --popover-foreground: 24 10% 14%;
+  --primary: 82 38% 36%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 40 4% 84%;
+  --secondary-foreground: 24 8% 22%;
+  --muted: 40 4% 84%;
+  --muted-foreground: 24 5% 40%;
+  --accent: 34 42% 42%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 65% 48%;
+  --destructive-foreground: 0 0% 100%;
+  --success: 145 50% 32%;
+  --success-foreground: 0 0% 100%;
+  --warning: 36 85% 48%;
+  --warning-foreground: 24 10% 10%;
+  --info: 200 70% 42%;
+  --info-foreground: 0 0% 100%;
+  --border: 30 6% 76%;
+  --input: 40 5% 86%;
+  --ring: 82 38% 36%;
+  --chart-1: 82 38% 36%;
+  --chart-2: 0 65% 48%;
+  --chart-3: 36 85% 48%;
+  --chart-4: 200 70% 42%;
+  --chart-5: 24 6% 46%;
+
+  --severity-high: var(--destructive);
+  --severity-medium: var(--warning);
+  --severity-low: var(--primary);
+}
+
 /* ==============================================
    SURVIVAL THEME - PROJECT ZOMBOID EFFECTS
    ============================================== */
@@ -1680,6 +1721,177 @@ tr:hover td {
 .theme-survival select:focus {
   border-color: hsl(82 42% 35%);
   box-shadow: 0 0 0 2px hsl(82 42% 35% / 0.2);
+}
+
+/* ==============================================
+   LIGHT THEME OVERRIDES
+   Neutralize survival grit; keep everything
+   readable on a warm light background.
+   ============================================== */
+
+/* Light background — clean, no grain/scanlines */
+.theme-light {
+  background-color: hsl(40 6% 88%);
+  background-image: none;
+}
+
+.theme-light::before {
+  display: none;
+}
+
+/* Scrollbar — subtle for light surfaces */
+.theme-light ::-webkit-scrollbar-track {
+  background: hsl(var(--background));
+}
+
+.theme-light ::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 5px;
+  border: 2px solid hsl(var(--background));
+}
+
+.theme-light ::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.5);
+}
+
+/* Cards — light surfaces with soft shadow */
+.theme-light .card {
+  border-color: hsl(var(--border));
+  box-shadow: 0 1px 3px hsl(30 10% 50% / 0.08);
+}
+
+.theme-light .card::after {
+  content: none;
+}
+
+/* Buttons */
+.theme-light [data-slot="button"][data-variant="default"] {
+  text-shadow: none;
+  box-shadow: 0 1px 2px hsl(30 10% 50% / 0.12);
+}
+
+.theme-light [data-slot="button"][data-variant="outline"] {
+  background: hsl(var(--background));
+  border-color: hsl(var(--border));
+}
+
+.theme-light [data-slot="button"][data-variant="destructive"] {
+  background: hsl(var(--destructive));
+  border-color: hsl(var(--destructive));
+}
+
+.theme-light [data-slot="button"][data-variant="warning"] {
+  background: hsl(var(--warning));
+  color: hsl(var(--warning-foreground));
+}
+
+/* Alerts */
+.theme-light [role="alert"] {
+  border-color: hsl(var(--border));
+  background: hsl(var(--card));
+}
+
+.theme-light [role="alert"].border-warning\/40 {
+  border-color: hsl(var(--warning) / 0.45);
+  background: hsl(var(--warning) / 0.08);
+}
+
+.theme-light [role="alert"].border-destructive\/50,
+.theme-light [role="alert"].border-destructive\/40 {
+  border-color: hsl(var(--destructive) / 0.45);
+  background: hsl(var(--destructive) / 0.06);
+}
+
+/* Inputs */
+.theme-light input,
+.theme-light textarea,
+.theme-light select {
+  border-color: hsl(var(--border));
+  background: hsl(var(--background));
+}
+
+.theme-light input:focus,
+.theme-light textarea:focus,
+.theme-light select:focus {
+  border-color: hsl(var(--primary));
+  box-shadow: 0 0 0 2px hsl(var(--primary) / 0.18);
+}
+
+/* Tabs */
+.theme-light [data-state="active"][role="tab"] {
+  border-bottom-color: hsl(var(--primary));
+  color: hsl(var(--foreground));
+}
+
+/* Switch checked state */
+.theme-light [role="switch"][data-state="checked"] {
+  box-shadow: 0 0 4px hsl(var(--primary) / 0.2);
+}
+
+/* Nav active item */
+.theme-light .nav-item-active {
+  background: linear-gradient(90deg,
+    hsl(var(--primary) / 0.14) 0%,
+    hsl(var(--primary) / 0.06) 100%
+  );
+  border-left: 2px solid hsl(var(--primary) / 0.7);
+}
+
+/* Sidebar header */
+.theme-light .sidebar-header {
+  background: linear-gradient(180deg,
+    hsl(var(--primary) / 0.08) 0%,
+    hsl(var(--background)) 100%
+  );
+  border-bottom: 1px solid hsl(var(--border));
+}
+
+/* Brand title — no text-shadow on light */
+.theme-light .shell-brand-title {
+  text-shadow: none;
+}
+
+/* Page headers */
+.theme-light .page-title {
+  color: hsl(var(--foreground));
+  text-shadow: none;
+}
+
+.theme-light .page-title-icon {
+  color: hsl(var(--primary));
+  filter: none;
+}
+
+/* Terminal / console on light */
+.theme-light .terminal-output {
+  background: hsl(30 8% 10%);
+  color: hsl(36 16% 82%);
+  border: 1px solid hsl(var(--border));
+}
+
+/* Table row hover */
+.theme-light tr:hover td {
+  background: hsl(var(--primary) / 0.04);
+}
+
+/* Glass morphism for light */
+.theme-light .glass {
+  backdrop-filter: blur(8px) saturate(120%);
+  background: hsl(var(--background) / 0.85);
+  border: 1px solid hsl(var(--border) / 0.6);
+}
+
+/* Auth background */
+.theme-light .auth-bg-gradient {
+  background-image: radial-gradient(circle at 84% -12%, hsl(var(--primary) / 0.10), transparent 38%),
+    radial-gradient(circle at 12% 108%, hsl(var(--destructive) / 0.08), transparent 42%),
+    linear-gradient(180deg, hsl(var(--background)), hsl(var(--background)));
+}
+
+/* Text selection */
+.theme-light ::selection {
+  background: hsl(var(--primary) / 0.22);
+  color: hsl(var(--foreground));
 }
 
 /* Improved scrollbar styling */

@@ -308,7 +308,9 @@ export class PanelUpdateChecker {
       // On Windows, can't replace running exe directly — rename approach
       if (isWindows) {
         const oldPath = exePath + '.old';
-        try { if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath); } catch (_) {}
+        try { if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath); } catch (cleanErr) {
+          log.debug(`Failed to clean old exe: ${cleanErr.message}`);
+        }
         fs.renameSync(exePath, oldPath);
         try {
           fs.renameSync(updatePath, exePath);
@@ -347,9 +349,13 @@ export class PanelUpdateChecker {
         const staleTempPrefix = `${isWindows ? 'ZomboidControlPanel.exe' : 'ZomboidControlPanel'}.update.`;
         const staleFiles = fs.readdirSync(exeDir).filter(name => name.startsWith(staleTempPrefix));
         for (const name of staleFiles) {
-          try { fs.unlinkSync(path.join(exeDir, name)); } catch (_) {}
+          try { fs.unlinkSync(path.join(exeDir, name)); } catch (delErr) {
+            log.debug(`Failed to clean stale update file ${name}: ${delErr.message}`);
+          }
         }
-      } catch (_) {}
+      } catch (cleanupErr) {
+        log.debug(`Update cleanup failed: ${cleanupErr.message}`);
+      }
 
       this.isDownloading = false;
     }
@@ -386,7 +392,8 @@ export class PanelUpdateChecker {
             host === 'github-releases.githubusercontent.com' ||
             host.endsWith('.githubusercontent.com')
           );
-        } catch {
+        } catch (e) {
+          log.debug(`Invalid download URL: ${e.message}`);
           return false;
         }
       };

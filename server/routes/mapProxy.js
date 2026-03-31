@@ -1,4 +1,6 @@
 import express from 'express';
+import { createLogger } from '../utils/logger.js';
+const log = createLogger('API:MapProxy');
 
 const router = express.Router();
 
@@ -26,7 +28,8 @@ router.get('/tiles/:level/:tile', async (req, res) => {
     res.set('Cache-Control', 'public, max-age=604800'); // 7 days
     const buffer = await response.arrayBuffer();
     res.send(Buffer.from(buffer));
-  } catch {
+  } catch (err) {
+    log.debug(`B42 tile proxy failed for ${level}/${tile}: ${err.message}`);
     res.status(502).end();
   }
 });
@@ -53,7 +56,8 @@ router.get('/b41tiles/:level/:tile', async (req, res) => {
     res.set('Cache-Control', 'public, max-age=604800'); // 7 days
     const buffer = await response.arrayBuffer();
     res.send(Buffer.from(buffer));
-  } catch {
+  } catch (err) {
+    log.debug(`B41 tile proxy failed for ${level}/${tile}: ${err.message}`);
     res.status(502).end();
   }
 });
