@@ -14,7 +14,7 @@ import { fileURLToPath } from 'url';
 import { exec, execSync, spawn } from 'child_process';
 import cookieParser from 'cookie-parser';
 
-import { logger, onLog, createLogger, logSection, logBlank, logBanner, logReady } from './utils/logger.js';
+import { onLog, createLogger, logSection, logBanner, logReady } from './utils/logger.js';
 const log = createLogger('Panel');
 import { initDatabase, getActiveServer, getAllSettings, getSetting } from './database/init.js';
 import { RconService } from './services/rcon.js';

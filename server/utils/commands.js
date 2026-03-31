@@ -413,18 +413,3 @@ export const ACCESS_LEVELS = [
   'observer',
   'none'
 ];
-
-// Log types for the /log command
-export const LOG_TYPES = [
-  'General', 'Network', 'Multiplayer', 'Voice', 'Packet', 'NetworkFileDebug',
-  'Lua', 'Mod', 'Sound', 'Zombie', 'Combat', 'Objects', 'Fireplace', 'Radio',
-  'MapLoading', 'Clothing', 'Animation', 'Asset', 'Script', 'Shader', 'Input',
-  'Recipe', 'ActionSystem', 'IsoRegion', 'UniTests', 'FileIO', 'Ownership',
-  'Death', 'Damage', 'Statistic', 'Vehicle', 'Checksum'
-];
-
-// Log levels
-export const LOG_LEVELS = ['Trace', 'Debug', 'General', 'Warning', 'Error'];
-
-// Stats modes
-export const STATS_MODES = ['none', 'file', 'console', 'all'];

@@ -485,16 +485,6 @@ export class RconService extends EventEmitter {
         timeout: 5000
       });
       
-      // Increase max listeners on the internal socket to prevent warnings during rapid reconnections
-      try {
-        const socket = newClient.connection || newClient.socket || newClient._socket;
-        if (socket && typeof socket.setMaxListeners === 'function') {
-          socket.setMaxListeners(20);
-        }
-      } catch (e) {
-        // Ignore - socket may not be created yet
-      }
-      
       // Track this client so it can be cleaned up if connection is force reset
       this.pendingClients.add(newClient);
       this.client = newClient;
@@ -529,6 +519,18 @@ export class RconService extends EventEmitter {
       this.reconnectAttempts = 0;
       this.consecutiveHealthFailures = 0;
       this.currentReconnectDelay = this.baseReconnectDelay; // Reset backoff on success
+
+      // Increase max listeners on the socket now that it exists post-authenticate
+      // rcon-srcds adds a data+error listener pair per execute() call, so concurrent commands stack up
+      try {
+        const socket = newClient.connection || newClient.socket || newClient._socket;
+        if (socket && typeof socket.setMaxListeners === 'function') {
+          socket.setMaxListeners(25);
+        }
+      } catch (e) {
+        // Non-critical — warning is cosmetic
+      }
+
       log.info(`connected to ${this.config.host}:${this.config.port}`);
       // Emit connected event for other services (like PanelBridge) to react
       this.emit('connected');

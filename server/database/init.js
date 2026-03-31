@@ -574,11 +574,6 @@ export async function logServerEvent(eventType, message = null) {
   return entry;
 }
 
-export async function getServerEvents(limit = 100) {
-  const db = await getDb();
-  return db.data.server_events.slice(0, limit);
-}
-
 // ============================================
 // Tracked Mods (per-server scoped)
 // ============================================

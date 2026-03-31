@@ -58,6 +58,10 @@ function getItemGroup(rawCategory: string): string {
   return 'Other'
 }
 
+function fmtWeight(w: number): string {
+  return parseFloat(w.toFixed(2)) + 'kg'
+}
+
 // Icon + display order for each group
 const GROUP_META: Record<string, { order: number; icon: typeof Sword }> = {
   'Weapons':            { order: 0,  icon: Sword },
@@ -344,7 +348,7 @@ export function ItemPicker({ value, onChange, disabled, placeholder = 'Search it
           <span className="flex-1 min-w-0 truncate">
             <span className="font-medium">{selectedItem.name || selectedItem.id}</span>
             {selectedItem.weight > 0 && (
-              <span className="text-muted-foreground ml-1.5 text-xs">{selectedItem.weight}kg</span>
+              <span className="text-muted-foreground ml-1.5 text-xs">{fmtWeight(selectedItem.weight)}</span>
             )}
           </span>
         ) : value ? (
@@ -374,21 +378,21 @@ export function ItemPicker({ value, onChange, disabled, placeholder = 'Search it
       {open && (
         <div
           className={cn(
-            'absolute z-50 rounded-lg border border-border bg-popover shadow-lg',
+            'absolute z-50 rounded-lg border border-border bg-popover shadow-xl shadow-black/30',
             'motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-[0.98] motion-safe:duration-150',
             dropUp ? 'bottom-full mb-1 motion-safe:slide-in-from-bottom-1' : 'top-full mt-1 motion-safe:slide-in-from-top-1'
           )}
-          style={{ width: 'max(100%, 540px)' }}
+          style={{ width: 'min(90vw, 760px)', minWidth: '100%' }}
         >
           {/* Search bar */}
-          <div className="flex items-center gap-2 border-b border-border px-3 h-11">
+          <div className="flex items-center gap-3 border-b border-border px-4 py-3">
             <Search className="w-4 h-4 text-muted-foreground shrink-0" />
             <input
               ref={inputRef}
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder={`Search ${nonVehicleItems.length.toLocaleString()} items...`}
-              className="flex-1 min-w-0 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+              placeholder={`Search ${nonVehicleItems.length.toLocaleString()} items…`}
+              className="flex-1 min-w-0 bg-transparent text-sm outline-none placeholder:text-muted-foreground/60"
               aria-label="Filter items"
               autoFocus
             />
@@ -396,9 +400,9 @@ export function ItemPicker({ value, onChange, disabled, placeholder = 'Search it
               <button
                 type="button"
                 onClick={() => setSearch('')}
-                className="flex items-center justify-center w-5 h-5 rounded text-muted-foreground hover:text-foreground shrink-0"
+                className="flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:text-foreground shrink-0 motion-safe:transition-colors"
               >
-                <X className="w-3 h-3" />
+                <X className="w-3.5 h-3.5" />
               </button>
             )}
             <Button
@@ -406,34 +410,34 @@ export function ItemPicker({ value, onChange, disabled, placeholder = 'Search it
               size="sm"
               onClick={e => { e.stopPropagation(); handleScan() }}
               disabled={scanning}
-              className="h-7 w-7 p-0 shrink-0"
+              className="h-8 w-8 p-0 shrink-0"
               title="Re-scan server items"
             >
-              {scanning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+              {scanning ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
             </Button>
           </div>
 
           {/* Category sidebar + item list */}
-          <div className="flex" style={{ maxHeight: '380px' }}>
+          <div className="flex" style={{ maxHeight: 'min(520px, 60vh)' }}>
             {/* Sidebar */}
-            <div className="w-[152px] shrink-0 border-r border-border/60 overflow-y-auto overscroll-contain py-1 bg-card/50">
+            <div className="w-[210px] shrink-0 border-r border-border/50 overflow-y-auto overscroll-contain py-1.5">
               <button
                 type="button"
                 onClick={() => setActiveCategory(null)}
                 className={cn(
-                  'w-full flex items-center gap-2 px-2.5 py-2 text-xs',
+                  'w-full flex items-center gap-2.5 px-3 py-2.5 text-[13px]',
                   'motion-safe:transition-colors duration-100',
                   !activeCategory
-                    ? 'bg-primary/12 text-primary border-l-2 border-primary'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-accent/8 border-l-2 border-transparent'
+                    ? 'bg-primary/12 text-primary border-l-[3px] border-primary'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-accent/8 border-l-[3px] border-transparent'
                 )}
               >
-                <LayoutGrid className="w-3.5 h-3.5 shrink-0" />
-                <span className="flex-1 min-w-0 truncate font-medium">All Items</span>
-                <span className="text-[10px] tabular-nums opacity-60">{nonVehicleItems.length.toLocaleString()}</span>
+                <LayoutGrid className="w-4 h-4 shrink-0" />
+                <span className="flex-1 min-w-0 font-medium">All Items</span>
+                <span className="text-[11px] tabular-nums opacity-60">{nonVehicleItems.length.toLocaleString()}</span>
               </button>
 
-              <div className="h-px bg-border/40 mx-2.5 my-1" />
+              <div className="h-px bg-border/30 mx-3 my-1.5" />
 
               {categorySummary.map(cat => {
                 const CatIcon = cat.Icon
@@ -443,16 +447,16 @@ export function ItemPicker({ value, onChange, disabled, placeholder = 'Search it
                     type="button"
                     onClick={() => setActiveCategory(cat.raw)}
                     className={cn(
-                      'w-full flex items-center gap-2 px-2.5 py-1.5 text-xs',
+                      'w-full flex items-center gap-2.5 px-3 py-2 text-[13px]',
                       'motion-safe:transition-colors duration-100',
                       activeCategory === cat.raw
-                        ? 'bg-primary/12 text-primary border-l-2 border-primary'
-                        : 'text-muted-foreground hover:text-foreground hover:bg-accent/8 border-l-2 border-transparent'
+                        ? 'bg-primary/12 text-primary border-l-[3px] border-primary'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-accent/8 border-l-[3px] border-transparent'
                     )}
                   >
-                    <CatIcon className="w-3.5 h-3.5 shrink-0 opacity-70" />
-                    <span className="flex-1 min-w-0 truncate">{cat.label}</span>
-                    <span className="text-[10px] tabular-nums opacity-50">{cat.count.toLocaleString()}</span>
+                    <CatIcon className="w-4 h-4 shrink-0 opacity-70" />
+                    <span className="flex-1 min-w-0">{cat.label}</span>
+                    <span className="text-[11px] tabular-nums opacity-50">{cat.count.toLocaleString()}</span>
                   </button>
                 )
               })}
@@ -461,16 +465,15 @@ export function ItemPicker({ value, onChange, disabled, placeholder = 'Search it
             {/* Items */}
             <div className="flex-1 min-w-0 overflow-y-auto overscroll-contain" role="listbox" id="itempicker-listbox" aria-label="Item list">
               {/* Category header */}
-              <div className="sticky top-0 z-10 flex items-center gap-2 px-3 h-8 bg-muted/60 backdrop-blur-sm border-b border-border/30 text-xs text-muted-foreground">
-                <ActiveIcon className="w-3 h-3 opacity-60" />
-                <span className="font-medium">{activeCategoryLabel}</span>
-                <span className="opacity-50">—</span>
-                <span className="tabular-nums">{totalFiltered.toLocaleString()} items</span>
+              <div className="sticky top-0 z-10 flex items-center gap-2.5 px-4 py-2 bg-muted/80 backdrop-blur-sm border-b border-border/30">
+                <ActiveIcon className="w-3.5 h-3.5 text-muted-foreground/70" />
+                <span className="text-xs font-semibold text-muted-foreground tracking-wide uppercase">{activeCategoryLabel}</span>
+                <span className="text-xs text-muted-foreground/40 tabular-nums ml-auto">{totalFiltered.toLocaleString()} items</span>
               </div>
 
               {totalFiltered === 0 ? (
-                <div className="py-10 text-center text-muted-foreground">
-                  <SearchX className="w-6 h-6 mx-auto mb-2 opacity-30" />
+                <div className="py-14 text-center text-muted-foreground">
+                  <SearchX className="w-7 h-7 mx-auto mb-3 opacity-30" />
                   <p className="text-sm">
                     {search ? <>No items match &ldquo;{search}&rdquo;</> : 'No items in this category'}
                   </p>
@@ -478,14 +481,14 @@ export function ItemPicker({ value, onChange, disabled, placeholder = 'Search it
                     <button
                       type="button"
                       onClick={() => setActiveCategory(null)}
-                      className="mt-2 text-xs text-primary hover:underline"
+                      className="mt-3 text-xs text-primary hover:underline"
                     >
                       Search all categories
                     </button>
                   )}
                 </div>
               ) : (
-                <div ref={listRef} className="py-0.5">
+                <div ref={listRef} className="py-1">
                   {visibleItems.map((item, idx) => {
                     const group = getItemGroup(item.category)
                     const ItemGroupIcon = GROUP_META[group]?.icon || HelpCircle
@@ -499,21 +502,30 @@ export function ItemPicker({ value, onChange, disabled, placeholder = 'Search it
                         data-item-index={idx}
                         onClick={() => handleSelect(item.id)}
                         className={cn(
-                          'w-full flex items-center gap-2.5 px-3 h-9 text-sm text-left',
+                          'w-full flex items-start gap-3 px-4 py-2.5 text-left group',
                           'motion-safe:transition-colors duration-75',
                           'hover:bg-accent/10',
-                          item.id === value && 'bg-primary/10 text-primary',
+                          item.id === value && 'bg-primary/10',
                           idx === highlightIndex && 'bg-accent/15 outline-none'
                         )}
                       >
                         {!activeCategory && (
-                          <ItemGroupIcon className="w-3 h-3 text-muted-foreground/40 shrink-0" />
+                          <ItemGroupIcon className="w-4 h-4 text-muted-foreground/30 shrink-0 mt-0.5" />
                         )}
-                        <span className="flex-1 min-w-0 truncate font-medium">{item.name || item.id}</span>
-                        {item.weight > 0 && (
-                          <span className="text-[10px] text-muted-foreground/50 tabular-nums shrink-0">{item.weight}kg</span>
-                        )}
-                        <span className="text-[10px] text-muted-foreground/40 shrink-0 max-w-[35%] truncate font-mono">{item.id}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className={cn(
+                              'text-sm font-medium truncate',
+                              item.id === value ? 'text-primary' : 'text-foreground'
+                            )}>
+                              {item.name || item.id}
+                            </span>
+                            {item.weight > 0 && (
+                              <span className="text-[10px] text-muted-foreground/50 tabular-nums shrink-0 px-1.5 py-0.5 rounded bg-muted/50">{fmtWeight(item.weight)}</span>
+                            )}
+                          </div>
+                          <span className="text-[11px] text-muted-foreground/40 font-mono block mt-0.5 truncate">{item.id}</span>
+                        </div>
                       </button>
                     )
                   })}
@@ -523,19 +535,19 @@ export function ItemPicker({ value, onChange, disabled, placeholder = 'Search it
           </div>
 
           {/* Footer */}
-          <div className="border-t border-border/40 px-3 h-8 flex items-center justify-between gap-3 text-[11px] text-muted-foreground bg-card/30">
+          <div className="border-t border-border/40 px-4 py-2 flex items-center justify-between gap-4 text-[11px] text-muted-foreground">
             <span className="shrink-0 tabular-nums">
               {capped
-                ? <><span className="text-warning">{MAX_VISIBLE}</span> of {totalFiltered.toLocaleString()} — type to narrow</>
+                ? <><span className="text-warning font-medium">{MAX_VISIBLE}</span> of {totalFiltered.toLocaleString()} — type to narrow</>
                 : `${totalFiltered.toLocaleString()} ${activeCategory ? activeCategoryLabel.toLowerCase() : 'items'}`}
             </span>
-            <div className="flex items-center gap-3 text-[10px] opacity-60">
+            <div className="flex items-center gap-4 text-[10px] opacity-50">
               <span>↑↓ navigate</span>
               <span>↵ select</span>
               <span>esc close</span>
             </div>
             {scannedAt && (
-              <span className="truncate text-right opacity-50">
+              <span className="text-right opacity-40 tabular-nums">
                 {new Date(scannedAt).toLocaleDateString()}
               </span>
             )}

@@ -205,14 +205,3 @@ export async function setDataPaths(newPaths, moveFiles = true) {
     filesMoved
   };
 }
-
-/**
- * Reset paths to defaults
- */
-export function resetPaths() {
-  if (fs.existsSync(configPath)) {
-    fs.unlinkSync(configPath);
-  }
-  currentPaths = null;
-  return getDataPaths();
-}
