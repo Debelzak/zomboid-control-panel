@@ -49,6 +49,7 @@ const defaultData = {
   player_logs: [],
   server_events: [],
   tracked_mods: [],
+  ignored_mods: [],
   servers: [],
   player_notes: [],
   player_stats: [],
@@ -670,6 +671,59 @@ export async function clearModUpdates() {
     }
   });
   scheduleWrite();
+}
+
+// ============================================
+// Ignored Mods (prevent auto-re-tracking)
+// ============================================
+
+export async function getIgnoredMods() {
+  const db = await getDb();
+  if (!db.data.ignored_mods) db.data.ignored_mods = [];
+  const serverId = await getActiveServerId();
+  if (!serverId) return db.data.ignored_mods;
+  return db.data.ignored_mods.filter(m => m.server_id === serverId || !m.server_id);
+}
+
+export async function addIgnoredMod(workshopId, name = null) {
+  const db = await getDb();
+  if (!db.data.ignored_mods) db.data.ignored_mods = [];
+  const serverId = await getActiveServerId();
+  const existing = db.data.ignored_mods.find(m =>
+    m.workshop_id === workshopId && (m.server_id === serverId || !m.server_id)
+  );
+  if (existing) return existing;
+  const entry = {
+    workshop_id: workshopId,
+    name,
+    server_id: serverId,
+    ignored_at: new Date().toISOString()
+  };
+  db.data.ignored_mods.push(entry);
+  scheduleWrite();
+  return entry;
+}
+
+export async function removeIgnoredMod(workshopId) {
+  const db = await getDb();
+  if (!db.data.ignored_mods) db.data.ignored_mods = [];
+  const serverId = await getActiveServerId();
+  const index = db.data.ignored_mods.findIndex(m =>
+    m.workshop_id === workshopId && (m.server_id === serverId || !m.server_id)
+  );
+  if (index === -1) return false;
+  db.data.ignored_mods.splice(index, 1);
+  scheduleWrite();
+  return true;
+}
+
+export async function isModIgnored(workshopId) {
+  const db = await getDb();
+  if (!db.data.ignored_mods) return false;
+  const serverId = await getActiveServerId();
+  return db.data.ignored_mods.some(m =>
+    m.workshop_id === workshopId && (m.server_id === serverId || !m.server_id)
+  );
 }
 
 // ============================================

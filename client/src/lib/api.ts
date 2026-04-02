@@ -604,6 +604,10 @@ export const modsApi = {
   getTrackedMods: (options?: RequestInit) => apiGet('/mods/tracked', options),
   trackMod: (workshopId: string) => apiPost('/mods/track', { workshopId }),
   untrackMod: (workshopId: string) => apiDelete(`/mods/track/${workshopId}`),
+  
+  // Ignored mods (prevent auto-re-tracking)
+  getIgnoredMods: () => apiGet('/mods/ignored'),
+  unignoreMod: (workshopId: string) => apiDelete(`/mods/ignored/${workshopId}`),
   checkUpdates: (options?: { signal?: AbortSignal }) => apiPost('/mods/check-updates', undefined, options),
   getServerMods: () => apiGet('/mods/server-mods'),
   syncFromServer: (options?: { signal?: AbortSignal }) => apiPost('/mods/sync-from-server', undefined, options),

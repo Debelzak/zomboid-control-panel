@@ -6,7 +6,7 @@ import os from 'os';
 import crypto from 'crypto';
 import { createLogger } from '../utils/logger.js';
 const log = createLogger('API:Mods');
-import { getTrackedMods, addTrackedMod, removeTrackedMod, clearModUpdates, getSetting, getActiveServer, getModPresets, createModPreset, updateModPreset, deleteModPreset } from '../database/init.js';
+import { getTrackedMods, addTrackedMod, removeTrackedMod, clearModUpdates, getSetting, getActiveServer, getModPresets, createModPreset, updateModPreset, deleteModPreset, addIgnoredMod, getIgnoredMods, removeIgnoredMod, isModIgnored } from '../database/init.js';
 import { sanitizeError } from '../utils/sanitize.js';
 
 const router = express.Router();
@@ -174,6 +174,9 @@ router.post('/track', async (req, res) => {
       return res.status(400).json({ error: 'Invalid Workshop ID format' });
     }
     
+    // Clear from ignore list if present (user explicitly wants to track this)
+    await removeIgnoredMod(workshopIdStr);
+    
     const result = await modChecker.addModToTrack(workshopIdStr);
     res.json(result);
   } catch (error) {
@@ -192,10 +195,49 @@ router.delete('/track/:workshopId', async (req, res) => {
       return res.status(400).json({ error: 'Invalid workshop ID' });
     }
     
+    // Get mod name before removing (for the ignore list)
+    const trackedMods = await getTrackedMods();
+    const mod = trackedMods.find(m => m.workshop_id === workshopId);
+    
     await removeTrackedMod(workshopId);
-    res.json({ success: true, message: 'Mod removed from tracking' });
+    // Add to ignored list so auto-sync won't re-add it
+    await addIgnoredMod(workshopId, mod?.name || null);
+    res.json({ success: true, message: 'Mod removed from tracking and added to ignore list' });
   } catch (error) {
     log.error(`Failed to remove tracked mod: ${error.message}`);
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
+// ============================================
+// Ignored Mods Management
+// ============================================
+
+// Get all ignored mods for the active server
+router.get('/ignored', async (req, res) => {
+  try {
+    const ignored = await getIgnoredMods();
+    res.json(ignored);
+  } catch (error) {
+    log.error(`Failed to get ignored mods: ${error.message}`);
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
+// Un-ignore a mod (allow it to be tracked again)
+router.delete('/ignored/:workshopId', async (req, res) => {
+  try {
+    const { workshopId } = req.params;
+    if (!workshopId || !/^\d{1,15}$/.test(workshopId)) {
+      return res.status(400).json({ error: 'Invalid workshop ID' });
+    }
+    const removed = await removeIgnoredMod(workshopId);
+    if (!removed) {
+      return res.status(404).json({ error: 'Mod not found in ignore list' });
+    }
+    res.json({ success: true, message: 'Mod removed from ignore list' });
+  } catch (error) {
+    log.error(`Failed to un-ignore mod: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
@@ -435,9 +477,15 @@ router.post('/sync-from-server', async (req, res) => {
     // Add each workshop ID to tracking
     const modChecker = req.app.get('modChecker');
     let synced = 0;
+    let skippedIgnored = 0;
     for (let i = 0; i < workshopIds.length; i++) {
       try {
         const workshopId = workshopIds[i];
+        // Skip mods the user explicitly ignored
+        if (await isModIgnored(workshopId)) {
+          skippedIgnored++;
+          continue;
+        }
         // Try to resolve real name from mod.info on disk, fall back to mod ID from INI
         const nameFromDisk = modChecker?.resolveModNameFromDisk(workshopId);
         const modName = nameFromDisk || modIds[i] || `Workshop Mod ${workshopId}`;
@@ -448,10 +496,14 @@ router.post('/sync-from-server', async (req, res) => {
       }
     }
     
+    const message = skippedIgnored > 0
+      ? `Synced ${synced} mods from server config (${skippedIgnored} ignored mods skipped)`
+      : `Synced ${synced} mods from server config`;
     res.json({ 
       success: true, 
-      message: `Synced ${synced} mods from server config`,
+      message,
       synced,
+      skippedIgnored,
       iniPath
     });
   } catch (error) {
@@ -1721,11 +1773,19 @@ router.post('/batch-remove', async (req, res) => {
       return res.status(400).json({ error: 'No valid workshop IDs provided' });
     }
 
-    // Step 1: Remove all from database (fast, in-memory)
+    // Step 1: Get mod names before removal (for ignore list)
+    const trackedMods = await getTrackedMods();
+    const modNameMap = new Map();
+    for (const mod of trackedMods) {
+      modNameMap.set(mod.workshop_id, mod.name);
+    }
+
+    // Step 2: Remove all from database and add to ignore list
     const dbResults = { removed: 0, failed: 0 };
     for (const wsId of validIds) {
       try {
         await removeTrackedMod(wsId);
+        await addIgnoredMod(wsId, modNameMap.get(wsId) || null);
         dbResults.removed++;
       } catch (e) {
         dbResults.failed++;
@@ -3104,8 +3164,9 @@ router.post('/add-mod-advanced', async (req, res) => {
       return { addedModIds, totalModIdsInConfig: currentModIds.length, workshopAlreadyExisted: workshopAlreadyExists };
     });
 
-    // Also add to tracking
+    // Also add to tracking (and clear from ignore list if present)
     try {
+      await removeIgnoredMod(String(workshopId));
       await addTrackedMod(String(workshopId), `Workshop Mod ${workshopId}`);
     } catch (e) {
       // Ignore if already tracked

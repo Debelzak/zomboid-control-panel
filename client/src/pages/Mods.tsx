@@ -34,6 +34,7 @@ import {
   GitBranch,
   PlusCircle,
   X,
+  EyeOff,
 } from 'lucide-react'
 import { ConflictScanResult, ScanStreamModScanned, ScanStreamConflictFound } from '@/types'
 import { FileDiffViewer } from '@/components/FileDiffViewer'
@@ -217,6 +218,8 @@ export default function Mods() {
   const [mapRepairResult, setMapRepairResult] = useState<{ removed: string[]; added?: string[]; remaining: string[]; message: string } | null>(null)
   const [confirmRemoveMod, setConfirmRemoveMod] = useState<string | null>(null) // workshopId to confirm single remove
   const [confirmBulkRemove, setConfirmBulkRemove] = useState(false)
+  const [ignoredMods, setIgnoredMods] = useState<Array<{ workshop_id: string; name: string | null; ignored_at: string }>>([])
+  const [ignoredModsOpen, setIgnoredModsOpen] = useState(false)
   const [confirmRemoveWorkshop, setConfirmRemoveWorkshop] = useState<{ wsId: string; knownModIds: string[] } | null>(null) // wsId for config tab remove
   const [deduplicating, setDeduplicating] = useState(false)
   const [deduplicateResult, setDeduplicateResult] = useState<string | null>(null)
@@ -400,7 +403,8 @@ export default function Mods() {
       const results = await Promise.allSettled([
         modsApi.getTrackedMods(),
         modsApi.getStatus(),
-        modsApi.getCurrentConfig()
+        modsApi.getCurrentConfig(),
+        modsApi.getIgnoredMods()
       ])
       
       // Extract successful results
@@ -423,6 +427,9 @@ export default function Mods() {
         if (results[2].value?.modIds) {
           setOrderedModIds(results[2].value.modIds)
         }
+      }
+      if (results[3].status === 'fulfilled') {
+        setIgnoredMods(Array.isArray(results[3].value) ? results[3].value : [])
       }
       
       // Check for failures and show persistent error
@@ -865,6 +872,26 @@ export default function Mods() {
       toast({
         title: 'Remove failed',
         description: error instanceof Error ? error.message : 'Failed to remove mods',
+        variant: 'destructive',
+      })
+    } finally {
+      setLoading(false)
+      busyRef.current = false
+    }
+  }
+
+  const handleUnignoreMod = async (workshopId: string) => {
+    if (busyRef.current) return
+    busyRef.current = true
+    setLoading(true)
+    try {
+      await modsApi.unignoreMod(workshopId)
+      toast({ title: 'Mod un-ignored', description: 'This mod can now be tracked again by auto-sync.' })
+      fetchData()
+    } catch (error) {
+      toast({
+        title: 'Failed to un-ignore mod',
+        description: error instanceof Error ? error.message : 'Unknown error',
         variant: 'destructive',
       })
     } finally {
@@ -2505,6 +2532,46 @@ export default function Mods() {
                 </ScrollArea>
               </CardContent>
             </Card>
+
+            {/* Ignored Mods — collapsible section */}
+            {ignoredMods.length > 0 && (
+              <div className="rounded-lg border border-border/30 bg-card/50">
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between px-4 py-2.5 text-left text-sm text-muted-foreground hover:text-foreground transition-colors"
+                  onClick={() => setIgnoredModsOpen(!ignoredModsOpen)}
+                >
+                  <span className="flex items-center gap-2">
+                    <EyeOff className="w-3.5 h-3.5" />
+                    {ignoredMods.length} ignored mod{ignoredMods.length !== 1 ? 's' : ''}
+                    <span className="text-xs opacity-60">— won't be re-added by auto-sync</span>
+                  </span>
+                  <ChevronRight className={`w-4 h-4 transition-transform ${ignoredModsOpen ? 'rotate-90' : ''}`} />
+                </button>
+                {ignoredModsOpen && (
+                  <div className="border-t border-border/30 px-4 py-2 space-y-1">
+                    {ignoredMods.map((mod) => (
+                      <div key={mod.workshop_id} className="flex items-center justify-between gap-3 py-1.5 text-sm">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <EyeOff className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0" />
+                          <span className="truncate text-muted-foreground">{mod.name || `Workshop Mod ${mod.workshop_id}`}</span>
+                          <span className="text-xs text-muted-foreground/50 tabular-nums shrink-0">{mod.workshop_id}</span>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2 text-xs shrink-0"
+                          onClick={() => handleUnignoreMod(mod.workshop_id)}
+                          disabled={loading}
+                        >
+                          Re-track
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </TabsContent>
 
           {/* Server Config Tab */}
@@ -4076,7 +4143,7 @@ export default function Mods() {
           <AlertDialogHeader>
             <AlertDialogTitle>Remove this mod?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will untrack the mod and remove it from the server INI config. The workshop files on disk won't be deleted.
+              This will untrack the mod, remove it from the server INI config, and add it to the ignore list so auto-sync won't re-add it. The workshop files on disk won't be deleted.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -4097,7 +4164,7 @@ export default function Mods() {
           <AlertDialogHeader>
             <AlertDialogTitle>Remove {selectedMods.size} mod{selectedMods.size !== 1 ? 's' : ''}?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will untrack all selected mods and remove them from the server INI config. Workshop files on disk won't be deleted.
+              This will untrack all selected mods, remove them from the server INI config, and add them to the ignore list so auto-sync won't re-add them. Workshop files on disk won't be deleted.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -1,6 +1,6 @@
 import { createLogger } from '../utils/logger.js';
 const log = createLogger('Mods');
-import { getTrackedMods, updateModTimestamp, logServerEvent, getSetting, setSetting, addTrackedMod, getActiveServer } from '../database/init.js';
+import { getTrackedMods, updateModTimestamp, logServerEvent, getSetting, setSetting, addTrackedMod, getActiveServer, isModIgnored } from '../database/init.js';
 import fs from 'fs';
 import path from 'path';
 import { EventEmitter } from 'events';
@@ -330,6 +330,11 @@ export class ModChecker extends EventEmitter {
       // Add all mods to tracking
       let synced = 0;
       for (const id of workshopIds) {
+        // Skip mods the user previously ignored
+        if (await isModIgnored(id)) {
+          log.debug(`Skipping ignored mod ${id} during auto-sync`);
+          continue;
+        }
         // Try to get name from disk
         const nameFromDisk = this.resolveModNameFromDisk(id);
         const name = nameFromDisk || `Workshop Mod ${id}`;
@@ -761,6 +766,11 @@ export class ModChecker extends EventEmitter {
         for (const [workshopId, details] of Object.entries(parsed.modDetails)) {
           const { timeupdated, latest_timeupdated } = details;
           if (latest_timeupdated > timeupdated) {
+            // Skip mods the user explicitly removed from tracking
+            if (!trackedMap.has(workshopId) && await isModIgnored(workshopId)) {
+              log.debug(`Skipping ignored mod ${workshopId} during ACF-only update check`);
+              continue;
+            }
             const trackedMod = trackedMap.get(workshopId);
             const nameFromDisk = this.resolveModNameFromDisk(workshopId);
             const modName = nameFromDisk || trackedMod?.name || `Workshop Mod ${workshopId}`;
@@ -780,6 +790,13 @@ export class ModChecker extends EventEmitter {
 
           if (steam.time_updated > localTime) {
             const trackedMod = trackedMap.get(workshopId);
+
+            // Skip mods the user explicitly removed from tracking
+            if (!trackedMod && await isModIgnored(workshopId)) {
+              log.debug(`Skipping ignored mod ${workshopId} during update check`);
+              continue;
+            }
+
             const nameFromDisk = this.resolveModNameFromDisk(workshopId);
             const modName = nameFromDisk || steam.title || trackedMod?.name || `Workshop Mod ${workshopId}`;
 
