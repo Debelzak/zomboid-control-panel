@@ -158,6 +158,7 @@ const allowedOrigins = new Set(defaultAllowedOrigins);
 const MAX_CORS_BLOCK_EVENTS = 50;
 const MAX_CORS_CUSTOM_ORIGINS = 100;
 const MAX_CORS_ORIGIN_LENGTH = 256;
+const CORS_DENY_MESSAGE = 'Origin blocked by panel CORS policy. Open the panel from a local/LAN host or add this origin in Settings > Remote Access.';
 const corsState = {
   allowAll: false,
   allowPrivateNetworks: true,
@@ -199,6 +200,24 @@ function isPrivateNetworkHost(host) {
     host.startsWith('100.') ||
     /^172\.(1[6-9]|2\d|3[01])\./.test(host)
   );
+}
+
+function isLikelyLanHostname(host) {
+  if (!host) return false;
+  const normalized = String(host).trim().toLowerCase();
+  if (!normalized) return false;
+
+  // Single-label hostnames like "garage" are typical on home/LAN networks.
+  if (/^[a-z0-9-]+$/.test(normalized) && !normalized.includes('.')) {
+    return true;
+  }
+
+  // Common LAN-only suffixes.
+  if (normalized.endsWith('.local') || normalized.endsWith('.lan') || normalized.endsWith('.home') || normalized.endsWith('.internal')) {
+    return true;
+  }
+
+  return false;
 }
 
 function recordCorsBlock(origin, source) {
@@ -299,7 +318,7 @@ function isAllowedOrigin(origin) {
 
   try {
     const url = new URL(normalized);
-    if (corsState.allowPrivateNetworks && isPrivateNetworkHost(url.hostname)) {
+    if (corsState.allowPrivateNetworks && (isPrivateNetworkHost(url.hostname) || isLikelyLanHostname(url.hostname))) {
       addAllowedOrigin(normalized);
       return true;
     }
@@ -315,7 +334,7 @@ const io = new Server(httpServer, {
         callback(null, true);
       } else {
         recordCorsBlock(origin, 'socket');
-        callback(new Error('Not allowed by CORS'));
+        callback(new Error(CORS_DENY_MESSAGE));
       }
     },
     methods: ['GET', 'POST'],
@@ -324,9 +343,10 @@ const io = new Server(httpServer, {
 });
 
 // Security middleware
-// Disable HSTS and upgrade-insecure-requests — panel is typically accessed over
-// plain HTTP on a LAN. Sending these headers forces browsers to require HTTPS
-// and blocks all assets on non-HTTPS setups.
+// HSTS and upgrade-insecure-requests are conditionally enabled:
+// - On LAN/HTTP setups: disabled (would break plain HTTP access)
+// - On VPS/HTTPS setups: enabled (browser enforces HTTPS)
+const httpsDetected = process.env.HTTPS === 'true' || process.env.FORCE_HSTS === 'true';
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -338,10 +358,10 @@ app.use(helmet({
       fontSrc: ["'self'", 'https://fonts.gstatic.com'],
       objectSrc: ["'none'"],
       frameAncestors: ["'none'"],
-      upgradeInsecureRequests: null,
+      upgradeInsecureRequests: httpsDetected ? [] : null,
     }
   },
-  hsts: false,
+  hsts: httpsDetected ? { maxAge: 31536000, includeSubDomains: false } : false,
   crossOriginEmbedderPolicy: false // Allow loading resources
 }));
 
@@ -352,7 +372,7 @@ app.use(cors({
     } else {
       recordCorsBlock(origin, 'http');
       log.warn(`CORS blocked request from origin: ${origin}`);
-      callback(new Error('Not allowed by CORS'));
+      callback(new Error(CORS_DENY_MESSAGE));
     }
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
@@ -921,6 +941,67 @@ async function start() {
 
     // ── Authentication ──
     await authService.init();
+
+    // ── CLI: --reset-password ──
+    if (process.argv.includes('--reset-password')) {
+      const readline = await import('readline');
+      const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+      const ask = (q) => new Promise((resolve) => rl.question(q, resolve));
+
+      let users;
+      try {
+        users = await authService.getUsers();
+      } catch (err) {
+        console.log(`\n  ERROR: Could not read users: ${err.message}\n`);
+        rl.close();
+        process.exit(1);
+      }
+
+      if (users.length === 0) {
+        console.log('\n  No user accounts exist. Start the panel normally to run setup.\n');
+        rl.close();
+        process.exit(0);
+      }
+
+      console.log('\n  ╔══════════════════════════════════════╗');
+      console.log('  ║     Password Reset (CLI Mode)        ║');
+      console.log('  ╚══════════════════════════════════════╝');
+      console.log(`\n  Admin account: ${users[0].username}`);
+      const newPassword = await ask('  Enter new password (min 6 chars): ');
+
+      if (!newPassword || newPassword.length < 6) {
+        console.log('  ERROR: Password must be at least 6 characters.\n');
+        rl.close();
+        process.exit(1);
+      }
+
+      if (newPassword.length > 128) {
+        console.log('  ERROR: Password must be 128 characters or fewer.\n');
+        rl.close();
+        process.exit(1);
+      }
+
+      const confirm = await ask('  Confirm new password: ');
+      if (newPassword !== confirm) {
+        console.log('  ERROR: Passwords do not match.\n');
+        rl.close();
+        process.exit(1);
+      }
+
+      try {
+        const result = await authService.resetPassword(newPassword);
+        console.log(`\n  Password reset successful for: ${result.username}`);
+        console.log('  All existing sessions have been invalidated.\n');
+      } catch (err) {
+        console.log(`  ERROR: ${err.message}\n`);
+        rl.close();
+        process.exit(1);
+      }
+
+      rl.close();
+      process.exit(0);
+    }
+
     const needsSetup = await authService.needsSetup();
     if (needsSetup) {
       log.info('No users found — first-run setup required');
@@ -1134,7 +1215,7 @@ async function start() {
               if (isAllowedOrigin(origin)) {
                 callback(null, true);
               } else {
-                callback(new Error('Not allowed by CORS'));
+                callback(new Error(CORS_DENY_MESSAGE));
               }
             },
             methods: ['GET', 'POST'],

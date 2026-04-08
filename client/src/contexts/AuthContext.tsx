@@ -24,6 +24,27 @@ interface AuthContextType extends AuthState {
 
 const AuthContext = createContext<AuthContextType | null>(null)
 
+const CORS_LOGIN_MESSAGE = 'Connection blocked by browser origin policy. Open the panel from a local/LAN address or add this URL in Settings > Remote Access.'
+
+async function getErrorPayload(response: Response): Promise<{ error?: string } | null> {
+  try {
+    const data = await response.json()
+    return data && typeof data === 'object' ? (data as { error?: string }) : null
+  } catch {
+    return null
+  }
+}
+
+function getLoginErrorMessage(error: unknown): string {
+  if (error instanceof TypeError) {
+    return CORS_LOGIN_MESSAGE
+  }
+  if (error instanceof Error && /cors|origin policy|failed to fetch/i.test(error.message)) {
+    return CORS_LOGIN_MESSAGE
+  }
+  return "We couldn't sign you in. Check your username and password and try again."
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>({
     user: null,
@@ -124,27 +145,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [checkAuth])
 
   const login = useCallback(async (username: string, password: string, rememberMe = true) => {
-    const res = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include', // Send/receive cookies
-      body: JSON.stringify({ username, password, rememberMe }),
-    })
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // Send/receive cookies
+        body: JSON.stringify({ username, password, rememberMe }),
+      })
 
-    if (!res.ok) {
+      if (!res.ok) {
+        const data = await getErrorPayload(res)
+        throw new Error(data?.error || "We couldn't sign you in. Check your username and password and try again.")
+      }
+
       const data = await res.json()
-      throw new Error(data.error || "We couldn't sign you in. Check your username and password and try again.")
+      setAccessToken(data.accessToken)
+      setState({
+        user: data.user,
+        isAuthenticated: true,
+        isLoading: false,
+        needsSetup: false,
+        authEnabled: true,
+      })
+    } catch (error) {
+      throw new Error(getLoginErrorMessage(error))
     }
-
-    const data = await res.json()
-    setAccessToken(data.accessToken)
-    setState({
-      user: data.user,
-      isAuthenticated: true,
-      isLoading: false,
-      needsSetup: false,
-      authEnabled: true,
-    })
   }, [])
 
   const setup = useCallback(async (username: string, password: string, rememberMe = true) => {
@@ -192,6 +217,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   )
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- hook intentionally co-located with its provider
 export function useAuth() {
   const context = useContext(AuthContext)
   if (!context) {
