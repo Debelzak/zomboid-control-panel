@@ -5192,6 +5192,71 @@ handlers.vehicleSetBattery = function(args)
     return true, { message = "Vehicle battery set to " .. charge, vehicleId = tonumber(args.vehicleId), charge = charge }
 end
 
+handlers.removeVehicle = function(args)
+    local vehicle = findVehicleById(args.vehicleId)
+    if not vehicle then return false, nil, "Vehicle not found" end
+
+    local vId = tonumber(args.vehicleId)
+    local vx = vehicle.getX and vehicle:getX() or 0
+    local vy = vehicle.getY and vehicle:getY() or 0
+    local scriptName = vehicle.getScriptName and vehicle:getScriptName() or "unknown"
+
+    local ok, err = pcall(function()
+        if vehicle.permanentlyRemove then
+            vehicle:permanentlyRemove()
+        elseif vehicle.removeFromWorld then
+            vehicle:removeFromWorld()
+        else
+            error("No removal method available")
+        end
+    end)
+    if not ok then return false, nil, "Failed to remove vehicle: " .. tostring(err) end
+
+    return true, { message = "Vehicle removed", vehicleId = vId, scriptName = scriptName, x = vx, y = vy }
+end
+
+handlers.removeVehiclesInArea = function(args)
+    if args.minX == nil or args.minY == nil or args.maxX == nil or args.maxY == nil then
+        return false, nil, "minX, minY, maxX, maxY required"
+    end
+    local minX = math.floor(tonumber(args.minX) or 0)
+    local minY = math.floor(tonumber(args.minY) or 0)
+    local maxX = math.floor(tonumber(args.maxX) or 0)
+    local maxY = math.floor(tonumber(args.maxY) or 0)
+    if maxX < minX then minX, maxX = maxX, minX end
+    if maxY < minY then minY, maxY = maxY, minY end
+
+    local vehicles = getVehiclesList()
+    if not vehicles then return false, nil, "Vehicle list not available" end
+
+    local removed = 0
+    local removedList = {}
+    for i = vehicles:size() - 1, 0, -1 do
+        local v = vehicles:get(i)
+        if v then
+            local vx = v.getX and v:getX() or 0
+            local vy = v.getY and v:getY() or 0
+            if vx >= minX and vx <= maxX and vy >= minY and vy <= maxY then
+                local vId = v.getId and v:getId() or nil
+                local scriptName = v.getScriptName and v:getScriptName() or "unknown"
+                local ok2, err2 = pcall(function()
+                    if v.permanentlyRemove then
+                        v:permanentlyRemove()
+                    elseif v.removeFromWorld then
+                        v:removeFromWorld()
+                    end
+                end)
+                if ok2 then
+                    removed = removed + 1
+                    table.insert(removedList, { id = vId, scriptName = scriptName, x = vx, y = vy })
+                end
+            end
+        end
+    end
+
+    return true, { message = removed .. " vehicle(s) removed from area", removed = removed, vehicles = removedList, bounds = { minX = minX, minY = minY, maxX = maxX, maxY = maxY } }
+end
+
 -- ============================================
 -- AI DIRECTOR EVENT HANDLERS
 -- ============================================

@@ -15,7 +15,9 @@ import {
   Maximize,
   Image,
   ImageOff,
-  FolderOpen
+  FolderOpen,
+  Car,
+  Home,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { PageHeader } from '@/components/PageHeader'
@@ -48,7 +50,7 @@ import {
 import { useToast } from '@/components/ui/use-toast'
 import { Separator } from '@/components/ui/separator'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import { chunksApi, serversApi } from '@/lib/api'
+import { chunksApi, serversApi, panelBridgeApi } from '@/lib/api'
 import { useTheme } from '@/contexts/ThemeContext'
 
 interface SaveInfo {
@@ -82,6 +84,27 @@ interface SaveStats {
   folders: Record<string, { fileCount: number; size: number; sizeFormatted: string }>
   playersDbSize?: number
   vehiclesDbSize?: number
+}
+
+interface ChunkVehicle {
+  id: number
+  x: number // chunk coordinate (game-tile / 10)
+  y: number
+  type: string
+  scriptName: string
+  fuelPct: number
+}
+
+interface ChunkSafehouse {
+  id: string
+  title: string
+  owner: string
+  x: number // chunk coordinate (game-tile / 10)
+  y: number
+  w: number // size in chunks
+  h: number
+  players: string[]
+  playerConnected: boolean
 }
 
 // Camera: screenX = worldX * scale + offset.x
@@ -201,6 +224,13 @@ export default function ChunkCleaner() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [createBackup, setCreateBackup] = useState(true)
   const [deleting, setDeleting] = useState(false)
+  const [deleteVehicles, setDeleteVehicles] = useState(false)
+
+  // Vehicle & safehouse overlays
+  const [chunkVehicles, setChunkVehicles] = useState<ChunkVehicle[]>([])
+  const [chunkSafehouses, setChunkSafehouses] = useState<ChunkSafehouse[]>([])
+  const [showVehicles, setShowVehicles] = useState(true)
+  const [showSafehouses, setShowSafehouses] = useState(true)
 
   // O(1) chunk lookup by coordinate key "x_y"
   const chunkMap = useMemo(() => {
@@ -299,6 +329,8 @@ export default function ChunkCleaner() {
     setStats(null)
     setSelectedChunks(new Set())
     setLimitReached(false)
+    setChunkVehicles([])
+    setChunkSafehouses([])
     
     try {
       const pathToUse = customPath || undefined
@@ -358,9 +390,45 @@ export default function ChunkCleaner() {
     }
   }, [selectedSave, customPath, toast])
 
+  // Fetch vehicles + safehouses from PanelBridge, convert to chunk coords
+  const fetchOverlayData = useCallback(async () => {
+    try {
+      const [vRes, sRes] = await Promise.allSettled([
+        panelBridgeApi.sendCommand('getVehiclesDetailed'),
+        panelBridgeApi.sendCommand('getSafehouses'),
+      ])
+      if (vRes.status === 'fulfilled' && vRes.value.success && Array.isArray(vRes.value.data)) {
+        setChunkVehicles(vRes.value.data.map((v: Record<string, unknown>) => ({
+          id: v.id as number,
+          x: Math.floor((v.x as number) / 10),
+          y: Math.floor((v.y as number) / 10),
+          type: (v.type as string) || (v.scriptName as string)?.split('.').pop() || 'Vehicle',
+          scriptName: (v.scriptName as string) || '',
+          fuelPct: (v.fuelPct as number) || 0,
+        })))
+      }
+      if (sRes.status === 'fulfilled' && sRes.value.success && Array.isArray(sRes.value.data)) {
+        setChunkSafehouses(sRes.value.data.map((s: Record<string, unknown>) => ({
+          id: s.id as string,
+          title: (s.title as string) || '',
+          owner: (s.owner as string) || '',
+          x: Math.floor((s.x as number) / 10),
+          y: Math.floor((s.y as number) / 10),
+          w: Math.max(1, Math.ceil((s.w as number) / 10)),
+          h: Math.max(1, Math.ceil((s.h as number) / 10)),
+          players: (s.players as string[]) || [],
+          playerConnected: (s.playerConnected as boolean) || false,
+        })))
+      }
+    } catch { /* best-effort */ }
+  }, [])
+
   useEffect(() => {
-    if (selectedSave) loadChunks()
-  }, [selectedSave, loadChunks])
+    if (selectedSave) {
+      loadChunks()
+      fetchOverlayData()
+    }
+  }, [selectedSave, loadChunks, fetchOverlayData])
 
   // ─── Fit view to show all chunks ───
   const fitView = useCallback(() => {
@@ -667,6 +735,86 @@ export default function ChunkCleaner() {
           ctx.fillText(lm.name, labelX, sy)
         }
       }
+
+      // ── Safehouse overlays ──
+      if (showSafehouses && chunkSafehouses.length > 0) {
+        for (const sh of chunkSafehouses) {
+          const sx = sh.x * scale + offset.x
+          const sy = sh.y * scale + offset.y
+          const sw = sh.w * scale
+          const shh = sh.h * scale
+
+          // Skip if off screen
+          if (sx + sw < 0 || sx > W || sy + shh < 0 || sy > H) continue
+
+          // Fill
+          ctx.fillStyle = sh.playerConnected
+            ? `hsl(120 60% 40% / 0.15)`
+            : `hsl(120 40% 50% / 0.08)`
+          ctx.fillRect(sx, sy, sw, shh)
+
+          // Border
+          ctx.strokeStyle = sh.playerConnected
+            ? `hsl(120 60% 50% / 0.7)`
+            : `hsl(120 40% 50% / 0.4)`
+          ctx.lineWidth = sh.playerConnected ? 2 : 1
+          ctx.setLineDash([4, 3])
+          ctx.strokeRect(sx, sy, sw, shh)
+          ctx.setLineDash([])
+
+          // Label (only if large enough to read)
+          if (sw > 30 && shh > 20) {
+            const label = sh.title || sh.owner || 'Safehouse'
+            const shFontSize = Math.max(8, Math.min(11, scale * 2))
+            ctx.font = `bold ${shFontSize}px sans-serif`
+            ctx.textAlign = 'center'
+            ctx.textBaseline = 'middle'
+            ctx.fillStyle = `hsl(120 50% 65% / 0.85)`
+            ctx.fillText(label, sx + sw / 2, sy + shh / 2)
+          }
+        }
+      }
+
+      // ── Vehicle markers ──
+      if (showVehicles && chunkVehicles.length > 0) {
+        const vSize = Math.max(2, Math.min(6, scale * 0.8))
+
+        for (const v of chunkVehicles) {
+          const vx = (v.x + 0.5) * scale + offset.x
+          const vy = (v.y + 0.5) * scale + offset.y
+
+          // Skip if off screen
+          if (vx < -10 || vx > W + 10 || vy < -10 || vy > H + 10) continue
+
+          // Dot color by fuel
+          const vColor = v.fuelPct > 30
+            ? hsl(primaryVar, 0.7)
+            : v.fuelPct > 10
+              ? hsl(warningVar, 0.8)
+              : hsl(destructiveVar, 0.8)
+
+          ctx.beginPath()
+          ctx.arc(vx, vy, vSize, 0, Math.PI * 2)
+          ctx.fillStyle = vColor
+          ctx.fill()
+          ctx.strokeStyle = hsl(foregroundVar, 0.4)
+          ctx.lineWidth = 0.5
+          ctx.stroke()
+        }
+
+        // Vehicle count badge (top of map)
+        if (scale > 2) {
+          const vLabel = `${chunkVehicles.length} vehicles`
+          ctx.font = '10px sans-serif'
+          ctx.textAlign = 'right'
+          ctx.textBaseline = 'top'
+          const vm = ctx.measureText(vLabel)
+          ctx.fillStyle = hsl(bgVar || '0 0% 0%', 0.7)
+          ctx.fillRect(W - vm.width - 16, 26, vm.width + 12, 16)
+          ctx.fillStyle = hsl(primaryVar, 0.7)
+          ctx.fillText(vLabel, W - 10, 29)
+        }
+      }
       
       // ── Grid lines (only when zoomed in enough) ──
       if (scale > 4) {
@@ -893,7 +1041,7 @@ export default function ChunkCleaner() {
     
     // Initial draw
     drawCanvasRef.current()
-  }, [chunks, chunkMap, bounds, scale, offset, selectedChunks, selectionStart, selectionEnd, canvasSize, showMap, loadMapTile, loadDziTile, isB42Save])
+  }, [chunks, chunkMap, bounds, scale, offset, selectedChunks, selectionStart, selectionEnd, canvasSize, showMap, loadMapTile, loadDziTile, isB42Save, showVehicles, showSafehouses, chunkVehicles, chunkSafehouses])
 
   // Schedule a canvas redraw via requestAnimationFrame (used by mouse handlers)
   const scheduleDraw = useCallback(() => {
@@ -933,7 +1081,7 @@ export default function ChunkCleaner() {
           setSelectedChunks(new Set())
           break
         case 'Delete':
-          if (selectedChunks.size > 0) setDeleteDialogOpen(true)
+          if (selectedChunks.size > 0) { setDeleteVehicles(false); setDeleteDialogOpen(true) }
           break
         case '1':
           setTool('select')
@@ -1124,6 +1272,33 @@ export default function ChunkCleaner() {
         .filter(c => selectedChunks.has(`${c.x}_${c.y}`))
         .map(c => ({ file: c.file, x: c.x, y: c.y, source: c.source }))
       
+      // If deleteVehicles is checked, remove vehicles in the selected area via PanelBridge
+      if (deleteVehicles) {
+        // Convert chunk coords back to game-tile coords for the PanelBridge command
+        let minGX = Infinity, minGY = Infinity, maxGX = -Infinity, maxGY = -Infinity
+        for (const key of selectedChunks) {
+          const [cx, cy] = key.split('_').map(Number)
+          minGX = Math.min(minGX, cx * 10)
+          minGY = Math.min(minGY, cy * 10)
+          maxGX = Math.max(maxGX, (cx + 1) * 10)
+          maxGY = Math.max(maxGY, (cy + 1) * 10)
+        }
+        try {
+          const vRes = await panelBridgeApi.sendCommand('removeVehiclesInArea', {
+            minX: minGX, minY: minGY, maxX: maxGX, maxY: maxGY
+          })
+          if (vRes.success && vRes.data) {
+            const data = vRes.data as Record<string, unknown>
+            const removed = (typeof data.removed === 'number' ? data.removed : 0)
+            if (removed > 0) {
+              toast({ title: `${removed} vehicle${removed !== 1 ? 's' : ''} removed from area` })
+            }
+          }
+        } catch {
+          toast({ title: 'Warning', description: 'Failed to remove vehicles — chunks will still be deleted', variant: 'destructive' })
+        }
+      }
+
       const result = await chunksApi.deleteChunks(selectedSave, chunksToDelete, createBackup, customPath || undefined)
       
       toast({
@@ -1133,7 +1308,9 @@ export default function ChunkCleaner() {
       
       setDeleteDialogOpen(false)
       setSelectedChunks(new Set())
+      setDeleteVehicles(false)
       await loadChunks()
+      await fetchOverlayData()
     } catch (error) {
       toast({
         title: 'Error',
@@ -1389,6 +1566,24 @@ export default function ChunkCleaner() {
                   </Label>
                   <Switch checked={showMap} onCheckedChange={setShowMap} />
                 </div>
+
+                <div className="flex items-center justify-between pt-0.5">
+                  <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <Car className="w-3.5 h-3.5" />
+                    Vehicles
+                    {chunkVehicles.length > 0 && <span className="text-[10px] tabular-nums opacity-60">({chunkVehicles.length})</span>}
+                  </Label>
+                  <Switch checked={showVehicles} onCheckedChange={setShowVehicles} />
+                </div>
+
+                <div className="flex items-center justify-between pt-0.5">
+                  <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <Home className="w-3.5 h-3.5" />
+                    Safehouses
+                    {chunkSafehouses.length > 0 && <span className="text-[10px] tabular-nums opacity-60">({chunkSafehouses.length})</span>}
+                  </Label>
+                  <Switch checked={showSafehouses} onCheckedChange={setShowSafehouses} />
+                </div>
                 
                 <Separator />
                 
@@ -1419,7 +1614,7 @@ export default function ChunkCleaner() {
               <Button 
                 variant="destructive" 
                 className="w-full h-9 text-sm"
-                onClick={() => setDeleteDialogOpen(true)}
+                onClick={() => { setDeleteVehicles(false); setDeleteDialogOpen(true) }}
               >
                 <Trash2 className="w-4 h-4 mr-2" />
                 Delete {selectedChunks.size} Chunk{selectedChunks.size === 1 ? '' : 's'}
@@ -1542,6 +1737,50 @@ export default function ChunkCleaner() {
                   <p className="text-muted-foreground">You will not be able to recover these chunks after deletion.</p>
                 </div>
               )}
+
+              {/* Vehicle removal option */}
+              {(() => {
+                const selChunkKeys = selectedChunks
+                const vehiclesInArea = chunkVehicles.filter(v => selChunkKeys.has(`${v.x}_${v.y}`))
+                return vehiclesInArea.length > 0 ? (
+                  <div className="flex items-center justify-between p-3 rounded-lg bg-muted">
+                    <div>
+                      <Label className="flex items-center gap-1.5">
+                        <Car className="w-3.5 h-3.5" />
+                        Remove {vehiclesInArea.length} vehicle{vehiclesInArea.length !== 1 ? 's' : ''} in area
+                      </Label>
+                      <p className="text-xs text-muted-foreground">
+                        Vehicles in deleted chunks persist in vehicles.db. Enable to remove them.
+                      </p>
+                    </div>
+                    <Switch checked={deleteVehicles} onCheckedChange={setDeleteVehicles} />
+                  </div>
+                ) : null
+              })()}
+
+              {/* Safehouse overlap warning */}
+              {(() => {
+                const selChunkKeys = selectedChunks
+                const overlapping = chunkSafehouses.filter(sh => {
+                  for (let cx = sh.x; cx < sh.x + sh.w; cx++) {
+                    for (let cy = sh.y; cy < sh.y + sh.h; cy++) {
+                      if (selChunkKeys.has(`${cx}_${cy}`)) return true
+                    }
+                  }
+                  return false
+                })
+                return overlapping.length > 0 ? (
+                  <div className="rounded-lg border border-warning/25 bg-warning/8 p-3 text-sm">
+                    <p className="font-medium text-warning flex items-center gap-1.5">
+                      <Home className="w-3.5 h-3.5" />
+                      {overlapping.length} safehouse{overlapping.length !== 1 ? 's' : ''} in deletion area
+                    </p>
+                    <p className="text-muted-foreground text-xs mt-1 truncate">
+                      {overlapping.slice(0, 5).map(sh => sh.owner || sh.title || 'Unknown').join(', ')}{overlapping.length > 5 ? ` +${overlapping.length - 5} more` : ''} — structures will be lost when chunks regenerate.
+                    </p>
+                  </div>
+                ) : null
+              })()}
             </div>
             
             <DialogFooter>

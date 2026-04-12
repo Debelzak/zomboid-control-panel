@@ -21,6 +21,11 @@ import {
   Hammer,
   Wrench,
   Target,
+  Car,
+  Home,
+  Fuel,
+  Battery,
+  Trash2,
 } from 'lucide-react'
 import { PageHeader } from '@/components/PageHeader'
 import { BridgeStatusBadge } from '@/components/BridgeStatusBadge'
@@ -72,6 +77,7 @@ interface ContextMenu {
   worldX: number // game-tile coordinate for actions
   worldY: number
   player?: MapPlayer
+  vehicle?: MapVehicle
 }
 
 interface AirdropMarker {
@@ -79,6 +85,34 @@ interface AirdropMarker {
   y: number
   preset: string
   time: number // Date.now()
+}
+
+interface MapVehicle {
+  id: number
+  x: number
+  y: number
+  z: number
+  scriptName: string
+  type: string
+  speedKmh: number
+  batteryCharge: number
+  fuelPct: number
+  alarmed: boolean
+  sirening: boolean
+  trunkLocked: boolean
+}
+
+interface MapSafehouse {
+  id: string
+  title: string
+  owner: string
+  x: number
+  y: number
+  w: number
+  h: number
+  players: string[]
+  playerConnected: boolean
+  lastVisited?: string
 }
 
 // Airdrop preset definitions
@@ -198,6 +232,18 @@ function resolveCanvasColors() {
     crosshair: hslToken('--foreground', 0.12),
     // Username label
     usernameLabel: hslToken('--foreground'),
+    // Vehicles
+    vehicleMarker: hslToken('--info', 0.85),
+    vehicleMarkerHover: hslToken('--info', 1),
+    vehicleLabel: hslToken('--info', 0.8),
+    vehicleGlow: hslToken('--info', 0.15),
+    vehicleFuelWarn: hslToken('--warning', 0.85),
+    vehicleFuelCrit: hslToken('--destructive', 0.85),
+    // Safehouses
+    safehouseFill: hslToken('--success', 0.08),
+    safehouseStroke: hslToken('--success', 0.45),
+    safehouseStrokeActive: hslToken('--success', 0.7),
+    safehouseLabel: hslToken('--success', 0.75),
   }
 }
 
@@ -212,7 +258,7 @@ const PZ_LANDMARKS = [
   { name: 'Louisville',     gx: 12700, gy:  1700 },
   { name: 'March Ridge',    gx: 10100, gy: 12700 },
   { name: 'Valley Station', gx: 13200, gy:  5300 },
-  { name: 'Ekron',          gx:  7460, gy:  9050 },
+  { name: 'Fallas Lake',    gx:  7460, gy:  9050 },
 ]
 
 // ─── Component ────────────────────────────────────────────
@@ -245,6 +291,13 @@ export default function WorldMap() {
   const actionLoadingRef = useRef<string | null>(null)
   const mountedRef = useRef(true)
   const [airdropMarkers, setAirdropMarkers] = useState<AirdropMarker[]>([])
+  const [vehicles, setVehicles] = useState<MapVehicle[]>([])
+  const [safehouses, setSafehouses] = useState<MapSafehouse[]>([])
+  const [showVehicles, setShowVehicles] = useState(true)
+  const [showSafehouses, setShowSafehouses] = useState(true)
+  const [hoveredVehicle, setHoveredVehicle] = useState<number | null>(null) // vehicle id
+  const vehiclesRef = useRef<MapVehicle[]>([])
+  const safehousesRef = useRef<MapSafehouse[]>([])
 
   const { toast } = useToast()
 
@@ -313,6 +366,8 @@ export default function WorldMap() {
   offsetRef.current = offset
   const airdropMarkersRef = useRef(airdropMarkers)
   airdropMarkersRef.current = airdropMarkers
+  useEffect(() => { vehiclesRef.current = vehicles }, [vehicles])
+  useEffect(() => { safehousesRef.current = safehouses }, [safehouses])
 
   // ─── Map tile cache ─────────────────────────────────────
   const tileCacheRef = useRef<Record<string, HTMLImageElement | null>>({})
@@ -423,11 +478,39 @@ export default function WorldMap() {
     }
   }, [])
 
+  // Fetch vehicles + safehouses from PanelBridge
+  const fetchOverlays = useCallback(async () => {
+    if (!mountedRef.current) return
+    try {
+      const [vRes, sRes] = await Promise.allSettled([
+        panelBridgeApi.sendCommand('getVehiclesDetailed'),
+        panelBridgeApi.sendCommand('getSafehouses'),
+      ])
+      if (!mountedRef.current) return
+      if (vRes.status === 'fulfilled' && vRes.value.success && Array.isArray(vRes.value.data)) {
+        setVehicles(vRes.value.data as MapVehicle[])
+      }
+      if (sRes.status === 'fulfilled' && sRes.value.success && Array.isArray(sRes.value.data)) {
+        setSafehouses(sRes.value.data as MapSafehouse[])
+      }
+    } catch { /* best-effort */ }
+  }, [])
+
   // ─── Polling ────────────────────────────────────────────
   useEffect(() => {
     checkBridgeStatus()
     fetchPlayerPositions()
   }, [fetchPlayerPositions, checkBridgeStatus])
+
+  // Fetch overlays on bridge connect and periodically (every 15s)
+  useEffect(() => {
+    if (!bridgeConnected) return
+    fetchOverlays()
+    const interval = setInterval(() => {
+      if (document.visibilityState !== 'hidden') fetchOverlays()
+    }, 15_000)
+    return () => clearInterval(interval)
+  }, [bridgeConnected, fetchOverlays])
 
   useEffect(() => {
     if (!bridgeConnected) return
@@ -538,6 +621,116 @@ export default function WorldMap() {
       // Label
       ctx.fillStyle = C.landmarkLabel
       ctx.fillText(lm.name, p.x, p.y - markerSize - 4)
+    }
+
+    // ── Safehouse rectangles ──
+    if (showSafehouses) {
+      const currentSafehouses = safehousesRef.current
+      for (const sh of currentSafehouses) {
+        // Safehouses have x, y (top-left game-tile) and w, h (size in game-tiles)
+        const topLeft = playerToScreen(sh.x, sh.y, s, off)
+        const bottomRight = playerToScreen(sh.x + sh.w, sh.y + sh.h, s, off)
+        // Isometric: we need all 4 corners for the diamond shape
+        const topRight = playerToScreen(sh.x + sh.w, sh.y, s, off)
+        const bottomLeft = playerToScreen(sh.x, sh.y + sh.h, s, off)
+
+        // Cull if entirely off-screen
+        const allX = [topLeft.x, topRight.x, bottomRight.x, bottomLeft.x]
+        const allY = [topLeft.y, topRight.y, bottomRight.y, bottomLeft.y]
+        const minPx = Math.min(...allX)
+        const maxPx = Math.max(...allX)
+        const minPy = Math.min(...allY)
+        const maxPy = Math.max(...allY)
+        if (maxPx < -50 || minPx > W + 50 || maxPy < -50 || minPy > H + 50) continue
+
+        // Draw isometric diamond
+        ctx.beginPath()
+        ctx.moveTo(topLeft.x, topLeft.y)
+        ctx.lineTo(topRight.x, topRight.y)
+        ctx.lineTo(bottomRight.x, bottomRight.y)
+        ctx.lineTo(bottomLeft.x, bottomLeft.y)
+        ctx.closePath()
+        ctx.fillStyle = C.safehouseFill
+        ctx.fill()
+        ctx.strokeStyle = sh.playerConnected ? C.safehouseStrokeActive : C.safehouseStroke
+        ctx.lineWidth = sh.playerConnected ? 2 : 1
+        ctx.stroke()
+
+        // Label (only show when zoomed in enough)
+        if (s > 0.0008) {
+          const centerX = (minPx + maxPx) / 2
+          const centerY = (minPy + maxPy) / 2
+          const shFontSize = Math.max(8, Math.min(11, s * 2000))
+          ctx.font = `600 ${shFontSize}px ui-sans-serif, system-ui, sans-serif`
+          ctx.textAlign = 'center'
+          ctx.fillStyle = C.safehouseLabel
+          const displayName = sh.title || sh.owner || 'Safehouse'
+          ctx.fillText(displayName, centerX, centerY - 2)
+          if (sh.owner && sh.owner !== displayName) {
+            ctx.font = `400 ${shFontSize * 0.85}px ui-sans-serif, system-ui, sans-serif`
+            ctx.fillText(sh.owner, centerX, centerY + shFontSize)
+          }
+        }
+      }
+    }
+
+    // ── Vehicle markers ──
+    if (showVehicles) {
+      const currentVehicles = vehiclesRef.current
+      const vRadius = Math.max(3, Math.min(7, s * 1000))
+
+      for (const vehicle of currentVehicles) {
+        const vp = playerToScreen(vehicle.x, vehicle.y, s, off)
+        if (vp.x < -30 || vp.x > W + 30 || vp.y < -30 || vp.y > H + 30) continue
+
+        const isHovered = hoveredVehicle === vehicle.id
+        const pinScale = isHovered ? 1.25 : 1
+        const r = vRadius * pinScale
+
+        // Glow on hover
+        if (isHovered) {
+          ctx.beginPath()
+          ctx.arc(vp.x, vp.y, r + 5, 0, Math.PI * 2)
+          ctx.fillStyle = C.vehicleGlow
+          ctx.fill()
+        }
+
+        // Vehicle dot
+        ctx.beginPath()
+        ctx.arc(vp.x, vp.y, r, 0, Math.PI * 2)
+        // Color by fuel status
+        const vColor = vehicle.fuelPct > 30
+          ? C.vehicleMarker
+          : vehicle.fuelPct > 10
+            ? C.vehicleFuelWarn
+            : C.vehicleFuelCrit
+        ctx.fillStyle = isHovered ? C.vehicleMarkerHover : vColor
+        ctx.fill()
+        ctx.strokeStyle = C.shadowLight
+        ctx.lineWidth = 1
+        ctx.stroke()
+
+        // Tiny car shape (rectangle body on top of the dot)
+        if (s > 0.0005) {
+          const bw = r * 1.6
+          const bh = r * 0.8
+          ctx.fillStyle = isHovered ? C.vehicleMarkerHover : vColor
+          ctx.beginPath()
+          ctx.roundRect(vp.x - bw / 2, vp.y - bh / 2, bw, bh, 1)
+          ctx.fill()
+        }
+
+        // Label on hover or at high zoom
+        if ((isHovered || s > 0.003) && s > 0.0008) {
+          const vFontSize = Math.max(8, Math.min(10, s * 1800))
+          ctx.font = `500 ${vFontSize}px ui-sans-serif, system-ui, sans-serif`
+          ctx.textAlign = 'center'
+          ctx.fillStyle = C.vehicleLabel
+          // Show short vehicle name (e.g. "Chevalier Dart" from "Base.VehicleName")
+          const shortName = vehicle.type || vehicle.scriptName.split('.').pop() || 'Vehicle'
+          ctx.fillText(shortName, vp.x, vp.y - r - 3)
+        }
+      }
     }
 
     // ── Player markers ──
@@ -805,7 +998,7 @@ export default function WorldMap() {
       ctx.stroke()
       ctx.setLineDash([])
     }
-  }, [canvasSize, loadDziTile, playerToScreen, hoveredPlayer, selectedPlayer, cursorWorldPos, isDragging])
+  }, [canvasSize, loadDziTile, playerToScreen, hoveredPlayer, selectedPlayer, cursorWorldPos, isDragging, showVehicles, showSafehouses, hoveredVehicle])
 
   // ─── Animation loop ─────────────────────────────────────
   useEffect(() => {
@@ -991,8 +1184,22 @@ export default function WorldMap() {
         }
       }
       setHoveredPlayer(found)
+
+      // Hit test vehicles
+      let foundVehicle: number | null = null
+      if (showVehicles && !found) {
+        for (const v of vehiclesRef.current) {
+          const vp = playerToScreen(v.x, v.y)
+          const dist = Math.sqrt((mx - vp.x) ** 2 + (my - vp.y) ** 2)
+          if (dist < MARKER_HIT_RADIUS) {
+            foundVehicle = v.id
+            break
+          }
+        }
+      }
+      setHoveredVehicle(foundVehicle)
     },
-    [isDragging, dragStart, screenToTile, playerToScreen]
+    [isDragging, dragStart, screenToTile, playerToScreen, showVehicles]
   )
 
   const handleMouseUp = useCallback(
@@ -1044,20 +1251,34 @@ export default function WorldMap() {
         }
       }
 
+      let clickedVehicle: MapVehicle | undefined
+      if (!clickedPlayer && showVehicles) {
+        for (const v of vehiclesRef.current) {
+          const vp = playerToScreen(v.x, v.y)
+          const dist = Math.sqrt((mx - vp.x) ** 2 + (my - vp.y) ** 2)
+          if (dist < MARKER_HIT_RADIUS) {
+            clickedVehicle = v
+            break
+          }
+        }
+      }
+
       setContextMenu({
         screenX: mx,
         screenY: my,
         worldX: wp.x,
         worldY: wp.y,
         player: clickedPlayer,
+        vehicle: clickedVehicle,
       })
     },
-    [screenToTile, playerToScreen]
+    [screenToTile, playerToScreen, showVehicles]
   )
 
   const handleMouseLeave = useCallback(() => {
     setIsDragging(false)
     setHoveredPlayer(null)
+    setHoveredVehicle(null)
     setCursorWorldPos(null)
   }, [])
 
@@ -1360,6 +1581,29 @@ export default function WorldMap() {
           >
             <Maximize2 className="w-4 h-4" />
           </button>
+          <div className="w-full h-px bg-border/30 my-0.5" />
+          <button
+            onClick={() => setShowVehicles((v) => !v)}
+            aria-label={showVehicles ? 'Hide vehicles' : 'Show vehicles'}
+            className={cn(
+              'w-10 h-10 rounded-lg backdrop-blur border flex items-center justify-center transition-colors',
+              showVehicles ? 'bg-info/15 border-info/40 text-info' : 'bg-background/80 border-border/60 text-muted-foreground hover:bg-muted'
+            )}
+            title={`${showVehicles ? 'Hide' : 'Show'} vehicles (${vehicles.length})`}
+          >
+            <Car className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => setShowSafehouses((v) => !v)}
+            aria-label={showSafehouses ? 'Hide safehouses' : 'Show safehouses'}
+            className={cn(
+              'w-10 h-10 rounded-lg backdrop-blur border flex items-center justify-center transition-colors',
+              showSafehouses ? 'bg-success/15 border-success/40 text-success' : 'bg-background/80 border-border/60 text-muted-foreground hover:bg-muted'
+            )}
+            title={`${showSafehouses ? 'Hide' : 'Show'} safehouses (${safehouses.length})`}
+          >
+            <Home className="w-4 h-4" />
+          </button>
         </div>
 
         {/* Player list panel */}
@@ -1572,6 +1816,95 @@ export default function WorldMap() {
               </>
             )}
 
+            {contextMenu.vehicle && (
+              <>
+                <div className="px-2 py-1.5 text-xs text-muted-foreground border-b border-border/20 truncate select-none">
+                  <Car className="w-3 h-3 inline mr-1" />
+                  <strong className="text-foreground">{contextMenu.vehicle.type || contextMenu.vehicle.scriptName.split('.').pop()}</strong>
+                </div>
+                <div className="px-2 py-1 text-[10px] text-muted-foreground/70 flex gap-3 select-none">
+                  <span>Fuel: {Math.round(contextMenu.vehicle.fuelPct)}%</span>
+                  <span>Battery: {Math.round(contextMenu.vehicle.batteryCharge)}%</span>
+                </div>
+                <ContextMenuItem
+                  icon={<Wrench className="w-3.5 h-3.5" />}
+                  label="Repair vehicle"
+                  loading={actionLoading === 'vehicle-repair'}
+                  onClick={() => {
+                    setActionLoading('vehicle-repair')
+                    panelBridgeApi.sendCommand('vehicleRepair', { vehicleId: contextMenu.vehicle!.id })
+                      .then((res) => {
+                        if (res.success) {
+                          toast({ title: 'Vehicle repaired' })
+                          fetchOverlays()
+                        } else {
+                          toast({ title: 'Repair failed', description: res.error || 'Unknown error', variant: 'destructive' })
+                        }
+                      })
+                      .catch(() => toast({ title: 'Error', variant: 'destructive' }))
+                      .finally(() => { setActionLoading(null); setContextMenu(null) })
+                  }}
+                />
+                <ContextMenuItem
+                  icon={<Fuel className="w-3.5 h-3.5" />}
+                  label="Fill fuel"
+                  loading={actionLoading === 'vehicle-fuel'}
+                  onClick={() => {
+                    setActionLoading('vehicle-fuel')
+                    panelBridgeApi.sendCommand('vehicleSetFuel', { vehicleId: contextMenu.vehicle!.id, level: 100 })
+                      .then((res) => {
+                        if (res.success) {
+                          toast({ title: 'Fuel filled to 100%' })
+                          fetchOverlays()
+                        } else {
+                          toast({ title: 'Fuel failed', description: res.error || 'Unknown error', variant: 'destructive' })
+                        }
+                      })
+                      .catch(() => toast({ title: 'Error', variant: 'destructive' }))
+                      .finally(() => { setActionLoading(null); setContextMenu(null) })
+                  }}
+                />
+                <ContextMenuItem
+                  icon={<Battery className="w-3.5 h-3.5" />}
+                  label="Charge battery"
+                  loading={actionLoading === 'vehicle-battery'}
+                  onClick={() => {
+                    setActionLoading('vehicle-battery')
+                    panelBridgeApi.sendCommand('vehicleSetBattery', { vehicleId: contextMenu.vehicle!.id, level: 100 })
+                      .then((res) => {
+                        if (res.success) {
+                          toast({ title: 'Battery charged to 100%' })
+                          fetchOverlays()
+                        } else {
+                          toast({ title: 'Battery failed', description: res.error || 'Unknown error', variant: 'destructive' })
+                        }
+                      })
+                      .catch(() => toast({ title: 'Error', variant: 'destructive' }))
+                      .finally(() => { setActionLoading(null); setContextMenu(null) })
+                  }}
+                />
+                <ContextMenuItem
+                  icon={<Trash2 className="w-3.5 h-3.5 text-destructive" />}
+                  label="Remove vehicle"
+                  loading={actionLoading === 'vehicle-remove'}
+                  onClick={() => {
+                    setActionLoading('vehicle-remove')
+                    panelBridgeApi.sendCommand('removeVehicle', { vehicleId: contextMenu.vehicle!.id })
+                      .then((res) => {
+                        if (res.success) {
+                          toast({ title: 'Vehicle removed' })
+                          fetchOverlays()
+                        } else {
+                          toast({ title: 'Remove failed', description: res.error || 'Unknown error', variant: 'destructive' })
+                        }
+                      })
+                      .catch(() => toast({ title: 'Error', variant: 'destructive' }))
+                      .finally(() => { setActionLoading(null); setContextMenu(null) })
+                  }}
+                />
+              </>
+            )}
+
             <div className="border-t border-border/20 pt-0.5">
               <ContextMenuItem
                 icon={<CloudLightning className="w-3.5 h-3.5" />}
@@ -1632,7 +1965,7 @@ export default function WorldMap() {
             onTouchEnd={handleTouchEnd}
             onContextMenu={handleContextMenu}
             onKeyDown={handleKeyDown}
-            className={cn('block w-full h-full outline-none focus-visible:ring-2 focus-visible:ring-primary/50', isDragging ? 'cursor-grabbing' : hoveredPlayer ? 'cursor-pointer' : 'cursor-grab')}
+            className={cn('block w-full h-full outline-none focus-visible:ring-2 focus-visible:ring-primary/50', isDragging ? 'cursor-grabbing' : (hoveredPlayer || hoveredVehicle) ? 'cursor-pointer' : 'cursor-grab')}
           />
         </div>
       </div>
