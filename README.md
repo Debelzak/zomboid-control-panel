@@ -83,7 +83,7 @@ After login, save it permanently in **Settings → Remote Access**. Use a revers
 
 ### PanelBridge (Optional)
 
-PanelBridge is a Lua mod that enables everything RCON can't do. Copy `pz-mod/PanelBridge` to your server's mods folder, set `DoLuaChecksum=false` in the server INI, restart, and point the panel to the bridge path in Settings.
+PanelBridge is a Lua mod that enables everything RCON can't do. The panel installs it automatically — just set `DoLuaChecksum=false` in your server INI, restart the PZ server, and enable it in Settings.
 
 ---
 
