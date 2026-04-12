@@ -4,6 +4,7 @@ After=network.target
 
 [Service]
 Type=simple
+# Create this user first: sudo useradd -r -m -s /bin/false pzuser
 User=pzuser
 Group=pzuser
 WorkingDirectory=/opt/zomboid-panel
@@ -13,12 +14,31 @@ RestartSec=5
 StandardOutput=journal
 StandardError=journal
 
+# Resource limits (important for CentOS/RHEL)
+LimitNOFILE=65536
+LimitNPROC=4096
+
 # Security hardening
 NoNewPrivileges=true
-ProtectSystem=strict
+# Use 'full' instead of 'strict' — strict breaks pkg binaries on CentOS (needs /usr/lib64)
+ProtectSystem=full
 ProtectHome=read-only
 ReadWritePaths=/opt/zomboid-panel/data /opt/zomboid-panel/logs
 PrivateTmp=true
+PrivateDevices=true
+RestrictRealtime=true
+
+# If PZ server data is outside /opt, add its path here (uncomment and adjust):
+# ReadWritePaths=/opt/zomboid-panel/data /opt/zomboid-panel/logs /home/pzuser/Zomboid
+
+# SELinux (CentOS/RHEL): If SELinux blocks access, run:
+#   sudo semanage fcontext -a -t admin_home_t "/opt/zomboid-panel(/.*)?"
+#   sudo restorecon -Rv /opt/zomboid-panel
+# Or set the service to permissive for its domain:
+#   sudo semanage permissive -a init_t
+
+# Firewall: Open port 3001 if firewalld is active:
+#   sudo firewall-cmd --permanent --add-port=3001/tcp && sudo firewall-cmd --reload
 
 [Install]
 WantedBy=multi-user.target
