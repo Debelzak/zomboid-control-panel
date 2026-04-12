@@ -1,5 +1,10 @@
 # Zomboid Control Panel - Docker
 # Multi-stage build: build client in stage 1, lean runtime in stage 2
+#
+# Default: Alpine-based (smallest image, works on any Docker host).
+# For CentOS/RHEL hosts with SELinux, add :z to volume mounts in docker-compose.yml.
+# For a RHEL-native image, see Dockerfile.rhel in the repo or use:
+#   docker build --build-arg BASE=node:18-bookworm-slim -f Dockerfile .
 
 # --- Build stage ---
 FROM node:18-alpine AS builder
@@ -46,7 +51,7 @@ EXPOSE 3001
 
 ENV NODE_ENV=production
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD node -e "import('http').then(h => h.get('http://localhost:3001/api/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1)))"
 
 CMD ["node", "server/index.js"]

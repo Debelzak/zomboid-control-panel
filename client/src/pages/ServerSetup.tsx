@@ -146,6 +146,7 @@ export default function ServerSetup() {
   const socket = useContext(SocketContext)
   const logsEndRef = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
+  const navigateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [startingServer, setStartingServer] = useState(false)
 
   // Refs for socket handler closure — avoids re-registering socket listeners when form state changes
@@ -153,6 +154,11 @@ export default function ServerSetup() {
   useEffect(() => {
     formStateRef.current = { serverName, installPath, zomboidDataPath, useCustomDataPath, rconPort, rconPassword, serverPort, minMemory, maxMemory, useNoSteam, useDebug }
   }, [serverName, installPath, zomboidDataPath, useCustomDataPath, rconPort, rconPassword, serverPort, minMemory, maxMemory, useNoSteam, useDebug])
+
+  // Clean up navigate timer on unmount
+  useEffect(() => () => {
+    if (navigateTimerRef.current) clearTimeout(navigateTimerRef.current)
+  }, [])
 
   // Total steps based on mode
   const totalSteps = setupMode === 'quick' ? 3 : 4
@@ -181,7 +187,7 @@ export default function ServerSetup() {
     if (!rconPassword) {
       setRconPassword(generatePassword(12))
     }
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps -- intentional mount-only: only generate once if blank
 
   // Auto-detect RAM on mount
   useEffect(() => {
@@ -238,7 +244,7 @@ export default function ServerSetup() {
     if (hasSteamCmd && steamCmdPath) {
       fetchBranches()
     }
-  }, [hasSteamCmd, steamCmdPath])
+  }, [hasSteamCmd, steamCmdPath]) // eslint-disable-line react-hooks/exhaustive-deps -- branch intentionally excluded; setBranch('public') inside is a deliberate fallback, not a dep
 
   // Auto-scroll logs
   useEffect(() => {
@@ -359,7 +365,6 @@ export default function ServerSetup() {
       socket.off('steamcmd:status', handleSteamCmdStatus)
       socket.off('steamcmd:log', handleSteamCmdLog)
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket, toast])
 
   const addLog = (type: InstallLog['type'], message: string) => {
@@ -560,13 +565,13 @@ export default function ServerSetup() {
             role="button"
             tabIndex={0}
             aria-describedby="full-setup-description"
-            className="group relative overflow-hidden cursor-pointer border-border/70 bg-gradient-to-br from-card via-secondary/50 to-accent/12 transition-[border-color,box-shadow,background-color] hover:border-primary/40 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            className="group relative overflow-hidden cursor-pointer border-border/70 bg-card transition-[border-color,box-shadow,background-color] hover:border-primary/40 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             onClick={activate}
             onKeyDown={(event) => handleCardKeyDown(event, activate)}
           >
-            <div className="absolute inset-0 bg-gradient-to-br from-primary/12 via-accent/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+            <div className="absolute inset-0 bg-primary/10 opacity-0 group-hover:opacity-100 transition-opacity" />
             <CardHeader className="pb-4">
-              <div className="w-14 h-14 rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/18 to-accent/16 flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
+              <div className="w-14 h-14 rounded-2xl border border-primary/20 bg-primary/15 flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
                 <Download className="w-7 h-7 text-primary" />
               </div>
               <CardTitle className="text-xl">Fresh Install</CardTitle>
@@ -609,13 +614,13 @@ export default function ServerSetup() {
             role="button"
             tabIndex={0}
             aria-describedby="quick-setup-description"
-            className="group relative overflow-hidden cursor-pointer border-border/70 bg-gradient-to-br from-card via-secondary/45 to-primary/10 transition-[border-color,box-shadow,background-color] hover:border-primary/30 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            className="group relative overflow-hidden cursor-pointer border-border/70 bg-card transition-[border-color,box-shadow,background-color] hover:border-primary/30 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             onClick={activate}
             onKeyDown={(event) => handleCardKeyDown(event, activate)}
           >
-            <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-accent/8 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+            <div className="absolute inset-0 bg-primary/10 opacity-0 group-hover:opacity-100 transition-opacity" />
             <CardHeader className="pb-4">
-              <div className="w-14 h-14 rounded-2xl border border-primary/18 bg-gradient-to-br from-primary/16 to-secondary flex items-center justify-center mb-4 group-hover:bg-primary/22 transition-colors">
+              <div className="w-14 h-14 rounded-2xl border border-primary/18 bg-primary/15 flex items-center justify-center mb-4 group-hover:bg-primary/22 transition-colors">
                 <Plus className="w-7 h-7 text-primary" />
               </div>
               <CardTitle className="text-xl">Use Existing Files</CardTitle>
@@ -1125,6 +1130,7 @@ export default function ServerSetup() {
                 min={2}
                 max={16}
                 step={1}
+                aria-label={`Minimum RAM: ${minMemory}GB`}
               />
             </div>
 
@@ -1142,6 +1148,7 @@ export default function ServerSetup() {
                 min={2}
                 max={16}
                 step={1}
+                aria-label={`Maximum RAM: ${maxMemory}GB`}
               />
             </div>
           </div>
@@ -1356,7 +1363,7 @@ export default function ServerSetup() {
 
       {/* Post-install */}
       {installComplete && (
-        <Card className="border-primary/32 bg-gradient-to-br from-primary/10 via-secondary/45 to-card shadow-sm">
+        <Card className="border-primary/32 bg-card shadow-sm">
           <CardContent className="pt-6 space-y-4">
             <div className="flex items-center gap-2 text-primary">
               <CheckCircle className="w-5 h-5" />
@@ -1382,7 +1389,7 @@ export default function ServerSetup() {
                   try {
                     await serverApi.start()
                     toast({ title: 'Server Starting', description: 'Redirecting to the dashboard...' })
-                    setTimeout(() => navigate('/'), 2000)
+                    navigateTimerRef.current = setTimeout(() => navigate('/'), 2000)
                   } catch (error) {
                     toast({ 
                       title: 'Start Failed', 
@@ -1601,6 +1608,7 @@ export default function ServerSetup() {
                   min={2}
                   max={16}
                   step={1}
+                  aria-label={`Minimum RAM: ${minMemory}GB`}
                 />
               </div>
 
@@ -1618,6 +1626,7 @@ export default function ServerSetup() {
                   min={2}
                   max={16}
                   step={1}
+                  aria-label={`Maximum RAM: ${maxMemory}GB`}
                 />
               </div>
             </div>
@@ -1815,7 +1824,7 @@ export default function ServerSetup() {
 
       {/* Post-create */}
       {installComplete && (
-        <Card className="border-primary/30 bg-gradient-to-r from-primary/10 via-secondary/45 to-card shadow-sm">
+        <Card className="border-primary/30 bg-card shadow-sm">
           <CardContent className="pt-6 space-y-4">
             <div className="flex items-center gap-2 text-primary">
               <CheckCircle className="w-5 h-5" />
@@ -1829,7 +1838,7 @@ export default function ServerSetup() {
                   try {
                     await serverApi.start()
                     toast({ title: 'Server Starting', description: 'Redirecting to the dashboard...' })
-                    setTimeout(() => navigate('/'), 2000)
+                    navigateTimerRef.current = setTimeout(() => navigate('/'), 2000)
                   } catch (error) {
                     toast({ 
                       title: 'Start Failed', 

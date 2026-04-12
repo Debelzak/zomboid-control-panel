@@ -53,7 +53,7 @@ export function AuthScreenLayout({
 
           <Card className="border-border/60 bg-card/80 shadow-[0_24px_80px_-40px_hsl(var(--foreground)/0.45)]">
             <CardHeader className="space-y-2 pb-5">
-              <CardTitle className="text-xl font-semibold tracking-tight">{cardTitle}</CardTitle>
+              <CardTitle as="h2" className="text-xl font-semibold tracking-tight">{cardTitle}</CardTitle>
               <CardDescription className="max-w-sm text-sm leading-6">{cardDescription}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">{children}</CardContent>

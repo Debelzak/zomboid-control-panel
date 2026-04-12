@@ -363,7 +363,7 @@ export default function Scheduler() {
 
   if (initialLoading) {
     return (
-      <div className="flex items-center justify-center h-[60vh]">
+      <div className="flex items-center justify-center min-h-[320px] py-12">
         <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
       </div>
     )

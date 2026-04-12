@@ -6,7 +6,7 @@ import os from 'os';
 import { createLogger } from '../utils/logger.js';
 const log = createLogger('API:Server');
 import { logServerEvent, setSetting, getSetting, getActiveServer } from '../database/init.js';
-import { sanitizeError } from '../utils/sanitize.js';
+import { sanitizeError, sanitizeIniValue } from '../utils/sanitize.js';
 
 const router = express.Router();
 
@@ -165,10 +165,8 @@ function isValidPath(inputPath) {
   return true;
 }
 
-// Security: Strip newlines from values before writing to INI files to prevent injection
-function sanitizeIniValue(value) {
-  return String(value).replace(/[\r\n]/g, '');
-}
+// Security: INI sanitization imported from shared util
+// sanitizeIniValue strips \r\n;= to prevent injection
 
 // Security: Validate integer in range
 function validateInt(value, min, max, defaultVal) {

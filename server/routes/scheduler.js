@@ -15,6 +15,28 @@ import {
 
 const router = express.Router();
 
+/**
+ * Check if a cron expression runs more frequently than every 5 minutes.
+ * Parses the minute and hour fields to detect sub-5-minute intervals.
+ */
+function isCronTooFrequent(expr) {
+  const parts = expr.trim().split(/\s+/);
+  if (parts.length < 5) return false;
+  const [minute, hour] = parts;
+  
+  // Every minute: * or */1 through */4
+  if (minute === '*') return true;
+  if (/^\*\/([1-4])$/.test(minute)) return true;
+  
+  // Comma-separated minutes with more than 12 entries per hour means <5min average
+  if (hour === '*' && minute.includes(',')) {
+    const values = minute.split(',').filter(Boolean);
+    if (values.length > 12) return true;
+  }
+  
+  return false;
+}
+
 // Get scheduler status
 router.get('/status', async (req, res) => {
   try {
@@ -84,6 +106,11 @@ router.post('/tasks', async (req, res) => {
       return res.status(400).json({ error: 'Invalid cron expression. Use format: minute hour day month weekday (e.g., "0 */6 * * *" for every 6 hours)' });
     }
     
+    // Security: Reject tasks that run more frequently than every 5 minutes to prevent DoS
+    if (isCronTooFrequent(cronExpression)) {
+      return res.status(400).json({ error: 'Tasks cannot run more frequently than every 5 minutes' });
+    }
+    
     const result = await createScheduledTask(name, cronExpression, command);
     const task = {
       id: result.id,
@@ -133,6 +160,11 @@ router.put('/tasks/:id', async (req, res) => {
     // Validate cron expression before saving to prevent DB/scheduler inconsistency
     if (cronExpression && !cron.validate(cronExpression)) {
       return res.status(400).json({ error: 'Invalid cron expression. Use format: minute hour day month weekday (e.g., "0 */6 * * *" for every 6 hours)' });
+    }
+    
+    // Security: Reject tasks that run more frequently than every 5 minutes to prevent DoS
+    if (cronExpression && isCronTooFrequent(cronExpression)) {
+      return res.status(400).json({ error: 'Tasks cannot run more frequently than every 5 minutes' });
     }
     
     await updateScheduledTask(taskId, name, cronExpression, command, enabled);

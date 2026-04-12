@@ -1,5 +1,7 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import { useSocket } from '@/contexts/SocketContext'
+import { usePageShortcut } from '../hooks/useKeyboardShortcuts'
 import { 
   Package, 
   RefreshCw, 
@@ -176,8 +178,12 @@ export default function Mods() {
   const [searchQuery, setSearchQuery] = useState('')
   const [deferredSearchQuery, setDeferredSearchQuery] = useState('')
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
   const [showUpdatesOnly, setShowUpdatesOnly] = useState(false)
   const [selectedMods, setSelectedMods] = useState<Set<string>>(new Set())
+
+  // Ctrl+K = focus search
+  usePageShortcut('k', () => { searchInputRef.current?.focus() }, { ctrl: true })
 
   // Advanced Add Mod dialog (with multi-ID selection)
   const [advancedAddOpen, setAdvancedAddOpen] = useState(false)
@@ -530,7 +536,7 @@ export default function Mods() {
       fetchPresets()
     } catch (error) {
       toast({
-        title: 'Preset save failed',
+        title: 'Preset Save Failed',
         description: error instanceof Error ? error.message : 'Failed to save preset',
         variant: 'destructive',
       })
@@ -550,7 +556,7 @@ export default function Mods() {
       })
     } catch (error) {
       toast({
-        title: 'Preset apply failed',
+        title: 'Preset Apply Failed',
         description: error instanceof Error ? error.message : 'Failed to apply preset',
         variant: 'destructive',
       })
@@ -571,7 +577,7 @@ export default function Mods() {
       fetchPresets()
     } catch (error) {
       toast({
-        title: 'Preset delete failed',
+        title: 'Preset Delete Failed',
         description: error instanceof Error ? error.message : 'Failed to delete preset',
         variant: 'destructive',
       })
@@ -602,6 +608,27 @@ export default function Mods() {
     })
   }, [mods, deferredSearchQuery, showUpdatesOnly])
 
+  // Group mods by status for scannable display
+  const groupedMods = useMemo(() => {
+    const updateAvailable: TrackedMod[] = []
+    const neverChecked: TrackedMod[] = []
+    const upToDate: TrackedMod[] = []
+    for (const mod of filteredMods) {
+      if (mod.update_available) updateAvailable.push(mod)
+      else if (!mod.last_checked) neverChecked.push(mod)
+      else upToDate.push(mod)
+    }
+    return { updateAvailable, neverChecked, upToDate }
+  }, [filteredMods])
+
+  // Collapse "up-to-date" by default, expand when searching
+  const [upToDateExpanded, setUpToDateExpanded] = useState(false)
+  // Reset collapse when search changes
+  useEffect(() => {
+    if (deferredSearchQuery) setUpToDateExpanded(true)
+    else setUpToDateExpanded(false)
+  }, [deferredSearchQuery])
+
   const handleCheckUpdates = async () => {
     if (busyRef.current) return
     busyRef.current = true
@@ -615,7 +642,7 @@ export default function Mods() {
       fetchData()
     } catch (error) {
       toast({
-        title: 'Update check failed',
+        title: 'Update Check Failed',
         description: error instanceof Error ? error.message : 'Failed to check updates',
         variant: 'destructive',
       })
@@ -769,7 +796,7 @@ export default function Mods() {
       
       if (result.addedModIds.length > 0) {
         toast({
-          title: 'Mod added to server config',
+          title: 'Mod Added to Server Config',
           description: `${result.addedModIds.join(', ')} written to INI.${result.mapFoldersAdded.length > 0 
             ? ` Map${result.mapFoldersAdded.length !== 1 ? 's' : ''}: ${result.mapFoldersAdded.join(', ')}.` 
             : ''} Restart the server to load it.`,
@@ -777,12 +804,12 @@ export default function Mods() {
         })
       } else if (result.workshopAlreadyExisted) {
         toast({
-          title: 'Already configured',
+          title: 'Already Configured',
           description: 'This mod is already in your server INI.',
         })
       } else {
         toast({
-          title: 'Workshop ID added',
+          title: 'Workshop ID Added',
           description: 'Added to INI. Mod IDs will be discovered after the server downloads the files.',
         })
       }
@@ -795,7 +822,7 @@ export default function Mods() {
       fetchData()
     } catch (error) {
       toast({
-        title: 'Add mod failed',
+        title: 'Add Mod Failed',
         description: error instanceof Error ? error.message : 'Failed to add mod',
         variant: 'destructive',
       })
@@ -824,13 +851,13 @@ export default function Mods() {
     try {
       await modsApi.batchRemove([workshopId])
       toast({
-        title: 'Mod removed',
+        title: 'Mod Removed',
         description: 'Removed from tracking and server config.',
       })
       fetchData()
     } catch (error) {
       toast({
-        title: 'Remove failed',
+        title: 'Remove Failed',
         description: error instanceof Error ? error.message : 'Failed to remove mod',
         variant: 'destructive',
       })
@@ -870,7 +897,7 @@ export default function Mods() {
       fetchData()
     } catch (error) {
       toast({
-        title: 'Remove failed',
+        title: 'Remove Failed',
         description: error instanceof Error ? error.message : 'Failed to remove mods',
         variant: 'destructive',
       })
@@ -886,11 +913,11 @@ export default function Mods() {
     setLoading(true)
     try {
       await modsApi.unignoreMod(workshopId)
-      toast({ title: 'Mod un-ignored', description: 'This mod can now be tracked again by auto-sync.' })
+      toast({ title: 'Mod Un-Ignored', description: 'This mod can now be tracked again by auto-sync.' })
       fetchData()
     } catch (error) {
       toast({
-        title: 'Failed to un-ignore mod',
+        title: 'Failed to Un-Ignore Mod',
         description: error instanceof Error ? error.message : 'Unknown error',
         variant: 'destructive',
       })
@@ -912,7 +939,7 @@ export default function Mods() {
       fetchData()
     } catch (error) {
       toast({
-        title: 'Setting update failed',
+        title: 'Setting Update Failed',
         description: error instanceof Error ? error.message : 'Failed to update setting',
         variant: 'destructive',
       })
@@ -928,14 +955,17 @@ export default function Mods() {
     setLoading(true)
     try {
       const result = await modsApi.syncFromServer()
+      const parts: string[] = [`Synced ${result.synced || 0} mods from server config`]
+      if (result.skippedNonMod > 0) parts.push(`${result.skippedNonMod} non-mod items filtered`)
+      if (result.skippedIgnored > 0) parts.push(`${result.skippedIgnored} ignored`)
       toast({
-        title: 'Mods synced',
-        description: `Synced ${result.synced || 0} mods from server configuration.`,
+        title: 'Mods Synced',
+        description: parts.join('. ') + '.',
       })
       fetchData()
     } catch (error) {
       toast({
-        title: 'Sync failed',
+        title: 'Sync Failed',
         description: error instanceof Error ? error.message : 'Failed to sync mods',
         variant: 'destructive',
       })
@@ -952,12 +982,12 @@ export default function Mods() {
     try {
       await modsApi.clearUpdates()
       toast({
-        title: 'Update flags cleared',
+        title: 'Update Flags Cleared',
       })
       fetchData()
     } catch (error) {
       toast({
-        title: 'Clear failed',
+        title: 'Clear Failed',
         description: error instanceof Error ? error.message : 'Failed to clear updates',
         variant: 'destructive',
       })
@@ -970,7 +1000,7 @@ export default function Mods() {
   const handleImportCollection = async () => {
     if (!collectionUrl) {
       toast({
-        title: 'No URL entered',
+        title: 'No URL Entered',
         description: 'Paste a Steam Workshop collection URL or numeric ID to import.',
         variant: 'destructive',
       })
@@ -980,7 +1010,7 @@ export default function Mods() {
     const trimmed = collectionUrl.trim()
     if (!/^\d{1,15}$/.test(trimmed) && !trimmed.includes('steamcommunity.com')) {
       toast({
-        title: 'Invalid format',
+        title: 'Invalid Format',
         description: 'Enter a Steam Workshop collection URL or a numeric collection ID.',
         variant: 'destructive',
       })
@@ -1004,7 +1034,7 @@ export default function Mods() {
       
       if (mods.length === 0) {
         toast({
-          title: 'No mods found',
+          title: 'No Mods Found',
           description: 'This collection appears empty. Check the URL and try again.',
           variant: 'destructive',
         })
@@ -1016,7 +1046,7 @@ export default function Mods() {
       }
     } catch (error) {
       toast({
-        title: 'Collection import failed',
+        title: 'Collection Import Failed',
         description: error instanceof Error ? error.message : 'Could not fetch collection from Steam. Check the URL and try again.',
         variant: 'destructive',
       })
@@ -1049,7 +1079,7 @@ export default function Mods() {
     
     if (selectedModsList.length === 0) {
       toast({
-        title: 'No mods selected',
+        title: 'No Mods Selected',
         description: 'Check the mods you want to add from the list above.',
         variant: 'destructive',
       })
@@ -1093,7 +1123,7 @@ export default function Mods() {
       fetchData()
     } catch (error) {
       toast({
-        title: 'Import failed',
+        title: 'Import Failed',
         description: error instanceof Error ? error.message : 'Could not add mods to server config. Try again.',
         variant: 'destructive',
       })
@@ -1105,7 +1135,7 @@ export default function Mods() {
   const handleWriteToIni = async () => {
     if (modsToInstall.length === 0) {
       toast({
-        title: 'Nothing to write',
+        title: 'Nothing to Write',
         description: 'Add mods to the pending list first, then write to INI.',
         variant: 'destructive',
       })
@@ -1134,7 +1164,7 @@ export default function Mods() {
       fetchData()
     } catch (error) {
       toast({
-        title: 'Write to INI failed',
+        title: 'Write to INI Failed',
         description: error instanceof Error ? error.message : 'Failed to write configuration',
         variant: 'destructive',
       })
@@ -1149,7 +1179,7 @@ export default function Mods() {
     try {
       const result = await modsApi.syncModIds()
       
-      const synced = result.syncedMods?.filter((m: any) => m.status?.startsWith('added')).length || 0
+      const synced = result.syncedMods?.filter((m: { status?: string }) => m.status?.startsWith('added')).length || 0
       const missing = result.missingMods?.length || 0
       
       if (synced > 0 || missing > 0) {
@@ -1168,7 +1198,7 @@ export default function Mods() {
       fetchData()
     } catch (error) {
       toast({
-        title: 'Mod ID sync failed',
+        title: 'Mod ID Sync Failed',
         description: error instanceof Error ? error.message : 'Failed to sync mod IDs',
         variant: 'destructive',
       })
@@ -1226,7 +1256,7 @@ export default function Mods() {
       fetchData()
     } catch (error) {
       toast({
-        title: 'Save order failed',
+        title: 'Save Order Failed',
         description: error instanceof Error ? error.message : 'Failed to save mod order',
         variant: 'destructive',
       })
@@ -1288,7 +1318,7 @@ export default function Mods() {
       fetchData()
     } catch (error) {
       toast({
-        title: 'Settings save failed',
+        title: 'Settings Save Failed',
         description: error instanceof Error ? error.message : 'Failed to save settings',
         variant: 'destructive',
       })
@@ -1311,7 +1341,7 @@ export default function Mods() {
       fetchData()
     } catch (error) {
       toast({
-        title: 'Cancel failed',
+        title: 'Cancel Failed',
         description: error instanceof Error ? error.message : 'Failed to cancel restart',
         variant: 'destructive',
       })
@@ -1325,6 +1355,121 @@ export default function Mods() {
   const modsWithUpdates = useMemo(() => mods.filter(m => m.update_available), [mods])
   const configuredWorkshopIds = useMemo(() => new Set(iniConfig?.workshopIds || []), [iniConfig?.workshopIds])
   const selectedCollectionCount = useMemo(() => collectionMods.filter(m => m.selected).length, [collectionMods])
+
+  // Render a single mod row — extracted to avoid duplication across groups
+  const renderModRow = useCallback((mod: TrackedMod) => (
+    <div
+      key={mod.id}
+      className={`perf-list-row flex items-center gap-3 p-3 hover:bg-accent/50 transition-colors ${
+        selectedMods.has(mod.workshop_id) ? 'bg-accent/30' : ''
+      }`}
+    >
+      <Checkbox
+        checked={selectedMods.has(mod.workshop_id)}
+        onCheckedChange={() => toggleModSelect(mod.workshop_id)}
+        aria-label={`Select ${mod.name || mod.workshop_id}`}
+      />
+      
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className={`truncate ${mod.update_available ? 'font-semibold text-foreground' : 'font-medium'}`}>
+            {mod.name || `Mod ${mod.workshop_id}`}
+          </span>
+          {mod.update_available ? (
+            <Badge variant="warning" className="text-xs shrink-0 update-badge-pulse">
+              Update
+            </Badge>
+          ) : null}
+          <Badge variant={configuredWorkshopIds.has(mod.workshop_id) ? 'success' : 'warning'} className="text-xs shrink-0">
+            {configuredWorkshopIds.has(mod.workshop_id) ? 'In Config' : 'Not in Config'}
+          </Badge>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap mt-1">
+          <span className="text-xs text-muted-foreground font-mono">{mod.workshop_id}</span>
+          <span className="text-xs text-muted-foreground">•</span>
+          <span className="text-xs text-muted-foreground">
+            {mod.last_checked
+              ? `Checked ${new Date(mod.last_checked).toLocaleDateString()}`
+              : 'Never checked'}
+          </span>
+        </div>
+      </div>
+      
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <a 
+            href={`https://steamcommunity.com/sharedfiles/filedetails/?id=${mod.workshop_id}`} 
+            target="_blank" 
+            rel="noreferrer"
+            className="inline-flex"
+          >
+            <Button
+              variant="ghost"
+              size="iconDense"
+              className="h-10 w-10 text-muted-foreground hover:text-primary sm:h-10 sm:w-10"
+              aria-label="Open workshop page (opens in new tab)"
+            >
+              <ExternalLink className="w-4 h-4" />
+            </Button>
+          </a>
+        </TooltipTrigger>
+        <TooltipContent>Open Workshop Page</TooltipContent>
+      </Tooltip>
+      
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="iconDense"
+            className="h-10 w-10 text-destructive hover:text-destructive sm:h-10 sm:w-10"
+            onClick={() => setConfirmRemoveMod(mod.workshop_id)}
+            disabled={loading}
+            aria-label={`Remove mod ${mod.name || mod.workshop_id}`}
+          >
+            <Trash2 className="w-4 h-4" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>Remove from tracking</TooltipContent>
+      </Tooltip>
+    </div>
+  ), [selectedMods, configuredWorkshopIds, loading, toggleModSelect])
+
+  // ── Virtualized tracked mods list ──
+  type FlatModItem =
+    | { type: 'header'; group: 'update' | 'neverChecked' | 'upToDate'; count: number }
+    | { type: 'hint' }
+    | { type: 'mod'; mod: TrackedMod; group: 'update' | 'neverChecked' | 'upToDate' }
+
+  const modListRef = useRef<HTMLDivElement>(null)
+
+  const flatModItems = useMemo<FlatModItem[]>(() => {
+    const items: FlatModItem[] = []
+    if (groupedMods.updateAvailable.length > 0) {
+      items.push({ type: 'header', group: 'update', count: groupedMods.updateAvailable.length })
+      for (const mod of groupedMods.updateAvailable) items.push({ type: 'mod', mod, group: 'update' })
+    }
+    if (groupedMods.neverChecked.length > 0) {
+      items.push({ type: 'header', group: 'neverChecked', count: groupedMods.neverChecked.length })
+      if (groupedMods.updateAvailable.length === 0 && groupedMods.upToDate.length === 0 && !searchQuery) {
+        items.push({ type: 'hint' })
+      }
+      for (const mod of groupedMods.neverChecked) items.push({ type: 'mod', mod, group: 'neverChecked' })
+    }
+    if (groupedMods.upToDate.length > 0) {
+      items.push({ type: 'header', group: 'upToDate', count: groupedMods.upToDate.length })
+      if (upToDateExpanded) {
+        for (const mod of groupedMods.upToDate) items.push({ type: 'mod', mod, group: 'upToDate' })
+      }
+    }
+    return items
+  }, [groupedMods, searchQuery, upToDateExpanded])
+
+  const modListVirtualizer = useVirtualizer({
+    count: flatModItems.length,
+    getScrollElement: () => modListRef.current,
+    estimateSize: (i) => flatModItems[i].type === 'mod' ? 65 : flatModItems[i].type === 'hint' ? 48 : 40,
+    overscan: 10,
+  })
 
   // ── Active Mods sub-tab: memoized derived data ──
   const activeModsData = useMemo(() => {
@@ -1634,6 +1779,7 @@ export default function Mods() {
       } else {
         // Connection lost — try to recover cached results from backend
         modsApi.getCachedConflicts().then(cached => {
+          if (closingIntentionallyRef.current) return
           if (cached) {
             setConflicts(cached)
             setConflictsError('Scan disconnected — showing cached results')
@@ -1641,7 +1787,7 @@ export default function Mods() {
             setConflictsError('Scan connection lost')
           }
         }).catch(() => {
-          setConflictsError('Scan connection lost')
+          if (!closingIntentionallyRef.current) setConflictsError('Scan connection lost')
         })
       }
       setConflictsLoading(false)
@@ -1711,8 +1857,14 @@ export default function Mods() {
           <Separator orientation="vertical" className="h-4" />
           <div className="flex items-center gap-2">
             <Clock className="w-3.5 h-3.5 text-muted-foreground" />
-            <span className="text-xs text-muted-foreground">
-              {status?.lastCheck ? `Last check ${new Date(status.lastCheck).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'Never checked'}
+            <span className="text-xs text-muted-foreground" title={status?.lastCheck ? new Date(status.lastCheck).toLocaleString() : undefined}>
+              {status?.lastCheck ? (() => {
+                const secs = Math.round((Date.now() - new Date(status.lastCheck).getTime()) / 1000)
+                if (secs < 60) return `Checked ${secs}s ago`
+                if (secs < 3600) return `Checked ${Math.floor(secs / 60)}m ago`
+                if (secs < 86400) return `Checked ${Math.floor(secs / 3600)}h ago`
+                return `Checked ${new Date(status.lastCheck).toLocaleDateString()}`
+              })() : 'Never checked'}
             </span>
           </div>
           
@@ -1960,7 +2112,7 @@ export default function Mods() {
                                   variant="ghost"
                                   className="h-10 w-10 sm:h-10 sm:w-10"
                                   onClick={() => openWorkshopPage(mod.workshopId)}
-                                  aria-label="Open workshop page"
+                                  aria-label="Open workshop page (opens in new tab)"
                                 >
                                   <ExternalLink className="w-3 h-3" />
                                 </Button>
@@ -2340,7 +2492,7 @@ export default function Mods() {
                       </div>
                     )}
                     
-                    <div className="rounded-lg border border-border/70 bg-gradient-to-r from-secondary/80 to-accent/20 p-3">
+                    <div className="rounded-lg border border-border/70 bg-secondary/40 p-3">
                       <p className="text-sm font-medium mb-2">Current Settings</p>
                       <div className="text-xs text-muted-foreground space-y-1">
                         <p>• Warning time: {restartWarningMinutes} minutes</p>
@@ -2389,6 +2541,7 @@ export default function Mods() {
               <div className="relative min-w-0 basis-full sm:basis-auto sm:flex-1 sm:max-w-sm">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
+                  ref={searchInputRef}
                   value={searchQuery}
                   onChange={(e) => handleSearchChange(e.target.value)}
                   placeholder="Search mods..."
@@ -2431,11 +2584,11 @@ export default function Mods() {
             </div>
             )}
 
-            {/* Mods List */}
+            {/* Mods List — grouped by status */}
             <Card>
               <CardContent className="p-0">
-                <ScrollArea className="h-[min(52vh,24rem)] sm:h-[min(60vh,31rem)]">
-                  {filteredMods.length === 0 ? (
+                {filteredMods.length === 0 ? (
+                  <div className="p-6">
                     <EmptyState
                       type={searchQuery ? 'noResults' : 'noMods'}
                       title={searchQuery ? 'No mods match your search' : 'No mods tracked'}
@@ -2443,93 +2596,78 @@ export default function Mods() {
                       action={searchQuery ? undefined : { label: 'Sync from Server', onClick: handleSyncFromServer, variant: 'outline' }}
                       secondaryAction={searchQuery ? undefined : { label: 'Import Collection', onClick: () => setCollectionDialogOpen(true), variant: 'ghost' }}
                     />
-                  ) : (
-                    <div className="divide-y">
-                      {filteredMods.map((mod) => (
-                        <div
-                          key={mod.id}
-                          className={`perf-list-row flex items-center gap-3 p-3 hover:bg-accent/50 transition-colors ${
-                            selectedMods.has(mod.workshop_id) ? 'bg-accent/30' : ''
-                          }`}
-                        >
-                          <Checkbox
-                            checked={selectedMods.has(mod.workshop_id)}
-                            onCheckedChange={() => toggleModSelect(mod.workshop_id)}
-                          aria-label={`Select ${mod.name || mod.workshop_id}`}
-                          />
-                          
-                          {mod.update_available ? (
-                            <AlertTriangle className="w-4 h-4 text-warning flex-shrink-0" />
-                          ) : (
-                            <CheckCircle className="w-4 h-4 text-primary flex-shrink-0" />
-                          )}
-                          
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 min-w-0">
-                              <span className="font-medium truncate">
-                                {mod.name || `Mod ${mod.workshop_id}`}
-                              </span>
-                              {mod.update_available ? (
-                                <Badge variant="warning" className="text-xs shrink-0 update-badge-pulse">
-                                  Update
-                                </Badge>
-                              ) : null}
-                              <Badge variant={configuredWorkshopIds.has(mod.workshop_id) ? 'success' : 'secondary'} className="text-xs shrink-0">
-                                {configuredWorkshopIds.has(mod.workshop_id) ? 'In Config' : 'Not in Config'}
-                              </Badge>
-                            </div>
-                            <div className="flex items-center gap-2 flex-wrap mt-1">
-                              <span className="text-xs text-muted-foreground font-mono">{mod.workshop_id}</span>
-                              <span className="text-xs text-muted-foreground">•</span>
-                              <span className="text-xs text-muted-foreground">
-                                {mod.last_checked
-                                  ? `Checked ${new Date(mod.last_checked).toLocaleDateString()}`
-                                  : 'Never checked'}
-                              </span>
-                            </div>
+                  </div>
+                ) : (
+                  <div ref={modListRef} className="h-[calc(100vh-340px)] min-h-[300px] overflow-y-auto">
+                    <div style={{ height: modListVirtualizer.getTotalSize(), position: 'relative' }}>
+                      {modListVirtualizer.getVirtualItems().map(virtualRow => {
+                        const item = flatModItems[virtualRow.index]
+                        const groupBorder =
+                          item.type === 'hint' ? 'border-l-2 border-muted-foreground/30'
+                          : (item.type === 'header' ? item.group : item.group) === 'update' ? 'border-l-2 border-warning'
+                          : (item.type === 'header' ? item.group : item.group) === 'neverChecked' ? 'border-l-2 border-muted-foreground/30'
+                          : 'border-l-2 border-primary/30'
+
+                        return (
+                          <div
+                            key={virtualRow.key}
+                            className={groupBorder}
+                            style={{
+                              position: 'absolute',
+                              top: 0,
+                              left: 0,
+                              width: '100%',
+                              transform: `translateY(${virtualRow.start}px)`,
+                            }}
+                          >
+                            {item.type === 'header' && item.group === 'update' && (
+                              <div className="flex items-center gap-2 bg-warning/10 px-4 py-2 border-b border-border/40">
+                                <AlertTriangle className="w-4 h-4 text-warning" />
+                                <span className="text-sm font-semibold text-warning">
+                                  Updates Available ({item.count})
+                                </span>
+                              </div>
+                            )}
+                            {item.type === 'header' && item.group === 'neverChecked' && (
+                              <div className="flex items-center gap-2 bg-muted/20 px-4 py-2 border-b border-border/40">
+                                <Clock className="w-4 h-4 text-muted-foreground" />
+                                <span className="text-sm font-medium text-muted-foreground">
+                                  Never Checked ({item.count})
+                                </span>
+                              </div>
+                            )}
+                            {item.type === 'header' && item.group === 'upToDate' && (
+                              <button
+                                type="button"
+                                className="flex w-full items-center gap-2 bg-primary/5 px-4 py-2 border-b border-border/40 hover:bg-primary/10 transition-colors text-left"
+                                onClick={() => setUpToDateExpanded(!upToDateExpanded)}
+                              >
+                                <ChevronRight className={`w-4 h-4 text-primary transition-transform ${upToDateExpanded ? 'rotate-90' : ''}`} />
+                                <CheckCircle className="w-4 h-4 text-primary" />
+                                <span className="text-sm font-medium text-primary">
+                                  Up to Date ({item.count})
+                                </span>
+                              </button>
+                            )}
+                            {item.type === 'hint' && (
+                              <div className="flex items-center gap-3 bg-primary/5 border-b border-border/40 px-4 py-3">
+                                <RefreshCw className="w-4 h-4 text-primary shrink-0" />
+                                <p className="text-sm text-muted-foreground">
+                                  Click <strong className="text-foreground">Check Updates</strong> above to scan all mods for new versions.
+                                </p>
+                              </div>
+                            )}
+                            {item.type === 'mod' && (
+                              <div className="border-b border-border/30">
+                                {renderModRow(item.mod)}
+                              </div>
+                            )}
                           </div>
-                          
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <a 
-                                href={`https://steamcommunity.com/sharedfiles/filedetails/?id=${mod.workshop_id}`} 
-                                target="_blank" 
-                                rel="noreferrer"
-                                className="inline-flex"
-                              >
-                                <Button
-                                  variant="ghost"
-                                  size="iconDense"
-                                  className="h-10 w-10 text-muted-foreground hover:text-primary sm:h-10 sm:w-10"
-                                  aria-label="Open workshop page"
-                                >
-                                  <ExternalLink className="w-4 h-4" />
-                                </Button>
-                              </a>
-                            </TooltipTrigger>
-                            <TooltipContent>Open Workshop Page</TooltipContent>
-                          </Tooltip>
-                          
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="iconDense"
-                                className="h-10 w-10 text-destructive hover:text-destructive sm:h-10 sm:w-10"
-                                onClick={() => setConfirmRemoveMod(mod.workshop_id)}
-                                disabled={loading}
-                                aria-label={`Remove mod ${mod.name || mod.workshop_id}`}
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>Remove from tracking</TooltipContent>
-                          </Tooltip>
-                        </div>
-                      ))}
+                        )
+                      })}
                     </div>
-                  )}
-                </ScrollArea>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -3568,7 +3706,7 @@ export default function Mods() {
                       <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 flex items-center gap-2 text-xs text-destructive">
                         <AlertTriangle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                         <span className="flex-1 min-w-0 break-words" dir="auto">Scan failed — {conflictsError}</span>
-                        <Button variant="ghost" size="sm" className="h-6 px-2 text-xs shrink-0" onClick={scanConflicts} disabled={conflictsLoading}>
+                        <Button variant="ghost" size="sm" className="h-9 px-3 text-xs shrink-0" onClick={scanConflicts} disabled={conflictsLoading}>
                           Retry
                         </Button>
                       </div>
@@ -3579,7 +3717,7 @@ export default function Mods() {
                       <div className="rounded-lg border border-warning/30 bg-warning/5 p-3 flex items-center gap-2 text-xs">
                         <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-warning" aria-hidden="true" />
                         <span className="flex-1 text-muted-foreground">Your mod list changed since this scan — results may be outdated.</span>
-                        <Button variant="outline" size="sm" className="h-6 px-2 text-xs shrink-0" onClick={scanConflicts} disabled={conflictsLoading}>
+                        <Button variant="outline" size="sm" className="h-9 px-3 text-xs shrink-0" onClick={scanConflicts} disabled={conflictsLoading}>
                           Rescan
                         </Button>
                       </div>
@@ -4080,7 +4218,7 @@ export default function Mods() {
                                           <a href={`https://steamcommunity.com/sharedfiles/filedetails/?id=${row.requiredByWsId}`}
                                             target="_blank" rel="noopener noreferrer"
                                             className="text-muted-foreground/70 hover:text-foreground underline decoration-muted-foreground/30 hover:decoration-foreground/50 transition-colors"
-                                          >{row.requiredBy}</a>
+                                          >{row.requiredBy}<span className="sr-only"> (opens in new tab)</span></a>
                                           {row.source === 'steam' && <span className="ml-1.5 text-accent/70">via Workshop</span>}
                                         </span>
                                       </div>
@@ -4108,14 +4246,15 @@ export default function Mods() {
                                             target="_blank" rel="noopener noreferrer"
                                             className="inline-flex items-center gap-1 h-7 px-2.5 text-xs rounded-md border border-border/40 text-muted-foreground hover:text-foreground transition-colors"
                                           >
-                                            <ExternalLink className="w-3 h-3" /> Find on Steam
+                                            <ExternalLink className="w-3 h-3" /> Find on Steam <span className="sr-only">(opens in new tab)</span>
                                           </a>
                                         )}
                                         {row.depWorkshopId && (
                                           <a href={`https://steamcommunity.com/sharedfiles/filedetails/?id=${row.depWorkshopId}`}
                                             target="_blank" rel="noopener noreferrer"
                                             className="text-muted-foreground/50 hover:text-muted-foreground transition-colors p-1"
-                                            title="View on Steam Workshop">
+                                            title="View on Steam Workshop"
+                                            aria-label="View on Steam Workshop (opens in new tab)">
                                             <ExternalLink className="w-3.5 h-3.5" />
                                           </a>
                                         )}

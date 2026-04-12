@@ -35,15 +35,19 @@ So I built the whole thing. [Background story →](https://www.youtube.com/watch
 
 ## Features
 
-- **Server control** — Start, stop, restart, force-stop, save world. Live status and uptime. Multiple server profiles.
-- **Player management** — Online players, activity history. Kick, ban, unban, access levels.
+- **Server control** — Start, stop, restart, force-stop, save world. Live status and uptime.
+- **Multi-server** — Manage multiple PZ server instances from one panel. Add existing servers, install new ones via SteamCMD, or connect to remote servers.
+- **Player management** — Online players, activity history, notes and tags. Kick, ban, unban, access levels.
 - **PanelBridge extras** — Teleport, heal, god mode, invisibility, character export/import (skills, perks, recipes, inventory).
-- **World & events** — Weather triggers, climate control, game time, sandbox settings. Chat and admin messaging.
+- **World & events** — Weather triggers, climate control, game time, sound events, zombie management. Chat and admin messaging.
+- **World map** — Live player positions on Knox County map with right-click actions.
+- **Server config editor** — Full INI editor with structured and raw views, sandbox variables, spawn points, spawn regions, and mod settings — all searchable and editable in-browser.
 - **Live mod settings** — Browse and edit every sandbox option from your mods and vanilla, grouped by mod, searchable, with instant apply. No config files, no restart.
-- **Mod tracking** — Workshop mod update detection with configurable polling.
-- **Scheduling** — Recurring tasks: restarts, saves, broadcasts.
-- **Maintenance** — Backups/restores, chunk cleanup, full RCON console.
-- **Integrations** — Discord bot. PanelBridge Lua mod for in-game commands RCON can't reach.
+- **Mod tracking** — Workshop mod update detection with configurable polling. Sync from server config with automatic filtering of non-mod Workshop items (collections, screenshots).
+- **Scheduling** — Recurring tasks: restarts, saves, broadcasts. Countdown warnings before restarts.
+- **Maintenance** — World backups/restores, chunk cleanup with visual map selector, full RCON console.
+- **Integrations** — Discord bot with slash commands and two-way chat relay. PanelBridge Lua mod for in-game commands RCON can't reach.
+- **Themes** — Survival (gritty) and Control Room (clean) dark themes.
 
 ---
 
@@ -126,6 +130,20 @@ PanelBridge is a Lua server mod that opens up commands RCON can't reach: charact
    ```
 3. Restart the PZ server.
 4. Set the bridge path in panel Settings.
+
+---
+
+## Security
+
+- JWT authentication on all API routes (except health check and map tiles).
+- Rate limiting at multiple tiers: general API, destructive operations, RCON, login.
+- RCON command parameter sanitization to prevent injection.
+- INI value sanitization to prevent config injection.
+- Error messages sanitized before returning to clients.
+- CORS configurable for LAN and VPS deployments.
+- Password reset via secure token file or CLI flag.
+
+For VPS deployments, use a reverse proxy with HTTPS and configure explicit CORS origins. See Settings → Remote Access after first login.
 
 ---
 

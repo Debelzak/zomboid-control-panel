@@ -119,6 +119,7 @@ export function FolderBrowser({ open, onOpenChange, onSelect, initialPath, title
             className="h-7 w-7 shrink-0"
             onClick={handleGoUp}
             disabled={isDriveList || loading}
+            aria-label="Go to parent directory"
           >
             <ArrowUp className="w-3.5 h-3.5" />
           </Button>

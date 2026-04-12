@@ -524,15 +524,15 @@ function BridgeResultDisplay({ result, loading, onInlineAction, players }: Bridg
                     <td className="py-2.5 pr-3 text-xs">{script || '—'}</td>
                     <td className="py-2.5 pr-3 font-mono text-xs text-foreground/70">{vx}, {vy}</td>
                     <td className="py-2.5 pr-3">
-                      <span className={cn('text-xs font-medium', battery > 50 ? 'text-green-500' : battery > 20 ? 'text-yellow-500' : 'text-red-400')}>
+                      <span className={cn('text-xs font-medium', battery > 50 ? 'text-success' : battery > 20 ? 'text-warning' : 'text-destructive')}>
                         {battery}%
                       </span>
                     </td>
                     <td className="py-2.5 pr-3">
                       <div className="flex flex-wrap gap-1">
-                        {alarmed && <Badge variant="outline" className="h-5 text-[10px] px-1.5 text-yellow-500 border-yellow-500/30">Alarm</Badge>}
-                        {sirening && <Badge variant="outline" className="h-5 text-[10px] px-1.5 text-blue-400 border-blue-400/30">Siren</Badge>}
-                        <Badge variant="outline" className={cn('h-5 text-[10px] px-1.5', trunkLocked ? 'text-foreground/60' : 'text-green-500 border-green-500/30')}>
+                        {alarmed && <Badge variant="outline" className="h-5 text-[10px] px-1.5 text-warning border-warning/30">Alarm</Badge>}
+                        {sirening && <Badge variant="outline" className="h-5 text-[10px] px-1.5 text-info border-info/30">Siren</Badge>}
+                        <Badge variant="outline" className={cn('h-5 text-[10px] px-1.5', trunkLocked ? 'text-foreground/60' : 'text-success border-success/30')}>
                           {trunkLocked ? 'Locked' : 'Open'}
                         </Badge>
                       </div>
@@ -702,6 +702,7 @@ function BridgeResultDisplay({ result, loading, onInlineAction, players }: Bridg
         type="button"
         onClick={() => setShowRaw(!showRaw)}
         className="flex items-center gap-1 text-xs text-muted-foreground/70 hover:text-muted-foreground transition-colors"
+        aria-expanded={showRaw}
       >
         {showRaw ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
         {showRaw ? 'Hide details' : 'Show details'}
@@ -881,8 +882,12 @@ export default function Events() {
     mountedRef.current = true
     fetchPlayers()
     checkBridgeStatus()
-    const interval = setInterval(fetchPlayers, 30000)
-    const bridgeInterval = setInterval(checkBridgeStatus, 10000)
+    const interval = setInterval(() => {
+      if (document.visibilityState !== 'hidden') fetchPlayers()
+    }, 30000)
+    const bridgeInterval = setInterval(() => {
+      if (document.visibilityState !== 'hidden') checkBridgeStatus()
+    }, 10000)
     return () => {
       mountedRef.current = false
       clearInterval(interval)
@@ -998,6 +1003,7 @@ export default function Events() {
 
     void loadBridgeOptions()
     const interval = setInterval(() => {
+      if (document.visibilityState === 'hidden') return
       void loadBridgeOptions()
     }, 30000)
 
@@ -1305,7 +1311,7 @@ export default function Events() {
   const runBridgeOperation = async () => {
     if (!bridgeConnected) {
       toast({
-        title: 'Bridge not connected',
+        title: 'Bridge Not Connected',
         description: 'Connect PanelBridge in Settings before running advanced operations.',
         variant: 'destructive',
       })
@@ -1320,7 +1326,7 @@ export default function Events() {
       const message = getUserErrorMessage(error, 'Please complete required fields.')
       setBridgeFormError(message)
       toast({
-        title: 'Missing or invalid fields',
+        title: 'Missing or Invalid Fields',
         description: message,
         variant: 'destructive',
       })
@@ -1359,7 +1365,7 @@ export default function Events() {
       })
       setBridgeLastRunAt(formatPanelTimestamp(new Date()))
       toast({
-        title: 'Bridge operation failed',
+        title: 'Bridge Operation Failed',
         description: message,
         variant: 'destructive',
       })
@@ -1401,29 +1407,30 @@ export default function Events() {
 
       {/* Target Selection */}
       <Card>
-        <CardHeader className="pb-4">
-          <CardTitle className="flex items-center gap-2">
-            <Target className="w-4 h-4 text-primary" />
-            Event Target
-          </CardTitle>
-          <CardDescription>Choose a target player or target all. Pick an action below.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
+        <CardHeader className="pb-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Target className="w-4 h-4 text-primary" />
+                Event Target
+              </CardTitle>
+              <CardDescription className="mt-0.5">Choose a target player or target all. Pick an action below.</CardDescription>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
               <Switch
                 checked={targetAll}
                 onCheckedChange={setTargetAll}
                 id="target-all"
               />
-              <Label htmlFor="target-all" className="flex items-center gap-2">
+              <Label htmlFor="target-all" className="flex items-center gap-2 whitespace-nowrap">
                 <Users className="w-4 h-4" />
                 Use Global/Random Target
               </Label>
             </div>
           </div>
-          
-          {!targetAll && (
+        </CardHeader>
+        {!targetAll && (
+        <CardContent className="pt-0 space-y-2">
             <div className="space-y-2">
               <Label htmlFor="event-target-player" className="flex items-center gap-2">
                 <User className="w-4 h-4" />
@@ -1451,8 +1458,8 @@ export default function Events() {
                 </p>
               )}
             </div>
-          )}
         </CardContent>
+        )}
       </Card>
 
       {/* Tab Navigation */}

@@ -219,7 +219,7 @@ export default function ServerFinder() {
 
     setFilteredServers(result)
     // Only reset to page 1 when actual filters/sort change, not when pings update
-  }, [servers, debouncedSearch, hideEmpty, hideFull, hidePrivate, showVacOnly, versionFilter, sortField, sortDirection])
+  }, [servers, debouncedSearch, hideEmpty, hideFull, hidePrivate, showVacOnly, versionFilter, sortField, sortDirection]) // eslint-disable-line react-hooks/exhaustive-deps -- serverPings intentionally excluded to avoid pagination reset on ping updates
 
   // Re-sort when pings arrive without resetting the current page
   useEffect(() => {
@@ -307,6 +307,7 @@ export default function ServerFinder() {
       size="sm"
       onClick={() => toggleSort(field)}
       className="h-8 px-2 flex items-center gap-1"
+      aria-label={sortField === field ? `Sort by ${label}, ${sortDirection === 'asc' ? 'ascending' : 'descending'}` : `Sort by ${label}`}
     >
       {label}
       {sortField === field ? (
@@ -365,7 +366,7 @@ export default function ServerFinder() {
                 Add your Steam API key in Settings before this page can load the public server list.
               </p>
               <ol className="text-sm text-muted-foreground list-decimal list-inside space-y-1 mt-2">
-                <li>Go to <a href="https://steamcommunity.com/dev/apikey" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Steam API Key page</a> and register for a key</li>
+                <li>Go to <a href="https://steamcommunity.com/dev/apikey" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Steam API Key page <span className="sr-only">(opens in new tab)</span></a> and register for a key</li>
                 <li>Go to <Link to="/settings" className="text-primary hover:underline">Settings</Link> and paste your API key in the "Steam Web API Key" field</li>
                 <li>Click "Save Settings" and refresh this page</li>
               </ol>
@@ -376,7 +377,7 @@ export default function ServerFinder() {
 
       {/* Stats */}
       <div className="grid gap-4 md:grid-cols-4 stagger-in">
-        <Card className="border-border/70 bg-gradient-to-br from-secondary/80 via-card to-accent/12 shadow-sm">
+        <Card className="border-border/70 bg-card shadow-sm">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Servers</CardTitle>
             <Server className="h-4 w-4 text-muted-foreground" />
@@ -390,7 +391,7 @@ export default function ServerFinder() {
           </CardContent>
         </Card>
 
-        <Card className="border-border/70 bg-gradient-to-br from-secondary/80 via-card to-primary/10 shadow-sm">
+        <Card className="border-border/70 bg-card shadow-sm">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Active Servers</CardTitle>
             <Globe className="h-4 w-4 text-muted-foreground" />
@@ -401,7 +402,7 @@ export default function ServerFinder() {
           </CardContent>
         </Card>
 
-        <Card className="border-border/70 bg-gradient-to-br from-secondary/80 via-card to-accent/16 shadow-sm">
+        <Card className="border-border/70 bg-card shadow-sm">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Players</CardTitle>
             <Users className="h-4 w-4 text-muted-foreground" />
@@ -412,7 +413,7 @@ export default function ServerFinder() {
           </CardContent>
         </Card>
 
-        <Card className="border-border/70 bg-gradient-to-br from-secondary/80 via-card to-primary/12 shadow-sm">
+        <Card className="border-border/70 bg-card shadow-sm">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Showing</CardTitle>
             <Filter className="h-4 w-4 text-muted-foreground" />
@@ -704,7 +705,7 @@ export default function ServerFinder() {
                               e.stopPropagation()
                               pingServer(server.ip, server.port)
                             }}
-                            className="h-6 px-2 text-xs"
+                            className="h-9 px-3 text-xs"
                           >
                             Ping
                           </Button>

@@ -399,9 +399,10 @@ router.post('/test-rcon', async (req, res) => {
     const connected = await rconService.connect();
     
     if (connected) {
-      // Try a simple command to verify
+      // Try a lightweight command to verify the connection is alive
+      // Avoid 'help' — PZ dumps a huge response that can overflow RCON packets and hang
       try {
-        await rconService.execute('help');
+        await rconService.execute('players', { skipLog: true });
         res.json({ 
           success: true, 
           message: 'RCON connection successful',

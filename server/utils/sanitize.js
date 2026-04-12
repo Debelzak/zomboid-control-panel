@@ -25,3 +25,19 @@ export function sanitizeError(message) {
     .replace(UNC_PATH_RE, '[path]')
     .replace(UNIX_PATH_RE, '[path]');
 }
+
+/**
+ * Strip INI-sensitive characters from values to prevent injection.
+ * Removes \r, \n (line injection), ; (comment / list delimiter), = (key separator).
+ */
+export function sanitizeIniValue(value) {
+  if (value == null) return '';
+  return String(value).replace(/[\r\n;=]/g, '');
+}
+
+/**
+ * Sanitize an array of values for INI semicolon-delimited fields.
+ */
+export function sanitizeIniList(values) {
+  return values.map(v => sanitizeIniValue(v)).filter(Boolean).join(';');
+}

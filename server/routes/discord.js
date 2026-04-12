@@ -76,6 +76,24 @@ router.put('/config', async (req, res) => {
     if (!finalToken || !guildId) {
       return res.status(400).json({ error: 'Token and Guild ID are required' });
     }
+
+    // Validate Discord Snowflake format for IDs
+    const SNOWFLAKE = /^\d{15,21}$/;
+    if (!SNOWFLAKE.test(guildId)) {
+      return res.status(400).json({ error: 'Invalid Guild ID format (must be a Discord Snowflake)' });
+    }
+    if (adminRoleId && !SNOWFLAKE.test(adminRoleId)) {
+      return res.status(400).json({ error: 'Invalid Admin Role ID format' });
+    }
+    if (modRoleId && !SNOWFLAKE.test(modRoleId)) {
+      return res.status(400).json({ error: 'Invalid Mod Role ID format' });
+    }
+    if (channelId && !SNOWFLAKE.test(channelId)) {
+      return res.status(400).json({ error: 'Invalid Channel ID format' });
+    }
+    if (chatRelayChannelId && !SNOWFLAKE.test(chatRelayChannelId)) {
+      return res.status(400).json({ error: 'Invalid Chat Relay Channel ID format' });
+    }
     
      // Snapshot current auth credentials before overwriting them so we know
      // whether a full Discord reconnection is actually needed.

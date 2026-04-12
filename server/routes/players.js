@@ -256,9 +256,9 @@ router.post('/teleport', async (req, res) => {
     
     let result;
     if (x !== undefined && y !== undefined && z !== undefined) {
-      // Validate coordinates
-      if (!isValidNumber(x) || !isValidNumber(y) || !isValidNumber(z)) {
-        return res.status(400).json({ error: 'Invalid coordinates' });
+      // Validate coordinates (PZ map cells range roughly 0-16800 per axis, z is floor level 0-7)
+      if (!isValidNumber(x, -1000, 20000) || !isValidNumber(y, -1000, 20000) || !isValidNumber(z, 0, 32)) {
+        return res.status(400).json({ error: 'Invalid coordinates (x/y: -1000 to 20000, z: 0 to 32)' });
       }
       if (player1) {
         log.info(`POST /teleport: ${player1} → coords(${x}, ${y}, ${z}) via PanelBridge`);

@@ -154,16 +154,8 @@ export async function setDataPaths(newPaths, moveFiles = true) {
       // Move data files
       if (newPaths.dataDir && newPaths.dataDir !== current.dataDir) {
         if (fs.existsSync(current.dataDir)) {
-          // Copy all files from old data dir to new
-          const files = fs.readdirSync(current.dataDir);
-          for (const file of files) {
-            const srcFile = path.join(current.dataDir, file);
-            const destFile = path.join(newPaths.dataDir, file);
-            
-            if (fs.statSync(srcFile).isFile()) {
-              fs.copyFileSync(srcFile, destFile);
-            }
-          }
+          // Copy all files and folders from old data dir to new
+          copyDirSync(current.dataDir, newPaths.dataDir);
           filesMoved.data = true;
         }
       }
@@ -171,16 +163,8 @@ export async function setDataPaths(newPaths, moveFiles = true) {
       // Move log files
       if (newPaths.logsDir && newPaths.logsDir !== current.logsDir) {
         if (fs.existsSync(current.logsDir)) {
-          // Copy all log files to new location
-          const files = fs.readdirSync(current.logsDir);
-          for (const file of files) {
-            const srcFile = path.join(current.logsDir, file);
-            const destFile = path.join(newPaths.logsDir, file);
-            
-            if (fs.statSync(srcFile).isFile()) {
-              fs.copyFileSync(srcFile, destFile);
-            }
-          }
+          // Copy all log files and folders to new location
+          copyDirSync(current.logsDir, newPaths.logsDir);
           filesMoved.logs = true;
         }
       }

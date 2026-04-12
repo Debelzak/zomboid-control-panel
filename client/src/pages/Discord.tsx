@@ -195,6 +195,7 @@ export default function Discord() {
   // Poll for bot status every 20s to catch silent disconnects without a full reload.
   useEffect(() => {
     const pollId = setInterval(async () => {
+      if (document.visibilityState === 'hidden') return
       try {
         const nextStatus = await discordApi.getStatus().catch(() => null)
         if (nextStatus) setStatus(nextStatus as DiscordStatus)
@@ -468,7 +469,7 @@ export default function Discord() {
                       <p className="text-sm text-muted-foreground mb-2">Click the button below to open it in a new tab.</p>
                       <Button variant="outline" asChild>
                         <a href="https://discord.com/developers/applications" target="_blank" rel="noopener noreferrer">
-                          <ExternalLink className="w-4 h-4 mr-2" /> Open Developer Portal
+                          <ExternalLink className="w-4 h-4 mr-2" /> Open Developer Portal <span className="sr-only">(opens in new tab)</span>
                         </a>
                       </Button>
                     </div>
@@ -564,7 +565,7 @@ export default function Discord() {
                 {botInfo && (
                   <Alert className="border-primary/30 bg-primary/10">
                     {botInfo.avatar && (
-                      <img src={botInfo.avatar} alt={`${botInfo.username} avatar`} className="w-12 h-12 rounded-full" width={48} height={48} />
+                      <img src={botInfo.avatar} alt={`${botInfo.username} avatar`} className="w-12 h-12 rounded-full" width={48} height={48} loading="lazy" />
                     )}
                     <div>
                       <p className="flex items-center gap-2 font-semibold text-primary">
@@ -663,7 +664,7 @@ export default function Discord() {
                       <p className="font-medium">Your invite link is ready!</p>
                       <Button size="lg" asChild>
                         <a href={inviteUrl} target="_blank" rel="noopener noreferrer">
-                          <UserPlus className="w-5 h-5 mr-2" /> Invite Bot to Server
+                          <UserPlus className="w-5 h-5 mr-2" /> Invite Bot to Server <span className="sr-only">(opens in new tab)</span>
                         </a>
                       </Button>
                       <div className="flex w-full flex-col items-center justify-center gap-2 sm:flex-row">
@@ -855,7 +856,7 @@ export default function Discord() {
                   </div>
                   {botInfo && (
                     <Alert className="border-primary/30 bg-primary/10 py-3">
-                      {botInfo.avatar && <img src={botInfo.avatar} alt={`${botInfo.username} avatar`} className="w-8 h-8 rounded-full" width={32} height={32} />}
+                      {botInfo.avatar && <img src={botInfo.avatar} alt={`${botInfo.username} avatar`} className="w-8 h-8 rounded-full" width={32} height={32} loading="lazy" />}
                       <p className="text-sm"><span className="font-medium text-primary">Token verified</span> — {botInfo.username}</p>
                     </Alert>
                   )}
@@ -1169,7 +1170,7 @@ export default function Discord() {
             </div>
             {botInfo && (
               <div className="flex items-center gap-2 text-sm text-primary">
-                {botInfo.avatar && <img src={botInfo.avatar} alt={`${botInfo.username} avatar`} className="w-5 h-5 rounded-full" width={20} height={20} />}
+                {botInfo.avatar && <img src={botInfo.avatar} alt={`${botInfo.username} avatar`} className="w-5 h-5 rounded-full" width={20} height={20} loading="lazy" />}
                 <CheckCircle2 className="w-3.5 h-3.5" /> Valid token — {botInfo.username}
               </div>
             )}
@@ -1326,8 +1327,9 @@ export default function Discord() {
                 </div>
                 {event.enabled && (
                   <div className="space-y-2">
-                    <Label className="text-sm">Message Template</Label>
+                    <Label htmlFor={`template-${eventKey}`} className="text-sm">Message Template</Label>
                     <Textarea
+                      id={`template-${eventKey}`}
                       value={event.template}
                       onChange={(e) => handleUpdateTemplate(eventKey, e.target.value)}
                       placeholder="Enter notification message..."

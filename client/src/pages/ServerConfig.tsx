@@ -539,7 +539,7 @@ export default function ServerConfig() {
   // Load initial data
   useEffect(() => {
     loadData()
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps -- intentional mount-only init
 
   useEffect(() => {
     return () => {
@@ -593,7 +593,6 @@ export default function ServerConfig() {
   }
 
   // Track if raw content is loading
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [_loadingRaw, setLoadingRaw] = useState(false)
   
   // Load raw content when switching to raw mode
@@ -755,9 +754,9 @@ export default function ServerConfig() {
           }
           return updated
         })
-        toast({ title: 'Option updated', description: `${optName} set successfully` })
+        toast({ title: 'Option Updated', description: `${optName} set successfully` })
       } else {
-        toast({ title: 'Failed to update', description: response?.error || 'Unknown error', variant: 'destructive' })
+        toast({ title: 'Failed to Update', description: response?.error || 'Unknown error', variant: 'destructive' })
       }
     } catch (error) {
       toast({ title: 'Error', description: getUserErrorMessage(error, 'Failed to set option'), variant: 'destructive' })
@@ -1253,8 +1252,9 @@ export default function ServerConfig() {
   // Ctrl+S keyboard shortcut — use refs to avoid stale closure
   const handleSaveIniRef = useRef(handleSaveIni)
   const handleSaveSandboxRef = useRef(handleSaveSandbox)
-  useEffect(() => { handleSaveIniRef.current = handleSaveIni }, [handleSaveIni])
-  useEffect(() => { handleSaveSandboxRef.current = handleSaveSandbox }, [handleSaveSandbox])
+  // Sync refs on every render so keyboard shortcut always calls latest version
+  handleSaveIniRef.current = handleSaveIni
+  handleSaveSandboxRef.current = handleSaveSandbox
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
@@ -1343,7 +1343,7 @@ export default function ServerConfig() {
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4 stagger-in">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 lg:grid-cols-4 stagger-in">
             <ConfigSummaryCard
               icon={<Settings className="h-5 w-5" />}
               value={iniSettingsCount}
@@ -1417,7 +1417,7 @@ export default function ServerConfig() {
           
           <div className="flex items-center gap-1 border rounded-lg p-1 bg-muted/30">
             <Button
-              variant={editorMode === 'structured' ? 'default' : 'ghost'}
+              variant={editorMode === 'structured' ? 'secondary' : 'ghost'}
               size="sm"
               onClick={() => setEditorMode('structured')}
               className="gap-1.5"
@@ -1425,7 +1425,7 @@ export default function ServerConfig() {
               <FormInput className="w-4 h-4" /> Structured
             </Button>
             <Button
-              variant={editorMode === 'raw' ? 'default' : 'ghost'}
+              variant={editorMode === 'raw' ? 'secondary' : 'ghost'}
               size="sm"
               onClick={() => {
                 setEditorMode('raw')
@@ -1548,7 +1548,7 @@ export default function ServerConfig() {
                     rel="noopener noreferrer"
                     className="text-xs text-muted-foreground hover:text-primary flex items-center gap-1 px-2 py-1 rounded border bg-muted/30"
                   >
-                    <ExternalLink className="w-3 h-3" /> PZ Wiki
+                    <ExternalLink className="w-3 h-3" /> PZ Wiki <span className="sr-only">(opens in new tab)</span>
                   </a>
                   <Button onClick={handleSaveIni} disabled={saving}>
                     {saving ? (
@@ -1893,7 +1893,7 @@ export default function ServerConfig() {
                     rel="noopener noreferrer"
                     className="text-xs text-muted-foreground hover:text-primary flex items-center gap-1 px-2 py-1 rounded border bg-muted/30"
                   >
-                    <ExternalLink className="w-3 h-3" /> Map Coordinates
+                    <ExternalLink className="w-3 h-3" /> Map Coordinates <span className="sr-only">(opens in new tab)</span>
                   </a>
                 </div>
               </div>
@@ -2330,7 +2330,7 @@ export default function ServerConfig() {
                                           }}
                                           disabled={isSaving}
                                         >
-                                          <SelectTrigger className="h-7 w-[180px] text-xs font-mono" aria-label={displayName}>
+                                          <SelectTrigger className="h-7 w-full sm:w-[180px] text-xs font-mono" aria-label={displayName}>
                                             <SelectValue />
                                           </SelectTrigger>
                                           <SelectContent>
@@ -2345,7 +2345,7 @@ export default function ServerConfig() {
                                         <Input
                                           key={`${opt.name}-${displayValue}`}
                                           type="number"
-                                          className="h-7 w-[100px] text-xs font-mono text-right"
+                                          className="h-7 w-full sm:w-[100px] text-xs font-mono text-right"
                                           defaultValue={displayValue}
                                           min={opt.min}
                                           max={opt.max}
@@ -2371,7 +2371,7 @@ export default function ServerConfig() {
                                         <Input
                                           key={`${opt.name}-${displayValue}`}
                                           type="text"
-                                          className="h-7 w-[160px] text-xs font-mono"
+                                          className="h-7 w-full sm:w-[160px] text-xs font-mono"
                                           defaultValue={displayValue}
                                           disabled={isSaving}
                                           aria-label={displayName}

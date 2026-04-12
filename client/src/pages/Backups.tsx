@@ -286,7 +286,7 @@ export default function Backups() {
       const result = await backupApi.deleteOlderThan(deleteOlderDays)
       if (result.success) {
         toast({
-          title: 'Rotation Complete',
+          title: 'Old Backups Removed',
           description: result.message || `Removed ${result.deleted || 0} aging backups`,
           variant: 'success' as const,
         })
@@ -712,6 +712,7 @@ export default function Backups() {
                           checked={isSelected}
                           onCheckedChange={() => toggleBackupSelection(backup.name)}
                           disabled={isRestoring}
+                          aria-label={`Select backup ${backup.name}`}
                         />
 
                         <div className="flex-1 min-w-0">

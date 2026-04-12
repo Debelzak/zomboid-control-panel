@@ -800,9 +800,9 @@ input[type="number"] {
 }
 
 @keyframes flashSuccess {
-  0% { box-shadow: 0 0 0 0 hsl(142 70% 50% / 0.4); }
-  50% { box-shadow: 0 0 0 6px hsl(142 70% 50% / 0.1); }
-  100% { box-shadow: 0 0 0 0 hsl(142 70% 50% / 0); }
+  0% { box-shadow: 0 0 0 0 hsl(var(--success) / 0.4); }
+  50% { box-shadow: 0 0 0 6px hsl(var(--success) / 0.1); }
+  100% { box-shadow: 0 0 0 0 hsl(var(--success) / 0); }
 }
 
 /* Glow pulse on important elements */
@@ -1410,6 +1410,8 @@ tr:hover td {
     radial-gradient(circle at 78% 60%, hsl(var(--primary) / 0.12), transparent 26%),
     radial-gradient(circle at 45% 100%, hsl(var(--destructive) / 0.12), transparent 28%);
   filter: blur(12px);
+  will-change: transform, opacity;
+  contain: strict;
   animation: emberDrift 20s ease-in-out infinite alternate;
 }
 
@@ -1643,6 +1645,77 @@ tr:hover td {
 }
 
 /* Survival theme buttons - military tactical style */
+
+/* ==============================================
+   FORCED-COLORS (Windows High Contrast) SUPPORT
+   ============================================== */
+@media (forced-colors: active) {
+  /* Buttons: ensure visible borders when system colors override backgrounds */
+  button,
+  [role="button"],
+  [data-slot="button"] {
+    border: 1px solid ButtonText;
+  }
+
+  /* Focus rings: use system Highlight color */
+  :focus-visible {
+    outline: 2px solid Highlight !important;
+    outline-offset: 2px;
+  }
+
+  /* Status indicator dots: add borders so they remain visible */
+  .status-online,
+  .status-offline,
+  .status-connecting,
+  .server-status-dot--online,
+  .server-status-dot--offline {
+    border: 2px solid ButtonText;
+    forced-color-adjust: none;
+  }
+
+  /* Badges: ensure visible border */
+  [data-slot="badge"],
+  .badge {
+    border: 1px solid ButtonText;
+  }
+
+  /* Cards: keep card boundaries visible */
+  .card,
+  [data-slot="card"] {
+    border: 1px solid ButtonText;
+  }
+
+  /* Nav active indicator: use system highlight */
+  .nav-item-active {
+    border-left: 3px solid Highlight;
+  }
+
+  /* Alert/toast destructive borders */
+  [data-variant="destructive"] {
+    border: 1px solid LinkText;
+  }
+
+  /* Switch/checkbox: keep toggles distinguishable */
+  [role="switch"],
+  [role="checkbox"] {
+    border: 1px solid ButtonText;
+  }
+
+  /* Dialog overlay: let system handle backdrop */
+  [data-state="open"] > [data-radix-overlay] {
+    forced-color-adjust: none;
+  }
+
+  /* Scrollbar: let system handle */
+  ::-webkit-scrollbar-thumb {
+    forced-color-adjust: auto;
+  }
+
+  /* Survival theme decorative overlays: hide in high contrast */
+  .theme-survival::before {
+    display: none;
+  }
+}
 .theme-survival .btn-primary,
 .theme-survival [data-slot="button"][data-variant="default"] {
   text-shadow: 0 1px 2px rgba(0,0,0,0.3);

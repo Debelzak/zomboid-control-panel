@@ -331,11 +331,12 @@ export default function Debug() {
 
     // Refresh system info every 30 seconds
     const interval = setInterval(() => {
+      if (document.visibilityState === 'hidden') return
       fetchSystemInfo()
       fetchHealthStatus()
     }, 30000)
     return () => clearInterval(interval)
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps -- intentional mount-only init
 
   useEffect(() => {
     if (activeTab !== 'performance') {
@@ -344,6 +345,7 @@ export default function Debug() {
 
     fetchPerformanceHistory()
     const interval = setInterval(() => {
+      if (document.visibilityState === 'hidden') return
       fetchPerformanceHistory()
     }, 30000)
 
@@ -376,7 +378,7 @@ export default function Debug() {
   const clearLogs = () => {
     setLogs([])
     toast({
-      title: 'Logs cleared',
+      title: 'Logs Cleared',
       description: 'Display cleared. Server logs remain on disk.',
     })
   }

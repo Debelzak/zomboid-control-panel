@@ -29,10 +29,12 @@ services:
     ports:
       - "3001:3001"
     volumes:
-      - ./data:/app/data          # Persist database (db.json)
-      - ./logs:/app/logs          # Persist logs
+      - ./data:/app/data:z          # :z = SELinux shared label (required on CentOS/RHEL)
+      - ./logs:/app/logs:z          # :z = SELinux shared label (required on CentOS/RHEL)
       # Uncomment and adjust: PanelBridge IPC requires access to the Zomboid user data folder
-      # - /home/pzuser/Zomboid:/zomboid
+      # - /home/pzuser/Zomboid:/zomboid:z
+      # CentOS SELinux note: if relabel fails, run:
+      #   sudo chcon -Rt container_file_t ./data ./logs
     environment:
       - NODE_ENV=production
       # - PORT=3001

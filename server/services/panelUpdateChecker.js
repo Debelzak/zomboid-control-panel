@@ -225,28 +225,28 @@ export class PanelUpdateChecker {
 
   extractVersion(tag) {
     if (typeof tag !== 'string') return null;
-    const match = tag.match(/(\d+)\.(\d+)\.(\d+)/);
+    const match = tag.match(/(\d+)\.(\d+)\.(\d+)(?:\.(\d+))?/);
     if (!match) return null;
-    return `${match[1]}.${match[2]}.${match[3]}`;
+    return match[4] ? `${match[1]}.${match[2]}.${match[3]}.${match[4]}` : `${match[1]}.${match[2]}.${match[3]}`;
   }
 
   /**
-   * Compare semver-ish versions. Returns true if latest > current.
+   * Compare semver-ish versions (supports 3 or 4 parts). Returns true if latest > current.
    */
   isNewer(latest, current) {
-    // Strip any non-numeric prefixes/suffixes for comparison
     const normalize = (v) => {
-      const match = v.match(/(\d+)\.(\d+)\.(\d+)/);
-      if (!match) return [0, 0, 0];
-      return [parseInt(match[1]), parseInt(match[2]), parseInt(match[3])];
+      const match = v.match(/(\d+)\.(\d+)\.(\d+)(?:\.(\d+))?/);
+      if (!match) return [0, 0, 0, 0];
+      return [parseInt(match[1]), parseInt(match[2]), parseInt(match[3]), parseInt(match[4] || '0')];
     };
 
-    const [lMajor, lMinor, lPatch] = normalize(latest);
-    const [cMajor, cMinor, cPatch] = normalize(current);
+    const [lMajor, lMinor, lPatch, lHotfix] = normalize(latest);
+    const [cMajor, cMinor, cPatch, cHotfix] = normalize(current);
 
     if (lMajor !== cMajor) return lMajor > cMajor;
     if (lMinor !== cMinor) return lMinor > cMinor;
-    return lPatch > cPatch;
+    if (lPatch !== cPatch) return lPatch > cPatch;
+    return lHotfix > cHotfix;
   }
 
   /**

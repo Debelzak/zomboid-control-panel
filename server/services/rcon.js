@@ -838,8 +838,8 @@ export class RconService extends EventEmitter {
   // Sanitize input for RCON commands to prevent injection
   sanitize(input) {
     if (input === null || input === undefined) return '';
-    // Remove/escape characters that could break command parsing
-    return String(input).replace(/["\\]/g, '');
+    // Remove quotes, backslashes, AND control characters (newlines, tabs, etc)
+    return String(input).replace(/["\\]|[\x00-\x1F\x7F]/g, '');
   }
 
   // Server commands
@@ -914,9 +914,15 @@ export class RconService extends EventEmitter {
     return this.execute(`kickuser "${safeUser}"`);
   }
 
+  sanitizeForBanReason(input) {
+    if (!input) return '';
+    // Only allow alphanumeric, spaces, and basic punctuation
+    return String(input).replace(/[^a-zA-Z0-9\s.,!?'-]/g, '').substring(0, 100);
+  }
+
   async banPlayer(username, banIp = false, reason = '') {
     const safeUser = this.sanitize(username);
-    const safeReason = this.sanitize(reason);
+    const safeReason = this.sanitizeForBanReason(reason);
     let cmd = `banuser "${safeUser}"`;
     if (banIp) cmd += ' -ip';
     if (safeReason) cmd += ` -r "${safeReason}"`;

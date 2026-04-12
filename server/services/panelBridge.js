@@ -597,7 +597,13 @@ class PanelBridge extends EventEmitter {
     } catch (err) {
       // If rename fails (file locked), try direct write as fallback
       log.warn(`renameSync failed, using direct write: ${err.message}`);
-      fs.writeFileSync(commandsFile, JSON.stringify(commands, null, 2), { mode: 0o600 });
+      try {
+        fs.writeFileSync(commandsFile, JSON.stringify(commands, null, 2), { mode: 0o600 });
+      } catch (writeErr) {
+        log.error(`Direct write also failed: ${writeErr.message}`);
+        try { fs.unlinkSync(tempFile); } catch (_) { /* ignore */ }
+        throw writeErr; // Propagate so caller knows the command failed
+      }
       try { fs.unlinkSync(tempFile); } catch (_) { /* ignore */ }
     }
   }

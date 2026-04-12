@@ -25,7 +25,7 @@ export function PageHeader({ title, description, icon, actions, badge, eyebrow, 
                 {badge}
               </div>
               {description && (
-                <p className="page-description mt-0.5 max-w-3xl text-xs leading-5 text-foreground/65 sm:text-sm">{description}</p>
+                <p className="page-description mt-0.5 max-w-3xl text-xs leading-5 text-muted-foreground sm:text-sm">{description}</p>
               )}
             </div>
           </div>

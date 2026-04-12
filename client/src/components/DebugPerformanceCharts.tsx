@@ -2,6 +2,7 @@ import { memo, useMemo } from 'react'
 import { Activity, TrendingUp } from 'lucide-react'
 import { Area, AreaChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis } from 'recharts'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { useTheme } from '@/contexts/ThemeContext'
 
 export interface DebugPerformancePoint {
   memoryMB?: number
@@ -14,6 +15,7 @@ interface DebugPerformanceChartsProps {
 }
 
 function useChartColors() {
+  const { theme } = useTheme()
   return useMemo(() => {
     const root = document.documentElement
     const style = getComputedStyle(root)
@@ -24,7 +26,7 @@ function useChartColors() {
       memory: hsl('--chart-1'),
       cpu: hsl('--chart-2'),
     }
-  }, [])
+  }, [theme])
 }
 
 function DebugPerformanceCharts({ performanceHistory }: DebugPerformanceChartsProps) {

@@ -243,7 +243,7 @@ export default function Servers() {
         setGameVersion(status.gameVersion)
       }
     }).catch(e => reportClientWarning('Failed to load update status.', e))
-  }, [])
+  }, [fetchServers])
 
   // Listen for update status changes (clears banner after successful update)
   useEffect(() => {
@@ -284,7 +284,7 @@ export default function Servers() {
     }
     
     fetchBranches()
-  }, [steamOperation?.server?.id, steamcmdPath])
+  }, [steamOperation, steamcmdPath])
 
   // Listen for server changes
   useEffect(() => {
@@ -298,7 +298,7 @@ export default function Servers() {
     return () => {
       socket.off('activeServerChanged', handleActiveServerChanged)
     }
-  }, [socket])
+  }, [socket, fetchServers])
 
   // Listen for Steam update/verify events
   useEffect(() => {
@@ -365,7 +365,7 @@ export default function Servers() {
         handleSelectServerConfig(data.detectedServers[0], data)
       } else if (data.detectedServers.length > 1) {
         toast({ 
-          title: 'Multiple servers found', 
+          title: 'Multiple Servers Found', 
           description: 'Please select which server configuration to use'
         })
       }
@@ -785,7 +785,7 @@ export default function Servers() {
 
       {/* Server Grid */}
       {servers.length === 0 ? (
-        <Card className="mission-brief overflow-hidden border-primary/20 bg-[linear-gradient(135deg,hsl(var(--card)),hsl(var(--primary)/0.07))]">
+        <Card className="mission-brief overflow-hidden border-primary/20 bg-card">
           <CardContent className="py-10">
             <div className="mx-auto max-w-4xl space-y-8">
               <div className="text-center">
@@ -904,7 +904,7 @@ export default function Servers() {
                   
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="iconDense" className="shrink-0" aria-label="Server options">
+                      <Button variant="ghost" size="iconDense" className="shrink-0" aria-label={`Options for ${server.name || server.serverName}`}>
                         <MoreVertical className="w-4 h-4" />
                       </Button>
                     </DropdownMenuTrigger>
@@ -949,7 +949,7 @@ export default function Servers() {
                         <HardDrive className="w-3.5 h-3.5 mt-0.5 text-muted-foreground shrink-0" />
                         <div className="min-w-0">
                           <span className="text-muted-foreground text-xs">Install Path</span>
-                          <p className="font-mono text-xs break-all">{server.installPath}</p>
+                          <p className="font-mono text-xs truncate" title={server.installPath}>{server.installPath}</p>
                         </div>
                       </div>
                     )}
@@ -958,7 +958,7 @@ export default function Servers() {
                         <Database className="w-3.5 h-3.5 mt-0.5 text-muted-foreground shrink-0" />
                         <div className="min-w-0">
                           <span className="text-muted-foreground text-xs">Data Path</span>
-                          <p className="font-mono text-xs break-all">{server.zomboidDataPath}</p>
+                          <p className="font-mono text-xs truncate" title={server.zomboidDataPath}>{server.zomboidDataPath}</p>
                         </div>
                       </div>
                     )}
@@ -1038,7 +1038,6 @@ export default function Servers() {
                     <Button 
                       size="sm"
                       variant="warning"
-                      className="flex-1"
                       onClick={() => openSteamOperation(server, 'update')}
                     >
                       <RefreshCw className="w-4 h-4 mr-1.5" /> Update Now
@@ -1060,6 +1059,13 @@ export default function Servers() {
                     </Button>
                   )}
                 </div>
+
+                {/* Created date */}
+                {server.createdAt && (
+                  <p className="text-[11px] text-muted-foreground/60 pt-1">
+                    Added {new Date(server.createdAt).toLocaleDateString()}
+                  </p>
+                )}
               </CardContent>
             </Card>
           )})}

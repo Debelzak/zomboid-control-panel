@@ -679,7 +679,9 @@ export class ModChecker extends EventEmitter {
           if (item.result === 1 && item.publishedfileid) {
             result.set(item.publishedfileid, {
               time_updated: item.time_updated || 0,
-              title: item.title || null
+              title: item.title || null,
+              file_type: item.file_type ?? 0,
+              creator_app_id: item.creator_app_id || 0
             });
           }
         }

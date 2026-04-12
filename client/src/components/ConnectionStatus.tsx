@@ -42,8 +42,8 @@ export function ConnectionStatus({ className, showLabel = false }: ConnectionSta
       icon: WifiOff,
       color: 'text-destructive',
       surface: 'border-destructive/24 bg-destructive/10',
-      label: 'Disconnected',
-      description: error || 'Connection lost',
+      label: 'Panel Disconnected',
+      description: error || 'WebSocket connection to the panel backend lost',
     }
   }
 

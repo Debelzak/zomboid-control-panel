@@ -7,12 +7,14 @@ import type {
 
 const TOAST_LIMIT = 5
 const TOAST_REMOVE_DELAY = 5000
+const TOAST_DESTRUCTIVE_DELAY = 15000
 
 type ToasterToast = ToastProps & {
   id: string
   title?: React.ReactNode
   description?: React.ReactNode
   action?: ToastActionElement
+  duration?: number
 }
 
 const actionTypes = {
@@ -55,18 +57,19 @@ interface State {
 
 const toastTimeouts = new Map<string, ReturnType<typeof setTimeout>>()
 
-const addToRemoveQueue = (toastId: string) => {
+const addToRemoveQueue = (toastId: string, duration?: number) => {
   if (toastTimeouts.has(toastId)) {
     return
   }
 
+  const delay = duration ?? TOAST_REMOVE_DELAY
   const timeout = setTimeout(() => {
     toastTimeouts.delete(toastId)
     dispatch({
       type: "REMOVE_TOAST",
       toastId: toastId,
     })
-  }, TOAST_REMOVE_DELAY)
+  }, delay)
 
   toastTimeouts.set(toastId, timeout)
 }
@@ -91,10 +94,13 @@ export const reducer = (state: State, action: Action): State => {
       const { toastId } = action
 
       if (toastId) {
-        addToRemoveQueue(toastId)
+        const t = state.toasts.find((t) => t.id === toastId)
+        const delay = t?.duration ?? (t?.variant === 'destructive' ? TOAST_DESTRUCTIVE_DELAY : undefined)
+        addToRemoveQueue(toastId, delay)
       } else {
         state.toasts.forEach((toast) => {
-          addToRemoveQueue(toast.id)
+          const delay = toast.duration ?? (toast.variant === 'destructive' ? TOAST_DESTRUCTIVE_DELAY : undefined)
+          addToRemoveQueue(toast.id, delay)
         })
       }
 

@@ -1,4 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import { usePageShortcut } from '../hooks/useKeyboardShortcuts'
 import { 
   Save,
   Server,
@@ -87,6 +89,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 
 interface AppSettings {
   // Mod Checker Settings
@@ -266,17 +273,28 @@ export default function Settings() {
 
   // Section navigation via tabs
   const settingsSections = [
-    { id: 'panel', label: 'Panel', icon: Globe, group: 'core' },
-    { id: 'https', label: 'HTTPS', icon: Lock, group: 'core' },
-    { id: 'rcon', label: 'RCON', icon: Link, group: 'connections' },
-    { id: 'bridge', label: 'Bridge', icon: Zap, group: 'connections' },
-    { id: 'mods', label: 'Mods', icon: Clock, group: 'features' },
-    { id: 'api-keys', label: 'API Keys', icon: Key, group: 'features' },
-    { id: 'backups', label: 'Backups', icon: Archive, group: 'features' },
-    { id: 'security', label: 'Security', icon: Shield, group: 'system' },
-    { id: 'about', label: 'About', icon: Server, group: 'system' },
+    { id: 'panel', label: 'Panel', icon: Globe, group: 'core', tip: 'Port, theme, and panel updates' },
+    { id: 'https', label: 'HTTPS', icon: Lock, group: 'core', tip: 'SSL/TLS encryption for secure connections' },
+    { id: 'rcon', label: 'RCON', icon: Link, group: 'connections', tip: 'Remote console \u2014 built-in game server protocol for commands' },
+    { id: 'bridge', label: 'Bridge', icon: Zap, group: 'connections', tip: 'PanelBridge Lua mod \u2014 adds weather, teleport, and world control' },
+    { id: 'mods', label: 'Mods', icon: Clock, group: 'features', tip: 'Auto-update checking and restart behavior' },
+    { id: 'api-keys', label: 'API Keys', icon: Key, group: 'features', tip: 'Steam API key for Workshop mod lookups' },
+    { id: 'backups', label: 'Backups', icon: Archive, group: 'features', tip: 'Scheduled backup frequency and retention' },
+    { id: 'security', label: 'Security', icon: Shield, group: 'system', tip: 'Password and access control' },
+    { id: 'about', label: 'About', icon: Server, group: 'system', tip: 'Version info and diagnostics' },
   ]
-  const [activeSection, setActiveSection] = useState('panel')
+  const validTabs = settingsSections.map(s => s.id)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [activeSection, setActiveSection] = useState(() => {
+    const tab = searchParams.get('tab')
+    return tab && validTabs.includes(tab) ? tab : 'panel'
+  })
+
+  // Sync active tab to URL
+  const handleTabChange = useCallback((value: string) => {
+    setActiveSection(value)
+    setSearchParams({ tab: value }, { replace: true })
+  }, [setSearchParams])
   
   // Warn before leaving with unsaved changes
   useEffect(() => {
@@ -447,6 +465,9 @@ export default function Settings() {
       setSaving(false)
     }
   }
+
+  // Ctrl+S to save settings
+  usePageShortcut('s', () => { if (isDirty && !saving) handleSave() }, { ctrl: true })
 
   const handleReloadCorsRules = async () => {
     setCorsUpdating(true)
@@ -756,7 +777,7 @@ export default function Settings() {
   useEffect(() => {
     fetchBridgeStatus()
     fetchServers()
-    
+
     // Use recursive setTimeout for adaptive interval based on current status
     let timeoutId: ReturnType<typeof setTimeout> | null = null
     
@@ -766,7 +787,9 @@ export default function Settings() {
       const interval = (status?.isRunning && !status?.modConnected) ? 3000 : 10000
       
       timeoutId = setTimeout(async () => {
-        await fetchBridgeStatus()
+        if (document.visibilityState !== 'hidden') {
+          await fetchBridgeStatus()
+        }
         scheduleNextFetch()
       }, interval)
     }
@@ -783,7 +806,7 @@ export default function Settings() {
         bridgeIntervalRef.current = null
       }
     }
-  }, [fetchBridgeStatus])
+  }, [fetchBridgeStatus, fetchServers])
 
   // Backup functions
   const fetchBackupStatus = useCallback(async () => {
@@ -1182,7 +1205,7 @@ export default function Settings() {
 
   if (loading && !originalSettings) {
     return (
-      <div className="flex items-center justify-center h-[60vh]">
+      <div className="flex items-center justify-center min-h-[320px] py-12">
         <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
       </div>
     )
@@ -1221,7 +1244,7 @@ export default function Settings() {
         }
       />
 
-      <Tabs value={activeSection} onValueChange={setActiveSection} className="mt-6">
+      <Tabs value={activeSection} onValueChange={handleTabChange} className="mt-6">
         <TabsList className="flex h-auto flex-wrap gap-1 bg-muted/40 p-1 rounded-lg w-full">
           {settingsSections.map((section, idx) => {
             const Icon = section.icon
@@ -1230,13 +1253,22 @@ export default function Settings() {
             return (
               <React.Fragment key={section.id}>
                 {showSeparator && <div className="mx-0.5 hidden sm:block w-px self-stretch bg-border/40" />}
-                <TabsTrigger
-                  value={section.id}
-                  className="flex items-center gap-1.5 px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-sm"
-                >
-                  <Icon className="w-3.5 h-3.5 shrink-0" />
-                  <span className="hidden sm:inline">{section.label}</span>
-                </TabsTrigger>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span>
+                      <TabsTrigger
+                        value={section.id}
+                        className="flex items-center gap-1.5 px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-sm"
+                      >
+                        <Icon className="w-3.5 h-3.5 shrink-0" />
+                        <span className="hidden sm:inline">{section.label}</span>
+                      </TabsTrigger>
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="max-w-[200px]">
+                    <p className="text-xs">{section.tip}</p>
+                  </TooltipContent>
+                </Tooltip>
               </React.Fragment>
             )
           })}
@@ -1315,7 +1347,7 @@ export default function Settings() {
             <div className="space-y-1">
               <p className="text-sm font-medium">Remote Access (CORS)</p>
               <p className="text-xs text-muted-foreground">
-                Allow browsers on other machines or public hostnames to reach this panel.
+                Controls which devices and browsers can connect to this panel. If you only access the panel from this machine, these defaults are fine.
               </p>
             </div>
 
@@ -1590,7 +1622,7 @@ export default function Settings() {
                 <Button asChild variant="ghost" className="gap-2">
                   <a href={panelUpdateStatus.releaseUrl} target="_blank" rel="noopener noreferrer" className="max-w-full truncate" title={panelUpdateStatus.releaseUrl}>
                     <ExternalLink className="h-4 w-4" />
-                    View Release Notes
+                    View Release Notes <span className="sr-only">(opens in new tab)</span>
                   </a>
                 </Button>
               )}
@@ -2248,7 +2280,7 @@ export default function Settings() {
             <div className="p-4 bg-muted rounded-lg text-sm mt-3">
               <p className="font-medium mb-2">How to get a Steam API Key:</p>
               <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
-                <li>Go to <a href="https://steamcommunity.com/dev/apikey" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Steam API Key Registration</a></li>
+                <li>Go to <a href="https://steamcommunity.com/dev/apikey" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Steam API Key Registration <span className="sr-only">(opens in new tab)</span></a></li>
                 <li>Log in with your Steam account</li>
                 <li>Enter a domain name (can be "localhost" for personal use)</li>
                 <li>Copy the key and paste it here</li>

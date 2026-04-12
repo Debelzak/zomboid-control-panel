@@ -8,12 +8,14 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useToast } from '@/components/ui/use-toast'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { rconApi, configApi, serverApi } from '@/lib/api'
 import { useSocket } from '@/contexts/SocketContext'
 import { EmptyState } from '@/components/EmptyState'
 import { StatusIndicator } from '@/components/StatusIndicator'
 import { PageHeader } from '@/components/PageHeader'
 import { cn } from '@/lib/utils'
+import { usePageShortcut } from '@/hooks/useKeyboardShortcuts'
 
 interface CommandEntry {
   id: number
@@ -178,7 +180,6 @@ export default function Console() {
   
   // Server Console Log state
   const [serverLogLines, setServerLogLines] = useState<string[]>([])
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [_serverLogSize, setServerLogSize] = useState(0)
   const [serverLogPath, setServerLogPath] = useState('')
   const [serverLogExists, setServerLogExists] = useState(false)
@@ -188,6 +189,11 @@ export default function Console() {
   const [serverLogAutoScroll, setServerLogAutoScroll] = useState(true)
   const [serverLogPaused, setServerLogPaused] = useState(false)
   const [serverLogFiltered, setServerLogFiltered] = useState(true) // Filter out noise by default
+  const [consoleTab, setConsoleTab] = useState('server-log')
+
+  // Console keyboard shortcuts
+  usePageShortcut('a', () => setServerLogAutoScroll(prev => !prev))
+  usePageShortcut('`', () => setConsoleTab(prev => prev === 'server-log' ? 'rcon' : 'server-log'))
   const serverLogRef = useRef<HTMLDivElement>(null)
   const serverLogIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const serverLogSizeRef = useRef(0) // Track size without recreating interval
@@ -219,12 +225,12 @@ export default function Console() {
       setCommandCache(data.history?.map((h: CommandEntry) => h.command).reverse() || [])
     } catch {
       toast({
-        title: 'History unavailable',
+        title: 'History Unavailable',
         description: 'Recent RCON command history could not be loaded.',
         variant: 'destructive',
       })
     }
-  }, [])
+  }, [toast])
 
   const testRconConnection = useCallback(async () => {
     setTestingConnection(true)
@@ -313,7 +319,7 @@ export default function Console() {
     
     // Poll every 2 seconds for new log content
     serverLogIntervalRef.current = setInterval(() => {
-      if (!serverLogPausedRef.current) {
+      if (!serverLogPausedRef.current && document.visibilityState !== 'hidden') {
         fetchServerLog(false)
       }
     }, 2000)
@@ -528,7 +534,7 @@ export default function Console() {
         tone="ops"
         icon={<TerminalIcon className="w-5 h-5" />}
       />
-      <Tabs defaultValue="server-log" className="w-full">
+      <Tabs value={consoleTab} onValueChange={setConsoleTab} className="w-full">
         <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="server-log" className="flex items-center gap-2">
             <FileText className="w-4 h-4" />
@@ -555,7 +561,7 @@ export default function Console() {
                 variant="ghost"
                 size="sm"
                 onClick={() => setServerLogPaused(!serverLogPaused)}
-                title={serverLogPaused ? 'Resume auto-update' : 'Pause auto-update'}
+                aria-label={serverLogPaused ? 'Resume auto-update' : 'Pause auto-update'}
               >
                 {serverLogPaused ? (
                   <Play className="w-4 h-4" />
@@ -577,7 +583,7 @@ export default function Console() {
                 variant="ghost"
                 size="sm"
                 onClick={() => setServerLogAutoScroll(!serverLogAutoScroll)}
-                title={serverLogAutoScroll ? 'Disable auto-scroll' : 'Enable auto-scroll'}
+                aria-label={serverLogAutoScroll ? 'Disable auto-scroll' : 'Enable auto-scroll'}
                 className={serverLogAutoScroll ? 'text-primary' : ''}
               >
                 <span className="text-xs">Auto-scroll</span>
@@ -586,14 +592,19 @@ export default function Console() {
                 variant="ghost"
                 size="sm"
                 onClick={() => fetchServerLog(true)}
-                title="Refresh log"
+                aria-label="Refresh log"
               >
                 <RefreshCw className="w-4 h-4" />
               </Button>
-              <Button variant="destructive" size="sm" onClick={clearServerLog}>
-                <Trash2 className="w-4 h-4 mr-2" />
-                Clear
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="destructive" size="sm" onClick={clearServerLog}>
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Clear
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Clear the log display (does not delete the server log file)</TooltipContent>
+              </Tooltip>
             </div>
           </div>
 
@@ -601,7 +612,7 @@ export default function Console() {
           {serverLogError && (
             <div className="mb-2 flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
               <span className="flex-1">{serverLogError}</span>
-              <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => fetchServerLog(true)}>
+              <Button variant="ghost" size="sm" className="h-9 px-3 text-xs" onClick={() => fetchServerLog(true)}>
                 Retry
               </Button>
             </div>
@@ -609,13 +620,16 @@ export default function Console() {
 
           {/* Terminal pane */}
           {!serverLogExists ? (
-            <div className="flex h-[55vh] min-h-[300px] items-center justify-center rounded-lg border border-border/50 bg-muted/20 p-4">
+            <div className="flex h-[24rem] min-h-[300px] sm:h-[28rem] lg:h-[34rem] items-center justify-center rounded-lg border border-border/50 bg-muted/20 p-4">
               <EmptyState type="serverOffline" title="Server console log not found" description="Make sure the server is running" compact />
             </div>
           ) : (
             <div
               ref={serverLogRef}
-              className="h-[55vh] min-h-[300px] overflow-auto rounded-lg border border-border/30 bg-black/40 p-3 font-mono text-xs terminal-output"
+              role="log"
+              aria-live="polite"
+              aria-label="Server console output"
+              className="h-[24rem] min-h-[300px] sm:h-[28rem] lg:h-[34rem] overflow-auto rounded-lg border border-border/30 bg-black/40 p-3 font-mono text-xs terminal-output"
             >
               {filteredLogLines.length === 0 ? (
                 <p className="text-muted-foreground p-2">{serverLogFiltered && serverLogLines.length > 0 ? 'All messages filtered out. Try disabling the filter.' : 'Console log is empty.'}</p>
@@ -728,6 +742,7 @@ export default function Console() {
               value={announcement}
               onChange={(e) => setAnnouncement(e.target.value)}
               placeholder="Write the announcement players should see..."
+              aria-label="Server announcement message"
               className="min-h-[80px]"
               maxLength={500}
               disabled={sendingAnnouncement || rconConnected === false}
@@ -778,6 +793,7 @@ export default function Console() {
               value={channelMessage}
               onChange={(e) => setChannelMessage(e.target.value)}
               placeholder="Write the message for this channel..."
+              aria-label="Channel message"
               disabled={sendingChannelMessage || rconConnected === false}
               onKeyDown={(e: React.KeyboardEvent) => e.key === 'Enter' && sendChannelMessage()}
             />
@@ -804,14 +820,22 @@ export default function Console() {
             <TerminalIcon className="w-4 h-4" />
             Console Output
           </div>
-          <Button variant="destructive" size="sm" onClick={clearLog}>
-            <Trash2 className="w-4 h-4 mr-2" />
-            Clear
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="destructive" size="sm" onClick={clearLog}>
+                <Trash2 className="w-4 h-4 mr-2" />
+                Clear
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Clear the command history display</TooltipContent>
+          </Tooltip>
         </div>
         <div 
           ref={scrollRef}
-          className="h-[35vh] min-h-[200px] sm:h-[40vh] overflow-auto rounded-lg border border-border/30 bg-black/40 p-3 terminal-output"
+          role="log"
+          aria-live="polite"
+          aria-label="RCON command output"
+          className="h-[16rem] min-h-[200px] sm:h-[20rem] lg:h-[24rem] overflow-auto rounded-lg border border-border/30 bg-black/40 p-3 terminal-output"
         >
           {liveLog.length === 0 ? (
             <EmptyState compact type="noMessages" title="No commands yet" description="Run an RCON command to see the response here." />
@@ -842,7 +866,7 @@ export default function Console() {
                  key={cmd}
                  variant="outline"
                  size="sm"
-                 className="h-7 text-xs font-mono"
+                 className="h-9 text-xs font-mono"
                  onClick={() => {
                     const newCommand = cmd === 'broadcast' ? 'servermsg "Message"' : cmd
                     setCommand(newCommand)
@@ -902,7 +926,7 @@ export default function Console() {
               />
             </div>
           </div>
-          <ScrollArea className="h-[35vh] min-h-[200px] rounded-lg border border-border/30 bg-black/40">
+          <ScrollArea className="h-[16rem] min-h-[200px] sm:h-[20rem] lg:h-[24rem] rounded-lg border border-border/30 bg-black/40">
             {history.length === 0 ? (
               <EmptyState compact type="noData" title="No command history" description="Commands you run will be logged here." />
             ) : (

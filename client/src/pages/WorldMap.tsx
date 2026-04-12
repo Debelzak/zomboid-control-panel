@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { useTheme } from '@/contexts/ThemeContext'
 import {
   Map as MapIcon,
   Crosshair,
@@ -146,33 +147,61 @@ const POLL_INTERVAL = 3000
 const MARKER_HIT_RADIUS = 14
 
 // ─── Canvas color palette ─────────────────────────────────
-const MAP_COLORS = {
-  background: '#0a0c0b',
-  // Landmarks
-  landmarkGlow: 'rgba(255,255,255,0.04)',
-  landmarkDiamond: 'rgba(255,255,255,0.35)',
-  landmarkLabel: 'rgba(255,255,255,0.65)',
-  // Shadows
-  shadowLight: 'rgba(0,0,0,0.4)',
-  shadowMedium: 'rgba(0,0,0,0.45)',
-  shadowStrong: 'rgba(0,0,0,0.6)',
-  shadowDarker: 'rgba(0,0,0,0.7)',
-  shadowOpaque: 'rgba(0,0,0,1)',
-  // Player markers
-  headHighlight: 'rgba(255,255,255,0.3)',
-  adminStar: 'rgba(251,191,36,0.9)',
-  healthBarBg: 'rgba(0,0,0,0.5)',
-  healthGood: 'rgba(74,222,128,0.8)',
-  healthWarning: 'rgba(251,191,36,0.8)',
-  healthCritical: 'rgba(248,113,113,0.8)',
-  // Airdrop
-  crateBody: 'rgba(140,100,40,0.92)',
-  crateBorder: 'rgba(90,65,20,0.95)',
-  crateStraps: 'rgba(200,160,60,0.7)',
-  // Empty state
-  emptyTitle: 'rgba(255,255,255,0.15)',
-  emptySubtitle: 'rgba(255,255,255,0.08)',
-} as const
+// Reads CSS custom properties so canvas colors follow the active theme.
+// Each HSL token is stored as "H S% L%" in the property (no commas).
+
+function hslToken(prop: string, alpha?: number): string {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(prop).trim()
+  if (!raw) return alpha !== undefined ? `rgba(128,128,128,${alpha})` : '#808080'
+  return alpha !== undefined ? `hsl(${raw} / ${alpha})` : `hsl(${raw})`
+}
+
+/** Resolve all canvas colors from CSS custom properties once per frame. */
+function resolveCanvasColors() {
+  return {
+    background: hslToken('--background'),
+    // Landmarks — these stay neutral/white-based since they overlay the map
+    landmarkGlow: 'rgba(255,255,255,0.04)',
+    landmarkDiamond: hslToken('--foreground', 0.35),
+    landmarkLabel: hslToken('--foreground', 0.65),
+    // Shadows — structural, theme-independent
+    shadowLight: 'rgba(0,0,0,0.4)',
+    shadowMedium: 'rgba(0,0,0,0.45)',
+    shadowStrong: 'rgba(0,0,0,0.6)',
+    shadowDarker: 'rgba(0,0,0,0.7)',
+    shadowOpaque: 'rgba(0,0,0,1)',
+    // Player markers
+    headHighlight: 'rgba(255,255,255,0.3)',
+    adminStar: hslToken('--warning', 0.9),
+    healthBarBg: 'rgba(0,0,0,0.5)',
+    healthGood: hslToken('--success', 0.8),
+    healthWarning: hslToken('--warning', 0.8),
+    healthCritical: hslToken('--destructive', 0.8),
+    // Player states (used by getPlayerColor)
+    playerDefault: hslToken('--info', 0.92),
+    playerAdmin: hslToken('--warning', 0.92),
+    playerInfected: hslToken('--destructive', 0.92),
+    playerDead: hslToken('--muted-foreground', 0.7),
+    // Airdrop
+    crateBody: hslToken('--accent', 0.92),
+    crateBorder: hslToken('--accent', 0.6),
+    crateStraps: hslToken('--warning', 0.7),
+    airdropRing: hslToken('--warning', 0.4),
+    airdropLine: hslToken('--foreground', 0.5),
+    airdropCanopyStroke: hslToken('--warning', 0.85),
+    airdropCanopyFill: hslToken('--warning', 0.12),
+    airdropLabel: hslToken('--warning', 0.9),
+    // Empty state
+    emptyTitle: hslToken('--foreground', 0.15),
+    emptySubtitle: hslToken('--foreground', 0.08),
+    // Crosshair
+    crosshair: hslToken('--foreground', 0.12),
+    // Username label
+    usernameLabel: hslToken('--foreground'),
+  }
+}
+
+type CanvasColors = ReturnType<typeof resolveCanvasColors>
 
 // Known PZ landmarks (game-tile coordinates)
 const PZ_LANDMARKS = [
@@ -188,12 +217,14 @@ const PZ_LANDMARKS = [
 
 // ─── Component ────────────────────────────────────────────
 export default function WorldMap() {
+  const { theme } = useTheme()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const mapWrapperRef = useRef<HTMLDivElement>(null)
   const animFrameRef = useRef<number>(0)
   const playersRef = useRef<MapPlayer[]>([])
   const drawRequestRef = useRef<number>(0)
+  const canvasColorsRef = useRef<CanvasColors>(resolveCanvasColors())
 
   const [players, setPlayers] = useState<MapPlayer[]>([])
   const [, setMapCfg] = useState<MapConfig>(MAP_B42)
@@ -400,18 +431,28 @@ export default function WorldMap() {
 
   useEffect(() => {
     if (!bridgeConnected) return
-    const interval = setInterval(fetchPlayerPositions, POLL_INTERVAL)
+    const interval = setInterval(() => {
+      if (document.visibilityState !== 'hidden') fetchPlayerPositions()
+    }, POLL_INTERVAL)
     return () => clearInterval(interval)
   }, [bridgeConnected, fetchPlayerPositions])
 
   useEffect(() => { playersRef.current = players }, [players])
 
   // ─── Canvas rendering ───────────────────────────────────
+
+  // Resolve theme colors once on mount and when theme changes — not per frame
+  useEffect(() => {
+    canvasColorsRef.current = resolveCanvasColors()
+  }, [theme])
+
   const drawMap = useCallback(() => {
     const canvas = canvasRef.current
     if (!canvas || canvasSize.width === 0) return
     const ctx = canvas.getContext('2d')
     if (!ctx) return
+
+    const C = canvasColorsRef.current
 
     // DPR-aware sizing for sharp rendering on high-DPI displays
     const dpr = window.devicePixelRatio || 1
@@ -429,7 +470,7 @@ export default function WorldMap() {
     ctx.imageSmoothingQuality = 'high'
 
     // Dark background
-    ctx.fillStyle = MAP_COLORS.background
+    ctx.fillStyle = C.background
     ctx.fillRect(0, 0, W, H)
 
     // ── DZI map tiles ──
@@ -481,7 +522,7 @@ export default function WorldMap() {
       // Glow
       ctx.beginPath()
       ctx.arc(p.x, p.y, markerSize * 2, 0, Math.PI * 2)
-      ctx.fillStyle = MAP_COLORS.landmarkGlow
+      ctx.fillStyle = C.landmarkGlow
       ctx.fill()
 
       // Diamond
@@ -491,11 +532,11 @@ export default function WorldMap() {
       ctx.lineTo(p.x, p.y + markerSize * 0.7)
       ctx.lineTo(p.x - markerSize * 0.7, p.y)
       ctx.closePath()
-      ctx.fillStyle = MAP_COLORS.landmarkDiamond
+      ctx.fillStyle = C.landmarkDiamond
       ctx.fill()
 
       // Label
-      ctx.fillStyle = MAP_COLORS.landmarkLabel
+      ctx.fillStyle = C.landmarkLabel
       ctx.fillText(lm.name, p.x, p.y - markerSize - 4)
     }
 
@@ -548,7 +589,7 @@ export default function WorldMap() {
 
       // Drop shadow
       ctx.save()
-      ctx.shadowColor = MAP_COLORS.shadowMedium
+      ctx.shadowColor = C.shadowMedium
       ctx.shadowBlur = 5
       ctx.shadowOffsetX = 1
       ctx.shadowOffsetY = 2
@@ -579,19 +620,19 @@ export default function WorldMap() {
       ctx.lineTo(p.x + bodyW, pinCenterY)
       ctx.closePath()
       ctx.arc(p.x, pinCenterY - headR * 0.4, headR, 0, Math.PI * 2)
-      ctx.strokeStyle = MAP_COLORS.shadowLight
+      ctx.strokeStyle = C.shadowLight
       ctx.lineWidth = 1
       ctx.stroke()
 
       // Inner head highlight
       ctx.beginPath()
       ctx.arc(p.x - headR * 0.25, pinCenterY - headR * 0.65, headR * 0.35, 0, Math.PI * 2)
-      ctx.fillStyle = MAP_COLORS.headHighlight
+      ctx.fillStyle = C.headHighlight
       ctx.fill()
 
       // Admin star
       if (isAdmin) {
-        ctx.fillStyle = MAP_COLORS.adminStar
+        ctx.fillStyle = C.adminStar
         drawStar(ctx, p.x + mRadius + 4, pinCenterY - headR - 3, 3.5, 5)
       }
 
@@ -601,10 +642,10 @@ export default function WorldMap() {
       ctx.font = `600 ${Math.max(10, Math.min(13, s * 2500))}px ui-sans-serif, system-ui, sans-serif`
       ctx.textAlign = 'center'
       ctx.save()
-      ctx.shadowColor = MAP_COLORS.shadowStrong
+      ctx.shadowColor = C.shadowStrong
       ctx.shadowBlur = 3
       ctx.shadowOffsetY = 1
-      ctx.fillStyle = `rgba(255,255,255,${labelAlpha})`
+      ctx.fillStyle = hslToken('--foreground', labelAlpha)
       ctx.fillText(player.displayName || player.username, p.x, labelY)
       ctx.restore()
 
@@ -616,14 +657,14 @@ export default function WorldMap() {
         const barY = pinCenterY + bodyH + headR + 4
         const healthPct = Math.max(0, Math.min(100, player.health)) / 100
 
-        ctx.fillStyle = MAP_COLORS.healthBarBg
+        ctx.fillStyle = C.healthBarBg
         ctx.beginPath()
         ctx.roundRect(barX, barY, barW, barH, 1.5)
         ctx.fill()
         ctx.fillStyle =
-          healthPct > 0.5 ? MAP_COLORS.healthGood :
-          healthPct > 0.25 ? MAP_COLORS.healthWarning :
-          MAP_COLORS.healthCritical
+          healthPct > 0.5 ? C.healthGood :
+          healthPct > 0.25 ? C.healthWarning :
+          C.healthCritical
         ctx.beginPath()
         ctx.roundRect(barX, barY, barW * healthPct, barH, 1.5)
         ctx.fill()
@@ -649,7 +690,7 @@ export default function WorldMap() {
         const ringR = dropSize + 8 + pulse * 14
         ctx.beginPath()
         ctx.arc(ap.x, ap.y, ringR, 0, Math.PI * 2)
-        ctx.strokeStyle = `rgba(251,191,36,${0.4 * (1 - pulse) * fadeAlpha})`
+        ctx.strokeStyle = hslToken('--warning', 0.4 * (1 - pulse) * fadeAlpha)
         ctx.lineWidth = 2
         ctx.stroke()
       }
@@ -659,7 +700,7 @@ export default function WorldMap() {
       ctx.globalAlpha = fadeAlpha * 0.25
       ctx.beginPath()
       ctx.ellipse(ap.x, ap.y + dropSize * 1.1, dropSize * 1.2, dropSize * 0.3, 0, 0, Math.PI * 2)
-      ctx.fillStyle = MAP_COLORS.shadowOpaque
+      ctx.fillStyle = C.shadowOpaque
       ctx.fill()
       ctx.restore()
 
@@ -674,9 +715,9 @@ export default function WorldMap() {
       // Crate body (rounded rect)
       ctx.beginPath()
       ctx.roundRect(ap.x - bs, crateTop, bs * 2, crateH, 2)
-      ctx.fillStyle = MAP_COLORS.crateBody
+      ctx.fillStyle = C.crateBody
       ctx.fill()
-      ctx.strokeStyle = MAP_COLORS.crateBorder
+      ctx.strokeStyle = C.crateBorder
       ctx.lineWidth = 1.5
       ctx.stroke()
 
@@ -686,7 +727,7 @@ export default function WorldMap() {
       ctx.lineTo(ap.x, crateBottom)
       ctx.moveTo(ap.x - bs, crateTop + crateH * 0.45)
       ctx.lineTo(ap.x + bs, crateTop + crateH * 0.45)
-      ctx.strokeStyle = MAP_COLORS.crateStraps
+      ctx.strokeStyle = C.crateStraps
       ctx.lineWidth = 1
       ctx.stroke()
 
@@ -700,7 +741,7 @@ export default function WorldMap() {
       ctx.lineTo(ap.x + canopyW, canopyY)
       ctx.moveTo(ap.x, crateTop)
       ctx.lineTo(ap.x, canopyY)
-      ctx.strokeStyle = `rgba(220,200,160,${0.5 * fadeAlpha})`
+      ctx.strokeStyle = hslToken('--foreground', 0.5 * fadeAlpha)
       ctx.lineWidth = 0.8
       ctx.stroke()
 
@@ -708,7 +749,7 @@ export default function WorldMap() {
       ctx.beginPath()
       ctx.moveTo(ap.x - canopyW, canopyY)
       ctx.quadraticCurveTo(ap.x, canopyY - dropSize * 1.2, ap.x + canopyW, canopyY)
-      ctx.strokeStyle = `rgba(251,191,36,${0.85 * fadeAlpha})`
+      ctx.strokeStyle = hslToken('--warning', 0.85 * fadeAlpha)
       ctx.lineWidth = 2.5
       ctx.stroke()
 
@@ -718,7 +759,7 @@ export default function WorldMap() {
       ctx.quadraticCurveTo(ap.x, canopyY - dropSize * 1.2, ap.x + canopyW, canopyY)
       ctx.lineTo(ap.x - canopyW, canopyY)
       ctx.closePath()
-      ctx.fillStyle = `rgba(251,191,36,${0.12 * fadeAlpha})`
+      ctx.fillStyle = hslToken('--warning', 0.12 * fadeAlpha)
       ctx.fill()
 
       ctx.restore()
@@ -730,10 +771,10 @@ export default function WorldMap() {
         const fontSize = Math.max(9, Math.min(12, s * 2200))
         ctx.font = `600 ${fontSize}px ui-sans-serif, system-ui, sans-serif`
         ctx.textAlign = 'center'
-        ctx.shadowColor = MAP_COLORS.shadowDarker
+        ctx.shadowColor = C.shadowDarker
         ctx.shadowBlur = 3
         ctx.shadowOffsetY = 1
-        ctx.fillStyle = `rgba(251,191,36,${0.9 * fadeAlpha})`
+        ctx.fillStyle = hslToken('--warning', 0.9 * fadeAlpha)
         ctx.fillText(presetDef.label, ap.x, ap.y - dropSize * 2.2)
         ctx.restore()
       }
@@ -742,18 +783,18 @@ export default function WorldMap() {
     // Empty state
     if (currentPlayers.length === 0) {
       ctx.textAlign = 'center'
-      ctx.fillStyle = MAP_COLORS.emptyTitle
+      ctx.fillStyle = C.emptyTitle
       ctx.font = '600 14px ui-sans-serif, system-ui, sans-serif'
       ctx.fillText('No players on the map', W / 2, H / 2 - 8)
       ctx.font = '400 11px ui-sans-serif, system-ui, sans-serif'
-      ctx.fillStyle = MAP_COLORS.emptySubtitle
+      ctx.fillStyle = C.emptySubtitle
       ctx.fillText('Player positions appear when PanelBridge is connected', W / 2, H / 2 + 10)
     }
 
     // Crosshair at cursor
     if (cursorWorldPos && !isDragging) {
       const cp = playerToScreen(cursorWorldPos.x, cursorWorldPos.y, s, off)
-      ctx.strokeStyle = 'rgba(255,255,255,0.12)'
+      ctx.strokeStyle = C.crosshair
       ctx.lineWidth = 1
       ctx.setLineDash([4, 4])
       ctx.beginPath()
@@ -1020,8 +1061,60 @@ export default function WorldMap() {
     setCursorWorldPos(null)
   }, [])
 
+  // ─── Touch support ─────────────────────────────────────
+  const touchRef = useRef<{ startX: number; startY: number; offX: number; offY: number; pinchDist: number | null }>({
+    startX: 0, startY: 0, offX: 0, offY: 0, pinchDist: null,
+  })
+
+  const getTouchDist = (touches: React.TouchList) => {
+    const dx = touches[0].clientX - touches[1].clientX
+    const dy = touches[0].clientY - touches[1].clientY
+    return Math.sqrt(dx * dx + dy * dy)
+  }
+
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length === 1) {
+      const t = e.touches[0]
+      touchRef.current = { startX: t.clientX, startY: t.clientY, offX: offsetRef.current.x, offY: offsetRef.current.y, pinchDist: null }
+      setIsDragging(true)
+    } else if (e.touches.length === 2) {
+      touchRef.current.pinchDist = getTouchDist(e.touches)
+    }
+  }, [])
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    e.preventDefault()
+    if (e.touches.length === 2 && touchRef.current.pinchDist !== null) {
+      const newDist = getTouchDist(e.touches)
+      const factor = newDist / touchRef.current.pinchDist
+      const canvas = canvasRef.current
+      if (!canvas) return
+      const rect = canvas.getBoundingClientRect()
+      const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left
+      const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top
+      const prevScale = scaleRef.current
+      const newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, prevScale * factor))
+      const ratio = newScale / prevScale
+      const newOffset = { x: cx - (cx - offsetRef.current.x) * ratio, y: cy - (cy - offsetRef.current.y) * ratio }
+      scaleRef.current = newScale
+      offsetRef.current = newOffset
+      setScale(newScale)
+      setOffset(newOffset)
+      touchRef.current.pinchDist = newDist
+    } else if (e.touches.length === 1) {
+      const t = e.touches[0]
+      const tr = touchRef.current
+      setOffset({ x: tr.offX + (t.clientX - tr.startX), y: tr.offY + (t.clientY - tr.startY) })
+    }
+  }, [])
+
+  const handleTouchEnd = useCallback(() => {
+    setIsDragging(false)
+    touchRef.current.pinchDist = null
+  }, [])
+
   // ─── Zoom controls ─────────────────────────────────────
-  const zoomIn = () => {
+  const zoomIn = useCallback(() => {
     const cx = canvasSize.width / 2
     const cy = canvasSize.height / 2
     const prev = scaleRef.current
@@ -1033,8 +1126,8 @@ export default function WorldMap() {
     offsetRef.current = newOffset
     setScale(next)
     setOffset(newOffset)
-  }
-  const zoomOut = () => {
+  }, [canvasSize])
+  const zoomOut = useCallback(() => {
     const cx = canvasSize.width / 2
     const cy = canvasSize.height / 2
     const prev = scaleRef.current
@@ -1046,7 +1139,7 @@ export default function WorldMap() {
     offsetRef.current = newOffset
     setScale(next)
     setOffset(newOffset)
-  }
+  }, [canvasSize])
 
   // ─── Keyboard controls ─────────────────────────────────
   const handleKeyDown = useCallback(
@@ -1137,7 +1230,7 @@ export default function WorldMap() {
       try {
         const res = await panelBridgeApi.playWorldSound(x, y, 0, 200, 100)
         if (res.success) {
-          toast({ title: 'Noise created', description: `Sound at ${x}, ${y} — attracting zombies` })
+          toast({ title: 'Noise Created', description: `Sound at ${x}, ${y} — attracting zombies` })
         }
       } catch {
         toast({ title: 'Error', description: 'Failed to create noise', variant: 'destructive' })
@@ -1240,13 +1333,13 @@ export default function WorldMap() {
         }
       />
 
-      <div ref={mapWrapperRef} className="relative rounded-xl border border-border/60 overflow-hidden bg-[#0a0c0b]">
+      <div ref={mapWrapperRef} className="relative rounded-xl border border-border/60 overflow-hidden bg-background">
         {/* Zoom controls */}
         <div className="absolute top-3 left-3 z-10 flex flex-col gap-1.5">
           <button
             onClick={zoomIn}
             aria-label="Zoom in"
-            className="w-8 h-8 rounded-lg bg-background/80 backdrop-blur border border-border/60 flex items-center justify-center hover:bg-muted transition-colors"
+            className="w-10 h-10 rounded-lg bg-background/80 backdrop-blur border border-border/60 flex items-center justify-center hover:bg-muted transition-colors"
             title="Zoom in"
           >
             <ZoomIn className="w-4 h-4" />
@@ -1254,7 +1347,7 @@ export default function WorldMap() {
           <button
             onClick={zoomOut}
             aria-label="Zoom out"
-            className="w-8 h-8 rounded-lg bg-background/80 backdrop-blur border border-border/60 flex items-center justify-center hover:bg-muted transition-colors"
+            className="w-10 h-10 rounded-lg bg-background/80 backdrop-blur border border-border/60 flex items-center justify-center hover:bg-muted transition-colors"
             title="Zoom out"
           >
             <ZoomOut className="w-4 h-4" />
@@ -1262,7 +1355,7 @@ export default function WorldMap() {
           <button
             onClick={fitToPlayers}
             aria-label="Fit to players"
-            className="w-8 h-8 rounded-lg bg-background/80 backdrop-blur border border-border/60 flex items-center justify-center hover:bg-muted transition-colors"
+            className="w-10 h-10 rounded-lg bg-background/80 backdrop-blur border border-border/60 flex items-center justify-center hover:bg-muted transition-colors"
             title="Fit to players"
           >
             <Maximize2 className="w-4 h-4" />
@@ -1295,7 +1388,7 @@ export default function WorldMap() {
                     {p.health !== undefined && (
                       <span className={cn(
                         'text-[10px] tabular-nums',
-                        p.health > 50 ? 'text-green-400' : p.health > 25 ? 'text-amber-400' : 'text-red-400'
+                        p.health > 50 ? 'text-success' : p.health > 25 ? 'text-warning' : 'text-destructive'
                       )}>
                         {Math.round(p.health)}%
                       </span>
@@ -1341,7 +1434,7 @@ export default function WorldMap() {
                     {selectedPlayer.displayName || selectedPlayer.username}
                   </span>
                 </div>
-                <button onClick={() => setSelectedPlayer(null)} className="text-muted-foreground hover:text-foreground">
+                <button onClick={() => setSelectedPlayer(null)} className="text-muted-foreground hover:text-foreground" aria-label="Close player panel">
                   <X className="w-3.5 h-3.5" />
                 </button>
               </div>
@@ -1364,9 +1457,9 @@ export default function WorldMap() {
                           style={{
                             width: `${Math.max(0, Math.min(100, selectedPlayer.health))}%`,
                             backgroundColor:
-                              selectedPlayer.health > 50 ? 'rgb(74,222,128)'
-                              : selectedPlayer.health > 25 ? 'rgb(251,191,36)'
-                              : 'rgb(248,113,113)',
+                              selectedPlayer.health > 50 ? 'hsl(var(--success))'
+                              : selectedPlayer.health > 25 ? 'hsl(var(--warning))'
+                              : 'hsl(var(--destructive))',
                           }}
                         />
                       </div>
@@ -1377,11 +1470,11 @@ export default function WorldMap() {
                 {selectedPlayer.accessLevel && selectedPlayer.accessLevel !== 'none' && selectedPlayer.accessLevel !== '' && (
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Role</span>
-                    <span className="text-amber-400 capitalize">{selectedPlayer.accessLevel}</span>
+                    <span className="text-warning capitalize">{selectedPlayer.accessLevel}</span>
                   </div>
                 )}
                 {selectedPlayer.isInfected && (
-                  <div className="flex items-center gap-1 text-red-400">
+                  <div className="flex items-center gap-1 text-destructive">
                     <Skull className="w-3 h-3" />
                     <span>Infected</span>
                   </div>
@@ -1431,7 +1524,7 @@ export default function WorldMap() {
             }}
             role="menu"
             aria-label="Map actions"
-            className="absolute z-20 min-w-[240px] max-h-[min(420px,80vh)] overflow-y-auto rounded-lg bg-background/95 backdrop-blur-md border border-border/60 shadow-xl ring-1 ring-black/10 p-1"
+            className="absolute z-20 min-w-[200px] sm:min-w-[240px] max-h-[min(420px,80vh)] overflow-y-auto rounded-lg bg-background/95 backdrop-blur-md border border-border/60 shadow-xl ring-1 ring-black/10 p-1"
             style={{
               left: contextMenu.screenX,
               top: contextMenu.screenY,
@@ -1495,7 +1588,7 @@ export default function WorldMap() {
             </div>
 
             <div className="border-t border-border/20 pt-0.5">
-              <div className="px-2 pt-1.5 pb-0.5 text-[10px] uppercase tracking-wider text-amber-500/70 font-semibold select-none">
+              <div className="px-2 pt-1.5 pb-0.5 text-[10px] uppercase tracking-wider text-warning/70 font-semibold select-none">
                 Airdrop
               </div>
               {AIRDROP_PRESETS.map((preset) => (
@@ -1511,7 +1604,7 @@ export default function WorldMap() {
               ))}
               {!bridgeConnected && (
                 <div className="px-2 py-1 text-[10px] text-muted-foreground/50 italic flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-red-500/60 flex-none" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-destructive/60 flex-none" />
                   Bridge offline — drops unavailable
                 </div>
               )}
@@ -1534,6 +1627,9 @@ export default function WorldMap() {
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseLeave}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
             onContextMenu={handleContextMenu}
             onKeyDown={handleKeyDown}
             className={cn('block w-full h-full outline-none focus-visible:ring-2 focus-visible:ring-primary/50', isDragging ? 'cursor-grabbing' : hoveredPlayer ? 'cursor-pointer' : 'cursor-grab')}
@@ -1568,11 +1664,11 @@ function ContextMenuItem({ icon, label, onClick, loading, description, disabled 
 }
 
 function getPlayerColor(player: MapPlayer, alpha: number): string {
-  if (!player.isAlive && player.isAlive !== undefined) return `rgba(120,120,120,${alpha})`
-  if (player.isInfected) return `rgba(248,113,113,${alpha})`
+  if (!player.isAlive && player.isAlive !== undefined) return hslToken('--muted-foreground', alpha)
+  if (player.isInfected) return hslToken('--destructive', alpha)
   if (player.accessLevel && player.accessLevel !== '' && player.accessLevel !== 'none')
-    return `rgba(251,191,36,${alpha})`
-  return `rgba(96,165,250,${alpha})`
+    return hslToken('--warning', alpha)
+  return hslToken('--info', alpha)
 }
 
 function drawStar(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, points: number) {
@@ -1582,7 +1678,11 @@ function drawStar(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: numb
     const angle = (Math.PI * 2 * i) / (points * 2) - Math.PI / 2
     const x = cx + Math.cos(angle) * radius
     const y = cy + Math.sin(angle) * radius
-    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)
+    if (i === 0) {
+      ctx.moveTo(x, y)
+    } else {
+      ctx.lineTo(x, y)
+    }
   }
   ctx.closePath()
   ctx.fill()

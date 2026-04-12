@@ -7,7 +7,7 @@ import crypto from 'crypto';
 import { createLogger } from '../utils/logger.js';
 const log = createLogger('API:Mods');
 import { getTrackedMods, addTrackedMod, removeTrackedMod, clearModUpdates, getSetting, getActiveServer, getModPresets, createModPreset, updateModPreset, deleteModPreset, addIgnoredMod, getIgnoredMods, removeIgnoredMod, isModIgnored } from '../database/init.js';
-import { sanitizeError } from '../utils/sanitize.js';
+import { sanitizeError, sanitizeIniValue, sanitizeIniList } from '../utils/sanitize.js';
 
 const router = express.Router();
 
@@ -33,15 +33,9 @@ function readTextFile(filePath) {
   return stripBom(fs.readFileSync(filePath, 'utf-8')).replace(/\r\n/g, '\n');
 }
 
-// Security: Strip INI-sensitive characters from values to prevent injection
-function sanitizeIniValue(value) {
-  return String(value).replace(/[\r\n;=]/g, '');
-}
-
-// Security: Sanitize an array of values for INI semicolon-delimited fields
-function sanitizeIniList(values) {
-  return values.map(v => sanitizeIniValue(v)).filter(Boolean).join(';');
-}
+// Security: INI sanitization imported from shared util
+// sanitizeIniValue strips \r\n;= to prevent injection
+// sanitizeIniList joins sanitized values with semicolons
 
 function getSanitizedIniPath(serverConfigPath, serverName) {
   if (!serverConfigPath || typeof serverName !== 'string') {
@@ -474,13 +468,38 @@ router.post('/sync-from-server', async (req, res) => {
       });
     }
     
-    // Add each workshop ID to tracking
+    // Query Steam API to identify non-mod items (collections, screenshots, etc.)
+    // Real PZ mods have creator_app_id 108600; collections/screenshots use 766 (Steam tools)
+    const PZ_APP_ID = 108600;
     const modChecker = req.app.get('modChecker');
+    let steamInfo = new Map();
+    const nonModTypes = new Set();
+    if (modChecker) {
+      try {
+        steamInfo = await modChecker.fetchSteamTimestamps(workshopIds);
+        for (const [id, info] of steamInfo) {
+          if (info.creator_app_id && info.creator_app_id !== PZ_APP_ID) {
+            nonModTypes.add(id);
+            log.info(`sync-from-server: Filtering "${info.title || id}" (creator_app_id: ${info.creator_app_id}, not a PZ mod)`);
+          }
+        }
+      } catch (e) {
+        log.warn(`sync-from-server: Steam API lookup failed, proceeding without type filter: ${e.message}`);
+      }
+    }
+
+    // Add each workshop ID to tracking
     let synced = 0;
     let skippedIgnored = 0;
+    let skippedNonMod = 0;
     for (let i = 0; i < workshopIds.length; i++) {
       try {
         const workshopId = workshopIds[i];
+        // Skip non-mod items (collections, screenshots, etc.)
+        if (nonModTypes.has(workshopId)) {
+          skippedNonMod++;
+          continue;
+        }
         // Skip mods the user explicitly ignored
         if (await isModIgnored(workshopId)) {
           skippedIgnored++;
@@ -488,7 +507,9 @@ router.post('/sync-from-server', async (req, res) => {
         }
         // Try to resolve real name from mod.info on disk, fall back to mod ID from INI
         const nameFromDisk = modChecker?.resolveModNameFromDisk(workshopId);
-        const modName = nameFromDisk || modIds[i] || `Workshop Mod ${workshopId}`;
+        // Use Steam API title if available, then disk name, then INI mod ID
+        const steamTitle = steamInfo.get(workshopId)?.title;
+        const modName = steamTitle || nameFromDisk || modIds[i] || `Workshop Mod ${workshopId}`;
         await addTrackedMod(workshopId, modName);
         synced++;
       } catch (e) {
@@ -496,14 +517,18 @@ router.post('/sync-from-server', async (req, res) => {
       }
     }
     
-    const message = skippedIgnored > 0
-      ? `Synced ${synced} mods from server config (${skippedIgnored} ignored mods skipped)`
+    const parts = [];
+    if (skippedIgnored > 0) parts.push(`${skippedIgnored} ignored`);
+    if (skippedNonMod > 0) parts.push(`${skippedNonMod} non-mod items filtered`);
+    const message = parts.length > 0
+      ? `Synced ${synced} mods from server config (${parts.join(', ')})`
       : `Synced ${synced} mods from server config`;
     res.json({ 
       success: true, 
       message,
       synced,
       skippedIgnored,
+      skippedNonMod,
       iniPath
     });
   } catch (error) {

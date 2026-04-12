@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useState, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
+import { usePageShortcut } from '../hooks/useKeyboardShortcuts'
 import { 
   Play, 
   Square, 
@@ -165,6 +166,7 @@ export default function Dashboard() {
   const [initialLoading, setInitialLoading] = useState(true)
   const [fetchError, setFetchError] = useState<string | null>(null)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
+  const [, setTick] = useState(0)
   const [autoStartServer, setAutoStartServer] = useState<boolean>(false)
   const [panelInfo, setPanelInfo] = useState<{ localIp: string; port: number; url: string } | null>(null)
   const [activeServer, setActiveServer] = useState<ServerInstance | null>(null)
@@ -187,7 +189,11 @@ export default function Dashboard() {
   } | null>(null)
   const [wipeDialog, setWipeDialog] = useState(false)
   const [wipeTargets, setWipeTargets] = useState<Record<string, boolean>>({ map: true, players: false, config: false })
-  const [wipePreview, setWipePreview] = useState<any>(null)
+  const [wipePreview, setWipePreview] = useState<{
+    totalFiles: number
+    totalSize: number
+    preview: Record<string, { files: number; size: number }>
+  } | null>(null)
   const [wipeLoading, setWipeLoading] = useState(false)
   const { toast } = useToast()
   const socket = useSocket()
@@ -195,6 +201,12 @@ export default function Dashboard() {
   useEffect(() => {
     initialLoadingRef.current = initialLoading
   }, [initialLoading])
+
+  // Tick every 10s to keep relative timestamp fresh
+  useEffect(() => {
+    const timer = setInterval(() => setTick(t => t + 1), 10000)
+    return () => clearInterval(timer)
+  }, [])
 
   const copyToClipboard = async (text: string, label: string) => {
     try {
@@ -206,7 +218,7 @@ export default function Dashboard() {
       })
     } catch {
       toast({
-        title: "Failed to copy",
+        title: "Failed to Copy",
         description: "Could not copy to clipboard",
         variant: "destructive",
       })
@@ -232,6 +244,9 @@ export default function Dashboard() {
       setFetchError('Failed to connect to server.')
     }
   }, [])
+
+  // R = refresh dashboard
+  usePageShortcut('r', () => { if (loading === null) fetchStatus() })
 
   const fetchPlayers = useCallback(async () => {
     try {
@@ -305,7 +320,7 @@ export default function Dashboard() {
     try {
       await configApi.updateAppSettings({ autoStartServer: String(checked) })
       toast({
-        title: checked ? 'Auto-start enabled' : 'Auto-start disabled',
+        title: checked ? 'Auto-Start Enabled' : 'Auto-Start Disabled',
         description: checked 
           ? 'Server will start automatically when the panel launches' 
           : 'Server will not start automatically',
@@ -358,14 +373,12 @@ export default function Dashboard() {
     const interval = setInterval(() => {
       // Skip polling when tab is hidden to save resources
       if (document.visibilityState === 'hidden') return
-      fetchStatus()
-      fetchPlayers()
-      fetchBridgeStatus()
+      // Only poll data NOT pushed via Socket.IO (status, players, bridge are socket-driven)
       fetchPlayerActivity()
       if (showPerformanceCharts) {
         fetchPerformanceHistory()
       }
-    }, 10000)
+    }, 15000)
 
     return () => {
       clearTimeout(loadingTimeout)
@@ -554,7 +567,7 @@ export default function Dashboard() {
     return (
       <div className="space-y-8 page-transition">
         <div className="space-y-1">
-          <h1 className="text-4xl font-bold tracking-tight">Dashboard</h1>
+          <p className="text-4xl font-bold tracking-tight">Dashboard</p>
           <p className="text-lg text-muted-foreground">Monitor and control your Project Zomboid server</p>
         </div>
         <div className="flex items-center justify-center py-24">
@@ -570,17 +583,17 @@ export default function Dashboard() {
   const getEventStyle = (action: string) => {
     switch (action) {
       case 'connect':
-        return { icon: <LogIn className="w-3.5 h-3.5" />, color: 'text-[hsl(var(--success))]', label: 'joined' }
+        return { icon: <LogIn className="w-3.5 h-3.5" />, color: 'text-success', label: 'joined' }
       case 'disconnect':
         return { icon: <LogOut className="w-3.5 h-3.5" />, color: 'text-destructive', label: 'left' }
       case 'death':
-        return { icon: <Skull className="w-3.5 h-3.5" />, color: 'text-[hsl(var(--warning))]', label: 'died' }
+        return { icon: <Skull className="w-3.5 h-3.5" />, color: 'text-warning', label: 'died' }
       case 'pvp_kill':
-        return { icon: <Sword className="w-3.5 h-3.5" />, color: 'text-[hsl(var(--warning))]', label: 'killed' }
+        return { icon: <Sword className="w-3.5 h-3.5" />, color: 'text-warning', label: 'killed' }
       case 'ban':
         return { icon: <ShieldAlert className="w-3.5 h-3.5" />, color: 'text-destructive', label: 'was banned' }
       case 'kick':
-        return { icon: <AlertCircle className="w-3.5 h-3.5" />, color: 'text-[hsl(var(--warning))]', label: 'was kicked' }
+        return { icon: <AlertCircle className="w-3.5 h-3.5" />, color: 'text-warning', label: 'was kicked' }
       default:
         return { icon: <Activity className="w-3.5 h-3.5" />, color: 'text-muted-foreground', label: action }
     }
@@ -595,8 +608,13 @@ export default function Dashboard() {
         actions={
           <div className="flex items-center gap-3">
             {lastUpdated && (
-              <span className="text-xs text-muted-foreground">
-                Updated {lastUpdated.toLocaleTimeString()}
+              <span className="text-xs text-muted-foreground" title={lastUpdated.toLocaleTimeString()}>
+                Updated {(() => {
+                  const seconds = Math.round((Date.now() - lastUpdated.getTime()) / 1000)
+                  if (seconds < 10) return 'just now'
+                  if (seconds < 60) return `${seconds}s ago`
+                  return `${Math.floor(seconds / 60)}m ago`
+                })()}
               </span>
             )}
             <Button variant="outline" size="sm" onClick={fetchStatus} disabled={loading !== null}>
@@ -634,7 +652,7 @@ export default function Dashboard() {
       )}
 
       {!activeServer && showQuickStart && (
-        <Card className="overflow-hidden border-primary/25 bg-[linear-gradient(135deg,hsl(var(--card)),hsl(var(--primary)/0.08))]">
+        <Card className="overflow-hidden border-primary/25 bg-card">
           <CardHeader className="pb-4">
             <div className="flex items-start justify-between gap-4">
               <div className="space-y-2">
@@ -713,7 +731,7 @@ export default function Dashboard() {
                   : "server-status-dot--offline"
               )} aria-hidden="true" />
               <div>
-                <span className="text-xl font-bold tracking-tight">
+                <span role="status" aria-live="polite" className="text-xl font-bold tracking-tight">
                   {status?.running ? 'Server Online' : 'Server Offline'}
                 </span>
                 {status?.running && status.uptime > 0 && (
@@ -860,7 +878,6 @@ export default function Dashboard() {
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="icon" className="h-11 w-11 shrink-0 sm:h-10 sm:w-10" aria-label="Open more server actions">
                   <MoreHorizontal className="w-4 h-4" />
-                  <span className="sr-only">More actions</span>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
@@ -960,25 +977,50 @@ export default function Dashboard() {
               {showPerformanceCharts ? <DashboardPerformanceCharts performanceHistory={performanceHistory} /> : null}
             </Suspense>
           ) : (
-            <div className="rounded-xl border border-border/60 bg-card/50 px-5 py-4">
-              <div className="grid grid-cols-2 gap-6">
+            <div className="rounded-xl border border-border/60 bg-card/50 px-5 py-4 flex flex-col h-full">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                 <section>
                   <div className="flex items-center gap-2 mb-1">
                     <Users className="h-3.5 w-3.5 text-muted-foreground" />
-                    <h3 className="text-xs font-medium text-muted-foreground">Players Online</h3>
+                    <p className="text-xs font-medium text-muted-foreground">Players Online</p>
                   </div>
                   <p className="text-3xl font-bold tracking-tight tabular-nums">{players.length}</p>
                 </section>
                 <section>
                   <div className="flex items-center gap-2 mb-1">
                     <Activity className="h-3.5 w-3.5 text-muted-foreground" />
-                    <h3 className="text-xs font-medium text-muted-foreground">Uptime</h3>
+                    <p className="text-xs font-medium text-muted-foreground">Uptime</p>
                   </div>
                   <p className="text-3xl font-bold tracking-tight tabular-nums">{status?.running && status.uptime > 0 ? formatUptime(status.uptime) : 'Offline'}</p>
                 </section>
               </div>
               {!status?.running && (
-                <div className="mt-4 pt-4 border-t border-border/30">
+                <div className="mt-4 flex-1 flex flex-col gap-3">
+                  <div className="rounded-lg border border-border/40 bg-muted/20 p-3 text-center">
+                    <p className="text-sm text-muted-foreground">Performance data appears when the server is running.</p>
+                    <p className="mt-1 text-xs text-muted-foreground/70">Start the server to begin tracking CPU, RAM, and player metrics.</p>
+                  </div>
+                  <div className="mt-auto pt-3 border-t border-border/30">
+                    <p className="text-xs font-medium text-muted-foreground mb-3">Quick Actions</p>
+                    <div className="flex flex-wrap gap-2">
+                      <Link to="/server-config" className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'gap-1.5 text-xs')}>
+                        <Server className="h-3.5 w-3.5" /> Server Config
+                      </Link>
+                      <Link to="/mods" className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'gap-1.5 text-xs')}>
+                        <Gamepad2 className="h-3.5 w-3.5" /> Mods
+                      </Link>
+                      <Link to="/backups" className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'gap-1.5 text-xs')}>
+                        <Archive className="h-3.5 w-3.5" /> Backups
+                      </Link>
+                      <Link to="/settings" className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'gap-1.5 text-xs')}>
+                        <Wifi className="h-3.5 w-3.5" /> Settings
+                      </Link>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {status?.running && (
+                <div className="mt-auto pt-4 border-t border-border/30">
                   <p className="text-xs font-medium text-muted-foreground mb-3">Quick Actions</p>
                   <div className="flex flex-wrap gap-2">
                     <Link to="/server-config" className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'gap-1.5 text-xs')}>
@@ -1012,7 +1054,7 @@ export default function Dashboard() {
           </div>
           {playerActivity.length === 0 ? (
             <div className="flex-1 flex items-center justify-center">
-              <EmptyState compact type="noPlayers" title="No activity yet" description="Player join/leave events will appear here." />
+              <EmptyState compact type="noPlayers" title="No activity yet" description={status?.running ? "Player join/leave events will appear here." : "Start the server to begin tracking player activity."} />
             </div>
           ) : (
             <div className="space-y-1 flex-1 overflow-y-auto max-h-[22rem]">
@@ -1042,7 +1084,7 @@ export default function Dashboard() {
             <AlertDialogTitle className="flex items-center gap-3 text-xl">
               <AlertTriangle className={cn(
                 "w-5 h-5",
-                confirmAction?.variant === 'destructive' ? 'text-destructive' : 'text-[hsl(var(--warning))]'
+                confirmAction?.variant === 'destructive' ? 'text-destructive' : 'text-warning'
               )} />
               {confirmAction?.title}
             </AlertDialogTitle>
@@ -1147,8 +1189,8 @@ export default function Dashboard() {
                     const targets = Object.entries(wipeTargets).filter(([, v]) => v).map(([k]) => k)
                     const res = await serverApi.wipePreview(targets)
                     setWipePreview(res)
-                  } catch (e: any) {
-                    toast({ title: 'Preview failed', description: e?.message || 'Could not scan save directory', variant: 'destructive' })
+                  } catch (e: unknown) {
+                    toast({ title: 'Preview Failed', description: e instanceof Error ? e.message : 'Could not scan save directory', variant: 'destructive' })
                   } finally {
                     setWipeLoading(false)
                   }
@@ -1170,8 +1212,8 @@ export default function Dashboard() {
                     toast({ title: 'Server Wiped', description: `Deleted: ${targets.join(', ')}` })
                     setWipeDialog(false)
                     setWipePreview(null)
-                  } catch (e: any) {
-                    toast({ title: 'Wipe failed', description: e?.message || 'Unknown error', variant: 'destructive' })
+                  } catch (e: unknown) {
+                    toast({ title: 'Wipe Failed', description: e instanceof Error ? e.message : 'Unknown error', variant: 'destructive' })
                   } finally {
                     setWipeLoading(false)
                   }

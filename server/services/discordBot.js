@@ -537,8 +537,8 @@ export class DiscordBot {
     
     // Sanitize inputs to prevent command injection
     const safePlayer = this.rconService.sanitize(player);
-    const safeReason = this.rconService.sanitize(reason);
-    const result = await this.rconService.execute(`kick "${safePlayer}" "${safeReason}"`);
+    // Project Zomboid RCON only supports 'kickuser' and no reason flag
+    const result = await this.rconService.execute(`kickuser "${safePlayer}"`);
     
     if (result.success) {
       await interaction.editReply(`👢 Kicked ${player}: ${reason}`);

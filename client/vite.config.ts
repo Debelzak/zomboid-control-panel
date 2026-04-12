@@ -3,6 +3,8 @@ import react from '@vitejs/plugin-react'
 import path from 'path'
 import { readFileSync } from 'fs'
 
+/// <reference types="vitest" />
+
 const rootPkg = JSON.parse(readFileSync(path.resolve(__dirname, '../package.json'), 'utf-8'))
 
 // https://vite.dev/config/
@@ -45,6 +47,7 @@ export default defineConfig(({ mode }) => {
       },
     },
     resolve: {
+      dedupe: ['react', 'react-dom'],
       alias: {
         '@': path.resolve(__dirname, './src'),
       },
@@ -62,6 +65,11 @@ export default defineConfig(({ mode }) => {
           ws: true,
         },
       },
+    },
+    test: {
+      environment: 'jsdom',
+      globals: true,
+      setupFiles: './src/test-setup.ts',
     },
   }
 })

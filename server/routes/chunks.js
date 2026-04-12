@@ -54,8 +54,19 @@ function resolveCustomOrDefaultDataPath(customPath) {
   if (!customPath) return null;
   const normalized = path.resolve(customPath);
   if (!fs.existsSync(normalized)) {
-    const error = new Error(`Custom path does not exist: ${normalized}`);
+    const error = new Error('Custom path does not exist');
     error.statusCode = 400;
+    throw error;
+  }
+  // Validate the path looks like a Zomboid data directory to prevent arbitrary filesystem access.
+  // Must contain a Saves or Server subdirectory, or itself be inside a Zomboid-related path.
+  const lower = normalized.toLowerCase().replace(/\\/g, '/');
+  const hasSavesDir = fs.existsSync(path.join(normalized, 'Saves'));
+  const isInsideSavesDir = lower.includes('/saves');
+  const hasZomboidMarker = lower.includes('zomboid') || lower.includes('projectzomboid');
+  if (!hasSavesDir && !isInsideSavesDir && !hasZomboidMarker) {
+    const error = new Error('Path does not appear to be a Zomboid data directory');
+    error.statusCode = 403;
     throw error;
   }
   return normalized;
@@ -97,13 +108,13 @@ router.get('/saves', async (req, res) => {
       } else {
         log.warn(`[ChunkCleaner] Saves path not found: ${savesPath}`);
         log.info(`[ChunkCleaner] zomboidDataPath: ${zomboidDataPath}`);
-        return res.json({ saves: [], debug: { zomboidDataPath, savesPath, exists: false } });
+        return res.json({ saves: [] });
       }
     }
     
     if (!fs.existsSync(savesPath)) {
       log.warn(`[ChunkCleaner] Resolved saves path does not exist: ${savesPath}`);
-      return res.json({ saves: [], debug: { zomboidDataPath, savesPath, exists: false } });
+      return res.json({ saves: [] });
     }
     
     log.info(`[ChunkCleaner] Listing saves from: ${savesPath}`);
@@ -148,7 +159,7 @@ router.get('/saves', async (req, res) => {
         };
       }));
     
-    res.json({ saves, debug: { zomboidDataPath, savesPath, exists: true } });
+    res.json({ saves });
   } catch (error) {
     log.error(`Failed to get saves: ${error.message}`);
     res.status(error.statusCode || 500).json({ error: sanitizeError(error.message) });
@@ -169,7 +180,7 @@ router.get('/chunks/:saveName', async (req, res) => {
     
     let zomboidDataPath;
     if (customPath) {
-      zomboidDataPath = path.resolve(customPath);
+      zomboidDataPath = resolveCustomOrDefaultDataPath(String(customPath));
     } else {
       zomboidDataPath = await getZomboidDataPath();
     }

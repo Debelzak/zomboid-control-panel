@@ -24,7 +24,9 @@ import {
   AlertCircle,
   RefreshCw,
   LogOut,
-  Github
+  Github,
+  PanelLeftClose,
+  PanelLeft
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ConnectionStatus } from './ConnectionStatus'
@@ -53,6 +55,9 @@ import {
   AlertTitle,
 } from "@/components/ui/alert"
 import { Separator } from "@/components/ui/separator"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
+import { KeyboardShortcutsHelp } from './KeyboardShortcutsHelp'
 
 // Standalone top-level nav item (not collapsible)
 const dashboardItem = { to: '/', icon: LayoutDashboard, label: 'Dashboard' }
@@ -229,20 +234,23 @@ function PanelBrand({ compact = false }: { compact?: boolean }) {
       <img
         src={`${import.meta.env.BASE_URL}spiffo.png`}
         alt="Spiffo"
+        loading="lazy"
+        width={compact ? 32 : 40}
+        height={compact ? 40 : 48}
         className={cn(
           compact ? "h-10 w-8" : "h-12 w-10",
           "object-contain drop-shadow-sm saturate-90"
         )}
       />
       <div className="min-w-0">
-        <h1
+        <p
           className={cn(
             "shell-brand-title truncate uppercase",
             compact ? "text-sm tracking-[0.12em]" : "text-base tracking-[0.14em]"
           )}
         >
           Project Zomboid
-        </h1>
+        </p>
         <p
           className={cn(
             "shell-brand-subtitle truncate text-muted-foreground",
@@ -264,6 +272,7 @@ export default function Layout({ children }: LayoutProps) {
   const [activeServer, setActiveServer] = useState<ServerInstance | null>(null)
   const [servers, setServers] = useState<ServerInstance[]>([])
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('sidebarCollapsed') === 'true')
   const [openSections, setOpenSections] = useState<Set<string>>(new Set(['active', 'world']))
   const [updateInfo, setUpdateInfo] = useState<UpdateStatus | null>(null)
   const [updateDismissed, setUpdateDismissed] = useState(() => sessionStorage.getItem('updateBannerDismissed') === 'true')
@@ -271,6 +280,7 @@ export default function Layout({ children }: LayoutProps) {
   const [panelVersion, setPanelVersion] = useState('')
   const socket = useContext(SocketContext)
   const { toast } = useToast()
+  const { helpOpen, setHelpOpen, shortcuts } = useKeyboardShortcuts()
 
   // Fetch panel version
   useEffect(() => {
@@ -309,6 +319,15 @@ export default function Layout({ children }: LayoutProps) {
         newSet.add(sectionId)
       }
       return newSet
+    })
+  }
+
+  // Toggle sidebar collapse
+  const toggleSidebar = () => {
+    setSidebarCollapsed(prev => {
+      const next = !prev
+      localStorage.setItem('sidebarCollapsed', String(next))
+      return next
     })
   }
 
@@ -449,6 +468,7 @@ export default function Layout({ children }: LayoutProps) {
 
   return (
     <div className="flex h-screen bg-background">
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[60] focus:rounded-md focus:bg-primary focus:px-4 focus:py-2 focus:text-primary-foreground focus:text-sm">Skip to content</a>
       {/* Mobile Header */}
       <div className="fixed top-0 left-0 right-0 z-50 border-b bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/85 lg:hidden">
         <div className="flex items-center justify-between p-3">
@@ -475,24 +495,40 @@ export default function Layout({ children }: LayoutProps) {
       )}
 
       {/* Sidebar - Desktop always visible, Mobile as slide-out */}
-      <aside className={cn(
-        "fixed inset-y-0 left-0 z-40 flex w-72 flex-col border-r bg-card transform transition-transform duration-300 ease-out will-change-transform motion-reduce:transition-none lg:relative lg:w-64",
+      <aside
+        aria-label="Sidebar"
+        className={cn(
+        "fixed inset-y-0 left-0 z-40 flex flex-col border-r bg-card transform transition-all duration-300 ease-out will-change-[width,transform] motion-reduce:transition-none lg:relative",
+        sidebarCollapsed ? "lg:w-[60px]" : "lg:w-64",
+        "w-72",
         "lg:translate-x-0",
         mobileMenuOpen ? "translate-x-0" : "-translate-x-full",
         "pt-16 lg:pt-0" // Add padding for mobile header
       )}>
+      <TooltipProvider delayDuration={150}>
         {/* Project Zomboid Banner with Spiffo */}
         <div className={cn(
           "relative overflow-hidden sidebar-header",
           "bg-gradient-to-b from-accent/20 via-card to-card border-b border-border/40"
         )}>
-          <div className="relative p-4">
-            <PanelBrand />
+          <div className={cn("relative", sidebarCollapsed ? "p-2 flex justify-center" : "p-4")}>
+            {sidebarCollapsed ? (
+              <img
+                src={`${import.meta.env.BASE_URL}spiffo.png`}
+                alt="Spiffo"
+                loading="lazy"
+                width={28}
+                height={34}
+                className="h-[34px] w-7 object-contain drop-shadow-sm saturate-90"
+              />
+            ) : (
+              <PanelBrand />
+            )}
           </div>
         </div>
 
         {/* Active Server Selector */}
-        {servers.length > 0 && (
+        {servers.length > 0 && !sidebarCollapsed && (
           <div className="px-4 py-3 border-b">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -546,15 +582,18 @@ export default function Layout({ children }: LayoutProps) {
         )}
 
         {/* Navigation */}
-        <nav className="flex-1 px-3 py-4 overflow-y-auto nav-scroll">
+        <nav aria-label="Main navigation" className="flex-1 px-3 py-4 overflow-y-auto nav-scroll">
           <div className="space-y-1">
             {/* Dashboard - standalone item */}
+            <Tooltip>
+              <TooltipTrigger asChild>
             <NavLink
               to={dashboardItem.to}
               onClick={() => setMobileMenuOpen(false)}
               className={({ isActive }) =>
                 cn(
-                  'nav-item flex min-h-11 items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors duration-200 group relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 focus-visible:ring-offset-1',
+                  'nav-item flex min-h-11 items-center gap-3 rounded-lg text-sm font-medium transition-colors duration-200 group relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 focus-visible:ring-offset-1',
+                  sidebarCollapsed ? 'justify-center px-2 py-2.5' : 'px-3 py-2.5',
                   isActive
                     ? 'nav-item-active bg-primary/10 text-foreground font-semibold'
                     : 'text-muted-foreground hover:text-foreground hover:bg-accent/30'
@@ -567,15 +606,18 @@ export default function Layout({ children }: LayoutProps) {
                     <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full bg-primary" />
                   )}
                   <span className={cn(
-                    "flex items-center justify-center w-8 h-8 rounded-lg transition-colors",
+                    "flex items-center justify-center w-8 h-8 rounded-lg transition-colors shrink-0",
                     isActive ? "bg-primary/15" : "bg-muted/50 group-hover:bg-muted"
                   )}>
                     <dashboardItem.icon className={cn("w-[18px] h-[18px]", isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground")} />
                   </span>
-                  <span>{dashboardItem.label}</span>
+                  {!sidebarCollapsed && <span>{dashboardItem.label}</span>}
                 </>
               )}
             </NavLink>
+              </TooltipTrigger>
+              {sidebarCollapsed && <TooltipContent side="right">{dashboardItem.label}</TooltipContent>}
+            </Tooltip>
 
             {/* Section divider */}
             <Separator className="my-3" />
@@ -586,6 +628,46 @@ export default function Layout({ children }: LayoutProps) {
               const hasActiveChild = section.items.some(item => location.pathname === item.to)
               const tone = sectionToneStyles[section.color as keyof typeof sectionToneStyles] || sectionToneStyles.slate
 
+              // Collapsed mode: show section items as icon-only buttons
+              if (sidebarCollapsed) {
+                return (
+                  <div key={section.id} className="space-y-0.5">
+                    {section.items.map((item) => {
+                      const isDisabledByRemote = !!item.requiresLocal && activeServer?.isRemote
+                      if (isDisabledByRemote) return null
+                      const isActive = location.pathname === item.to
+                      return (
+                        <Tooltip key={item.to}>
+                          <TooltipTrigger asChild>
+                            <NavLink
+                              to={item.to}
+                              onClick={() => setMobileMenuOpen(false)}
+                              className={cn(
+                                'nav-item flex min-h-10 items-center justify-center rounded-lg transition-colors duration-200 group relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 focus-visible:ring-offset-1 px-2 py-2',
+                                isActive
+                                  ? cn('nav-item-active font-medium', tone.childActive)
+                                  : 'text-muted-foreground hover:bg-accent/30 hover:text-foreground'
+                              )}
+                            >
+                              {isActive && (
+                                <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-4 rounded-r-full bg-primary" />
+                              )}
+                              <item.icon className={cn(
+                                "w-[18px] h-[18px] transition-colors duration-200 shrink-0",
+                                isActive ? tone.labelActive : "text-muted-foreground/70 group-hover:text-foreground"
+                              )} />
+                            </NavLink>
+                          </TooltipTrigger>
+                          <TooltipContent side="right">{item.label}</TooltipContent>
+                        </Tooltip>
+                      )
+                    })}
+                    <Separator className="my-1.5" />
+                  </div>
+                )
+              }
+
+              // Expanded mode: full collapsible sections
               return (
                 <Collapsible
                   key={section.id}
@@ -694,31 +776,71 @@ export default function Layout({ children }: LayoutProps) {
         </nav>
 
         {/* Footer */}
-        <div className="p-4 border-t space-y-4">
-          <ConnectionStatus showLabel className="justify-center" />
-          <AuthFooter />
-          <div className="text-center">
-            <p className="shell-brand-subtitle text-xs text-muted-foreground">
-              // Zomboid Control Panel
-            </p>
-            <p className="mt-1 flex items-center justify-center gap-2 text-xs text-muted-foreground">
-              {panelVersion && <span>v{panelVersion}</span>}
-              <a
-                href="https://github.com/fpsacha/zomboid-control-panel"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-muted-foreground/60 hover:text-foreground transition-colors"
-                aria-label="GitHub repository"
-              >
-                <Github className="w-3.5 h-3.5" />
-              </a>
-            </p>
+        <div className={cn("border-t", sidebarCollapsed ? "p-2 space-y-2" : "p-4 space-y-4")}>
+          {!sidebarCollapsed && (
+            <>
+              <ConnectionStatus showLabel className="justify-center" />
+              <AuthFooter />
+              <div className="text-center">
+                <p className="shell-brand-subtitle text-xs text-muted-foreground">
+                  // Zomboid Control Panel
+                </p>
+                <p className="mt-1 flex items-center justify-center gap-2 text-xs text-muted-foreground">
+                  {panelVersion && <span>v{panelVersion}</span>}
+                  <a
+                    href="https://github.com/fpsacha/zomboid-control-panel"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-muted-foreground/60 hover:text-foreground transition-colors"
+                    aria-label="GitHub repository (opens in new tab)"
+                  >
+                    <Github className="w-3.5 h-3.5" />
+                  </a>
+                </p>
+                <button
+                  onClick={() => setHelpOpen(true)}
+                  className="mt-1.5 inline-flex items-center gap-1.5 text-[11px] text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+                  aria-label="Keyboard shortcuts"
+                >
+                  <kbd className="inline-flex items-center justify-center w-4 h-4 rounded border border-border/40 text-[10px] font-mono leading-none">?</kbd>
+                  <span>Shortcuts</span>
+                </button>
+              </div>
+            </>
+          )}
+          {sidebarCollapsed && (
+            <div className="flex justify-center">
+              <ConnectionStatus className="justify-center" />
+            </div>
+          )}
+          {/* Collapse toggle - desktop only */}
+          <div className="hidden lg:flex justify-center">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={toggleSidebar}
+                  className={cn("h-8 text-muted-foreground hover:text-foreground", sidebarCollapsed ? "w-8 p-0" : "w-full")}
+                  aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+                >
+                  {sidebarCollapsed ? <PanelLeft className="w-4 h-4" /> : (
+                    <>
+                      <PanelLeftClose className="w-4 h-4 mr-2" />
+                      <span className="text-xs">Collapse</span>
+                    </>
+                  )}
+                </Button>
+              </TooltipTrigger>
+              {sidebarCollapsed && <TooltipContent side="right">Expand sidebar</TooltipContent>}
+            </Tooltip>
           </div>
         </div>
+      </TooltipProvider>
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-auto pt-16 lg:pt-0">
+      <main id="main-content" className="flex-1 overflow-auto pt-16 lg:pt-0">
         <div className="p-4 lg:p-8 max-w-7xl mx-auto">
           {/* Server Update Banner */}
           {updateInfo && updateInfo.updateAvailable && !updateDismissed && (
@@ -759,6 +881,7 @@ export default function Layout({ children }: LayoutProps) {
           {children}
         </div>
       </main>
+      <KeyboardShortcutsHelp open={helpOpen} onClose={() => setHelpOpen(false)} shortcuts={shortcuts} />
     </div>
   )
 }

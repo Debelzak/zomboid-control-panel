@@ -1,6 +1,6 @@
 {
   "name": "pz-server-manager",
-  "version": "0.8.7.2",
+  "version": "1.0.0",
   "description": "Project Zomboid Server Manager - Web-based admin panel",
   "main": "server/index.js",
   "type": "module",
@@ -15,8 +15,10 @@
     "build:exe:all": "node build.js --all",
     "start": "node server/index.js",
     "install:all": "npm install && cd client && npm install",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "vitest run --config vitest.config.js && cd client && npx vitest run",
+    "test:watch": "vitest --config vitest.config.js",
+    "test:server": "vitest run --config vitest.config.js",
+    "test:client": "cd client && npx vitest run"
   },
   "dependencies": {
     "archiver": "^7.0.1",

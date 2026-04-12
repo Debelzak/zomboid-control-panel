@@ -175,6 +175,10 @@ class AuthService {
       throw new Error('Password must be at least 6 characters');
     }
 
+    if (password.length > 128) {
+      throw new Error('Password must be 128 characters or fewer');
+    }
+
     const db = await getDb();
     if (!db.data.users) {
       db.data.users = [];
@@ -406,6 +410,35 @@ class AuthService {
     } catch (error) {
       return false;
     }
+  }
+
+  /**
+   * Reset password for the first admin user (no auth required).
+   * Caller must verify the reset token before calling this.
+   */
+  async resetPassword(newPassword) {
+    if (!newPassword || typeof newPassword !== 'string' || newPassword.length < 6) {
+      throw new Error('Password must be at least 6 characters');
+    }
+    if (newPassword.length > 128) {
+      throw new Error('Password must be 128 characters or fewer');
+    }
+
+    const db = await getDb();
+    const users = db.data.users || [];
+    if (users.length === 0) {
+      throw new Error('No user accounts exist. Use setup instead.');
+    }
+
+    // Reset the first admin account
+    const user = users.find(u => u.role === 'admin') || users[0];
+    user.password = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+    user.tokenGen = (user.tokenGen || 0) + 1;
+    user.refreshSessions = [];
+    await db.write();
+
+    log.info(`Password reset for user: ${user.username}`);
+    return { username: user.username };
   }
 
   /**

@@ -646,13 +646,13 @@ router.get('/ini', async (req, res) => {
     const filePath = path.join(configPath, `${serverName}.ini`);
     
     if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ error: 'INI file not found', path: filePath });
+      return res.status(404).json({ error: 'INI file not found' });
     }
     
     const content = fs.readFileSync(filePath, 'utf-8');
     const parsed = parseIni(content);
     
-    res.json({ settings: parsed, path: filePath });
+    res.json({ settings: parsed });
   } catch (error) {
     log.error('Failed to read INI:', error);
     res.status(500).json({ error: sanitizeError(error.message) });
@@ -705,13 +705,13 @@ router.get('/sandbox', async (req, res) => {
     const filePath = path.join(configPath, `${serverName}_SandboxVars.lua`);
     
     if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ error: 'SandboxVars file not found', path: filePath });
+      return res.status(404).json({ error: 'SandboxVars file not found' });
     }
     
     const content = fs.readFileSync(filePath, 'utf-8');
     const parsed = parseSandboxVars(content);
     
-    res.json({ sandbox: parsed, path: filePath });
+    res.json({ sandbox: parsed });
   } catch (error) {
     log.error('Failed to read SandboxVars:', error);
     res.status(500).json({ error: sanitizeError(error.message) });
@@ -1331,15 +1331,54 @@ router.delete('/templates/:id', async (req, res) => {
 
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp']);
 
+/**
+ * Build the list of directories the file browser is allowed to access.
+ * Restricts browsing to the server config path, server install path,
+ * and Zomboid data path — prevents arbitrary filesystem traversal.
+ */
+async function getAllowedBrowseRoots() {
+  const roots = [];
+  const activeServer = await getActiveServer();
+  if (activeServer?.serverConfigPath) roots.push(path.resolve(activeServer.serverConfigPath));
+  if (activeServer?.zomboidDataPath) roots.push(path.resolve(activeServer.zomboidDataPath));
+  if (activeServer?.serverPath) roots.push(path.resolve(activeServer.serverPath));
+  const settings = await getAllSettings();
+  if (settings.serverConfigPath) roots.push(path.resolve(settings.serverConfigPath));
+  if (settings.zomboidDataPath) roots.push(path.resolve(settings.zomboidDataPath));
+  // Always allow the default Zomboid config directory
+  const defaultConfig = path.join(os.homedir(), 'Zomboid');
+  roots.push(path.resolve(defaultConfig));
+  // De-duplicate
+  return [...new Set(roots)];
+}
+
+/**
+ * Check whether `target` is equal to or inside one of `allowedRoots`.
+ * Returns the resolved target if allowed, or null if it escapes all roots.
+ */
+function confineToRoots(target, allowedRoots) {
+  const resolved = path.resolve(target);
+  for (const root of allowedRoots) {
+    if (resolved === root || resolved.startsWith(root + path.sep)) {
+      return resolved;
+    }
+  }
+  return null;
+}
+
 // GET /browse-files - List directories and files at a given path
 router.get('/browse-files', async (req, res) => {
   try {
     const browsePath = req.query.path ? String(req.query.path) : null;
     const filterExts = req.query.extensions ? String(req.query.extensions).split(',').map(e => e.toLowerCase().trim()) : null;
     
+    const allowedRoots = await getAllowedBrowseRoots();
     let targetPath;
     if (browsePath) {
-      targetPath = path.resolve(browsePath);
+      targetPath = confineToRoots(browsePath, allowedRoots);
+      if (!targetPath) {
+        return res.status(403).json({ error: 'Access denied: path is outside allowed server directories' });
+      }
     } else {
       // Default to the server config directory
       const configPath = await getServerConfigPath();
@@ -1391,7 +1430,7 @@ router.get('/browse-files', async (req, res) => {
     
     res.json({
       currentPath: targetPath,
-      parent: path.dirname(targetPath) !== targetPath ? path.dirname(targetPath) : null,
+      parent: path.dirname(targetPath) !== targetPath && confineToRoots(path.dirname(targetPath), allowedRoots) ? path.dirname(targetPath) : null,
       directories,
       files
     });
@@ -1409,7 +1448,11 @@ router.get('/image-preview', async (req, res) => {
       return res.status(400).json({ error: 'Path is required' });
     }
     
-    const resolved = path.resolve(filePath);
+    const allowedRoots = await getAllowedBrowseRoots();
+    const resolved = confineToRoots(filePath, allowedRoots);
+    if (!resolved) {
+      return res.status(403).json({ error: 'Access denied: path is outside allowed server directories' });
+    }
     
     if (!fs.existsSync(resolved)) {
       return res.status(404).json({ error: 'File not found' });

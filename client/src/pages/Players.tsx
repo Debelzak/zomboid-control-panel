@@ -228,12 +228,14 @@ export default function Players() {
   const [exporting, setExporting] = useState(false)
   const [importing, setImporting] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [importExportOpen, setImportExportOpen] = useState(false)
   
   // Bridge status for character export/import
   const [bridgeConnected, setBridgeConnected] = useState(false)
   
   // Ref for copy timeout cleanup
   const copiedTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
   
   // Cleanup copy timeout on unmount
   useEffect(() => {
@@ -364,7 +366,7 @@ export default function Players() {
     try {
       await playersApi.saveNote(selectedPlayer, normalizedNote, currentTags)
       toast({
-        title: 'Note saved',
+        title: 'Note Saved',
         description: `Note for ${selectedPlayer} has been saved`,
         variant: 'success' as const,
       })
@@ -395,7 +397,7 @@ export default function Players() {
     try {
       await playersApi.deleteNote(selectedPlayer)
       toast({
-        title: 'Note deleted',
+        title: 'Note Deleted',
         description: `Note for ${selectedPlayer} has been deleted`,
         variant: 'success' as const,
       })
@@ -457,12 +459,19 @@ export default function Players() {
     Promise.all([fetchPlayers(), fetchData(), fetchNotesAndStats()]).catch(err => {
       reportClientError('Failed to load initial player data.', err)
     })
+    let isMounted = true
     // Check bridge status for character export/import
     panelBridgeApi.getStatus().then(status => {
-      setBridgeConnected(Boolean(status.modConnected && status.isRunning))
-    }).catch(() => setBridgeConnected(false))
-    const interval = setInterval(fetchPlayers, 15000)
-    return () => clearInterval(interval)
+      if (isMounted) setBridgeConnected(Boolean(status.modConnected && status.isRunning))
+    }).catch(() => { if (isMounted) setBridgeConnected(false) })
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'hidden') return
+      fetchPlayers()
+    }, 15000)
+    return () => {
+      isMounted = false
+      clearInterval(interval)
+    }
   }, [fetchPlayers, fetchData, fetchNotesAndStats])
   
   // Load note/tags when selected player changes
@@ -503,6 +512,8 @@ export default function Players() {
     handleAction('Kick player', () => playersApi.kick(selectedPlayer, kickReason), () => {
       setKickDialogOpen(false)
       setKickReason('')
+      setSelectedPlayer('')
+      searchInputRef.current?.focus()
     })
   }
 
@@ -513,6 +524,8 @@ export default function Players() {
       setBanConfirmOpen(false)
       setBanReason('')
       setBanIp(false)
+      setSelectedPlayer('')
+      searchInputRef.current?.focus()
     })
   }
 
@@ -741,6 +754,7 @@ export default function Players() {
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
+                ref={searchInputRef}
                 placeholder="Search players..."
                 value={playerSearchFilter}
                 onChange={(e) => setPlayerSearchFilter(e.target.value)}
@@ -926,6 +940,14 @@ export default function Players() {
                         Remove from Whitelist
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        onClick={() => setImportExportOpen(true)}
+                        disabled={!bridgeConnected}
+                      >
+                        <Download className="w-4 h-4 mr-2" />
+                        Import/Export Character
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
                       <DropdownMenuItem 
                         onClick={() => setBanDialogOpen(true)}
                         className="text-destructive focus:text-destructive"
@@ -964,9 +986,7 @@ export default function Players() {
                   <TabsTrigger value="items" className="min-h-9 shrink-0 text-xs px-3">Items & XP</TabsTrigger>
                   <TabsTrigger value="vehicles" className="min-h-9 shrink-0 text-xs px-3">Vehicles</TabsTrigger>
                   <TabsTrigger value="powers" className="min-h-9 shrink-0 text-xs px-3">Powers</TabsTrigger>
-                  <TabsTrigger value="import-export" className="min-h-9 shrink-0 text-xs px-3">Import/Export</TabsTrigger>
-                  <TabsTrigger value="notes" className="min-h-9 shrink-0 text-xs px-3">Notes</TabsTrigger>
-                  <TabsTrigger value="activity" className="min-h-9 shrink-0 text-xs px-3" onClick={() => fetchActivityLogs()}>Activity</TabsTrigger>
+                  <TabsTrigger value="notes" className="min-h-9 shrink-0 text-xs px-3" onClick={() => fetchActivityLogs()}>Notes & Log</TabsTrigger>
                 </TabsList>
               </div>
 
@@ -974,7 +994,7 @@ export default function Players() {
               <TabsContent value="moderation" className="space-y-4 mt-4">
                 {/* Primary actions — visible when a player is selected */}
                 {selectedPlayer ? (
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   {/* Kick */}
                   <Dialog open={kickDialogOpen} onOpenChange={setKickDialogOpen}>
                     <DialogTrigger asChild>
@@ -1220,12 +1240,14 @@ export default function Players() {
                 </div>
                 ) : (
                 <div className="rounded-lg border border-dashed border-border/50 px-4 py-6 text-center">
-                  <p className="text-sm text-muted-foreground">Select a player to manage</p>
+                  <p className="text-sm text-muted-foreground">Pick a player from the list, or type a username below</p>
                 </div>
                 )}
 
                 {/* Secondary actions — less frequent operations */}
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                <div className="pt-4 mt-2 border-t border-border/30">
+                  <p className="text-xs font-medium text-muted-foreground mb-2">Standalone Actions</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                   {/* Voice Ban */}
                   <Dialog open={voiceBanDialogOpen} onOpenChange={setVoiceBanDialogOpen}>
                     <DialogTrigger asChild>
@@ -1460,6 +1482,7 @@ export default function Players() {
                     </DialogContent>
                   </Dialog>
                 </div>
+                </div>
               </TabsContent>
               <TabsContent value="items" className="space-y-4 mt-4">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -1670,207 +1693,7 @@ export default function Players() {
                 </div>
               </TabsContent>
 
-              {/* Import/Export Tab */}
-              <TabsContent value="import-export" className="space-y-4 mt-4">
-                {!bridgeConnected && (
-                  <Alert className="border-warning/40 bg-warning/10">
-                    <AlertTriangle className="h-4 w-4 text-warning" />
-                    <AlertTitle className="text-warning">Bridge Offline</AlertTitle>
-                    <AlertDescription>
-                      Character export and import require PanelBridge to be connected.{' '}
-                      <Link to="/settings" className="text-primary underline hover:text-foreground">Open Bridge Setup</Link>
-                    </AlertDescription>
-                  </Alert>
-                )}
-                <div className={cn("grid grid-cols-1 lg:grid-cols-2 gap-4", !bridgeConnected && 'opacity-60 pointer-events-none')}>
-                  {/* Export */}
-                  <Card>
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-sm flex items-center gap-2">
-                        <Download className="w-4 h-4" />
-                        Export Character
-                      </CardTitle>
-                      <CardDescription className="text-xs">
-                        Export player's XP, perks, and skills
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      <Button
-                        variant="outline"
-                        disabled={!selectedPlayer || exporting}
-                        onClick={async () => {
-                          setExporting(true)
-                          try {
-                            const { panelBridgeApi } = await import('@/lib/api')
-                            const response = await panelBridgeApi.exportCharacter(selectedPlayer)
-                            const exportData = response.data || response
-                            const jsonStr = JSON.stringify(exportData, null, 2)
-                            setCharacterData(jsonStr)
-                            toast({
-                              title: 'Character Exported',
-                              description: `Exported character data for ${selectedPlayer}`,
-                            })
-                          } catch (error) {
-                            toast({
-                              title: 'Export Failed',
-                              description: error instanceof Error ? error.message : 'Failed to export character',
-                              variant: 'destructive',
-                            })
-                          } finally {
-                            setExporting(false)
-                          }
-                        }}
-                        size="sm"
-                        className="w-full"
-                      >
-                        {exporting ? (
-                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        ) : (
-                          <Download className="w-4 h-4 mr-2" />
-                        )}
-                        Export {selectedPlayer || 'Player'}
-                      </Button>
-                      
-                      {characterData && (
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-medium">Character Data</span>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="h-7 w-7 p-0"
-                              onClick={() => {
-                                copyText(characterData)
-                                setCopied(true)
-                                if (copiedTimeoutRef.current) clearTimeout(copiedTimeoutRef.current)
-                                copiedTimeoutRef.current = setTimeout(() => setCopied(false), 2000)
-                              }}
-                            >
-                              {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                            </Button>
-                          </div>
-                          <Textarea
-                            readOnly
-                            value={characterData}
-                            className="h-32 resize-none font-mono text-xs"
-                          />
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="w-full"
-                            onClick={() => {
-                              const blob = new Blob([characterData], { type: 'application/json' })
-                              const url = URL.createObjectURL(blob)
-                              const a = document.createElement('a')
-                              a.href = url
-                              a.download = `${selectedPlayer}_character.json`
-                              a.click()
-                              URL.revokeObjectURL(url)
-                            }}
-                          >
-                            <Download className="w-4 h-4 mr-2" />
-                            Download File
-                          </Button>
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                  
-                  {/* Import */}
-                  <Card>
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-sm flex items-center gap-2">
-                        <Upload className="w-4 h-4" />
-                        Import Character
-                      </CardTitle>
-                      <CardDescription className="text-xs">
-                        Restore XP, perks, and skills
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      <Textarea
-                        value={importCharacterData}
-                        onChange={(e) => setImportCharacterData(e.target.value)}
-                        placeholder='Paste character JSON here...'
-                        className="h-24 resize-none font-mono text-xs"
-                      />
-                      <div className="flex gap-2">
-                        <Button
-                          disabled={importing || !selectedPlayer || !importCharacterData.trim()}
-                          onClick={async () => {
-                            let data
-                            try {
-                              data = JSON.parse(importCharacterData)
-                            } catch {
-                              toast({
-                                title: 'Invalid JSON',
-                                description: 'The character data is not valid JSON format',
-                                variant: 'destructive',
-                              })
-                              return
-                            }
-                            
-                            setImporting(true)
-                            try {
-                              const { panelBridgeApi } = await import('@/lib/api')
-                              await panelBridgeApi.importCharacter(selectedPlayer, data)
-                              toast({
-                                title: 'Character Imported',
-                                description: `Applied character data to ${selectedPlayer}`,
-                              })
-                              setImportCharacterData('')
-                            } catch (error) {
-                              toast({
-                                title: 'Import Failed',
-                                description: error instanceof Error ? error.message : 'Failed to import character',
-                                variant: 'destructive',
-                              })
-                            } finally {
-                              setImporting(false)
-                            }
-                          }}
-                          size="sm"
-                          className="flex-1"
-                        >
-                          {importing ? (
-                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                          ) : (
-                            <Upload className="w-4 h-4 mr-2" />
-                          )}
-                          Apply
-                        </Button>
-                        <label className="cursor-pointer">
-                          <Button variant="outline" size="sm" asChild>
-                            <span>
-                              <Upload className="w-4 h-4 mr-1" />
-                              File
-                            </span>
-                          </Button>
-                          <input
-                            type="file"
-                            accept=".json"
-                            className="hidden"
-                            onChange={(e) => {
-                              const file = e.target.files?.[0]
-                              if (file) {
-                                const reader = new FileReader()
-                                reader.onload = (ev) => {
-                                  setImportCharacterData(ev.target?.result as string || '')
-                                }
-                                reader.readAsText(file)
-                              }
-                              e.target.value = ''
-                            }}
-                          />
-                        </label>
-                      </div>
-                      <p className="text-xs text-muted-foreground">Player must be online.</p>
-                    </CardContent>
-                  </Card>
-                </div>
-              </TabsContent>
-
-              {/* Notes & Tags Tab */}
+              {/* Notes & Log Tab */}
               <TabsContent value="notes" className="space-y-4 mt-4">
                 {notesLoading ? (
                   <div className="flex items-center justify-center py-8">
@@ -2016,101 +1839,306 @@ export default function Players() {
                     </div>
                   </div>
                 )}
-              </TabsContent>
 
-              {/* Activity Log Tab */}
-              <TabsContent value="activity" className="space-y-4 mt-4">
-                {logsError && (
-                  <Alert variant="destructive">
-                    <AlertTriangle className="h-4 w-4" />
-                    <AlertTitle>Activity log unavailable</AlertTitle>
-                    <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                      <span className="min-w-0 break-words">{logsError}</span>
-                      <Button variant="outline" size="sm" onClick={() => fetchActivityLogs(logPlayerFilter || undefined)} className="self-start">
-                        <RefreshCw className="mr-2 h-4 w-4" /> Retry
-                      </Button>
-                    </AlertDescription>
-                  </Alert>
-                )}
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input
-                      placeholder="Filter by player name..."
-                      value={logPlayerFilter}
-                      onChange={(e) => setLogPlayerFilter(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') fetchActivityLogs(logPlayerFilter || undefined)
-                      }}
-                      className="pl-9"
-                      aria-label="Filter activity logs by player name"
-                    />
+                {/* Activity Log */}
+                <div className="pt-4 border-t space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-medium flex items-center gap-2">
+                      <Clock className="w-4 h-4" />
+                      Activity Log
+                    </h4>
                   </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => fetchActivityLogs(logPlayerFilter || undefined)}
-                    disabled={logsLoading}
-                    className="w-full sm:w-auto"
-                  >
-                    {logsLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                  </Button>
-                </div>
-                
-                <div className="rounded-md border max-h-[350px] overflow-auto">
-                  <table className="w-full min-w-[420px] text-sm">
-                    <thead className="bg-muted/50 sticky top-0">
-                      <tr>
-                        <th className="text-left p-2 font-medium text-xs">Time</th>
-                        <th className="text-left p-2 font-medium text-xs">Player</th>
-                        <th className="text-left p-2 font-medium text-xs">Action</th>
-                        <th className="text-left p-2 font-medium text-xs">Details</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {activityLogs.length === 0 ? (
+                  {logsError && (
+                    <Alert variant="destructive">
+                      <AlertTriangle className="h-4 w-4" />
+                      <AlertTitle>Activity log unavailable</AlertTitle>
+                      <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <span className="min-w-0 break-words">{logsError}</span>
+                        <Button variant="outline" size="sm" onClick={() => fetchActivityLogs(logPlayerFilter || undefined)} className="self-start">
+                          <RefreshCw className="mr-2 h-4 w-4" /> Retry
+                        </Button>
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Filter by player name..."
+                        value={logPlayerFilter}
+                        onChange={(e) => setLogPlayerFilter(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') fetchActivityLogs(logPlayerFilter || undefined)
+                        }}
+                        className="pl-9"
+                        aria-label="Filter activity logs by player name"
+                      />
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => fetchActivityLogs(logPlayerFilter || undefined)}
+                      disabled={logsLoading}
+                      className="w-full sm:w-auto"
+                    >
+                      {logsLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                    </Button>
+                  </div>
+                  
+                  <div className="rounded-md border max-h-[280px] overflow-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-muted/50 sticky top-0">
                         <tr>
-                          <td colSpan={4} className="p-4 text-center text-muted-foreground text-sm">
-                            {logsLoading ? 'Loading...' : 'No activity logs'}
-                          </td>
+                          <th className="text-left p-2 font-medium text-xs">Time</th>
+                          <th className="text-left p-2 font-medium text-xs">Player</th>
+                          <th className="text-left p-2 font-medium text-xs">Action</th>
+                          <th className="text-left p-2 font-medium text-xs hidden sm:table-cell">Details</th>
                         </tr>
-                      ) : (
-                        activityLogs.map((log) => (
-                          <tr key={log.id} className="hover:bg-muted/50">
-                            <td className="p-2 whitespace-nowrap text-xs text-muted-foreground">
-                              {new Date(log.logged_at).toLocaleString()}
-                            </td>
-                            <td className="p-2 text-xs font-medium break-words">{log.player_name}</td>
-                            <td className="p-2">
-                              <Badge
-                                variant={
-                                  log.action === 'connect'
-                                    ? 'success'
-                                    : log.action === 'disconnect' || log.action === 'ban'
-                                      ? 'destructive'
-                                      : log.action === 'kick'
-                                        ? 'warning'
-                                        : 'secondary'
-                                }
-                                className="text-xs"
-                              >
-                                {log.action}
-                              </Badge>
-                            </td>
-                            <td className="max-w-[220px] p-2 text-xs text-muted-foreground break-words">
-                              {log.details || '-'}
+                      </thead>
+                      <tbody className="divide-y">
+                        {activityLogs.length === 0 ? (
+                          <tr>
+                            <td colSpan={4} className="p-4 text-center text-muted-foreground text-sm">
+                              {logsLoading ? 'Loading...' : 'No activity logs'}
                             </td>
                           </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
+                        ) : (
+                          activityLogs.map((log) => (
+                            <tr key={log.id} className="hover:bg-muted/50">
+                              <td className="p-2 whitespace-nowrap text-xs text-muted-foreground">
+                                {new Date(log.logged_at).toLocaleString()}
+                              </td>
+                              <td className="p-2 text-xs font-medium break-words">{log.player_name}</td>
+                              <td className="p-2">
+                                <Badge
+                                  variant={
+                                    log.action === 'connect'
+                                      ? 'success'
+                                      : log.action === 'disconnect' || log.action === 'ban'
+                                        ? 'destructive'
+                                        : log.action === 'kick'
+                                          ? 'warning'
+                                          : 'secondary'
+                                  }
+                                  className="text-xs"
+                                >
+                                  {log.action}
+                                </Badge>
+                              </td>
+                              <td className="max-w-[220px] p-2 text-xs text-muted-foreground break-words hidden sm:table-cell">
+                                {log.details || '-'}
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </TabsContent>
             </Tabs>
           </CardContent>
         </Card>
       </div>
+
+      {/* Import/Export Character Dialog */}
+      <Dialog open={importExportOpen} onOpenChange={setImportExportOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Download className="w-5 h-5" />
+              Import/Export Character
+            </DialogTitle>
+            <DialogDescription>
+              Export or restore a player's XP, perks, and skills via PanelBridge.
+            </DialogDescription>
+          </DialogHeader>
+          {!bridgeConnected && (
+            <Alert className="border-warning/40 bg-warning/10">
+              <AlertTriangle className="h-4 w-4 text-warning" />
+              <AlertTitle className="text-warning">Bridge Offline</AlertTitle>
+              <AlertDescription>
+                Character export and import require PanelBridge to be connected.{' '}
+                <Link to="/settings" className="text-primary underline hover:text-foreground">Open Bridge Setup</Link>
+              </AlertDescription>
+            </Alert>
+          )}
+          <div className={cn("grid grid-cols-1 md:grid-cols-2 gap-4", !bridgeConnected && 'opacity-60 pointer-events-none')}>
+            {/* Export */}
+            <div className="space-y-3">
+              <h4 className="text-sm font-medium flex items-center gap-2">
+                <Download className="w-4 h-4" />
+                Export Character
+              </h4>
+              <p className="text-xs text-muted-foreground">Export player's XP, perks, and skills</p>
+              <Button
+                variant="outline"
+                disabled={!selectedPlayer || exporting}
+                onClick={async () => {
+                  setExporting(true)
+                  try {
+                    const { panelBridgeApi } = await import('@/lib/api')
+                    const response = await panelBridgeApi.exportCharacter(selectedPlayer)
+                    const exportData = response.data || response
+                    const jsonStr = JSON.stringify(exportData, null, 2)
+                    setCharacterData(jsonStr)
+                    toast({
+                      title: 'Character Exported',
+                      description: `Exported character data for ${selectedPlayer}`,
+                    })
+                  } catch (error) {
+                    toast({
+                      title: 'Export Failed',
+                      description: error instanceof Error ? error.message : 'Failed to export character',
+                      variant: 'destructive',
+                    })
+                  } finally {
+                    setExporting(false)
+                  }
+                }}
+                size="sm"
+                className="w-full"
+              >
+                {exporting ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Download className="w-4 h-4 mr-2" />
+                )}
+                Export {selectedPlayer || 'Player'}
+              </Button>
+              
+              {characterData && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium">Character Data</span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 w-7 p-0"
+                      onClick={() => {
+                        copyText(characterData)
+                        setCopied(true)
+                        if (copiedTimeoutRef.current) clearTimeout(copiedTimeoutRef.current)
+                        copiedTimeoutRef.current = setTimeout(() => setCopied(false), 2000)
+                      }}
+                    >
+                      {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                    </Button>
+                  </div>
+                  <Textarea
+                    readOnly
+                    value={characterData}
+                    className="h-32 resize-none font-mono text-xs"
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => {
+                      const blob = new Blob([characterData], { type: 'application/json' })
+                      const url = URL.createObjectURL(blob)
+                      const a = document.createElement('a')
+                      a.href = url
+                      a.download = `${selectedPlayer}_character.json`
+                      a.click()
+                      URL.revokeObjectURL(url)
+                    }}
+                  >
+                    <Download className="w-4 h-4 mr-2" />
+                    Download File
+                  </Button>
+                </div>
+              )}
+            </div>
+            
+            {/* Import */}
+            <div className="space-y-3">
+              <h4 className="text-sm font-medium flex items-center gap-2">
+                <Upload className="w-4 h-4" />
+                Import Character
+              </h4>
+              <p className="text-xs text-muted-foreground">Restore XP, perks, and skills</p>
+              <Textarea
+                value={importCharacterData}
+                onChange={(e) => setImportCharacterData(e.target.value)}
+                placeholder='Paste character JSON here...'
+                className="h-24 resize-none font-mono text-xs"
+              />
+              <div className="flex gap-2">
+                <Button
+                  disabled={importing || !selectedPlayer || !importCharacterData.trim()}
+                  onClick={async () => {
+                    let data
+                    try {
+                      data = JSON.parse(importCharacterData)
+                    } catch {
+                      toast({
+                        title: 'Invalid JSON',
+                        description: 'The character data is not valid JSON format',
+                        variant: 'destructive',
+                      })
+                      return
+                    }
+                    
+                    setImporting(true)
+                    try {
+                      const { panelBridgeApi } = await import('@/lib/api')
+                      await panelBridgeApi.importCharacter(selectedPlayer, data)
+                      toast({
+                        title: 'Character Imported',
+                        description: `Applied character data to ${selectedPlayer}`,
+                      })
+                      setImportCharacterData('')
+                    } catch (error) {
+                      toast({
+                        title: 'Import Failed',
+                        description: error instanceof Error ? error.message : 'Failed to import character',
+                        variant: 'destructive',
+                      })
+                    } finally {
+                      setImporting(false)
+                    }
+                  }}
+                  size="sm"
+                  className="flex-1"
+                >
+                  {importing ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Upload className="w-4 h-4 mr-2" />
+                  )}
+                  Apply
+                </Button>
+                <label className="cursor-pointer">
+                  <Button variant="outline" size="sm" asChild>
+                    <span>
+                      <Upload className="w-4 h-4 mr-1" />
+                      File
+                    </span>
+                  </Button>
+                  <input
+                    type="file"
+                    accept=".json"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      if (file) {
+                        const reader = new FileReader()
+                        reader.onload = (ev) => {
+                          setImportCharacterData(ev.target?.result as string || '')
+                        }
+                        reader.readAsText(file)
+                      }
+                      e.target.value = ''
+                    }}
+                  />
+                </label>
+              </div>
+              <p className="text-xs text-muted-foreground">Player must be online.</p>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -1,7 +1,7 @@
 ---@diagnostic disable: undefined-global, deprecated
 --[[
     PanelBridge - Server-side mod for Zomboid Control Panel
-    Version: 1.7.1
+    Version: 1.0.0
     
     This mod enables external control panel communication with the PZ server.
     Communication happens via JSON files in the server save folder.
@@ -96,7 +96,7 @@
 local json
 
 local PanelBridge = {
-    VERSION = "1.7.1",
+    VERSION = "1.0.0",
     PROTOCOL_VERSION = "queue-v1",
     CHECK_INTERVAL = 250, -- milliseconds (fast command polling)
     lastCheck = 0,
@@ -892,7 +892,8 @@ end
 
 local function normalizeMessage(value, maxLen)
     if value == nil then return nil end
-    local message = tostring(value)
+    local ok, message = pcall(tostring, value)
+    if not ok then return nil end
     if message == "" then return nil end
     if maxLen and #message > maxLen then
         message = message:sub(1, maxLen)

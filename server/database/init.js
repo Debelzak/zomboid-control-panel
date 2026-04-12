@@ -58,8 +58,36 @@ const defaultData = {
   performance_history: [],
   discord_webhooks: [],
   users: [],
-  settings: {}
+  settings: {},
+  _schemaVersion: 1
 };
+
+// ============================================
+// Schema Migrations
+// ============================================
+
+const CURRENT_SCHEMA_VERSION = 1;
+
+/**
+ * Run any pending schema migrations.
+ * Add new migrations as sequential `if (version < N)` blocks.
+ * Each migration must be idempotent — safe to re-run if the write after
+ * bumping the version failed.
+ */
+function runMigrations(data) {
+  const version = data._schemaVersion || 0;
+  if (version >= CURRENT_SCHEMA_VERSION) return data;
+
+  log.info(`Running DB migrations: v${version} → v${CURRENT_SCHEMA_VERSION}`);
+
+  // Migration 1: stamp initial schema version (no data changes needed)
+  // Future migrations:
+  // if (version < 2) { /* rename fields, restructure collections, etc. */ }
+
+  data._schemaVersion = CURRENT_SCHEMA_VERSION;
+  log.info(`DB migrated to schema v${CURRENT_SCHEMA_VERSION}`);
+  return data;
+}
 
 // ============================================
 // Write Queue (debounced, crash-safe)
@@ -69,6 +97,8 @@ let db = null;
 let _writeTimer = null;
 let _writePromise = null;
 let _dirty = false;
+let _writeRetries = 0;
+const MAX_WRITE_RETRIES = 5;
 let _backupTimer = null;
 let _shutdownRegistered = false;
 
@@ -109,10 +139,18 @@ async function flushWrites() {
       const data = JSON.stringify(db.data, null, 2);
       fs.writeFileSync(tmpPath, data, 'utf-8');
       fs.renameSync(tmpPath, dbPath);
+      _writeRetries = 0; // Reset on success
       log.debug(`DB flushed (${Math.round(data.length / 1024)}KB)`);
     } catch (err) {
-      log.error(`Write error: ${err.message}`);
-      _dirty = true; // Re-mark dirty so next scheduleWrite retries
+      _writeRetries++;
+      if (_writeRetries >= MAX_WRITE_RETRIES) {
+        log.error(`DB write failed ${_writeRetries} times, giving up: ${err.message}`);
+        // Stay dirty but stop retrying — next explicit scheduleWrite will reset the counter
+        _writeRetries = 0;
+      } else {
+        log.error(`Write error (attempt ${_writeRetries}/${MAX_WRITE_RETRIES}): ${err.message}`);
+        _dirty = true; // Re-mark dirty so next scheduleWrite retries
+      }
     }
   })();
 
@@ -291,6 +329,7 @@ export async function getDb() {
 
     // Validate structure and compact
     db.data = validateData(db.data);
+    db.data = runMigrations(db.data);
     db.data = compactData(db.data);
     await db.write();
 
@@ -753,7 +792,7 @@ export async function getAllSettings() {
 function normalizeMemoryGb(value, fallback) {
   const parsed = parseInt(value, 10);
   if (isNaN(parsed) || parsed <= 0) return fallback;
-  if (parsed > 128) {
+  if (parsed > 2048) {
     return Math.max(1, Math.round(parsed / 1024));
   }
   return parsed;

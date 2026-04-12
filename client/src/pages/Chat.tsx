@@ -67,6 +67,7 @@ export default function Chat() {
   useEffect(() => {
     fetchPlayers()
     const interval = setInterval(() => {
+      if (document.visibilityState === 'hidden') return
       fetchPlayers()
     }, 15000)
     return () => clearInterval(interval)
@@ -177,7 +178,7 @@ export default function Chat() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Chat Window */}
         <div className="lg:col-span-2">
-          <Card className="h-[50vh] min-h-[300px] sm:h-[500px] md:h-[600px] flex flex-col">
+          <Card className="h-[24rem] min-h-[300px] sm:h-[30rem] lg:h-[36rem] flex flex-col">
             <CardHeader className="pb-3 border-b shrink-0">
               <CardTitle className="flex items-center gap-2">
                 <MessagesSquare className="w-4 h-4 text-primary" />
@@ -207,7 +208,7 @@ export default function Chat() {
                               {msg.timestamp.toLocaleTimeString()}
                             </time>
                           </div>
-                          <p className="text-sm break-words [overflow-wrap:anywhere]">{msg.message}</p>
+                          <p className="text-sm [overflow-wrap:anywhere]">{msg.message}</p>
                         </div>
                       )
                     })
@@ -232,7 +233,7 @@ export default function Chat() {
                   <Button
                     onClick={sendMessage}
                     disabled={sending || !message.trim()}
-                    className="h-11 min-w-28 gap-2"
+                    className="h-11 min-w-20 sm:min-w-28 gap-2"
                   >
                     {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                     Send

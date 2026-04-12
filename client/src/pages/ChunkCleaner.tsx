@@ -49,6 +49,7 @@ import { useToast } from '@/components/ui/use-toast'
 import { Separator } from '@/components/ui/separator'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { chunksApi, serversApi } from '@/lib/api'
+import { useTheme } from '@/contexts/ThemeContext'
 
 interface SaveInfo {
   name: string
@@ -120,6 +121,7 @@ function formatSize(bytes: number): string {
 }
 
 export default function ChunkCleaner() {
+  const { theme } = useTheme()
   const [saves, setSaves] = useState<SaveInfo[]>([])
   const [selectedSave, setSelectedSave] = useState<string>('')
   const [chunks, setChunks] = useState<ChunkInfo[]>([])
@@ -139,6 +141,28 @@ export default function ChunkCleaner() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 })
+  
+  // Cached theme colors for canvas (avoid getComputedStyle in rAF)
+  const canvasColorsRef = useRef({
+    bg: '228 30% 7%', primary: '217 91% 60%', destructive: '0 70% 50%',
+    mutedFg: '215 14% 55%', foreground: '210 11% 90%',
+    warning: '28 80% 55%', accent: '34 55% 28%',
+  })
+
+  useEffect(() => {
+    const el = canvasRef.current ?? document.documentElement
+    const style = getComputedStyle(el)
+    const get = (name: string) => style.getPropertyValue(name).trim()
+    canvasColorsRef.current = {
+      bg: get('--background') || '228 30% 7%',
+      primary: get('--primary') || '217 91% 60%',
+      destructive: get('--destructive') || '0 70% 50%',
+      mutedFg: get('--muted-foreground') || '215 14% 55%',
+      foreground: get('--foreground') || '210 11% 90%',
+      warning: get('--warning') || '28 80% 55%',
+      accent: get('--accent') || '34 55% 28%',
+    }
+  }, [theme])
   
   // Camera state: screen = world * scale + offset
   const [scale, setScale] = useState(4)
@@ -223,7 +247,7 @@ export default function ChunkCleaner() {
       return result.saves || []
     } catch (error) {
       toast({
-        title: 'Could not load saves',
+        title: 'Could Not Load Saves',
         description: error instanceof Error ? error.message : 'Failed to load save folders.',
         variant: 'destructive',
       })
@@ -476,15 +500,15 @@ export default function ChunkCleaner() {
       const W = canvasSize.width
       const H = canvasSize.height
       
-      // Read theme colors from CSS custom properties
-      const style = getComputedStyle(canvas)
-      const cssVar = (name: string) => style.getPropertyValue(name).trim()
-      const bgVar = cssVar('--background')
-      const primaryVar = cssVar('--primary') || '217 91% 60%'
-      const destructiveVar = cssVar('--destructive') || '0 70% 50%'
-      const mutedFgVar = cssVar('--muted-foreground') || '215 14% 55%'
-      const foregroundVar = cssVar('--foreground') || '210 11% 90%'
-      const warningVar = cssVar('--warning') || '28 80% 55%'
+      // Read cached theme colors (updated on theme change, not per-frame)
+      const cc = canvasColorsRef.current
+      const bgVar = cc.bg
+      const primaryVar = cc.primary
+      const destructiveVar = cc.destructive
+      const mutedFgVar = cc.mutedFg
+      const foregroundVar = cc.foreground
+      const warningVar = cc.warning
+      const accentVar = cc.accent
       const hsl = (v: string, a: number) => `hsl(${v} / ${a})`
 
       const canvasBg = bgVar ? `hsl(${bgVar})` : hsl('228 30% 7%', 1)
@@ -688,11 +712,9 @@ export default function ChunkCleaner() {
         if (isSelected) {
           ctx.fillStyle = hsl(destructiveVar, 0.5)
         } else {
+          // Chunk heat: blend from accent (small) to warning (large) using theme tokens
           const ratio = Math.min(chunk.size / 50000, 1)
-          const r = Math.floor(240 + (1 - ratio) * 15)
-          const g = Math.floor(130 + (1 - ratio) * 70)
-          const b = Math.floor(15 + (1 - ratio) * 15)
-          ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.3)`
+          ctx.fillStyle = ratio > 0.5 ? hsl(warningVar, 0.25 + ratio * 0.15) : hsl(accentVar, 0.2 + ratio * 0.2)
         }
         
         if (scale > 4) {
@@ -702,7 +724,8 @@ export default function ChunkCleaner() {
           if (isSelected) {
             ctx.strokeStyle = hsl(destructiveVar, 0.8)
           } else {
-            ctx.strokeStyle = `rgba(${Math.floor(240 + (1 - Math.min(chunk.size / 50000, 1)) * 15)}, ${Math.floor(130 + (1 - Math.min(chunk.size / 50000, 1)) * 70)}, 20, 0.6)`
+            const ratio = Math.min(chunk.size / 50000, 1)
+            ctx.strokeStyle = ratio > 0.5 ? hsl(warningVar, 0.5 + ratio * 0.2) : hsl(accentVar, 0.4 + ratio * 0.2)
           }
           ctx.lineWidth = 1
           ctx.strokeRect(sx + gap, sy + gap, scale - gap * 2, scale - gap * 2)
@@ -1043,6 +1066,54 @@ export default function ChunkCleaner() {
     e.preventDefault()
   }, [])
 
+  // ─── Touch support ─────────────────────────────────────
+  const touchRef = useRef<{ startX: number; startY: number; offX: number; offY: number; pinchDist: number | null }>({
+    startX: 0, startY: 0, offX: 0, offY: 0, pinchDist: null,
+  })
+
+  const getTouchDist = (touches: React.TouchList) => {
+    const dx = touches[0].clientX - touches[1].clientX
+    const dy = touches[0].clientY - touches[1].clientY
+    return Math.sqrt(dx * dx + dy * dy)
+  }
+
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length === 1) {
+      touchRef.current = { startX: e.touches[0].clientX, startY: e.touches[0].clientY, offX: offset.x, offY: offset.y, pinchDist: null }
+      isPanningRef.current = true
+    } else if (e.touches.length === 2) {
+      touchRef.current.pinchDist = getTouchDist(e.touches)
+    }
+  }, [offset])
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    e.preventDefault()
+    if (e.touches.length === 2 && touchRef.current.pinchDist !== null) {
+      const newDist = getTouchDist(e.touches)
+      const factor = newDist / touchRef.current.pinchDist
+      const canvas = canvasRef.current
+      if (!canvas) return
+      const rect = canvas.getBoundingClientRect()
+      const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left
+      const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top
+      const newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale * factor))
+      const worldX = (cx - offset.x) / scale
+      const worldY = (cy - offset.y) / scale
+      setScale(newScale)
+      setOffset({ x: cx - worldX * newScale, y: cy - worldY * newScale })
+      touchRef.current.pinchDist = newDist
+    } else if (e.touches.length === 1 && isPanningRef.current) {
+      const t = e.touches[0]
+      const tr = touchRef.current
+      setOffset({ x: tr.offX + (t.clientX - tr.startX), y: tr.offY + (t.clientY - tr.startY) })
+    }
+  }, [scale, offset])
+
+  const handleTouchEnd = useCallback(() => {
+    isPanningRef.current = false
+    touchRef.current.pinchDist = null
+  }, [])
+
   // ─── Delete handlers ───
   const handleDelete = async () => {
     if (selectedChunks.size === 0) return
@@ -1166,6 +1237,7 @@ export default function ChunkCleaner() {
                         value={customPathInput}
                         onChange={(e) => setCustomPathInput(e.target.value)}
                         placeholder="e.g. /home/user/Zomboid"
+                        aria-label="Custom server path"
                         className="text-xs h-7"
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' && customPathInput.trim()) {
@@ -1328,13 +1400,13 @@ export default function ChunkCleaner() {
                     </span>
                   </div>
                   <div className="flex gap-1.5">
-                    <Button variant="outline" size="sm" className="h-7 text-xs flex-1" onClick={selectAll} disabled={chunks.length === 0}>
+                    <Button variant="outline" size="sm" className="h-9 text-xs flex-1" onClick={selectAll} disabled={chunks.length === 0}>
                       All
                     </Button>
-                    <Button variant="outline" size="sm" className="h-7 text-xs flex-1" onClick={clearSelection} disabled={selectedChunks.size === 0}>
+                    <Button variant="outline" size="sm" className="h-9 text-xs flex-1" onClick={clearSelection} disabled={selectedChunks.size === 0}>
                       Clear
                     </Button>
-                    <Button variant="outline" size="sm" className="h-7 text-xs flex-1" onClick={invertSelection} disabled={chunks.length === 0}>
+                    <Button variant="outline" size="sm" className="h-9 text-xs flex-1" onClick={invertSelection} disabled={chunks.length === 0}>
                       Invert
                     </Button>
                   </div>
@@ -1357,7 +1429,7 @@ export default function ChunkCleaner() {
 
           {/* Canvas — primary workspace */}
           <div className="order-1 lg:order-2">
-            <Card className="flex flex-col h-[55vh] min-h-[320px] sm:h-[65vh] lg:h-[72vh]">
+            <Card className="flex flex-col h-[24rem] min-h-[320px] sm:h-[30rem] lg:h-[36rem]">
               <CardContent className="flex-1 p-2 min-h-0">
                 {!selectedSave ? (
                   <div className="h-full flex items-center justify-center text-muted-foreground">
@@ -1391,6 +1463,9 @@ export default function ChunkCleaner() {
                         ref={canvasRef}
                         width={canvasSize.width}
                         height={canvasSize.height}
+                        role="img"
+                        aria-label="Chunk map — select areas to clean up"
+                        tabIndex={0}
                         style={{
                           width: canvasSize.width,
                           height: canvasSize.height,
@@ -1402,6 +1477,9 @@ export default function ChunkCleaner() {
                         onMouseMove={handleMouseMove}
                         onMouseUp={handleMouseUp}
                         onMouseLeave={handleMouseLeave}
+                        onTouchStart={handleTouchStart}
+                        onTouchMove={handleTouchMove}
+                        onTouchEnd={handleTouchEnd}
                         onWheel={handleWheel}
                         onContextMenu={handleContextMenu}
                       />
@@ -1416,7 +1494,7 @@ export default function ChunkCleaner() {
         {/* Help — collapsible */}
         <Collapsible open={showHelp} onOpenChange={setShowHelp}>
           <CollapsibleTrigger asChild>
-            <button className="flex items-center gap-2 text-xs text-muted-foreground/60 hover:text-muted-foreground transition-colors w-full">
+            <button className="flex items-center gap-2 text-xs text-muted-foreground/70 hover:text-muted-foreground transition-colors w-full">
               <Info className="w-3.5 h-3.5" />
               <span>{showHelp ? 'Hide help' : 'Show help'}</span>
             </button>

@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from 'react'
+import { createContext, useContext, useEffect, useState, useCallback, useMemo, ReactNode } from 'react'
 
 export type ThemeName = 'survival' | 'light'
 
@@ -66,13 +66,16 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     applyThemeClass(theme)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  const value = useMemo(() => ({ theme, setTheme }), [theme, setTheme])
+
   return (
-    <ThemeContext.Provider value={{ theme, setTheme }}>
+    <ThemeContext.Provider value={value}>
       {children}
     </ThemeContext.Provider>
   )
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- hook intentionally co-located with its provider
 export function useTheme() {
   return useContext(ThemeContext)
 }
