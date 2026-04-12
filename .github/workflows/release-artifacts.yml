@@ -32,14 +32,14 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install --no-audit
 
       - name: Install client dependencies
-        run: npm ci
+        run: npm install --no-audit
         working-directory: client
 
       - name: Build
