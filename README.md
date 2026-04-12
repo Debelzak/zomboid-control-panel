@@ -9,6 +9,8 @@ One place to manage your server instead of juggling five different tools.
 
 **[Live demo →](https://fpsacha.github.io/zomboid-control-panel/)**
 
+No existing PZ server tool covered the full workflow. Most handled one or two parts. I needed one place for everything — server control, mod tracking, an in-game bridge, backups, Discord, chunk cleanup, multi-server. So I built the whole thing. [Background story →](https://www.youtube.com/watch?v=P2k0VFX1FUw)
+
 ![Dashboard](Screenshots/screenshot-dashboard.png)
 
 ---
