@@ -51,7 +51,8 @@ class PanelBridge extends EventEmitter {
       pollIntervalMs: 150,          // Fast polling for results (150ms)
       statusCheckMs: 1000,          // Check status every 1 second
       commandTimeoutMs: 15000,
-      statusStaleMs: 45000,         // Status considered stale after 45 seconds (Lua updates every 5s)
+      statusStaleMs: 45000,         // Status considered stale after 45 seconds (Lua updates every 3s)
+      statusStaleIdleMs: 300000,    // 5 min tolerance when 0 players (PZ stops ticking with no players)
       fileWatchDebounceMs: 100      // Debounce file change events
     };
   }
@@ -316,8 +317,12 @@ class PanelBridge extends EventEmitter {
       try {
         const stats = fs.statSync(statusFile);
         const ageMs = Date.now() - stats.mtimeMs;
+        // Use relaxed threshold when server idle (0 players)
+        const diagStaleMs = (this.modStatus?.playerCount === 0)
+          ? this.config.statusStaleIdleMs
+          : this.config.statusStaleMs;
         checks.statusAgeMs = ageMs;
-        checks.statusFresh = ageMs < this.config.statusStaleMs;
+        checks.statusFresh = ageMs < diagStaleMs;
         if (!checks.statusFresh) {
           issues.push(`Status file is stale (${Math.round(ageMs / 1000)}s old).`);
         }
@@ -890,6 +895,11 @@ class PanelBridge extends EventEmitter {
       const stats = fs.statSync(statusFile);
       const age = Date.now() - stats.mtimeMs;
       
+      // Use relaxed threshold when server is idle (0 players) — PZ stops Lua ticks with no players
+      const staleThreshold = (this.modStatus?.playerCount === 0)
+        ? this.config.statusStaleIdleMs
+        : this.config.statusStaleMs;
+
       // If file hasn't changed since last check and we have valid status (not just waiting), skip full re-read
       // Always re-read if modStatus is in waiting state (version is null) to pick up initial data
       const hasValidStatus = this.modStatus && !this.modStatus.waiting && this.modStatus.version;
@@ -897,7 +907,7 @@ class PanelBridge extends EventEmitter {
         // Just update age in existing status
         if (this.modStatus.age !== age) {
           this.modStatus.age = age;
-          this.modStatus.alive = age < this.config.statusStaleMs;
+          this.modStatus.alive = age < staleThreshold;
           if (!this.modStatus.alive && this.modStatus._wasAlive) {
             this.modStatus._wasAlive = false;
             this.emit('modStatus', this.modStatus);
@@ -920,7 +930,11 @@ class PanelBridge extends EventEmitter {
       this.consecutiveFailures = 0; // Reset failure counter on success
       
       // Determine if status is stale
-      status.alive = age < this.config.statusStaleMs;
+      // Use relaxed threshold when server is idle (0 players) — PZ stops Lua ticks with no players
+      const fullReadStaleThreshold = (status.playerCount === 0)
+        ? this.config.statusStaleIdleMs
+        : this.config.statusStaleMs;
+      status.alive = age < fullReadStaleThreshold;
       status.age = age;
       status._wasAlive = status.alive;
       status.filePath = statusFile;
