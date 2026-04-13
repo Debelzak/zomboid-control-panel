@@ -359,6 +359,8 @@ export default function ChunkCleaner() {
       setIsB42Save(isB42)
       if (isB42 && rawChunks.length > 0) {
         for (const c of rawChunks) {
+          // All B42 entries (map/ and chunkdata) are in B42 chunk space.
+          // Convert uniformly to B41 chunk space (× 0.8).
           c.x = Math.floor(c.x * 8 / 10)
           c.y = Math.floor(c.y * 8 / 10)
         }

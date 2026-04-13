@@ -320,7 +320,20 @@ router.get('/chunks/:saveName', async (req, res) => {
     
     // B41 fallback: if map/ didn't yield any chunks, check save root for
     // flat chunk files like map_X_Y.bin (common B41 save layout).
-    const isB42 = xDirs.length > 0;
+    let isB42 = xDirs.length > 0;
+    
+    // Secondary B42 detection: if map/ is empty (no subdirs, no flat files),
+    // check for B42-specific files in the save root. B42 saves have files like
+    // WorldDictionary.bin, global_mod_data.bin, entity_data.bin that B41 doesn't.
+    if (!isB42 && chunks.length === 0) {
+      const b42Indicators = ['WorldDictionary.bin', 'global_mod_data.bin', 'entity_data.bin'];
+      const hasB42Files = b42Indicators.some(f => fs.existsSync(path.join(savePath, f)));
+      if (hasB42Files) {
+        isB42 = true;
+        log.info(`[ChunkCleaner] Detected B42 save via indicator files (map/ is empty)`);
+      }
+    }
+    
     if (!isB42 && chunks.length === 0) {
       const B41_CHUNK_REGEX = /^map_(\d+)_(\d+)\.bin$/i;
       const rootEntries = await fs.promises.readdir(savePath, { withFileTypes: true });
@@ -356,10 +369,14 @@ router.get('/chunks/:saveName', async (req, res) => {
       }
     }
     
-    // Also check chunkdata folder — but ONLY for legacy (B41) saves.
-    // In B42 (directory-based map/), chunkdata files use a different coordinate
-    // system (cell-based, not chunk-based) and would corrupt bounds if mixed in.
-    if (!isB42) {
+    // Also check chunkdata folder for additional chunk data.
+    // In B41 saves, chunkdata coords match chunk coords directly.
+    // In B42 saves, chunkdata uses CELL coordinates (1 cell = 300 tiles).
+    // For display purposes, B42 chunkdata coords are converted to B42 chunk
+    // coords (× 32, since 1 chunkdata unit = 32 B42 chunks = 256 tiles).
+    // The frontend then applies × 0.8 to convert B42→B41 chunk space.
+    // Original coords are preserved in cellX/cellY for file operations.
+    {
       const chunkDataPath = path.join(savePath, 'chunkdata');
       if (fs.existsSync(chunkDataPath)) {
         // Create a Set for O(1) lookup of existing chunks to prevent O(N^2) complexity
@@ -371,15 +388,25 @@ router.get('/chunks/:saveName', async (req, res) => {
         const chunkDataPromises = validFiles.map(async file => {
           const match = file.match(/(\d+)_(\d+)(?:_\d+)?\.bin$/i);
           if (match) {
-            const x = parseInt(match[1], 10);
-            const y = parseInt(match[2], 10);
+            const rawX = parseInt(match[1], 10);
+            const rawY = parseInt(match[2], 10);
             
-            // Check if we already have this chunk from map folder
-            if (!existingCoords.has(`${x},${y}`)) {
+            // In B42, chunkdata coords × 32 = B42 chunk coords.
+            // The frontend then does × 0.8 for B42→B41 conversion.
+            // For B41 saves, chunkdata coords are already chunk coords.
+            const displayX = isB42 ? rawX * 32 : rawX;
+            const displayY = isB42 ? rawY * 32 : rawY;
+            
+            // Check if we already have this chunk from map folder (use display coords)
+            if (!existingCoords.has(`${displayX},${displayY}`)) {
               try {
                   const stats = await fs.promises.stat(path.join(chunkDataPath, file));
                   return {
-                    file, x, y, size: stats.size, modified: stats.mtime, source: 'chunkdata'
+                    file, x: displayX, y: displayY, size: stats.size, modified: stats.mtime,
+                    source: 'chunkdata',
+                    // For B42 saves, preserve the original cell coords for file operations.
+                    // Deletion needs the cell coords to find chunkdata_X_Y.bin files.
+                    ...(isB42 ? { cellX: rawX, cellY: rawY } : {})
                   };
               } catch(e) {
                 log.debug(`Stat failed for chunkdata ${file}: ${e.message}`);
@@ -555,21 +582,25 @@ router.post('/delete-chunks', async (req, res) => {
         
         // Related data folders use flat file naming: prefix_X_Y.bin
         // Unlike map/ which uses B42's subdirectory structure (X/Y.bin)
-        const chunkDataFile = path.join(savePath, 'chunkdata', `chunkdata_${chunk.x}_${chunk.y}.bin`);
+        // For B42 chunkdata-only entries, use original cell coords (cellX/cellY)
+        // since those map to the actual file names on disk.
+        const fileX = chunk.cellX !== undefined ? chunk.cellX : chunk.x;
+        const fileY = chunk.cellY !== undefined ? chunk.cellY : chunk.y;
+        const chunkDataFile = path.join(savePath, 'chunkdata', `chunkdata_${fileX}_${fileY}.bin`);
         try { await fs.promises.unlink(chunkDataFile); } catch (e) {
-          if (e.code !== 'ENOENT') log.debug(`Failed to delete chunkdata ${chunk.x}_${chunk.y}: ${e.message}`);
+          if (e.code !== 'ENOENT') log.debug(`Failed to delete chunkdata ${fileX}_${fileY}: ${e.message}`);
         }
         
         // isoregiondata uses datachunk_X_Y.bin format
-        const isoFile = path.join(savePath, 'isoregiondata', `datachunk_${chunk.x}_${chunk.y}.bin`);
+        const isoFile = path.join(savePath, 'isoregiondata', `datachunk_${fileX}_${fileY}.bin`);
         try { await fs.promises.unlink(isoFile); } catch (e) {
-          if (e.code !== 'ENOENT') log.debug(`Failed to delete isoregiondata ${chunk.x}_${chunk.y}: ${e.message}`);
+          if (e.code !== 'ENOENT') log.debug(`Failed to delete isoregiondata ${fileX}_${fileY}: ${e.message}`);
         }
         
         // zpop uses zpop_X_Y.bin format
-        const zpopFile = path.join(savePath, 'zpop', `zpop_${chunk.x}_${chunk.y}.bin`);
+        const zpopFile = path.join(savePath, 'zpop', `zpop_${fileX}_${fileY}.bin`);
         try { await fs.promises.unlink(zpopFile); } catch (e) {
-          if (e.code !== 'ENOENT') log.debug(`Failed to delete zpop ${chunk.x}_${chunk.y}: ${e.message}`);
+          if (e.code !== 'ENOENT') log.debug(`Failed to delete zpop ${fileX}_${fileY}: ${e.message}`);
         }
         
         return { success: true, wasDeleted };
