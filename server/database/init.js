@@ -756,6 +756,19 @@ export async function removeIgnoredMod(workshopId) {
   return true;
 }
 
+export async function clearAllIgnoredMods() {
+  const db = await getDb();
+  if (!db.data.ignored_mods) db.data.ignored_mods = [];
+  const serverId = await getActiveServerId();
+  const before = db.data.ignored_mods.length;
+  db.data.ignored_mods = db.data.ignored_mods.filter(m =>
+    m.server_id && m.server_id !== serverId
+  );
+  const removed = before - db.data.ignored_mods.length;
+  if (removed > 0) scheduleWrite();
+  return removed;
+}
+
 export async function isModIgnored(workshopId) {
   const db = await getDb();
   if (!db.data.ignored_mods) return false;

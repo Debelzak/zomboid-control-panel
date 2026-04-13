@@ -6,7 +6,7 @@ import os from 'os';
 import crypto from 'crypto';
 import { createLogger } from '../utils/logger.js';
 const log = createLogger('API:Mods');
-import { getTrackedMods, addTrackedMod, removeTrackedMod, clearModUpdates, getSetting, getActiveServer, getModPresets, createModPreset, updateModPreset, deleteModPreset, addIgnoredMod, getIgnoredMods, removeIgnoredMod, isModIgnored } from '../database/init.js';
+import { getTrackedMods, addTrackedMod, removeTrackedMod, clearModUpdates, getSetting, getActiveServer, getModPresets, createModPreset, updateModPreset, deleteModPreset, addIgnoredMod, getIgnoredMods, removeIgnoredMod, clearAllIgnoredMods, isModIgnored } from '../database/init.js';
 import { sanitizeError, sanitizeIniValue, sanitizeIniList } from '../utils/sanitize.js';
 
 const router = express.Router();
@@ -232,6 +232,17 @@ router.delete('/ignored/:workshopId', async (req, res) => {
     res.json({ success: true, message: 'Mod removed from ignore list' });
   } catch (error) {
     log.error(`Failed to un-ignore mod: ${error.message}`);
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
+// Clear all ignored mods for the active server
+router.delete('/ignored', async (req, res) => {
+  try {
+    const removed = await clearAllIgnoredMods();
+    res.json({ success: true, message: `Cleared ${removed} ignored mod${removed !== 1 ? 's' : ''}`, removed });
+  } catch (error) {
+    log.error(`Failed to clear ignored mods: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });
   }
 });

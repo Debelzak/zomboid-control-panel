@@ -6,6 +6,10 @@
     This mod enables external control panel communication with the PZ server.
     Communication happens via JSON files in the server save folder.
     
+    v1.7.2 Changes:
+    - Fixed teleportPlayer: use NetworkTeleport.teleport() for proper network-synced teleport
+    - setPosition() only moves server-side coords; NetworkTeleport handles client sync
+
     v1.7.1 Changes:
     - Item catalog now excludes vehicle entries (vehicles served separately)
     - Removed debug logging from catalog handler registration
@@ -24,8 +28,8 @@
     - Removed addLamppost/removeLamppost from backend whitelist (no Lua implementation)
 
     v1.5.0 Changes:
-    - Fixed teleportPlayer for B42: use setTeleport() instead of broken sendObjectChange("teleport")
-    - Added fallback chain: setTeleport → setX/Y/Z + sendPlayerExtraInfo → sendObjectChange
+    - Fixed teleportPlayer for B42: use NetworkTeleport.teleport() for proper network sync
+    - Added B41 fallback chain: setPosition → setX/Y/Z + setNetworkTeleportEnabled
     - Added airdrop system handler
 
     v1.4.3 Changes:
@@ -2637,24 +2641,27 @@ handlers.teleportPlayer = function(args)
     end
     
     local success, err = pcall(function()
-        -- B42: setPosition(float, float, float) is a direct IsoPlayer method
-        if player.setPosition then
-            player:setPosition(x, y, z)
+        -- B42: Use NetworkTeleport for proper network-synced teleport
+        if NetworkTeleport and NetworkTeleport.teleport then
+            local zFloor = math.floor(z)
+            NetworkTeleport.teleport(player, NetworkTeleport.Type.none, x, y, zFloor, 0)
         else
-            -- Fallback: set coordinates individually
-            player:setX(x)
-            player:setY(y)
-            player:setZ(z)
-        end
-        -- Update last-known position for network consistency
-        if player.setLx then
-            player:setLx(x)
-            player:setLy(y)
-            player:setLz(z)
-        end
-        -- Enable network teleport flag so other clients see the move
-        if player.setNetworkTeleportEnabled then
-            player:setNetworkTeleportEnabled(true)
+            -- B41 fallback: set coordinates + network flag
+            if player.setPosition then
+                player:setPosition(x, y, z)
+            else
+                player:setX(x)
+                player:setY(y)
+                player:setZ(z)
+            end
+            if player.setLx then
+                player:setLx(x)
+                player:setLy(y)
+                player:setLz(z)
+            end
+            if player.setNetworkTeleportEnabled then
+                player:setNetworkTeleportEnabled(true)
+            end
         end
     end)
     
@@ -3847,11 +3854,6 @@ handlers.restoreUtilities = function(args)
         table.insert(debugInfo, "After restore: isHydroPowerOn = " .. tostring(isPowerOn))
         table.insert(debugInfo, "nightsSurvived < ElecShutModifier = " .. tostring(nightsSurvived < restoreDays))
         
-        -- Save world so changes persist across server restarts
-        pcall(function()
-            world:saveWorld()
-            table.insert(debugInfo, "World saved")
-        end)
     end)
     
     if not success then
@@ -4019,11 +4021,6 @@ handlers.shutOffUtilities = function(args)
         local isPowerOn = world:isHydroPowerOn()
         table.insert(debugInfo, "After shutoff: isHydroPowerOn = " .. tostring(isPowerOn))
         
-        -- Save world so changes persist across server restarts
-        pcall(function()
-            world:saveWorld()
-            table.insert(debugInfo, "World saved")
-        end)
     end)
     
     if not success then
@@ -4191,6 +4188,32 @@ handlers.setInvisible = function(args)
     
     PanelBridge.info("Set invisible", { username = username, enabled = enabled })
     return true, { message = "Invisibility " .. (enabled and "enabled" or "disabled"), username = username }
+end
+
+-- Set player's noclip
+handlers.setNoclip = function(args)
+    local username = args.username
+    local enabled = args.enabled == true
+    
+    if not username then
+        return false, nil, "Username required"
+    end
+    
+    local player = getPlayerByUsername(username)
+    if not player then
+        return false, nil, "Player not found: " .. username
+    end
+    
+    local success, err = pcall(function()
+        player:setNoClip(enabled)
+    end)
+    
+    if not success then
+        return false, nil, "Failed to set noclip: " .. tostring(err)
+    end
+    
+    PanelBridge.info("Set noclip", { username = username, enabled = enabled })
+    return true, { message = "Noclip " .. (enabled and "enabled" or "disabled"), username = username }
 end
 
 -- Give item to player
@@ -5366,6 +5389,105 @@ handlers.vehicleProbeAPI = function(args)
     end
 
     return true, { vehicleMethods = methods, parts = parts, script = scriptInfo }
+end
+
+handlers.spawnVehicleAt = function(args)
+    local scriptName = args.vehicle or args.scriptName
+    if not scriptName or scriptName == "" then
+        return false, nil, "Vehicle script name required (e.g. Base.CarNormal)"
+    end
+    local x = math.floor(tonumber(args.x) or 0)
+    local y = math.floor(tonumber(args.y) or 0)
+    local z = math.floor(tonumber(args.z) or 0)
+    if x == 0 and y == 0 then
+        return false, nil, "Valid x, y coordinates required"
+    end
+
+    local vehicle = nil
+    local ok, err = pcall(function()
+        local world = getWorld()
+        local cell = world and world:getCell() or nil
+        if not cell then error("World cell not available") end
+
+        -- Find a valid square at the target position
+        local sq = cell:getGridSquare(x, y, z)
+        if not sq then
+            error("Grid square not loaded at " .. x .. "," .. y .. "," .. z .. " — area must be loaded")
+        end
+
+        -- Use addVehicle API (B42+)
+        if cell.addVehicle then
+            vehicle = cell:addVehicle(scriptName, sq)
+        elseif addVehicleToWorld then
+            vehicle = addVehicleToWorld(scriptName, sq)
+        else
+            error("No vehicle spawn API available")
+        end
+
+        if not vehicle then
+            error("Failed to create vehicle '" .. scriptName .. "' — check script name")
+        end
+    end)
+
+    if not ok then
+        return false, nil, "Spawn failed: " .. tostring(err)
+    end
+
+    local vId = vehicle and vehicle.getId and vehicle:getId() or nil
+    return true, {
+        message = "Vehicle spawned",
+        vehicleId = vId,
+        scriptName = scriptName,
+        x = x, y = y, z = z
+    }
+end
+
+handlers.vehicleHotwire = function(args)
+    local vehicle = findVehicleById(args.vehicleId)
+    if not vehicle then return false, nil, "Vehicle not found" end
+
+    local ok, err = pcall(function()
+        -- Set hotwired state
+        if vehicle.setHotwired then
+            vehicle:setHotwired(true)
+        end
+        -- Also set hotwire success so the engine can be started
+        if vehicle.setHotwiredBroken then
+            vehicle:setHotwiredBroken(false)
+        end
+        -- Unlock all doors
+        local partCount = vehicle.getPartCount and vehicle:getPartCount() or 0
+        for i = 0, partCount - 1 do
+            local part = vehicle:getPartByIndex(i)
+            if part then
+                local door = part.getDoor and part:getDoor()
+                if door and door.setLocked then
+                    door:setLocked(false)
+                end
+            end
+        end
+        -- Also unlock trunk
+        if vehicle.setTrunkLocked then
+            vehicle:setTrunkLocked(false)
+        end
+        -- Start the engine if possible
+        if vehicle.setEngineRunning then
+            vehicle:setEngineRunning(true)
+        end
+        -- Transmit state to clients
+        if vehicle.transmitEngine then
+            vehicle:transmitEngine()
+        end
+    end)
+
+    if not ok then
+        return false, nil, "Hotwire failed: " .. tostring(err)
+    end
+
+    return true, {
+        message = "Vehicle hotwired and engine started",
+        vehicleId = tonumber(args.vehicleId)
+    }
 end
 
 -- ============================================

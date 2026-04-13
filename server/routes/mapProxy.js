@@ -5,31 +5,38 @@ const log = createLogger('API:MapProxy');
 const router = express.Router();
 
 // Proxy DZI tiles from b42map.com to avoid CORS restrictions.
-// Validates inputs to prevent SSRF — only allows numeric level 0-22
-// and tile filenames matching the DZI convention ({col}_{row}.jpg).
+// Validates inputs to prevent SSRF — only allows numeric level 0-22,
+// floor -17..30, and tile filenames matching the DZI convention.
 router.get('/tiles/:level/:tile', async (req, res) => {
   const level = parseInt(req.params.level, 10);
   const tile = req.params.tile;
+  const floorRaw = Array.isArray(req.query.floor) ? req.query.floor[0] : req.query.floor;
+  const floor = parseInt(String(floorRaw ?? '0'), 10);
 
   if (isNaN(level) || level < 0 || level > 22) {
     return res.status(400).json({ error: 'Invalid level' });
   }
-  if (!/^\d+_\d+\.jpg$/.test(tile)) {
+  if (isNaN(floor) || floor < -17 || floor > 30) {
+    return res.status(400).json({ error: 'Invalid floor' });
+  }
+  // layer0 uses jpg, all other layers use webp
+  const ext = floor === 0 ? 'jpg' : 'webp';
+  if (!new RegExp(`^\\d+_\\d+\\.${ext}$`).test(tile)) {
     return res.status(400).json({ error: 'Invalid tile' });
   }
 
-  const url = `https://b42map.com/map_data/base/layer0_files/${level}/${tile}`;
+  const url = `https://b42map.com/map_data/base/layer${floor}_files/${level}/${tile}`;
   try {
     const response = await fetch(url);
     if (!response.ok) {
       return res.status(response.status).end();
     }
-    res.set('Content-Type', 'image/jpeg');
+    res.set('Content-Type', floor === 0 ? 'image/jpeg' : 'image/webp');
     res.set('Cache-Control', 'public, max-age=604800'); // 7 days
     const buffer = await response.arrayBuffer();
     res.send(Buffer.from(buffer));
   } catch (err) {
-    log.debug(`B42 tile proxy failed for ${level}/${tile}: ${err.message}`);
+    log.debug(`B42 tile proxy failed for floor${floor}/${level}/${tile}: ${err.message}`);
     res.status(502).end();
   }
 });

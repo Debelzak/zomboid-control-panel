@@ -10,6 +10,7 @@ import {
   UserMinus,
   Car,
   Sparkles,
+  Package,
   Ghost,
   Eye,
   Layers,
@@ -34,7 +35,8 @@ import {
   X,
   Plus,
   Save,
-  Trash2
+  Trash2,
+  Heart,
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -644,7 +646,7 @@ export default function Players() {
     if (!player) return
     handleAction(enabled ? 'Enable god mode' : 'Disable god mode', 
       async () => {
-        await playersApi.setGodMode(player, enabled)
+        await panelBridgeApi.sendCommand('setGodMode', { username: player, enabled })
         setPlayerPowers(prev => ({
           ...prev,
           [player]: { ...prev[player], godMode: enabled }
@@ -657,7 +659,7 @@ export default function Players() {
     if (!player) return
     handleAction(enabled ? 'Enable invisible' : 'Disable invisible',
       async () => {
-        await playersApi.setInvisible(player, enabled)
+        await panelBridgeApi.sendCommand('setInvisible', { username: player, enabled })
         setPlayerPowers(prev => ({
           ...prev,
           [player]: { ...prev[player], invisible: enabled }
@@ -670,11 +672,20 @@ export default function Players() {
     if (!player) return
     handleAction(enabled ? 'Enable noclip' : 'Disable noclip',
       async () => {
-        await playersApi.setNoclip(player, enabled)
+        await panelBridgeApi.sendCommand('setNoclip', { username: player, enabled })
         setPlayerPowers(prev => ({
           ...prev,
           [player]: { ...prev[player], noclip: enabled }
         }))
+      })
+  }
+
+  const handleHealPlayer = () => {
+    const player = selectedPlayer
+    if (!player) return
+    handleAction('Heal player',
+      async () => {
+        await panelBridgeApi.sendCommand('healPlayer', { username: player })
       })
   }
 
@@ -983,8 +994,7 @@ export default function Players() {
               <div className="overflow-x-auto pb-1">
                 <TabsList className="inline-flex h-auto min-w-max gap-1 rounded-lg border border-border/60 bg-muted/40 p-1">
                   <TabsTrigger value="moderation" className="min-h-9 shrink-0 text-xs px-3">Moderation</TabsTrigger>
-                  <TabsTrigger value="items" className="min-h-9 shrink-0 text-xs px-3">Items & XP</TabsTrigger>
-                  <TabsTrigger value="vehicles" className="min-h-9 shrink-0 text-xs px-3">Vehicles</TabsTrigger>
+                  <TabsTrigger value="spawn" className="min-h-9 shrink-0 text-xs px-3">Spawn</TabsTrigger>
                   <TabsTrigger value="powers" className="min-h-9 shrink-0 text-xs px-3">Powers</TabsTrigger>
                   <TabsTrigger value="notes" className="min-h-9 shrink-0 text-xs px-3" onClick={() => fetchActivityLogs()}>Notes & Log</TabsTrigger>
                 </TabsList>
@@ -1484,121 +1494,136 @@ export default function Players() {
                 </div>
                 </div>
               </TabsContent>
-              <TabsContent value="items" className="space-y-4 mt-4">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  {/* Add Item */}
-                  <Card>
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-sm flex items-center gap-2">
-                        <Sparkles className="w-4 h-4" />
-                        Add Item
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                        <div className="sm:col-span-2">
-                          <Label className="text-xs">Item</Label>
-                          <ItemPicker
-                            value={itemName}
-                            onChange={setItemName}
-                            disabled={loading}
-                          />
-                        </div>
-                        <div>
-                          <Label className="text-xs">Count</Label>
-                          <Input
-                            type="number"
-                            value={itemCount}
-                            onChange={(e) => {
-                              const v = parseInt(e.target.value)
-                              setItemCount(Number.isNaN(v) ? 1 : Math.max(1, Math.min(100, v)))
-                            }}
-                            min={1}
-                            max={100}
-                          />
-                        </div>
-                      </div>
-                      <Button onClick={handleAddItem} disabled={loading || !itemName} size="sm" className="w-full">
-                        <Sparkles className="w-4 h-4 mr-2" />
-                        Give Item
-                      </Button>
-                    </CardContent>
-                  </Card>
-
-                  {/* Add XP */}
-                  <Card>
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-sm flex items-center gap-2">
-                        <TrendingUp className="w-4 h-4" />
-                        Add XP
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        <div>
-                          <Label className="text-xs">Perk</Label>
-                          <Select value={selectedPerk} onValueChange={setSelectedPerk}>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select perk..." />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {perks.map((perk) => (
-                                <SelectItem key={perk} value={perk}>
-                                  {perk}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div>
-                          <Label className="text-xs">Amount</Label>
-                          <Input
-                            type="number"
-                            value={xpAmount}
-                            onChange={(e) => setXpAmount(parseInt(e.target.value) || 0)}
-                            min={1}
-                            max={10000}
-                          />
-                        </div>
-                      </div>
-                      <Button 
-                        onClick={handleAddXp} 
-                        disabled={loading || !selectedPlayer || !selectedPerk}
-                        size="sm"
-                        className="w-full"
-                      >
-                        <Sparkles className="w-4 h-4 mr-2" />
-                        Give XP
-                      </Button>
-                    </CardContent>
-                  </Card>
-                </div>
-              </TabsContent>
-
-              {/* Vehicles Tab */}
-              <TabsContent value="vehicles" className="mt-4">
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm flex items-center gap-2">
-                      <Car className="w-4 h-4" />
-                      Spawn Vehicle
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
+              {/* Spawn Tab — Items, Vehicles, XP */}
+              <TabsContent value="spawn" className="space-y-3 mt-4">
+                {/* Give Item */}
+                <div className="rounded-xl border border-border/60 bg-card/50 p-4 transition-colors">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="rounded-lg border border-primary/20 bg-primary/10 p-2 text-primary">
+                      <Package className="w-5 h-5" />
+                    </div>
                     <div>
-                      <Label className="text-xs">Vehicle Type</Label>
+                      <p className="font-medium">Give Item</p>
+                      <p className="text-xs text-muted-foreground">
+                        Add items to {selectedPlayer ? <span className="text-foreground font-medium">{selectedPlayer}</span> : 'player'}'s inventory
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-2">
+                    <div className="flex-1 min-w-0">
+                      <ItemPicker
+                        value={itemName}
+                        onChange={setItemName}
+                        disabled={loading}
+                      />
+                    </div>
+                    <div className="w-full sm:w-20 shrink-0">
+                      <Label className="text-xs text-muted-foreground">Qty</Label>
+                      <Input
+                        type="number"
+                        value={itemCount}
+                        onChange={(e) => {
+                          const v = parseInt(e.target.value)
+                          setItemCount(Number.isNaN(v) ? 1 : Math.max(1, Math.min(100, v)))
+                        }}
+                        min={1}
+                        max={100}
+                      />
+                    </div>
+                    <Button 
+                      onClick={handleAddItem} 
+                      disabled={loading || !itemName} 
+                      size="sm" 
+                      className="shrink-0 sm:min-w-[100px]"
+                    >
+                      <Sparkles className="w-4 h-4 mr-2" />
+                      Give Item
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Spawn Vehicle */}
+                <div className="rounded-xl border border-border/60 bg-card/50 p-4 transition-colors">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="rounded-lg border border-primary/20 bg-primary/10 p-2 text-primary">
+                      <Car className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <p className="font-medium">Spawn Vehicle</p>
+                      <p className="text-xs text-muted-foreground">
+                        Spawn a vehicle near {selectedPlayer ? <span className="text-foreground font-medium">{selectedPlayer}</span> : 'player'}'s position
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-2">
+                    <div className="flex-1 min-w-0">
                       <VehiclePicker
                         value={selectedVehicle}
                         onChange={setSelectedVehicle}
                         disabled={loading}
                       />
                     </div>
-                    <Button onClick={handleAddVehicle} disabled={loading || !selectedVehicle} size="sm">
+                    <Button 
+                      onClick={handleAddVehicle} 
+                      disabled={loading || !selectedVehicle} 
+                      size="sm"
+                      className="shrink-0 sm:min-w-[100px]"
+                    >
                       <Car className="w-4 h-4 mr-2" />
-                      Spawn Vehicle
+                      Spawn
                     </Button>
-                  </CardContent>
-                </Card>
+                  </div>
+                </div>
+
+                {/* Give XP */}
+                <div className="rounded-xl border border-border/60 bg-card/50 p-4 transition-colors">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="rounded-lg border border-primary/20 bg-primary/10 p-2 text-primary">
+                      <TrendingUp className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <p className="font-medium">Give XP</p>
+                      <p className="text-xs text-muted-foreground">
+                        Grant experience to {selectedPlayer ? <span className="text-foreground font-medium">{selectedPlayer}</span> : 'the selected player'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-2">
+                    <div className="flex-1 min-w-0">
+                      <Select value={selectedPerk} onValueChange={setSelectedPerk}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select perk..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {perks.map((perk) => (
+                            <SelectItem key={perk} value={perk}>
+                              {perk}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="w-full sm:w-24 shrink-0">
+                      <Label className="text-xs text-muted-foreground">Amount</Label>
+                      <Input
+                        type="number"
+                        value={xpAmount}
+                        onChange={(e) => setXpAmount(parseInt(e.target.value) || 0)}
+                        min={1}
+                        max={10000}
+                      />
+                    </div>
+                    <Button 
+                      onClick={handleAddXp} 
+                      disabled={loading || !selectedPlayer || !selectedPerk}
+                      size="sm"
+                      className="shrink-0 sm:min-w-[100px]"
+                    >
+                      <TrendingUp className="w-4 h-4 mr-2" />
+                      Give XP
+                    </Button>
+                  </div>
+                </div>
               </TabsContent>
 
               {/* Powers Tab */}
@@ -1689,6 +1714,27 @@ export default function Players() {
                         {selectedPlayerPowers?.noclip ? 'Disable' : 'Enable'}
                       </Button>
                     </div>
+                  </div>
+
+                  {/* Heal */}
+                  <div className="flex items-center justify-between rounded-xl border border-border/60 bg-card/50 p-4 transition-colors hover:bg-accent/30">
+                    <div className="flex items-center gap-3">
+                      <div className="rounded-lg border border-green-500/20 bg-green-500/10 p-2 text-green-500">
+                        <Heart className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <p className="font-medium">Heal</p>
+                        <p className="text-xs text-muted-foreground">Restore full health & stats</p>
+                      </div>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={!selectedPlayer || loading}
+                      onClick={handleHealPlayer}
+                    >
+                      Heal
+                    </Button>
                   </div>
                 </div>
               </TabsContent>

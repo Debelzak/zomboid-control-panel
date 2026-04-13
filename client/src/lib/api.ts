@@ -608,6 +608,7 @@ export const modsApi = {
   // Ignored mods (prevent auto-re-tracking)
   getIgnoredMods: () => apiGet('/mods/ignored'),
   unignoreMod: (workshopId: string) => apiDelete(`/mods/ignored/${workshopId}`),
+  clearAllIgnoredMods: () => apiDelete('/mods/ignored'),
   checkUpdates: (options?: { signal?: AbortSignal }) => apiPost('/mods/check-updates', undefined, options),
   getServerMods: () => apiGet('/mods/server-mods'),
   syncFromServer: (options?: { signal?: AbortSignal }) => apiPost('/mods/sync-from-server', undefined, options),

@@ -927,6 +927,26 @@ export default function Mods() {
     }
   }
 
+  const handleClearAllIgnored = async () => {
+    if (busyRef.current) return
+    busyRef.current = true
+    setLoading(true)
+    try {
+      const result = await modsApi.clearAllIgnoredMods()
+      toast({ title: 'Ignore List Cleared', description: result.message || 'All ignored mods removed.' })
+      fetchData()
+    } catch (error) {
+      toast({
+        title: 'Failed to Clear Ignored Mods',
+        description: error instanceof Error ? error.message : 'Unknown error',
+        variant: 'destructive',
+      })
+    } finally {
+      setLoading(false)
+      busyRef.current = false
+    }
+  }
+
   const handleToggleAutoRestart = async () => {
     if (busyRef.current) return
     busyRef.current = true
@@ -2706,6 +2726,17 @@ export default function Mods() {
                         </Button>
                       </div>
                     ))}
+                    <div className="flex justify-end pt-1 pb-0.5 border-t border-border/20 mt-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs text-destructive hover:text-destructive"
+                        onClick={handleClearAllIgnored}
+                        disabled={loading}
+                      >
+                        Clear all ignored
+                      </Button>
+                    </div>
                   </div>
                 )}
               </div>
