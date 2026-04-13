@@ -188,7 +188,7 @@ export default function Dashboard() {
     variant?: 'destructive' | 'warning'
   } | null>(null)
   const [wipeDialog, setWipeDialog] = useState(false)
-  const [wipeTargets, setWipeTargets] = useState<Record<string, boolean>>({ map: true, players: false, config: false })
+  const [wipeTargets, setWipeTargets] = useState<Record<string, boolean>>({ map: true, players: true, world: true })
   const [wipePreview, setWipePreview] = useState<{
     totalFiles: number
     totalSize: number
@@ -1124,9 +1124,9 @@ export default function Dashboard() {
 
           <div className="space-y-3 py-2">
             {([
-              ['map', 'Map Data', 'Chunk files, terrain, buildings. Players keep their characters.'],
-              ['players', 'Player Data', 'Player saves, inventories, positions.'],
-              ['config', 'World Config', 'Sandbox settings, world metadata files.'],
+              ['map', 'Map & Terrain', 'Chunks, terrain, buildings, zombie population, iso regions.'],
+              ['players', 'Players & Vehicles', 'Player saves, inventories, positions, vehicle data.'],
+              ['world', 'World State', 'World dictionary, metadata, erosion, game object states, radio.'],
             ] as const).map(([key, label, desc]) => (
               <label key={key} className="flex items-start gap-3 p-3 rounded-md border border-border/50 hover:bg-muted/30 cursor-pointer">
                 <Checkbox
@@ -1143,6 +1143,7 @@ export default function Dashboard() {
                 </div>
               </label>
             ))}
+            <div className="text-xs text-muted-foreground px-3 pb-1">Server .ini and sandbox settings are stored separately and will not be affected.</div>
           </div>
 
           {wipePreview && (
@@ -1152,24 +1153,14 @@ export default function Dashboard() {
               ) : (
                 <>
                   <div className="font-medium text-destructive">This will permanently delete:</div>
-                  {wipePreview.preview?.map && wipePreview.preview.map.files > 0 && (
-                    <div>{wipePreview.preview.map.files.toLocaleString()} map files ({(wipePreview.preview.map.size / 1024 / 1024).toFixed(1)} MB)</div>
-                  )}
-                  {wipePreview.preview?.map && wipePreview.preview.map.files === 0 && (
-                    <div className="text-muted-foreground">No map files found</div>
-                  )}
-                  {wipePreview.preview?.players && wipePreview.preview.players.files > 0 && (
-                    <div>{wipePreview.preview.players.files.toLocaleString()} player files ({(wipePreview.preview.players.size / 1024 / 1024).toFixed(1)} MB)</div>
-                  )}
-                  {wipePreview.preview?.players && wipePreview.preview.players.files === 0 && (
-                    <div className="text-muted-foreground">No player files found</div>
-                  )}
-                  {wipePreview.preview?.config && wipePreview.preview.config.files > 0 && (
-                    <div>{wipePreview.preview.config.files.toLocaleString()} config files ({(wipePreview.preview.config.size / 1024 / 1024).toFixed(1)} MB)</div>
-                  )}
-                  {wipePreview.preview?.config && wipePreview.preview.config.files === 0 && (
-                    <div className="text-muted-foreground">No config files found</div>
-                  )}
+                  {(['map', 'players', 'world'] as const).map(key => {
+                    const data = wipePreview.preview?.[key]
+                    if (!data) return null
+                    const labels = { map: 'map/terrain', players: 'player/vehicle', world: 'world state' }
+                    return data.files > 0
+                      ? <div key={key}>{data.files.toLocaleString()} {labels[key]} files ({(data.size / 1024 / 1024).toFixed(1)} MB)</div>
+                      : <div key={key} className="text-muted-foreground">No {labels[key]} files found</div>
+                  })}
                   <div className="font-medium pt-1">Total: {wipePreview.totalFiles.toLocaleString()} files ({(wipePreview.totalSize / 1024 / 1024).toFixed(1)} MB)</div>
                 </>
               )}
