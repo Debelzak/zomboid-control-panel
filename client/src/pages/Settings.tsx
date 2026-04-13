@@ -96,6 +96,9 @@ import {
 } from '@/components/ui/tooltip'
 
 interface AppSettings {
+  // Bridge Settings
+  panelBridgeAutoUpdate: boolean
+
   // Mod Checker Settings
   modCheckInterval: string
   modAutoRestart: boolean
@@ -157,6 +160,7 @@ function ThemeSelect() {
 export default function Settings() {
   const socket = useSocket()
   const [settings, setSettings] = useState<AppSettings>({
+    panelBridgeAutoUpdate: true,
     modCheckInterval: '30',
     modAutoRestart: true,
     modRestartDelay: '5',
@@ -2141,6 +2145,19 @@ export default function Settings() {
               </Button>
             </div>
           )}
+
+          {/* Auto-update toggle */}
+          <div className="flex items-center justify-between rounded-xl border border-border/60 bg-muted/25 p-4">
+            <div>
+              <Label className="text-sm font-medium">Auto-update mod on panel startup</Label>
+              <p className="text-xs text-muted-foreground">When the panel starts, automatically copy the latest bundled PanelBridge.lua to the PZ server if versions differ.</p>
+            </div>
+            <Switch
+              checked={settings.panelBridgeAutoUpdate}
+              onCheckedChange={(value) => updateSetting('panelBridgeAutoUpdate', value)}
+              aria-label="Auto-update PanelBridge mod"
+            />
+          </div>
 
           {/* Install Mod */}
           <div className="p-4 bg-muted rounded-xl space-y-3">

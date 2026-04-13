@@ -234,8 +234,9 @@ router.post('/auto-configure', async (req, res) => {
     const bridgePath = bridge.configure(foundPath.path, true); // true = direct path
     bridge.start();
     
-    // Also auto-install the PanelBridge mod if not already present
+    // Auto-install or update PanelBridge mod
     let modInstalled = false;
+    let modUpdated = false;
     try {
       const serverInstallDir = targetServer.serverPath || targetServer.installPath;
       if (serverInstallDir) {
@@ -245,27 +246,51 @@ router.post('/auto-configure', async (req, res) => {
         
         const destLuaFile = path.join(installDir, 'media', 'lua', 'server', 'PanelBridge.lua');
         
-        // Check if mod already exists
-        if (!fs.existsSync(destLuaFile)) {
-          // Find source mod
-          const possibleModPaths = [
-            path.join(process.cwd(), 'pz-mod', 'PanelBridge'),
-            path.join(path.dirname(process.execPath), 'pz-mod', 'PanelBridge'),
-            path.join(__dirname, '..', '..', 'pz-mod', 'PanelBridge'),
-          ];
+        // Find source mod
+        const possibleModPaths = [
+          path.join(process.cwd(), 'pz-mod', 'PanelBridge'),
+          path.join(path.dirname(process.execPath), 'pz-mod', 'PanelBridge'),
+          path.join(__dirname, '..', '..', 'pz-mod', 'PanelBridge'),
+        ];
+        
+        let sourceLuaFile = null;
+        for (const modPath of possibleModPaths) {
+          const candidate = path.join(modPath, 'media', 'lua', 'server', 'PanelBridge.lua');
+          if (fs.existsSync(candidate)) {
+            sourceLuaFile = candidate;
+            break;
+          }
+        }
+        
+        if (sourceLuaFile) {
+          let needsCopy = !fs.existsSync(destLuaFile);
           
-          for (const modPath of possibleModPaths) {
-            const sourceLuaFile = path.join(modPath, 'media', 'lua', 'server', 'PanelBridge.lua');
-            if (fs.existsSync(sourceLuaFile)) {
-              // Create destination directory
-              fs.mkdirSync(path.dirname(destLuaFile), { recursive: true });
-              fs.copyFileSync(sourceLuaFile, destLuaFile);
-              modInstalled = true;
-              break;
+          // If dest exists, compare VERSION strings to decide if we should update
+          if (!needsCopy) {
+            modInstalled = true;
+            try {
+              const srcContent = fs.readFileSync(sourceLuaFile, 'utf8');
+              const destContent = fs.readFileSync(destLuaFile, 'utf8');
+              const srcVersion = (srcContent.match(/VERSION\s*=\s*"([^"]+)"/) || [])[1];
+              const destVersion = (destContent.match(/VERSION\s*=\s*"([^"]+)"/) || [])[1];
+              if (srcVersion && destVersion && srcVersion !== destVersion) {
+                needsCopy = true;
+                modUpdated = true;
+                log.info(`PanelBridge mod update: ${destVersion} → ${srcVersion}`);
+              }
+            } catch (_) { /* ignore read errors — keep existing */ }
+          }
+          
+          if (needsCopy) {
+            fs.mkdirSync(path.dirname(destLuaFile), { recursive: true });
+            fs.copyFileSync(sourceLuaFile, destLuaFile);
+            modInstalled = true;
+            if (modUpdated) {
+              log.info('PanelBridge mod updated on server');
+            } else {
+              log.info('PanelBridge mod auto-installed to server');
             }
           }
-        } else {
-          modInstalled = true; // Already installed
         }
       }
     } catch (modError) {
@@ -281,6 +306,7 @@ router.post('/auto-configure', async (req, res) => {
       source: foundPath.source,
       hasStatus: foundPath.hasStatus,
       modInstalled,
+      modUpdated,
       searchedPaths: searchedLocations
     });
     log.info(`Bridge auto-configured: path=${foundPath.path} source=${foundPath.source} hasStatus=${foundPath.hasStatus} modInstalled=${modInstalled}`);

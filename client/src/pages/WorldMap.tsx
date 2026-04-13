@@ -487,11 +487,15 @@ export default function WorldMap() {
         panelBridgeApi.sendCommand('getSafehouses'),
       ])
       if (!mountedRef.current) return
-      if (vRes.status === 'fulfilled' && vRes.value.success && Array.isArray(vRes.value.data)) {
-        setVehicles(vRes.value.data as MapVehicle[])
+      if (vRes.status === 'fulfilled' && vRes.value.success && vRes.value.data) {
+        const vData = vRes.value.data as Record<string, unknown>
+        const vList = Array.isArray(vData) ? vData : Array.isArray(vData.vehicles) ? vData.vehicles : []
+        setVehicles((vList as MapVehicle[]).filter(v => typeof v.x === 'number' && typeof v.y === 'number' && isFinite(v.x) && isFinite(v.y)))
       }
-      if (sRes.status === 'fulfilled' && sRes.value.success && Array.isArray(sRes.value.data)) {
-        setSafehouses(sRes.value.data as MapSafehouse[])
+      if (sRes.status === 'fulfilled' && sRes.value.success && sRes.value.data) {
+        const sData = sRes.value.data as Record<string, unknown>
+        const sList = Array.isArray(sData) ? sData : Array.isArray(sData.safehouses) ? sData.safehouses : []
+        setSafehouses((sList as MapSafehouse[]).filter(s => typeof s.x === 'number' && typeof s.y === 'number' && isFinite(s.x) && isFinite(s.y)))
       }
     } catch { /* best-effort */ }
   }, [])
@@ -677,48 +681,130 @@ export default function WorldMap() {
     // ── Vehicle markers ──
     if (showVehicles) {
       const currentVehicles = vehiclesRef.current
-      const vRadius = Math.max(3, Math.min(7, s * 1000))
+      const vRadius = Math.max(3, Math.min(12, s * 1400))
+
+      // Reusable body path — modern sedan top-down silhouette
+      const traceBody = () => {
+        ctx.moveTo(-3.2, -7.5)
+        ctx.bezierCurveTo(-3.2, -9.8, -1.8, -10.2, 0, -10.2)
+        ctx.bezierCurveTo(1.8, -10.2, 3.2, -9.8, 3.2, -7.5)
+        ctx.lineTo(3.8, -2)
+        ctx.bezierCurveTo(4.0, 1, 4.0, 4, 3.6, 6.5)
+        ctx.bezierCurveTo(3.3, 8.5, 1.8, 9, 0, 9)
+        ctx.bezierCurveTo(-1.8, 9, -3.3, 8.5, -3.6, 6.5)
+        ctx.bezierCurveTo(-4.0, 4, -4.0, 1, -3.8, -2)
+        ctx.closePath()
+      }
 
       for (const vehicle of currentVehicles) {
         const vp = playerToScreen(vehicle.x, vehicle.y, s, off)
-        if (vp.x < -30 || vp.x > W + 30 || vp.y < -30 || vp.y > H + 30) continue
+        if (vp.x < -40 || vp.x > W + 40 || vp.y < -40 || vp.y > H + 40) continue
 
         const isHovered = hoveredVehicle === vehicle.id
         const pinScale = isHovered ? 1.25 : 1
         const r = vRadius * pinScale
+        const carScale = r * 0.2
+
+        // Color by fuel status (null/undefined = unknown → use default marker color)
+        const vColor = vehicle.fuelPct == null
+          ? C.vehicleMarker
+          : vehicle.fuelPct > 30
+            ? C.vehicleMarker
+            : vehicle.fuelPct > 10
+              ? C.vehicleFuelWarn
+              : C.vehicleFuelCrit
 
         // Glow on hover
         if (isHovered) {
           ctx.beginPath()
-          ctx.arc(vp.x, vp.y, r + 5, 0, Math.PI * 2)
+          ctx.arc(vp.x, vp.y, r + 8, 0, Math.PI * 2)
           ctx.fillStyle = C.vehicleGlow
           ctx.fill()
         }
 
-        // Vehicle dot
+        // Drop shadow
+        ctx.save()
+        ctx.translate(vp.x + 1.5, vp.y + 2)
+        ctx.scale(carScale, carScale)
+        ctx.fillStyle = 'rgba(0,0,0,0.3)'
         ctx.beginPath()
-        ctx.arc(vp.x, vp.y, r, 0, Math.PI * 2)
-        // Color by fuel status
-        const vColor = vehicle.fuelPct > 30
-          ? C.vehicleMarker
-          : vehicle.fuelPct > 10
-            ? C.vehicleFuelWarn
-            : C.vehicleFuelCrit
-        ctx.fillStyle = isHovered ? C.vehicleMarkerHover : vColor
+        traceBody()
         ctx.fill()
-        ctx.strokeStyle = C.shadowLight
-        ctx.lineWidth = 1
+        ctx.restore()
+
+        // Main car body
+        ctx.save()
+        ctx.translate(vp.x, vp.y)
+        ctx.scale(carScale, carScale)
+
+        // Body fill
+        ctx.fillStyle = isHovered ? C.vehicleMarkerHover : vColor
+        ctx.beginPath()
+        traceBody()
+        ctx.fill()
+
+        // Body outline — thin edge highlight
+        ctx.strokeStyle = isHovered ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.1)'
+        ctx.lineWidth = 0.5
+        ctx.lineJoin = 'round'
+        ctx.beginPath()
+        traceBody()
         ctx.stroke()
 
-        // Tiny car shape (rectangle body on top of the dot)
-        if (s > 0.0005) {
-          const bw = r * 1.6
-          const bh = r * 0.8
+        // Windshield — blue-tinted glass, trapezoidal with curved top
+        ctx.fillStyle = isHovered ? 'rgba(100,180,220,0.35)' : 'rgba(100,180,220,0.22)'
+        ctx.beginPath()
+        ctx.moveTo(-2.4, -7.2)
+        ctx.bezierCurveTo(-2.2, -8.3, -1.2, -8.8, 0, -8.8)
+        ctx.bezierCurveTo(1.2, -8.8, 2.2, -8.3, 2.4, -7.2)
+        ctx.lineTo(3, -4.2)
+        ctx.lineTo(-3, -4.2)
+        ctx.closePath()
+        ctx.fill()
+
+        // Rear window — curved bottom edge
+        ctx.fillStyle = isHovered ? 'rgba(100,180,220,0.3)' : 'rgba(100,180,220,0.18)'
+        ctx.beginPath()
+        ctx.moveTo(-2.6, 3.5)
+        ctx.lineTo(2.6, 3.5)
+        ctx.bezierCurveTo(2.2, 6, 1.2, 6.5, 0, 6.5)
+        ctx.bezierCurveTo(-1.2, 6.5, -2.2, 6, -2.6, 3.5)
+        ctx.closePath()
+        ctx.fill()
+
+        // Roof highlight — subtle center gloss for 3D curvature
+        ctx.fillStyle = 'rgba(255,255,255,0.05)'
+        ctx.beginPath()
+        ctx.ellipse(0, -0.5, 1.2, 3.5, 0, 0, Math.PI * 2)
+        ctx.fill()
+
+        // Details visible at moderate+ zoom
+        if (r > 3) {
+          // Side mirrors
           ctx.fillStyle = isHovered ? C.vehicleMarkerHover : vColor
           ctx.beginPath()
-          ctx.roundRect(vp.x - bw / 2, vp.y - bh / 2, bw, bh, 1)
+          ctx.ellipse(-4.5, -4.5, 0.8, 0.5, -0.15, 0, Math.PI * 2)
           ctx.fill()
+          ctx.beginPath()
+          ctx.ellipse(4.5, -4.5, 0.8, 0.5, 0.15, 0, Math.PI * 2)
+          ctx.fill()
+
+          // Headlights — warm white glow
+          ctx.fillStyle = 'rgba(255,240,190,0.9)'
+          ctx.beginPath()
+          ctx.ellipse(-1.8, -9.6, 0.65, 0.35, 0, 0, Math.PI * 2)
+          ctx.fill()
+          ctx.beginPath()
+          ctx.ellipse(1.8, -9.6, 0.65, 0.35, 0, 0, Math.PI * 2)
+          ctx.fill()
+
+          // Taillights — red
+          ctx.fillStyle = 'rgba(220,40,40,0.85)'
+          ctx.fillRect(-2.8, 7.8, 1.4, 0.5)
+          ctx.fillRect(1.4, 7.8, 1.4, 0.5)
         }
+
+        ctx.restore()
 
         // Label on hover or at high zoom
         if ((isHovered || s > 0.003) && s > 0.0008) {
@@ -726,9 +812,8 @@ export default function WorldMap() {
           ctx.font = `500 ${vFontSize}px ui-sans-serif, system-ui, sans-serif`
           ctx.textAlign = 'center'
           ctx.fillStyle = C.vehicleLabel
-          // Show short vehicle name (e.g. "Chevalier Dart" from "Base.VehicleName")
-          const shortName = vehicle.type || vehicle.scriptName.split('.').pop() || 'Vehicle'
-          ctx.fillText(shortName, vp.x, vp.y - r - 3)
+          const shortName = vehicle.type || vehicle.scriptName?.split('.').pop() || 'Vehicle'
+          ctx.fillText(shortName, vp.x, vp.y - 10.5 * carScale - 4)
         }
       }
     }
@@ -1185,13 +1270,14 @@ export default function WorldMap() {
       }
       setHoveredPlayer(found)
 
-      // Hit test vehicles
+      // Hit test vehicles (hit radius scales with zoom to match icon size)
       let foundVehicle: number | null = null
       if (showVehicles && !found) {
+        const vHitRadius = Math.max(MARKER_HIT_RADIUS, Math.max(3, Math.min(12, scaleRef.current * 1400)) * 2.2)
         for (const v of vehiclesRef.current) {
           const vp = playerToScreen(v.x, v.y)
           const dist = Math.sqrt((mx - vp.x) ** 2 + (my - vp.y) ** 2)
-          if (dist < MARKER_HIT_RADIUS) {
+          if (dist < vHitRadius) {
             foundVehicle = v.id
             break
           }
@@ -1253,10 +1339,11 @@ export default function WorldMap() {
 
       let clickedVehicle: MapVehicle | undefined
       if (!clickedPlayer && showVehicles) {
+        const vHitRadius = Math.max(MARKER_HIT_RADIUS, Math.max(3, Math.min(12, scaleRef.current * 1400)) * 2.2)
         for (const v of vehiclesRef.current) {
           const vp = playerToScreen(v.x, v.y)
           const dist = Math.sqrt((mx - vp.x) ** 2 + (my - vp.y) ** 2)
-          if (dist < MARKER_HIT_RADIUS) {
+          if (dist < vHitRadius) {
             clickedVehicle = v
             break
           }
@@ -1589,7 +1676,7 @@ export default function WorldMap() {
               'w-10 h-10 rounded-lg backdrop-blur border flex items-center justify-center transition-colors',
               showVehicles ? 'bg-info/15 border-info/40 text-info' : 'bg-background/80 border-border/60 text-muted-foreground hover:bg-muted'
             )}
-            title={`${showVehicles ? 'Hide' : 'Show'} vehicles (${vehicles.length})`}
+            title={`${showVehicles ? 'Hide' : 'Show'} vehicles (${vehicles.length}) — only vehicles near players are visible`}
           >
             <Car className="w-4 h-4" />
           </button>
@@ -1818,13 +1905,40 @@ export default function WorldMap() {
 
             {contextMenu.vehicle && (
               <>
-                <div className="px-2 py-1.5 text-xs text-muted-foreground border-b border-border/20 truncate select-none">
-                  <Car className="w-3 h-3 inline mr-1" />
-                  <strong className="text-foreground">{contextMenu.vehicle.type || contextMenu.vehicle.scriptName.split('.').pop()}</strong>
-                </div>
-                <div className="px-2 py-1 text-[10px] text-muted-foreground/70 flex gap-3 select-none">
-                  <span>Fuel: {Math.round(contextMenu.vehicle.fuelPct)}%</span>
-                  <span>Battery: {Math.round(contextMenu.vehicle.batteryCharge)}%</span>
+                <div className="px-2 py-2 border-b border-border/20 select-none">
+                  <div className="flex items-center gap-1.5 text-xs">
+                    <Car className="w-3.5 h-3.5 text-info flex-none" />
+                    <strong className="text-foreground truncate">{contextMenu.vehicle.type || contextMenu.vehicle.scriptName?.split('.').pop() || 'Vehicle'}</strong>
+                  </div>
+                  <div className="mt-1.5 space-y-1">
+                    {contextMenu.vehicle.fuelPct != null && (
+                      <div className="flex items-center gap-2">
+                        <Fuel className="w-3 h-3 text-muted-foreground/60 flex-none" />
+                        <div className="flex-1 h-1.5 rounded-full bg-muted/60 overflow-hidden">
+                          <div
+                            className={cn("h-full rounded-full transition-all", contextMenu.vehicle.fuelPct > 30 ? "bg-info/80" : contextMenu.vehicle.fuelPct > 10 ? "bg-warning/80" : "bg-destructive/80")}
+                            style={{ width: `${Math.round(contextMenu.vehicle.fuelPct)}%` }}
+                          />
+                        </div>
+                        <span className="text-[10px] tabular-nums text-muted-foreground/70 w-7 text-right">{Math.round(contextMenu.vehicle.fuelPct)}%</span>
+                      </div>
+                    )}
+                    {contextMenu.vehicle.batteryCharge != null && (
+                      <div className="flex items-center gap-2">
+                        <Battery className="w-3 h-3 text-muted-foreground/60 flex-none" />
+                        <div className="flex-1 h-1.5 rounded-full bg-muted/60 overflow-hidden">
+                          <div
+                            className={cn("h-full rounded-full transition-all", contextMenu.vehicle.batteryCharge > 30 ? "bg-info/80" : contextMenu.vehicle.batteryCharge > 10 ? "bg-warning/80" : "bg-destructive/80")}
+                            style={{ width: `${Math.round(contextMenu.vehicle.batteryCharge)}%` }}
+                          />
+                        </div>
+                        <span className="text-[10px] tabular-nums text-muted-foreground/70 w-7 text-right">{Math.round(contextMenu.vehicle.batteryCharge)}%</span>
+                      </div>
+                    )}
+                    {contextMenu.vehicle.fuelPct == null && contextMenu.vehicle.batteryCharge == null && (
+                      <div className="text-[10px] text-muted-foreground/50 italic">No telemetry</div>
+                    )}
+                  </div>
                 </div>
                 <ContextMenuItem
                   icon={<Wrench className="w-3.5 h-3.5" />}
@@ -1851,7 +1965,7 @@ export default function WorldMap() {
                   loading={actionLoading === 'vehicle-fuel'}
                   onClick={() => {
                     setActionLoading('vehicle-fuel')
-                    panelBridgeApi.sendCommand('vehicleSetFuel', { vehicleId: contextMenu.vehicle!.id, level: 100 })
+                    panelBridgeApi.sendCommand('vehicleSetFuel', { vehicleId: contextMenu.vehicle!.id, percent: 100 })
                       .then((res) => {
                         if (res.success) {
                           toast({ title: 'Fuel filled to 100%' })
@@ -1870,7 +1984,7 @@ export default function WorldMap() {
                   loading={actionLoading === 'vehicle-battery'}
                   onClick={() => {
                     setActionLoading('vehicle-battery')
-                    panelBridgeApi.sendCommand('vehicleSetBattery', { vehicleId: contextMenu.vehicle!.id, level: 100 })
+                    panelBridgeApi.sendCommand('vehicleSetBattery', { vehicleId: contextMenu.vehicle!.id, charge: 100 })
                       .then((res) => {
                         if (res.success) {
                           toast({ title: 'Battery charged to 100%' })

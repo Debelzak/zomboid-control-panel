@@ -588,7 +588,51 @@ async function tryStartPanelBridge(trigger = 'unknown') {
     log.debug(`${result.error} (trigger: ${trigger})`);
     return false;
   }
-  
+
+  // Auto-update PanelBridge.lua on the PZ server if bundled version is newer
+  const autoUpdateEnabled = (await getSetting('panelBridgeAutoUpdate')) !== false; // default true
+  if (!autoUpdateEnabled) {
+    log.debug('PanelBridge mod auto-update disabled by setting');
+  }
+  if (autoUpdateEnabled) try {
+    const activeServer = await getActiveServer();
+    const serverInstallDir = activeServer?.serverPath || activeServer?.installPath;
+    if (serverInstallDir) {
+      const installDir = serverInstallDir.endsWith('.bat') || serverInstallDir.endsWith('.sh') || serverInstallDir.endsWith('.exe')
+        ? path.dirname(serverInstallDir)
+        : serverInstallDir;
+      const destLuaFile = path.join(installDir, 'media', 'lua', 'server', 'PanelBridge.lua');
+
+      // Find bundled source mod
+      const possibleModPaths = [
+        path.join(process.cwd(), 'pz-mod', 'PanelBridge'),
+        path.join(path.dirname(process.execPath), 'pz-mod', 'PanelBridge'),
+      ];
+      let sourceLuaFile = null;
+      for (const modPath of possibleModPaths) {
+        const candidate = path.join(modPath, 'media', 'lua', 'server', 'PanelBridge.lua');
+        if (fs.existsSync(candidate)) { sourceLuaFile = candidate; break; }
+      }
+
+      if (sourceLuaFile && fs.existsSync(destLuaFile)) {
+        const srcContent = fs.readFileSync(sourceLuaFile, 'utf8');
+        const destContent = fs.readFileSync(destLuaFile, 'utf8');
+        const srcVersion = (srcContent.match(/VERSION\s*=\s*"([^"]+)"/) || [])[1];
+        const destVersion = (destContent.match(/VERSION\s*=\s*"([^"]+)"/) || [])[1];
+        if (srcVersion && destVersion && srcVersion !== destVersion) {
+          fs.copyFileSync(sourceLuaFile, destLuaFile);
+          log.info(`PanelBridge mod auto-updated on server: ${destVersion} → ${srcVersion}`);
+        }
+      } else if (sourceLuaFile && !fs.existsSync(destLuaFile)) {
+        fs.mkdirSync(path.dirname(destLuaFile), { recursive: true });
+        fs.copyFileSync(sourceLuaFile, destLuaFile);
+        log.info('PanelBridge mod auto-installed to server');
+      }
+    }
+  } catch (modError) {
+    log.warn(`Auto-update mod check failed: ${modError.message}`);
+  }
+
   try {
     panelBridge.configure(result.path, true);
     panelBridge.start();

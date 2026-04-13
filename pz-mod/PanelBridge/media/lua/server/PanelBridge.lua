@@ -1,7 +1,7 @@
 ---@diagnostic disable: undefined-global, deprecated
 --[[
     PanelBridge - Server-side mod for Zomboid Control Panel
-    Version: 1.0.0
+    Version: 1.1.0
     
     This mod enables external control panel communication with the PZ server.
     Communication happens via JSON files in the server save folder.
@@ -96,7 +96,7 @@
 local json
 
 local PanelBridge = {
-    VERSION = "1.0.0",
+    VERSION = "1.1.0",
     PROTOCOL_VERSION = "queue-v1",
     CHECK_INTERVAL = 250, -- milliseconds (fast command polling)
     lastCheck = 0,
@@ -342,6 +342,10 @@ local function escape_str(s)
     for i, c in ipairs(in_char) do
         s = s:gsub(c, '\\' .. out_char[i])
     end
+    -- Escape remaining control characters (0x00-0x1F) to produce valid JSON
+    s = s:gsub('[%z\1-\31]', function(c)
+        return string.format('\\u%04x', string.byte(c))
+    end)
     return s
 end
 
@@ -582,12 +586,15 @@ function PanelBridge.readFile(filename)
     end
     
     local lines = {}
-    local line = reader:readLine()
-    while line do
-        lines[#lines + 1] = line
-        line = reader:readLine()
-    end
+    local readOk, readErr = pcall(function()
+        local line = reader:readLine()
+        while line do
+            lines[#lines + 1] = line
+            line = reader:readLine()
+        end
+    end)
     reader:close()
+    if not readOk then return nil end
     
     local content = table.concat(lines, "\n")
     return content:gsub("^%s*(.-)%s*$", "%1") -- trim
@@ -600,8 +607,14 @@ function PanelBridge.writeFile(filename, content)
         print("[PanelBridge] Error: Could not write to " .. path)
         return false
     end
-    writer:write(content)
+    local writeOk, writeErr = pcall(function()
+        writer:write(content)
+    end)
     writer:close()
+    if not writeOk then
+        print("[PanelBridge] Error writing: " .. tostring(writeErr))
+        return false
+    end
     return true
 end
 
@@ -5157,12 +5170,23 @@ handlers.vehicleSetFuel = function(args)
     pct = math.min(math.max(pct, 0), 100)
 
     local ok, err = pcall(function()
-        -- B42: setRemainingFuelPercentage expects 0-100
+        -- B42: fuel is stored as container content amount on the GasTank part
+        -- Pattern from Vehicles.Create.GasTank / Vehicles.Update.GasTank
+        local part = vehicle:getPartById("GasTank")
+        if part and part.getContainerCapacity then
+            local capacity = part:getContainerCapacity()
+            if capacity and capacity > 0 then
+                local amount = capacity * pct / 100
+                part:setContainerContentAmount(amount)
+                if vehicle.transmitPartModData then
+                    vehicle:transmitPartModData(part)
+                end
+                return -- B42 success
+            end
+        end
+        -- B41 fallback (also used if B42 GasTank has no capacity)
         if vehicle.setRemainingFuelPercentage then
             vehicle:setRemainingFuelPercentage(pct)
-        -- Fallback: some builds use tank capacity fraction (0-1)
-        elseif vehicle.setCurrentFuel and vehicle.getMaxFuel then
-            vehicle:setCurrentFuel(vehicle:getMaxFuel() * pct / 100)
         else
             error("No fuel setter available")
         end
@@ -5181,10 +5205,24 @@ handlers.vehicleSetBattery = function(args)
     charge = math.min(math.max(charge, 0), 100)
 
     local ok, err = pcall(function()
+        -- B42: battery charge is set via the battery part's inventory item
+        -- Pattern from VehicleUtils.chargeBattery in Vehicles.lua
+        local battery = vehicle.getBattery and vehicle:getBattery() or nil
+        if battery and battery.getInventoryItem then
+            local item = battery:getInventoryItem()
+            if item and item.setUsedDelta then
+                item:setUsedDelta(charge / 100)
+                if vehicle.transmitPartUsedDelta then
+                    vehicle:transmitPartUsedDelta(battery)
+                end
+                return -- B42 success
+            end
+        end
+        -- B41 fallback (also used if B42 battery has no inventory item)
         if vehicle.setBatteryCharge then
             vehicle:setBatteryCharge(charge)
         else
-            error("setBatteryCharge not available")
+            error("No battery setter available")
         end
     end)
     if not ok then return false, nil, "Failed to set battery: " .. tostring(err) end
@@ -5206,8 +5244,17 @@ handlers.removeVehicle = function(args)
             vehicle:permanentlyRemove()
         elseif vehicle.removeFromWorld then
             vehicle:removeFromWorld()
+        elseif vehicle.removeVehicle then
+            vehicle:removeVehicle()
         else
-            error("No removal method available")
+            -- Last resort: try to destroy via world cell
+            local world = getWorld()
+            local cell = world and world:getCell() or nil
+            if cell and cell.removeVehicle then
+                cell:removeVehicle(vehicle)
+            else
+                error("No removal method available on this PZ build")
+            end
         end
     end)
     if not ok then return false, nil, "Failed to remove vehicle: " .. tostring(err) end
@@ -5255,6 +5302,70 @@ handlers.removeVehiclesInArea = function(args)
     end
 
     return true, { message = removed .. " vehicle(s) removed from area", removed = removed, vehicles = removedList, bounds = { minX = minX, minY = minY, maxX = maxX, maxY = maxY } }
+end
+
+handlers.vehicleProbeAPI = function(args)
+    local vehicle = findVehicleById(args.vehicleId)
+    if not vehicle then return false, nil, "Vehicle not found" end
+
+    local methods = {}
+    -- Check known method names
+    local names = {
+        "setRemainingFuelPercentage", "getRemainingFuelPercentage",
+        "setCurrentFuel", "getMaxFuel", "getCurrentFuel",
+        "setBatteryCharge", "getBatteryCharge",
+        "setFuel", "getFuel",
+        "getPartById", "getScript",
+        "permanentlyRemove", "removeFromWorld", "removeVehicle",
+        "repair", "updatePartStats",
+        "getPartCount",
+    }
+    for _, name in ipairs(names) do
+        methods[name] = vehicle[name] ~= nil
+    end
+
+    -- Probe parts
+    local parts = {}
+    local partNames = { "GasTank", "Battery", "Engine", "TireFL", "TireFR" }
+    for _, pname in ipairs(partNames) do
+        local ok2, part = pcall(function() return vehicle:getPartById(pname) end)
+        if ok2 and part then
+            local partMethods = {}
+            local pMethodNames = { "getCondition", "setCondition", "getInventoryItem", "getItemContainer", "setCustomWeight" }
+            for _, m in ipairs(pMethodNames) do
+                partMethods[m] = part[m] ~= nil
+            end
+            -- Check container
+            local containerInfo = nil
+            local ok3, container = pcall(function() return part:getItemContainer() end)
+            if ok3 and container then
+                local cMethods = { "setCustomWeight", "getCustomWeight", "getCapacity", "setCapacity" }
+                containerInfo = {}
+                for _, m in ipairs(cMethods) do
+                    containerInfo[m] = container[m] ~= nil
+                end
+            end
+            parts[pname] = { methods = partMethods, container = containerInfo }
+        else
+            parts[pname] = false
+        end
+    end
+
+    -- Script info
+    local scriptInfo = nil
+    local ok4, script = pcall(function() return vehicle:getScript() end)
+    if ok4 and script then
+        scriptInfo = {}
+        local sMethods = { "getTankCapacity", "getMass", "getEngineForce" }
+        for _, m in ipairs(sMethods) do
+            scriptInfo[m] = script[m] ~= nil
+        end
+        if script.getTankCapacity then
+            pcall(function() scriptInfo.tankCapacityValue = script:getTankCapacity() end)
+        end
+    end
+
+    return true, { vehicleMethods = methods, parts = parts, script = scriptInfo }
 end
 
 -- ============================================

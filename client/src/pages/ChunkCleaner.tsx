@@ -122,11 +122,12 @@ const B42_DZI_FULL_H = 16128   // full-resolution image height in pixels
 const B42_DZI_TILE_PX = 256    // DZI tile size in pixels
 const B42_DZI_MAX_LEVEL = 15   // ceil(log2(max(W,H)))
 // B42: 1 PZ cell = 256 tiles, pzmap2dzi renders 256 px/cell → 1 tile = 1 DZI px
-// After B42→B41 conversion (×0.8), 1 B41-equiv chunk = 10 DZI px
-const B42_CHUNK_TO_DZI_PX = 10
+// B42 chunks are 8×8 tiles → 8 DZI px per B42 chunk (native coords, no B41 conversion)
+const B42_CHUNK_TO_DZI_PX = 8
 
-// Known PZ city / landmark positions (in chunk coordinates)
+// Known PZ city / landmark positions (in B41 chunk coordinates)
 // Derived from map.projectzomboid.com overlays.json POI centroids (game-tile ÷ 10)
+// For B42, multiply by 10/8 (= 1.25) to convert to B42 chunk space
 const PZ_LANDMARKS: { name: string; x: number; y: number }[] = [
   { name: 'Muldraugh',      x: 1063, y:  980 },
   { name: 'West Point',     x: 1190, y:  690 },
@@ -219,6 +220,7 @@ export default function ChunkCleaner() {
   
   // B42 save detection
   const [isB42Save, setIsB42Save] = useState(false)
+  const isB42Ref = useRef(false)
   
   // Delete dialog
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
@@ -351,31 +353,12 @@ export default function ChunkCleaner() {
       
       // B42 saves use map/{X}/{Y}.bin with 8×8 tile chunks.
       // B41 saves use flat files with 10×10 tile chunks.
-      // The grabofus map tiles use B41 chunk space (1 chunk = 10 tiles).
-      // Convert B42 → B41: multiply by 0.8  (8/10).
+      // Keep native chunk coordinates (no B41 conversion) to avoid rounding errors.
       // The 'file' field is preserved unchanged for deletion operations.
       const rawChunks: ChunkInfo[] = Array.isArray(chunksResult.chunks) ? chunksResult.chunks : []
       const isB42 = chunksResult.isB42 === true || (rawChunks.length > 0 && rawChunks[0].file?.includes('/'))
+      isB42Ref.current = isB42
       setIsB42Save(isB42)
-      if (isB42 && rawChunks.length > 0) {
-        for (const c of rawChunks) {
-          // All B42 entries (map/ and chunkdata) are in B42 chunk space.
-          // Convert uniformly to B41 chunk space (× 0.8).
-          c.x = Math.floor(c.x * 8 / 10)
-          c.y = Math.floor(c.y * 8 / 10)
-        }
-        // Recompute bounds from converted coords
-        if (chunksResult.bounds) {
-          let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
-          for (const c of rawChunks) {
-            minX = Math.min(minX, c.x)
-            maxX = Math.max(maxX, c.x)
-            minY = Math.min(minY, c.y)
-            maxY = Math.max(maxY, c.y)
-          }
-          chunksResult.bounds = { minX, maxX, minY, maxY }
-        }
-      }
       setChunks(rawChunks)
       setBounds(chunksResult.bounds ?? null)
       setStats(statsResult)
@@ -399,36 +382,46 @@ export default function ChunkCleaner() {
         panelBridgeApi.sendCommand('getVehiclesDetailed'),
         panelBridgeApi.sendCommand('getSafehouses'),
       ])
-      if (vRes.status === 'fulfilled' && vRes.value.success && Array.isArray(vRes.value.data)) {
-        setChunkVehicles(vRes.value.data.map((v: Record<string, unknown>) => ({
-          id: v.id as number,
-          x: Math.floor((v.x as number) / 10),
-          y: Math.floor((v.y as number) / 10),
-          type: (v.type as string) || (v.scriptName as string)?.split('.').pop() || 'Vehicle',
-          scriptName: (v.scriptName as string) || '',
-          fuelPct: (v.fuelPct as number) || 0,
-        })))
+      if (vRes.status === 'fulfilled' && vRes.value.success && vRes.value.data) {
+        const vData = vRes.value.data as Record<string, unknown>
+        const vList = (Array.isArray(vData) ? vData : Array.isArray(vData.vehicles) ? vData.vehicles : []) as Record<string, unknown>[]
+        const tilesPerChunk = isB42Ref.current ? 8 : 10
+        setChunkVehicles(vList
+          .filter((v) => typeof v.x === 'number' && typeof v.y === 'number' && isFinite(v.x as number) && isFinite(v.y as number))
+          .map((v) => ({
+            id: v.id as number,
+            x: Math.floor((v.x as number) / tilesPerChunk),
+            y: Math.floor((v.y as number) / tilesPerChunk),
+            type: (v.type as string) || (v.scriptName as string)?.split('.').pop() || 'Vehicle',
+            scriptName: (v.scriptName as string) || '',
+            fuelPct: typeof v.fuelPct === 'number' ? v.fuelPct : -1,
+          })))
       }
-      if (sRes.status === 'fulfilled' && sRes.value.success && Array.isArray(sRes.value.data)) {
-        setChunkSafehouses(sRes.value.data.map((s: Record<string, unknown>) => ({
-          id: s.id as string,
-          title: (s.title as string) || '',
-          owner: (s.owner as string) || '',
-          x: Math.floor((s.x as number) / 10),
-          y: Math.floor((s.y as number) / 10),
-          w: Math.max(1, Math.ceil((s.w as number) / 10)),
-          h: Math.max(1, Math.ceil((s.h as number) / 10)),
-          players: (s.players as string[]) || [],
-          playerConnected: (s.playerConnected as boolean) || false,
-        })))
+      if (sRes.status === 'fulfilled' && sRes.value.success && sRes.value.data) {
+        const sData = sRes.value.data as Record<string, unknown>
+        const sList = (Array.isArray(sData) ? sData : Array.isArray(sData.safehouses) ? sData.safehouses : []) as Record<string, unknown>[]
+        const tilesPerChunk = isB42Ref.current ? 8 : 10
+        setChunkSafehouses(sList
+          .filter((s) => typeof s.x === 'number' && typeof s.y === 'number' && isFinite(s.x as number) && isFinite(s.y as number))
+          .map((s) => ({
+            id: s.id as string,
+            title: (s.title as string) || '',
+            owner: (s.owner as string) || '',
+            x: Math.floor((s.x as number) / tilesPerChunk),
+            y: Math.floor((s.y as number) / tilesPerChunk),
+            w: Math.max(1, Math.ceil(((s.w as number) || 1) / tilesPerChunk)),
+            h: Math.max(1, Math.ceil(((s.h as number) || 1) / tilesPerChunk)),
+            players: Array.isArray(s.players) ? s.players as string[] : [],
+            playerConnected: (s.playerConnected as boolean) || false,
+          })))
       }
     } catch { /* best-effort */ }
   }, [])
 
   useEffect(() => {
     if (selectedSave) {
-      loadChunks()
-      fetchOverlayData()
+      // loadChunks sets isB42Ref before fetchOverlayData needs it
+      loadChunks().then(() => fetchOverlayData())
     }
   }, [selectedSave, loadChunks, fetchOverlayData])
 
@@ -708,8 +701,11 @@ export default function ChunkCleaner() {
         ctx.textBaseline = 'middle'
         
         for (const lm of PZ_LANDMARKS) {
-          const sx = lm.x * scale + offset.x
-          const sy = lm.y * scale + offset.y
+          // Landmarks are in B41 chunk coords; for B42, convert to B42 chunk space (×1.25)
+          const lx = isB42Save ? lm.x * 1.25 : lm.x
+          const ly = isB42Save ? lm.y * 1.25 : lm.y
+          const sx = lx * scale + offset.x
+          const sy = ly * scale + offset.y
           // Skip if off screen
           if (sx < -100 || sx > W + 100 || sy < -50 || sy > H + 50) continue
           
@@ -788,12 +784,14 @@ export default function ChunkCleaner() {
           // Skip if off screen
           if (vx < -10 || vx > W + 10 || vy < -10 || vy > H + 10) continue
 
-          // Dot color by fuel
-          const vColor = v.fuelPct > 30
-            ? hsl(primaryVar, 0.7)
-            : v.fuelPct > 10
-              ? hsl(warningVar, 0.8)
-              : hsl(destructiveVar, 0.8)
+          // Dot color by fuel (-1 = unknown → use neutral primary)
+          const vColor = v.fuelPct < 0
+            ? hsl(primaryVar, 0.5)
+            : v.fuelPct > 30
+              ? hsl(primaryVar, 0.7)
+              : v.fuelPct > 10
+                ? hsl(warningVar, 0.8)
+                : hsl(destructiveVar, 0.8)
 
           ctx.beginPath()
           ctx.arc(vx, vy, vSize, 0, Math.PI * 2)
@@ -994,8 +992,9 @@ export default function ChunkCleaner() {
         const hoverChunk = chunkMap[hkey]
         const hoverSel = selectedChunks.has(hkey)
         
-        const cellX = Math.floor(hx / 30)
-        const cellY = Math.floor(hy / 30)
+        const chunksPerCell = isB42Save ? 32 : 30
+        const cellX = Math.floor(hx / chunksPerCell)
+        const cellY = Math.floor(hy / chunksPerCell)
         let label = `Chunk ${hx}, ${hy}  |  Cell ${cellX}, ${cellY}`
         if (hoverChunk) {
           label += ` | ${formatSize(hoverChunk.size)}${hoverSel ? ' | SELECTED' : ''}`
@@ -1019,10 +1018,11 @@ export default function ChunkCleaner() {
       // ── Top-left bounds info ──
       ctx.textAlign = 'left'
       ctx.textBaseline = 'top'
-      const cellMinX = Math.floor(bounds.minX / 30)
-      const cellMinY = Math.floor(bounds.minY / 30)
-      const cellMaxX = Math.floor(bounds.maxX / 30)
-      const cellMaxY = Math.floor(bounds.maxY / 30)
+      const chunksPerCell = isB42Save ? 32 : 30
+      const cellMinX = Math.floor(bounds.minX / chunksPerCell)
+      const cellMinY = Math.floor(bounds.minY / chunksPerCell)
+      const cellMaxX = Math.floor(bounds.maxX / chunksPerCell)
+      const cellMaxY = Math.floor(bounds.maxY / chunksPerCell)
       const boundsLabel = `Chunks ${bounds.minX}–${bounds.maxX}, ${bounds.minY}–${bounds.maxY}  (${chunks.length})  |  Cells ${cellMinX}–${cellMaxX}, ${cellMinY}–${cellMaxY}`
       const bm = ctx.measureText(boundsLabel)
       ctx.fillStyle = hsl(bgVar || '0 0% 0%', 0.7)
