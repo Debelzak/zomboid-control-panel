@@ -317,9 +317,13 @@ router.post('/add-item', async (req, res) => {
     }
     const itemCount = count !== undefined ? Math.min(Math.floor(Number(count)), 100) : 1;
     
+    if (!username) {
+      return res.status(400).json({ error: 'A player must be selected to give items' });
+    }
+    
     let result;
     // Prefer PanelBridge (direct Lua inventory access) — much more reliable than RCON additem in B42
-    if (username && bridge.isRunning && bridge.isModConnected()) {
+    if (bridge.isRunning && bridge.isModConnected()) {
       try {
         result = await bridge.sendCommand('giveItem', {
           username,
@@ -334,7 +338,7 @@ router.post('/add-item', async (req, res) => {
       }
     } else {
       result = await rconService.addItem(username, item, itemCount);
-      log.info(`POST /add-item: ${item} x${itemCount} to ${username || 'self'} via RCON`);
+      log.info(`POST /add-item: ${item} x${itemCount} to ${username} via RCON`);
     }
     if (username) {
       await logPlayerAction(username, 'add_item', `${item} x${itemCount}`);

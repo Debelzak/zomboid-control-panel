@@ -622,10 +622,10 @@ export default function Players() {
   }
 
   const handleAddItem = async () => {
-    if (!itemName) return
+    if (!itemName || !selectedPlayer) return
     const name = itemName
     const count = itemCount
-    await handleAction('Add item', () => playersApi.addItem(selectedPlayer || null, name, count), () => {
+    await handleAction('Add item', () => playersApi.addItem(selectedPlayer, name, count), () => {
       setItemName('')
       setItemCount(1)
     })
@@ -1532,7 +1532,7 @@ export default function Players() {
                     </div>
                     <Button 
                       onClick={handleAddItem} 
-                      disabled={loading || !itemName} 
+                      disabled={loading || !itemName || !selectedPlayer} 
                       size="sm" 
                       className="shrink-0 sm:min-w-[100px]"
                     >
