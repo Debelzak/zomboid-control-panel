@@ -964,7 +964,7 @@ export class RconService extends EventEmitter {
   // Items and XP
   async addItem(username, item, count = 1) {
     const safeItem = this.sanitize(item);
-    const n = Math.min(Math.max(Math.floor(Number(count)) || 1, 1), 10000);
+    const n = Math.min(Math.max(Math.floor(Number(count)) || 1, 1), 100);
     if (username) {
       return this.execute(`additem "${this.sanitize(username)}" "${safeItem}" ${n}`);
     }
@@ -1036,11 +1036,11 @@ export class RconService extends EventEmitter {
   }
 
   async createHorde(count, username = null) {
-    // count is validated as number in routes
+    const n = Math.min(Math.max(Math.floor(Number(count)) || 50, 1), 500);
     if (username) {
-      return this.execute(`createhorde ${count} "${this.sanitize(username)}"`);
+      return this.execute(`createhorde ${n} "${this.sanitize(username)}"`);
     }
-    return this.execute(`createhorde ${count}`);
+    return this.execute(`createhorde ${n}`);
   }
 
   // Admin modes

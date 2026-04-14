@@ -312,10 +312,10 @@ router.post('/add-item', async (req, res) => {
       return res.status(400).json({ error: 'Invalid username format' });
     }
     
-    if (count !== undefined && !isValidNumber(count, 1, 10000)) {
-      return res.status(400).json({ error: 'Invalid count (1-10000)' });
+    if (count !== undefined && !isValidNumber(count, 1, 100)) {
+      return res.status(400).json({ error: 'Invalid count (1-100)' });
     }
-    const itemCount = count !== undefined ? Math.min(Math.floor(Number(count)), 10000) : 1;
+    const itemCount = count !== undefined ? Math.min(Math.floor(Number(count)), 100) : 1;
     
     let result;
     // Prefer PanelBridge (direct Lua inventory access) — much more reliable than RCON additem in B42

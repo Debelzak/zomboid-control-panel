@@ -1782,8 +1782,8 @@ router.post('/players/:username/give-item', async (req, res) => {
     return res.status(400).json({ error: 'Invalid username format' });
   }
   const { itemType, count = 1 } = req.body;
-  if (!itemType || typeof itemType !== 'string' || itemType.length > 200) {
-    return res.status(400).json({ error: 'itemType is required (e.g., "Base.Axe")' });
+  if (!itemType || typeof itemType !== 'string' || !/^[a-zA-Z][a-zA-Z0-9_]*\.[a-zA-Z][a-zA-Z0-9_]*$/.test(itemType)) {
+    return res.status(400).json({ error: 'itemType must be in Module.ItemName format (e.g., "Base.Axe")' });
   }
   if (typeof count !== 'number' || count < 1 || count > 100) {
     return res.status(400).json({ error: 'count must be 1-100' });
