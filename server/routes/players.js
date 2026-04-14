@@ -316,8 +316,25 @@ router.post('/add-item', async (req, res) => {
       return res.status(400).json({ error: 'Invalid count (1-10000)' });
     }
     
-    const result = await rconService.addItem(username, item, count || 1);
-    log.info(`POST /add-item: ${item} x${count || 1} to ${username || 'self'}`);
+    let result;
+    // Prefer PanelBridge (direct Lua inventory access) — much more reliable than RCON additem in B42
+    if (username && bridge.isRunning && bridge.isModConnected()) {
+      try {
+        result = await bridge.sendCommand('giveItem', {
+          username,
+          itemType: item,
+          count: count || 1
+        });
+        log.info(`POST /add-item: ${item} x${count || 1} to ${username} via PanelBridge`);
+      } catch (bridgeErr) {
+        log.warn(`PanelBridge giveItem failed, falling back to RCON: ${bridgeErr.message}`);
+        result = await rconService.addItem(username, item, count || 1);
+        log.info(`POST /add-item: ${item} x${count || 1} to ${username} via RCON (fallback)`);
+      }
+    } else {
+      result = await rconService.addItem(username, item, count || 1);
+      log.info(`POST /add-item: ${item} x${count || 1} to ${username || 'self'} via RCON`);
+    }
     if (username) {
       await logPlayerAction(username, 'add_item', `${item} x${count || 1}`);
     }
