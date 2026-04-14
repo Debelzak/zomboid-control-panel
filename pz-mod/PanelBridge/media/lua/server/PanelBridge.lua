@@ -4056,11 +4056,12 @@ handlers.healPlayer = function(args)
     end
     
     local healed = {}
+    local errors = {}
     
     -- Heal body damage
     local bodyDamage = player:getBodyDamage()
     if bodyDamage then
-        pcall(function()
+        local ok1, err1 = pcall(function()
             -- Clear Knox virus (zombie) infection at body level
             if bodyDamage.setInfected then
                 bodyDamage:setInfected(false)
@@ -4068,47 +4069,104 @@ handlers.healPlayer = function(args)
             if bodyDamage.setInfectedWound then
                 bodyDamage:setInfectedWound(false)
             end
+            -- B42: clear fake-dead scratches, bites etc
+            if bodyDamage.setFakeInfected then
+                bodyDamage:setFakeInfected(false)
+            end
             -- Restore individual body parts
             for i = 0, bodyDamage:getNumOfBodyParts() - 1 do
                 local part = bodyDamage:getBodyPart(i)
                 if part then
-                    part:SetBitten(false)
-                    part:SetBleeding(false)
-                    part:SetScratched(false, false)
-                    part:SetDeepWounded(false)
-                    part:SetInfected(false)
-                    part:SetHealth(100)
+                    if part.SetBitten then part:SetBitten(false) end
+                    if part.SetBleeding then part:SetBleeding(false) end
+                    if part.SetScratched then part:SetScratched(false, false) end
+                    if part.SetDeepWounded then part:SetDeepWounded(false) end
+                    if part.SetInfected then part:SetInfected(false) end
+                    if part.SetHealth then part:SetHealth(100) end
+                    -- B42: clear additional wound states
+                    if part.SetBurned then part:SetBurned(false) end
+                    if part.setBandaged then part:setBandaged(false, 0) end
+                    if part.SetCut then part:SetCut(false) end
+                    if part.SetHaveBullet then part:SetHaveBullet(false) end
+                    if part.SetHaveGlass then part:SetHaveGlass(false) end
+                    if part.SetFractureTime then part:SetFractureTime(0) end
+                    if part.SetSplintFactor then part:SetSplintFactor(0) end
+                    if part.SetStiffness then part:SetStiffness(0) end
+                    if part.SetWoundInfectionLevel then part:SetWoundInfectionLevel(0) end
                 end
             end
-            bodyDamage:RestoreToFullHealth()
+            -- RestoreToFullHealth — the most comprehensive single call
+            if bodyDamage.RestoreToFullHealth then
+                bodyDamage:RestoreToFullHealth()
+            end
             healed.bodyDamage = true
         end)
+        if not ok1 then table.insert(errors, "bodyDamage: " .. tostring(err1)) end
     end
     
     -- Restore stats
     local stats = player:getStats()
     if stats then
-        pcall(function()
-            stats:setHunger(0)
-            stats:setThirst(0)
-            stats:setFatigue(0)
-            stats:setStress(0)
-            stats:setBoredom(0)
-            stats:setUnhappyness(0)
-            stats:setPain(0)
-            stats:setEndurance(1)
+        local ok2, err2 = pcall(function()
+            if stats.setHunger then stats:setHunger(0) end
+            if stats.setThirst then stats:setThirst(0) end
+            if stats.setFatigue then stats:setFatigue(0) end
+            if stats.setStress then stats:setStress(0) end
+            if stats.setBoredom then stats:setBoredom(0) end
+            if stats.setUnhappyness then stats:setUnhappyness(0) end
+            if stats.setPain then stats:setPain(0) end
+            if stats.setEndurance then stats:setEndurance(1) end
+            -- B42: additional stat resets
+            if stats.setDrunkenness then stats:setDrunkenness(0) end
+            if stats.setAngry then stats:setAngry(0) end
+            if stats.setFear then stats:setFear(0) end
+            if stats.setPanic then stats:setPanic(0) end
             healed.stats = true
         end)
+        if not ok2 then table.insert(errors, "stats: " .. tostring(err2)) end
     end
     
     -- Clear moodles/effects if possible
-    pcall(function()
+    local ok3, err3 = pcall(function()
         local moodles = player:getMoodles()
         if moodles then
-            moodles:reset()
+            if moodles.reset then
+                moodles:reset()
+            end
             healed.moodles = true
         end
     end)
+    if not ok3 then table.insert(errors, "moodles: " .. tostring(err3)) end
+    
+    -- CRITICAL: Network sync — transmit changes to client
+    -- Without this, the server has the healed state but the player client doesn't see it
+    local ok4, err4 = pcall(function()
+        local synced = false
+        -- B42: sendPlayerExtraInfo sends full player state to all clients
+        if sendPlayerExtraInfo then
+            sendPlayerExtraInfo(player)
+            synced = true
+            healed.syncMethod = "sendPlayerExtraInfo"
+        end
+        -- Also try sendObjectChange for network replication
+        if player.sendObjectChange then
+            player:sendObjectChange("bodyDamage")
+            synced = true
+            healed.syncMethod = (healed.syncMethod or "") .. "+sendObjectChange"
+        end
+        -- B42: PacketTypes for fine-grained sync
+        if syncPlayerFields then
+            syncPlayerFields(player)
+            synced = true
+            healed.syncMethod = (healed.syncMethod or "") .. "+syncPlayerFields"
+        end
+        healed.networkSync = synced
+    end)
+    if not ok4 then table.insert(errors, "sync: " .. tostring(err4)) end
+    
+    if #errors > 0 then
+        healed.errors = errors
+    end
     
     PanelBridge.info("Healed player", { username = username, healed = healed })
     return true, { message = "Player healed", username = username, healed = healed }
