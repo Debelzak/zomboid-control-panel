@@ -106,6 +106,10 @@ interface PerformancePoint {
   time: string
   playerCount: number
   memoryMB: number
+  pzMemMB?: number
+  cpuPercent?: number
+  hostMemUsedGB?: number
+  hostMemTotalGB?: number
 }
 
 const DashboardPerformanceCharts = lazy(() => import('@/components/DashboardPerformanceCharts'))
@@ -287,7 +291,11 @@ export default function Dashboard() {
         setPerformanceHistory(data.history.map((h) => ({
           time: new Date(h.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
           playerCount: h.playerCount || 0,
-          memoryMB: Math.round((h.memoryUsed || 0) / (1024 * 1024))
+          memoryMB: Math.round((h.memoryUsed || 0) / (1024 * 1024)),
+          pzMemMB: h.pzMemUsed ? Math.round(h.pzMemUsed / (1024 * 1024)) : undefined,
+          cpuPercent: h.cpuUsage != null ? Math.round(h.cpuUsage) : undefined,
+          hostMemUsedGB: h.hostMemUsed ? +(h.hostMemUsed / (1024 * 1024 * 1024)).toFixed(1) : undefined,
+          hostMemTotalGB: h.hostMemTotal ? +(h.hostMemTotal / (1024 * 1024 * 1024)).toFixed(1) : undefined,
         })))
       }
     } catch {
@@ -959,17 +967,16 @@ export default function Dashboard() {
           {performanceHistory.length > 0 ? (
             <Suspense
               fallback={
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  {[0, 1].map((index) => (
-                    <Card key={index}>
-                      <CardHeader className="pb-2">
-                        <div className="h-5 w-32 rounded bg-muted/60" />
-                        <div className="h-4 w-24 rounded bg-muted/40" />
-                      </CardHeader>
-                      <CardContent>
-                        <div className="h-[150px] animate-pulse rounded-lg bg-muted/40" />
-                      </CardContent>
-                    </Card>
+                <div className="rounded-xl border border-border/60 bg-card/50 px-5 py-4 space-y-4">
+                  {[0, 1, 2, 3].map((i) => (
+                    <div key={i} className="flex items-center gap-3 py-2.5">
+                      <div className="h-8 w-8 rounded-md bg-muted/40" />
+                      <div className="w-[90px] space-y-1.5">
+                        <div className="h-3 w-12 rounded bg-muted/40" />
+                        <div className="h-5 w-16 rounded bg-muted/50" />
+                      </div>
+                      <div className="flex-1 h-10 animate-pulse rounded bg-muted/30" />
+                    </div>
                   ))}
                 </div>
               }

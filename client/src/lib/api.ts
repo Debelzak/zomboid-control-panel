@@ -1552,7 +1552,7 @@ export const backupApi = {
 export const debugApi = {
   getRam: (): Promise<{ totalGB: number; freeGB: number; recommendedMin: number; recommendedMax: number }> =>
     apiGet('/debug/ram'),
-  getPerformanceHistory: (limit: number = 30): Promise<{ history: Array<{ timestamp: string; playerCount: number; memoryUsed: number }> }> =>
+  getPerformanceHistory: (limit: number = 30): Promise<{ history: Array<{ timestamp: string; playerCount: number; memoryUsed: number; pzMemUsed?: number; cpuUsage?: number; hostMemUsed?: number; hostMemTotal?: number }> }> =>
     apiGet(`/debug/performance-history?limit=${limit}`),
 }
 
