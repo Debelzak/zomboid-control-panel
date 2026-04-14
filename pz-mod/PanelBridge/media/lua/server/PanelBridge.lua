@@ -4250,7 +4250,13 @@ handlers.healPlayer = function(args)
                 numParts = 18
             end
             for i = 0, numParts - 1 do
-                local ok_part, part = pcall(function() return bodyDamage:getBodyPart(i) end)
+                -- B42 requires BodyPartType enum, not a raw integer index
+                local partType = i
+                if BodyPartType and BodyPartType.FromIndex then
+                    local okIdx, converted = pcall(BodyPartType.FromIndex, i)
+                    if okIdx and converted then partType = converted end
+                end
+                local ok_part, part = pcall(function() return bodyDamage:getBodyPart(partType) end)
                 if ok_part and part then
                     if part.SetBitten then part:SetBitten(false) end
                     if part.SetBleeding then part:SetBleeding(false) end
