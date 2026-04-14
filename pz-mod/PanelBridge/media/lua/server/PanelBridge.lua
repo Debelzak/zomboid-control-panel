@@ -5576,6 +5576,13 @@ handlers.removeVehiclesInArea = function(args)
     if maxX < minX then minX, maxX = maxX, minX end
     if maxY < minY then minY, maxY = maxY, minY end
 
+    -- Cap area to 2000x2000 tiles to prevent performance DoS
+    local areaW = maxX - minX
+    local areaH = maxY - minY
+    if areaW > 2000 or areaH > 2000 then
+        return false, nil, "Area too large (max 2000x2000 tiles). Use smaller selections."
+    end
+
     local vehicles = getVehiclesList()
     if not vehicles then return false, nil, "Vehicle list not available" end
 
