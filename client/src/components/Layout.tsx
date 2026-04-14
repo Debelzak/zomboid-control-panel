@@ -776,35 +776,36 @@ export default function Layout({ children }: LayoutProps) {
         </nav>
 
         {/* Footer */}
-        <div className={cn("border-t", sidebarCollapsed ? "p-2 space-y-2" : "p-4 space-y-4")}>
+        <div className={cn("border-t", sidebarCollapsed ? "p-2 space-y-2" : "px-4 py-2 space-y-1.5")}>
           {!sidebarCollapsed && (
             <>
-              <ConnectionStatus showLabel className="justify-center" />
-              <AuthFooter />
-              <div className="text-center">
-                <p className="shell-brand-subtitle text-xs text-muted-foreground">
+              <div className="flex items-center justify-between gap-2">
+                <ConnectionStatus showLabel className="flex-1 min-w-0" />
+                <AuthFooter />
+              </div>
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span className="shell-brand-subtitle text-[11px] text-muted-foreground/60 truncate">
                   // Zomboid Control Panel
-                </p>
-                <p className="mt-1 flex items-center justify-center gap-2 text-xs text-muted-foreground">
-                  {panelVersion && <span>v{panelVersion}</span>}
+                  {panelVersion && <span className="ml-1.5 text-muted-foreground">v{panelVersion}</span>}
+                </span>
+                <span className="flex items-center gap-2 shrink-0">
                   <a
                     href="https://github.com/fpsacha/zomboid-control-panel"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-muted-foreground/60 hover:text-foreground transition-colors"
+                    className="text-muted-foreground/50 hover:text-foreground transition-colors"
                     aria-label="GitHub repository (opens in new tab)"
                   >
                     <Github className="w-3.5 h-3.5" />
                   </a>
-                </p>
-                <button
-                  onClick={() => setHelpOpen(true)}
-                  className="mt-1.5 inline-flex items-center gap-1.5 text-[11px] text-muted-foreground/50 hover:text-muted-foreground transition-colors"
-                  aria-label="Keyboard shortcuts"
-                >
-                  <kbd className="inline-flex items-center justify-center w-4 h-4 rounded border border-border/40 text-[10px] font-mono leading-none">?</kbd>
-                  <span>Shortcuts</span>
-                </button>
+                  <button
+                    onClick={() => setHelpOpen(true)}
+                    className="inline-flex items-center gap-1 text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+                    aria-label="Keyboard shortcuts"
+                  >
+                    <kbd className="inline-flex items-center justify-center w-4 h-4 rounded border border-border/40 text-[10px] font-mono leading-none">?</kbd>
+                  </button>
+                </span>
               </div>
             </>
           )}
@@ -821,7 +822,7 @@ export default function Layout({ children }: LayoutProps) {
                   variant="ghost"
                   size="sm"
                   onClick={toggleSidebar}
-                  className={cn("h-8 text-muted-foreground hover:text-foreground", sidebarCollapsed ? "w-8 p-0" : "w-full")}
+                  className={cn("h-7 text-muted-foreground/60 hover:text-foreground", sidebarCollapsed ? "w-8 p-0" : "w-full")}
                   aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                 >
                   {sidebarCollapsed ? <PanelLeft className="w-4 h-4" /> : (
