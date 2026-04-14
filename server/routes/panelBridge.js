@@ -25,7 +25,7 @@ const router = express.Router();
 const VALID_ACTIONS = new Set([
   'ping', 'getServerInfo', 'getWeather', 'getGameTime', 'getWorldStats',
   'getPlayerDetails', 'getAllPlayerDetails', 'healPlayer', 'killPlayer',
-  'teleportPlayer', 'setGodMode', 'setInvisible', 'giveItem',
+  'teleportPlayer', 'setGodMode', 'setInvisible', 'setNoclip', 'giveItem',
   'exportPlayerData', 'importPlayerData',
   'triggerBlizzard', 'triggerTropicalStorm', 'triggerStorm', 'stopWeather',
   'startRain', 'stopRain', 'setSnow', 'generateWeather',
@@ -44,6 +44,7 @@ const VALID_ACTIONS = new Set([
   'getFactions', 'createFaction', 'factionAddPlayer', 'factionRemovePlayer', 'factionSetTag', 'removeFaction',
   'getVehiclesDetailed', 'vehicleRepair', 'vehicleSetAlarm', 'vehicleSetSiren', 'vehicleSetTrunkLocked',
   'vehicleSetFuel', 'vehicleSetBattery', 'removeVehicle', 'removeVehiclesInArea',
+  'spawnVehicleAt', 'vehicleHotwire',
   'getTimeSpeed', 'setTimeSpeed', 'triggerHelicopterEvent',
   'triggerSwarmEvent', 'runEventSequence',
   'getInfrastructureSnapshot',
