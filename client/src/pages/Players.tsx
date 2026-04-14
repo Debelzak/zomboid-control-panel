@@ -1203,8 +1203,8 @@ export default function Players() {
                               value={teleportX}
                               onChange={(e) => setTeleportX(e.target.value)}
                               placeholder="10500"
-                              min={-100000}
-                              max={100000}
+                              min={0}
+                              max={16800}
                             />
                           </div>
                           <div>
@@ -1215,8 +1215,8 @@ export default function Players() {
                               value={teleportY}
                               onChange={(e) => setTeleportY(e.target.value)}
                               placeholder="9700"
-                              min={-100000}
-                              max={100000}
+                              min={0}
+                              max={16800}
                             />
                           </div>
                           <div>
@@ -1228,7 +1228,7 @@ export default function Players() {
                               onChange={(e) => setTeleportZ(e.target.value)}
                               placeholder="0"
                               min={0}
-                              max={20}
+                              max={8}
                             />
                           </div>
                         </div>

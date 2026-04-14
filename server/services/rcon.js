@@ -954,21 +954,27 @@ export class RconService extends EventEmitter {
   }
 
   async teleportTo(x, y, z) {
-    // Coordinates are already validated as numbers in routes
-    return this.execute(`teleportto ${x},${y},${z}`);
+    const nx = Number(x), ny = Number(y), nz = Number(z);
+    if (!Number.isFinite(nx) || !Number.isFinite(ny) || !Number.isFinite(nz)) {
+      throw new Error('Coordinates must be valid numbers');
+    }
+    return this.execute(`teleportto ${nx},${ny},${nz}`);
   }
 
   // Items and XP
   async addItem(username, item, count = 1) {
     const safeItem = this.sanitize(item);
+    const n = Math.min(Math.max(Math.floor(Number(count)) || 1, 1), 10000);
     if (username) {
-      return this.execute(`additem "${this.sanitize(username)}" "${safeItem}" ${count}`);
+      return this.execute(`additem "${this.sanitize(username)}" "${safeItem}" ${n}`);
     }
-    return this.execute(`additem "${safeItem}" ${count}`);
+    return this.execute(`additem "${safeItem}" ${n}`);
   }
 
   async addXp(username, perk, amount) {
-    return this.execute(`addxp "${this.sanitize(username)}" ${this.sanitize(perk)}=${amount}`);
+    const n = Number(amount);
+    if (!Number.isFinite(n)) throw new Error('amount must be a number');
+    return this.execute(`addxp "${this.sanitize(username)}" "${this.sanitize(perk)}"=${n}`);
   }
 
   async addVehicle(vehicle, username = null) {
@@ -981,8 +987,10 @@ export class RconService extends EventEmitter {
 
   // Weather
   async startRain(intensity = null) {
-    if (intensity) {
-      return this.execute(`startrain ${intensity}`);
+    if (intensity !== null && intensity !== undefined) {
+      const n = Number(intensity);
+      if (!Number.isFinite(n) || n < 0 || n > 1) throw new Error('intensity must be 0-1');
+      return this.execute(`startrain ${n}`);
     }
     return this.execute('startrain');
   }
@@ -992,8 +1000,10 @@ export class RconService extends EventEmitter {
   }
 
   async startStorm(duration = null) {
-    if (duration) {
-      return this.execute(`startstorm ${duration}`);
+    if (duration !== null && duration !== undefined) {
+      const n = Number(duration);
+      if (!Number.isFinite(n) || n < 0 || n > 168) throw new Error('duration must be 0-168');
+      return this.execute(`startstorm ${n}`);
     }
     return this.execute('startstorm');
   }

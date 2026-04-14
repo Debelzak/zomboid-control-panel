@@ -841,6 +841,9 @@ router.post('/weather/storm', async (req, res) => {
     return res.status(400).json({ error: 'Bridge not running. Start it first.' });
   }
   const { duration } = req.body;
+  if (duration !== undefined && (typeof duration !== 'number' || !Number.isFinite(duration) || duration < 0 || duration > 168)) {
+    return res.status(400).json({ error: 'duration must be a number 0-168 (hours)' });
+  }
   try {
     const result = await bridge.triggerStorm(duration);
     res.json(result);
@@ -867,6 +870,12 @@ router.post('/weather/generate', async (req, res) => {
     return res.status(400).json({ error: 'Bridge not running. Start it first.' });
   }
   const { strength, frontType } = req.body;
+  if (strength !== undefined && (typeof strength !== 'number' || !Number.isFinite(strength) || strength < 0 || strength > 1)) {
+    return res.status(400).json({ error: 'strength must be a number 0-1' });
+  }
+  if (frontType !== undefined && (typeof frontType !== 'number' || !Number.isInteger(frontType) || frontType < 0 || frontType > 5)) {
+    return res.status(400).json({ error: 'frontType must be an integer 0-5' });
+  }
   try {
     const result = await bridge.generateWeather(strength ?? 0.5, frontType ?? 0);
     res.json(result);
@@ -880,6 +889,9 @@ router.post('/weather/snow', async (req, res) => {
     return res.status(400).json({ error: 'Bridge not running. Start it first.' });
   }
   const { enabled, intensity } = req.body;
+  if (intensity !== undefined && intensity !== null && (typeof intensity !== 'number' || !Number.isFinite(intensity) || intensity < 0 || intensity > 1)) {
+    return res.status(400).json({ error: 'intensity must be a number 0-1' });
+  }
   try {
     const result = await bridge.setSnow(enabled !== false, intensity ?? null);
     res.json(result);
@@ -898,6 +910,9 @@ router.post('/weather/rain/start', async (req, res) => {
     return res.status(400).json({ error: 'Bridge not running. Start it first.' });
   }
   const { intensity } = req.body;
+  if (intensity !== undefined && (typeof intensity !== 'number' || !Number.isFinite(intensity) || intensity < 0 || intensity > 1)) {
+    return res.status(400).json({ error: 'intensity must be a number 0-1' });
+  }
   try {
     const result = await bridge.startRain(intensity ?? 0.5);
     res.json(result);
@@ -924,6 +939,12 @@ router.post('/weather/lightning', async (req, res) => {
     return res.status(400).json({ error: 'Bridge not running. Start it first.' });
   }
   const { x, y, strike, light, rumble } = req.body;
+  if (x !== undefined && (typeof x !== 'number' || !Number.isFinite(x))) {
+    return res.status(400).json({ error: 'x must be a number' });
+  }
+  if (y !== undefined && (typeof y !== 'number' || !Number.isFinite(y))) {
+    return res.status(400).json({ error: 'y must be a number' });
+  }
   try {
     const result = await bridge.triggerLightning(x, y, strike, light, rumble);
     res.json(result);
@@ -953,6 +974,12 @@ router.post('/climate/float', async (req, res) => {
   if (floatId === undefined || value === undefined) {
     return res.status(400).json({ error: 'floatId and value are required' });
   }
+  if (typeof floatId !== 'number' || !Number.isInteger(floatId) || floatId < 0 || floatId > 12) {
+    return res.status(400).json({ error: 'floatId must be an integer 0-12' });
+  }
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return res.status(400).json({ error: 'value must be a number' });
+  }
   try {
     const result = await bridge.setClimateFloat(floatId, value, enable !== false);
     res.json(result);
@@ -979,6 +1006,9 @@ router.post('/climate/temperature', async (req, res) => {
     return res.status(400).json({ error: 'Bridge not running. Start it first.' });
   }
   const { value } = req.body;
+  if (value !== undefined && (typeof value !== 'number' || !Number.isFinite(value) || value < -50 || value > 50)) {
+    return res.status(400).json({ error: 'value must be a number -50 to 50' });
+  }
   try {
     const result = await bridge.setTemperature(value ?? 22);
     res.json(result);
@@ -992,6 +1022,9 @@ router.post('/climate/wind', async (req, res) => {
     return res.status(400).json({ error: 'Bridge not running. Start it first.' });
   }
   const { value } = req.body;
+  if (value !== undefined && (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1)) {
+    return res.status(400).json({ error: 'value must be a number 0-1' });
+  }
   try {
     const result = await bridge.setWind(value ?? 0.5);
     res.json(result);
@@ -1005,6 +1038,9 @@ router.post('/climate/fog', async (req, res) => {
     return res.status(400).json({ error: 'Bridge not running. Start it first.' });
   }
   const { value } = req.body;
+  if (value !== undefined && (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1)) {
+    return res.status(400).json({ error: 'value must be a number 0-1' });
+  }
   try {
     const result = await bridge.setFog(value ?? 0);
     res.json(result);
@@ -1018,6 +1054,9 @@ router.post('/climate/clouds', async (req, res) => {
     return res.status(400).json({ error: 'Bridge not running. Start it first.' });
   }
   const { value } = req.body;
+  if (value !== undefined && (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1)) {
+    return res.status(400).json({ error: 'value must be a number 0-1' });
+  }
   try {
     const result = await bridge.setClouds(value ?? 0);
     res.json(result);
@@ -1044,6 +1083,18 @@ router.post('/time', async (req, res) => {
     return res.status(400).json({ error: 'Bridge not running. Start it first.' });
   }
   const { hour, day, month, year } = req.body;
+  if (hour !== undefined && (typeof hour !== 'number' || !Number.isInteger(hour) || hour < 0 || hour > 23)) {
+    return res.status(400).json({ error: 'hour must be an integer 0-23' });
+  }
+  if (day !== undefined && (typeof day !== 'number' || !Number.isInteger(day) || day < 1 || day > 31)) {
+    return res.status(400).json({ error: 'day must be an integer 1-31' });
+  }
+  if (month !== undefined && (typeof month !== 'number' || !Number.isInteger(month) || month < 1 || month > 12)) {
+    return res.status(400).json({ error: 'month must be an integer 1-12' });
+  }
+  if (year !== undefined && (typeof year !== 'number' || !Number.isInteger(year) || year < 1 || year > 9999)) {
+    return res.status(400).json({ error: 'year must be an integer 1-9999' });
+  }
   try {
     const result = await bridge.setGameTime({ hour, day, month, year });
     res.json(result);
@@ -1119,6 +1170,12 @@ router.post('/players/:username/teleport', async (req, res) => {
   }
   if (typeof x !== 'number' || typeof y !== 'number' || (z !== undefined && typeof z !== 'number')) {
     return res.status(400).json({ error: 'Coordinates must be numbers' });
+  }
+  if (x < 0 || x > 16800 || y < 0 || y > 16800) {
+    return res.status(400).json({ error: 'x/y coordinates out of range (0-16800)' });
+  }
+  if (z !== undefined && (z < 0 || z > 8)) {
+    return res.status(400).json({ error: 'z coordinate out of range (0-8)' });
   }
   try {
     const result = await bridge.teleportPlayer(req.params.username, x, y, z);
