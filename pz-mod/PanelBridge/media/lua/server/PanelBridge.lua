@@ -6240,15 +6240,33 @@ handlers.getVehicleCatalog = function(args)
             if nameOk and fullName then
                 entry.id = fullName
 
-                local dispOk, disp = pcall(function() return script:getDisplayName() end)
-                entry.name = (dispOk and disp) or fullName
+                -- Avoid getDisplayName() — throws RuntimeException in B42 Kahlua
+                -- Use getName() which works, or strip module prefix from fullName
+                local displayName = nil
+                local shortOk, shortName = pcall(function() return script:getName() end)
+                if shortOk and shortName and shortName ~= "" then
+                    displayName = shortName
+                else
+                    displayName = fullName:match("%.(.+)$") or fullName
+                end
+                entry.name = displayName
 
                 -- Grab mechanics info if available
                 local massOk, mass = pcall(function() return script:getMass() end)
                 if massOk and mass then entry.mass = mass end
 
-                local seatOk, seats = pcall(function() return script:getSeatNumber() end)
-                if seatOk and seats then entry.seats = seats end
+                -- Avoid getSeatNumber() — throws RuntimeException in B42 Kahlua
+                -- Try getPassengerCount/getMaxPassengers as safe alternatives
+                local seats = nil
+                if script.getPassengerCount then
+                    local pcOk, pc = pcall(script.getPassengerCount, script)
+                    if pcOk and pc then seats = pc end
+                end
+                if not seats and script.getMaxPassengers then
+                    local mpOk, mp = pcall(script.getMaxPassengers, script)
+                    if mpOk and mp then seats = mp end
+                end
+                if seats then entry.seats = seats end
 
                 table.insert(catalog, entry)
             end
