@@ -4222,6 +4222,12 @@ handlers.healPlayer = function(args)
     local bodyDamage = player:getBodyDamage()
     if bodyDamage then
         local ok1, err1 = pcall(function()
+            -- RestoreToFullHealth — the most comprehensive single call (B42)
+            -- Call this FIRST as it handles most healing in one shot
+            if bodyDamage.RestoreToFullHealth then
+                bodyDamage:RestoreToFullHealth()
+                healed.bodyDamage = true
+            end
             -- Clear Knox virus (zombie) infection at body level
             if bodyDamage.setInfected then
                 bodyDamage:setInfected(false)
@@ -4233,10 +4239,19 @@ handlers.healPlayer = function(args)
             if bodyDamage.setFakeInfected then
                 bodyDamage:setFakeInfected(false)
             end
-            -- Restore individual body parts
-            for i = 0, bodyDamage:getNumOfBodyParts() - 1 do
-                local part = bodyDamage:getBodyPart(i)
-                if part then
+            -- Restore individual body parts (guard getNumOfBodyParts — removed in some B42 builds)
+            local numParts = 0
+            if bodyDamage.getNumOfBodyParts then
+                numParts = bodyDamage:getNumOfBodyParts()
+            elseif BodyPartType and BodyPartType.getNumOfBodyParts then
+                numParts = BodyPartType:getNumOfBodyParts()
+            elseif BodyPartType and BodyPartType.ToIndex then
+                -- B42 fallback: iterate known part count (PZ has ~18 body parts)
+                numParts = 18
+            end
+            for i = 0, numParts - 1 do
+                local ok_part, part = pcall(function() return bodyDamage:getBodyPart(i) end)
+                if ok_part and part then
                     if part.SetBitten then part:SetBitten(false) end
                     if part.SetBleeding then part:SetBleeding(false) end
                     if part.SetScratched then part:SetScratched(false, false) end
@@ -4254,10 +4269,6 @@ handlers.healPlayer = function(args)
                     if part.SetStiffness then part:SetStiffness(0) end
                     if part.SetWoundInfectionLevel then part:SetWoundInfectionLevel(0) end
                 end
-            end
-            -- RestoreToFullHealth — the most comprehensive single call
-            if bodyDamage.RestoreToFullHealth then
-                bodyDamage:RestoreToFullHealth()
             end
             healed.bodyDamage = true
         end)
@@ -4307,12 +4318,6 @@ handlers.healPlayer = function(args)
             sendPlayerExtraInfo(player)
             synced = true
             healed.syncMethod = "sendPlayerExtraInfo"
-        end
-        -- Also try sendObjectChange for network replication
-        if player.sendObjectChange then
-            player:sendObjectChange("bodyDamage")
-            synced = true
-            healed.syncMethod = (healed.syncMethod or "") .. "+sendObjectChange"
         end
         -- B42: PacketTypes for fine-grained sync
         if syncPlayerFields then
@@ -4530,7 +4535,10 @@ handlers.giveItem = function(args)
     
     -- Network sync so client sees the new items
     pcall(function()
-        if player.sendPlayerExtraInfo then player:sendPlayerExtraInfo() end
+        -- Use global sendPlayerExtraInfo (not player method) for B42 compatibility
+        if sendPlayerExtraInfo then
+            sendPlayerExtraInfo(player)
+        end
     end)
     
     PanelBridge.info("Gave items", { username = username, itemType = itemType, count = added })
