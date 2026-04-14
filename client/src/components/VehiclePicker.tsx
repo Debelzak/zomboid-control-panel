@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
-import { Search, RefreshCw, Loader2, X, ChevronDown, AlertCircle, SearchX, Car, Users } from 'lucide-react'
+import { Search, RefreshCw, Loader2, X, ChevronDown, AlertCircle, SearchX, Car, Users, Truck, Bus, Shield, Zap, Mountain, Package, type LucideIcon } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -20,22 +20,57 @@ interface VehiclePickerProps {
   placeholder?: string
 }
 
-// Classify vehicles into types by name/id patterns
+// Classify vehicles into types by name/id patterns, mass, and seat count
 function getVehicleType(v: CatalogVehicle): string {
-  const n = (v.name || v.id).toLowerCase()
-  if (n.includes('trailer') || n.includes('cart')) return 'Trailers'
-  if (n.includes('van') || n.includes('bus') || n.includes('ambulance')) return 'Vans & Buses'
-  if (n.includes('truck') || n.includes('pickup') || n.includes('semi') || n.includes('tow')) return 'Trucks'
-  if (n.includes('sport') || n.includes('muscle') || n.includes('race') || n.includes('fast')) return 'Performance'
-  if (n.includes('suv') || n.includes('offroad') || n.includes('4x4') || n.includes('jeep')) return 'SUVs & Off-road'
-  if (n.includes('police') || n.includes('fire') || n.includes('military') || n.includes('army')) return 'Emergency & Military'
-  if (n.includes('taxi') || n.includes('cab')) return 'Sedans'
+  const raw = `${v.name || ''} ${v.id}`.toLowerCase()
+  const id = v.id.toLowerCase().replace(/^base\./, '')
+
+  // Trailers: typically 0 seats, or explicit trailer/cart names
+  if (/trailer|\bcart\b/.test(raw)) return 'Trailers'
+  if (v.seats === 0 && v.mass > 0) return 'Trailers'
+
+  // Emergency & Military — check BEFORE generic types to catch police/military variants
+  // PZ B42 military CUCV series: M1008, M1009, M1010, M1028 etc.
+  if (/police|\bcop\b|sheriff|firetruck|fire.?engine|military|army|m10[0-9]{2}|humvee|hmm?wv|cucv|armou?red|swat|ambulance|\bems\b/.test(raw))
+    return 'Emergency & Military'
+  // Police/military suffixes on vehicle IDs: pd (police dept), ksp (KY state police), mp (military police)
+  if (/(?:pd|ksp|mp|trooper|patrol)$/i.test(id)) return 'Emergency & Military'
+  if (/lightsbar|lightbar|siren/.test(raw)) return 'Emergency & Military'
+
+  // Vans & Buses
+  if (/\bvan\b|\bbus\b|minivan|stepvan|minibus|schoolbus/.test(raw)) return 'Vans & Buses'
+
+  // Trucks & Pickups
+  if (/truck|pickup|pick.?up|\bsemi\b|\btow\b|flatnose|\bdump\b|plow|hauler|flat.?bed/.test(raw)) return 'Trucks'
+
+  // Performance / Sports
+  if (/sport|muscle|\brace\b|\bfast\b|corvette|camaro|mustang|\bgto\b|charger|firebird|trans.?am/.test(raw)) return 'Performance'
+
+  // SUVs & Off-road (blazer, K5 are Chevy SUVs)
+  if (/\bsuv\b|offroad|off.?road|4x4|\bjeep\b|blazer|\bk5|wrangler|bronco|scout/.test(raw)) return 'SUVs & Off-road'
+
+  // Mass/seats-based fallback for uncategorized vehicles
+  if (v.mass > 5000) return 'Trucks'
+  if (v.seats >= 7) return 'Vans & Buses'
+
   return 'Sedans'
+}
+
+/** Strip Base. prefix and return a cleaner display name */
+function formatVehicleName(v: CatalogVehicle): string {
+  // If the game provided a real display name, use it
+  if (v.name && v.name !== v.id && !v.name.startsWith('Base.')) return v.name
+  return (v.name || v.id).replace(/^Base\./, '')
 }
 
 const TYPE_ORDER: Record<string, number> = {
   'Sedans': 0, 'Performance': 1, 'SUVs & Off-road': 2,
   'Trucks': 3, 'Vans & Buses': 4, 'Emergency & Military': 5, 'Trailers': 6,
+}
+
+const TYPE_ICON: Record<string, LucideIcon> = {
+  'Sedans': Car, 'Performance': Zap, 'SUVs & Off-road': Mountain,
+  'Trucks': Truck, 'Vans & Buses': Bus, 'Emergency & Military': Shield, 'Trailers': Package,
 }
 
 const MAX_VISIBLE = 100
@@ -352,13 +387,16 @@ export function VehiclePicker({ value, onChange, disabled, placeholder = 'Search
                 {groupedVehicles.map(([type, vehs]) => (
                   <div key={type}>
                     {/* Group header — only show when not searching */}
-                    {!search && groupedVehicles.length > 1 && (
-                      <div className="sticky top-0 z-10 flex items-center gap-2 px-3 h-7 bg-muted/50 backdrop-blur-sm text-[11px] text-muted-foreground font-medium border-b border-border/20">
-                        <Car className="w-3 h-3 opacity-50" />
-                        {type}
-                        <span className="opacity-40 tabular-nums">({vehs.length})</span>
-                      </div>
-                    )}
+                    {!search && groupedVehicles.length > 1 && (() => {
+                      const Icon = TYPE_ICON[type] || Car
+                      return (
+                        <div className="sticky top-0 z-10 flex items-center gap-2 px-3 h-7 bg-muted/50 backdrop-blur-sm text-[11px] text-muted-foreground font-medium border-b border-border/20">
+                          <Icon className="w-3 h-3 opacity-50" />
+                          {type}
+                          <span className="opacity-40 tabular-nums">({vehs.length})</span>
+                        </div>
+                      )
+                    })()}
                     {vehs.map((veh) => {
                       const globalIdx = visibleVehicles.indexOf(veh)
                       return (
@@ -377,7 +415,7 @@ export function VehiclePicker({ value, onChange, disabled, placeholder = 'Search
                             globalIdx === highlightIndex && 'bg-accent/15 outline-none'
                           )}
                         >
-                          <span className="flex-1 min-w-0 truncate font-medium">{veh.name || veh.id.replace('Base.', '')}</span>
+                          <span className="flex-1 min-w-0 truncate font-medium">{formatVehicleName(veh)}</span>
                           {veh.seats > 0 && (
                             <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground/60 shrink-0 tabular-nums" title={`${veh.seats} seats`}>
                               <Users className="w-2.5 h-2.5" />
@@ -389,7 +427,7 @@ export function VehiclePicker({ value, onChange, disabled, placeholder = 'Search
                               {(veh.mass / 1000).toFixed(1)}t
                             </span>
                           )}
-                          <span className="text-[10px] text-muted-foreground/40 shrink-0 max-w-[30%] truncate font-mono">{veh.id}</span>
+                          <span className="text-[10px] text-muted-foreground/40 shrink-0 max-w-[30%] truncate font-mono">{veh.id.replace('Base.', '')}</span>
                         </button>
                       )
                     })}
