@@ -322,24 +322,10 @@ router.post('/add-item', async (req, res) => {
     }
     
     let result;
-    // Prefer PanelBridge (direct Lua inventory access) — much more reliable than RCON additem in B42
-    if (bridge.isRunning && bridge.isModConnected()) {
-      try {
-        result = await bridge.sendCommand('giveItem', {
-          username,
-          itemType: item,
-          count: itemCount
-        });
-        log.info(`POST /add-item: ${item} x${itemCount} to ${username} via PanelBridge`);
-      } catch (bridgeErr) {
-        log.warn(`PanelBridge giveItem failed, falling back to RCON: ${bridgeErr.message}`);
-        result = await rconService.addItem(username, item, itemCount);
-        log.info(`POST /add-item: ${item} x${itemCount} to ${username} via RCON (fallback)`);
-      }
-    } else {
-      result = await rconService.addItem(username, item, itemCount);
-      log.info(`POST /add-item: ${item} x${itemCount} to ${username} via RCON`);
-    }
+    // Use RCON for additem — PZ handles inventory sync to client correctly via RCON
+    // PanelBridge's inventory:AddItem() works server-side but client doesn't see items until relog
+    result = await rconService.addItem(username, item, itemCount);
+    log.info(`POST /add-item: ${item} x${itemCount} to ${username} via RCON`);
     if (username) {
       await logPlayerAction(username, 'add_item', `${item} x${itemCount}`);
     }

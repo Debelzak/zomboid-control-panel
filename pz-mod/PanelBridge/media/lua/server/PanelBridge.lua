@@ -4532,7 +4532,11 @@ handlers.giveItem = function(args)
     
     -- Network sync so client sees the new items
     pcall(function()
-        -- Use global sendPlayerExtraInfo (not player method) for B42 compatibility
+        -- Force inventory sync to client
+        if player.sendObjectChange then
+            player:sendObjectChange("inventory")
+        end
+        -- Also send player state update
         if sendPlayerExtraInfo then
             sendPlayerExtraInfo(player)
         end
