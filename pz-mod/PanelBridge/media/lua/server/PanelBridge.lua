@@ -2314,16 +2314,44 @@ end
 
 -- Helper to serialize inventory items
 local function serializeInventory(container)
-    if not container then return {} end
+    if not container then return {}, "container is nil" end
     
     local items = {}
-    local itemList = container:getItems()
-    if not itemList then return {} end
     
-    for i = 0, itemList:size() - 1 do
+    -- B42: try getItems() first, then fall back to other methods
+    local itemList = nil
+    local method = "none"
+    
+    if container.getItems then
+        local ok, result = pcall(function() return container:getItems() end)
+        if ok and result then
+            itemList = result
+            method = "getItems"
+        end
+    end
+    
+    -- B42 fallback: some containers use getAllItems() or Items
+    if not itemList and container.getAllItems then
+        local ok, result = pcall(function() return container:getAllItems() end)
+        if ok and result then
+            itemList = result
+            method = "getAllItems"
+        end
+    end
+    
+    if not itemList then return {}, "no items method (tried: getItems, getAllItems)" end
+    
+    local listSize = 0
+    if itemList.size then
+        local ok, sz = pcall(function() return itemList:size() end)
+        if ok then listSize = sz end
+    end
+    
+    if listSize == 0 then return {}, method .. " returned size 0" end
+    
+    for i = 0, listSize - 1 do
         local item = itemList:get(i)
         if item then
-            -- Use pcall to safely get item properties (B42 API may differ)
             local ok, itemData = pcall(function()
                 local data = {
                     fullType = item:getFullType(),
@@ -2334,17 +2362,15 @@ local function serializeInventory(container)
                     isEquipped = item.isEquipped and item:isEquipped() or false
                 }
                 
-                -- Safely get condition
                 if item.getCondition then
                     data.condition = item:getCondition()
                 end
                 
-                -- Safely get uses
                 if item.getCurrentUses then
                     data.uses = item:getCurrentUses()
                 end
                 
-                -- Handle containers (bags, etc.) - check method exists
+                -- Handle containers (bags, etc.)
                 if item.IsInventoryContainer and item:IsInventoryContainer() then
                     local subContainer = item:getItemContainer()
                     if subContainer then
@@ -2352,7 +2378,6 @@ local function serializeInventory(container)
                     end
                 end
                 
-                -- Handle drainable items (flashlights, etc.)
                 if item.getDelta then
                     data.delta = item:getDelta()
                 end
@@ -2405,47 +2430,64 @@ end
 -- Helper to get player traits
 local function getPlayerTraits(player)
     local traits = {}
+    local traitList = nil
+    local method = "none"
     
     -- B42: Traits are accessed through SurvivorDesc
-    -- B41: Traits were accessed directly via player:getTraits()
-    local traitList = nil
+    local desc = nil
+    if player.getDescriptor then
+        local ok, d = pcall(function() return player:getDescriptor() end)
+        if ok and d then desc = d end
+    end
     
-    -- Try B42 method first (via SurvivorDesc)
-    local desc = player:getDescriptor()
     if desc then
-        -- B42 uses getTraitList() or getTraits() on SurvivorDesc
-        if desc.getTraitList then
-            traitList = desc:getTraitList()
-        elseif desc.getTraits then
-            traitList = desc:getTraits()
+        -- B42 primary: getTraitList()
+        if not traitList and desc.getTraitList then
+            local ok, result = pcall(function() return desc:getTraitList() end)
+            if ok and result then traitList = result; method = "desc:getTraitList" end
+        end
+        -- B42 alt: getTraits()
+        if not traitList and desc.getTraits then
+            local ok, result = pcall(function() return desc:getTraits() end)
+            if ok and result then traitList = result; method = "desc:getTraits" end
         end
     end
     
-    -- Fallback to B41 method if available
+    -- B41 fallback: player:getTraits()
     if not traitList and player.getTraits then
-        traitList = player:getTraits()
+        local ok, result = pcall(function() return player:getTraits() end)
+        if ok and result then traitList = result; method = "player:getTraits" end
     end
     
-    if traitList then
-        -- Handle both ArrayList and other iterable types
-        if traitList.size then
-            for i = 0, traitList:size() - 1 do
-                local trait = traitList:get(i)
-                -- In B42, traits might be objects; get the type/name
-                if type(trait) == "string" then
-                    table.insert(traits, trait)
-                elseif trait and trait.getType then
-                    table.insert(traits, trait:getType())
-                elseif trait and trait.toString then
-                    table.insert(traits, trait:toString())
-                else
-                    table.insert(traits, tostring(trait))
-                end
+    if not traitList then return {}, "no trait method worked (tried: desc:getTraitList, desc:getTraits, player:getTraits)" end
+    
+    -- Get size safely
+    local listSize = 0
+    if traitList.size then
+        local ok, sz = pcall(function() return traitList:size() end)
+        if ok then listSize = sz end
+    end
+    
+    if listSize == 0 then return {}, method .. " returned size 0" end
+    
+    for i = 0, listSize - 1 do
+        local ok, trait = pcall(function() return traitList:get(i) end)
+        if ok and trait then
+            if type(trait) == "string" then
+                table.insert(traits, trait)
+            elseif trait.getType then
+                local ok2, t = pcall(function() return trait:getType() end)
+                if ok2 then table.insert(traits, t) else table.insert(traits, tostring(trait)) end
+            elseif trait.toString then
+                local ok2, t = pcall(function() return trait:toString() end)
+                if ok2 then table.insert(traits, t) else table.insert(traits, tostring(trait)) end
+            else
+                table.insert(traits, tostring(trait))
             end
         end
     end
     
-    return traits
+    return traits, method .. " found " .. #traits
 end
 
 -- Helper to get known recipes
@@ -2465,22 +2507,42 @@ end
 -- Helper to get worn items
 local function getWornItems(player)
     local worn = {}
-    local wornItems = player:getWornItems()
+    local wornItems = nil
+    local method = "none"
     
-    if wornItems then
-        for i = 0, wornItems:size() - 1 do
+    if player.getWornItems then
+        local ok, result = pcall(function() return player:getWornItems() end)
+        if ok and result then wornItems = result; method = "getWornItems" end
+    end
+    
+    if not wornItems then return {}, "getWornItems returned nil or failed" end
+    
+    local listSize = 0
+    if wornItems.size then
+        local ok, sz = pcall(function() return wornItems:size() end)
+        if ok then listSize = sz end
+    end
+    
+    if listSize == 0 then return {}, method .. " returned size 0" end
+    
+    for i = 0, listSize - 1 do
+        local ok, wornData = pcall(function()
             local item = wornItems:get(i)
             if item and item:getItem() then
-                table.insert(worn, {
+                return {
                     location = item:getLocation(),
                     fullType = item:getItem():getFullType(),
                     condition = item:getItem():getCondition()
-                })
+                }
             end
+            return nil
+        end)
+        if ok and wornData then
+            table.insert(worn, wornData)
         end
     end
     
-    return worn
+    return worn, method .. " found " .. #worn
 end
 
 -- Comprehensive player export for backup/restore
@@ -2495,8 +2557,66 @@ handlers.exportPlayerData = function(args)
         return false, nil, "Player not found: " .. username
     end
     
+    -- Collect diagnostics
+    local diag = {}
+    
+    -- Traits
+    local traits, traitDiag = getPlayerTraits(player)
+    diag.traits = traitDiag or "ok"
+    
+    -- Worn items
+    local wornItems, wornDiag = getWornItems(player)
+    diag.wornItems = wornDiag or "ok"
+    
+    -- Main inventory
+    local mainInv = nil
+    local invDiag = "not attempted"
+    if player.getInventory then
+        local ok, container = pcall(function() return player:getInventory() end)
+        if ok and container then
+            mainInv, invDiag = serializeInventory(container)
+        else
+            invDiag = "getInventory() failed or returned nil"
+        end
+    else
+        invDiag = "player has no getInventory method"
+    end
+    diag.inventory = invDiag
+    
+    -- Also try to get items from worn containers (backpacks, bags on body)
+    local bagItems = {}
+    local bagCount = 0
+    if wornItems then
+        for _, worn in ipairs(type(wornItems) == "table" and wornItems or {}) do
+            if worn.fullType then
+                -- Try to get this worn item's container
+                local ok, wornObj = pcall(function()
+                    local wi = player:getWornItems()
+                    if wi then
+                        for j = 0, wi:size() - 1 do
+                            local w = wi:get(j)
+                            if w and w:getItem() and w:getItem():getFullType() == worn.fullType then
+                                if w:getItem().getItemContainer then
+                                    local subContainer = w:getItem():getItemContainer()
+                                    if subContainer then
+                                        local subItems = serializeInventory(subContainer)
+                                        if #subItems > 0 then
+                                            bagItems[worn.location or worn.fullType] = subItems
+                                            bagCount = bagCount + #subItems
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end)
+            end
+        end
+    end
+    diag.bagItems = bagCount .. " items in " .. (function() local c = 0; for _ in pairs(bagItems) do c = c + 1 end; return c end)() .. " bags"
+    
     local exportData = {
-        version = "1.2",
+        version = "1.3",
         exportTime = getTimestampMs(),
         serverName = getServerName(),
         
@@ -2507,22 +2627,28 @@ handlers.exportPlayerData = function(args)
         -- Skills/Perks with XP (this is what we need for restore)
         perks = getPlayerPerks(player),
         
-        -- Traits (reference - requires manual restore)
-        traits = getPlayerTraits(player),
+        -- Traits
+        traits = traits,
         
         -- Known recipes
         recipes = getKnownRecipes(player),
         
-        -- Worn items (reference - what the player is wearing)
-        wornItems = getWornItems(player),
+        -- Worn items
+        wornItems = wornItems,
         
-        -- Kill stats (for reference, can't easily restore)
+        -- Kill stats
         kills = {
             zombies = player:getZombieKills()
         },
         
         -- Main inventory
-        inventory = serializeInventory(player:getInventory())
+        inventory = mainInv or {},
+        
+        -- Items in worn bags/containers
+        bagInventory = bagItems,
+        
+        -- Diagnostics for debugging
+        _diagnostics = diag
     }
     
     return true, exportData
@@ -5912,6 +6038,7 @@ handlers.getItemCatalog = function(args)
     end
 
     local catalog = {}
+    local errors = 0
     local count = allItems:size()
     for i = 0, count - 1 do
         local script = allItems:get(i)
@@ -5928,43 +6055,22 @@ handlers.getItemCatalog = function(args)
                 local nameOk, displayName = pcall(function() return script:getDisplayName() end)
                 entry.name = (nameOk and displayName) or fullType
 
-                -- Category / type tag for grouping
+                -- Category: use getDisplayCategory first (least crash-prone)
+                -- Then extract module from fullType as fallback
+                -- Avoid getTypeString/getType — they throw Java RuntimeExceptions
+                -- on many items, spamming server logs even though pcall catches them
                 local cat = nil
 
-                -- Method 1: getTypeString()
-                local tsOk, tsVal = pcall(function() return script:getTypeString() end)
-                if tsOk and tsVal and tostring(tsVal) ~= "" then
-                    cat = tostring(tsVal)
+                -- Method 1: getDisplayCategory() — human-readable, works on most items
+                local dcOk, dcVal = pcall(function() return script:getDisplayCategory() end)
+                if dcOk and dcVal and tostring(dcVal) ~= "" then
+                    cat = tostring(dcVal)
                 end
 
-                -- Method 2: getType() — returns Java enum, try tostring first
-                if not cat then
-                    local tOk, tVal = pcall(function() return script:getType() end)
-                    if tOk and tVal then
-                        local s = tostring(tVal)
-                        if s and s ~= "" and s ~= "userdata" then
-                            -- Clean up Java enum string (e.g. "Normal", "Weapon", or "Item$Type: Normal")
-                            local cleaned = s:match(":%s*(.+)$") or s
-                            cleaned = cleaned:match("^%s*(.-)%s*$") -- trim
-                            if cleaned ~= "" then cat = cleaned end
-                        end
-                    end
-                end
-
-                -- Method 3: getCategory() — some B42 scripts have this
-                if not cat then
-                    local cOk, cVal = pcall(function() return script:getCategory() end)
-                    if cOk and cVal and tostring(cVal) ~= "" then
-                        cat = tostring(cVal)
-                    end
-                end
-
-                -- Method 4: Check display category
-                if not cat then
-                    local dcOk, dcVal = pcall(function() return script:getDisplayCategory() end)
-                    if dcOk and dcVal and tostring(dcVal) ~= "" then
-                        cat = tostring(dcVal)
-                    end
+                -- Method 2: Extract module prefix from fullType (e.g. "Base.Hammer" → "Base")
+                if not cat and fullType then
+                    local module = fullType:match("^([^%.]+)%.")
+                    if module then cat = module end
                 end
 
                 entry.category = cat or "Other"
@@ -5974,11 +6080,13 @@ handlers.getItemCatalog = function(args)
                 if wOk and w then entry.weight = w end
 
                 table.insert(catalog, entry)
+            else
+                errors = errors + 1
             end
         end
     end
 
-    PanelBridge.info("Item catalog scanned", { count = #catalog })
+    PanelBridge.info("Item catalog scanned", { count = #catalog, errors = errors })
     return true, { items = catalog, count = #catalog }
 end
 
