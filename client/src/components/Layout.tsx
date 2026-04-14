@@ -23,7 +23,6 @@ import {
   Archive,
   AlertCircle,
   RefreshCw,
-  LogOut,
   Github,
   PanelLeftClose,
   PanelLeft
@@ -209,21 +208,18 @@ function AuthFooter() {
   if (!authEnabled || !user) return null
   
   return (
-    <div className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-      <span className="min-w-0 truncate font-medium" title={user.username}>
+    <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+      <span className="min-w-0 truncate font-medium text-foreground/70" title={user.username}>
         {user.username}
       </span>
-      <Button
+      <button
         type="button"
-        variant="ghost"
-        size="sm"
         onClick={logout}
-        className="h-9 px-2 text-xs"
+        className="shrink-0 text-muted-foreground/50 hover:text-foreground transition-colors text-[11px]"
         title="Sign out"
       >
-        <LogOut className="w-3 h-3" />
-        <span>Sign out</span>
-      </Button>
+        Sign out
+      </button>
     </div>
   )
 }
@@ -776,34 +772,31 @@ export default function Layout({ children }: LayoutProps) {
         </nav>
 
         {/* Footer */}
-        <div className={cn("border-t", sidebarCollapsed ? "p-2 space-y-2" : "px-4 py-2 space-y-1.5")}>
+        <div className={cn("border-t border-border/40", sidebarCollapsed ? "p-2 space-y-2" : "px-4 py-2.5 space-y-1")}>
           {!sidebarCollapsed && (
             <>
-              <div className="flex items-center justify-between gap-2">
-                <ConnectionStatus showLabel className="flex-1 min-w-0" />
-                <AuthFooter />
-              </div>
-              <div className="flex items-center justify-between text-xs text-muted-foreground">
-                <span className="shell-brand-subtitle text-[11px] text-muted-foreground/60 truncate">
-                  // Zomboid Control Panel
-                  {panelVersion && <span className="ml-1.5 text-muted-foreground">v{panelVersion}</span>}
+              <ConnectionStatus showLabel className="mb-1.5" />
+              <AuthFooter />
+              <div className="flex items-center justify-between text-[11px] text-muted-foreground/40">
+                <span className="shell-brand-subtitle truncate">
+                  Zomboid Control Panel{panelVersion && <span className="ml-1">v{panelVersion}</span>}
                 </span>
-                <span className="flex items-center gap-2 shrink-0">
+                <span className="flex items-center gap-1.5 shrink-0">
                   <a
                     href="https://github.com/fpsacha/zomboid-control-panel"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-muted-foreground/50 hover:text-foreground transition-colors"
+                    className="hover:text-muted-foreground transition-colors"
                     aria-label="GitHub repository (opens in new tab)"
                   >
-                    <Github className="w-3.5 h-3.5" />
+                    <Github className="w-3 h-3" />
                   </a>
                   <button
                     onClick={() => setHelpOpen(true)}
-                    className="inline-flex items-center gap-1 text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+                    className="hover:text-muted-foreground transition-colors"
                     aria-label="Keyboard shortcuts"
                   >
-                    <kbd className="inline-flex items-center justify-center w-4 h-4 rounded border border-border/40 text-[10px] font-mono leading-none">?</kbd>
+                    <kbd className="inline-flex items-center justify-center w-3.5 h-3.5 rounded border border-border/30 text-[9px] font-mono leading-none">?</kbd>
                   </button>
                 </span>
               </div>
