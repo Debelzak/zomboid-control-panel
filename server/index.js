@@ -1091,8 +1091,21 @@ async function getPzProcessMemory() {
   });
 }
 
-function startPerfPolling() {
+async function startPerfPolling() {
   if (perfPollingInterval) clearInterval(perfPollingInterval);
+
+  // Clear stale performance data from previous session so charts start fresh
+  try {
+    const { getDb, scheduleWrite } = await import('./database/init.js');
+    const db = await getDb();
+    if (db.data.performance_history && db.data.performance_history.length > 0) {
+      db.data.performance_history = [];
+      scheduleWrite();
+      log.info('Cleared stale performance history from previous session');
+    }
+  } catch (e) {
+    log.debug(`Could not clear perf history: ${e.message}`);
+  }
 
   // Seed CPU info on first call
   getCpuUsage();
