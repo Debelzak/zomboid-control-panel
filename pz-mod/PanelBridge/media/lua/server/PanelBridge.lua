@@ -5342,6 +5342,13 @@ handlers.vehicleProbeAPI = function(args)
         "permanentlyRemove", "removeFromWorld", "removeVehicle",
         "repair", "updatePartStats",
         "getPartCount",
+        -- Engine / hotwire methods
+        "setHotwired", "isHotwired", "setHotwiredBroken", "isHotwiredBroken",
+        "setKeysInIgnition", "isKeysInIgnition",
+        "setEngineRunning", "isEngineRunning",
+        "startEngine", "engineDoStarting",
+        "transmitEngine", "transmitVehicle", "updateFlags",
+        "getBattery", "getEngine",
     }
     for _, name in ipairs(names) do
         methods[name] = vehicle[name] ~= nil
@@ -5446,16 +5453,25 @@ handlers.vehicleHotwire = function(args)
     local vehicle = findVehicleById(args.vehicleId)
     if not vehicle then return false, nil, "Vehicle not found" end
 
+    local actions = {}
+
     local ok, err = pcall(function()
-        -- Set hotwired state
+        -- 1. Hotwire state
         if vehicle.setHotwired then
             vehicle:setHotwired(true)
+            table.insert(actions, "hotwired")
         end
-        -- Also set hotwire success so the engine can be started
         if vehicle.setHotwiredBroken then
             vehicle:setHotwiredBroken(false)
+            table.insert(actions, "hotwireBroken=false")
         end
-        -- Unlock all doors
+        -- B42: put keys in ignition as fallback
+        if vehicle.setKeysInIgnition then
+            vehicle:setKeysInIgnition(true)
+            table.insert(actions, "keysInIgnition")
+        end
+
+        -- 2. Unlock all doors
         local partCount = vehicle.getPartCount and vehicle:getPartCount() or 0
         for i = 0, partCount - 1 do
             local part = vehicle:getPartByIndex(i)
@@ -5466,27 +5482,75 @@ handlers.vehicleHotwire = function(args)
                 end
             end
         end
-        -- Also unlock trunk
         if vehicle.setTrunkLocked then
             vehicle:setTrunkLocked(false)
         end
-        -- Start the engine if possible
-        if vehicle.setEngineRunning then
-            vehicle:setEngineRunning(true)
+        table.insert(actions, "unlocked")
+
+        -- 3. Ensure engine part has enough condition to start
+        local enginePart = vehicle.getPartById and vehicle:getPartById("Engine") or nil
+        if enginePart and enginePart.getCondition then
+            local cond = enginePart:getCondition()
+            if cond < 10 then
+                if enginePart.setCondition then
+                    enginePart:setCondition(20)
+                    table.insert(actions, "engineCondRepaired")
+                end
+            end
         end
-        -- Transmit state to clients
+
+        -- 4. Start engine — try multiple B42/B41 approaches
+        local engineStarted = false
+
+        -- B42: startEngine method
+        if not engineStarted and vehicle.startEngine then
+            vehicle:startEngine()
+            engineStarted = true
+            table.insert(actions, "startEngine")
+        end
+
+        -- B42/B41: setEngineRunning
+        if not engineStarted and vehicle.setEngineRunning then
+            vehicle:setEngineRunning(true)
+            engineStarted = true
+            table.insert(actions, "setEngineRunning")
+        end
+
+        -- B42: engineDoStarting (forces engine into starting sequence)
+        if not engineStarted and vehicle.engineDoStarting then
+            vehicle:engineDoStarting()
+            engineStarted = true
+            table.insert(actions, "engineDoStarting")
+        end
+
+        if not engineStarted then
+            table.insert(actions, "noEngineMethod")
+        end
+
+        -- 5. Transmit state to clients — try all known methods
         if vehicle.transmitEngine then
             vehicle:transmitEngine()
+            table.insert(actions, "transmitEngine")
+        end
+        if vehicle.transmitVehicle then
+            vehicle:transmitVehicle()
+            table.insert(actions, "transmitVehicle")
+        end
+        -- B42: send full update to all clients
+        if vehicle.updateFlags then
+            vehicle:updateFlags()
+            table.insert(actions, "updateFlags")
         end
     end)
 
     if not ok then
-        return false, nil, "Hotwire failed: " .. tostring(err)
+        return false, nil, "Hotwire failed: " .. tostring(err) .. " (completed: " .. table.concat(actions, ", ") .. ")"
     end
 
     return true, {
         message = "Vehicle hotwired and engine started",
-        vehicleId = tonumber(args.vehicleId)
+        vehicleId = tonumber(args.vehicleId),
+        actions = actions
     }
 end
 
