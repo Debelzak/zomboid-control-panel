@@ -2767,7 +2767,7 @@ handlers.importPlayerData = function(args)
             
             -- Network sync
             pcall(function()
-                if player.sendPlayerExtraInfo then player:sendPlayerExtraInfo() end
+                if sendPlayerExtraInfo then sendPlayerExtraInfo(player) end
             end)
         end
     end
@@ -4359,10 +4359,7 @@ handlers.killPlayer = function(args)
     
     -- Network sync so client sees the death
     pcall(function()
-        if player.sendPlayerExtraInfo then player:sendPlayerExtraInfo() end
-    end)
-    pcall(function()
-        if sendObjectChange then sendObjectChange(player, "bodyDamage") end
+        if sendPlayerExtraInfo then sendPlayerExtraInfo(player) end
     end)
     
     PanelBridge.info("Killed player", { username = username })
