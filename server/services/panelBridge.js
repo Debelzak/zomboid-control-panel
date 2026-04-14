@@ -954,7 +954,7 @@ class PanelBridge extends EventEmitter {
         this.emit('modStatus', status);
         
         if (status.alive) {
-          log.debug(`Mod connected (age: ${Math.round(age / 1000)}s)`);
+          log.info(`Mod connected (age: ${Math.round(age / 1000)}s, players: ${status.playerCount})`);
         }
       }
     } catch (e) {
@@ -997,7 +997,9 @@ class PanelBridge extends EventEmitter {
    * Track player connect/disconnect events
    */
   trackPlayerActivity(currentPlayers) {
-    const current = new Set(currentPlayers || []);
+    // Normalize players: Lua encodes empty arrays as {} (object), so handle both arrays and objects
+    const playerList = Array.isArray(currentPlayers) ? currentPlayers : Object.keys(currentPlayers || {});
+    const current = new Set(playerList);
     const previous = this.previousPlayers;
     
     // Find players who joined (in current but not in previous)
