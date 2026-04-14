@@ -2169,6 +2169,15 @@ export default function Players() {
                     onChange={(e) => {
                       const file = e.target.files?.[0]
                       if (file) {
+                        if (file.size > 5 * 1024 * 1024) {
+                          toast({
+                            title: 'File Too Large',
+                            description: 'Character data file must be under 5MB',
+                            variant: 'destructive',
+                          })
+                          e.target.value = ''
+                          return
+                        }
                         const reader = new FileReader()
                         reader.onload = (ev) => {
                           setImportCharacterData(ev.target?.result as string || '')

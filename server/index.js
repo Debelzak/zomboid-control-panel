@@ -431,6 +431,8 @@ app.use('/api/server-files/raw', strictLimiter);
 app.use('/api/server-files/restore', strictLimiter);
 app.use('/api/server-files/save-and-reload', strictLimiter);
 app.use('/api/panel-bridge/install-mod', strictLimiter);
+app.use('/api/panel-bridge/character/export', strictLimiter);
+app.use('/api/panel-bridge/character/import', strictLimiter);
 app.use('/api/panel/update-check', strictLimiter);
 app.use('/api/panel/update-download', strictLimiter);
 app.use('/api/panel/restart', strictLimiter);

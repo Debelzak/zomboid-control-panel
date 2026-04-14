@@ -519,10 +519,14 @@ local function getPlayerByUsername(username)
     local onlinePlayers = getOnlinePlayers()
     if not onlinePlayers then return nil end
     
+    local lowerUser = string.lower(username)
     for i = 0, onlinePlayers:size() - 1 do
         local player = onlinePlayers:get(i)
-        if player and player:getUsername() == username then
-            return player
+        if player then
+            local ok, pname = pcall(function() return player:getUsername() end)
+            if ok and pname and string.lower(pname) == lowerUser then
+                return player
+            end
         end
     end
     
@@ -2313,8 +2317,13 @@ end
 -- ============================================
 
 -- Helper to serialize inventory items
-local function serializeInventory(container)
+local function serializeInventory(container, depth, maxItems, currentCount)
+    depth = depth or 1
+    maxItems = maxItems or 1000
+    currentCount = currentCount or { n = 0 }
+    
     if not container then return {}, "container is nil" end
+    if depth > 4 then return {}, "max depth exceeded" end
     
     local items = {}
     
@@ -2350,6 +2359,7 @@ local function serializeInventory(container)
     if listSize == 0 then return {}, method .. " returned size 0" end
     
     for i = 0, listSize - 1 do
+        if currentCount.n >= maxItems then break end
         local item = itemList:get(i)
         if item then
             local ok, itemData = pcall(function()
@@ -2374,7 +2384,7 @@ local function serializeInventory(container)
                 if item.IsInventoryContainer and item:IsInventoryContainer() then
                     local subContainer = item:getItemContainer()
                     if subContainer then
-                        data.contents = serializeInventory(subContainer)
+                        data.contents = serializeInventory(subContainer, depth + 1, maxItems, currentCount)
                     end
                 end
                 
@@ -2387,6 +2397,7 @@ local function serializeInventory(container)
             
             if ok and itemData then
                 table.insert(items, itemData)
+                currentCount.n = currentCount.n + 1
             end
         end
     end
@@ -2705,42 +2716,59 @@ handlers.importPlayerData = function(args)
     if data.inventory and options.restoreInventory ~= false then
         local inventory = player:getInventory()
         if inventory then
-            -- Helper function to add items recursively
-            local function addItems(container, itemList)
+            local MAX_DEPTH = 3
+            local MAX_ITEMS = 500
+            local totalAdded = 0
+            -- Helper function to add items recursively with depth limit
+            local function addItems(container, itemList, depth)
+                if depth > MAX_DEPTH then return end
+                if type(itemList) ~= "table" then return end
                 for _, itemData in ipairs(itemList) do
-                    local ok, result = pcall(function()
-                        local count = math.min(itemData.count or 1, 100) -- Clamp to prevent server freeze
-                        for c = 1, count do
-                            local newItem = container:AddItem(itemData.fullType)
-                            if newItem then
-                                -- Set condition if available
-                                if itemData.condition and newItem.setCondition then
-                                    newItem:setCondition(itemData.condition)
-                                end
-                                -- Set uses if available (for drainable items)
-                                if itemData.uses and newItem.setCurrentUses then
-                                    newItem:setCurrentUses(itemData.uses)
-                                end
-                                -- Set delta if available
-                                if itemData.delta and newItem.setDelta then
-                                    newItem:setDelta(itemData.delta)
-                                end
-                                -- Handle container contents (bags)
-                                if itemData.contents and newItem.getItemContainer then
-                                    local subContainer = newItem:getItemContainer()
-                                    if subContainer then
-                                        addItems(subContainer, itemData.contents)
+                    if totalAdded >= MAX_ITEMS then break end
+                    if type(itemData) ~= "table" or not itemData.fullType then
+                        -- skip malformed entries
+                    else
+                        local ok, result = pcall(function()
+                            local count = math.min(itemData.count or 1, 100) -- Clamp to prevent server freeze
+                            for c = 1, count do
+                                if totalAdded >= MAX_ITEMS then break end
+                                local newItem = container:AddItem(itemData.fullType)
+                                if newItem then
+                                    -- Set condition if available
+                                    if itemData.condition and newItem.setCondition then
+                                        newItem:setCondition(itemData.condition)
                                     end
+                                    -- Set uses if available (for drainable items)
+                                    if itemData.uses and newItem.setCurrentUses then
+                                        newItem:setCurrentUses(itemData.uses)
+                                    end
+                                    -- Set delta if available
+                                    if itemData.delta and newItem.setDelta then
+                                        newItem:setDelta(itemData.delta)
+                                    end
+                                    -- Handle container contents (bags) with depth limit
+                                    if itemData.contents and type(itemData.contents) == "table" and newItem.getItemContainer then
+                                        local subContainer = newItem:getItemContainer()
+                                        if subContainer then
+                                            addItems(subContainer, itemData.contents, depth + 1)
+                                        end
+                                    end
+                                    totalAdded = totalAdded + 1
+                                    restored.items = restored.items + 1
                                 end
-                                restored.items = restored.items + 1
                             end
-                        end
-                    end)
-                    -- Silently skip items that fail to add
+                        end)
+                        -- Silently skip items that fail to add
+                    end
                 end
             end
             
-            addItems(inventory, data.inventory)
+            addItems(inventory, data.inventory, 1)
+            
+            -- Network sync
+            pcall(function()
+                if player.sendPlayerExtraInfo then player:sendPlayerExtraInfo() end
+            end)
         end
     end
     
@@ -2760,6 +2788,12 @@ handlers.teleportPlayer = function(args)
     if not username or not x or not y then
         return false, nil, "Username, x, y required"
     end
+    
+    -- Validate coordinates (PZ map cells: 0-16800, z floors: 0-8)
+    if x < 0 or x > 16800 or y < 0 or y > 16800 then
+        return false, nil, "Coordinates out of range (x/y: 0-16800)"
+    end
+    z = math.max(0, math.min(math.floor(z), 8))
     
     local player = getPlayerByUsername(username)
     if not player then
@@ -4318,6 +4352,14 @@ handlers.killPlayer = function(args)
         return false, nil, "Failed to kill player: " .. tostring(err)
     end
     
+    -- Network sync so client sees the death
+    pcall(function()
+        if player.sendPlayerExtraInfo then player:sendPlayerExtraInfo() end
+    end)
+    pcall(function()
+        if sendObjectChange then sendObjectChange(player, "bodyDamage") end
+    end)
+    
     PanelBridge.info("Killed player", { username = username })
     return true, { message = "Player killed", username = username }
 end
@@ -4336,16 +4378,38 @@ handlers.setGodMode = function(args)
         return false, nil, "Player not found: " .. username
     end
     
+    -- B42/B41: setGodMod is the actual PZ method name (not a typo)
+    local method = nil
     local success, err = pcall(function()
-        player:setGodMod(enabled)
+        if player.setGodMod then
+            player:setGodMod(enabled)
+            method = "setGodMod"
+        elseif player.setGodMode then
+            player:setGodMode(enabled)
+            method = "setGodMode"
+        else
+            error("No godmode method available on player object")
+        end
     end)
     
     if not success then
         return false, nil, "Failed to set godmode: " .. tostring(err)
     end
     
-    PanelBridge.info("Set godmode", { username = username, enabled = enabled })
-    return true, { message = "Godmode " .. (enabled and "enabled" or "disabled"), username = username }
+    -- Verify it took effect
+    local verified = nil
+    pcall(function()
+        if player.isGodMod then
+            verified = player:isGodMod() == enabled
+        end
+    end)
+    
+    PanelBridge.info("Set godmode", { username = username, enabled = enabled, method = method, verified = verified })
+    return true, { 
+        message = "Godmode " .. (enabled and "enabled" or "disabled"), 
+        username = username,
+        verified = verified
+    }
 end
 
 -- Set player's invisibility
@@ -4362,6 +4426,10 @@ handlers.setInvisible = function(args)
         return false, nil, "Player not found: " .. username
     end
     
+    if not player.setInvisible then
+        return false, nil, "setInvisible method not available in this PZ version"
+    end
+    
     local success, err = pcall(function()
         player:setInvisible(enabled)
     end)
@@ -4370,8 +4438,20 @@ handlers.setInvisible = function(args)
         return false, nil, "Failed to set invisible: " .. tostring(err)
     end
     
-    PanelBridge.info("Set invisible", { username = username, enabled = enabled })
-    return true, { message = "Invisibility " .. (enabled and "enabled" or "disabled"), username = username }
+    -- Verify
+    local verified = nil
+    pcall(function()
+        if player.isInvisible then
+            verified = player:isInvisible() == enabled
+        end
+    end)
+    
+    PanelBridge.info("Set invisible", { username = username, enabled = enabled, verified = verified })
+    return true, { 
+        message = "Invisibility " .. (enabled and "enabled" or "disabled"), 
+        username = username,
+        verified = verified
+    }
 end
 
 -- Set player's noclip
@@ -4386,6 +4466,10 @@ handlers.setNoclip = function(args)
     local player = getPlayerByUsername(username)
     if not player then
         return false, nil, "Player not found: " .. username
+    end
+    
+    if not player.setNoClip then
+        return false, nil, "setNoClip method not available in this PZ version"
     end
     
     local success, err = pcall(function()
@@ -4412,6 +4496,10 @@ handlers.giveItem = function(args)
     if not itemType then
         return false, nil, "Item type required (e.g., 'Base.Axe')"
     end
+    -- Basic format validation: must look like "Module.ItemName"
+    if not itemType:match("^%a[%w_]*%.%a[%w_]*$") then
+        return false, nil, "Invalid item type format (expected Module.ItemName): " .. tostring(itemType)
+    end
     
     local player = getPlayerByUsername(username)
     if not player then
@@ -4424,18 +4512,26 @@ handlers.giveItem = function(args)
     end
     
     local added = 0
+    local lastError = nil
     for i = 1, count do
         local ok, item = pcall(function()
             return inventory:AddItem(itemType)
         end)
         if ok and item then
             added = added + 1
+        elseif not ok then
+            lastError = tostring(item)
         end
     end
     
     if added == 0 then
-        return false, nil, "Failed to add item. Check item type: " .. itemType
+        return false, nil, "Failed to add item '" .. itemType .. "'" .. (lastError and (": " .. lastError) or ". Item type may not exist.")
     end
+    
+    -- Network sync so client sees the new items
+    pcall(function()
+        if player.sendPlayerExtraInfo then player:sendPlayerExtraInfo() end
+    end)
     
     PanelBridge.info("Gave items", { username = username, itemType = itemType, count = added })
     return true, { 

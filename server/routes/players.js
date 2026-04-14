@@ -23,7 +23,7 @@ const router = express.Router();
 // Validation helpers to prevent RCON command injection
 // Allow normal in-game names (spaces/symbols) but block control chars and quote/backslash.
 const USERNAME_REGEX = /^[^\x00-\x1F\x7F"\\]{1,64}$/;
-const SAFE_TEXT_REGEX = /^[a-zA-Z0-9\s.,!?_-]{0,256}$/;
+const SAFE_TEXT_REGEX = /^[a-zA-Z0-9\s.,!?'":;()@#&+=%_\-\u00C0-\u024F]{0,256}$/;
 const ITEM_REGEX = /^[a-zA-Z0-9_.]{1,128}$/;
 
 function isValidUsername(username) {
@@ -257,8 +257,8 @@ router.post('/teleport', async (req, res) => {
     let result;
     if (x !== undefined && y !== undefined && z !== undefined) {
       // Validate coordinates (PZ map cells range roughly 0-16800 per axis, z is floor level 0-7)
-      if (!isValidNumber(x, -1000, 20000) || !isValidNumber(y, -1000, 20000) || !isValidNumber(z, 0, 32)) {
-        return res.status(400).json({ error: 'Invalid coordinates (x/y: -1000 to 20000, z: 0 to 32)' });
+      if (!isValidNumber(x, 0, 16800) || !isValidNumber(y, 0, 16800) || !isValidNumber(z, 0, 8)) {
+        return res.status(400).json({ error: 'Invalid coordinates (x/y: 0 to 16800, z: 0 to 8)' });
       }
       if (player1) {
         log.info(`POST /teleport: ${player1} → coords(${x}, ${y}, ${z}) via PanelBridge`);
@@ -315,6 +315,7 @@ router.post('/add-item', async (req, res) => {
     if (count !== undefined && !isValidNumber(count, 1, 10000)) {
       return res.status(400).json({ error: 'Invalid count (1-10000)' });
     }
+    const itemCount = count !== undefined ? Math.min(Math.floor(Number(count)), 10000) : 1;
     
     let result;
     // Prefer PanelBridge (direct Lua inventory access) — much more reliable than RCON additem in B42
@@ -323,20 +324,20 @@ router.post('/add-item', async (req, res) => {
         result = await bridge.sendCommand('giveItem', {
           username,
           itemType: item,
-          count: count || 1
+          count: itemCount
         });
-        log.info(`POST /add-item: ${item} x${count || 1} to ${username} via PanelBridge`);
+        log.info(`POST /add-item: ${item} x${itemCount} to ${username} via PanelBridge`);
       } catch (bridgeErr) {
         log.warn(`PanelBridge giveItem failed, falling back to RCON: ${bridgeErr.message}`);
-        result = await rconService.addItem(username, item, count || 1);
-        log.info(`POST /add-item: ${item} x${count || 1} to ${username} via RCON (fallback)`);
+        result = await rconService.addItem(username, item, itemCount);
+        log.info(`POST /add-item: ${item} x${itemCount} to ${username} via RCON (fallback)`);
       }
     } else {
-      result = await rconService.addItem(username, item, count || 1);
-      log.info(`POST /add-item: ${item} x${count || 1} to ${username || 'self'} via RCON`);
+      result = await rconService.addItem(username, item, itemCount);
+      log.info(`POST /add-item: ${item} x${itemCount} to ${username || 'self'} via RCON`);
     }
     if (username) {
-      await logPlayerAction(username, 'add_item', `${item} x${count || 1}`);
+      await logPlayerAction(username, 'add_item', `${item} x${itemCount}`);
     }
     
     res.json(result);
@@ -418,7 +419,10 @@ router.post('/godmode', async (req, res) => {
     const rconService = req.app.get('rconService');
     const { username, enabled } = req.body;
     
-    if (username && !isValidUsername(username)) {
+    if (!username) {
+      return res.status(400).json({ error: 'Username is required' });
+    }
+    if (!isValidUsername(username)) {
       return res.status(400).json({ error: 'Invalid username format' });
     }
     
@@ -441,7 +445,10 @@ router.post('/invisible', async (req, res) => {
     const rconService = req.app.get('rconService');
     const { username, enabled } = req.body;
     
-    if (username && !isValidUsername(username)) {
+    if (!username) {
+      return res.status(400).json({ error: 'Username is required' });
+    }
+    if (!isValidUsername(username)) {
       return res.status(400).json({ error: 'Invalid username format' });
     }
     
@@ -464,7 +471,10 @@ router.post('/noclip', async (req, res) => {
     const rconService = req.app.get('rconService');
     const { username, enabled } = req.body;
     
-    if (username && !isValidUsername(username)) {
+    if (!username) {
+      return res.status(400).json({ error: 'Username is required' });
+    }
+    if (!isValidUsername(username)) {
       return res.status(400).json({ error: 'Invalid username format' });
     }
     
