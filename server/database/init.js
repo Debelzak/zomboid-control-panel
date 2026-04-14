@@ -18,6 +18,7 @@ const RETENTION = {
   schedule_history: 500,
   performance_history: 1440,   // 24h at 1-min intervals
   player_sessions: 50,         // per player
+  bridge_logs: 500,
 };
 
 const WRITE_DEBOUNCE_MS = 500;          // Coalesce rapid writes
@@ -56,6 +57,7 @@ const defaultData = {
   mod_presets: [],
   steamid_bans: [],
   performance_history: [],
+  bridge_logs: [],
   discord_webhooks: [],
   users: [],
   settings: {},
@@ -281,6 +283,7 @@ function compactData(data) {
   data.player_logs = trimArray(data.player_logs, RETENTION.player_logs);
   data.server_events = trimArray(data.server_events, RETENTION.server_events);
   data.schedule_history = trimArray(data.schedule_history, RETENTION.schedule_history);
+  data.bridge_logs = trimArray(data.bridge_logs || [], RETENTION.bridge_logs);
   data.performance_history = trimArrayEnd(data.performance_history, RETENTION.performance_history);
 
   if (Array.isArray(data.player_stats)) {
@@ -382,6 +385,7 @@ function getDatabaseStatsSync() {
       player_stats: data.player_stats?.length ?? 0,
       mod_presets: data.mod_presets?.length ?? 0,
       performance_history: data.performance_history?.length ?? 0,
+      bridge_logs: data.bridge_logs?.length ?? 0,
       discord_webhooks: data.discord_webhooks?.length ?? 0
     },
     totalRecords: Object.values(data).reduce((sum, v) => sum + (Array.isArray(v) ? v.length : 0), 0),
@@ -455,6 +459,45 @@ export async function logCommand(command, response, success = true) {
 export async function getCommandHistory(limit = 100) {
   const db = await getDb();
   return db.data.command_history.slice(0, limit);
+}
+
+// ============================================
+// Bridge Logs (PanelBridge command history)
+// ============================================
+
+export async function logBridgeCommand(action, args, result, success = true, durationMs = 0) {
+  const db = await getDb();
+  if (!db.data.bridge_logs) db.data.bridge_logs = [];
+
+  const truncatedResult = (() => {
+    try {
+      const s = JSON.stringify(result);
+      return s && s.length > 4096 ? JSON.parse(s.substring(0, 4096) + '..."}}') : result;
+    } catch { return { truncated: true }; }
+  })();
+
+  const entry = {
+    id: generateId(),
+    action,
+    args: args || {},
+    result: truncatedResult,
+    success: success ? 1 : 0,
+    duration_ms: durationMs,
+    executed_at: new Date().toISOString()
+  };
+
+  db.data.bridge_logs.unshift(entry);
+  if (db.data.bridge_logs.length > RETENTION.bridge_logs) {
+    db.data.bridge_logs = db.data.bridge_logs.slice(0, RETENTION.bridge_logs);
+  }
+  scheduleWrite();
+  return entry;
+}
+
+export async function getBridgeLogs(limit = 100) {
+  const db = await getDb();
+  if (!db.data.bridge_logs) return [];
+  return db.data.bridge_logs.slice(0, limit);
 }
 
 // ============================================

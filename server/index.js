@@ -16,7 +16,7 @@ import cookieParser from 'cookie-parser';
 
 import { onLog, createLogger, logSection, logBanner, logReady } from './utils/logger.js';
 const log = createLogger('Panel');
-import { initDatabase, getActiveServer, getAllSettings, getSetting } from './database/init.js';
+import { initDatabase, getActiveServer, getAllSettings, getSetting, recordPerformanceSnapshot } from './database/init.js';
 import { RconService } from './services/rcon.js';
 import { ServerManager } from './services/serverManager.js';
 import { ModChecker } from './services/modChecker.js';
@@ -62,6 +62,9 @@ async function gracefulShutdown(signal) {
   try {
     // Stop player polling
     stopPlayerPolling();
+    
+    // Stop performance polling
+    stopPerfPolling();
     
     // Stop scheduler jobs
     if (scheduler) {
@@ -969,6 +972,124 @@ function stopPlayerPolling() {
   }
 }
 
+// ============================================
+// Performance snapshot polling (host + PZ server)
+// ============================================
+let perfPollingInterval = null;
+let lastCpuInfo = null;
+
+function getCpuUsage() {
+  const cpus = os.cpus();
+  const total = cpus.reduce((acc, cpu) => {
+    const t = Object.values(cpu.times).reduce((a, b) => a + b, 0);
+    const idle = cpu.times.idle;
+    return { total: acc.total + t, idle: acc.idle + idle };
+  }, { total: 0, idle: 0 });
+
+  if (!lastCpuInfo) {
+    lastCpuInfo = total;
+    return 0;
+  }
+
+  const totalDiff = total.total - lastCpuInfo.total;
+  const idleDiff = total.idle - lastCpuInfo.idle;
+  lastCpuInfo = total;
+  return totalDiff > 0 ? Math.round((1 - idleDiff / totalDiff) * 100) : 0;
+}
+
+async function getPzProcessMemory() {
+  // Get PZ server Java process memory from OS
+  return new Promise((resolve) => {
+    const timeout = setTimeout(() => resolve(null), 5000);
+
+    if (process.platform === 'win32') {
+      // Windows: Get working set of java.exe processes, find the PZ one
+      exec('powershell -Command "Get-CimInstance Win32_Process -Filter \\"Name=\'java.exe\'\\" | Select-Object ProcessId, WorkingSetSize, CommandLine | Format-List"',
+        { timeout: 8000 }, (err, stdout) => {
+          clearTimeout(timeout);
+          if (err || !stdout) return resolve(null);
+
+          // Parse output — look for PZ server process
+          const blocks = stdout.split(/ProcessId/).filter(b => b.toLowerCase().includes('zombie.network.gameserver'));
+          if (blocks.length === 0) return resolve(null);
+
+          const wsMatch = blocks[0].match(/WorkingSetSize\s*:\s*(\d+)/i);
+          if (!wsMatch) return resolve(null);
+
+          resolve(parseInt(wsMatch[1], 10)); // bytes
+        });
+    } else {
+      // Linux: Use ps to find PZ server RSS
+      exec('ps aux --no-headers | grep -i "zombie.network.[Gg]ame[Ss]erver" | grep -v grep',
+        { timeout: 5000 }, (err, stdout) => {
+          clearTimeout(timeout);
+          if (err || !stdout || !stdout.trim()) return resolve(null);
+
+          // RSS is the 6th column in ps aux (in KB)
+          const parts = stdout.trim().split(/\s+/);
+          if (parts.length >= 6) {
+            const rssKB = parseInt(parts[5], 10);
+            if (!isNaN(rssKB)) return resolve(rssKB * 1024); // convert to bytes
+          }
+          resolve(null);
+        });
+    }
+  });
+}
+
+function startPerfPolling() {
+  if (perfPollingInterval) clearInterval(perfPollingInterval);
+
+  // Seed CPU info on first call
+  getCpuUsage();
+
+  perfPollingInterval = setInterval(async () => {
+    try {
+      const hostMem = os.totalmem();
+      const hostMemFree = os.freemem();
+      const cpuUsage = getCpuUsage();
+      const panelMem = process.memoryUsage();
+
+      const pzMemBytes = await getPzProcessMemory();
+
+      const snapshot = {
+        // Host machine
+        hostMemTotal: hostMem,
+        hostMemUsed: hostMem - hostMemFree,
+        cpuUsage,
+        // Panel process
+        panelMemHeap: panelMem.heapUsed,
+        panelMemRss: panelMem.rss,
+        // PZ server process (null if not running)
+        pzMemUsed: pzMemBytes,
+        // Legacy fields (kept for compat with existing charts)
+        memoryUsed: panelMem.heapUsed,
+        memoryTotal: panelMem.heapTotal,
+        // Status
+        playerCount: lastPlayerList.length,
+        serverRunning: serverManager.isRunning,
+      };
+
+      await recordPerformanceSnapshot(snapshot);
+
+      // Broadcast to any connected clients on the perf room
+      io.to('logs').emit('perf:snapshot', snapshot);
+    } catch (err) {
+      log.debug(`Perf snapshot failed: ${err.message}`);
+    }
+  }, 60000); // every 60 seconds
+
+  if (perfPollingInterval.unref) perfPollingInterval.unref();
+  log.info('Performance polling started (60s interval)');
+}
+
+function stopPerfPolling() {
+  if (perfPollingInterval) {
+    clearInterval(perfPollingInterval);
+    perfPollingInterval = null;
+  }
+}
+
 // Initialize and start server
 async function start() {
   try {
@@ -1231,6 +1352,9 @@ async function start() {
     
     // Start server-side player polling for real-time updates
     startPlayerPolling();
+    
+    // Start performance snapshot polling (host + PZ server stats)
+    startPerfPolling();
     
     // Start update checker for server updates
     updateChecker.start();

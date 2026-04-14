@@ -100,6 +100,17 @@ interface HealthStatus {
   uptime: number
 }
 
+interface ActivityEntry {
+  id: string
+  source: 'rcon' | 'bridge' | 'player' | 'server'
+  action: string
+  args?: Record<string, unknown>
+  detail: string
+  success: boolean
+  duration_ms?: number
+  timestamp: string
+}
+
 interface LogFile {
   name: string
   size: number
@@ -114,10 +125,19 @@ interface PerformanceSnapshot {
   cpuUsage: number
   playerCount: number
   serverRunning: boolean
+  // New host/PZ fields
+  hostMemTotal?: number
+  hostMemUsed?: number
+  pzMemUsed?: number | null
+  panelMemHeap?: number
+  panelMemRss?: number
   // Computed fields added by frontend
   memoryMB?: number
   cpuLoad?: number
   time?: string
+  hostMemGB?: number
+  hostMemUsedGB?: number
+  pzMemMB?: number | null
 }
 
 interface CrashLog {
@@ -144,13 +164,18 @@ export default function Debug() {
   const [refreshingLogs, setRefreshingLogs] = useState(false)
   const [refreshingCrashLogs, setRefreshingCrashLogs] = useState(false)
   const [refreshingHealth, setRefreshingHealth] = useState(false)
+  const [activityEntries, setActivityEntries] = useState<ActivityEntry[]>([])
+  const [activitySource, setActivitySource] = useState<string>('all')
+  const [activitySearch, setActivitySearch] = useState('')
+  const [refreshingActivity, setRefreshingActivity] = useState(false)
+  const [expandedActivity, setExpandedActivity] = useState<Set<string>>(new Set())
   const [autoScroll, setAutoScroll] = useState(true)
   const [paused, setPaused] = useState(false)
   const [levelFilter, setLevelFilter] = useState<'all' | 'info' | 'warn' | 'error' | 'debug'>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [sourceFilter, setSourceFilter] = useState<string>('all')
   const [timeFormat, setTimeFormat] = useState<TimeFormat>('time')
-  const [activeTab, setActiveTab] = useState('logs')
+  const [activeTab, setActiveTab] = useState('activity')
   const [expandedLogs, setExpandedLogs] = useState<Set<string>>(new Set())
   const logsEndRef = useRef<HTMLDivElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
@@ -258,7 +283,10 @@ export default function Debug() {
           ...h,
           memoryMB: Math.round(h.memoryUsed / (1024 * 1024)),
           cpuLoad: h.cpuUsage,
-          time: new Date(h.timestamp).toLocaleTimeString()
+          time: new Date(h.timestamp).toLocaleTimeString(),
+          hostMemGB: h.hostMemTotal ? +(h.hostMemTotal / (1024 * 1024 * 1024)).toFixed(1) : undefined,
+          hostMemUsedGB: h.hostMemUsed ? +(h.hostMemUsed / (1024 * 1024 * 1024)).toFixed(1) : undefined,
+          pzMemMB: h.pzMemUsed ? Math.round(h.pzMemUsed / (1024 * 1024)) : null,
         })))
       }
     } catch {
@@ -322,6 +350,23 @@ export default function Debug() {
     }
   }
 
+  // Fetch activity log
+  const fetchActivity = useCallback(async () => {
+    setRefreshingActivity(true)
+    try {
+      const res = await authFetch(`/api/debug/activity?limit=200&source=${activitySource}`)
+      if (!res.ok) return
+      const data = await res.json()
+      if (data.entries) {
+        setActivityEntries(data.entries)
+      }
+    } catch {
+      // Endpoint may not exist yet
+    } finally {
+      setRefreshingActivity(false)
+    }
+  }, [authFetch, activitySource])
+
   useEffect(() => {
     fetchSystemInfo()
     fetchHealthStatus()
@@ -337,6 +382,19 @@ export default function Debug() {
     }, 30000)
     return () => clearInterval(interval)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps -- intentional mount-only init
+
+  // Activity tab polling
+  useEffect(() => {
+    if (activeTab !== 'activity') return
+
+    fetchActivity()
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'hidden') return
+      fetchActivity()
+    }, 15000)
+
+    return () => clearInterval(interval)
+  }, [activeTab, fetchActivity])
 
   useEffect(() => {
     if (activeTab !== 'performance') {
@@ -626,6 +684,10 @@ export default function Debug() {
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList>
+          <TabsTrigger value="activity" className="gap-2">
+            <Zap className="w-4 h-4" />
+            Activity
+          </TabsTrigger>
           <TabsTrigger value="logs" className="gap-2">
             <Terminal className="w-4 h-4" />
             Logs
@@ -647,6 +709,127 @@ export default function Debug() {
             System
           </TabsTrigger>
         </TabsList>
+
+        {/* Activity Tab — Unified command/event timeline */}
+        <TabsContent value="activity" className="space-y-4">
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Zap className="w-5 h-5 text-primary" />
+                    Activity Log
+                  </CardTitle>
+                  <CardDescription>Unified view of RCON commands, Bridge actions, player events, and server events</CardDescription>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Select value={activitySource} onValueChange={(v) => setActivitySource(v)}>
+                    <SelectTrigger className="w-[130px] h-8">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Sources</SelectItem>
+                      <SelectItem value="rcon">RCON</SelectItem>
+                      <SelectItem value="bridge">Bridge</SelectItem>
+                      <SelectItem value="player">Player</SelectItem>
+                      <SelectItem value="server">Server</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Input
+                    placeholder="Search..."
+                    value={activitySearch}
+                    onChange={(e) => setActivitySearch(e.target.value)}
+                    className="w-[180px] h-8"
+                  />
+                  <Button variant="outline" size="sm" onClick={fetchActivity} disabled={refreshingActivity}>
+                    <RefreshCw className={cn("w-4 h-4", refreshingActivity && "animate-spin")} />
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {activityEntries.length === 0 ? (
+                <EmptyState
+                  title="No activity yet"
+                  description="Commands and events will appear here as the panel is used."
+                  icon={<Zap className="w-6 h-6" />}
+                />
+              ) : (
+                <ScrollArea className="h-[600px]">
+                  <div className="space-y-1 font-mono text-xs">
+                    {activityEntries
+                      .filter(e => {
+                        if (!activitySearch) return true
+                        const q = activitySearch.toLowerCase()
+                        return e.action.toLowerCase().includes(q) ||
+                               e.detail.toLowerCase().includes(q) ||
+                               e.source.toLowerCase().includes(q)
+                      })
+                      .map(entry => {
+                        const isExpanded = expandedActivity.has(entry.id)
+                        return (
+                          <div
+                            key={entry.id}
+                            className={cn(
+                              "flex flex-col gap-0",
+                              !entry.success && "bg-destructive/5 rounded"
+                            )}
+                          >
+                            <div
+                              className="flex items-start gap-2 px-2 py-1.5 rounded hover:bg-muted/50 cursor-pointer"
+                              onClick={() => {
+                                setExpandedActivity(prev => {
+                                  const next = new Set(prev)
+                                  if (next.has(entry.id)) next.delete(entry.id)
+                                  else next.add(entry.id)
+                                  return next
+                                })
+                              }}
+                            >
+                              <span className="text-muted-foreground shrink-0 w-[65px]">
+                                {new Date(entry.timestamp).toLocaleTimeString()}
+                              </span>
+                              <Badge variant="outline" className={cn(
+                                "shrink-0 text-[10px] px-1.5 py-0 uppercase font-semibold",
+                                entry.source === 'rcon' && "border-blue-500/50 text-blue-400",
+                                entry.source === 'bridge' && "border-primary/50 text-primary",
+                                entry.source === 'player' && "border-green-500/50 text-green-400",
+                                entry.source === 'server' && "border-orange-500/50 text-orange-400",
+                              )}>
+                                {entry.source}
+                              </Badge>
+                              {entry.success ? (
+                                <CheckCircle className="w-3.5 h-3.5 text-green-500 shrink-0 mt-0.5" />
+                              ) : (
+                                <AlertCircle className="w-3.5 h-3.5 text-destructive shrink-0 mt-0.5" />
+                              )}
+                              <span className="font-medium text-foreground shrink-0">{entry.action}</span>
+                              {entry.duration_ms != null && (
+                                <span className="text-muted-foreground shrink-0">{entry.duration_ms}ms</span>
+                              )}
+                              <span className="text-muted-foreground truncate flex-1">
+                                {entry.detail.substring(0, 120)}
+                              </span>
+                              {isExpanded ? <ChevronDown className="w-3.5 h-3.5 shrink-0 mt-0.5" /> : <ChevronRight className="w-3.5 h-3.5 shrink-0 mt-0.5" />}
+                            </div>
+                            {isExpanded && (
+                              <div className="ml-[72px] px-3 py-2 bg-muted/30 rounded text-xs mb-1 break-all">
+                                {entry.args && Object.keys(entry.args).length > 0 && (
+                                  <div className="mb-1"><span className="text-muted-foreground">Args:</span> {JSON.stringify(entry.args)}</div>
+                                )}
+                                <div><span className="text-muted-foreground">Detail:</span> {entry.detail}</div>
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })
+                    }
+                  </div>
+                </ScrollArea>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         {/* Logs Tab */}
         <TabsContent value="logs" className="space-y-4">
@@ -1033,6 +1216,65 @@ export default function Debug() {
 
         {/* Performance Tab */}
         <TabsContent value="performance" className="space-y-4">
+          {/* Current Snapshot Cards */}
+          {(() => {
+            const latest = performanceHistory.length > 0 ? performanceHistory[performanceHistory.length - 1] : null
+            return (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                <Card>
+                  <CardContent className="p-4">
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide">Host RAM</p>
+                    <p className="text-xl font-bold mt-1">
+                      {latest?.hostMemUsedGB != null ? `${latest.hostMemUsedGB} / ${latest.hostMemGB} GB` : 'N/A'}
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4">
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide">Host CPU</p>
+                    <p className="text-xl font-bold mt-1">
+                      {latest?.cpuLoad != null ? `${latest.cpuLoad}%` : 'N/A'}
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card className={cn(latest?.pzMemMB != null && latest.pzMemMB > 7600 && "border-destructive/50")}>
+                  <CardContent className="p-4">
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide">PZ Server RAM</p>
+                    <p className={cn("text-xl font-bold mt-1", latest?.pzMemMB != null && latest.pzMemMB > 7600 && "text-destructive")}>
+                      {latest?.pzMemMB != null ? `${(latest.pzMemMB / 1024).toFixed(1)} GB` : 'N/A'}
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4">
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide">PZ Peak</p>
+                    <p className="text-xl font-bold mt-1">
+                      {performanceHistory.some(p => p.pzMemMB != null)
+                        ? `${(Math.max(...performanceHistory.filter(p => p.pzMemMB != null).map(p => p.pzMemMB!)) / 1024).toFixed(1)} GB`
+                        : 'N/A'}
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4">
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide">Players</p>
+                    <p className="text-xl font-bold mt-1">
+                      {latest?.playerCount ?? 'N/A'}
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4">
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide">Data Points</p>
+                    <p className="text-xl font-bold mt-1">{performanceHistory.length}</p>
+                    <p className="text-xs text-muted-foreground">1 per minute</p>
+                  </CardContent>
+                </Card>
+              </div>
+            )
+          })()}
+
+          {/* Charts */}
           <Suspense
             fallback={
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -1051,49 +1293,9 @@ export default function Debug() {
           >
             {activeTab === 'performance' && performanceHistory.length > 0 ? <DebugPerformanceCharts performanceHistory={performanceHistory} /> : null}
             {activeTab === 'performance' && performanceHistory.length === 0 && (
-              <EmptyState compact type="noData" title="No performance data collected yet" description="Data is recorded while the server is running." />
+              <EmptyState compact type="noData" title="Collecting data..." description="Performance snapshots are recorded every 60 seconds. First data will appear shortly." />
             )}
           </Suspense>
-
-          {/* Current Stats */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <Card>
-              <CardContent className="p-4">
-                <p className="text-sm text-muted-foreground">Current Memory</p>
-                <p className="text-2xl font-bold">
-                  {performanceHistory.length > 0 
-                    ? `${performanceHistory[performanceHistory.length - 1].memoryMB} MB`
-                    : 'N/A'}
-                </p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-4">
-                <p className="text-sm text-muted-foreground">Peak Memory</p>
-                <p className="text-2xl font-bold">
-                  {performanceHistory.length > 0 
-                    ? `${Math.max(...performanceHistory.map(p => p.memoryMB || 0))} MB`
-                    : 'N/A'}
-                </p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-4">
-                <p className="text-sm text-muted-foreground">Current CPU Load</p>
-                <p className="text-2xl font-bold">
-                  {performanceHistory.length > 0 
-                    ? performanceHistory[performanceHistory.length - 1].cpuLoad?.toFixed(2) || 'N/A'
-                    : 'N/A'}
-                </p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-4">
-                <p className="text-sm text-muted-foreground">Data Points</p>
-                <p className="text-2xl font-bold">{performanceHistory.length}</p>
-              </CardContent>
-            </Card>
-          </div>
         </TabsContent>
 
         {/* Health Tab */}

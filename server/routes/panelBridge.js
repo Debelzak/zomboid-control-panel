@@ -10,7 +10,7 @@ import path from 'path';
 import os from 'os';
 import { fileURLToPath } from 'url';
 import bridge from '../services/panelBridge.js';
-import { getActiveServer, getServer, getAllSettings, getDb } from '../database/init.js';
+import { getActiveServer, getServer, getAllSettings, getDb, logBridgeCommand } from '../database/init.js';
 import { sanitizeError } from '../utils/sanitize.js';
 import { createLogger } from '../utils/logger.js';
 const log = createLogger('API:PanelBridge');
@@ -750,13 +750,18 @@ router.post('/command', async (req, res) => {
     }
   }
   
+  const startTime = Date.now();
   try {
     log.info(`POST /command: action=${action} args=${JSON.stringify(args || {}).substring(0, 200)}`);
     const result = await bridge.sendCommand(action, args || {});
-    log.debug(`POST /command: action=${action} completed successfully`);
+    const durationMs = Date.now() - startTime;
+    log.debug(`POST /command: action=${action} completed in ${durationMs}ms`);
+    logBridgeCommand(action, args, result, true, durationMs).catch(() => {});
     res.json(result);
   } catch (error) {
+    const durationMs = Date.now() - startTime;
     const message = sanitizeError(error?.message || 'Bridge command failed');
+    logBridgeCommand(action, args, { error: message }, false, durationMs).catch(() => {});
 
     if (/timeout/i.test(message)) {
       return res.status(504).json({ error: message, category: 'timeout' });
