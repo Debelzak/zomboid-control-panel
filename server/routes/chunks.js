@@ -228,6 +228,11 @@ router.get('/chunks/:saveName', async (req, res) => {
     if (xDirs.length > 0) {
       // B42 structure: map/{X}/{Y}.bin
       // Use sequential for-of loop to avoid overwhelming FS with parallel requests
+      let totalBinFiles = 0;
+      let totalNonBinFiles = 0;
+      let sampleNonBinFiles = [];
+      let emptyDirs = 0;
+      
       for (const xDir of xDirs) {
         if (chunks.length >= MAX_CHUNKS) break;
         
@@ -236,12 +241,26 @@ router.get('/chunks/:saveName', async (req, res) => {
         
         try {
           // Read Y files in this X directory
-          const yFiles = await fs.promises.readdir(xPath);
+          const yEntries = await fs.promises.readdir(xPath, { withFileTypes: true });
+          // Only process files (skip subdirectories inside chunk dirs)
+          const yFiles = yEntries.filter(e => e.isFile()).map(e => e.name);
+          
+          if (yFiles.length === 0) {
+            emptyDirs++;
+            continue;
+          }
+          
+          const binFiles = yFiles.filter(f => f.endsWith('.bin'));
+          const nonBinFiles = yFiles.filter(f => !f.endsWith('.bin'));
+          totalBinFiles += binFiles.length;
+          totalNonBinFiles += nonBinFiles.length;
+          if (nonBinFiles.length > 0 && sampleNonBinFiles.length < 5) {
+            sampleNonBinFiles.push(...nonBinFiles.slice(0, 3).map(f => `${xDir.name}/${f}`));
+          }
           
           // Filter and process files in parallel for this directory
           // (Batch size usually reasonable for one directory)
-          const filePromises = yFiles
-            .filter(f => f.endsWith('.bin'))
+          const filePromises = binFiles
             .map(async yFile => {
                if (chunks.length >= MAX_CHUNKS) return null; // Soft limit check
                
@@ -282,6 +301,9 @@ router.get('/chunks/:saveName', async (req, res) => {
           log.warn(`Error reading chunk directory ${xPath}: ${err.message}`);
         }
       }
+      
+      // Diagnostic: log what was found inside the B42 dirs
+      log.info(`[ChunkCleaner] B42 scan: ${chunks.length} chunks from ${totalBinFiles} .bin files, ${emptyDirs} empty dirs, ${totalNonBinFiles} non-.bin files${sampleNonBinFiles.length > 0 ? ' (samples: ' + sampleNonBinFiles.join(', ') + ')' : ''}`);
     } else {
       // Legacy flat file structure: map_X_Y.bin or X_Y.bin
       const files = mapContents.filter(f => f.isFile() && f.name.endsWith('.bin')).map(f => f.name);
@@ -563,44 +585,68 @@ router.post('/delete-chunks', async (req, res) => {
       const chunkErrors = [];
       
       try {
-        // Delete from the correct location based on source
-        let mapFile;
-        if (chunk.source === 'saveroot') {
-          // B41 flat file in save root directory
-          mapFile = path.join(savePath, chunk.file);
-        } else {
-          // Default: map/ directory (both B42 subdirs and B41 flat files in map/)
-          mapFile = path.join(savePath, 'map', chunk.file);
-        }
-        try {
-            await fs.promises.unlink(mapFile);
+        // For chunkdata-source chunks, the primary file is in chunkdata/ not map/
+        if (chunk.source === 'chunkdata') {
+          // Primary: delete from chunkdata/
+          const fileX = chunk.cellX !== undefined ? chunk.cellX : chunk.x;
+          const fileY = chunk.cellY !== undefined ? chunk.cellY : chunk.y;
+          const chunkDataFile = path.join(savePath, 'chunkdata', `chunkdata_${fileX}_${fileY}.bin`);
+          try {
+            await fs.promises.unlink(chunkDataFile);
             wasDeleted = true;
-        } catch (e) {
-            // Ignore if file doesn't exist
-            if (e.code !== 'ENOENT') chunkErrors.push(e.message);
-        }
-        
-        // Related data folders use flat file naming: prefix_X_Y.bin
-        // Unlike map/ which uses B42's subdirectory structure (X/Y.bin)
-        // For B42 chunkdata-only entries, use original cell coords (cellX/cellY)
-        // since those map to the actual file names on disk.
-        const fileX = chunk.cellX !== undefined ? chunk.cellX : chunk.x;
-        const fileY = chunk.cellY !== undefined ? chunk.cellY : chunk.y;
-        const chunkDataFile = path.join(savePath, 'chunkdata', `chunkdata_${fileX}_${fileY}.bin`);
-        try { await fs.promises.unlink(chunkDataFile); } catch (e) {
-          if (e.code !== 'ENOENT') log.debug(`Failed to delete chunkdata ${fileX}_${fileY}: ${e.message}`);
-        }
-        
-        // isoregiondata uses datachunk_X_Y.bin format
-        const isoFile = path.join(savePath, 'isoregiondata', `datachunk_${fileX}_${fileY}.bin`);
-        try { await fs.promises.unlink(isoFile); } catch (e) {
-          if (e.code !== 'ENOENT') log.debug(`Failed to delete isoregiondata ${fileX}_${fileY}: ${e.message}`);
-        }
-        
-        // zpop uses zpop_X_Y.bin format
-        const zpopFile = path.join(savePath, 'zpop', `zpop_${fileX}_${fileY}.bin`);
-        try { await fs.promises.unlink(zpopFile); } catch (e) {
-          if (e.code !== 'ENOENT') log.debug(`Failed to delete zpop ${fileX}_${fileY}: ${e.message}`);
+          } catch (e) {
+            if (e.code !== 'ENOENT') chunkErrors.push(`chunkdata: ${e.message}`);
+          }
+          
+          // Also clean up related isoregiondata/zpop
+          const isoFile = path.join(savePath, 'isoregiondata', `datachunk_${fileX}_${fileY}.bin`);
+          try { await fs.promises.unlink(isoFile); } catch (e) {
+            if (e.code !== 'ENOENT') log.debug(`Failed to delete isoregiondata ${fileX}_${fileY}: ${e.message}`);
+          }
+          const zpopFile = path.join(savePath, 'zpop', `zpop_${fileX}_${fileY}.bin`);
+          try { await fs.promises.unlink(zpopFile); } catch (e) {
+            if (e.code !== 'ENOENT') log.debug(`Failed to delete zpop ${fileX}_${fileY}: ${e.message}`);
+          }
+        } else {
+          // Delete from the correct location based on source
+          let mapFile;
+          if (chunk.source === 'saveroot') {
+            // B41 flat file in save root directory
+            mapFile = path.join(savePath, chunk.file);
+          } else {
+            // Default: map/ directory (both B42 subdirs and B41 flat files in map/)
+            mapFile = path.join(savePath, 'map', chunk.file);
+          }
+          try {
+              await fs.promises.unlink(mapFile);
+              wasDeleted = true;
+          } catch (e) {
+              // Ignore if file doesn't exist
+              if (e.code !== 'ENOENT') chunkErrors.push(e.message);
+          }
+          
+          // Related data folders use flat file naming: prefix_X_Y.bin
+          // Unlike map/ which uses B42's subdirectory structure (X/Y.bin)
+          // For B42 chunkdata-only entries, use original cell coords (cellX/cellY)
+          // since those map to the actual file names on disk.
+          const fileX = chunk.cellX !== undefined ? chunk.cellX : chunk.x;
+          const fileY = chunk.cellY !== undefined ? chunk.cellY : chunk.y;
+          const chunkDataFile = path.join(savePath, 'chunkdata', `chunkdata_${fileX}_${fileY}.bin`);
+          try { await fs.promises.unlink(chunkDataFile); wasDeleted = wasDeleted || true; } catch (e) {
+            if (e.code !== 'ENOENT') log.debug(`Failed to delete chunkdata ${fileX}_${fileY}: ${e.message}`);
+          }
+          
+          // isoregiondata uses datachunk_X_Y.bin format
+          const isoFile = path.join(savePath, 'isoregiondata', `datachunk_${fileX}_${fileY}.bin`);
+          try { await fs.promises.unlink(isoFile); } catch (e) {
+            if (e.code !== 'ENOENT') log.debug(`Failed to delete isoregiondata ${fileX}_${fileY}: ${e.message}`);
+          }
+          
+          // zpop uses zpop_X_Y.bin format
+          const zpopFile = path.join(savePath, 'zpop', `zpop_${fileX}_${fileY}.bin`);
+          try { await fs.promises.unlink(zpopFile); } catch (e) {
+            if (e.code !== 'ENOENT') log.debug(`Failed to delete zpop ${fileX}_${fileY}: ${e.message}`);
+          }
         }
         
         return { success: true, wasDeleted };
