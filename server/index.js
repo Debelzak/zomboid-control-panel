@@ -899,6 +899,51 @@ onLog((logEntry) => {
 });
 
 // ============================================
+// Auto-export player data on login
+// ============================================
+import { getDataPaths } from './utils/paths.js';
+
+async function autoExportPlayer(username) {
+  try {
+    if (!panelBridge.isRunning || !panelBridge.isModConnected()) {
+      log.debug(`Auto-export skipped for ${username}: PanelBridge not connected`);
+      return;
+    }
+    const result = await panelBridge.sendCommand('exportPlayerData', { username });
+    if (!result || !result.success) {
+      log.warn(`Auto-export failed for ${username}: ${result?.error || 'unknown error'}`);
+      return;
+    }
+
+    const { dataDir } = getDataPaths();
+    const exportDir = path.join(dataDir, 'exports', username.replace(/[^a-zA-Z0-9_-]/g, '_'));
+    fs.mkdirSync(exportDir, { recursive: true });
+
+    // Write timestamped export file
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const filename = `${username.replace(/[^a-zA-Z0-9_-]/g, '_')}_${timestamp}.json`;
+    fs.writeFileSync(path.join(exportDir, filename), JSON.stringify(result.data || result, null, 2));
+
+    // Rotate — keep only the last N exports
+    const maxExports = Number(await getSetting('autoExportMaxPerPlayer')) || 3;
+    const files = fs.readdirSync(exportDir)
+      .filter(f => f.endsWith('.json'))
+      .sort()
+      .reverse(); // newest first by name (ISO timestamp)
+
+    if (files.length > maxExports) {
+      for (const old of files.slice(maxExports)) {
+        fs.unlinkSync(path.join(exportDir, old));
+      }
+    }
+
+    log.info(`Auto-exported character data for ${username} (${files.length > maxExports ? maxExports : files.length} kept)`);
+  } catch (err) {
+    log.warn(`Auto-export error for ${username}: ${err.message}`);
+  }
+}
+
+// ============================================
 // Server-side player polling for real-time updates
 // ============================================
 let lastPlayerList = [];
@@ -951,6 +996,15 @@ function startPlayerPolling() {
             }
             for (const p of left) {
               discordBot.sendEventNotification('playerLeave', { player: p.name }).catch(err => log.debug(`Discord playerLeave notification failed: ${err.message}`));
+            }
+
+            // Auto-export character data on login (if enabled)
+            const autoExport = await getSetting('autoExportOnLogin');
+            if (autoExport === true || autoExport === 'true') {
+              for (const p of joined) {
+                // Delay slightly — player needs to fully load before export works
+                setTimeout(() => autoExportPlayer(p.name), 10000);
+              }
             }
           }
         }

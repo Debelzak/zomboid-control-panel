@@ -85,7 +85,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { EmptyState } from '@/components/EmptyState'
 import { ItemPicker } from '@/components/ItemPicker'
 import { VehiclePicker } from '@/components/VehiclePicker'
-import { playersApi, panelBridgeApi } from '@/lib/api'
+import { playersApi, panelBridgeApi, configApi } from '@/lib/api'
 import { PageHeader } from '@/components/PageHeader'
 import { cn, copyText } from '@/lib/utils'
 
@@ -234,6 +234,10 @@ export default function Players() {
   
   // Bridge status for character export/import
   const [bridgeConnected, setBridgeConnected] = useState(false)
+
+  // Auto-export on login
+  const [autoExportEnabled, setAutoExportEnabled] = useState(false)
+  const [savedExports, setSavedExports] = useState<Array<{ username: string; filename: string; size: number; timestamp: string }>>([])
   
   // Ref for copy timeout cleanup
   const copiedTimeoutRef = useRef<NodeJS.Timeout | null>(null)
@@ -466,6 +470,16 @@ export default function Players() {
     panelBridgeApi.getStatus().then(status => {
       if (isMounted) setBridgeConnected(Boolean(status.modConnected && status.isRunning))
     }).catch(() => { if (isMounted) setBridgeConnected(false) })
+    // Load auto-export setting
+    configApi.getAppSettings().then(response => {
+      if (isMounted && response?.settings) {
+        setAutoExportEnabled(response.settings.autoExportOnLogin === true || response.settings.autoExportOnLogin === 'true')
+      }
+    }).catch(() => {})
+    // Load saved exports
+    playersApi.getExports().then(response => {
+      if (isMounted && response?.exports) setSavedExports(response.exports)
+    }).catch(() => {})
     const interval = setInterval(() => {
       if (document.visibilityState === 'hidden') return
       fetchPlayers()
@@ -2191,6 +2205,88 @@ export default function Players() {
               </div>
               <p className="text-xs text-muted-foreground">Player must be online.</p>
             </div>
+          </div>
+
+          {/* Auto-export on login */}
+          <div className="border-t border-border/40 pt-4 mt-2 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <h4 className="text-sm font-medium">Auto-export on login</h4>
+                <p className="text-xs text-muted-foreground">Automatically save a character backup when players join the server</p>
+              </div>
+              <Checkbox
+                id="autoExportOnLogin"
+                checked={autoExportEnabled}
+                onCheckedChange={async (checked: boolean) => {
+                  setAutoExportEnabled(checked)
+                  try {
+                    await configApi.updateAppSettings({ autoExportOnLogin: checked })
+                  } catch {
+                    setAutoExportEnabled(!checked)
+                    toast({ title: 'Failed to update setting', variant: 'destructive' })
+                  }
+                }}
+              />
+            </div>
+
+            {savedExports.length > 0 && (
+              <div className="space-y-2">
+                <h4 className="text-xs font-medium text-muted-foreground">Saved Exports ({savedExports.length})</h4>
+                <ScrollArea className="max-h-[180px]">
+                  <div className="space-y-1">
+                    {savedExports.map((exp) => (
+                      <div key={`${exp.username}-${exp.filename}`} className="flex items-center justify-between gap-2 rounded-md border border-border/40 px-3 py-1.5 text-xs">
+                        <div className="min-w-0 flex-1">
+                          <span className="font-medium">{exp.username}</span>
+                          <span className="text-muted-foreground ml-2">{new Date(exp.timestamp).toLocaleString()}</span>
+                          <span className="text-muted-foreground ml-2">({(exp.size / 1024).toFixed(1)} KB)</span>
+                        </div>
+                        <div className="flex gap-1 shrink-0">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 w-6 p-0"
+                            title="Download"
+                            onClick={async () => {
+                              try {
+                                const data = await playersApi.getExport(exp.username, exp.filename)
+                                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+                                const url = URL.createObjectURL(blob)
+                                const a = document.createElement('a')
+                                a.href = url
+                                a.download = exp.filename
+                                a.click()
+                                URL.revokeObjectURL(url)
+                              } catch {
+                                toast({ title: 'Download failed', variant: 'destructive' })
+                              }
+                            }}
+                          >
+                            <Download className="w-3 h-3" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 w-6 p-0 text-destructive hover:text-destructive"
+                            title="Delete"
+                            onClick={async () => {
+                              try {
+                                await playersApi.deleteExport(exp.username, exp.filename)
+                                setSavedExports(prev => prev.filter(e => e.filename !== exp.filename || e.username !== exp.username))
+                              } catch {
+                                toast({ title: 'Delete failed', variant: 'destructive' })
+                              }
+                            }}
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              </div>
+            )}
           </div>
         </DialogContent>
       </Dialog>

@@ -18,7 +18,9 @@ const VALID_SETTINGS_KEYS = [
   'panelPort',
   'httpsEnabled', 'httpsPort', 'httpsKeyPath', 'httpsCertPath',
   'corsAllowedOrigins', 'corsAllowAll', 'corsAllowPrivateNetworks', 'corsDebug',
-  'panelBridgeAutoUpdate'
+  'panelBridgeAutoUpdate',
+  'autoExportOnLogin',
+  'autoExportMaxPerPlayer'
 ];
 
 const OPTION_NAME_REGEX = /^[a-zA-Z0-9_]{1,64}$/;
@@ -204,7 +206,7 @@ router.put('/app-settings', async (req, res) => {
         }
       }
 
-      if (['corsAllowAll', 'corsAllowPrivateNetworks', 'corsDebug', 'panelBridgeAutoUpdate'].includes(key) && typeof value !== 'boolean') {
+      if (['corsAllowAll', 'corsAllowPrivateNetworks', 'corsDebug', 'panelBridgeAutoUpdate', 'autoExportOnLogin'].includes(key) && typeof value !== 'boolean') {
         return res.status(400).json({ error: `${key} must be true or false` });
       }
 

@@ -552,6 +552,10 @@ export const playersApi = {
   // Player Stats (playtime tracking)
   getStats: () => apiGet('/players/stats'),
   getStat: (playerName: string) => apiGet(`/players/stats/${encodeURIComponent(playerName)}`),
+  // Character export history
+  getExports: (username?: string) => apiGet(`/players/exports${username ? `?username=${encodeURIComponent(username)}` : ''}`),
+  getExport: (username: string, filename: string) => apiGet(`/players/exports/${encodeURIComponent(username)}/${encodeURIComponent(filename)}`),
+  deleteExport: (username: string, filename: string) => apiDelete(`/players/exports/${encodeURIComponent(username)}/${encodeURIComponent(filename)}`),
 }
 
 // RCON API
