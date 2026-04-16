@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { EventEmitter } from 'events';
+import { RconService } from '../services/rcon.js';
 
 // Test RCON service logic by creating a lightweight mock
 // This tests the key behaviors without requiring a live RCON connection
@@ -110,6 +111,27 @@ describe('RconService', () => {
       rcon.simulateHealthCheckFailure(); // 1 again
       rcon.simulateHealthCheckFailure(); // 2 again
       expect(rcon.connected).toBe(true); // still connected
+    });
+  });
+
+  describe('auto reconnect', () => {
+    it('should still probe RCON when process detection says server is not running', async () => {
+      vi.useFakeTimers();
+
+      const liveRcon = new RconService();
+      const checkServerRunning = vi.fn().mockResolvedValue(false);
+      const connectSpy = vi.spyOn(liveRcon, 'connect').mockResolvedValue(false);
+
+      liveRcon.setServerManager({ checkServerRunning });
+      liveRcon.startAutoReconnect();
+
+      await vi.advanceTimersByTimeAsync(liveRcon.autoReconnectDelay);
+
+      expect(checkServerRunning).toHaveBeenCalledTimes(1);
+      expect(connectSpy).toHaveBeenCalledTimes(1);
+
+      liveRcon.stopAutoReconnect();
+      vi.useRealTimers();
     });
   });
 });

@@ -108,26 +108,28 @@ export class RconService extends EventEmitter {
         return;
       }
       
-      // Check if server is running before attempting
-      if (this.serverManager) {
-        try {
-          const isRunning = await this.serverManager.checkServerRunning();
-          if (isRunning) {
-            log.info('Server is running, attempting connection...');
-            try {
-              const result = await this.connect();
-              if (result) {
-                log.info('Successfully connected!');
-              }
-            } catch (e) {
-              log.warn(`Connection failed, retrying in ${this.currentReconnectDelay}ms: ${e.message}`);
-              // Using updated backoff delay for the next interval would require complex restructuring of setInterval
-              // Instead, we trust the internal backoff of execute() retries and keep this loop simple
+      try {
+        if (this.serverManager) {
+          try {
+            const isRunning = await this.serverManager.checkServerRunning();
+            if (isRunning) {
+              log.info('Server is running, attempting connection...');
+            } else {
+              log.debug('Process check did not confirm server; probing RCON port anyway');
             }
+          } catch (e) {
+            log.debug(`Server check error: ${e.message}`);
           }
-        } catch (e) {
-          log.debug(`Server check error: ${e.message}`);
         }
+
+        const result = await this.connect();
+        if (result) {
+          log.info('Successfully connected!');
+        }
+      } catch (e) {
+        log.warn(`Connection failed, retrying in ${this.currentReconnectDelay}ms: ${e.message}`);
+        // Using updated backoff delay for the next interval would require complex restructuring of setInterval
+        // Instead, we trust the internal backoff of execute() retries and keep this loop simple
       }
     }, this.autoReconnectDelay);
     
@@ -424,9 +426,8 @@ export class RconService extends EventEmitter {
         const isServerRunning = await Promise.race([checkPromise, timeoutPromise]);
         clearTimeout(timeoutId);
         if (!isServerRunning) {
-          log.debug('Skipping connection - server is not running');
+          log.debug('Process check did not detect the server; continuing with RCON port probe');
           this.connected = false;
-          return false;
         }
       } catch (error) {
         clearTimeout(timeoutId);

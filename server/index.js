@@ -1337,7 +1337,32 @@ async function start() {
           }
         } else {
           log.info('PZ server not detected running on startup');
-          
+
+          // Process detection can fail with wrappers (WinGSM) or restricted permissions.
+          // Probe the RCON port directly as a fallback so we don't wait 60s for auto-reconnect.
+          try {
+            await rconService.loadConfig();
+            const rconHost = rconService.config.host || '127.0.0.1';
+            const rconPort = rconService.config.port || 27015;
+            const portOpen = await rconService.checkPortOpen(rconHost, rconPort);
+            if (portOpen) {
+              log.info(`RCON port ${rconHost}:${rconPort} is open even though process check failed — connecting...`);
+              try {
+                await Promise.race([
+                  rconService.connect(),
+                  new Promise((_, reject) => setTimeout(() => reject(new Error('RCON connection timeout')), timeoutMs))
+                ]);
+                if (rconService.connected) {
+                  log.info('RCON connected via port fallback probe');
+                }
+              } catch (e) {
+                log.debug(`Fallback RCON connect failed: ${e.message}`);
+              }
+            }
+          } catch (e) {
+            log.debug(`Fallback RCON probe error: ${e.message}`);
+          }
+
           // Check if auto-start is enabled
           const autoStartServer = await getSetting('autoStartServer');
           if (autoStartServer === true || autoStartServer === 'true') {

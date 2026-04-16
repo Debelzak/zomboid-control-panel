@@ -54,6 +54,30 @@ function getDefaultStartupScript() {
   return isWindows ? 'StartServer64.bat' : 'start-server.sh';
 }
 
+export function isWindowsDedicatedServerCommandLine(commandLine) {
+  const normalized = typeof commandLine === 'string' ? commandLine.toLowerCase() : '';
+  if (!normalized) return false;
+
+  // 1. Direct Java execution
+  if (normalized.includes('zombie.network.gameserver')) {
+    return true;
+  }
+
+  // 2. Native Launcher (Wrappers like WinGSM often call these with specific flags)
+  if (normalized.includes('projectzomboid64.exe') || normalized.includes('projectzomboid32.exe')) {
+    if (normalized.includes('-server') || normalized.includes('startserver') || normalized.includes('-servername')) {
+      return true;
+    }
+  }
+
+  // 3. Fallback for custom generic setups (must explicitly name Zomboid)
+  if (normalized.includes('zomboid') && (normalized.includes('-server') || normalized.includes('startserver'))) {
+    return true;
+  }
+
+  return false;
+}
+
 export class ServerManager {
   constructor() {
     this.serverProcess = null;
@@ -191,7 +215,7 @@ export class ServerManager {
         // Windows: Use PowerShell Get-CimInstance to inspect command lines
         exec('powershell -Command "Get-CimInstance Win32_Process -Filter \\"Name=\'java.exe\'\\" | Select-Object CommandLine | Format-List"', { timeout: 8000 }, (psError, psStdout) => {
           if (!psError && psStdout) {
-            const isPZServer = psStdout.toLowerCase().includes('zombie.network.gameserver');
+            const isPZServer = isWindowsDedicatedServerCommandLine(psStdout);
             if (isPZServer) {
               clearTimeout(timeout);
               this.isRunning = true;
@@ -210,9 +234,7 @@ export class ServerManager {
             }
             
             const cmdLine = psStdout2.toLowerCase();
-            const isServer = cmdLine.includes('-server') || 
-                            cmdLine.includes('zombie.network.gameserver') ||
-                            cmdLine.includes('startserver');
+            const isServer = isWindowsDedicatedServerCommandLine(cmdLine);
             
             this.isRunning = isServer;
             resolve(isServer);
@@ -402,30 +424,61 @@ export class ServerManager {
 
     return new Promise((resolve, reject) => {
       if (isWindows) {
-        // Windows: Kill java.exe running PZ server, then ProjectZomboid64.exe
-        exec('powershell -Command "Get-CimInstance Win32_Process -Filter \\"Name=\'java.exe\'\\" | Where-Object { $_.CommandLine -like \'*zombie.network.gameserver*\' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"', (javaErr) => {
-          exec('taskkill /IM ProjectZomboid64.exe /F', (pzError, stdout, stderr) => {
-            const javaKilled = !javaErr;
-            const pzKilled = !pzError;
-            
-            if (!javaKilled && !pzKilled) {
-              if (pzError && pzError.message.includes('not found')) {
-                resolve({ success: true, message: 'Server was not running' });
-                return;
+        // Windows: Accurately identify and kill PZ server processes to respect wrapper edge-cases like WinGSM
+        log.debug('stopServer: Identifying Windows dedicated server processes...');
+        exec('powershell -Command "Get-CimInstance Win32_Process | Where-Object { $_.Name -match \'^(java\\.exe|ProjectZomboid64\\.exe|ProjectZomboid32\\.exe)$\' } | Select-Object ProcessId, CommandLine | ConvertTo-Csv -NoTypeInformation"', (err, stdout) => {
+          let fallback = false;
+          let pidsToKill = [];
+          
+          if (!err && stdout) {
+            const lines = stdout.split('\n');
+            for (let line of lines) {
+              line = line.trim();
+              if (!line || line.startsWith('"ProcessId"')) continue;
+              // Parse CSV format like: "1234","java -jar ..."
+              const parts = line.match(/^"(\d+)",\s*"(.*)"$/);
+              if (parts) {
+                const pid = parseInt(parts[1], 10);
+                const cmdLine = parts[2];
+                if (isWindowsDedicatedServerCommandLine(cmdLine)) {
+                  pidsToKill.push(pid);
+                }
               }
-              resolve({ success: true, message: 'Server may not have been running' });
-              return;
             }
-            
+          } else {
+            fallback = true;
+          }
+
+          if (pidsToKill.length === 0 && !fallback) {
+            log.debug('stopServer: No matching PZ server processes found.');
+            resolve({ success: true, message: 'Server was not running' });
+            return;
+          }
+          
+          if (fallback) {
+            log.warn('stopServer: WMI process detection failed. Falling back to generic force stop.');
+            exec('taskkill /IM ProjectZomboid64.exe /F', () => resolve({ success: true, message: 'Forced fallback kill executed' }));
+            exec('powershell -Command "Get-CimInstance Win32_Process -Filter \\"Name=\'java.exe\'\\" | Where-Object { $_.CommandLine -like \'*zombie.network.gameserver*\' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"');
+            return;
+          }
+
+          log.info(`stopServer: Force killing matched PIDs: ${pidsToKill.join(', ')}`);
+          let killedAny = false;
+          for (const pid of pidsToKill) {
+             exec(`taskkill /PID ${pid} /F`, (killErr) => {
+                if (!killErr) killedAny = true;
+             });
+          }
+          
+          // Wait briefly for taskkills to dispatch
+          setTimeout(() => {
             this.isRunning = false;
             this.serverProcess = null;
             this.startTime = null;
             
             logServerEvent('server_stop', 'Server force stopped').catch(e => log.warn(`Failed to log event: ${e.message}`));
-            log.info('Server force stopped');
-            
             resolve({ success: true, message: 'Server stopped' });
-          });
+          }, 1000);
         });
       } else {
         // Linux: Find and kill the PZ server process

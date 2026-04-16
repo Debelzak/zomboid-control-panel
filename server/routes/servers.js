@@ -507,6 +507,44 @@ router.put('/:id', async (req, res) => {
     }
     
     log.info(`Updated server: ${server.name} (ID: ${server.id})`);
+
+    // If the active server's RCON settings changed, refresh the RCON service
+    // Otherwise the service keeps stale cached credentials after a reconnect
+    if (server.isActive) {
+      const rconFieldsChanged = ['rconHost', 'rconPort', 'rconPassword']
+        .some(k => Object.prototype.hasOwnProperty.call(updates, k));
+      const serverManagerFieldsChanged = ['installPath', 'serverPath', 'zomboidDataPath',
+        'serverConfigPath', 'branch', 'serverPort', 'minMemory', 'maxMemory',
+        'useNoSteam', 'useDebug', 'startBat', 'batFile', 'serverName']
+        .some(k => Object.prototype.hasOwnProperty.call(updates, k));
+
+      const rconService = req.app.get('rconService');
+      const serverManager = req.app.get('serverManager');
+
+      if (serverManagerFieldsChanged && serverManager?.reloadConfig) {
+        try {
+          await serverManager.reloadConfig();
+          log.info(`ServerManager config refreshed after active server update`);
+        } catch (e) {
+          log.warn(`ServerManager reload failed after update: ${e.message}`);
+        }
+      }
+
+      if (rconFieldsChanged && rconService?.reloadConfig) {
+        try {
+          if (rconService.isConnected && rconService.isConnected()) {
+            await rconService.disconnect();
+          }
+          await rconService.reloadConfig();
+          // Try to reconnect in background; auto-reconnect will also keep trying
+          rconService.connect().catch(() => {});
+          log.info(`RCON config refreshed after active server update`);
+        } catch (e) {
+          log.warn(`RCON reload failed after update: ${e.message}`);
+        }
+      }
+    }
+
     res.json({ server, message: 'Server updated successfully' });
   } catch (error) {
     log.error(`Failed to update server: ${error.message}`);
