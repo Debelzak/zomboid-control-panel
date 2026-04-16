@@ -85,6 +85,17 @@ type EditorMode = 'structured' | 'raw'
 type SandboxScalar = string | number | boolean | null | undefined
 type SandboxRecord = Record<string, SandboxScalar>
 
+/** Merge schema defaults into parsed INI settings so schema-defined keys always exist */
+function mergeSchemaDefaults(parsed: Record<string, string>): Record<string, string> {
+  const merged = { ...parsed }
+  for (const setting of INI_SCHEMA) {
+    if (!(setting.key in merged)) {
+      merged[setting.key] = String(setting.default ?? '')
+    }
+  }
+  return merged
+}
+
 // Auth-aware image preview (img tags can't send Bearer tokens)
 function AuthImage({ filePath, alt, className }: { filePath: string; alt?: string; className?: string }) {
   const [blobUrl, setBlobUrl] = useState<string | null>(null)
@@ -559,8 +570,9 @@ export default function ServerConfig() {
       // Load files that exist
       if (paths.exists.ini) {
         const iniData = await serverFilesApi.getIni()
-        setIniSettings(iniData.settings)
-        setOriginalIniSettings(iniData.settings)
+        const merged = mergeSchemaDefaults(iniData.settings)
+        setIniSettings(merged)
+        setOriginalIniSettings(merged)
       }
 
       if (paths.exists.sandbox) {
@@ -848,8 +860,9 @@ export default function ServerConfig() {
           loadData()
         } else {
           const iniData = await serverFilesApi.getIni()
-          setIniSettings(iniData.settings)
-          setOriginalIniSettings(iniData.settings)
+          const merged = mergeSchemaDefaults(iniData.settings)
+          setIniSettings(merged)
+          setOriginalIniSettings(merged)
         }
       } catch { /* silent refresh — local state is still valid */ }
     } catch (error) {

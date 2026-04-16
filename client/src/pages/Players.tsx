@@ -922,10 +922,10 @@ export default function Players() {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => setTeleportDialogOpen(true)}
-                    className="gap-1"
-                    title="Teleport"
-                    aria-label="Teleport player"
+                    disabled
+                    className="gap-1 opacity-50 cursor-not-allowed"
+                    title="Teleport is currently not working in B42 multiplayer"
+                    aria-label="Teleport player (currently unavailable)"
                   >
                     <MapPin className="w-4 h-4" />
                     <span className="hidden sm:inline">Teleport</span>
@@ -1161,11 +1161,11 @@ export default function Players() {
                     </DialogContent>
                   </Dialog>
 
-                  {/* Teleport */}
+                  {/* Teleport — disabled, not working in B42 MP */}
                   <Dialog open={teleportDialogOpen} onOpenChange={setTeleportDialogOpen}>
                     <DialogTrigger asChild>
-                      <button type="button" disabled={!selectedPlayer} className="block h-auto w-full p-0 text-left">
-                        <ActionTile icon={<MapPin className="w-5 h-5" />} label="Teleport" disabled={!selectedPlayer} />
+                      <button type="button" disabled className="block h-auto w-full p-0 text-left opacity-50 cursor-not-allowed">
+                        <ActionTile icon={<MapPin className="w-5 h-5" />} label="Teleport (unavailable)" disabled />
                       </button>
                     </DialogTrigger>
                     <DialogContent className="max-w-md">

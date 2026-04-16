@@ -1036,22 +1036,6 @@ export default function Events() {
     }
   }, [toast])
 
-  // Utilities action handler with status refresh
-  const handleUtilitiesAction = async (action: string, fn: () => Promise<unknown>) => {
-    await handleBridgeAction(action, async () => {
-      await fn()
-      // Refresh utilities status after action
-      try {
-        const result = await panelBridgeApi.getUtilitiesStatus()
-        if (result.success && result.data) {
-          setUtilitiesStatus(result.data)
-        }
-      } catch {
-        // Ignore refresh errors
-      }
-    })
-  }
-
   const executeCommand = useCallback(async (command: string) => {
     const result = await rconApi.execute(command)
     if (!result.success) {
@@ -2066,6 +2050,10 @@ export default function Events() {
           </CardHeader>
           <CardContent>
               <div className="space-y-4">
+                {/* Disabled notice */}
+                <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+                  Power/water toggle is currently not working in B42 multiplayer. Server-side sandbox changes don't propagate to connected clients.
+                </div>
                 {/* Current Status Display - Always visible */}
                 <div className="flex items-center justify-center gap-6 p-3 bg-muted/30 rounded-lg">
                   <div className="flex items-center gap-2">
@@ -2092,20 +2080,18 @@ export default function Events() {
                 <div className="grid grid-cols-2 gap-3">
                   <Button
                     variant="outline"
-                    onClick={() => handleUtilitiesAction('Restore Utilities', () => panelBridgeApi.restoreUtilities())}
-                    disabled={bridgeLoading !== null}
-                    className="h-11 gap-2"
+                    disabled
+                    className="h-11 gap-2 opacity-50 cursor-not-allowed"
                   >
-                    {bridgeLoading === 'Restore Utilities' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+                    <Zap className="w-4 h-4" />
                     Restore Power + Water
                   </Button>
                   <Button
                     variant="outline"
-                    onClick={() => handleUtilitiesAction('Shut Off Utilities', () => panelBridgeApi.shutOffUtilities())}
-                    disabled={bridgeLoading !== null}
-                    className="h-11 gap-2"
+                    disabled
+                    className="h-11 gap-2 opacity-50 cursor-not-allowed"
                   >
-                    {bridgeLoading === 'Shut Off Utilities' ? <Loader2 className="w-4 h-4 animate-spin" /> : <CloudOff className="w-4 h-4" />}
+                    <CloudOff className="w-4 h-4" />
                     Cut Power + Water
                   </Button>
                 </div>
@@ -2113,20 +2099,18 @@ export default function Events() {
                 <div className="grid grid-cols-2 gap-3">
                   <Button
                     variant="outline"
-                    onClick={() => handleUtilitiesAction('Restore Power', () => panelBridgeApi.restoreUtilities(true, false))}
-                    disabled={bridgeLoading !== null}
-                    className="h-11 gap-2"
+                    disabled
+                    className="h-11 gap-2 opacity-50 cursor-not-allowed"
                   >
-                    {bridgeLoading === 'Restore Power' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+                    <Zap className="w-4 h-4" />
                     Restore Power
                   </Button>
                   <Button
                     variant="outline"
-                    onClick={() => handleUtilitiesAction('Restore Water', () => panelBridgeApi.restoreUtilities(false, true))}
-                    disabled={bridgeLoading !== null}
-                    className="h-11 gap-2"
+                    disabled
+                    className="h-11 gap-2 opacity-50 cursor-not-allowed"
                   >
-                    {bridgeLoading === 'Restore Water' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Droplets className="w-4 h-4" />}
+                    <Droplets className="w-4 h-4" />
                     Restore Water
                   </Button>
                 </div>

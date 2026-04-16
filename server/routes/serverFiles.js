@@ -180,9 +180,11 @@ function toIni(obj, originalContent = '') {
       }
     }
     
-    // Add any new keys
+    // Add any new keys (only if they have a non-empty value)
     for (const [key, value] of Object.entries(obj)) {
       if (!written.has(key)) {
+        // Skip empty values for keys that weren't in the original file
+        if (value === '' || value === undefined || value === null) continue;
         // Validate key is a safe INI identifier
         if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(key)) {
           log.warn(`Invalid INI key skipped: ${key}`);
@@ -1409,7 +1411,9 @@ router.get('/browse-files', async (req, res) => {
         if (!entry.name.startsWith('.') && entry.name !== 'node_modules') {
           directories.push(entry.name);
         }
-      } else if (entry.isFile()) {
+      } else {
+        // Treat everything that's not a directory as a potential file
+        // (avoids issues with pkg/Dirent.isFile() not working for some entries)
         const ext = path.extname(entry.name).toLowerCase();
         // If extension filter is provided, only show matching files
         if (filterExts) {

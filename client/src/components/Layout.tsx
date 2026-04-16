@@ -66,6 +66,7 @@ interface NavItem {
   icon: typeof LayoutDashboard
   label: string
   requiresLocal?: boolean
+  disabled?: boolean
 }
 
 interface NavSection {
@@ -117,7 +118,7 @@ const navSections: NavSection[] = [
     items: [
       { to: '/scheduler', icon: Clock, label: 'Scheduled Tasks' },
       { to: '/backups', icon: Archive, label: 'World Backups', requiresLocal: true },
-      { to: '/chunks', icon: Map, label: 'Map Cleanup', requiresLocal: true },
+      { to: '/chunks', icon: Map, label: 'Map Cleanup (buggy)', requiresLocal: true, disabled: true },
     ]
   },
   {
@@ -629,7 +630,7 @@ export default function Layout({ children }: LayoutProps) {
                   <div key={section.id} className="space-y-0.5">
                     {section.items.map((item) => {
                       const isDisabledByRemote = !!item.requiresLocal && activeServer?.isRemote
-                      if (isDisabledByRemote) return null
+                      if (isDisabledByRemote || item.disabled) return null
                       const isActive = location.pathname === item.to
                       return (
                         <Tooltip key={item.to}>
@@ -711,6 +712,20 @@ export default function Layout({ children }: LayoutProps) {
                       {section.items.map((item) => {
                         const isDisabledByRemote = !!item.requiresLocal && activeServer?.isRemote
                         
+                        if (item.disabled) {
+                          return (
+                            <div
+                              key={item.to}
+                              className="nav-item relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm opacity-50 cursor-not-allowed"
+                              title={item.label}
+                              aria-disabled="true"
+                            >
+                              <item.icon className="w-4 h-4 text-muted-foreground/50 shrink-0" />
+                              <span className="truncate text-muted-foreground/70">{item.label}</span>
+                            </div>
+                          )
+                        }
+
                         if (isDisabledByRemote) {
                           return (
                             <div

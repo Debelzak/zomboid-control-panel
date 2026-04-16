@@ -3,10 +3,11 @@ import os from 'os';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import archiver from 'archiver';
 import { createLogger } from '../utils/logger.js';
 const log = createLogger('API:Debug');
 import { getDataPaths, setDataPaths } from '../utils/paths.js';
-import { getPerformanceHistory, recordPerformanceSnapshot, getDatabaseStats, createDatabaseBackup, compactDatabase, getCommandHistory, getBridgeLogs, getPlayerLogs, getDb } from '../database/init.js';
+import { getPerformanceHistory, recordPerformanceSnapshot, getDatabaseStats, createDatabaseBackup, compactDatabase, getCommandHistory, getBridgeLogs, getPlayerLogs, getDb, getActiveServer } from '../database/init.js';
 import { sanitizeError } from '../utils/sanitize.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -109,6 +110,159 @@ router.get('/logs', async (req, res) => {
   }
 });
 
+async function getAvailableLogFiles(logsDir) {
+  const entries = await fs.promises.readdir(logsDir, { withFileTypes: true });
+
+  const files = (await Promise.all(entries
+    .filter((entry) => entry.isFile() && entry.name.endsWith('.log'))
+    .map(async (entry) => {
+      try {
+        const filePath = path.join(logsDir, entry.name);
+        const stats = await fs.promises.stat(filePath);
+        return {
+          name: entry.name,
+          size: stats.size,
+          modified: stats.mtime.toISOString()
+        };
+      } catch (error) {
+        log.debug(`Stat failed for log file ${entry.name}: ${error.message}`);
+        return null;
+      }
+    })))
+    .filter((file) => file !== null)
+    .sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime());
+
+  return files;
+}
+
+const SUPPORT_LOG_FILE_RE = /\.(log|txt)$/i;
+const CRASH_FILE_RE = /^(hs_err_pid.*|.*(?:crash|error|exception).*)\.(log|txt)$/i;
+
+async function resolveSearchRoot(candidate) {
+  if (!candidate) return null;
+
+  const resolved = path.resolve(candidate);
+
+  try {
+    const stats = await fs.promises.stat(resolved);
+    return stats.isDirectory() ? resolved : path.dirname(resolved);
+  } catch {
+    return path.extname(resolved) ? path.dirname(resolved) : resolved;
+  }
+}
+
+async function collectBundleFilesFromDir(dir, matcher, archivePrefix, entries, seenFiles) {
+  if (!dir) return;
+
+  try {
+    await fs.promises.access(dir);
+  } catch {
+    return;
+  }
+
+  const dirEntries = await fs.promises.readdir(dir, { withFileTypes: true });
+
+  for (const entry of dirEntries) {
+    if (!entry.isFile()) continue;
+    if (!matcher(entry.name)) continue;
+
+    const filePath = path.join(dir, entry.name);
+    const dedupeKey = path.resolve(filePath).toLowerCase();
+    if (seenFiles.has(dedupeKey)) continue;
+
+    seenFiles.add(dedupeKey);
+    entries.push({
+      filePath,
+      archivePath: `${archivePrefix}/${entry.name}`
+    });
+  }
+}
+
+async function getSupportBundleEntries() {
+  const paths = getDataPaths();
+  const activeServer = await getActiveServer().catch(() => null);
+
+  const installRoot = await resolveSearchRoot(activeServer?.installPath || '');
+  const zomboidDataRoot = await resolveSearchRoot(activeServer?.zomboidDataPath || '');
+
+  const entries = [];
+  const seenFiles = new Set();
+
+  await collectBundleFilesFromDir(
+    paths.logsDir,
+    (name) => SUPPORT_LOG_FILE_RE.test(name) && !name.startsWith('.'),
+    'admin-panel',
+    entries,
+    seenFiles
+  );
+
+  await collectBundleFilesFromDir(
+    zomboidDataRoot,
+    (name) => SUPPORT_LOG_FILE_RE.test(name),
+    'zomboid-server/root',
+    entries,
+    seenFiles
+  );
+
+  await collectBundleFilesFromDir(
+    zomboidDataRoot ? path.join(zomboidDataRoot, 'Logs') : null,
+    (name) => SUPPORT_LOG_FILE_RE.test(name),
+    'zomboid-server/Logs',
+    entries,
+    seenFiles
+  );
+
+  await collectBundleFilesFromDir(
+    installRoot ? path.join(installRoot, 'logs') : null,
+    (name) => SUPPORT_LOG_FILE_RE.test(name),
+    'zomboid-install/logs',
+    entries,
+    seenFiles
+  );
+
+  await collectBundleFilesFromDir(
+    installRoot,
+    (name) => CRASH_FILE_RE.test(name),
+    'crash-logs/install-root',
+    entries,
+    seenFiles
+  );
+
+  await collectBundleFilesFromDir(
+    installRoot ? path.join(installRoot, 'logs') : null,
+    (name) => CRASH_FILE_RE.test(name),
+    'crash-logs/install-logs',
+    entries,
+    seenFiles
+  );
+
+  await collectBundleFilesFromDir(
+    zomboidDataRoot,
+    (name) => CRASH_FILE_RE.test(name),
+    'crash-logs/server-root',
+    entries,
+    seenFiles
+  );
+
+  await collectBundleFilesFromDir(
+    zomboidDataRoot ? path.join(zomboidDataRoot, 'Logs') : null,
+    (name) => CRASH_FILE_RE.test(name),
+    'crash-logs/server-logs',
+    entries,
+    seenFiles
+  );
+
+  return {
+    entries,
+    activeServer,
+    sources: {
+      panelLogsDir: paths.logsDir,
+      installRoot,
+      zomboidDataRoot
+    }
+  };
+}
+
 // List available log files
 router.get('/logs/files', async (req, res) => {
   try {
@@ -121,27 +275,8 @@ router.get('/logs/files', async (req, res) => {
         log.debug(`Logs directory not accessible (${logsDir}): ${e.message}`);
         return res.json({ files: [] });
     }
-    
-    const fileList = await fs.promises.readdir(logsDir);
-    
-    const files = (await Promise.all(fileList
-      .filter(f => f.endsWith('.log'))
-      .map(async name => {
-        try {
-            const filePath = path.join(logsDir, name);
-            const stats = await fs.promises.stat(filePath);
-            return {
-            name,
-            size: stats.size,
-            modified: stats.mtime.toISOString()
-            };
-        } catch(e) {
-            log.debug(`Stat failed for log file ${name}: ${e.message}`);
-            return null;
-        }
-      })))
-      .filter(f => f !== null)
-      .sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime());
+
+    const files = await getAvailableLogFiles(logsDir);
     
     res.json({ files });
   } catch (error) {
@@ -172,6 +307,70 @@ router.get('/logs/download', async (req, res) => {
     readStream.pipe(res);
   } catch (error) {
     log.error(`Failed to download logs: ${error.message}`);
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
+// Download all log files as a zip archive
+router.get('/logs/download-zip', async (req, res) => {
+  try {
+    log.info('GET /logs/download-zip');
+
+    const { entries, activeServer, sources } = await getSupportBundleEntries();
+    if (entries.length === 0) {
+      return res.status(404).json({ error: 'No support logs found' });
+    }
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const archiveName = `pz-support-bundle-${timestamp}.zip`;
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${archiveName}"`);
+
+    const archive = archiver('zip', {
+      zlib: { level: 6 }
+    });
+
+    archive.on('warning', (error) => {
+      log.warn(`Log zip warning: ${error.message}`);
+    });
+
+    archive.on('error', (error) => {
+      log.error(`Failed to create log archive: ${error.message}`);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Failed to create log archive' });
+      } else {
+        res.destroy(error);
+      }
+    });
+
+    archive.pipe(res);
+
+    const manifest = [
+      'Project Zomboid Control Panel Support Bundle',
+      `Generated: ${new Date().toISOString()}`,
+      `Active Server: ${activeServer?.name || activeServer?.serverName || 'Not configured'}`,
+      `Panel Logs Dir: ${sources.panelLogsDir || 'n/a'}`,
+      `Zomboid Data Dir: ${sources.zomboidDataRoot || 'n/a'}`,
+      `Install Dir: ${sources.installRoot || 'n/a'}`,
+      `Included Files: ${entries.length}`,
+      '',
+      'Contents:',
+      '- admin-panel: panel combined/error logs',
+      '- zomboid-server: server-console and runtime logs',
+      '- zomboid-install: install-side connection/workshop/system logs',
+      '- crash-logs: matching crash/error dump files'
+    ].join('\n');
+
+    archive.append(manifest, { name: 'support-bundle-info.txt' });
+
+    for (const entry of entries) {
+      archive.file(entry.filePath, { name: entry.archivePath });
+    }
+
+    archive.finalize();
+  } catch (error) {
+    log.error(`Failed to download log archive: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });
   }
 });

@@ -156,6 +156,7 @@ export default function Debug() {
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null)
   const [healthStatus, setHealthStatus] = useState<HealthStatus | null>(null)
   const [logFiles, setLogFiles] = useState<LogFile[]>([])
+  const [downloadingLogArchive, setDownloadingLogArchive] = useState(false)
   const [performanceHistory, setPerformanceHistory] = useState<PerformanceSnapshot[]>([])
   const [crashLogs, setCrashLogs] = useState<CrashLog[]>([])
   const [selectedCrashLog, setSelectedCrashLog] = useState<string | null>(null)
@@ -531,6 +532,66 @@ export default function Debug() {
       if (url) window.URL.revokeObjectURL(url)
     }
   }
+
+  const downloadLogFile = useCallback(async (filename: string) => {
+    let url: string | null = null
+    try {
+      const res = await authFetch(`/api/debug/logs/download/${encodeURIComponent(filename)}`)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+
+      const blob = await res.blob()
+      url = window.URL.createObjectURL(blob)
+
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: `Failed to download ${filename}`,
+        variant: 'destructive',
+      })
+    } finally {
+      if (url) {
+        const objectUrl = url
+        window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 1000)
+      }
+    }
+  }, [authFetch, toast])
+
+  const downloadLogArchive = useCallback(async () => {
+    let url: string | null = null
+    setDownloadingLogArchive(true)
+    try {
+      const res = await authFetch('/api/debug/logs/download-zip')
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+
+      const blob = await res.blob()
+      url = window.URL.createObjectURL(blob)
+
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `pz-panel-logs-${new Date().toISOString().split('T')[0]}.zip`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to download log archive',
+        variant: 'destructive',
+      })
+    } finally {
+      setDownloadingLogArchive(false)
+      if (url) {
+        const objectUrl = url
+        window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 1000)
+      }
+    }
+  }, [authFetch, toast])
 
   const copyLogEntry = (log: LogEntry) => {
     const text = `[${log.timestamp.toISOString()}] [${log.level.toUpperCase()}] ${log.source ? `[${log.source}] ` : ''}${log.message}`
@@ -1109,9 +1170,20 @@ export default function Debug() {
                   <FileText className="w-5 h-5" />
                   Log Files on Disk
                 </CardTitle>
-                <CardDescription>Download or view historical log files.</CardDescription>
+                <CardDescription>Download panel logs individually, or grab one support bundle with panel logs, Zomboid server logs, and crash files.</CardDescription>
               </CardHeader>
               <CardContent>
+                <div className="mb-3 flex justify-end">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={downloadLogArchive}
+                    disabled={downloadingLogArchive}
+                  >
+                    {downloadingLogArchive ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+                    Download Support Bundle (.zip)
+                  </Button>
+                </div>
                 <div className="space-y-2">
                   {logFiles.map(file => (
                     <div key={file.name} className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
@@ -1124,10 +1196,13 @@ export default function Debug() {
                           </p>
                         </div>
                       </div>
-                      <Button variant="ghost" size="sm" asChild>
-                        <a href={`/api/debug/logs/download/${file.name}`} download>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => downloadLogFile(file.name)}
+                        aria-label={`Download ${file.name}`}
+                      >
                           <Download className="w-4 h-4" />
-                        </a>
                       </Button>
                     </div>
                   ))}
