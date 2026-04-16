@@ -68,6 +68,8 @@ interface ChunkInfo {
   size: number
   modified: string
   source?: string
+  cellX?: number
+  cellY?: number
 }
 
 interface ChunkBounds {
@@ -144,6 +146,39 @@ function formatSize(bytes: number): string {
   return `${bytes} B`
 }
 
+function findFirstRenderableChunkIndex(chunks: ChunkInfo[], minX: number): number {
+  let low = 0
+  let high = chunks.length
+  const target = minX - 1
+
+  while (low < high) {
+    const mid = (low + high) >> 1
+    if (chunks[mid].x < target) {
+      low = mid + 1
+    } else {
+      high = mid
+    }
+  }
+
+  return low
+}
+
+function findLastRenderableChunkIndex(chunks: ChunkInfo[], maxX: number): number {
+  let low = 0
+  let high = chunks.length
+
+  while (low < high) {
+    const mid = (low + high) >> 1
+    if (chunks[mid].x <= maxX) {
+      low = mid + 1
+    } else {
+      high = mid
+    }
+  }
+
+  return low - 1
+}
+
 export default function ChunkCleaner() {
   const { theme } = useTheme()
   const [saves, setSaves] = useState<SaveInfo[]>([])
@@ -212,9 +247,6 @@ export default function ChunkCleaner() {
   const [showCustomPath, setShowCustomPath] = useState(false)
   const [showHelp, setShowHelp] = useState(false)
   
-  // Chunk limit warning
-  const [limitReached, setLimitReached] = useState(false)
-  
   // Guard against stale chunk-load responses when user switches saves quickly
   const loadIdRef = useRef(0)
   
@@ -244,11 +276,12 @@ export default function ChunkCleaner() {
   // Total size of selected chunks (memoized for display)
   const selectedSize = useMemo(() => {
     let total = 0
-    for (const chunk of chunks) {
-      if (selectedChunks.has(`${chunk.x}_${chunk.y}`)) total += chunk.size || 0
+    for (const key of selectedChunks) {
+      const chunk = chunkMap[key]
+      if (chunk) total += chunk.size || 0
     }
     return total
-  }, [chunks, selectedChunks])
+  }, [chunkMap, selectedChunks])
 
   // Whether the canvas container is in the DOM
   const hasCanvas = !!selectedSave && !loading && chunks.length > 0
@@ -330,7 +363,6 @@ export default function ChunkCleaner() {
     setBounds(null)
     setStats(null)
     setSelectedChunks(new Set())
-    setLimitReached(false)
     setChunkVehicles([])
     setChunkSafehouses([])
     
@@ -362,7 +394,6 @@ export default function ChunkCleaner() {
       setChunks(rawChunks)
       setBounds(chunksResult.bounds ?? null)
       setStats(statsResult)
-      setLimitReached(chunksResult.limitReached === true)
     } catch (error) {
       if (thisLoadId !== loadIdRef.current) return
       toast({
@@ -848,7 +879,11 @@ export default function ChunkCleaner() {
       
       // ── Draw chunks ──
       // Translucent fill so the map underneath remains visible
-      for (const chunk of chunks) {
+      const visibleStart = findFirstRenderableChunkIndex(chunks, visMinX)
+      const visibleEnd = findLastRenderableChunkIndex(chunks, visMaxX)
+
+      for (let index = visibleStart; index <= visibleEnd; index++) {
+        const chunk = chunks[index]
         if (chunk.x + 1 < visMinX || chunk.x > visMaxX || chunk.y + 1 < visMinY || chunk.y > visMaxY) continue
         
         const sx = chunk.x * scale + offset.x
@@ -948,7 +983,10 @@ export default function ChunkCleaner() {
         
         // Selection preview: count chunks in selection region
         let selCount = 0
-        for (const c of chunks) {
+        const selectionStartIndex = findFirstRenderableChunkIndex(chunks, wsx)
+        const selectionEndIndex = findLastRenderableChunkIndex(chunks, Math.ceil(wex) - 1)
+        for (let index = selectionStartIndex; index <= selectionEndIndex; index++) {
+          const c = chunks[index]
           if (c.x + 1 > wsx && c.x < wex && c.y + 1 > wsy && c.y < wey) selCount++
         }
         
@@ -1157,7 +1195,10 @@ export default function ChunkCleaner() {
           }
         }
       } else {
-        for (const chunk of chunks) {
+        const selectionStartIndex = findFirstRenderableChunkIndex(chunks, sx)
+        const selectionEndIndex = findLastRenderableChunkIndex(chunks, Math.ceil(ex) - 1)
+        for (let index = selectionStartIndex; index <= selectionEndIndex; index++) {
+          const chunk = chunks[index]
           if (chunk.x + 1 > sx && chunk.x < ex && chunk.y + 1 > sy && chunk.y < ey) {
             const key = `${chunk.x}_${chunk.y}`
             if (shiftKey) {
@@ -1272,18 +1313,19 @@ export default function ChunkCleaner() {
     try {
       const chunksToDelete = chunks
         .filter(c => selectedChunks.has(`${c.x}_${c.y}`))
-        .map(c => ({ file: c.file, x: c.x, y: c.y, source: c.source }))
+        .map(c => ({ file: c.file, x: c.x, y: c.y, source: c.source, cellX: c.cellX, cellY: c.cellY }))
       
       // If deleteVehicles is checked, remove vehicles in the selected area via PanelBridge
       if (deleteVehicles) {
         // Convert chunk coords back to game-tile coords for the PanelBridge command
+        const tilesPerChunk = isB42Ref.current ? 8 : 10
         let minGX = Infinity, minGY = Infinity, maxGX = -Infinity, maxGY = -Infinity
         for (const key of selectedChunks) {
           const [cx, cy] = key.split('_').map(Number)
-          minGX = Math.min(minGX, cx * 10)
-          minGY = Math.min(minGY, cy * 10)
-          maxGX = Math.max(maxGX, (cx + 1) * 10)
-          maxGY = Math.max(maxGY, (cy + 1) * 10)
+          minGX = Math.min(minGX, cx * tilesPerChunk)
+          minGY = Math.min(minGY, cy * tilesPerChunk)
+          maxGX = Math.max(maxGX, (cx + 1) * tilesPerChunk)
+          maxGY = Math.max(maxGY, (cy + 1) * tilesPerChunk)
         }
         try {
           const vRes = await panelBridgeApi.sendCommand('removeVehiclesInArea', {
@@ -1349,16 +1391,6 @@ export default function ChunkCleaner() {
             <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
             Deleting chunks resets those areas — constructions, loot, and zombies will be lost. Stop the server first and keep backups enabled.
           </p>
-
-          {/* Limit Warning */}
-          {limitReached && (
-            <div className="flex items-center gap-2.5 rounded-md border border-warning/25 bg-warning/8 px-3 py-2">
-              <AlertTriangle className="w-4 h-4 flex-shrink-0 text-warning" />
-              <p className="text-xs text-muted-foreground">
-                <span className="font-medium text-warning">Chunk limit reached</span> — Only {chunks.length.toLocaleString()} chunks shown. Use region delete for larger areas.
-              </p>
-            </div>
-          )}
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-5">

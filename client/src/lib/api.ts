@@ -780,7 +780,7 @@ export const chunksApi = {
   getStats: (saveName: string, customPath?: string) => apiGet(`/chunks/stats/${encodeURIComponent(saveName)}${customPath ? `?customPath=${encodeURIComponent(customPath)}` : ''}`),
   deleteChunks: (
     saveName: string,
-    chunks: Array<{ file: string; x: number; y: number; source?: string }>,
+    chunks: Array<{ file: string; x: number; y: number; source?: string; cellX?: number; cellY?: number }>,
     createBackup: boolean = true,
     customPath?: string,
   ) => apiPost('/chunks/delete-chunks', { saveName, chunks, createBackup, customPath }),

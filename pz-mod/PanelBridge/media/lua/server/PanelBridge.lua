@@ -2778,7 +2778,7 @@ handlers.importPlayerData = function(args)
     }
 end
 
--- Teleport a player
+-- Teleport a player (hybrid: server position + client command for network sync)
 handlers.teleportPlayer = function(args)
     local username = args.username
     local x = tonumber(args.x)
@@ -2800,38 +2800,81 @@ handlers.teleportPlayer = function(args)
         return false, nil, "Player not found: " .. username
     end
     
-    local success, err = pcall(function()
-        -- B42: Use NetworkTeleport for proper network-synced teleport
-        if NetworkTeleport and NetworkTeleport.teleport then
-            local zFloor = math.floor(z)
-            NetworkTeleport.teleport(player, NetworkTeleport.Type.none, x, y, zFloor, 0)
+    local oldX = player:getX()
+    local oldY = player:getY()
+    local oldZ = player:getZ()
+    local debugInfo = {}
+    
+    -- Step 1: Server-side position update via teleportTo (Java method)
+    local ok1, err1 = pcall(function()
+        if player.teleportTo then
+            player:teleportTo(x, y, z)
+            table.insert(debugInfo, "teleportTo called")
         else
-            -- B41 fallback: set coordinates + network flag
-            if player.setPosition then
-                player:setPosition(x, y, z)
-            else
-                player:setX(x)
-                player:setY(y)
-                player:setZ(z)
-            end
-            if player.setLx then
-                player:setLx(x)
-                player:setLy(y)
-                player:setLz(z)
-            end
-            if player.setNetworkTeleportEnabled then
-                player:setNetworkTeleportEnabled(true)
-            end
+            player:setX(x)
+            player:setY(y)
+            player:setZ(z)
+            table.insert(debugInfo, "setXYZ called")
+        end
+    end)
+    if not ok1 then
+        table.insert(debugInfo, "teleportTo FAILED: " .. tostring(err1))
+    end
+    
+    -- Step 2: Update last-known position for network consistency
+    pcall(function()
+        if player.setLx then
+            player:setLx(x)
+            player:setLy(y)
+            player:setLz(z)
+            table.insert(debugInfo, "setLxyz done")
         end
     end)
     
-    if not success then
-        return false, nil, "Failed to teleport player: " .. tostring(err)
+    -- Step 3: Set network teleport flag (tells server to broadcast new position)
+    pcall(function()
+        if player.setNetworkTeleportEnabled then
+            player:setNetworkTeleportEnabled(true)
+            table.insert(debugInfo, "networkTeleportEnabled set")
+        end
+    end)
+    
+    -- Step 4: Send command to the player's CLIENT to also teleport locally
+    -- PZ's own admin panels always teleport from client side in MP
+    -- This ensures the player's screen actually moves
+    local ok4, err4 = pcall(function()
+        if sendServerCommand then
+            local data = {}
+            data.x = tostring(x)
+            data.y = tostring(y)
+            data.z = tostring(z)
+            -- 4-arg form sends to specific player only
+            sendServerCommand(player, "PanelBridge", "doTeleport", data)
+            table.insert(debugInfo, "sendServerCommand(player, doTeleport) sent")
+        else
+            table.insert(debugInfo, "sendServerCommand not available")
+        end
+    end)
+    if not ok4 then
+        table.insert(debugInfo, "sendServerCommand FAILED: " .. tostring(err4))
     end
+    
+    -- Step 5: Verify position after teleport
+    local verifyX = player:getX()
+    local verifyY = player:getY()
+    local verifyZ = player:getZ()
+    table.insert(debugInfo, "verify pos: " .. verifyX .. "," .. verifyY .. "," .. verifyZ)
+    
+    local debugStr = table.concat(debugInfo, " | ")
+    logDebug("teleportPlayer: " .. username .. " from " .. oldX .. "," .. oldY .. "," .. oldZ 
+        .. " to " .. x .. "," .. y .. "," .. z .. " — " .. debugStr)
     
     return true, { 
         message = "Player teleported",
-        newPosition = { x = x, y = y, z = z }
+        oldPosition = { x = oldX, y = oldY, z = oldZ },
+        newPosition = { x = x, y = y, z = z },
+        verifyPosition = { x = verifyX, y = verifyY, z = verifyZ },
+        debug = debugStr
     }
 end
 
@@ -3585,16 +3628,21 @@ handlers.getUtilitiesStatus = function(args)
     local elecModifier = 0
     local waterModifier = 0
     
-    -- Check actual shutdown state from GameTime modData
+    -- Read sandbox settings and game time for diagnostics
     local currentHour = 0
+    local currentDay = 0
+    local nightsSurvived = 0
+    local timeSinceApo = 1
     local elecShutStart = nil
     local waterShutStart = nil
-    local powerActuallyOn = hydroPowerOn
-    local waterActuallyOn = hydroPowerOn
+    -- Power: Use the same formula the game uses (ISButtonPrompt.lua line 421):
+    --   if (ElecShutModifier > -1 AND worldAgeDays < ElecShutModifier) OR square:haveElectricity()
+    -- isHydroPowerOn() is NOT used by the game's Lua gameplay code.
+    local powerActuallyOn = false
+    local waterActuallyOn = false
     
     pcall(function()
         if sandbox then
-            -- Use getOptionByName for B42 compatibility
             local elecOpt = sandbox:getOptionByName("ElecShut")
             local waterOpt = sandbox:getOptionByName("WaterShut")
             if elecOpt and elecOpt.getValue then
@@ -3603,37 +3651,38 @@ handlers.getUtilitiesStatus = function(args)
             if waterOpt and waterOpt.getValue then
                 waterShut = tostring(waterOpt:getValue())
             end
-            -- These are direct methods that exist
             elecModifier = sandbox:getElecShutModifier()
             waterModifier = sandbox:getWaterShutModifier()
+            if sandbox.getTimeSinceApo then
+                timeSinceApo = sandbox:getTimeSinceApo()
+            end
         end
         
-        -- Check the actual shutdown timers
         local gameTime = GameTime.getInstance()
         if gameTime then
             currentHour = gameTime:getWorldAgeHours()
+            currentDay = currentHour / 24
+            nightsSurvived = gameTime:getNightsSurvived()
             local modData = gameTime:getModData()
             if modData then
                 elecShutStart = modData.ElecShutStart
                 waterShutStart = modData.WaterShutStart
-                
-                -- Power is on if: hydroPowerOn is true AND (no shutdown time set OR shutdown time is in the future OR set to -1 for permanent)
-                if elecShutStart then
-                    if elecShutStart == -1 then
-                        powerActuallyOn = hydroPowerOn -- -1 means never shut off
-                    elseif elecShutStart > 0 and currentHour >= elecShutStart then
-                        powerActuallyOn = false -- Past the shutdown time
-                    end
-                end
-                
-                if waterShutStart then
-                    if waterShutStart == -1 then
-                        waterActuallyOn = hydroPowerOn
-                    elseif waterShutStart > 0 and currentHour >= waterShutStart then
-                        waterActuallyOn = false
-                    end
-                end
             end
+        end
+
+        -- Water has no Java flag like isHydroPowerOn().
+        -- Use the same formula as power (matches game's internal check).
+        -- Modifier > -1 AND worldAgeDays < modifier = water still on
+        local worldAgeDays = currentHour / 24 + (timeSinceApo - 1) * 30
+        
+        -- Power check: same formula as ISButtonPrompt.lua line 421
+        if elecModifier > -1 and worldAgeDays < elecModifier then
+            powerActuallyOn = true
+        end
+        
+        -- Water check: same formula
+        if waterModifier > -1 and worldAgeDays < waterModifier then
+            waterActuallyOn = true
         end
     end)
     
@@ -3642,6 +3691,9 @@ handlers.getUtilitiesStatus = function(args)
         powerOn = powerActuallyOn,
         waterOn = waterActuallyOn,
         currentWorldHour = currentHour,
+        currentWorldDay = currentDay,
+        nightsSurvived = nightsSurvived,
+        timeSinceApo = timeSinceApo,
         elecShutStart = elecShutStart,
         waterShutStart = waterShutStart,
         elecShut = elecShut,
@@ -3649,6 +3701,48 @@ handlers.getUtilitiesStatus = function(args)
         elecShutModifier = elecModifier,
         waterShutModifier = waterModifier
     }
+end
+
+-- Helper: set haveElectricity on all loaded squares around players
+-- This directly forces IsoGridSquare.haveElectricity() to return the desired
+-- value, which is what the game's power checks (ISButtonPrompt, ISVehicleMenu,
+-- ISWorldObjectContextMenu) actually read.
+local function setElectricityOnLoadedSquares(enabled)
+    local cell = getCell()
+    if not cell then
+        return 0, "No cell available"
+    end
+    
+    local players = getOnlinePlayers()
+    if not players or players:size() == 0 then
+        return 0, "No players online"
+    end
+    
+    local squareCount = 0
+    
+    for p = 0, players:size() - 1 do
+        local player = players:get(p)
+        if player then
+            local px, py = math.floor(player:getX()), math.floor(player:getY())
+            
+            -- 50-square radius covers the playable area around each player
+            for x = px - 50, px + 50 do
+                for y = py - 50, py + 50 do
+                    for z = 0, 3 do
+                        local sq = cell:getGridSquare(x, y, z)
+                        if sq then
+                            pcall(function()
+                                sq:setHaveElectricity(enabled)
+                            end)
+                            squareCount = squareCount + 1
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    return squareCount, "success"
 end
 
 -- Helper function to activate light switches in loaded chunks around all players
@@ -3660,36 +3754,31 @@ local function activateLightSwitchesInLoadedChunks()
     
     local activatedCount = 0
     
-    -- Get all online players to find loaded areas
     local players = getOnlinePlayers()
     if not players or players:size() == 0 then
         return 0, "No players online"
     end
     
-    -- Process light switches around each player
     for p = 0, players:size() - 1 do
         local player = players:get(p)
         if player then
             local px, py = math.floor(player:getX()), math.floor(player:getY())
             
-            -- Scan loaded area around each player (reduced radius for performance)
-            -- 30-square radius * 4 floors = ~14k squares/player vs ~82k before
             for x = px - 30, px + 30 do
                 for y = py - 30, py + 30 do
-                    for z = 0, 3 do  -- Ground to 3rd floor (covers most buildings)
+                    for z = 0, 3 do
                         local sq = cell:getGridSquare(x, y, z)
                         if sq then
                             local objects = sq:getObjects()
                             if objects then
                                 for i = 0, objects:size() - 1 do
                                     local obj = objects:get(i)
-                                    -- Check if this is a light switch using instanceof
                                     if obj and instanceof(obj, "IsoLightSwitch") then
-                                        -- Activate the light switch using toggle method
-                                        -- IsoLightSwitch has toggle() and setActive() methods
                                         local success, toggleErr = pcall(function()
                                             if obj.toggle then
-                                                -- Only toggle if currently off
+                                                if obj:isActivated() then
+                                                    obj:toggle()
+                                                end
                                                 if not obj:isActivated() then
                                                     obj:toggle()
                                                     activatedCount = activatedCount + 1
@@ -3699,7 +3788,6 @@ local function activateLightSwitchesInLoadedChunks()
                                                 activatedCount = activatedCount + 1
                                             end
                                         end)
-                                        -- Ignore individual toggle errors, continue with other switches
                                     end
                                 end
                             end
@@ -3783,7 +3871,6 @@ handlers.restoreUtilities = function(args)
     local debugInfo = {}
     
     local success, err = pcall(function()
-        -- Get current day using getNightsSurvived() (same as RicksMLC_PowerGrid uses)
         local gameTime = GameTime.getInstance()
         local nightsSurvived = 0
         if gameTime then
@@ -3791,236 +3878,160 @@ handlers.restoreUtilities = function(args)
         end
         table.insert(debugInfo, "nightsSurvived=" .. tostring(nightsSurvived))
         
-        -- Calculate restore days - set to far future (same pattern as RicksMLC_PowerGrid)
-        -- The game checks: power is ON when NightsSurvived < ElecShutModifier
-        local restoreDays = nightsSurvived + 99999
-        table.insert(debugInfo, "restoreDays=" .. tostring(restoreDays))
+        local sandboxOptions = getSandboxOptions()
         
+        -- Step 1: Set Lua SandboxVars FIRST (the authoritative source for updateFromLua)
+        -- The game's actual power check (ISButtonPrompt.lua line 421) is:
+        --   if (ElecShutModifier > -1 AND worldAgeDays < ElecShutModifier) OR square:haveElectricity()
+        -- Setting -1 makes (> -1) FALSE = power always off!
+        -- Use 999999 = far future, makes the check pass (999999 > -1 AND days < 999999)
+        local restoreDays = 999999
         if restorePower then
-            -- APPROACH: Clear shutdown timers + set modifiers to far future
+            SandboxVars.ElecShut = 9        -- 9 = Disabled (sandbox UI label)
+            SandboxVars.ElecShutModifier = restoreDays
+            table.insert(debugInfo, "Lua ElecShut=9(Disabled) ElecShutModifier=" .. tostring(restoreDays))
             
-            -- Step 1: Clear ElecShutStart in GameTime modData
-            -- This is the ACTUAL value PZ checks to determine if power is off.
-            -- If ElecShutStart is set and currentHour >= ElecShutStart, power is off.
-            -- Setting to -1 means "never shut off".
+            -- Clear ElecShutStart in GameTime modData
             local gameTimeModData = gameTime and gameTime:getModData() or nil
             if gameTimeModData then
-                local oldElecShutStart = gameTimeModData.ElecShutStart
+                local oldVal = gameTimeModData.ElecShutStart
                 gameTimeModData.ElecShutStart = -1
-                table.insert(debugInfo, "ElecShutStart: " .. tostring(oldElecShutStart) .. " -> -1")
-            else
-                table.insert(debugInfo, "WARNING: Could not access GameTime modData")
+                table.insert(debugInfo, "ElecShutStart: " .. tostring(oldVal) .. " -> -1")
             end
-            
-            -- Step 2: Set the global hydro power flag ON
-            world:setHydroPowerOn(true)
-            table.insert(debugInfo, "setHydroPowerOn(true) called")
-            
-            -- Step 3: Set sandbox options via Java API
-            local sandboxOptions = getSandboxOptions()
-            if sandboxOptions then
-                local elecOption = sandboxOptions:getOptionByName("ElecShutModifier")
-                if elecOption and elecOption.setValue then
-                    elecOption:setValue(restoreDays)
-                    table.insert(debugInfo, "elecOption:setValue(" .. tostring(restoreDays) .. ")")
-                end
-            end
-            
-            -- Step 4: Set Lua SandboxVars table
-            SandboxVars.ElecShutModifier = restoreDays
-            table.insert(debugInfo, "Set SandboxVars.ElecShutModifier = " .. tostring(restoreDays))
-            
-            -- Step 5: Try to use GameServer.sendWorldState if available
-            local gs = GameServer
-            if gs then
-                -- Try various GameServer methods
-                if gs.sendWorldState then
-                    pcall(function() gs.sendWorldState() end)
-                    table.insert(debugInfo, "GameServer.sendWorldState called")
-                end
-                
-                -- Try syncSandboxOptions
-                if gs.syncSandboxOptions then
-                    pcall(function() gs.syncSandboxOptions() end)
-                    table.insert(debugInfo, "GameServer.syncSandboxOptions called")
-                end
-                
-                -- Try sendSandboxOptionsToClient for each player
-                if gs.sendSandboxOptionsToClient then
-                    local players = getOnlinePlayers()
-                    if players then
-                        for i = 0, players:size() - 1 do
-                            local player = players:get(i)
-                            if player then
-                                pcall(function()
-                                    gs.sendSandboxOptionsToClient(player:getOnlineID())
-                                end)
-                            end
-                        end
-                        table.insert(debugInfo, "sendSandboxOptionsToClient called for all players")
-                    end
-                end
-            end
-            
-            -- Step 5: Try ServerOptions if available (for syncing to clients)
-            if ServerOptions and ServerOptions.instance then
-                local serverOpts = ServerOptions.instance
-                if serverOpts.sync then
-                    pcall(function() serverOpts:sync() end)
-                    table.insert(debugInfo, "ServerOptions sync called")
-                end
-            end
-            
-            -- Step 6: Activate light switches in loaded chunks
-            local switchesActivated, statusMsg = activateLightSwitchesInLoadedChunks()
-            table.insert(debugInfo, "Light switches activated: " .. tostring(switchesActivated))
-            
-            -- Step 7: Trigger the power on event
-            if triggerEvent then
-                pcall(function() triggerEvent("OnHydroPowerOn") end)
-                table.insert(debugInfo, "Triggered OnHydroPowerOn event")
-            end
-            
-            -- Step 8: Verify Java API value
-            local sandboxOptions2 = getSandboxOptions()
-            if sandboxOptions2 then
-                local elecOption2 = sandboxOptions2:getOptionByName("ElecShutModifier")
-                if elecOption2 and elecOption2.getValue then
-                    local javaValue = elecOption2:getValue()
-                    table.insert(debugInfo, "Java ElecShutModifier getValue: " .. tostring(javaValue))
-                end
-            end
-            
-            -- Step 9: Try transmitWeather to sync world state
-            if world.transmitWeather then
-                pcall(function() world:transmitWeather() end)
-                table.insert(debugInfo, "transmitWeather called")
-            end
-            
-            -- Step 10: Try to use the server's built-in sandbox sync
-            -- In B42, need to find the right method
-            pcall(function()
-                -- Try to force a world state update
-                if world.setHydroPowerOn then
-                    -- Turn it OFF then ON again to trigger any listeners
-                    world:setHydroPowerOn(false)
-                    world:setHydroPowerOn(true)
-                    table.insert(debugInfo, "Toggled hydro power to trigger update")
-                end
-            end)
-            
-            -- Step 11: Use IsoWorld's triggerNPCEvent if available
-            pcall(function()
-                if world.triggerNPCEvent then
-                    world:triggerNPCEvent("HydroPowerChanged")
-                    table.insert(debugInfo, "triggerNPCEvent called")
-                end
-            end)
-            
-            -- Step 12: Try all GameServer static methods we can find
-            pcall(function()
-                if GameServer then
-                    local methods = {}
-                    for k, v in pairs(GameServer) do
-                        if type(v) == "function" and (k:lower():find("sync") or k:lower():find("sandbox") or k:lower():find("send")) then
-                            table.insert(methods, k)
-                        end
-                    end
-                    if #methods > 0 then
-                        table.insert(debugInfo, "GameServer sync methods found: " .. table.concat(methods, ", "))
-                    end
-                end
-            end)
-            
-            -- Step 13: Send command to all clients to refresh their power state
-            local players = getOnlinePlayers()
-            if players then
-                for i = 0, players:size() - 1 do
-                    local player = players:get(i)
-                    if player then
-                        if sendServerCommand then
-                            sendServerCommand(player, "PanelBridge", "refreshPowerState", {powerOn = true, elecShutModifier = restoreDays})
-                            -- Also send a visible message so players know to reconnect if power doesn't work
-                            sendServerCommand(player, "chat", "addMessage", {
-                                message = "[Server] Power has been restored. If lights don't work, reconnect to the server.",
-                                type = "server"
-                            })
-                        end
-                    end
-                end
-                table.insert(debugInfo, "Sent refreshPowerState to " .. tostring(players:size()) .. " players")
-            end
-            
-            -- Step 14: Skip save() - it requires a ByteBuffer argument that can't be provided from Lua
-            -- Instead, rely on applySettings which syncs the options without file I/O
-            pcall(function()
-                if getSandboxOptions() and getSandboxOptions().applySettings then
-                    getSandboxOptions():applySettings()
-                    table.insert(debugInfo, "SandboxOptions applySettings() called")
-                end
-            end)
-            
-            -- Step 15: Try sending reloadoptions command (this is what the admin panel uses)
-            pcall(function()
-                if executeCommand then
-                    executeCommand("/reloadoptions")
-                    table.insert(debugInfo, "executeCommand /reloadoptions called")
-                end
-            end)
-            
-            -- Step 16: Try ServerAPI if available
-            pcall(function()
-                if ServerAPI and ServerAPI.ReloadOptions then
-                    ServerAPI.ReloadOptions()
-                    table.insert(debugInfo, "ServerAPI.ReloadOptions called")
-                end
-            end)
         end
         
         if restoreWater then
-            -- Clear WaterShutStart in GameTime modData (same as ElecShutStart for power)
+            SandboxVars.WaterShut = 9       -- 9 = Disabled (sandbox UI label)
+            SandboxVars.WaterShutModifier = restoreDays
+            table.insert(debugInfo, "Lua WaterShut=9(Disabled) WaterShutModifier=" .. tostring(restoreDays))
+            
+            -- Clear WaterShutStart in GameTime modData
             local gameTimeModData = gameTime and gameTime:getModData() or nil
             if gameTimeModData then
-                local oldWaterShutStart = gameTimeModData.WaterShutStart
+                local oldVal = gameTimeModData.WaterShutStart
                 gameTimeModData.WaterShutStart = -1
-                table.insert(debugInfo, "WaterShutStart: " .. tostring(oldWaterShutStart) .. " -> -1")
+                table.insert(debugInfo, "WaterShutStart: " .. tostring(oldVal) .. " -> -1")
             end
-            
-            -- Same pattern for water - set WaterShutModifier to far future
-            SandboxVars.WaterShutModifier = restoreDays
-            table.insert(debugInfo, "Set SandboxVars.WaterShutModifier = " .. tostring(restoreDays))
-            
-            -- Set Java-side option (mirrors power restore pattern)
-            local sandboxOptions = getSandboxOptions()
-            if sandboxOptions then
-                local waterOption = sandboxOptions:getOptionByName("WaterShutModifier")
-                if waterOption and waterOption.setValue then
-                    waterOption:setValue(restoreDays)
-                    table.insert(debugInfo, "waterOption:setValue(" .. tostring(restoreDays) .. ")")
-                end
-            end
-            
-            -- Apply settings to sync water state
+        end
+        
+        -- Step 2: Sync Lua -> Java via updateFromLua, then apply
+        if sandboxOptions then
             pcall(function()
-                if getSandboxOptions() and getSandboxOptions().applySettings then
-                    getSandboxOptions():applySettings()
-                    table.insert(debugInfo, "Water: SandboxOptions applySettings() called")
+                if sandboxOptions.updateFromLua then
+                    sandboxOptions:updateFromLua()
+                    table.insert(debugInfo, "updateFromLua OK")
+                end
+            end)
+            pcall(function()
+                if sandboxOptions.applySettings then
+                    sandboxOptions:applySettings()
+                    table.insert(debugInfo, "applySettings OK")
+                end
+            end)
+            -- Verify Java side got the values
+            table.insert(debugInfo, "Java getElecShutModifier=" .. tostring(sandboxOptions:getElecShutModifier()))
+            table.insert(debugInfo, "Java getWaterShutModifier=" .. tostring(sandboxOptions:getWaterShutModifier()))
+            -- If applySettings recalculated, force restoreDays back via Java option
+            if restorePower and sandboxOptions:getElecShutModifier() ~= restoreDays then
+                pcall(function()
+                    local opt = sandboxOptions:getOptionByName("ElecShutModifier")
+                    if opt and opt.setValue then opt:setValue(restoreDays) end
+                end)
+                table.insert(debugInfo, "FORCED Java ElecShutModifier=" .. tostring(restoreDays))
+            end
+            if restoreWater and sandboxOptions:getWaterShutModifier() ~= restoreDays then
+                pcall(function()
+                    local opt = sandboxOptions:getOptionByName("WaterShutModifier")
+                    if opt and opt.setValue then opt:setValue(restoreDays) end
+                end)
+                table.insert(debugInfo, "FORCED Java WaterShutModifier=" .. tostring(restoreDays))
+            end
+            -- Sync Java -> Lua to confirm
+            pcall(function()
+                if sandboxOptions.toLua then
+                    sandboxOptions:toLua()
+                    table.insert(debugInfo, "toLua OK")
                 end
             end)
         end
         
-        -- Final verification
-        local isPowerOn = world:isHydroPowerOn()
-        table.insert(debugInfo, "After restore: isHydroPowerOn = " .. tostring(isPowerOn))
-        table.insert(debugInfo, "nightsSurvived < ElecShutModifier = " .. tostring(nightsSurvived < restoreDays))
+        -- Step 3: Set hydro power ON *after* applySettings so it can't be overwritten
+        if restorePower then
+            world:setHydroPowerOn(true)
+            table.insert(debugInfo, "setHydroPowerOn(true)")
+        end
         
+        -- Step 4: Force electricity ON for all loaded squares around players
+        -- This makes IsoGridSquare.haveElectricity() return true, which is what
+        -- the game's actual power checks use (ISButtonPrompt OR condition,
+        -- ISVehicleMenu, ISWorldObjectContextMenu). This bypasses the
+        -- SandboxVars.ElecShutModifier client-side check entirely.
+        if restorePower then
+            local squareCount, sqMsg = setElectricityOnLoadedSquares(true)
+            table.insert(debugInfo, "setHaveElectricity(true) squares=" .. tostring(squareCount))
+        end
+        
+        -- Step 5: Activate light switches in loaded chunks
+        if restorePower then
+            local switchesActivated = activateLightSwitchesInLoadedChunks()
+            table.insert(debugInfo, "switches=" .. tostring(switchesActivated))
+        end
+        
+        -- Step 6: Push options to clients via all available mechanisms
+        -- 6a: GameServer.sendOptionsToClients() — may sync sandbox options to clients
+        pcall(function()
+            if GameServer and GameServer.sendOptionsToClients then
+                GameServer.sendOptionsToClients()
+                table.insert(debugInfo, "sendOptionsToClients OK")
+            end
+        end)
+        -- 6b: executeCommand("/reloadoptions") — this is what the in-game admin panel uses
+        pcall(function()
+            if executeCommand then
+                executeCommand("/reloadoptions")
+                table.insert(debugInfo, "executeCommand /reloadoptions OK")
+            end
+        end)
+        
+        -- Step 7: Transmit weather (forces world state sync including power)
+        pcall(function()
+            if world.transmitWeather then
+                world:transmitWeather()
+                table.insert(debugInfo, "transmitWeather OK")
+            end
+        end)
+        
+        -- Step 8: Send custom command to clients for immediate power refresh
+        pcall(function()
+            local players = getOnlinePlayers()
+            if players and sendServerCommand then
+                local refreshArgs = {
+                    powerOn = restorePower and true or nil,
+                    elecShutModifier = restoreDays,
+                    waterShutModifier = restoreWater and restoreDays or nil,
+                    elecShut = restorePower and 9 or nil,
+                    waterShut = restoreWater and 9 or nil
+                }
+                for i = 0, players:size() - 1 do
+                    local player = players:get(i)
+                    if player then
+                        sendServerCommand(player, "PanelBridge", "refreshPowerState", refreshArgs)
+                    end
+                end
+                table.insert(debugInfo, "refreshPowerState sent to " .. tostring(players:size()) .. " clients")
+            end
+        end)
+        
+        -- Verify final state
+        table.insert(debugInfo, "FINAL isHydroPowerOn=" .. tostring(world:isHydroPowerOn()))
+        table.insert(debugInfo, "FINAL SandboxVars.ElecShutModifier=" .. tostring(SandboxVars.ElecShutModifier))
+        table.insert(debugInfo, "FINAL SandboxVars.WaterShutModifier=" .. tostring(SandboxVars.WaterShutModifier))
     end)
     
     if not success then
         return false, nil, "Failed to restore utilities: " .. tostring(err)
     end
     
-    -- Log debug info
     print("[PanelBridge] restoreUtilities debug: " .. table.concat(debugInfo, " | "))
     
     return true, { 
@@ -4045,7 +4056,6 @@ handlers.shutOffUtilities = function(args)
     local debugInfo = {}
     
     local success, err = pcall(function()
-        -- Get current NightsSurvived (same pattern as RicksMLC_PowerGrid)
         local gameTime = GameTime.getInstance()
         local nightsSurvived = 0
         if gameTime then
@@ -4053,133 +4063,107 @@ handlers.shutOffUtilities = function(args)
         end
         table.insert(debugInfo, "nightsSurvived=" .. tostring(nightsSurvived))
         
+        -- Step 1: Set Lua SandboxVars to instant shutoff
         if shutPower then
-            -- Step 1: Set ElecShutStart in GameTime modData to current hour
-            -- This is the value PZ checks to determine if power is off
+            SandboxVars.ElecShut = 1        -- 1 = Instant
+            SandboxVars.ElecShutModifier = 0   -- 0 = shut off at day 0
+            table.insert(debugInfo, "Lua ElecShut=1(Instant) ElecShutModifier=0")
+            
             local gameTimeModData = gameTime and gameTime:getModData() or nil
             if gameTimeModData then
                 gameTimeModData.ElecShutStart = nightsSurvived * 24
-                table.insert(debugInfo, "ElecShutStart set to " .. tostring(nightsSurvived * 24))
-            end
-            
-            -- Step 2: Turn off hydro power (same as BWOEvents.SetHydroPower)
-            world:setHydroPowerOn(false)
-            table.insert(debugInfo, "setHydroPowerOn(false) called")
-            
-            -- Step 2: Set ElecShutModifier to a PAST value (0 = instant shutoff)
-            -- The game checks: power is ON when NightsSurvived < ElecShutModifier
-            -- By setting ElecShutModifier to 0, and NightsSurvived >= 0, power stays OFF
-            SandboxVars.ElecShutModifier = 0
-            table.insert(debugInfo, "Set SandboxVars.ElecShutModifier = 0")
-            
-            -- Step 3: Set sandbox options via Java API (like restoreUtilities)
-            local sandboxOptions = getSandboxOptions()
-            if sandboxOptions then
-                local elecOption = sandboxOptions:getOptionByName("ElecShutModifier")
-                if elecOption and elecOption.setValue then
-                    elecOption:setValue(0)
-                    table.insert(debugInfo, "elecOption:setValue(0)")
-                end
-            end
-            
-            -- Step 4: Try to use GameServer.sendWorldState if available
-            local gs = GameServer
-            if gs then
-                if gs.sendWorldState then
-                    pcall(function() gs.sendWorldState() end)
-                    table.insert(debugInfo, "GameServer.sendWorldState called")
-                end
-                
-                if gs.syncSandboxOptions then
-                    pcall(function() gs.syncSandboxOptions() end)
-                    table.insert(debugInfo, "GameServer.syncSandboxOptions called")
-                end
-                
-                if gs.sendSandboxOptionsToClient then
-                    local players = getOnlinePlayers()
-                    if players then
-                        for i = 0, players:size() - 1 do
-                            local player = players:get(i)
-                            if player then
-                                pcall(function() gs.sendSandboxOptionsToClient(player:getOnlineID()) end)
-                            end
-                        end
-                        table.insert(debugInfo, "sendSandboxOptionsToClient called for all players")
-                    end
-                end
-            end
-            
-            -- Step 5: Deactivate light switches in loaded chunks near players
-            local switchesDeactivated, switchStatusMsg = deactivateLightSwitchesInLoadedChunks()
-            table.insert(debugInfo, "Light switches deactivated: " .. tostring(switchesDeactivated))
-            
-            -- Step 6: Transmit weather to sync world state
-            if world.transmitWeather then
-                pcall(function() world:transmitWeather() end)
-                table.insert(debugInfo, "transmitWeather called")
-            end
-            
-            -- Step 7: Apply settings
-            pcall(function()
-                if getSandboxOptions() and getSandboxOptions().applySettings then
-                    getSandboxOptions():applySettings()
-                    table.insert(debugInfo, "SandboxOptions applySettings() called")
-                end
-            end)
-            
-            -- Step 8: Notify players
-            local players = getOnlinePlayers()
-            if players then
-                for i = 0, players:size() - 1 do
-                    local player = players:get(i)
-                    if player then
-                        if sendServerCommand then
-                            sendServerCommand(player, "PanelBridge", "refreshPowerState", {powerOn = false, elecShutModifier = 0})
-                            -- Also send a visible message
-                            sendServerCommand(player, "chat", "addMessage", {
-                                message = "[Server] Power has been shut off.",
-                                type = "server"
-                            })
-                        end
-                    end
-                end
+                table.insert(debugInfo, "ElecShutStart=" .. tostring(nightsSurvived * 24))
             end
         end
         
         if shutWater then
-            -- Set WaterShutStart in GameTime modData to current hour
+            SandboxVars.WaterShut = 1       -- 1 = Instant
+            SandboxVars.WaterShutModifier = 0  -- 0 = shut off at day 0
+            table.insert(debugInfo, "Lua WaterShut=1(Instant) WaterShutModifier=0")
+            
             local gameTimeModData = gameTime and gameTime:getModData() or nil
             if gameTimeModData then
                 gameTimeModData.WaterShutStart = nightsSurvived * 24
-                table.insert(debugInfo, "WaterShutStart set to " .. tostring(nightsSurvived * 24))
+                table.insert(debugInfo, "WaterShutStart=" .. tostring(nightsSurvived * 24))
             end
-            
-            -- Same pattern for water
-            SandboxVars.WaterShutModifier = 0
-            table.insert(debugInfo, "Set SandboxVars.WaterShutModifier = 0")
-            
-            -- Sync Java options for water too
-            local sandboxOptions = getSandboxOptions()
-            if sandboxOptions then
-                local waterOption = sandboxOptions:getOptionByName("WaterShutModifier")
-                if waterOption and waterOption.setValue then
-                    waterOption:setValue(0)
-                    table.insert(debugInfo, "waterOption:setValue(0)")
-                end
-            end
-            
-            -- Apply settings to sync water state (matches restoreUtilities pattern)
-            pcall(function()
-                if getSandboxOptions() and getSandboxOptions().applySettings then
-                    getSandboxOptions():applySettings()
-                    table.insert(debugInfo, "Water: SandboxOptions applySettings() called")
-                end
-            end)
         end
         
+        -- Step 2: Sync Lua -> Java and apply
+        local sandboxOptions = getSandboxOptions()
+        if sandboxOptions then
+            pcall(function()
+                if sandboxOptions.updateFromLua then sandboxOptions:updateFromLua() end
+            end)
+            pcall(function()
+                if sandboxOptions.applySettings then sandboxOptions:applySettings() end
+            end)
+            pcall(function()
+                if sandboxOptions.toLua then sandboxOptions:toLua() end
+            end)
+            table.insert(debugInfo, "sandbox sync OK")
+        end
+        
+        -- Step 3: Set hydro power OFF *after* applySettings
+        if shutPower then
+            world:setHydroPowerOn(false)
+            table.insert(debugInfo, "setHydroPowerOn(false)")
+        end
+        
+        -- Step 4: Force electricity OFF for all loaded squares
+        if shutPower then
+            local squareCount, sqMsg = setElectricityOnLoadedSquares(false)
+            table.insert(debugInfo, "setHaveElectricity(false) squares=" .. tostring(squareCount))
+        end
+        
+        -- Step 5: Deactivate light switches
+        if shutPower then
+            local switchesDeactivated = deactivateLightSwitchesInLoadedChunks()
+            table.insert(debugInfo, "switches deactivated=" .. tostring(switchesDeactivated))
+        end
+        
+        -- Step 6: Push options to clients via all available mechanisms
+        pcall(function()
+            if GameServer and GameServer.sendOptionsToClients then
+                GameServer.sendOptionsToClients()
+                table.insert(debugInfo, "sendOptionsToClients OK")
+            end
+        end)
+        pcall(function()
+            if executeCommand then
+                executeCommand("/reloadoptions")
+                table.insert(debugInfo, "executeCommand /reloadoptions OK")
+            end
+        end)
+        
+        -- Step 7: Transmit weather
+        pcall(function()
+            if world.transmitWeather then world:transmitWeather() end
+            table.insert(debugInfo, "transmitWeather OK")
+        end)
+        
+        -- Step 8: Send refreshPowerState to clients
+        pcall(function()
+            local players = getOnlinePlayers()
+            if players and sendServerCommand then
+                local refreshArgs = {
+                    powerOn = shutPower and false or nil,
+                    elecShutModifier = shutPower and 0 or nil,
+                    waterShutModifier = shutWater and 0 or nil,
+                    elecShut = shutPower and 1 or nil,
+                    waterShut = shutWater and 1 or nil
+                }
+                for i = 0, players:size() - 1 do
+                    local player = players:get(i)
+                    if player then
+                        sendServerCommand(player, "PanelBridge", "refreshPowerState", refreshArgs)
+                    end
+                end
+                table.insert(debugInfo, "refreshPowerState sent to " .. tostring(players:size()) .. " clients")
+            end
+        end)
+        
         -- Final verification
-        local isPowerOn = world:isHydroPowerOn()
-        table.insert(debugInfo, "After shutoff: isHydroPowerOn = " .. tostring(isPowerOn))
+        table.insert(debugInfo, "FINAL isHydroPowerOn=" .. tostring(world:isHydroPowerOn()))
         
     end)
     
@@ -4187,7 +4171,6 @@ handlers.shutOffUtilities = function(args)
         return false, nil, "Failed to shut off utilities: " .. tostring(err)
     end
     
-    -- Log debug info
     print("[PanelBridge] shutOffUtilities debug: " .. table.concat(debugInfo, " | "))
     
     return true, { 

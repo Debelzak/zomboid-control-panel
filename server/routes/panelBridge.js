@@ -1694,13 +1694,16 @@ router.post('/utilities/restore', async (req, res) => {
     return res.status(400).json({ error: 'Bridge not running. Start it first.' });
   }
   const { power, water } = req.body;
+  log.info(`Restoring utilities - power: ${power !== false}, water: ${water !== false}`);
   try {
     const result = await bridge.sendCommand('restoreUtilities', { 
       power: power !== false, 
       water: water !== false 
     });
+    log.info(`Utilities restored successfully`, result?.debug ? { debug: result.debug } : {});
     res.json(result);
   } catch (error) {
+    log.error(`Failed to restore utilities: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
@@ -1711,13 +1714,16 @@ router.post('/utilities/shutoff', async (req, res) => {
     return res.status(400).json({ error: 'Bridge not running. Start it first.' });
   }
   const { power, water } = req.body;
+  log.info(`Shutting off utilities - power: ${power !== false}, water: ${water !== false}`);
   try {
     const result = await bridge.sendCommand('shutOffUtilities', { 
       power: power !== false, 
       water: water !== false 
     });
+    log.info(`Utilities shut off successfully`, result?.debug ? { debug: result.debug } : {});
     res.json(result);
   } catch (error) {
+    log.error(`Failed to shut off utilities: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });
   }
 });

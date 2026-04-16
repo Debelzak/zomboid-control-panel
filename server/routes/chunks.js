@@ -203,8 +203,10 @@ router.get('/chunks/:saveName', async (req, res) => {
     }
     
     const chunks = [];
+    const seenChunkCoords = new Set();
     let minX = Infinity, maxX = -Infinity;
     let minY = Infinity, maxY = -Infinity;
+    let totalChunks = 0;
     
     const mapExists = fs.existsSync(mapPath);
     
@@ -222,20 +224,27 @@ router.get('/chunks/:saveName', async (req, res) => {
     
     log.info(`[ChunkCleaner] map/ ${mapExists ? 'exists' : 'missing'}: ${mapContents.length} entries, ${xDirs.length} numeric dirs (B42), ${flatBinFiles.length} flat .bin files (B41)`);
     
-    // Limit maximum chunks to prevent memory issues with very large maps
-    const MAX_CHUNKS = 50000;
+    const rememberChunkCoord = (x, y) => {
+      const key = `${x},${y}`;
+      if (seenChunkCoords.has(key)) return false;
+      seenChunkCoords.add(key);
+      totalChunks++;
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x);
+      minY = Math.min(minY, y);
+      maxY = Math.max(maxY, y);
+      return true;
+    };
     
     if (xDirs.length > 0) {
       // B42 structure: map/{X}/{Y}.bin
-      // Use sequential for-of loop to avoid overwhelming FS with parallel requests
+      // Use sequential directory scans to avoid overwhelming the filesystem.
       let totalBinFiles = 0;
       let totalNonBinFiles = 0;
       let sampleNonBinFiles = [];
       let emptyDirs = 0;
       
       for (const xDir of xDirs) {
-        if (chunks.length >= MAX_CHUNKS) break;
-        
         const x = parseInt(xDir.name, 10);
         const xPath = path.join(mapPath, xDir.name);
         
@@ -257,44 +266,38 @@ router.get('/chunks/:saveName', async (req, res) => {
           if (nonBinFiles.length > 0 && sampleNonBinFiles.length < 5) {
             sampleNonBinFiles.push(...nonBinFiles.slice(0, 3).map(f => `${xDir.name}/${f}`));
           }
-          
-          // Filter and process files in parallel for this directory
-          // (Batch size usually reasonable for one directory)
-          const filePromises = binFiles
-            .map(async yFile => {
-               if (chunks.length >= MAX_CHUNKS) return null; // Soft limit check
-               
-               const yMatch = yFile.match(/^(\d+)\.bin$/);
-               if (!yMatch) return null;
 
-               const y = parseInt(yMatch[1], 10);
-               const filePath = path.join(xPath, yFile);
-               
-               try {
-                 const stats = await fs.promises.stat(filePath);
-                 return {
-                    file: `${x}/${yFile}`,
-                    x,
-                    y,
-                    size: stats.size,
-                    modified: stats.mtime
-                 };
-               } catch (e) {
-                 log.debug(`Stat failed for chunk ${x}/${yFile}: ${e.message}`);
-                 return null;
-               }
-            });
+          const chunkEntries = [];
+          for (const yFile of binFiles) {
+            const yMatch = yFile.match(/^(\d+)\.bin$/);
+            if (!yMatch) continue;
 
-          const results = await Promise.all(filePromises);
-          
+            const y = parseInt(yMatch[1], 10);
+            if (!rememberChunkCoord(x, y)) continue;
+
+            chunkEntries.push({ x, y, yFile });
+          }
+
+          const results = await Promise.all(chunkEntries.map(async ({ x, y, yFile }) => {
+            const filePath = path.join(xPath, yFile);
+
+            try {
+              const stats = await fs.promises.stat(filePath);
+              return {
+                file: `${x}/${yFile}`,
+                x,
+                y,
+                size: stats.size,
+                modified: stats.mtime
+              };
+            } catch (e) {
+              log.debug(`Stat failed for chunk ${x}/${yFile}: ${e.message}`);
+              return null;
+            }
+          }));
+
           for (const chunk of results) {
-               if (chunk && chunks.length < MAX_CHUNKS) {
-                   chunks.push(chunk);
-                   minX = Math.min(minX, chunk.x);
-                   maxX = Math.max(maxX, chunk.x);
-                   minY = Math.min(minY, chunk.y);
-                   maxY = Math.max(maxY, chunk.y);
-               }
+            if (chunk) chunks.push(chunk);
           }
 
         } catch (err) {
@@ -303,39 +306,43 @@ router.get('/chunks/:saveName', async (req, res) => {
       }
       
       // Diagnostic: log what was found inside the B42 dirs
-      log.info(`[ChunkCleaner] B42 scan: ${chunks.length} chunks from ${totalBinFiles} .bin files, ${emptyDirs} empty dirs, ${totalNonBinFiles} non-.bin files${sampleNonBinFiles.length > 0 ? ' (samples: ' + sampleNonBinFiles.join(', ') + ')' : ''}`);
+      log.info(`[ChunkCleaner] B42 scan: ${totalChunks} chunks loaded, ${totalBinFiles} .bin files, ${emptyDirs} empty dirs, ${totalNonBinFiles} non-.bin files${sampleNonBinFiles.length > 0 ? ' (samples: ' + sampleNonBinFiles.join(', ') + ')' : ''}`);
     } else {
       // Legacy flat file structure: map_X_Y.bin or X_Y.bin
       const files = mapContents.filter(f => f.isFile() && f.name.endsWith('.bin')).map(f => f.name);
-      
-      const legacyPromises = files.map(async file => {
+
+      const chunkEntries = [];
+      for (const file of files) {
         // Common formats: map_X_Y.bin, chunkdata_X_Y.bin, X_Y.bin
         const match = file.match(/(?:map_|chunkdata_|chunk_)?(\d+)_(\d+)(?:_\d+)?\.bin$/i);
         if (match) {
-          try {
-              const x = parseInt(match[1], 10);
-              const y = parseInt(match[2], 10);
-              const stats = await fs.promises.stat(path.join(mapPath, file));
-              
-              return {
-                file, x, y, size: stats.size, modified: stats.mtime
-              };
-          } catch(e) {
-            log.debug(`Stat failed for legacy chunk ${file}: ${e.message}`);
-            return null;
-          }
-        }
-        return null;
-      });
+          const x = parseInt(match[1], 10);
+          const y = parseInt(match[2], 10);
+          if (!rememberChunkCoord(x, y)) continue;
 
-      const legacyResults = await Promise.all(legacyPromises);
+          chunkEntries.push({ file, x, y });
+        }
+      }
+
+      const legacyResults = await Promise.all(chunkEntries.map(async ({ file, x, y }) => {
+        try {
+          const stats = await fs.promises.stat(path.join(mapPath, file));
+          return {
+            file,
+            x,
+            y,
+            size: stats.size,
+            modified: stats.mtime
+          };
+        } catch (e) {
+          log.debug(`Stat failed for legacy chunk ${file}: ${e.message}`);
+          return null;
+        }
+      }));
+
       for (const res of legacyResults) {
         if (res) {
-            chunks.push(res);
-            minX = Math.min(minX, res.x);
-            maxX = Math.max(maxX, res.x);
-            minY = Math.min(minY, res.y);
-            maxY = Math.max(maxY, res.y);
+          chunks.push(res);
         }
       }
     }
@@ -356,19 +363,27 @@ router.get('/chunks/:saveName', async (req, res) => {
       }
     }
     
-    if (!isB42 && chunks.length === 0) {
+    if (!isB42 && totalChunks === 0) {
       const B41_CHUNK_REGEX = /^map_(\d+)_(\d+)\.bin$/i;
       const rootEntries = await fs.promises.readdir(savePath, { withFileTypes: true });
       const rootBinFiles = rootEntries.filter(f => f.isFile() && B41_CHUNK_REGEX.test(f.name));
       
       if (rootBinFiles.length > 0) {
         log.info(`[ChunkCleaner] Found ${rootBinFiles.length} B41 chunk files in save root`);
-        
-        const rootPromises = rootBinFiles.slice(0, MAX_CHUNKS).map(async entry => {
+
+        const chunkEntries = [];
+        for (const entry of rootBinFiles) {
           const match = entry.name.match(B41_CHUNK_REGEX);
-          if (!match) return null;
+          if (!match) continue;
+
           const x = parseInt(match[1], 10);
           const y = parseInt(match[2], 10);
+          if (!rememberChunkCoord(x, y)) continue;
+
+          chunkEntries.push({ entry, x, y });
+        }
+
+        const rootResults = await Promise.all(chunkEntries.map(async ({ entry, x, y }) => {
           try {
             const stats = await fs.promises.stat(path.join(savePath, entry.name));
             return { file: entry.name, x, y, size: stats.size, modified: stats.mtime, source: 'saveroot' };
@@ -376,16 +391,11 @@ router.get('/chunks/:saveName', async (req, res) => {
             log.debug(`Stat failed for B41 root chunk ${entry.name}: ${e.message}`);
             return null;
           }
-        });
-        
-        const rootResults = await Promise.all(rootPromises);
+        }));
+
         for (const res of rootResults) {
-          if (res && chunks.length < MAX_CHUNKS) {
+          if (res) {
             chunks.push(res);
-            minX = Math.min(minX, res.x);
-            maxX = Math.max(maxX, res.x);
-            minY = Math.min(minY, res.y);
-            maxY = Math.max(maxY, res.y);
           }
         }
       }
@@ -393,61 +403,54 @@ router.get('/chunks/:saveName', async (req, res) => {
     
     // Also check chunkdata folder for additional chunk data.
     // In B41 saves, chunkdata coords match chunk coords directly.
-    // In B42 saves, chunkdata uses CELL coordinates (1 cell = 300 tiles).
-    // For display purposes, B42 chunkdata coords are converted to B42 chunk
-    // coords (× 32, since 1 chunkdata unit = 32 B42 chunks = 256 tiles).
-    // The frontend then applies × 0.8 to convert B42→B41 chunk space.
-    // Original coords are preserved in cellX/cellY for file operations.
+    // In B42 saves, chunkdata uses CELL coordinates and is converted here to
+    // native B42 chunk coordinates (× 32). Original cell coords are preserved
+    // in cellX/cellY for deletion operations.
     {
       const chunkDataPath = path.join(savePath, 'chunkdata');
       if (fs.existsSync(chunkDataPath)) {
-        // Create a Set for O(1) lookup of existing chunks to prevent O(N^2) complexity
-        const existingCoords = new Set(chunks.map(c => `${c.x},${c.y}`));
-
         const chunkDataFiles = await fs.promises.readdir(chunkDataPath);
         const validFiles = chunkDataFiles.filter(f => f.endsWith('.bin'));
 
-        const chunkDataPromises = validFiles.map(async file => {
+        const chunkEntries = [];
+        for (const file of validFiles) {
           const match = file.match(/(\d+)_(\d+)(?:_\d+)?\.bin$/i);
           if (match) {
             const rawX = parseInt(match[1], 10);
             const rawY = parseInt(match[2], 10);
             
-            // In B42, chunkdata coords × 32 = B42 chunk coords.
-            // The frontend then does × 0.8 for B42→B41 conversion.
-            // For B41 saves, chunkdata coords are already chunk coords.
-            const displayX = isB42 ? rawX * 32 : rawX;
-            const displayY = isB42 ? rawY * 32 : rawY;
-            
-            // Check if we already have this chunk from map folder (use display coords)
-            if (!existingCoords.has(`${displayX},${displayY}`)) {
-              try {
-                  const stats = await fs.promises.stat(path.join(chunkDataPath, file));
-                  return {
-                    file, x: displayX, y: displayY, size: stats.size, modified: stats.mtime,
-                    source: 'chunkdata',
-                    // For B42 saves, preserve the original cell coords for file operations.
-                    // Deletion needs the cell coords to find chunkdata_X_Y.bin files.
-                    ...(isB42 ? { cellX: rawX, cellY: rawY } : {})
-                  };
-              } catch(e) {
-                log.debug(`Stat failed for chunkdata ${file}: ${e.message}`);
-                return null;
-              }
-            }
-          }
-          return null;
-        });
+            const displayX = isB42 ? rawX * 32 : rawX * 30;
+            const displayY = isB42 ? rawY * 32 : rawY * 30;
 
-        const chunkDataResults = await Promise.all(chunkDataPromises);
-        for(const res of chunkDataResults) {
-            if (res) {
-              chunks.push(res);
-              minX = Math.min(minX, res.x);
-              maxX = Math.max(maxX, res.x);
-              minY = Math.min(minY, res.y);
-              maxY = Math.max(maxY, res.y);
-            }
+            if (!rememberChunkCoord(displayX, displayY)) continue;
+
+            chunkEntries.push({ file, rawX, rawY, displayX, displayY });
+          }
+        }
+
+        const chunkDataResults = await Promise.all(chunkEntries.map(async ({ file, rawX, rawY, displayX, displayY }) => {
+          try {
+            const stats = await fs.promises.stat(path.join(chunkDataPath, file));
+            return {
+              file,
+              x: displayX,
+              y: displayY,
+              size: stats.size,
+              modified: stats.mtime,
+              source: 'chunkdata',
+              cellX: rawX,
+              cellY: rawY
+            };
+          } catch (e) {
+            log.debug(`Stat failed for chunkdata ${file}: ${e.message}`);
+            return null;
+          }
+        }));
+
+        for (const res of chunkDataResults) {
+          if (res) {
+            chunks.push(res);
+          }
         }
       }
     }
@@ -460,10 +463,11 @@ router.get('/chunks/:saveName', async (req, res) => {
     res.json({
       saveName,
       chunks,
-      totalChunks: chunks.length,
+      shownChunks: chunks.length,
+      totalChunks,
       bounds,
-      limitReached: chunks.length >= MAX_CHUNKS,
-      maxChunks: MAX_CHUNKS,
+      limitReached: false,
+      maxChunks: null,
       isB42
     });
   } catch (error) {
@@ -518,6 +522,24 @@ router.post('/delete-chunks', async (req, res) => {
         }
         chunk.y = ny;
       }
+    }
+    
+    // Compute cell coordinates for related file cleanup (chunkdata/zpop/isoregion use cell coords, not chunk coords)
+    // B42: 1 cell = 32×32 chunks, B41: 1 cell = 30×30 chunks
+    const isB42 = chunks.some(c => c.file && c.file.includes('/'));
+    const cellDivisor = isB42 ? 32 : 30;
+    for (const chunk of chunks) {
+      if (chunk.source === 'chunkdata' && chunk.cellX === undefined) {
+        // Parse cell coords from chunkdata filename: chunkdata_X_Y.bin
+        const cdMatch = chunk.file.match(/(\d+)_(\d+)/);
+        if (cdMatch) {
+          chunk.cellX = parseInt(cdMatch[1], 10);
+          chunk.cellY = parseInt(cdMatch[2], 10);
+        }
+      }
+      // For map-source chunks, convert chunk coords → cell coords
+      if (chunk.cellX === undefined) chunk.cellX = Math.floor(chunk.x / cellDivisor);
+      if (chunk.cellY === undefined) chunk.cellY = Math.floor(chunk.y / cellDivisor);
     }
     
     const zomboidDataPath = customPath
@@ -863,11 +885,16 @@ router.post('/delete-region', async (req, res) => {
         // It's safe in Node.js main thread.
         deleted++;
         
-        // Related data folders use flat file naming with specific prefixes
+        // Related data folders use CELL coordinates, not chunk coordinates
+        // B42: 1 cell = 32×32 chunks, B41: 1 cell = 30×30 chunks
+        const regionIsB42 = xDirs.length > 0;
+        const regionCellDiv = regionIsB42 ? 32 : 30;
+        const cellX = Math.floor(chunk.x / regionCellDiv);
+        const cellY = Math.floor(chunk.y / regionCellDiv);
         const relatedFiles = [
-          { folder: 'chunkdata', file: `chunkdata_${chunk.x}_${chunk.y}.bin` },
-          { folder: 'isoregiondata', file: `datachunk_${chunk.x}_${chunk.y}.bin` },
-          { folder: 'zpop', file: `zpop_${chunk.x}_${chunk.y}.bin` }
+          { folder: 'chunkdata', file: `chunkdata_${cellX}_${cellY}.bin` },
+          { folder: 'isoregiondata', file: `datachunk_${cellX}_${cellY}.bin` },
+          { folder: 'zpop', file: `zpop_${cellX}_${cellY}.bin` }
         ];
         
         await Promise.all(relatedFiles.map(async ({ folder, file }) => {
