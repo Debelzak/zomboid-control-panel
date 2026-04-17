@@ -12,6 +12,7 @@ import os from 'os';
 import path from 'path';
 import https from 'https';
 import crypto from 'crypto';
+import { spawn } from 'child_process';
 import { createLogger } from '../utils/logger.js';
 import { getSetting, setSetting } from '../database/init.js';
 
@@ -448,7 +449,6 @@ export class PanelUpdateChecker {
       throw new Error('No staged update found');
     }
 
-    const { spawn } = await import('child_process');
     const { stagedPath, exePath } = staged;
     const oldPath = `${exePath}.old`;
     const ts = Date.now();
