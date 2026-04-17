@@ -29,7 +29,7 @@ No existing PZ server tool covered the full workflow. Most handled one or two pa
 - **Chunk cleaner** — Visual map selector for cleaning unused chunks.
 - **Multi-server** — Manage multiple PZ servers from one panel.
 - **Discord bot** — Slash commands and two-way chat relay.
-- **PanelBridge** — Lua mod for in-game actions RCON can't reach: teleport, heal, god mode, character export/import, inventory management.
+- **PanelBridge** — Server-side Lua drop-in for in-game actions RCON can't reach: teleport, heal, god mode, character export/import, inventory management. No client component; all handlers run on the dedicated server.
 - **Auto-update** — Checks for new panel releases, downloads and applies them.
 
 <p align="center">
@@ -85,7 +85,7 @@ After login, save it permanently in **Settings → Remote Access**. Use a revers
 
 ### PanelBridge (Optional)
 
-PanelBridge is a Lua mod that enables everything RCON can't do. The panel installs it automatically — just set `DoLuaChecksum=false` in your server INI, restart the PZ server, and enable it in Settings.
+PanelBridge is a server-side Lua drop-in that enables everything RCON can't do. There is no client-side component — players do not need to install anything. The panel installs it automatically by copying `PanelBridge.lua` into your server's `Install/media/lua/server/` folder. Set `DoLuaChecksum=false` in your server INI, restart the PZ server, and enable it in Settings.
 
 ---
 

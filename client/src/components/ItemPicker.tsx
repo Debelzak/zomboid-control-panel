@@ -26,7 +26,7 @@ interface ItemPickerProps {
 }
 
 // PZ categories that are vehicles — filter out of item picker
-const VEHICLE_CATEGORIES = new Set(['Vehicle'])
+export const VEHICLE_CATEGORIES = new Set(['Vehicle'])
 
 // Consolidate PZ's 270+ display categories into ~15 usable groups
 // Uses prefix matching — order matters (first match wins)
@@ -50,7 +50,7 @@ const CATEGORY_RULES: Array<{ match: (c: string) => boolean; group: string }> = 
   { match: c => c === 'Sports' || c.startsWith('SportsOr') || c === 'Instrument' || c.startsWith('InstrumentOr') || c === 'Entertainment' || c === 'KeyRing', group: 'Misc' },
 ]
 
-function getItemGroup(rawCategory: string): string {
+export function getItemGroup(rawCategory: string): string {
   if (!rawCategory) return 'Other'
   for (const rule of CATEGORY_RULES) {
     if (rule.match(rawCategory)) return rule.group
@@ -58,12 +58,12 @@ function getItemGroup(rawCategory: string): string {
   return 'Other'
 }
 
-function fmtWeight(w: number): string {
+export function fmtWeight(w: number): string {
   return parseFloat(w.toFixed(2)) + 'kg'
 }
 
 // Icon + display order for each group
-const GROUP_META: Record<string, { order: number; icon: typeof Sword }> = {
+export const GROUP_META: Record<string, { order: number; icon: typeof Sword }> = {
   'Weapons':            { order: 0,  icon: Sword },
   'Ammo':               { order: 1,  icon: Crosshair },
   'Food & Drink':       { order: 2,  icon: UtensilsCrossed },

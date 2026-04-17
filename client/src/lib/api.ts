@@ -783,7 +783,8 @@ export const chunksApi = {
     chunks: Array<{ file: string; x: number; y: number; source?: string; cellX?: number; cellY?: number }>,
     createBackup: boolean = true,
     customPath?: string,
-  ) => apiPost('/chunks/delete-chunks', { saveName, chunks, createBackup, customPath }),
+    deleteVehicles: boolean = false,
+  ) => apiPost('/chunks/delete-chunks', { saveName, chunks, createBackup, customPath, deleteVehicles }),
   deleteRegion: (
     saveName: string,
     minX: number,
@@ -793,7 +794,8 @@ export const chunksApi = {
     createBackup: boolean = true,
     invert: boolean = false,
     customPath?: string,
-  ) => apiPost('/chunks/delete-region', { saveName, minX, maxX, minY, maxY, createBackup, invert, customPath }),
+    deleteVehicles: boolean = false,
+  ) => apiPost('/chunks/delete-region', { saveName, minX, maxX, minY, maxY, createBackup, invert, customPath, deleteVehicles }),
   browse: (browsePath?: string) => apiGet(`/chunks/browse${browsePath ? `?path=${encodeURIComponent(browsePath)}` : ''}`),
 }
 
@@ -1619,12 +1621,46 @@ export interface PanelUpdateStatus {
   downloadProgress: number
   lastCheck: string | null
   lastError: string | null
+  stagedUpdate: { version: string | null; path: string } | null
+  lastApplyResult: PanelUpdateApplyResult | null
+}
+
+export interface PanelUpdateApplyResult {
+  status: 'success' | 'failed'
+  appliedVersion?: string
+  pendingVersion?: string
+  currentVersion?: string
+  at: string
+  stagedStillPresent?: boolean
+  helperLog?: string | null
+}
+
+export interface PanelUpdatePreflight {
+  ok: boolean
+  blockers: string[]
+  warnings: string[]
+  info: {
+    isPackaged?: boolean
+    platform?: string
+    alreadyCurrent?: boolean
+    exePath?: string
+    exeDir?: string
+    asset?: { name: string; size: number }
+    writable?: boolean
+    freeBytes?: number | null
+    oneDrive?: boolean
+    syncSuspect?: boolean
+    programFiles?: boolean
+    stagedUpdate?: { version: string | null; path: string }
+    oldPath?: string
+  }
 }
 
 export interface PanelUpdateActionResult {
   success: boolean
   message?: string
   error?: string
+  preflight?: PanelUpdatePreflight
 }
 
 export const updateApi = {
@@ -1644,5 +1680,7 @@ export const updateApi = {
 export const panelUpdateApi = {
   check: (): Promise<PanelUpdateStatus> => apiGet('/panel/update-check'),
   getStatus: (): Promise<PanelUpdateStatus> => apiGet('/panel/update-status'),
+  preflight: (): Promise<PanelUpdatePreflight> => apiGet('/panel/update-preflight'),
   download: (): Promise<PanelUpdateActionResult> => apiPost('/panel/update-download'),
+  getApplyLog: (): Promise<{ log: string | null }> => apiGet('/panel/update-apply-log'),
 }

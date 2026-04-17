@@ -16,7 +16,7 @@ import cookieParser from 'cookie-parser';
 
 import { onLog, createLogger, logSection, logBanner, logReady } from './utils/logger.js';
 const log = createLogger('Panel');
-import { initDatabase, getActiveServer, getAllSettings, getSetting, recordPerformanceSnapshot } from './database/init.js';
+import { initDatabase, getActiveServer, getAllSettings, getSetting, setSetting, flushWrites, recordPerformanceSnapshot } from './database/init.js';
 import { RconService } from './services/rcon.js';
 import { ServerManager } from './services/serverManager.js';
 import { ModChecker } from './services/modChecker.js';
@@ -438,6 +438,7 @@ app.use('/api/panel-bridge/character/export', strictLimiter);
 app.use('/api/panel-bridge/character/import', strictLimiter);
 app.use('/api/panel/update-check', strictLimiter);
 app.use('/api/panel/update-download', strictLimiter);
+app.use('/api/panel/update-preflight', strictLimiter);
 app.use('/api/panel/restart', strictLimiter);
 
 // Mid-tier rate limit for RCON commands (higher than strict, lower than general)
@@ -748,13 +749,64 @@ app.get('/api/panel-info', async (req, res) => {
 });
 
 // Panel restart endpoint — restarts the panel process (works with exe or node)
-app.post('/api/panel/restart', (req, res) => {
+// If a downloaded-but-not-applied panel update is staged, hand off to the
+// external helper so the exe swap happens after this process exits.
+app.post('/api/panel/restart', async (req, res) => {
   log.info('Panel restart requested via API');
+
+  const checker = req.app.get('panelUpdateChecker');
+  const isPackaged = typeof process.pkg !== 'undefined';
+  const isWindows = process.platform === 'win32';
+  const staged = checker && typeof checker.getStagedUpdate === 'function' ? checker.getStagedUpdate() : null;
+
+  // Windows + packaged + staged update → spawn helper, then exit.
+  if (isPackaged && isWindows && staged) {
+    try {
+      // Commit the apply: write the pending marker FIRST and flush to disk
+      // before we exit. reconcilePendingUpdate() on next boot uses this to
+      // detect success/failure. If the flush is skipped we silently lose the
+      // ability to warn the user that apply failed.
+      if (staged.version) {
+        await setSetting('pendingPanelUpdate', staged.version);
+        await flushWrites();
+      }
+      const { helperPath, logPath } = await checker.spawnWindowsApplyHelper();
+      log.info(`Staged update will be applied by helper: ${helperPath} (log: ${logPath})`);
+      res.json({ success: true, message: 'Applying staged update...', applyingUpdate: true });
+      setTimeout(() => process.exit(0), 500);
+      return;
+    } catch (err) {
+      log.error(`Could not spawn update apply helper: ${err.message}`);
+      return res.status(500).json({ error: sanitizeError(err.message) });
+    }
+  }
+
+  // Linux + packaged + staged update → overwrite in place (safe on Linux), then restart.
+  if (isPackaged && !isWindows && staged) {
+    try {
+      const fssync = await import('fs');
+      const fsp = fssync.promises;
+      if (staged.version) {
+        await setSetting('pendingPanelUpdate', staged.version);
+        await flushWrites();
+      }
+      await fsp.rename(staged.stagedPath, staged.exePath);
+      try { await fsp.chmod(staged.exePath, 0o755); } catch (chmodErr) {
+        log.warn(`Could not chmod new binary: ${chmodErr.message}`);
+      }
+      log.info(`Linux staged update applied; restarting`);
+    } catch (err) {
+      log.error(`Failed to apply Linux staged update: ${err.message}`);
+      return res.status(500).json({ error: sanitizeError(err.message) });
+    }
+  }
+
   res.json({ success: true, message: 'Panel is restarting...' });
-  
+
   // Short delay so the response can be sent before exit
-  setTimeout(() => {
-    if (typeof process.pkg !== 'undefined') {
+  setTimeout(async () => {
+    try { await flushWrites(); } catch { /* best effort */ }
+    if (isPackaged) {
       // Running as packaged exe — spawn self then exit
       spawn(process.execPath, [], { detached: true, stdio: 'ignore' }).unref();
     }
@@ -779,6 +831,29 @@ app.get('/api/panel/update-status', (req, res) => {
   const checker = req.app.get('panelUpdateChecker');
   if (!checker) return res.status(500).json({ error: 'Panel update checker not available' });
   res.json(checker.getStatus());
+});
+
+app.get('/api/panel/update-preflight', async (req, res) => {
+  try {
+    const checker = req.app.get('panelUpdateChecker');
+    if (!checker) return res.status(500).json({ error: 'Panel update checker not available' });
+    const result = await checker.preflight();
+    res.json(result);
+  } catch (error) {
+    log.error(`Panel update preflight failed: ${error.message}`);
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
+app.get('/api/panel/update-apply-log', (req, res) => {
+  try {
+    const checker = req.app.get('panelUpdateChecker');
+    if (!checker) return res.status(500).json({ error: 'Panel update checker not available' });
+    const log = checker.readMostRecentApplyLog();
+    res.json({ log });
+  } catch (error) {
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
 });
 
 app.post('/api/panel/update-download', async (req, res) => {

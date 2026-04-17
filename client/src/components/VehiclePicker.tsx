@@ -21,7 +21,7 @@ interface VehiclePickerProps {
 }
 
 // Classify vehicles into types by name/id patterns, mass, and seat count
-function getVehicleType(v: CatalogVehicle): string {
+export function getVehicleType(v: CatalogVehicle): string {
   const raw = `${v.name || ''} ${v.id}`.toLowerCase()
   const id = v.id.toLowerCase().replace(/^base\./, '')
 
@@ -57,18 +57,18 @@ function getVehicleType(v: CatalogVehicle): string {
 }
 
 /** Strip Base. prefix and return a cleaner display name */
-function formatVehicleName(v: CatalogVehicle): string {
+export function formatVehicleName(v: CatalogVehicle): string {
   // If the game provided a real display name, use it
   if (v.name && v.name !== v.id && !v.name.startsWith('Base.')) return v.name
   return (v.name || v.id).replace(/^Base\./, '')
 }
 
-const TYPE_ORDER: Record<string, number> = {
+export const TYPE_ORDER: Record<string, number> = {
   'Sedans': 0, 'Performance': 1, 'SUVs & Off-road': 2,
   'Trucks': 3, 'Vans & Buses': 4, 'Emergency & Military': 5, 'Trailers': 6,
 }
 
-const TYPE_ICON: Record<string, LucideIcon> = {
+export const TYPE_ICON: Record<string, LucideIcon> = {
   'Sedans': Car, 'Performance': Zap, 'SUVs & Off-road': Mountain,
   'Trucks': Truck, 'Vans & Buses': Bus, 'Emergency & Military': Shield, 'Trailers': Package,
 }

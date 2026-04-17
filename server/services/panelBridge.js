@@ -1295,13 +1295,15 @@ class PanelBridge extends EventEmitter {
   }
 
   /**
-   * Convenience method: send server message
+   * Convenience method: send server message (routed via sendToServerChat).
+   * No dedicated sendServerMessage Lua handler exists — this wraps sendToServerChat
+   * with isAlert=true so callers still get an announcement-style broadcast.
    */
   async sendServerMessage(message) {
     if (!this.isRunning) {
       throw new Error('Bridge not running');
     }
-    return this.sendCommand('sendServerMessage', { message });
+    return this.sendCommand('sendToServerChat', { message, isAlert: true });
   }
 
   /**

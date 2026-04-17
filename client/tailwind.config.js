@@ -108,13 +108,24 @@ export default {
   				to: {
   					height: '0'
   				}
+  			},
+  			'spawn-flash': {
+  				'0%': {
+  					backgroundColor: 'hsl(var(--primary) / 0.35)',
+  					boxShadow: 'inset 3px 0 0 0 hsl(var(--primary))'
+  				},
+  				'100%': {
+  					backgroundColor: 'transparent',
+  					boxShadow: 'inset 3px 0 0 0 transparent'
+  				}
   			}
   		},
   		animation: {
   			'accordion-down': 'accordion-down 0.2s ease-out',
   			'accordion-up': 'accordion-up 0.2s ease-out',
   			'collapsible-down': 'collapsible-down 0.2s ease-out',
-  			'collapsible-up': 'collapsible-up 0.2s ease-out'
+  			'collapsible-up': 'collapsible-up 0.2s ease-out',
+  			'spawn-flash': 'spawn-flash 900ms cubic-bezier(0.16, 1, 0.3, 1)'
   		}
   	}
   },

@@ -31,11 +31,22 @@ import {
   Layers,
   Zap,
   Plus,
+  Copy,
+  Locate,
+  Package,
+  Flame,
+  BellRing,
+  Megaphone,
+  Save,
 } from 'lucide-react'
 import { PageHeader } from '@/components/PageHeader'
 import { BridgeStatusBadge } from '@/components/BridgeStatusBadge'
 import { VehiclePicker } from '@/components/VehiclePicker'
+import { ItemPicker } from '@/components/ItemPicker'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import {
   Dialog,
   DialogContent,
@@ -193,75 +204,157 @@ const MAX_SCALE = 1.0           // canvas px per DZI px (zoomed way in)
 const POLL_INTERVAL = 3000
 const MARKER_HIT_RADIUS = 14
 
-// ─── Cached SVG car icons ─────────────────────────────────
-// Lucide "Car" icon paths rendered to offscreen canvases, keyed by `color|size`.
+// ─── Cached top-down vehicle icons ────────────────────────
+// Top-down car silhouette rendered to offscreen canvases. Much more legible
+// on a world map than a side-view Lucide icon. Cache key encodes every visual
+// variable so we don't rebuild the path every frame.
 const _carIconCache = new Map<string, HTMLCanvasElement>()
 
-function getCarIcon(color: string, size: number): HTMLCanvasElement | null {
-  if (size < 1) return null
-  const key = `${color}|${size}`
+interface CarIconOpts {
+  color: string
+  size: number
+  alarmed?: boolean
+  sirening?: boolean
+  selected?: boolean
+}
+
+function getCarIcon(opts: CarIconOpts): HTMLCanvasElement | null {
+  const { color, size, alarmed, sirening, selected } = opts
+  if (size < 2) return null
+  // Pad the canvas so sirens/alarm beacons can bleed outside the body outline
+  const pad = Math.ceil(size * 0.2)
+  const totalSize = size + pad * 2
+  const key = `${color}|${size}|${alarmed ? 1 : 0}|${sirening ? 1 : 0}|${selected ? 1 : 0}`
   let cv = _carIconCache.get(key)
   if (cv) return cv
   cv = document.createElement('canvas')
-  cv.width = size
-  cv.height = size
+  cv.width = totalSize
+  cv.height = totalSize
   const c = cv.getContext('2d')!
-  // Draw Lucide Car icon (24×24 viewBox) scaled to `size`
+
+  // Draw on a normalized 24×24 viewport, centered inside the padded canvas.
+  c.translate(pad, pad)
   const k = size / 24
   c.scale(k, k)
-  c.strokeStyle = color
-  c.lineWidth = 2
-  c.lineCap = 'round'
+
+  // Geometry constants for a top-down sedan silhouette.
+  const bodyX = 6, bodyY = 2.5
+  const bodyW = 12, bodyH = 19
+  const radius = 3.2 // rounded ends
+
+  // 1. Chassis fill — solid colored body with subtle vertical gradient
+  const grad = c.createLinearGradient(0, bodyY, 0, bodyY + bodyH)
+  grad.addColorStop(0, color)
+  grad.addColorStop(0.5, color)
+  grad.addColorStop(1, 'rgba(0,0,0,0.55)') // shadowed rear
+  c.fillStyle = grad
+  roundRectPath(c, bodyX, bodyY, bodyW, bodyH, radius)
+  c.fill()
+
+  // 2. Chassis rim — darker outline for definition
+  c.strokeStyle = 'rgba(0,0,0,0.75)'
+  c.lineWidth = 1
   c.lineJoin = 'round'
-  c.fillStyle = 'none'
-  // Body path: M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 12 10s-6.7.6-8.5 1.1C2.7 11.3 2 12.1 2 13v3c0 .6.4 1 1 1h2
-  c.beginPath()
-  c.moveTo(19, 17)
-  c.lineTo(21, 17)
-  c.bezierCurveTo(21.6, 17, 22, 16.6, 22, 16)
-  c.lineTo(22, 13)
-  c.bezierCurveTo(22, 12.1, 21.3, 11.3, 20.5, 11.1)
-  c.bezierCurveTo(18.7, 10.6, 16, 10, 12, 10)
-  c.bezierCurveTo(8, 10, 5.3, 10.6, 3.5, 11.1)
-  c.bezierCurveTo(2.7, 11.3, 2, 12.1, 2, 13)
-  c.lineTo(2, 16)
-  c.bezierCurveTo(2, 16.6, 2.4, 17, 3, 17)
-  c.lineTo(5, 17)
+  roundRectPath(c, bodyX, bodyY, bodyW, bodyH, radius)
   c.stroke()
-  // Hood path: M14 17h-4
+
+  // 3. Specular highlight along the driver-side edge
+  c.save()
   c.beginPath()
-  c.moveTo(14, 17)
-  c.lineTo(10, 17)
+  roundRectPath(c, bodyX, bodyY, bodyW, bodyH, radius)
+  c.clip()
+  c.fillStyle = 'rgba(255,255,255,0.14)'
+  c.fillRect(bodyX, bodyY, 2.2, bodyH)
+  c.restore()
+
+  // 4. Windshield (front) — tinted glass panel
+  c.fillStyle = 'rgba(200,230,255,0.35)'
+  roundRectPath(c, bodyX + 1.3, bodyY + 3.3, bodyW - 2.6, 4.2, 1.2)
+  c.fill()
+  c.strokeStyle = 'rgba(0,0,0,0.35)'
+  c.lineWidth = 0.6
   c.stroke()
-  // Roof path (windshield + roof): M7 10 L5 17 and M17 10 L19 17 (simplified A-pillar)
-  // Use the canonical Lucide Car "top" path: path d="M7 10 5 17" and "M17 10 19 17" plus hood
+
+  // 5. Rear window — slightly darker tint
+  c.fillStyle = 'rgba(200,230,255,0.22)'
+  roundRectPath(c, bodyX + 1.3, bodyY + 11.5, bodyW - 2.6, 3.4, 1.0)
+  c.fill()
+  c.strokeStyle = 'rgba(0,0,0,0.35)'
+  c.stroke()
+
+  // 6. Roof seam (between windows) — suggests the cabin
+  c.strokeStyle = 'rgba(0,0,0,0.4)'
+  c.lineWidth = 0.5
   c.beginPath()
-  c.moveTo(7, 10)
-  c.lineTo(5, 17)
+  c.moveTo(bodyX + 1.3, bodyY + 8.2)
+  c.lineTo(bodyX + bodyW - 1.3, bodyY + 8.2)
+  c.moveTo(bodyX + 1.3, bodyY + 10.8)
+  c.lineTo(bodyX + bodyW - 1.3, bodyY + 10.8)
   c.stroke()
-  c.beginPath()
-  c.moveTo(17, 10)
-  c.lineTo(19, 17)
-  c.stroke()
-  // Roof/windshield arc: line from 7,10 → 7,6.5 curve up to 17,6.5 → 17,10
-  c.beginPath()
-  c.moveTo(7, 10)
-  c.lineTo(7, 7)
-  c.bezierCurveTo(7, 5.5, 9, 4, 12, 4)
-  c.bezierCurveTo(15, 4, 17, 5.5, 17, 7)
-  c.lineTo(17, 10)
-  c.stroke()
-  // Wheels: two circles
-  c.beginPath()
-  c.arc(7, 17, 2, 0, Math.PI * 2)
-  c.stroke()
-  c.beginPath()
-  c.arc(17, 17, 2, 0, Math.PI * 2)
-  c.stroke()
-  // Limit cache size
-  if (_carIconCache.size > 120) _carIconCache.clear()
+
+  // 7. Headlights — two warm rectangles at the front (top of icon)
+  c.fillStyle = 'rgba(255,235,180,0.92)'
+  c.fillRect(bodyX + 1.2, bodyY + 0.6, 2.4, 1.4)
+  c.fillRect(bodyX + bodyW - 3.6, bodyY + 0.6, 2.4, 1.4)
+
+  // 8. Tail lights — dim reds at the back (bottom of icon)
+  c.fillStyle = 'rgba(220,60,50,0.85)'
+  c.fillRect(bodyX + 1.2, bodyY + bodyH - 1.8, 2.2, 1.0)
+  c.fillRect(bodyX + bodyW - 3.4, bodyY + bodyH - 1.8, 2.2, 1.0)
+
+  // 9. Four wheels — tiny dark rectangles poking from the sides
+  c.fillStyle = 'rgba(15,15,15,0.9)'
+  c.fillRect(bodyX - 1, bodyY + 2.8, 1.8, 3.2) // front-left
+  c.fillRect(bodyX + bodyW - 0.8, bodyY + 2.8, 1.8, 3.2) // front-right
+  c.fillRect(bodyX - 1, bodyY + bodyH - 6, 1.8, 3.2) // rear-left
+  c.fillRect(bodyX + bodyW - 0.8, bodyY + bodyH - 6, 1.8, 3.2) // rear-right
+
+  // 10. Selection ring (when clicked/focused via keyboard)
+  if (selected) {
+    c.strokeStyle = 'rgba(255,255,255,0.85)'
+    c.lineWidth = 1.2
+    roundRectPath(c, bodyX - 1.8, bodyY - 1.2, bodyW + 3.6, bodyH + 2.4, radius + 1.8)
+    c.stroke()
+  }
+
+  // 11. Siren lightbar (blue/red alternating blocks on the roof)
+  if (sirening) {
+    c.fillStyle = 'rgba(80,140,255,1)'
+    c.fillRect(bodyX + 2.6, bodyY + 9.1, 3.2, 1.5)
+    c.fillStyle = 'rgba(255,70,70,1)'
+    c.fillRect(bodyX + bodyW - 5.8, bodyY + 9.1, 3.2, 1.5)
+  }
+
+  // 12. Alarm indicator — pulsing amber dot above the roof
+  if (alarmed) {
+    c.fillStyle = 'rgba(255,170,40,0.95)'
+    c.beginPath()
+    c.arc(bodyX + bodyW / 2, bodyY - 1.8, 1.8, 0, Math.PI * 2)
+    c.fill()
+    c.strokeStyle = 'rgba(0,0,0,0.5)'
+    c.lineWidth = 0.5
+    c.stroke()
+  }
+
+  if (_carIconCache.size > 200) _carIconCache.clear()
   _carIconCache.set(key, cv)
   return cv
+}
+
+// Small helper so every rounded-rect share uses the same algorithm
+function roundRectPath(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  const rr = Math.min(r, w / 2, h / 2)
+  c.beginPath()
+  c.moveTo(x + rr, y)
+  c.lineTo(x + w - rr, y)
+  c.quadraticCurveTo(x + w, y, x + w, y + rr)
+  c.lineTo(x + w, y + h - rr)
+  c.quadraticCurveTo(x + w, y + h, x + w - rr, y + h)
+  c.lineTo(x + rr, y + h)
+  c.quadraticCurveTo(x, y + h, x, y + h - rr)
+  c.lineTo(x, y + rr)
+  c.quadraticCurveTo(x, y, x + rr, y)
+  c.closePath()
 }
 
 // ─── Canvas color palette ─────────────────────────────────
@@ -384,6 +477,54 @@ export default function WorldMap() {
   const safehousesRef = useRef<MapSafehouse[]>([])
   const [spawnDialog, setSpawnDialog] = useState<{ x: number; y: number; z: number } | null>(null)
   const [spawnVehicleId, setSpawnVehicleId] = useState('')
+  const [dropDialog, setDropDialog] = useState<{ x: number; y: number; z: number } | null>(null)
+  // Items staged for the current drop (multi-item packages supported).
+  const [dropItems, setDropItems] = useState<Array<{ itemType: string; count: number }>>([
+    { itemType: '', count: 1 },
+  ])
+  const [dropAnnounce, setDropAnnounce] = useState(true)
+  const [dropAttractZombies, setDropAttractZombies] = useState(true)
+  const [dropSoundRadius, setDropSoundRadius] = useState(150)
+  // Last custom drop — enables a "repeat last drop" context menu item
+  const [lastDrop, setLastDrop] = useState<{
+    items: Array<{ itemType: string; count: number }>
+    label: string
+  } | null>(null)
+  // User-defined item packages persisted in localStorage. Save / load / delete.
+  interface DropTemplate {
+    id: string
+    name: string
+    items: Array<{ itemType: string; count: number }>
+  }
+  const DROP_TEMPLATES_KEY = 'worldmap.customDropTemplates.v1'
+  const [dropTemplates, setDropTemplates] = useState<DropTemplate[]>(() => {
+    try {
+      const raw = localStorage.getItem(DROP_TEMPLATES_KEY)
+      if (!raw) return []
+      const parsed = JSON.parse(raw)
+      if (!Array.isArray(parsed)) return []
+      return parsed.filter(
+        (t) =>
+          t &&
+          typeof t.id === 'string' &&
+          typeof t.name === 'string' &&
+          Array.isArray(t.items)
+      )
+    } catch {
+      return []
+    }
+  })
+  const [activeTemplateId, setActiveTemplateId] = useState<string | null>(null)
+  const [templateNameInput, setTemplateNameInput] = useState('')
+  const [savingTemplate, setSavingTemplate] = useState(false)
+  const persistDropTemplates = useCallback((next: DropTemplate[]) => {
+    setDropTemplates(next)
+    try {
+      localStorage.setItem(DROP_TEMPLATES_KEY, JSON.stringify(next))
+    } catch {
+      // localStorage full / unavailable — silent
+    }
+  }, [])
   const [floor, setFloor] = useState(0)    // PZ floor: 0 = ground, 1+ = upper, -1 = basement
   const floorRef = useRef(0)
   const { toast } = useToast()
@@ -793,6 +934,7 @@ export default function WorldMap() {
     }
 
     // ── Vehicle markers ──
+    const now = performance.now()
     if (showVehicles) {
       const currentVehicles = vehiclesRef.current
       const vSize = Math.max(14, Math.min(36, s * 4200))
@@ -823,15 +965,48 @@ export default function WorldMap() {
           ctx.fill()
         }
 
-        // Draw cached SVG car icon
-        const img = getCarIcon(color, Math.round(drawSize))
+        // Siren halo — cycles blue/red when sirening
+        if (vehicle.sirening && !prefersReducedMotion.current) {
+          const sirenPhase = (now / 450) % 1
+          const sirenR = half + 8 + sirenPhase * 6
+          const sirenColor = sirenPhase < 0.5 ? 'hsl(210 95% 60%)' : 'hsl(0 85% 60%)'
+          ctx.beginPath()
+          ctx.arc(vp.x, vp.y, sirenR, 0, Math.PI * 2)
+          ctx.strokeStyle = sirenColor
+          ctx.globalAlpha = 0.45 * (1 - sirenPhase)
+          ctx.lineWidth = 2
+          ctx.stroke()
+          ctx.globalAlpha = 1
+        }
+
+        // Alarm pulse — amber ring when alarm is active
+        if (vehicle.alarmed && !prefersReducedMotion.current) {
+          const alarmPhase = (now / 900) % 1
+          const alarmR = half + 4 + alarmPhase * 10
+          ctx.beginPath()
+          ctx.arc(vp.x, vp.y, alarmR, 0, Math.PI * 2)
+          ctx.strokeStyle = hslToken('--warning', 0.45 * (1 - alarmPhase))
+          ctx.lineWidth = 1.5
+          ctx.stroke()
+        }
+
+        // Draw cached top-down vehicle icon (padded canvas → center on vp)
+        const img = getCarIcon({
+          color,
+          size: Math.round(drawSize),
+          alarmed: !!vehicle.alarmed,
+          sirening: !!vehicle.sirening,
+          selected: isHovered,
+        })
         if (img) {
-          // Drop shadow
-          ctx.shadowColor = 'rgba(0,0,0,0.4)'
-          ctx.shadowBlur = 3
-          ctx.shadowOffsetX = 1
-          ctx.shadowOffsetY = 1
-          ctx.drawImage(img, vp.x - half, vp.y - half, drawSize, drawSize)
+          ctx.shadowColor = 'rgba(0,0,0,0.55)'
+          ctx.shadowBlur = 4
+          ctx.shadowOffsetX = 0
+          ctx.shadowOffsetY = 2
+          // Icon canvas is padded 20% on each side — draw centered
+          const drawX = vp.x - img.width / 2
+          const drawY = vp.y - img.height / 2
+          ctx.drawImage(img, drawX, drawY)
           ctx.shadowColor = 'transparent'
           ctx.shadowBlur = 0
           ctx.shadowOffsetX = 0
@@ -852,8 +1027,7 @@ export default function WorldMap() {
 
     // ── Player markers ──
     const currentPlayers = playersRef.current
-    const now = performance.now()
-    const mRadius = Math.max(4, Math.min(8, s * 1200))
+    const mRadius = Math.max(5, Math.min(9, s * 1400))
 
     for (const player of currentPlayers) {
       // Interpolate position (skip if reduced motion)
@@ -871,84 +1045,184 @@ export default function WorldMap() {
       const isHovered = hoveredPlayer === player.username
       const isSelected = selectedPlayer?.username === player.username
       const isAdmin = player.accessLevel && player.accessLevel !== '' && player.accessLevel !== 'none'
-      const pinScale = isHovered ? 1.15 : 1
-      const headR = mRadius * 0.65 * pinScale
-      const bodyH = mRadius * 1.1 * pinScale
-      const bodyW = mRadius * 1.2 * pinScale
-      const pinCenterY = p.y - bodyH * 0.2 // shift pin up so point sits at coords
+      const isDead = player.isAlive === false
+      const isInfected = !!player.isInfected && !isDead
+      const pinScale = isHovered || isSelected ? 1.2 : 1
 
-      // Pulse ring (skip if reduced motion)
-      if (!prefersReducedMotion.current) {
-        const pulsePhase = (now / 1500 + (player.username.charCodeAt(0) / 26)) % 1
-        const pulseRadius = mRadius + 4 + pulsePhase * 8
-        const pulseAlpha = 0.3 * (1 - pulsePhase)
+      // Pin geometry — a refined teardrop anchored at p.x, p.y
+      const tipX = p.x
+      const tipY = p.y
+      const headR = mRadius * 1.0 * pinScale
+      const headCenterY = tipY - headR * 2.2 // head sits above the tip
+      const shoulderOffset = headR * 0.85 // where the teardrop sides meet the head
+      const color = getPlayerColor(player, 0.95)
+
+      // 1. Ground shadow — soft ellipse beneath the tip to anchor the pin
+      ctx.save()
+      ctx.fillStyle = 'rgba(0,0,0,0.35)'
+      ctx.beginPath()
+      ctx.ellipse(tipX, tipY + 1.5, headR * 0.9, headR * 0.3, 0, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.restore()
+
+      // 2. Pulse ring (live players only, subtle)
+      if (!prefersReducedMotion.current && !isDead) {
+        const seed = player.username.charCodeAt(0) / 26
+        const pulsePhase = (now / 1800 + seed) % 1
+        const pulseRadius = headR + 2 + pulsePhase * 10
+        const pulseAlpha = 0.32 * (1 - pulsePhase)
         ctx.beginPath()
-        ctx.arc(p.x, pinCenterY, pulseRadius, 0, Math.PI * 2)
+        ctx.arc(p.x, headCenterY, pulseRadius, 0, Math.PI * 2)
         ctx.strokeStyle = getPlayerColor(player, pulseAlpha)
         ctx.lineWidth = 1.5
         ctx.stroke()
       }
 
-      // Outer glow
+      // 3. Selection / hover halo
       if (isHovered || isSelected) {
         ctx.beginPath()
-        ctx.arc(p.x, pinCenterY, mRadius + 5, 0, Math.PI * 2)
-        ctx.fillStyle = getPlayerColor(player, 0.18)
+        ctx.arc(p.x, headCenterY, headR + 4, 0, Math.PI * 2)
+        ctx.fillStyle = getPlayerColor(player, 0.2)
         ctx.fill()
       }
 
-      // Drop shadow
+      // 4. Teardrop body — rounded top, tapered to tip
+      // Using bezier curves from tip → left shoulder → top arc → right shoulder → back to tip.
       ctx.save()
-      ctx.shadowColor = C.shadowMedium
-      ctx.shadowBlur = 5
-      ctx.shadowOffsetX = 1
+      ctx.shadowColor = 'rgba(0,0,0,0.45)'
+      ctx.shadowBlur = 4
+      ctx.shadowOffsetX = 0
       ctx.shadowOffsetY = 2
 
-      const color = getPlayerColor(player, 0.92)
-
-      // Body (teardrop / triangular torso pointing down)
       ctx.beginPath()
-      ctx.moveTo(p.x - bodyW, pinCenterY)          // left shoulder
-      ctx.lineTo(p.x, pinCenterY + bodyH + headR)   // bottom point
-      ctx.lineTo(p.x + bodyW, pinCenterY)            // right shoulder
+      ctx.moveTo(tipX, tipY)
+      // Left side: tip → left shoulder
+      ctx.quadraticCurveTo(
+        tipX - shoulderOffset * 0.4,
+        tipY - headR * 1.2,
+        tipX - shoulderOffset,
+        headCenterY + headR * 0.55
+      )
+      // Top arc: left shoulder → over the head → right shoulder
+      ctx.arc(p.x, headCenterY, headR * 1.05, Math.PI + 0.55, -0.55, false)
+      // Right side: right shoulder → tip
+      ctx.quadraticCurveTo(
+        tipX + shoulderOffset * 0.4,
+        tipY - headR * 1.2,
+        tipX,
+        tipY
+      )
       ctx.closePath()
       ctx.fillStyle = color
       ctx.fill()
+      ctx.restore()
 
-      // Head circle
+      // 5. Pin outline for crispness
       ctx.beginPath()
-      ctx.arc(p.x, pinCenterY - headR * 0.4, headR, 0, Math.PI * 2)
-      ctx.fillStyle = color
-      ctx.fill()
-
-      ctx.restore() // remove shadow for inner details
-
-      // Dark outline
-      ctx.beginPath()
-      ctx.moveTo(p.x - bodyW, pinCenterY)
-      ctx.lineTo(p.x, pinCenterY + bodyH + headR)
-      ctx.lineTo(p.x + bodyW, pinCenterY)
+      ctx.moveTo(tipX, tipY)
+      ctx.quadraticCurveTo(
+        tipX - shoulderOffset * 0.4,
+        tipY - headR * 1.2,
+        tipX - shoulderOffset,
+        headCenterY + headR * 0.55
+      )
+      ctx.arc(p.x, headCenterY, headR * 1.05, Math.PI + 0.55, -0.55, false)
+      ctx.quadraticCurveTo(
+        tipX + shoulderOffset * 0.4,
+        tipY - headR * 1.2,
+        tipX,
+        tipY
+      )
       ctx.closePath()
-      ctx.arc(p.x, pinCenterY - headR * 0.4, headR, 0, Math.PI * 2)
-      ctx.strokeStyle = C.shadowLight
-      ctx.lineWidth = 1
+      ctx.strokeStyle = 'rgba(0,0,0,0.7)'
+      ctx.lineWidth = 1.2
       ctx.stroke()
 
-      // Inner head highlight
+      // 6. Inner head disc — a darker plate that the 'face' sits on
       ctx.beginPath()
-      ctx.arc(p.x - headR * 0.25, pinCenterY - headR * 0.65, headR * 0.35, 0, Math.PI * 2)
-      ctx.fillStyle = C.headHighlight
+      ctx.arc(p.x, headCenterY, headR * 0.72, 0, Math.PI * 2)
+      ctx.fillStyle = 'rgba(0,0,0,0.32)'
       ctx.fill()
 
-      // Admin star
-      if (isAdmin) {
-        ctx.fillStyle = C.adminStar
-        drawStar(ctx, p.x + mRadius + 4, pinCenterY - headR - 3, 3.5, 5)
+      // 7. Face disc — solid head in the player color, with rim
+      ctx.beginPath()
+      ctx.arc(p.x, headCenterY, headR * 0.58, 0, Math.PI * 2)
+      ctx.fillStyle = color
+      ctx.fill()
+      ctx.strokeStyle = 'rgba(0,0,0,0.45)'
+      ctx.lineWidth = 0.8
+      ctx.stroke()
+
+      // 8. Specular highlight on the head
+      ctx.beginPath()
+      ctx.arc(p.x - headR * 0.22, headCenterY - headR * 0.25, headR * 0.2, 0, Math.PI * 2)
+      ctx.fillStyle = 'rgba(255,255,255,0.38)'
+      ctx.fill()
+
+      // 9. Infected indicator — a jagged viral ring
+      if (isInfected && !prefersReducedMotion.current) {
+        const spikes = 8
+        const innerR = headR * 0.85
+        const outerR = headR * 1.15 + Math.sin(now / 400) * 0.8
+        ctx.beginPath()
+        for (let i = 0; i < spikes * 2; i++) {
+          const angle = (i / (spikes * 2)) * Math.PI * 2 - Math.PI / 2
+          const r = i % 2 === 0 ? outerR : innerR
+          const x = p.x + Math.cos(angle) * r
+          const y = headCenterY + Math.sin(angle) * r
+          if (i === 0) ctx.moveTo(x, y)
+          else ctx.lineTo(x, y)
+        }
+        ctx.closePath()
+        ctx.strokeStyle = hslToken('--destructive', 0.75)
+        ctx.lineWidth = 1.2
+        ctx.stroke()
       }
 
-      // Username label
-      const labelY = pinCenterY - headR - mRadius * 0.5 - 4
-      const labelAlpha = isHovered || isSelected ? 1 : 0.8
+      // 10. Dead overlay — X through the pin
+      if (isDead) {
+        const xLen = headR * 0.65
+        ctx.save()
+        ctx.strokeStyle = 'rgba(255,255,255,0.9)'
+        ctx.lineWidth = 1.5
+        ctx.lineCap = 'round'
+        ctx.beginPath()
+        ctx.moveTo(p.x - xLen, headCenterY - xLen)
+        ctx.lineTo(p.x + xLen, headCenterY + xLen)
+        ctx.moveTo(p.x + xLen, headCenterY - xLen)
+        ctx.lineTo(p.x - xLen, headCenterY + xLen)
+        ctx.stroke()
+        ctx.restore()
+      }
+
+      // 11. Admin crown badge — replaces the old 5-point star
+      if (isAdmin) {
+        const bx = p.x + headR * 0.95
+        const by = headCenterY - headR * 0.85
+        ctx.save()
+        ctx.fillStyle = C.adminStar
+        ctx.strokeStyle = 'rgba(0,0,0,0.6)'
+        ctx.lineWidth = 0.8
+        // Tiny crown shape (3 points + base)
+        const crownH = headR * 0.55
+        const crownW = headR * 0.8
+        ctx.beginPath()
+        ctx.moveTo(bx - crownW / 2, by + crownH / 2)
+        ctx.lineTo(bx - crownW / 2, by - crownH / 4)
+        ctx.lineTo(bx - crownW / 4, by + crownH / 4)
+        ctx.lineTo(bx, by - crownH / 2)
+        ctx.lineTo(bx + crownW / 4, by + crownH / 4)
+        ctx.lineTo(bx + crownW / 2, by - crownH / 4)
+        ctx.lineTo(bx + crownW / 2, by + crownH / 2)
+        ctx.closePath()
+        ctx.fill()
+        ctx.stroke()
+        ctx.restore()
+      }
+
+      // 12. Username label above the pin
+      const labelY = headCenterY - headR - 6
+      const labelAlpha = isHovered || isSelected ? 1 : 0.85
       ctx.font = `600 ${Math.max(10, Math.min(13, s * 2500))}px ui-sans-serif, system-ui, sans-serif`
       ctx.textAlign = 'center'
       ctx.save()
@@ -959,18 +1233,21 @@ export default function WorldMap() {
       ctx.fillText(player.displayName || player.username, p.x, labelY)
       ctx.restore()
 
-      // Health bar
-      if (player.health !== undefined && s > 0.0005) {
-        const barW = 24
+      // 13. Health bar below the tip
+      if (player.health !== undefined && s > 0.0005 && !isDead) {
+        const barW = 26
         const barH = 3
         const barX = p.x - barW / 2
-        const barY = pinCenterY + bodyH + headR + 4
+        const barY = tipY + 4
         const healthPct = Math.max(0, Math.min(100, player.health)) / 100
 
+        // Backdrop
         ctx.fillStyle = C.healthBarBg
         ctx.beginPath()
         ctx.roundRect(barX, barY, barW, barH, 1.5)
         ctx.fill()
+
+        // Fill
         ctx.fillStyle =
           healthPct > 0.5 ? C.healthGood :
           healthPct > 0.25 ? C.healthWarning :
@@ -978,6 +1255,13 @@ export default function WorldMap() {
         ctx.beginPath()
         ctx.roundRect(barX, barY, barW * healthPct, barH, 1.5)
         ctx.fill()
+
+        // Rim
+        ctx.strokeStyle = 'rgba(0,0,0,0.4)'
+        ctx.lineWidth = 0.6
+        ctx.beginPath()
+        ctx.roundRect(barX, barY, barW, barH, 1.5)
+        ctx.stroke()
       }
     }
 
@@ -1290,12 +1574,18 @@ export default function WorldMap() {
       const wp = screenToTile(mx, my)
       setCursorWorldPos(wp)
 
-      // Hit test players
+      // Hit test players — pin anchors at tip, head sits ~18px above; accept either.
       let found: string | null = null
       for (const player of playersRef.current) {
         const p = playerToScreen(player.x, player.y)
-        const dist = Math.sqrt((mx - p.x) ** 2 + (my - p.y) ** 2)
-        if (dist < MARKER_HIT_RADIUS) {
+        const pinR = Math.max(5, Math.min(9, scaleRef.current * 1400))
+        const headY = p.y - pinR * 2.2
+        // Closest vertical point on pin (tip or head)
+        const dxTip = mx - p.x, dyTip = my - p.y
+        const dxHead = mx - p.x, dyHead = my - headY
+        const distTip = Math.sqrt(dxTip * dxTip + dyTip * dyTip)
+        const distHead = Math.sqrt(dxHead * dxHead + dyHead * dyHead)
+        if (distTip < MARKER_HIT_RADIUS || distHead < MARKER_HIT_RADIUS) {
           found = player.username
           break
         }
@@ -1362,8 +1652,11 @@ export default function WorldMap() {
       let clickedPlayer: MapPlayer | undefined
       for (const player of playersRef.current) {
         const p = playerToScreen(player.x, player.y)
-        const dist = Math.sqrt((mx - p.x) ** 2 + (my - p.y) ** 2)
-        if (dist < MARKER_HIT_RADIUS) {
+        const pinR = Math.max(5, Math.min(9, scaleRef.current * 1400))
+        const headY = p.y - pinR * 2.2
+        const distTip = Math.sqrt((mx - p.x) ** 2 + (my - p.y) ** 2)
+        const distHead = Math.sqrt((mx - p.x) ** 2 + (my - headY) ** 2)
+        if (distTip < MARKER_HIT_RADIUS || distHead < MARKER_HIT_RADIUS) {
           clickedPlayer = player
           break
         }
@@ -1637,6 +1930,146 @@ export default function WorldMap() {
     }, 15_000)
     return () => clearInterval(interval)
   }, [])
+
+  // Custom drop — drop one or more items at coords. Reuses the airdrop
+  // backend's `items` payload; no new server/Lua route required.
+  const callCustomDrop = useCallback(
+    async (opts: {
+      x: number
+      y: number
+      items: Array<{ itemType: string; count: number }>
+      announce: boolean
+      attractZombies: boolean
+      soundRadius: number
+      silent?: boolean
+      label?: string
+    }) => {
+      if (actionLoadingRef.current) return
+      const cleaned = opts.items
+        .map((it) => ({
+          itemType: (it.itemType || '').trim(),
+          count: Math.max(1, Math.min(20, Math.floor(Number(it.count) || 1))),
+        }))
+        .filter((it) => it.itemType.length > 0)
+      if (cleaned.length === 0) {
+        toast({ title: 'No items', description: 'Add at least one item to drop', variant: 'destructive' })
+        return
+      }
+      // Module must start with a letter; item name may start with a digit (e.g. 9mmClip, 556Bullets).
+      const ID_RE = /^[A-Za-z]\w*\.\w+$/
+      const bad = cleaned.find((it) => !ID_RE.test(it.itemType))
+      if (bad) {
+        toast({
+          title: 'Invalid item',
+          description: `${bad.itemType} — expected format: Module.Item`,
+          variant: 'destructive',
+        })
+        return
+      }
+      if (cleaned.length > 50) {
+        toast({ title: 'Too many items', description: 'Max 50 item entries per drop', variant: 'destructive' })
+        return
+      }
+      actionLoadingRef.current = 'drop'
+      setActionLoading('drop')
+      try {
+        const res = await panelBridgeApi.triggerAirdrop({
+          x: opts.x,
+          y: opts.y,
+          items: cleaned,
+          announce: opts.announce,
+          attractZombies: opts.attractZombies,
+          soundRadius: Math.max(10, Math.min(500, Math.floor(opts.soundRadius))),
+        })
+        if (!mountedRef.current) return
+        if (res.success) {
+          const data = res.data as Record<string, unknown> | undefined
+          const failed = typeof data?.failed === 'number' ? data.failed : 0
+          const totalQty = cleaned.reduce((sum, it) => sum + it.count, 0)
+          const coords = `${Math.round(opts.x)}, ${Math.round(opts.y)}`
+          const title = opts.label ? `${opts.label} dropped` : 'Drop deployed'
+          let desc =
+            cleaned.length === 1
+              ? `${cleaned[0].itemType.replace(/^[^.]+\./, '')}${cleaned[0].count > 1 ? ` × ${cleaned[0].count}` : ''} at ${coords}`
+              : `${cleaned.length} items (${totalQty} total) at ${coords}`
+          if (failed > 0) desc += ` (${failed} failed)`
+          if (!opts.silent) toast({ title, description: desc })
+          setAirdropMarkers((prev) => {
+            const next = [...prev, { x: opts.x, y: opts.y, preset: 'custom', time: Date.now() }]
+            return next.length > 50 ? next.slice(-50) : next
+          })
+          setLastDrop({
+            items: cleaned,
+            label: opts.label || (cleaned.length === 1
+              ? cleaned[0].itemType.replace(/^[^.]+\./, '')
+              : `${cleaned.length}-item package`),
+          })
+        } else {
+          toast({ title: 'Drop failed', description: res.error || 'Area may not be loaded — a player must be nearby', variant: 'destructive' })
+        }
+      } catch (err) {
+        if (!mountedRef.current) return
+        const msg = err instanceof Error ? err.message : 'Failed to drop item'
+        toast({ title: 'Drop error', description: msg, variant: 'destructive' })
+      } finally {
+        actionLoadingRef.current = null
+        if (mountedRef.current) {
+          setActionLoading(null)
+        }
+      }
+    },
+    [toast]
+  )
+
+  // Teleport an arbitrary online player to the right-clicked coordinate.
+  const teleportPlayerTo = useCallback(
+    async (username: string, x: number, y: number, z: number) => {
+      setActionLoading('teleport')
+      try {
+        const res = await panelBridgeApi.sendCommand('teleportPlayer', {
+          username,
+          x: Math.round(x),
+          y: Math.round(y),
+          z: Math.round(z),
+        })
+        if (!mountedRef.current) return
+        if (res.success) {
+          toast({
+            title: 'Player teleported',
+            description: `${username} → ${Math.round(x)}, ${Math.round(y)}`,
+          })
+          fetchPlayerPositions()
+        } else {
+          toast({
+            title: 'Teleport failed',
+            description: res.error || 'Grid square may not be loaded at destination',
+            variant: 'destructive',
+          })
+        }
+      } catch (err) {
+        if (!mountedRef.current) return
+        const msg = err instanceof Error ? err.message : 'Teleport error'
+        toast({ title: 'Teleport error', description: msg, variant: 'destructive' })
+      } finally {
+        if (mountedRef.current) setActionLoading(null)
+      }
+    },
+    [toast]
+  )
+
+  // Copy map coordinates to the clipboard.
+  const copyCoords = useCallback(
+    async (x: number, y: number) => {
+      const text = `${Math.round(x)}, ${Math.round(y)}`
+      try {
+        await navigator.clipboard.writeText(text)
+        toast({ title: 'Copied', description: text })
+      } catch {
+        toast({ title: 'Copy failed', description: 'Clipboard unavailable', variant: 'destructive' })
+      }
+    },
+    [toast]
+  )
 
   // Pan to player (from player list click)
   const panToPlayer = useCallback((p: MapPlayer) => {
@@ -1954,8 +2387,26 @@ export default function WorldMap() {
               }
             }}
           >
-            <div className="px-2 py-1 text-[11px] font-mono text-muted-foreground/50 border-b border-border/20 tabular-nums select-none">
-              {Math.round(contextMenu.worldX)}, {Math.round(contextMenu.worldY)}
+            {/* Context header — coordinates + quick actions on the spot */}
+            <div className="flex items-center justify-between gap-1 px-2 py-1.5 text-[11px] font-mono text-muted-foreground/70 border-b border-border/30 tabular-nums select-none bg-muted/20">
+              <span className="flex items-center gap-1.5">
+                <Crosshair className="w-3 h-3 text-muted-foreground/50" />
+                <span>{Math.round(contextMenu.worldX)}, {Math.round(contextMenu.worldY)}</span>
+                <span className="text-muted-foreground/40">·</span>
+                <span className="text-muted-foreground/50">{floorLabel(floor)}</span>
+              </span>
+              <button
+                type="button"
+                title="Copy coordinates"
+                aria-label="Copy coordinates"
+                className="p-1 -m-1 rounded hover:bg-muted/60 text-muted-foreground/60 hover:text-foreground transition-colors"
+                onClick={(ev) => {
+                  ev.stopPropagation()
+                  copyCoords(contextMenu.worldX, contextMenu.worldY)
+                }}
+              >
+                <Copy className="w-3 h-3" />
+              </button>
             </div>
 
             {contextMenu.player && (
@@ -2110,22 +2561,66 @@ export default function WorldMap() {
               </>
             )}
 
-            <div className="border-t border-border/20 pt-0.5">
+            {/* ── Teleport players to this spot ── */}
+            {playersRef.current.length > 0 && (
+              <div className="border-t border-border/30 pt-0.5">
+                <div className="px-2 pt-1.5 pb-0.5 text-[10px] uppercase tracking-wider text-muted-foreground/60 font-semibold select-none flex items-center gap-1.5">
+                  <Locate className="w-3 h-3" />
+                  Teleport to this spot
+                </div>
+                {playersRef.current.slice(0, 6).map((pl) => {
+                  const pColor = pl.isInfected
+                    ? 'text-destructive'
+                    : pl.accessLevel && pl.accessLevel !== '' && pl.accessLevel !== 'none'
+                      ? 'text-warning'
+                      : 'text-info'
+                  return (
+                    <ContextMenuItem
+                      key={`tp-${pl.username}`}
+                      icon={<Users className={cn('w-3.5 h-3.5', pColor)} />}
+                      label={pl.displayName || pl.username}
+                      description={`${Math.round(pl.x)}, ${Math.round(pl.y)} → ${Math.round(contextMenu.worldX)}, ${Math.round(contextMenu.worldY)}`}
+                      loading={actionLoading === 'teleport'}
+                      disabled={!bridgeConnected}
+                      onClick={() => {
+                        teleportPlayerTo(pl.username, contextMenu.worldX, contextMenu.worldY, floor)
+                        setContextMenu(null)
+                      }}
+                    />
+                  )
+                })}
+                {playersRef.current.length > 6 && (
+                  <div className="px-2 py-1 text-[10px] text-muted-foreground/40 italic select-none">
+                    +{playersRef.current.length - 6} more online
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── World effects section ── */}
+            <div className="border-t border-border/30 pt-0.5">
+              <div className="px-2 pt-1.5 pb-0.5 text-[10px] uppercase tracking-wider text-muted-foreground/60 font-semibold select-none flex items-center gap-1.5">
+                <Zap className="w-3 h-3" />
+                Effects at this spot
+              </div>
               <ContextMenuItem
-                icon={<CloudLightning className="w-3.5 h-3.5" />}
+                icon={<CloudLightning className="w-3.5 h-3.5 text-info" />}
                 label="Lightning strike"
+                description="Single bolt + thunder"
                 loading={actionLoading === 'lightning'}
                 onClick={() => triggerLightningAt(contextMenu.worldX, contextMenu.worldY)}
               />
               <ContextMenuItem
-                icon={<Volume2 className="w-3.5 h-3.5" />}
+                icon={<Volume2 className="w-3.5 h-3.5 text-warning" />}
                 label="Create noise"
+                description="Pull zombies this way"
                 loading={actionLoading === 'noise'}
                 onClick={() => createNoiseAt(contextMenu.worldX, contextMenu.worldY)}
               />
               <ContextMenuItem
                 icon={<Car className="w-3.5 h-3.5" />}
                 label="Spawn vehicle here"
+                description="Pick a vehicle to spawn"
                 disabled={!bridgeConnected}
                 onClick={() => {
                   setSpawnDialog({ x: Math.round(contextMenu.worldX), y: Math.round(contextMenu.worldY), z: floor })
@@ -2135,9 +2630,87 @@ export default function WorldMap() {
               />
             </div>
 
-            <div className="border-t border-border/20 pt-0.5">
-              <div className="px-2 pt-1.5 pb-0.5 text-[10px] uppercase tracking-wider text-warning/70 font-semibold select-none">
-                Airdrop
+            {/* ── Drops section ── */}
+            <div className="border-t border-border/30 pt-0.5">
+              <div className="px-2 pt-1.5 pb-0.5 text-[10px] uppercase tracking-wider text-warning/80 font-semibold select-none flex items-center gap-1.5">
+                <Package className="w-3 h-3" />
+                Drop items
+              </div>
+              <ContextMenuItem
+                icon={<Package className="w-3.5 h-3.5 text-warning" />}
+                label="Custom drop…"
+                description="Build a package — items, quantities, templates"
+                disabled={!bridgeConnected}
+                onClick={() => {
+                  setDropDialog({ x: Math.round(contextMenu.worldX), y: Math.round(contextMenu.worldY), z: floor })
+                  // Seed from last drop if any, otherwise one empty row.
+                  if (lastDrop && lastDrop.items.length > 0) {
+                    setDropItems(lastDrop.items.map((it) => ({ ...it })))
+                  } else {
+                    setDropItems([{ itemType: '', count: 1 }])
+                  }
+                  setActiveTemplateId(null)
+                  setSavingTemplate(false)
+                  setTemplateNameInput('')
+                  setDropAnnounce(true)
+                  setDropAttractZombies(true)
+                  setDropSoundRadius(150)
+                  setContextMenu(null)
+                }}
+              />
+              {lastDrop && (
+                <ContextMenuItem
+                  icon={<RefreshCw className="w-3.5 h-3.5 text-warning/80" />}
+                  label="Repeat last drop"
+                  description={lastDrop.label}
+                  loading={actionLoading === 'drop'}
+                  disabled={!bridgeConnected}
+                  onClick={() => {
+                    callCustomDrop({
+                      x: contextMenu.worldX,
+                      y: contextMenu.worldY,
+                      items: lastDrop.items,
+                      announce: false, // repeats are silent in-world
+                      attractZombies: true,
+                      soundRadius: 150,
+                      label: lastDrop.label,
+                    })
+                    setContextMenu(null)
+                  }}
+                />
+              )}
+              {dropTemplates.length > 0 && (
+                <>
+                  <div className="px-2 pt-1 pb-0.5 text-[10px] uppercase tracking-wider text-muted-foreground/50 font-semibold select-none flex items-center gap-1.5">
+                    <Save className="w-3 h-3" />
+                    Saved packages
+                  </div>
+                  {dropTemplates.slice(0, 8).map((tpl) => (
+                    <ContextMenuItem
+                      key={tpl.id}
+                      icon={<Package className="w-3.5 h-3.5 text-warning/70" />}
+                      label={tpl.name}
+                      description={`${tpl.items.length} items`}
+                      loading={actionLoading === 'drop'}
+                      disabled={!bridgeConnected}
+                      onClick={() => {
+                        callCustomDrop({
+                          x: contextMenu.worldX,
+                          y: contextMenu.worldY,
+                          items: tpl.items,
+                          announce: true,
+                          attractZombies: true,
+                          soundRadius: 150,
+                          label: tpl.name,
+                        })
+                        setContextMenu(null)
+                      }}
+                    />
+                  ))}
+                </>
+              )}
+              <div className="px-2 pt-1 pb-0.5 text-[10px] uppercase tracking-wider text-muted-foreground/50 font-semibold select-none">
+                Preset crates
               </div>
               {AIRDROP_PRESETS.map((preset) => (
                 <ContextMenuItem
@@ -2235,6 +2808,332 @@ export default function WorldMap() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Custom Drop Dialog — drops one or more items at the right-clicked coords */}
+      <Dialog open={!!dropDialog} onOpenChange={(open) => { if (!open) setDropDialog(null) }}>
+        <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Package className="w-5 h-5 text-warning" />
+              Custom item drop
+              {activeTemplateId && (() => {
+                const tpl = dropTemplates.find((t) => t.id === activeTemplateId)
+                return tpl ? (
+                  <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-muted/60 px-2 py-0.5 text-[10px] font-normal text-muted-foreground">
+                    <Save className="w-3 h-3" />
+                    {tpl.name}
+                  </span>
+                ) : null
+              })()}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {/* Target info */}
+            <div className="flex items-center justify-between gap-2 rounded-md border border-border/50 bg-muted/20 px-3 py-2 text-xs font-mono tabular-nums">
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Crosshair className="w-3.5 h-3.5" />
+                <span className="text-foreground">{dropDialog?.x}, {dropDialog?.y}</span>
+                <span className="text-muted-foreground/50">·</span>
+                <span>{floorLabel(dropDialog?.z ?? 0)}</span>
+              </div>
+              <button
+                type="button"
+                className="text-muted-foreground/60 hover:text-foreground"
+                title="Copy coordinates"
+                onClick={() => dropDialog && copyCoords(dropDialog.x, dropDialog.y)}
+              >
+                <Copy className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {/* Templates bar */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <Label className="text-xs text-muted-foreground flex items-center gap-1.5 mr-auto">
+                <Save className="w-3.5 h-3.5" />
+                Package templates
+              </Label>
+              {dropTemplates.length > 0 ? (
+                <>
+                  <select
+                    value={activeTemplateId ?? ''}
+                    onChange={(e) => {
+                      const id = e.target.value
+                      if (!id) {
+                        setActiveTemplateId(null)
+                        return
+                      }
+                      const tpl = dropTemplates.find((t) => t.id === id)
+                      if (tpl) {
+                        setDropItems(tpl.items.map((it) => ({ ...it })))
+                        setActiveTemplateId(tpl.id)
+                      }
+                    }}
+                    className="h-8 rounded-md border border-border/60 bg-background px-2 text-xs min-w-[140px] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  >
+                    <option value="">Load package…</option>
+                    {dropTemplates.map((tpl) => (
+                      <option key={tpl.id} value={tpl.id}>
+                        {tpl.name} ({tpl.items.length})
+                      </option>
+                    ))}
+                  </select>
+                  {activeTemplateId && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 px-2 text-destructive hover:text-destructive"
+                      title="Delete this package"
+                      onClick={() => {
+                        const tpl = dropTemplates.find((t) => t.id === activeTemplateId)
+                        if (!tpl) return
+                        if (!window.confirm(`Delete package "${tpl.name}"?`)) return
+                        persistDropTemplates(dropTemplates.filter((t) => t.id !== activeTemplateId))
+                        setActiveTemplateId(null)
+                        toast({ title: 'Package deleted', description: tpl.name })
+                      }}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  )}
+                </>
+              ) : (
+                <span className="text-[11px] text-muted-foreground/60 italic">No packages yet — build one and save below</span>
+              )}
+            </div>
+
+            {/* Items list — NO overflow-y-auto here so the ItemPicker dropdown isn't clipped */}
+            <div className="rounded-md border border-border/50 bg-muted/10 divide-y divide-border/30">
+              {dropItems.length === 0 && (
+                <div className="px-3 py-4 text-center text-xs text-muted-foreground/60 italic">
+                  No items — add at least one below.
+                </div>
+              )}
+              {dropItems.map((item, idx) => (
+                <div key={idx} className="flex items-end gap-2 px-2 py-2">
+                  <div className="flex-1 min-w-0">
+                    {idx === 0 && (
+                      <Label className="text-[10px] text-muted-foreground/70 mb-1 block">Item</Label>
+                    )}
+                    <ItemPicker
+                      value={item.itemType}
+                      onChange={(val) => {
+                        setDropItems((prev) => prev.map((it, i) => (i === idx ? { ...it, itemType: val } : it)))
+                        setActiveTemplateId(null)
+                      }}
+                      placeholder="Search catalog..."
+                    />
+                  </div>
+                  <div className="w-16 shrink-0">
+                    {idx === 0 && (
+                      <Label className="text-[10px] text-muted-foreground/70 mb-1 block">Qty</Label>
+                    )}
+                    <Input
+                      type="number"
+                      value={item.count}
+                      min={1}
+                      max={20}
+                      className="h-9 text-center tabular-nums"
+                      onChange={(e) => {
+                        const v = parseInt(e.target.value)
+                        const count = Number.isNaN(v) ? 1 : Math.max(1, Math.min(20, v))
+                        setDropItems((prev) => prev.map((it, i) => (i === idx ? { ...it, count } : it)))
+                        setActiveTemplateId(null)
+                      }}
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-9 w-9 p-0 shrink-0 text-muted-foreground/60 hover:text-destructive"
+                    title="Remove item"
+                    onClick={() => {
+                      setDropItems((prev) => (prev.length <= 1 ? [{ itemType: '', count: 1 }] : prev.filter((_, i) => i !== idx)))
+                      setActiveTemplateId(null)
+                    }}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8"
+                disabled={dropItems.length >= 50}
+                onClick={() => {
+                  setDropItems((prev) => [...prev, { itemType: '', count: 1 }])
+                  setActiveTemplateId(null)
+                }}
+              >
+                <Plus className="w-3.5 h-3.5 mr-1" />
+                Add item
+              </Button>
+              <div className="text-[11px] text-muted-foreground/70 tabular-nums">
+                {dropItems.filter((it) => it.itemType.trim()).length} / {dropItems.length} valid · max 50
+              </div>
+            </div>
+
+            {/* Save as template */}
+            {savingTemplate ? (
+              <div className="flex items-center gap-2 rounded-md border border-border/60 bg-muted/20 px-3 py-2">
+                <Save className="w-4 h-4 text-muted-foreground/70 flex-none" />
+                <Input
+                  autoFocus
+                  value={templateNameInput}
+                  onChange={(e) => setTemplateNameInput(e.target.value.slice(0, 40))}
+                  placeholder="Package name (e.g. 'Winter starter')"
+                  className="h-8 flex-1"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      const name = templateNameInput.trim()
+                      if (!name) return
+                      const valid = dropItems.filter((it) => it.itemType.trim())
+                      if (valid.length === 0) {
+                        toast({ title: 'Cannot save empty package', variant: 'destructive' })
+                        return
+                      }
+                      const id = `tpl-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
+                      const tpl: DropTemplate = { id, name, items: valid.map((it) => ({ ...it })) }
+                      persistDropTemplates([...dropTemplates, tpl].slice(-50))
+                      setActiveTemplateId(id)
+                      setSavingTemplate(false)
+                      setTemplateNameInput('')
+                      toast({ title: 'Package saved', description: name })
+                    } else if (e.key === 'Escape') {
+                      setSavingTemplate(false)
+                      setTemplateNameInput('')
+                    }
+                  }}
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-8"
+                  disabled={!templateNameInput.trim()}
+                  onClick={() => {
+                    const name = templateNameInput.trim()
+                    const valid = dropItems.filter((it) => it.itemType.trim())
+                    if (!name || valid.length === 0) return
+                    const id = `tpl-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
+                    const tpl: DropTemplate = { id, name, items: valid.map((it) => ({ ...it })) }
+                    persistDropTemplates([...dropTemplates, tpl].slice(-50))
+                    setActiveTemplateId(id)
+                    setSavingTemplate(false)
+                    setTemplateNameInput('')
+                    toast({ title: 'Package saved', description: name })
+                  }}
+                >
+                  Save
+                </Button>
+                <Button type="button" size="sm" variant="ghost" className="h-8" onClick={() => { setSavingTemplate(false); setTemplateNameInput('') }}>
+                  <X className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 w-full"
+                disabled={dropItems.filter((it) => it.itemType.trim()).length === 0}
+                onClick={() => { setSavingTemplate(true); setTemplateNameInput('') }}
+              >
+                <Save className="w-3.5 h-3.5 mr-2" />
+                Save current items as package…
+              </Button>
+            )}
+
+            {/* Options */}
+            <div className="rounded-md border border-border/50 bg-muted/10 divide-y divide-border/30">
+              <label className="flex items-center justify-between gap-3 px-3 py-2.5 cursor-pointer hover:bg-muted/20 transition-colors">
+                <div className="flex items-start gap-2.5 min-w-0">
+                  <Megaphone className="w-4 h-4 text-muted-foreground/70 mt-0.5 flex-none" />
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium">Announce to players</div>
+                    <div className="text-[11px] text-muted-foreground/70">Broadcast drop location in server chat</div>
+                  </div>
+                </div>
+                <Switch checked={dropAnnounce} onCheckedChange={setDropAnnounce} />
+              </label>
+              <label className="flex items-center justify-between gap-3 px-3 py-2.5 cursor-pointer hover:bg-muted/20 transition-colors">
+                <div className="flex items-start gap-2.5 min-w-0">
+                  <BellRing className="w-4 h-4 text-muted-foreground/70 mt-0.5 flex-none" />
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium">Attract zombies</div>
+                    <div className="text-[11px] text-muted-foreground/70">Creates noise when items land</div>
+                  </div>
+                </div>
+                <Switch checked={dropAttractZombies} onCheckedChange={setDropAttractZombies} />
+              </label>
+              {dropAttractZombies && (
+                <div className="px-3 py-2.5">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <Label className="text-xs text-muted-foreground">Noise radius</Label>
+                    <span className="text-xs font-mono tabular-nums text-muted-foreground/80">{dropSoundRadius} tiles</span>
+                  </div>
+                  <Input
+                    type="range"
+                    min={10}
+                    max={500}
+                    step={10}
+                    value={dropSoundRadius}
+                    onChange={(e) => setDropSoundRadius(parseInt(e.target.value))}
+                    className="h-1.5 accent-warning"
+                  />
+                  <div className="flex justify-between text-[9px] text-muted-foreground/50 mt-1">
+                    <span>whisper</span>
+                    <span>gunshot</span>
+                    <span>explosion</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDropDialog(null)}>Cancel</Button>
+            <Button
+              disabled={dropItems.filter((it) => it.itemType.trim()).length === 0 || actionLoading === 'drop'}
+              onClick={async () => {
+                if (!dropDialog) return
+                const valid = dropItems.filter((it) => it.itemType.trim())
+                if (valid.length === 0) return
+                const label = activeTemplateId
+                  ? dropTemplates.find((t) => t.id === activeTemplateId)?.name
+                  : valid.length === 1
+                    ? valid[0].itemType.replace(/^[^.]+\./, '')
+                    : `${valid.length}-item package`
+                await callCustomDrop({
+                  x: dropDialog.x,
+                  y: dropDialog.y,
+                  items: valid,
+                  announce: dropAnnounce,
+                  attractZombies: dropAttractZombies,
+                  soundRadius: dropSoundRadius,
+                  label,
+                })
+                if (mountedRef.current) setDropDialog(null)
+              }}
+            >
+              {actionLoading === 'drop'
+                ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                : <Flame className="w-4 h-4 mr-2" />}
+              {(() => {
+                const validCount = dropItems.filter((it) => it.itemType.trim()).length
+                const totalQty = dropItems.filter((it) => it.itemType.trim()).reduce((s, it) => s + it.count, 0)
+                if (validCount === 0) return 'Drop'
+                if (validCount === 1) return `Drop${totalQty > 1 ? ` × ${totalQty}` : ''}`
+                return `Drop ${validCount} items`
+              })()}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -2268,23 +3167,6 @@ function getPlayerColor(player: MapPlayer, alpha: number): string {
   if (player.accessLevel && player.accessLevel !== '' && player.accessLevel !== 'none')
     return hslToken('--warning', alpha)
   return hslToken('--info', alpha)
-}
-
-function drawStar(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, points: number) {
-  ctx.beginPath()
-  for (let i = 0; i < points * 2; i++) {
-    const radius = i % 2 === 0 ? r : r * 0.5
-    const angle = (Math.PI * 2 * i) / (points * 2) - Math.PI / 2
-    const x = cx + Math.cos(angle) * radius
-    const y = cy + Math.sin(angle) * radius
-    if (i === 0) {
-      ctx.moveTo(x, y)
-    } else {
-      ctx.lineTo(x, y)
-    }
-  }
-  ctx.closePath()
-  ctx.fill()
 }
 
 function easeOutCubic(t: number): number {

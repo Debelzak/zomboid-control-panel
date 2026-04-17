@@ -127,16 +127,17 @@ See docker-compose.yml comments for volume mount and UID configuration.
 - client/dist/             - Web interface (required, must stay alongside binary)
 - data/db.json             - Configuration database (created on first run)
 - logs/                    - Application logs
-- pz-mod/                  - PanelBridge mod for advanced in-game features
+- pz-mod/                  - PanelBridge server-side Lua (drop into Install/media/lua/server)
 - checksums.txt            - SHA256 hashes for release archives
 - release-manifest.json    - Build metadata for this package
 
 ## Panel Bridge Setup (Optional)
-The PanelBridge mod enables advanced features like weather control:
-1. Copy the pz-mod/PanelBridge folder to your server's mods folder
-2. Add "PanelBridge" to your server's Mods= line in the .ini file
-3. Restart your PZ server
-4. Go to Settings in the panel and configure the Panel Bridge section
+The PanelBridge Lua enables advanced features like weather control. It is a
+server-side drop-in, NOT a Workshop mod — there is no client component.
+1. Copy pz-mod/PanelBridge/media/lua/server/PanelBridge.lua into your PZ
+   dedicated server's install folder: Install/media/lua/server/PanelBridge.lua
+2. Restart your PZ server (no .ini changes needed; nothing loads on clients)
+3. Go to Settings in the panel and configure the Panel Bridge section
 
 ## Notes
 - Keep all files in the same folder structure — the binary needs client/dist/.
@@ -284,6 +285,17 @@ async function main() {
 
   if (fs.existsSync('./pz-mod')) {
     fs.cpSync('./pz-mod', './release/pz-mod', { recursive: true });
+  }
+
+  // Ship the sql.js WASM blob next to the executable. vehiclesDb.js loads it
+  // at runtime to delete rows from the save's vehicles.db. The file is tiny
+  // (~660 KB) and pkg can't introspect sql.js's dynamic require, so we copy
+  // it manually.
+  const wasmSrc = './node_modules/sql.js/dist/sql-wasm.wasm';
+  if (fs.existsSync(wasmSrc)) {
+    fs.copyFileSync(wasmSrc, './release/sql-wasm.wasm');
+  } else {
+    console.warn('sql-wasm.wasm not found in node_modules/sql.js/dist — vehicle cleanup will fail at runtime. Run `npm install` first.');
   }
 
   if (fs.existsSync('./zomboid-panel.service')) {

@@ -2080,16 +2080,24 @@ export default function Events() {
                 <div className="grid grid-cols-2 gap-3">
                   <Button
                     variant="outline"
-                    disabled
-                    className="h-11 gap-2 opacity-50 cursor-not-allowed"
+                    disabled={!bridgeConnected || loading !== null}
+                    onClick={() => handleAction('Restore Utilities', async () => {
+                      await panelBridgeApi.restoreUtilities(true, true)
+                      await checkBridgeStatus()
+                    })}
+                    className="h-11 gap-2"
                   >
                     <Zap className="w-4 h-4" />
                     Restore Power + Water
                   </Button>
                   <Button
                     variant="outline"
-                    disabled
-                    className="h-11 gap-2 opacity-50 cursor-not-allowed"
+                    disabled={!bridgeConnected || loading !== null}
+                    onClick={() => handleAction('Shut Off Utilities', async () => {
+                      await panelBridgeApi.shutOffUtilities(true, true)
+                      await checkBridgeStatus()
+                    })}
+                    className="h-11 gap-2"
                   >
                     <CloudOff className="w-4 h-4" />
                     Cut Power + Water
@@ -2099,16 +2107,24 @@ export default function Events() {
                 <div className="grid grid-cols-2 gap-3">
                   <Button
                     variant="outline"
-                    disabled
-                    className="h-11 gap-2 opacity-50 cursor-not-allowed"
+                    disabled={!bridgeConnected || loading !== null}
+                    onClick={() => handleAction('Restore Power', async () => {
+                      await panelBridgeApi.restoreUtilities(true, false)
+                      await checkBridgeStatus()
+                    })}
+                    className="h-11 gap-2"
                   >
                     <Zap className="w-4 h-4" />
                     Restore Power
                   </Button>
                   <Button
                     variant="outline"
-                    disabled
-                    className="h-11 gap-2 opacity-50 cursor-not-allowed"
+                    disabled={!bridgeConnected || loading !== null}
+                    onClick={() => handleAction('Restore Water', async () => {
+                      await panelBridgeApi.restoreUtilities(false, true)
+                      await checkBridgeStatus()
+                    })}
+                    className="h-11 gap-2"
                   >
                     <Droplets className="w-4 h-4" />
                     Restore Water

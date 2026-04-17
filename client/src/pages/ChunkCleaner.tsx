@@ -1315,9 +1315,11 @@ export default function ChunkCleaner() {
         .filter(c => selectedChunks.has(`${c.x}_${c.y}`))
         .map(c => ({ file: c.file, x: c.x, y: c.y, source: c.source, cellX: c.cellX, cellY: c.cellY }))
       
-      // If deleteVehicles is checked, remove vehicles in the selected area via PanelBridge
+      // If deleteVehicles is checked and the server is running, also remove
+      // currently loaded vehicles live via PanelBridge so players don't see
+      // a "ghost" car for a second before the next DB load. This is best-effort
+      // — the authoritative cleanup happens server-side against vehicles.db.
       if (deleteVehicles) {
-        // Convert chunk coords back to game-tile coords for the PanelBridge command
         const tilesPerChunk = isB42Ref.current ? 8 : 10
         let minGX = Infinity, minGY = Infinity, maxGX = -Infinity, maxGY = -Infinity
         for (const key of selectedChunks) {
@@ -1328,26 +1330,26 @@ export default function ChunkCleaner() {
           maxGY = Math.max(maxGY, (cy + 1) * tilesPerChunk)
         }
         try {
-          const vRes = await panelBridgeApi.sendCommand('removeVehiclesInArea', {
+          await panelBridgeApi.sendCommand('removeVehiclesInArea', {
             minX: minGX, minY: minGY, maxX: maxGX, maxY: maxGY
           })
-          if (vRes.success && vRes.data) {
-            const data = vRes.data as Record<string, unknown>
-            const removed = (typeof data.removed === 'number' ? data.removed : 0)
-            if (removed > 0) {
-              toast({ title: `${removed} vehicle${removed !== 1 ? 's' : ''} removed from area` })
-            }
-          }
-        } catch {
-          toast({ title: 'Warning', description: 'Failed to remove vehicles — chunks will still be deleted', variant: 'destructive' })
-        }
+        } catch { /* server stopped — fine, DB cleanup will handle it */ }
       }
 
-      const result = await chunksApi.deleteChunks(selectedSave, chunksToDelete, createBackup, customPath || undefined)
-      
+      const result = await chunksApi.deleteChunks(
+        selectedSave,
+        chunksToDelete,
+        createBackup,
+        customPath || undefined,
+        deleteVehicles,
+      )
+
+      const vDel = (result as { vehiclesDeleted?: number }).vehiclesDeleted ?? 0
       toast({
         title: 'Chunks Deleted',
-        description: `Deleted ${result.deleted ?? 0} chunks${createBackup ? ' (backup created)' : ''}`,    
+        description: `Removed ${result.deleted ?? 0} chunk${(result.deleted ?? 0) !== 1 ? 's' : ''}`
+          + (vDel > 0 ? ` + ${vDel} vehicle${vDel !== 1 ? 's' : ''} from save DB` : '')
+          + (createBackup ? ' (backup created)' : ''),
       })
       
       setDeleteDialogOpen(false)
@@ -1772,24 +1774,28 @@ export default function ChunkCleaner() {
                 </div>
               )}
 
-              {/* Vehicle removal option */}
+              {/* Vehicle removal option — always available (works with server stopped) */}
               {(() => {
                 const selChunkKeys = selectedChunks
                 const vehiclesInArea = chunkVehicles.filter(v => selChunkKeys.has(`${v.x}_${v.y}`))
-                return vehiclesInArea.length > 0 ? (
+                const loadedCount = vehiclesInArea.length
+                return (
                   <div className="flex items-center justify-between p-3 rounded-lg bg-muted">
-                    <div>
+                    <div className="min-w-0 pr-3">
                       <Label className="flex items-center gap-1.5">
                         <Car className="w-3.5 h-3.5" />
-                        Remove {vehiclesInArea.length} vehicle{vehiclesInArea.length !== 1 ? 's' : ''} in area
+                        Remove vehicles from save database
                       </Label>
                       <p className="text-xs text-muted-foreground">
-                        Vehicles in deleted chunks persist in vehicles.db. Enable to remove them.
+                        {loadedCount > 0
+                          ? `${loadedCount} vehicle${loadedCount !== 1 ? 's' : ''} currently loaded in this area. `
+                          : 'Unloaded vehicles still live in vehicles.db and respawn when a player revisits. '}
+                        Deletes matching rows from vehicles.db so cars don't come back.
                       </p>
                     </div>
                     <Switch checked={deleteVehicles} onCheckedChange={setDeleteVehicles} />
                   </div>
-                ) : null
+                )
               })()}
 
               {/* Safehouse overlap warning */}

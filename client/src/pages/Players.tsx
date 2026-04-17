@@ -9,7 +9,6 @@ import {
   UserPlus, 
   UserMinus,
   Car,
-  Sparkles,
   Package,
   Ghost,
   Eye,
@@ -83,8 +82,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { useToast } from '@/components/ui/use-toast'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { EmptyState } from '@/components/EmptyState'
-import { ItemPicker } from '@/components/ItemPicker'
-import { VehiclePicker } from '@/components/VehiclePicker'
+import { SpawnBrowser } from '@/components/SpawnBrowser'
 import { playersApi, panelBridgeApi, configApi } from '@/lib/api'
 import { PageHeader } from '@/components/PageHeader'
 import { cn, copyText } from '@/lib/utils'
@@ -183,17 +181,16 @@ export default function Players() {
   const [steamIdBanDialogOpen, setSteamIdBanDialogOpen] = useState(false)
   const [voiceBanDialogOpen, setVoiceBanDialogOpen] = useState(false)
   const [addUserDialogOpen, setAddUserDialogOpen] = useState(false)
+  const [itemBrowserOpen, setItemBrowserOpen] = useState(false)
+  const [vehicleBrowserOpen, setVehicleBrowserOpen] = useState(false)
 
   // Form states
   const [kickReason, setKickReason] = useState('')
   const [banReason, setBanReason] = useState('')
   const [banIp, setBanIp] = useState(false)
   const [accessLevel, setAccessLevel] = useState('')
-  const [itemName, setItemName] = useState('')
-  const [itemCount, setItemCount] = useState(1)
   const [selectedPerk, setSelectedPerk] = useState('')
   const [xpAmount, setXpAmount] = useState(100)
-  const [selectedVehicle, setSelectedVehicle] = useState('')
   const [unbanUsername, setUnbanUsername] = useState('')
   const [unbanSteamIdDialogOpen, setUnbanSteamIdDialogOpen] = useState(false)
   const [unbanSteamId, setUnbanSteamId] = useState('')
@@ -574,9 +571,10 @@ export default function Players() {
     }
   }, [])
 
-  const handleTeleport = () => {
-    if (!teleportTarget || !teleportX || !teleportY) return
-    handleAction('Teleport player', () => playersApi.teleport(teleportTarget, {
+  const handleTeleport = (targetOverride?: string) => {
+    const target = (targetOverride ?? teleportTarget ?? '').trim() || selectedPlayer
+    if (!target || !teleportX || !teleportY) return
+    handleAction('Teleport player', () => playersApi.teleport(target, {
       x: Number(teleportX),
       y: Number(teleportY),
       z: Number(teleportZ || '0')
@@ -585,6 +583,7 @@ export default function Players() {
       setTeleportX('')
       setTeleportY('')
       setTeleportZ('0')
+      setTeleportTarget('')
     })
   }
 
@@ -635,24 +634,58 @@ export default function Players() {
     handleAction('Set access level', () => playersApi.setAccessLevel(selectedPlayer, accessLevel))
   }
 
-  const handleAddItem = async () => {
-    if (!itemName || !selectedPlayer) return
-    const name = itemName
-    const count = itemCount
-    await handleAction('Add item', () => playersApi.addItem(selectedPlayer, name, count), () => {
-      setItemName('')
-      setItemCount(1)
-    })
+  // Direct spawn handlers used by the SpawnBrowser dialog. They intentionally
+  // rethrow on failure so the dialog keeps the current selection (user can retry),
+  // and resolve silently on success so the dialog shows its own in-place confirmation.
+  const spawnItemFromBrowser = async (id: string, qty?: number) => {
+    if (!selectedPlayer) throw new Error('No player selected')
+    const count = qty ?? 1
+    setLoading(true)
+    try {
+      await playersApi.addItem(selectedPlayer, id, count)
+      toast({
+        title: 'Item given',
+        description: `${id.replace(/^Base\./, '')}${count > 1 ? ` × ${count}` : ''} → ${selectedPlayer}`,
+        variant: 'success' as const,
+      })
+      fetchPlayers()
+    } catch (error) {
+      toast({
+        title: 'Give item failed',
+        description: error instanceof Error ? error.message : 'Could not deliver the item',
+        variant: 'destructive',
+      })
+      throw error
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const spawnVehicleFromBrowser = async (id: string) => {
+    setLoading(true)
+    try {
+      await playersApi.addVehicle(id, selectedPlayer || undefined)
+      toast({
+        title: 'Vehicle spawned',
+        description: `${id.replace(/^Base\./, '')}${selectedPlayer ? ` near ${selectedPlayer}` : ''}`,
+        variant: 'success' as const,
+      })
+      fetchPlayers()
+    } catch (error) {
+      toast({
+        title: 'Vehicle spawn failed',
+        description: error instanceof Error ? error.message : 'Could not spawn the vehicle',
+        variant: 'destructive',
+      })
+      throw error
+    } finally {
+      setLoading(false)
+    }
   }
 
   const handleAddXp = () => {
     if (!selectedPlayer || !selectedPerk) return
     handleAction('Add XP', () => playersApi.addXp(selectedPlayer, selectedPerk, xpAmount))
-  }
-
-  const handleAddVehicle = () => {
-    if (!selectedVehicle) return
-    handleAction('Spawn vehicle', () => playersApi.addVehicle(selectedVehicle, selectedPlayer || undefined))
   }
 
   const handleGodMode = (enabled: boolean) => {
@@ -1161,11 +1194,14 @@ export default function Players() {
                     </DialogContent>
                   </Dialog>
 
-                  {/* Teleport — disabled, not working in B42 MP */}
-                  <Dialog open={teleportDialogOpen} onOpenChange={setTeleportDialogOpen}>
+                  {/* Teleport — requires PanelBridge; syncs via teleportTo + setNetworkTeleportEnabled */}
+                  <Dialog open={teleportDialogOpen} onOpenChange={(open) => {
+                    setTeleportDialogOpen(open)
+                    if (open && !teleportTarget) setTeleportTarget(selectedPlayer)
+                  }}>
                     <DialogTrigger asChild>
-                      <button type="button" disabled className="block h-auto w-full p-0 text-left opacity-50 cursor-not-allowed">
-                        <ActionTile icon={<MapPin className="w-5 h-5" />} label="Teleport (unavailable)" disabled />
+                      <button type="button" className="block h-auto w-full p-0 text-left">
+                        <ActionTile icon={<MapPin className="w-5 h-5" />} label="Teleport" />
                       </button>
                     </DialogTrigger>
                     <DialogContent className="max-w-md">
@@ -1218,7 +1254,7 @@ export default function Players() {
                               onChange={(e) => setTeleportX(e.target.value)}
                               placeholder="10500"
                               min={0}
-                              max={16800}
+                              max={24000}
                             />
                           </div>
                           <div>
@@ -1230,7 +1266,7 @@ export default function Players() {
                               onChange={(e) => setTeleportY(e.target.value)}
                               placeholder="9700"
                               min={0}
-                              max={16800}
+                              max={24000}
                             />
                           </div>
                           <div>
@@ -1249,11 +1285,8 @@ export default function Players() {
                       </div>
                       <DialogFooter>
                         <Button 
-                          onClick={() => {
-                            if (!teleportTarget) setTeleportTarget(selectedPlayer)
-                            handleTeleport()
-                          }} 
-                          disabled={loading || !teleportX || !teleportY}
+                          onClick={() => handleTeleport(teleportTarget || selectedPlayer)} 
+                          disabled={loading || !teleportX || !teleportY || !(teleportTarget || selectedPlayer)}
                         >
                           {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
                           Teleport
@@ -1511,83 +1544,102 @@ export default function Players() {
               {/* Spawn Tab — Items, Vehicles, XP */}
               <TabsContent value="spawn" className="space-y-3 mt-4">
                 {/* Give Item */}
-                <div className="rounded-xl border border-border/60 bg-card/50 p-4 transition-colors">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="rounded-lg border border-primary/20 bg-primary/10 p-2 text-primary">
+                <button
+                  type="button"
+                  onClick={() => setItemBrowserOpen(true)}
+                  disabled={!selectedPlayer || loading}
+                  className={cn(
+                    'group w-full rounded-xl border bg-card/50 p-4 text-left',
+                    'motion-safe:transition-all duration-150',
+                    'border-border/60',
+                    selectedPlayer && !loading && 'hover:border-primary/50 hover:bg-card/80 hover:shadow-sm',
+                    (!selectedPlayer || loading) && 'opacity-60 cursor-not-allowed'
+                  )}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={cn(
+                      'rounded-lg border p-2.5 shrink-0',
+                      'motion-safe:transition-colors duration-150',
+                      selectedPlayer && !loading
+                        ? 'border-primary/20 bg-primary/10 text-primary group-hover:bg-primary/15 group-hover:border-primary/30'
+                        : 'border-border/40 bg-muted/30 text-muted-foreground'
+                    )}>
                       <Package className="w-5 h-5" />
                     </div>
-                    <div>
-                      <p className="font-medium">Give Item</p>
-                      <p className="text-xs text-muted-foreground">
-                        Add items to {selectedPlayer ? <span className="text-foreground font-medium">{selectedPlayer}</span> : 'player'}'s inventory
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-foreground flex items-center gap-2">
+                        Give items
+                        <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground/60 font-semibold">
+                          browser
+                        </span>
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                        {selectedPlayer
+                          ? <>Weapons, food, medical, tools — give as many items as you want to <span className="text-primary font-medium">{selectedPlayer}</span> without closing the dialog.</>
+                          : <>Pick a player first, then browse the full item catalog to fill their inventory.</>}
                       </p>
                     </div>
-                  </div>
-                  <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-2">
-                    <div className="flex-1 min-w-0">
-                      <ItemPicker
-                        value={itemName}
-                        onChange={setItemName}
-                        disabled={loading}
-                      />
+                    <div className={cn(
+                      'flex items-center gap-1 text-xs shrink-0',
+                      'motion-safe:transition-all duration-150',
+                      selectedPlayer && !loading
+                        ? 'text-muted-foreground/60 group-hover:text-primary group-hover:translate-x-0.5'
+                        : 'text-muted-foreground/30'
+                    )}>
+                      <span className="uppercase tracking-wider text-[10px] font-semibold">Browse</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
                     </div>
-                    <div className="w-full sm:w-20 shrink-0">
-                      <Label className="text-xs text-muted-foreground">Qty</Label>
-                      <Input
-                        type="number"
-                        value={itemCount}
-                        onChange={(e) => {
-                          const v = parseInt(e.target.value)
-                          setItemCount(Number.isNaN(v) ? 1 : Math.max(1, Math.min(100, v)))
-                        }}
-                        min={1}
-                        max={100}
-                      />
-                    </div>
-                    <Button 
-                      onClick={handleAddItem} 
-                      disabled={loading || !itemName || !selectedPlayer} 
-                      size="sm" 
-                      className="shrink-0 sm:min-w-[100px]"
-                    >
-                      <Sparkles className="w-4 h-4 mr-2" />
-                      Give Item
-                    </Button>
                   </div>
-                </div>
+                </button>
 
                 {/* Spawn Vehicle */}
-                <div className="rounded-xl border border-border/60 bg-card/50 p-4 transition-colors">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="rounded-lg border border-primary/20 bg-primary/10 p-2 text-primary">
+                <button
+                  type="button"
+                  onClick={() => setVehicleBrowserOpen(true)}
+                  disabled={loading}
+                  className={cn(
+                    'group w-full rounded-xl border bg-card/50 p-4 text-left',
+                    'motion-safe:transition-all duration-150',
+                    'border-border/60',
+                    !loading && 'hover:border-primary/50 hover:bg-card/80 hover:shadow-sm',
+                    loading && 'opacity-60 cursor-not-allowed'
+                  )}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={cn(
+                      'rounded-lg border p-2.5 shrink-0',
+                      'motion-safe:transition-colors duration-150',
+                      !loading
+                        ? 'border-primary/20 bg-primary/10 text-primary group-hover:bg-primary/15 group-hover:border-primary/30'
+                        : 'border-border/40 bg-muted/30 text-muted-foreground'
+                    )}>
                       <Car className="w-5 h-5" />
                     </div>
-                    <div>
-                      <p className="font-medium">Spawn Vehicle</p>
-                      <p className="text-xs text-muted-foreground">
-                        Spawn a vehicle near {selectedPlayer ? <span className="text-foreground font-medium">{selectedPlayer}</span> : 'player'}'s position
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-foreground flex items-center gap-2">
+                        Spawn vehicles
+                        <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground/60 font-semibold">
+                          browser
+                        </span>
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                        {selectedPlayer
+                          ? <>Sedans, trucks, emergency, military — spawn one after another near <span className="text-primary font-medium">{selectedPlayer}</span>.</>
+                          : <>Spawns at the caller's position — select a player to spawn vehicles near them instead.</>}
                       </p>
                     </div>
-                  </div>
-                  <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-2">
-                    <div className="flex-1 min-w-0">
-                      <VehiclePicker
-                        value={selectedVehicle}
-                        onChange={setSelectedVehicle}
-                        disabled={loading}
-                      />
+                    <div className={cn(
+                      'flex items-center gap-1 text-xs shrink-0',
+                      'motion-safe:transition-all duration-150',
+                      !loading
+                        ? 'text-muted-foreground/60 group-hover:text-primary group-hover:translate-x-0.5'
+                        : 'text-muted-foreground/30'
+                    )}>
+                      <span className="uppercase tracking-wider text-[10px] font-semibold">Browse</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
                     </div>
-                    <Button 
-                      onClick={handleAddVehicle} 
-                      disabled={loading || !selectedVehicle} 
-                      size="sm"
-                      className="shrink-0 sm:min-w-[100px]"
-                    >
-                      <Car className="w-4 h-4 mr-2" />
-                      Spawn
-                    </Button>
                   </div>
-                </div>
+                </button>
 
                 {/* Give XP */}
                 <div className="rounded-xl border border-border/60 bg-card/50 p-4 transition-colors">
@@ -2290,6 +2342,22 @@ export default function Players() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Spawn browser dialogs — items + vehicles, stay-open workflow */}
+      <SpawnBrowser
+        mode="items"
+        open={itemBrowserOpen}
+        onOpenChange={setItemBrowserOpen}
+        playerName={selectedPlayer}
+        onSpawn={spawnItemFromBrowser}
+      />
+      <SpawnBrowser
+        mode="vehicles"
+        open={vehicleBrowserOpen}
+        onOpenChange={setVehicleBrowserOpen}
+        playerName={selectedPlayer}
+        onSpawn={spawnVehicleFromBrowser}
+      />
     </div>
   )
 }

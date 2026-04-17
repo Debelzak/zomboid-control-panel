@@ -726,8 +726,8 @@ router.post('/command', async (req, res) => {
   if (action === 'airdrop' && args) {
     const VALID_PRESETS = ['military', 'medical', 'food', 'building', 'weapons', 'tools'];
     const x = Number(args.x), y = Number(args.y);
-    if (!Number.isFinite(x) || !Number.isFinite(y) || x < -1000 || x > 100000 || y < -1000 || y > 100000) {
-      return res.status(400).json({ error: 'Invalid airdrop coordinates' });
+    if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > 24000 || y < 0 || y > 24000) {
+      return res.status(400).json({ error: 'Invalid airdrop coordinates (valid: 0-24000)' });
     }
     if (args.preset && (typeof args.preset !== 'string' || !VALID_PRESETS.includes(args.preset))) {
       return res.status(400).json({ error: `Invalid preset. Valid: ${VALID_PRESETS.join(', ')}` });
@@ -740,7 +740,7 @@ router.post('/command', async (req, res) => {
         if (!entry || typeof entry !== 'object') {
           return res.status(400).json({ error: 'Each item must be an object with itemType' });
         }
-        if (typeof entry.itemType !== 'string' || !/^[A-Za-z]\w*\.[A-Za-z]\w*$/.test(entry.itemType)) {
+        if (typeof entry.itemType !== 'string' || !/^[A-Za-z]\w*\.\w+$/.test(entry.itemType)) {
           return res.status(400).json({ error: `Invalid item type format: ${String(entry.itemType).slice(0, 60)}` });
         }
         if (entry.count !== undefined && (typeof entry.count !== 'number' || entry.count < 1 || entry.count > 20)) {
@@ -1177,8 +1177,8 @@ router.post('/players/:username/teleport', async (req, res) => {
   if (typeof x !== 'number' || typeof y !== 'number' || (z !== undefined && typeof z !== 'number')) {
     return res.status(400).json({ error: 'Coordinates must be numbers' });
   }
-  if (x < 0 || x > 16800 || y < 0 || y > 16800) {
-    return res.status(400).json({ error: 'x/y coordinates out of range (0-16800)' });
+  if (x < 0 || x > 24000 || y < 0 || y > 24000) {
+    return res.status(400).json({ error: 'x/y coordinates out of range (0-24000)' });
   }
   if (z !== undefined && (z < 0 || z > 8)) {
     return res.status(400).json({ error: 'z coordinate out of range (0-8)' });
@@ -1191,7 +1191,7 @@ router.post('/players/:username/teleport', async (req, res) => {
   }
 });
 
-// Server message
+// Server message (routed via sendToServerChat; no dedicated sendServerMessage Lua handler)
 router.post('/message', async (req, res) => {
   if (!bridge.isRunning) {
     return res.status(400).json({ error: 'Bridge not running. Start it first.' });
@@ -1201,7 +1201,7 @@ router.post('/message', async (req, res) => {
     return res.status(400).json({ error: 'message is required (max 2000 chars)' });
   }
   try {
-    const result = await bridge.sendServerMessage(message);
+    const result = await bridge.sendCommand('sendToServerChat', { message, isAlert: true });
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: sanitizeError(error.message) });
@@ -1281,8 +1281,7 @@ router.get('/commands', (req, res) => {
       { action: 'importPlayerData', description: 'Import/restore character data', args: { username: 'string (required)', data: 'object (required, from export)', options: '{ restorePerks: boolean, restoreInventory: boolean } (optional, both default true)' } },
       
       // === Chat ===
-      { action: 'sendServerMessage', description: 'Send message to all players (system announcement)', args: { message: 'string (required)' } },
-      { action: 'sendToServerChat', description: 'Send message to server chat', args: { message: 'string (required)', alert: 'boolean (default: false, true for server alert)' } },
+      { action: 'sendToServerChat', description: 'Send message to server chat (isAlert=true for system announcement)', args: { message: 'string (required)', isAlert: 'boolean (default: false)' } },
       { action: 'sendToAdminChat', description: 'Send message to admin-only chat', args: { message: 'string (required)' } },
       { action: 'sendToGeneralChat', description: 'Send message to general chat with custom author', args: { message: 'string (required)', author: 'string (default: "[Panel]")' } },
       { action: 'getChatInfo', description: 'Get available chat types', args: {} },
@@ -1594,6 +1593,9 @@ router.post('/sound/world', async (req, res) => {
   const { x, y, z, radius, volume } = req.body;
   if (x === undefined || y === undefined) {
     return res.status(400).json({ error: 'x and y coordinates are required' });
+  }
+  if (typeof x !== 'number' || typeof y !== 'number' || x < 0 || x > 24000 || y < 0 || y > 24000) {
+    return res.status(400).json({ error: 'Coordinates out of range (valid: 0-24000)' });
   }
   try {
     const result = await bridge.playWorldSound(x, y, z, radius, volume);

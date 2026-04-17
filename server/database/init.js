@@ -124,7 +124,7 @@ function scheduleWrite() {
  * Immediately flush all pending writes to disk.
  * Safe to call multiple times — deduplicates concurrent flushes.
  */
-async function flushWrites() {
+export async function flushWrites() {
   if (!_dirty || !db) return;
   _dirty = false;
 

@@ -67,6 +67,7 @@ interface NavItem {
   label: string
   requiresLocal?: boolean
   disabled?: boolean
+  badge?: string
 }
 
 interface NavSection {
@@ -118,7 +119,7 @@ const navSections: NavSection[] = [
     items: [
       { to: '/scheduler', icon: Clock, label: 'Scheduled Tasks' },
       { to: '/backups', icon: Archive, label: 'World Backups', requiresLocal: true },
-      { to: '/chunks', icon: Map, label: 'Map Cleanup (buggy)', requiresLocal: true, disabled: true },
+      { to: '/chunks', icon: Map, label: 'Map Cleanup', requiresLocal: true },
     ]
   },
   {
@@ -764,6 +765,14 @@ export default function Layout({ children }: LayoutProps) {
                                 isActive ? tone.labelActive : "text-muted-foreground/70 group-hover:text-foreground"
                               )} />
                               <span className="truncate">{item.label}</span>
+                              {item.badge && (
+                                <Badge
+                                  variant={isActive ? 'secondary' : 'outline'}
+                                  className="ml-auto px-1.5 py-0 text-[10px] uppercase tracking-wider text-warning border-warning/40"
+                                >
+                                  {item.badge}
+                                </Badge>
+                              )}
                               {item.to === '/players' && playerCount > 0 && (
                                 <Badge
                                   variant={isActive ? 'secondary' : 'success'}

@@ -1960,16 +1960,36 @@ handlers.createNoise = function(args)
     -- Clamp values
     radius = math.min(math.max(radius, 10), 500)
     volume = math.min(math.max(volume, 1), 500)
-    
-    addSound(nil, x, y, z, radius, volume)
-    
-    return true, { 
-        message = "Noise created", 
-        x = x, 
-        y = y, 
-        z = z, 
+
+    local method = "unknown"
+    local ok, err = pcall(function()
+        if addSound then
+            addSound(nil, x, y, z, radius, volume)
+            method = "addSound"
+        elseif getWorld and getWorld() and getWorld().getWorldSoundManager then
+            local wsm = getWorld():getWorldSoundManager()
+            if wsm and wsm.addSound then
+                wsm:addSound(nil, x, y, z, radius, volume)
+                method = "WorldSoundManager.addSound"
+            else
+                error("No sound API available")
+            end
+        else
+            error("No sound API available")
+        end
+    end)
+    if not ok then
+        return false, nil, "createNoise failed: " .. tostring(err)
+    end
+
+    return true, {
+        message = "Noise created",
+        x = x,
+        y = y,
+        z = z,
         radius = radius,
-        volume = volume 
+        volume = volume,
+        method = method
     }
 end
 
@@ -2789,9 +2809,9 @@ handlers.teleportPlayer = function(args)
         return false, nil, "Username, x, y required"
     end
     
-    -- Validate coordinates (PZ map cells: 0-16800, z floors: 0-8)
-    if x < 0 or x > 16800 or y < 0 or y > 16800 then
-        return false, nil, "Coordinates out of range (x/y: 0-16800)"
+    -- Validate coordinates (B42 vanilla map extends past 16800; cap generously for modded maps)
+    if x < 0 or x > 24000 or y < 0 or y > 24000 then
+        return false, nil, "Coordinates out of range (x/y: 0-24000)"
     end
     z = math.max(0, math.min(math.floor(z), 8))
     
@@ -2804,7 +2824,37 @@ handlers.teleportPlayer = function(args)
     local oldY = player:getY()
     local oldZ = player:getZ()
     local debugInfo = {}
-    
+
+    -- Step 0a: If the player is in a vehicle, exit first — teleportTo silently
+    -- fails when the occupant is bound to a vehicle seat.
+    pcall(function()
+        if player.getVehicle and player:getVehicle() then
+            local v = player:getVehicle()
+            if v.exit then
+                v:exit(player)
+                table.insert(debugInfo, "vehicle exit")
+            end
+        end
+    end)
+
+    -- Step 0b: Cancel any in-progress timed actions so PZ does not snap the
+    -- player back after teleport.
+    pcall(function()
+        if ISTimedActionQueue and ISTimedActionQueue.clear then
+            ISTimedActionQueue.clear(player)
+            table.insert(debugInfo, "timedActionQueue cleared")
+        end
+    end)
+
+    -- Step 0c: Enable network teleport flag BEFORE moving so the move itself
+    -- is flagged as an authorized teleport instead of a suspicious jump.
+    pcall(function()
+        if player.setNetworkTeleportEnabled then
+            player:setNetworkTeleportEnabled(true)
+            table.insert(debugInfo, "networkTeleportEnabled(pre) set")
+        end
+    end)
+
     -- Step 1: Server-side position update via teleportTo (Java method)
     local ok1, err1 = pcall(function()
         if player.teleportTo then
@@ -2820,7 +2870,16 @@ handlers.teleportPlayer = function(args)
     if not ok1 then
         table.insert(debugInfo, "teleportTo FAILED: " .. tostring(err1))
     end
-    
+
+    -- Step 1b: Hard-set XYZ as belt-and-braces — teleportTo alone does not
+    -- always stick on B42 dedicated servers.
+    pcall(function()
+        if player.setX then player:setX(x) end
+        if player.setY then player:setY(y) end
+        if player.setZ then player:setZ(z) end
+        table.insert(debugInfo, "setXYZ forced")
+    end)
+
     -- Step 2: Update last-known position for network consistency
     pcall(function()
         if player.setLx then
@@ -2830,35 +2889,27 @@ handlers.teleportPlayer = function(args)
             table.insert(debugInfo, "setLxyz done")
         end
     end)
-    
-    -- Step 3: Set network teleport flag (tells server to broadcast new position)
+
+    -- Step 3: Re-set network teleport flag (tells server to broadcast new position)
     pcall(function()
         if player.setNetworkTeleportEnabled then
             player:setNetworkTeleportEnabled(true)
-            table.insert(debugInfo, "networkTeleportEnabled set")
+            table.insert(debugInfo, "networkTeleportEnabled(post) set")
         end
     end)
-    
-    -- Step 4: Send command to the player's CLIENT to also teleport locally
-    -- PZ's own admin panels always teleport from client side in MP
-    -- This ensures the player's screen actually moves
-    local ok4, err4 = pcall(function()
-        if sendServerCommand then
-            local data = {}
-            data.x = tostring(x)
-            data.y = tostring(y)
-            data.z = tostring(z)
-            -- 4-arg form sends to specific player only
-            sendServerCommand(player, "PanelBridge", "doTeleport", data)
-            table.insert(debugInfo, "sendServerCommand(player, doTeleport) sent")
-        else
-            table.insert(debugInfo, "sendServerCommand not available")
+
+    -- Step 4: Force position broadcast via sendPlayerExtraInfo (global, server-side)
+    -- PanelBridge has no client-side mod, so sendServerCommand to a custom module
+    -- would be a silent no-op. Instead, rely on teleportTo + setNetworkTeleportEnabled
+    -- to trigger PZ's built-in position sync. sendPlayerExtraInfo also pushes
+    -- an authoritative player-state update to all clients.
+    pcall(function()
+        if sendPlayerExtraInfo then
+            sendPlayerExtraInfo(player)
+            table.insert(debugInfo, "sendPlayerExtraInfo pushed")
         end
     end)
-    if not ok4 then
-        table.insert(debugInfo, "sendServerCommand FAILED: " .. tostring(err4))
-    end
-    
+
     -- Step 5: Verify position after teleport
     local verifyX = player:getX()
     local verifyY = player:getY()
@@ -2866,7 +2917,7 @@ handlers.teleportPlayer = function(args)
     table.insert(debugInfo, "verify pos: " .. verifyX .. "," .. verifyY .. "," .. verifyZ)
     
     local debugStr = table.concat(debugInfo, " | ")
-    logDebug("teleportPlayer: " .. username .. " from " .. oldX .. "," .. oldY .. "," .. oldZ 
+    PanelBridge.debug("teleportPlayer: " .. username .. " from " .. oldX .. "," .. oldY .. "," .. oldZ
         .. " to " .. x .. "," .. y .. "," .. z .. " — " .. debugStr)
     
     return true, { 
@@ -3510,6 +3561,11 @@ end
 handlers.sendToGeneralChat = function(args)
     local message = normalizeMessage(args.message, 1000)
     local author = normalizeMessage(args.author, 80) or "[Panel]"
+    -- Strip control chars / newlines from author to prevent chat-log spoofing
+    if author then
+        author = author:gsub("[%c]", " ")
+        if author == "" then author = "[Panel]" end
+    end
 
     if not message then
         return false, nil, "Message required"
@@ -3884,8 +3940,9 @@ handlers.restoreUtilities = function(args)
         -- The game's actual power check (ISButtonPrompt.lua line 421) is:
         --   if (ElecShutModifier > -1 AND worldAgeDays < ElecShutModifier) OR square:haveElectricity()
         -- Setting -1 makes (> -1) FALSE = power always off!
-        -- Use 999999 = far future, makes the check pass (999999 > -1 AND days < 999999)
-        local restoreDays = 999999
+        -- Integer.MAX_VALUE (2147483647) = documented sandbox max, "never shuts off"
+        -- sentinel used by EPR / phobos-dthorga/mod-pz-epr-cleanup.
+        local restoreDays = 2147483647
         if restorePower then
             SandboxVars.ElecShut = 9        -- 9 = Disabled (sandbox UI label)
             SandboxVars.ElecShutModifier = restoreDays
@@ -3946,6 +4003,13 @@ handlers.restoreUtilities = function(args)
                 end)
                 table.insert(debugInfo, "FORCED Java WaterShutModifier=" .. tostring(restoreDays))
             end
+            -- Re-apply so the forced values take effect before setHydroPowerOn
+            pcall(function()
+                if sandboxOptions.applySettings then
+                    sandboxOptions:applySettings()
+                    table.insert(debugInfo, "applySettings(post-force) OK")
+                end
+            end)
             -- Sync Java -> Lua to confirm
             pcall(function()
                 if sandboxOptions.toLua then
@@ -3977,22 +4041,14 @@ handlers.restoreUtilities = function(args)
             table.insert(debugInfo, "switches=" .. tostring(switchesActivated))
         end
         
-        -- Step 6: Push options to clients via all available mechanisms
-        -- 6a: GameServer.sendOptionsToClients() — may sync sandbox options to clients
-        pcall(function()
-            if GameServer and GameServer.sendOptionsToClients then
-                GameServer.sendOptionsToClients()
-                table.insert(debugInfo, "sendOptionsToClients OK")
-            end
-        end)
-        -- 6b: executeCommand("/reloadoptions") — this is what the in-game admin panel uses
+        -- Step 6: /reloadoptions — the in-game admin panel uses this to push sandbox changes
         pcall(function()
             if executeCommand then
                 executeCommand("/reloadoptions")
                 table.insert(debugInfo, "executeCommand /reloadoptions OK")
             end
         end)
-        
+
         -- Step 7: Transmit weather (forces world state sync including power)
         pcall(function()
             if world.transmitWeather then
@@ -4000,28 +4056,11 @@ handlers.restoreUtilities = function(args)
                 table.insert(debugInfo, "transmitWeather OK")
             end
         end)
-        
-        -- Step 8: Send custom command to clients for immediate power refresh
-        pcall(function()
-            local players = getOnlinePlayers()
-            if players and sendServerCommand then
-                local refreshArgs = {
-                    powerOn = restorePower and true or nil,
-                    elecShutModifier = restoreDays,
-                    waterShutModifier = restoreWater and restoreDays or nil,
-                    elecShut = restorePower and 9 or nil,
-                    waterShut = restoreWater and 9 or nil
-                }
-                for i = 0, players:size() - 1 do
-                    local player = players:get(i)
-                    if player then
-                        sendServerCommand(player, "PanelBridge", "refreshPowerState", refreshArgs)
-                    end
-                end
-                table.insert(debugInfo, "refreshPowerState sent to " .. tostring(players:size()) .. " clients")
-            end
-        end)
-        
+
+        -- NOTE: no custom client-side mod is distributed. Client sync relies on
+        -- built-in PZ propagation: /reloadoptions (sandbox), transmitWeather
+        -- (world state), and setHaveElectricity (per-square network update).
+
         -- Verify final state
         table.insert(debugInfo, "FINAL isHydroPowerOn=" .. tostring(world:isHydroPowerOn()))
         table.insert(debugInfo, "FINAL SandboxVars.ElecShutModifier=" .. tostring(SandboxVars.ElecShutModifier))
@@ -4121,50 +4160,27 @@ handlers.shutOffUtilities = function(args)
             table.insert(debugInfo, "switches deactivated=" .. tostring(switchesDeactivated))
         end
         
-        -- Step 6: Push options to clients via all available mechanisms
-        pcall(function()
-            if GameServer and GameServer.sendOptionsToClients then
-                GameServer.sendOptionsToClients()
-                table.insert(debugInfo, "sendOptionsToClients OK")
-            end
-        end)
+        -- Step 6: /reloadoptions pushes sandbox changes to clients
         pcall(function()
             if executeCommand then
                 executeCommand("/reloadoptions")
                 table.insert(debugInfo, "executeCommand /reloadoptions OK")
             end
         end)
-        
+
         -- Step 7: Transmit weather
         pcall(function()
             if world.transmitWeather then world:transmitWeather() end
             table.insert(debugInfo, "transmitWeather OK")
         end)
-        
-        -- Step 8: Send refreshPowerState to clients
-        pcall(function()
-            local players = getOnlinePlayers()
-            if players and sendServerCommand then
-                local refreshArgs = {
-                    powerOn = shutPower and false or nil,
-                    elecShutModifier = shutPower and 0 or nil,
-                    waterShutModifier = shutWater and 0 or nil,
-                    elecShut = shutPower and 1 or nil,
-                    waterShut = shutWater and 1 or nil
-                }
-                for i = 0, players:size() - 1 do
-                    local player = players:get(i)
-                    if player then
-                        sendServerCommand(player, "PanelBridge", "refreshPowerState", refreshArgs)
-                    end
-                end
-                table.insert(debugInfo, "refreshPowerState sent to " .. tostring(players:size()) .. " clients")
-            end
-        end)
-        
+
+        -- NOTE: no custom client-side mod is distributed. Client sync relies on
+        -- built-in PZ propagation: /reloadoptions (sandbox), transmitWeather
+        -- (world state), and setHaveElectricity (per-square network update).
+
         -- Final verification
         table.insert(debugInfo, "FINAL isHydroPowerOn=" .. tostring(world:isHydroPowerOn()))
-        
+
     end)
     
     if not success then
@@ -4332,27 +4348,84 @@ handlers.killPlayer = function(args)
     if not username then
         return false, nil, "Username required"
     end
-    
+
     local player = getPlayerByUsername(username)
     if not player then
         return false, nil, "Player not found: " .. username
     end
-    
-    local success, err = pcall(function()
-        player:setHealth(0)
-    end)
-    
-    if not success then
-        return false, nil, "Failed to kill player: " .. tostring(err)
-    end
-    
-    -- Network sync so client sees the death
+
+    local debugInfo = {}
+
+    -- Force godmode OFF — otherwise setHealth(0) is a no-op
     pcall(function()
-        if sendPlayerExtraInfo then sendPlayerExtraInfo(player) end
+        if player.setGodMod then
+            player:setGodMod(false)
+            table.insert(debugInfo, "godMod disabled")
+        elseif player.setGodMode then
+            player:setGodMode(false)
+            table.insert(debugInfo, "godMode disabled")
+        end
+        if player.setInvincible then
+            player:setInvincible(false)
+            table.insert(debugInfo, "invincible disabled")
+        end
     end)
-    
-    PanelBridge.info("Killed player", { username = username })
-    return true, { message = "Player killed", username = username }
+
+    -- Method 1: zero out overall body health (B42 authoritative source)
+    pcall(function()
+        local bd = player:getBodyDamage()
+        if bd and bd.setOverallBodyHealth then
+            bd:setOverallBodyHealth(0)
+            table.insert(debugInfo, "bodyDamage.setOverallBodyHealth(0)")
+        end
+    end)
+
+    -- Method 2: direct setHealth(0) — may be overwritten by body damage recompute
+    pcall(function()
+        player:setHealth(0)
+        table.insert(debugInfo, "setHealth(0)")
+    end)
+
+    -- Method 3: trigger PZ's native death path so clients get the death event
+    pcall(function()
+        if player.Kill then
+            player:Kill(player)
+            table.insert(debugInfo, "Kill(self) called")
+        elseif player.DoDeath then
+            local HandWeapon = _G.HandWeapon
+            local fakeWeapon = HandWeapon and HandWeapon.new and HandWeapon.new() or nil
+            player:DoDeath(fakeWeapon, player, "panel")
+            table.insert(debugInfo, "DoDeath called")
+        end
+    end)
+
+    -- Method 4: broadcast updated extra info + zombie-death flag for network sync
+    pcall(function()
+        if sendPlayerExtraInfo then
+            sendPlayerExtraInfo(player)
+            table.insert(debugInfo, "sendPlayerExtraInfo")
+        end
+    end)
+    pcall(function()
+        if sendPlayerDeath then
+            sendPlayerDeath(player)
+            table.insert(debugInfo, "sendPlayerDeath")
+        end
+    end)
+
+    local isDead = false
+    pcall(function()
+        if player.isDead then isDead = player:isDead() end
+    end)
+
+    local debugStr = table.concat(debugInfo, " | ")
+    PanelBridge.info("Killed player", { username = username, isDead = isDead, debug = debugStr })
+    return true, {
+        message = isDead and "Player killed" or "Kill attempted (player may respawn if not dead)",
+        username = username,
+        isDead = isDead,
+        debug = debugStr
+    }
 end
 
 -- Set player's godmode
@@ -4488,7 +4561,7 @@ handlers.giveItem = function(args)
         return false, nil, "Item type required (e.g., 'Base.Axe')"
     end
     -- Basic format validation: must look like "Module.ItemName"
-    if not itemType:match("^%a[%w_]*%.%a[%w_]*$") then
+    if not itemType:match("^%a[%w_]*%.[%w_]+$") then
         return false, nil, "Invalid item type format (expected Module.ItemName): " .. tostring(itemType)
     end
     
@@ -4595,8 +4668,8 @@ handlers.airdrop = function(args)
     local soundRadius = math.min(math.max(tonumber(args.soundRadius) or 150, 10), 500)
 
     -- Validate coordinates are within reasonable PZ world bounds
-    if x < -1000 or x > 100000 or y < -1000 or y > 100000 then
-        return false, nil, "Coordinates out of range (valid: -1000 to 100000)"
+    if x < 0 or x > 24000 or y < 0 or y > 24000 then
+        return false, nil, "Coordinates out of range (valid: 0 to 24000)"
     end
     if x == 0 and y == 0 then
         return false, nil, "Valid x and y coordinates are required"
@@ -4617,7 +4690,7 @@ handlers.airdrop = function(args)
         for _, entry in ipairs(customItems) do
             if entry.itemType and type(entry.itemType) == "string" then
                 -- Validate item type format: must be "Module.ItemName" pattern
-                if not entry.itemType:match("^%a[%w_]*%.%a[%w_]*$") then
+                if not entry.itemType:match("^%a[%w_]*%.[%w_]+$") then
                     return false, nil, "Invalid item type format: " .. tostring(entry.itemType) .. " (expected Module.ItemName)"
                 end
                 local count = math.min(math.max(tonumber(entry.count) or 1, 1), 20)
@@ -4895,34 +4968,56 @@ handlers.spawnHordeNearPlayer = function(args)
         return false, nil, "Player not found: " .. username
     end
 
-    local px, py = player:getX(), player:getY()
+    local px, py, pz = player:getX(), player:getY(), player:getZ()
 
-    -- Random angle, spawn 50-70 tiles from player in a 30x30 area
+    -- Spawn 15-25 tiles from player — close enough to be inside the player's
+    -- loaded chunk radius on any vanilla config, so zombies actually materialize.
     local angle = ZombRand(360) * math.pi / 180
-    local dist = 50 + ZombRand(21) -- 50-70
+    local dist = 15 + ZombRand(11)
     local cx = math.floor(px + math.cos(angle) * dist)
     local cy = math.floor(py + math.sin(angle) * dist)
-    local half = 15
+    local half = 8
     local method = "unknown"
+    local spawned = 0
 
     local ok, err = pcall(function()
-        -- B42 preferred: ZombiePopulationManager.createHordeInAreaTo
-        -- Creates real zombies that walk toward the player
-        local zpop = getZombiePopManager()
-        if zpop and zpop.createHordeInAreaTo then
-            zpop:createHordeInAreaTo(cx - half, cy - half, half * 2, half * 2, math.floor(px), math.floor(py), count)
-            method = "createHordeInAreaTo"
-        elseif zpop and zpop.createHordeFromTo then
-            zpop:createHordeFromTo(cx, cy, math.floor(px), math.floor(py), count)
-            method = "createHordeFromTo"
+        -- Primary method for B41+B42: VirtualZombieManager spawns real zombies
+        -- one at a time in a radius. More reliable than horde APIs and works
+        -- even when createHordeInAreaTo silently no-ops on unloaded chunks.
+        local vzm = _G.VirtualZombieManager and _G.VirtualZombieManager.instance
+        if vzm and vzm.createRealZombieAlways then
+            for i = 1, count do
+                local dx = ZombRand(half * 2 + 1) - half
+                local dy = ZombRand(half * 2 + 1) - half
+                local tx = cx + dx
+                local ty = cy + dy
+                local okZ, _ = pcall(function()
+                    vzm:createRealZombieAlways(tx, ty, pz)
+                end)
+                if okZ then spawned = spawned + 1 end
+            end
+            method = "VirtualZombieManager.createRealZombieAlways"
         else
-            -- Fallback: IsoWorld.CreateSwarm (B41)
-            local world = getWorld()
-            if world and world.CreateSwarm then
-                world:CreateSwarm(count, cx - half, cy - half, cx + half, cy + half)
-                method = "CreateSwarm"
+            -- Fallback: ZombiePopulationManager horde APIs (may silently fail
+            -- if the area isn't fully loaded on the server)
+            local zpop = getZombiePopManager()
+            if zpop and zpop.createHordeInAreaTo then
+                zpop:createHordeInAreaTo(cx - half, cy - half, half * 2, half * 2, math.floor(px), math.floor(py), count)
+                method = "createHordeInAreaTo"
+                spawned = count
+            elseif zpop and zpop.createHordeFromTo then
+                zpop:createHordeFromTo(cx, cy, math.floor(px), math.floor(py), count)
+                method = "createHordeFromTo"
+                spawned = count
             else
-                error("No zombie spawning API available")
+                local world = getWorld()
+                if world and world.CreateSwarm then
+                    world:CreateSwarm(count, cx - half, cy - half, cx + half, cy + half)
+                    method = "CreateSwarm"
+                    spawned = count
+                else
+                    error("No zombie spawning API available (VirtualZombieManager / ZombiePopulationManager / IsoWorld.CreateSwarm all missing)")
+                end
             end
         end
     end)
@@ -4931,10 +5026,11 @@ handlers.spawnHordeNearPlayer = function(args)
         return false, nil, "Failed to spawn horde: " .. tostring(err)
     end
 
-    PanelBridge.warn("Spawned horde near player", { username = username, count = count, cx = cx, cy = cy, method = method })
+    PanelBridge.warn("Spawned horde near player", { username = username, count = count, spawned = spawned, cx = cx, cy = cy, method = method })
     return true, {
-        message = "Spawned " .. count .. " zombies near " .. username,
+        message = "Spawned " .. spawned .. "/" .. count .. " zombies near " .. username,
         count = count,
+        spawned = spawned,
         center = { x = cx, y = cy },
         distance = dist,
         method = method
@@ -4957,6 +5053,7 @@ handlers.spawnHordeBehindPlayer = function(args)
     end
 
     local px, py = player:getX(), player:getY()
+    local pz = player:getZ()
 
     -- Get player facing direction and compute "behind" offset
     local dir = player:getDir()
@@ -4977,29 +5074,48 @@ handlers.spawnHordeBehindPlayer = function(args)
     local behindX = -facing.dx
     local behindY = -facing.dy
 
-    -- Spawn 50-70 tiles behind, in a 30x30 area
-    local dist = 50 + ZombRand(21) -- 50-70
+    -- Spawn 15-25 tiles behind — within the player's loaded chunk radius so
+    -- VirtualZombieManager actually materialises the zombies.
+    local dist = 15 + ZombRand(11)
     local cx = math.floor(px + behindX * dist)
     local cy = math.floor(py + behindY * dist)
-    local half = 15
+    local half = 8
     local method = "unknown"
+    local spawned = 0
 
     local ok, err = pcall(function()
-        -- B42 preferred: ZombiePopulationManager.createHordeInAreaTo
-        local zpop = getZombiePopManager()
-        if zpop and zpop.createHordeInAreaTo then
-            zpop:createHordeInAreaTo(cx - half, cy - half, half * 2, half * 2, math.floor(px), math.floor(py), count)
-            method = "createHordeInAreaTo"
-        elseif zpop and zpop.createHordeFromTo then
-            zpop:createHordeFromTo(cx, cy, math.floor(px), math.floor(py), count)
-            method = "createHordeFromTo"
+        local vzm = _G.VirtualZombieManager and _G.VirtualZombieManager.instance
+        if vzm and vzm.createRealZombieAlways then
+            for i = 1, count do
+                local dx = ZombRand(half * 2 + 1) - half
+                local dy = ZombRand(half * 2 + 1) - half
+                local tx = cx + dx
+                local ty = cy + dy
+                local okZ, _ = pcall(function()
+                    vzm:createRealZombieAlways(tx, ty, pz)
+                end)
+                if okZ then spawned = spawned + 1 end
+            end
+            method = "VirtualZombieManager.createRealZombieAlways"
         else
-            local world = getWorld()
-            if world and world.CreateSwarm then
-                world:CreateSwarm(count, cx - half, cy - half, cx + half, cy + half)
-                method = "CreateSwarm"
+            local zpop = getZombiePopManager()
+            if zpop and zpop.createHordeInAreaTo then
+                zpop:createHordeInAreaTo(cx - half, cy - half, half * 2, half * 2, math.floor(px), math.floor(py), count)
+                method = "createHordeInAreaTo"
+                spawned = count
+            elseif zpop and zpop.createHordeFromTo then
+                zpop:createHordeFromTo(cx, cy, math.floor(px), math.floor(py), count)
+                method = "createHordeFromTo"
+                spawned = count
             else
-                error("No zombie spawning API available")
+                local world = getWorld()
+                if world and world.CreateSwarm then
+                    world:CreateSwarm(count, cx - half, cy - half, cx + half, cy + half)
+                    method = "CreateSwarm"
+                    spawned = count
+                else
+                    error("No zombie spawning API available")
+                end
             end
         end
     end)
@@ -5008,10 +5124,11 @@ handlers.spawnHordeBehindPlayer = function(args)
         return false, nil, "Failed to spawn horde behind: " .. tostring(err)
     end
 
-    PanelBridge.warn("Spawned horde behind player", { username = username, count = count, direction = dirName, cx = cx, cy = cy, method = method })
+    PanelBridge.warn("Spawned horde behind player", { username = username, count = count, spawned = spawned, direction = dirName, cx = cx, cy = cy, method = method })
     return true, {
-        message = "Spawned " .. count .. " zombies behind " .. username,
+        message = "Spawned " .. spawned .. "/" .. count .. " zombies behind " .. username,
         count = count,
+        spawned = spawned,
         center = { x = cx, y = cy },
         playerDirection = dirName,
         distance = dist,

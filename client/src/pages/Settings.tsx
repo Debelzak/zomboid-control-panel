@@ -67,6 +67,7 @@ import {
   BackupStatus,
   BackupFile,
   PanelUpdateStatus,
+  PanelUpdatePreflight,
   ServerInstance
 } from '@/lib/api'
 import { useSocket } from '@/contexts/SocketContext'
@@ -194,6 +195,9 @@ export default function Settings() {
   const [checkingPanelUpdate, setCheckingPanelUpdate] = useState(false)
   const [downloadingPanelUpdate, setDownloadingPanelUpdate] = useState(false)
   const [panelUpdateReady, setPanelUpdateReady] = useState(false)
+  const [panelUpdatePreflight, setPanelUpdatePreflight] = useState<PanelUpdatePreflight | null>(null)
+  const [panelApplyLog, setPanelApplyLog] = useState<string | null>(null)
+  const [panelApplyResultDismissed, setPanelApplyResultDismissed] = useState(false)
   const { toast } = useToast()
   const { user, authEnabled } = useAuth()
   
@@ -379,8 +383,26 @@ export default function Settings() {
       const status = await panelUpdateApi.getStatus()
       setPanelUpdateStatus(status)
       setPanelUpdateStatusError(null)
-      if (!status.updateAvailable) {
+      // "Ready to apply" reflects whether a binary is staged on disk, not just
+      // whether the last click finished. Survives page reloads.
+      if (status.stagedUpdate) {
+        setPanelUpdateReady(true)
+      } else if (!status.updateAvailable) {
         setPanelUpdateReady(false)
+      }
+      // If a previous apply failed, surface the helper log right away so the
+      // user can see what happened without clicking anything.
+      if (status.lastApplyResult?.status === 'failed') {
+        if (status.lastApplyResult.helperLog) {
+          setPanelApplyLog(status.lastApplyResult.helperLog)
+        } else {
+          try {
+            const { log: helperLog } = await panelUpdateApi.getApplyLog()
+            setPanelApplyLog(helperLog)
+          } catch {
+            setPanelApplyLog(null)
+          }
+        }
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not load updater status'
@@ -389,9 +411,29 @@ export default function Settings() {
     }
   }, [])
 
+  const fetchPanelUpdatePreflight = useCallback(async () => {
+    try {
+      const pre = await panelUpdateApi.preflight()
+      setPanelUpdatePreflight(pre)
+      return pre
+    } catch (error) {
+      reportClientError('Failed to fetch panel update preflight.', error)
+      return null
+    }
+  }, [])
+
   useEffect(() => {
     fetchPanelUpdateStatus()
   }, [fetchPanelUpdateStatus])
+
+  // Run preflight once status tells us we're in a packaged build and there is
+  // anything actionable (either an available update or a staged file on disk).
+  useEffect(() => {
+    if (!panelUpdateStatus) return
+    if (panelUpdateStatus.updateAvailable || panelUpdateStatus.stagedUpdate) {
+      fetchPanelUpdatePreflight()
+    }
+  }, [panelUpdateStatus?.updateAvailable, panelUpdateStatus?.stagedUpdate?.path, fetchPanelUpdatePreflight])
 
   const normalizePort = (value: string): string => {
     const parsed = Number.parseInt(value, 10)
@@ -583,8 +625,15 @@ export default function Settings() {
     setDownloadingPanelUpdate(true)
     setPanelUpdateStatusError(null)
     try {
+      // Pre-flight before touching disk — refuse early if we know apply will fail.
+      const pre = await fetchPanelUpdatePreflight()
+      if (pre && !pre.ok) {
+        throw new Error(pre.blockers[0] || 'Update blocked by preflight check.')
+      }
+
       const result = await panelUpdateApi.download()
       if (!result.success) {
+        if (result.preflight) setPanelUpdatePreflight(result.preflight)
         throw new Error(result.error || result.message || 'Update download failed')
       }
 
@@ -633,6 +682,8 @@ export default function Settings() {
           downloadProgress: 0,
           lastCheck: new Date().toISOString(),
           lastError: null,
+          stagedUpdate: null,
+          lastApplyResult: null,
         }
         return {
           ...base,
@@ -659,6 +710,8 @@ export default function Settings() {
           downloadProgress: 0,
           lastCheck: null,
           lastError: null,
+          stagedUpdate: null,
+          lastApplyResult: null,
         }
         const bounded = Math.max(0, Math.min(100, data.progress ?? base.downloadProgress))
         return {
@@ -682,14 +735,45 @@ export default function Settings() {
       fetchPanelUpdateStatus()
     }
 
+    const handlePanelUpdateApplied = (data: { version?: string }) => {
+      setPanelUpdateReady(false)
+      setPanelApplyResultDismissed(false)
+      setPanelApplyLog(null)
+      toast({
+        title: 'Update Applied',
+        description: data.version
+          ? `Panel successfully updated to v${data.version}.`
+          : 'Panel update applied successfully.',
+        variant: 'success' as const,
+      })
+      fetchPanelUpdateStatus()
+    }
+
+    const handlePanelUpdateApplyFailed = (data: { pendingVersion?: string; helperLog?: string | null }) => {
+      setPanelApplyResultDismissed(false)
+      if (data?.helperLog) setPanelApplyLog(data.helperLog)
+      toast({
+        title: 'Update Failed to Apply',
+        description: data?.pendingVersion
+          ? `Panel is still running the previous version. The v${data.pendingVersion} update did not install.`
+          : 'The downloaded update did not install. Review the helper log for details.',
+        variant: 'destructive',
+      })
+      fetchPanelUpdateStatus()
+    }
+
     socket.on('panel:updateAvailable', handlePanelUpdateAvailable)
     socket.on('panel:downloadProgress', handlePanelDownloadProgress)
     socket.on('panel:updateReady', handlePanelUpdateReady)
+    socket.on('panel:updateApplied', handlePanelUpdateApplied)
+    socket.on('panel:updateApplyFailed', handlePanelUpdateApplyFailed)
 
     return () => {
       socket.off('panel:updateAvailable', handlePanelUpdateAvailable)
       socket.off('panel:downloadProgress', handlePanelDownloadProgress)
       socket.off('panel:updateReady', handlePanelUpdateReady)
+      socket.off('panel:updateApplied', handlePanelUpdateApplied)
+      socket.off('panel:updateApplyFailed', handlePanelUpdateApplyFailed)
     }
   }, [socket, toast, fetchPanelUpdateStatus])
 
@@ -1592,6 +1676,96 @@ export default function Settings() {
               </Alert>
             )}
 
+            {panelUpdateStatus?.lastApplyResult && !panelApplyResultDismissed && (
+              panelUpdateStatus.lastApplyResult.status === 'success' ? (
+                <Alert variant="success">
+                  <AlertTitle>Update Applied</AlertTitle>
+                  <AlertDescription className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <span>
+                      Panel is now running v{panelUpdateStatus.lastApplyResult.appliedVersion || panelUpdateStatus.currentVersion}
+                      {panelUpdateStatus.lastApplyResult.at ? ` (applied ${formatTimestamp(panelUpdateStatus.lastApplyResult.at)})` : ''}.
+                    </span>
+                    <Button variant="outline" size="sm" onClick={() => setPanelApplyResultDismissed(true)} className="self-start">
+                      Dismiss
+                    </Button>
+                  </AlertDescription>
+                </Alert>
+              ) : (
+                <Alert variant="destructive">
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertTitle>Update Failed to Apply</AlertTitle>
+                  <AlertDescription className="flex flex-col gap-2">
+                    <span className="break-words">
+                      Panel is still running v{panelUpdateStatus.lastApplyResult.currentVersion || panelUpdateStatus.currentVersion}.
+                      {panelUpdateStatus.lastApplyResult.pendingVersion
+                        ? ` Expected v${panelUpdateStatus.lastApplyResult.pendingVersion}.`
+                        : ''}
+                      {panelUpdateStatus.lastApplyResult.stagedStillPresent
+                        ? ' The downloaded file is still on disk; you can retry the restart.'
+                        : ' The staged binary is gone — re-download the update before retrying.'}
+                    </span>
+                    {panelApplyLog && (
+                      <details className="mt-1 text-xs">
+                        <summary className="cursor-pointer font-medium">Show helper log</summary>
+                        <pre className="mt-2 max-h-64 overflow-auto rounded-md border border-destructive/30 bg-background/60 p-2 text-[11px] leading-snug whitespace-pre-wrap break-all">
+{panelApplyLog}
+                        </pre>
+                      </details>
+                    )}
+                    <div className="flex flex-wrap gap-2">
+                      <Button variant="outline" size="sm" onClick={() => setPanelApplyResultDismissed(true)}>Dismiss</Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={async () => {
+                          try {
+                            const { log: helperLog } = await panelUpdateApi.getApplyLog()
+                            setPanelApplyLog(helperLog || 'No helper log found.')
+                          } catch (error) {
+                            toast({
+                              title: 'Could not read log',
+                              description: error instanceof Error ? error.message : 'Failed to read helper log.',
+                              variant: 'destructive',
+                            })
+                          }
+                        }}
+                      >
+                        Refresh log
+                      </Button>
+                    </div>
+                  </AlertDescription>
+                </Alert>
+              )
+            )}
+
+            {panelUpdatePreflight && !panelUpdatePreflight.ok && (panelUpdateStatus?.updateAvailable || panelUpdateStatus?.stagedUpdate) && (
+              <Alert variant="destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertTitle>Update Blocked</AlertTitle>
+                <AlertDescription>
+                  <ul className="mt-1 list-disc space-y-1 pl-5 text-sm">
+                    {panelUpdatePreflight.blockers.map((b, i) => (
+                      <li key={`blk-${i}`} className="break-words">{b}</li>
+                    ))}
+                  </ul>
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {panelUpdatePreflight && panelUpdatePreflight.ok && panelUpdatePreflight.warnings.length > 0 && (panelUpdateStatus?.updateAvailable || panelUpdateStatus?.stagedUpdate) && (
+              <Alert variant="warning">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertTitle>Before You Restart</AlertTitle>
+                <AlertDescription>
+                  <ul className="mt-1 list-disc space-y-1 pl-5 text-sm">
+                    {panelUpdatePreflight.warnings.map((w, i) => (
+                      <li key={`wrn-${i}`} className="break-words">{w}</li>
+                    ))}
+                  </ul>
+                </AlertDescription>
+              </Alert>
+            )}
+
             <div className="flex flex-wrap gap-2">
               <Button
                 variant="outline"
@@ -1605,22 +1779,60 @@ export default function Settings() {
 
               <Button
                 onClick={handleDownloadPanelUpdate}
-                disabled={!panelUpdateStatus?.updateAvailable || checkingPanelUpdate || downloadingPanelUpdate || restarting}
+                disabled={!panelUpdateStatus?.updateAvailable || checkingPanelUpdate || downloadingPanelUpdate || restarting || (panelUpdatePreflight?.ok === false)}
                 className="gap-2"
               >
                 {downloadingPanelUpdate ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
                 {downloadingPanelUpdate ? 'Downloading...' : 'Download Update'}
               </Button>
 
-              <Button
-                variant="warning"
-                onClick={() => restartPanelWithReconnect('Applying downloaded update. Restarting panel...')}
-                disabled={!panelUpdateReady || restarting || isDirty || downloadingPanelUpdate || Boolean(panelUpdateStatus?.isDownloading)}
-                className="gap-2"
-              >
-                {restarting ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCw className="w-4 h-4" />}
-                Restart and Apply Update
-              </Button>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    variant="warning"
+                    disabled={!panelUpdateReady || restarting || isDirty || downloadingPanelUpdate || Boolean(panelUpdateStatus?.isDownloading) || (panelUpdatePreflight?.ok === false)}
+                    className="gap-2"
+                  >
+                    {restarting ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCw className="w-4 h-4" />}
+                    Restart and Apply Update
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Apply panel update?</AlertDialogTitle>
+                    <AlertDialogDescription asChild>
+                      <div className="space-y-3 text-sm">
+                        <p>
+                          The panel will exit immediately. A helper process will swap the executable and relaunch it in a few seconds.
+                          {panelUpdateStatus?.stagedUpdate?.version
+                            ? ` You are about to install v${panelUpdateStatus.stagedUpdate.version}.`
+                            : ''}
+                        </p>
+                        {panelUpdatePreflight?.warnings.length ? (
+                          <div>
+                            <p className="font-medium text-foreground">Please confirm before continuing:</p>
+                            <ul className="mt-1 list-disc space-y-1 pl-5">
+                              {panelUpdatePreflight.warnings.map((w, i) => (
+                                <li key={`confirm-wrn-${i}`} className="break-words">{w}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        ) : null}
+                        <p className="text-xs text-muted-foreground">
+                          If the new version does not come back online within a minute, check the helper log in <code>%TEMP%</code>
+                          (<code>zomboid-panel-update-*.log</code>) and relaunch the panel manually.
+                        </p>
+                      </div>
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={() => restartPanelWithReconnect('Applying downloaded update. Restarting panel...')}>
+                      Restart and apply
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
 
               {panelUpdateStatus?.releaseUrl && (
                 <Button asChild variant="ghost" className="gap-2">

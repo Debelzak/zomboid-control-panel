@@ -256,9 +256,11 @@ router.post('/teleport', async (req, res) => {
     
     let result;
     if (x !== undefined && y !== undefined && z !== undefined) {
-      // Validate coordinates (PZ map cells range roughly 0-16800 per axis, z is floor level 0-7)
-      if (!isValidNumber(x, 0, 16800) || !isValidNumber(y, 0, 16800) || !isValidNumber(z, 0, 8)) {
-        return res.status(400).json({ error: 'Invalid coordinates (x/y: 0 to 16800, z: 0 to 8)' });
+      // Validate coordinates. B42 vanilla map extends past 16800 and modded maps
+      // (Normandy, etc.) go further, so cap at 24000 to match the Lua handler.
+      // z is floor level 0-8.
+      if (!isValidNumber(x, 0, 24000) || !isValidNumber(y, 0, 24000) || !isValidNumber(z, 0, 8)) {
+        return res.status(400).json({ error: 'Invalid coordinates (x/y: 0 to 24000, z: 0 to 8)' });
       }
       if (player1) {
         log.info(`POST /teleport: ${player1} → coords(${x}, ${y}, ${z}) via PanelBridge`);
