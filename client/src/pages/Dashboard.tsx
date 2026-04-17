@@ -28,6 +28,8 @@ import {
   MoreHorizontal,
   Zap,
   Trash2,
+  Download,
+  Sparkles,
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -50,7 +52,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { serverApi, rconApi, playersApi, panelBridgeApi, backupApi, configApi, serversApi, debugApi, ServerInstance } from '@/lib/api'
+import { serverApi, rconApi, playersApi, panelBridgeApi, backupApi, configApi, serversApi, debugApi, panelUpdateApi, ServerInstance, PanelUpdateStatus } from '@/lib/api'
 import { formatUptime } from '@/lib/utils'
 import { useSocket } from '@/contexts/SocketContext'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -182,6 +184,10 @@ export default function Dashboard() {
       return true
     }
   })
+  const [panelUpdate, setPanelUpdate] = useState<PanelUpdateStatus | null>(null)
+  const [panelUpdateDismissedVersion, setPanelUpdateDismissedVersion] = useState<string | null>(() => {
+    try { return sessionStorage.getItem('panel-update-banner-dismissed') } catch { return null }
+  })
 
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const initialLoadingRef = useRef(true)
@@ -211,6 +217,43 @@ export default function Dashboard() {
     const timer = setInterval(() => setTick(t => t + 1), 10000)
     return () => clearInterval(timer)
   }, [])
+
+  // Fetch panel update status on mount + listen for socket announcements
+  useEffect(() => {
+    let cancelled = false
+    panelUpdateApi.getStatus()
+      .then(s => { if (!cancelled) setPanelUpdate(s) })
+      .catch(() => { /* non-fatal; banner simply won't show */ })
+    return () => { cancelled = true }
+  }, [])
+
+  useEffect(() => {
+    if (!socket) return
+    const handleAvailable = (data: { latestVersion?: string; currentVersion?: string; releaseUrl?: string }) => {
+      setPanelUpdate(prev => ({
+        currentVersion: data.currentVersion || prev?.currentVersion || 'Unknown',
+        updateAvailable: true,
+        latestVersion: data.latestVersion || prev?.latestVersion || null,
+        releaseUrl: data.releaseUrl || prev?.releaseUrl || null,
+        releaseNotes: prev?.releaseNotes ?? null,
+        publishedAt: prev?.publishedAt ?? null,
+        isChecking: false,
+        isDownloading: prev?.isDownloading ?? false,
+        downloadProgress: prev?.downloadProgress ?? 0,
+        lastCheck: prev?.lastCheck ?? null,
+        lastError: null,
+        stagedUpdate: prev?.stagedUpdate ?? null,
+        lastApplyResult: prev?.lastApplyResult ?? null,
+      }))
+    }
+    const handleApplied = () => setPanelUpdate(prev => prev ? { ...prev, updateAvailable: false } : prev)
+    socket.on('panel:updateAvailable', handleAvailable)
+    socket.on('panel:updateApplied', handleApplied)
+    return () => {
+      socket.off('panel:updateAvailable', handleAvailable)
+      socket.off('panel:updateApplied', handleApplied)
+    }
+  }, [socket])
 
   const copyToClipboard = async (text: string, label: string) => {
     try {
@@ -632,6 +675,62 @@ export default function Dashboard() {
           </div>
         }
       />
+
+      {/* Panel Update Available Banner */}
+      {(() => {
+        if (!panelUpdate?.updateAvailable) return null
+        const latest = panelUpdate.latestVersion
+        // Defensive: backend says update available but versions match — hide.
+        if (latest && latest === panelUpdate.currentVersion) return null
+        // Per-version dismissal.
+        if (latest && panelUpdateDismissedVersion === latest) return null
+        const isStaged = !!panelUpdate.stagedUpdate && (!latest || panelUpdate.stagedUpdate.version === latest)
+        const lastFailed = panelUpdate.lastApplyResult?.status === 'failed'
+          && (!latest || panelUpdate.lastApplyResult.pendingVersion === latest)
+        const ctaLabel = isStaged ? 'Apply update' : 'View update'
+        const title = isStaged
+          ? `Panel update ready to apply${latest ? ` — v${latest}` : ''}`
+          : `Panel update available${latest ? ` — v${latest}` : ''}`
+        const body = lastFailed
+          ? `Last apply attempt failed. Open Settings for diagnostics and the apply log.`
+          : isStaged
+            ? `v${latest ?? '?'} is downloaded. Restart the panel from Settings to apply it.`
+            : `You're on v${panelUpdate.currentVersion}. Head to Settings to download and apply the update.`
+        const dismiss = () => {
+          if (!latest) return
+          try { sessionStorage.setItem('panel-update-banner-dismissed', latest) } catch { /* ignore */ }
+          setPanelUpdateDismissedVersion(latest)
+        }
+        return (
+          <Alert className={lastFailed ? 'border-destructive/40 bg-destructive/10' : 'border-primary/40 bg-primary/10'}>
+            <Sparkles className={`h-4 w-4 ${lastFailed ? 'text-destructive' : 'text-primary'}`} />
+            <AlertTitle className={`break-words ${lastFailed ? 'text-destructive' : 'text-primary'}`}>
+              {title}
+            </AlertTitle>
+            <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <span className="min-w-0 break-words text-sm">{body}</span>
+              <div className="flex items-center gap-2 self-start sm:self-auto">
+                <Link to="/settings?tab=panel">
+                  <Button size="sm" variant={lastFailed ? 'destructive' : 'default'}>
+                    <Download className="mr-2 h-4 w-4" />
+                    {ctaLabel}
+                  </Button>
+                </Link>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  aria-label="Dismiss update notification"
+                  onClick={dismiss}
+                  disabled={!latest}
+                  title="Dismiss until next version"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            </AlertDescription>
+          </Alert>
+        )
+      })()}
 
       {/* Error Banner */}
       {fetchError && (
