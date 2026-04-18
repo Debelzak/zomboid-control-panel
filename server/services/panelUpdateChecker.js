@@ -1123,20 +1123,59 @@ export class PanelUpdateChecker {
    *   'permission'    — access denied on move/copy
    *   'no_helper_log' — no log found at all
    *   'unknown'       — log exists but doesn't match a known pattern
+   *
+   * Order matters: check permission before lock, and check AV signatures
+   * first because "cannot find path" / "system cannot find the file" can
+   * appear inside a failed Move-Item message where the real cause is AV
+   * having deleted the source between operations, not a plain file-lock.
    */
   classifyApplyFailure(helperLog, stagedStillPresent) {
     if (!helperLog) return 'no_helper_log';
     const l = helperLog.toLowerCase();
-    if (l.includes('quarantined by av') || l.includes('disappeared or is empty') ||
-        l.includes('cannot find the file specified') || l.includes('controlled folder access')) {
+
+    // AV / Controlled Folder Access — file vanished between helper steps.
+    // Patterns cover: post-place verify failure, rollback copy wiped, staged
+    // gone before we started, and the Windows "cannot find" messages that
+    // surface as Move-Item failures when the source was deleted mid-apply.
+    if (
+      l.includes('quarantined by av') ||
+      l.includes('disappeared or is empty') ||
+      l.includes('controlled folder access') ||
+      l.includes('cannot find the file specified') ||
+      l.includes('cannot find path') ||
+      l.includes('staged path is already missing') ||
+      l.includes('backup .old is also missing') ||
+      l.includes('rollback did not stick') ||
+      l.includes('rollback copy failed')
+    ) {
       return 'av_quarantine';
     }
-    if (l.includes('could not rename running exe') || l.includes('rename attempt')) {
-      return stagedStillPresent ? 'rename_locked' : 'unknown';
-    }
+
+    // Permission: check BEFORE rename-lock because "access is denied" on a
+    // rename attempt is a permission problem, not a transient file lock.
     if (l.includes('access is denied') || l.includes('access denied') || l.includes('unauthorized')) {
       return 'permission';
     }
+
+    // File locked by another process — either the rename (exe → .old) or the
+    // place (.new → exe) was blocked by AV scan, OneDrive sync, or another
+    // holder of the exe handle.
+    if (
+      l.includes('could not rename running exe') ||
+      l.includes('rename attempt') ||
+      l.includes('place attempt') ||
+      l.includes('being used by another process') ||
+      l.includes('it is being used by')
+    ) {
+      // If rename failed AND there is no staged file left on disk, AV most
+      // likely deleted .new between download and apply — treat as quarantine
+      // so the UI surfaces the exclusion hint instead of a generic lock msg.
+      if (!stagedStillPresent && (l.includes('rename attempt') || l.includes('could not rename running exe'))) {
+        return 'av_quarantine';
+      }
+      return 'rename_locked';
+    }
+
     return 'unknown';
   }
 
