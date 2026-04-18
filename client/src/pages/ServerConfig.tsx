@@ -141,8 +141,8 @@ const IniSettingRow = memo(({
   // Multiline settings
   if (setting.type === 'multiline') {
     return (
-      <div className={`perf-content-auto grid gap-2 rounded-md border-b py-3 pr-4 transition-colors last:border-0 ${
-        isModified ? 'border-l-2 border-l-warning bg-warning/5 pl-3' : ''
+      <div className={`perf-content-auto grid gap-2 rounded-md border-b py-3 pl-3 pr-4 transition-colors last:border-0 ${
+        isModified ? 'border-l-2 border-l-warning bg-warning/5' : 'border-l-2 border-l-transparent hover:bg-muted/20'
       }`}>
         <div className="flex items-center justify-between">
           <div>
@@ -172,8 +172,8 @@ const IniSettingRow = memo(({
 
   // Standard settings
   return (
-    <div className={`perf-content-auto grid gap-2 rounded-md border-b py-3 pr-4 transition-colors last:border-0 ${
-      isModified ? 'border-l-2 border-l-warning bg-warning/5 pl-3' : ''
+    <div className={`perf-content-auto grid gap-2 rounded-md border-b py-3 pl-3 pr-4 transition-colors last:border-0 ${
+      isModified ? 'border-l-2 border-l-warning bg-warning/5' : 'border-l-2 border-l-transparent hover:bg-muted/20'
     }`}>
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4">
         <div className="flex-1 min-w-0">
@@ -330,8 +330,8 @@ const SandboxSettingRow = memo(({
   const isDifferentFromDefault = setting.default !== undefined && JSON.stringify(value) !== JSON.stringify(setting.default)
 
   return (
-    <div className={`perf-content-auto grid gap-2 rounded-md border-b py-3 pr-4 transition-colors last:border-0 ${
-      isModified ? 'border-l-2 border-l-warning bg-warning/5 pl-3' : ''
+    <div className={`perf-content-auto grid gap-2 rounded-md border-b py-3 pl-3 pr-4 transition-colors last:border-0 ${
+      isModified ? 'border-l-2 border-l-warning bg-warning/5' : 'border-l-2 border-l-transparent hover:bg-muted/20'
     }`}>
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4">
         <div className="flex-1 min-w-0">
@@ -1459,9 +1459,7 @@ export default function ServerConfig() {
             {hasIniChanges && activeTab !== 'ini' && (
               <span className="h-2 w-2 rounded-full bg-warning animate-pulse" title="Unsaved changes" />
             )}
-            {pathsInfo?.exists.ini ? (
-              <CheckCircle className="w-3 h-3 text-primary" />
-            ) : (
+            {!pathsInfo?.exists.ini && (
               <AlertCircle className="w-3 h-3 text-warning" />
             )}
           </TabsTrigger>
@@ -1476,9 +1474,7 @@ export default function ServerConfig() {
             {hasSandboxChanges && activeTab !== 'sandbox' && (
               <span className="h-2 w-2 rounded-full bg-warning animate-pulse" title="Unsaved changes" />
             )}
-            {pathsInfo?.exists.sandbox ? (
-              <CheckCircle className="w-3 h-3 text-primary" />
-            ) : (
+            {!pathsInfo?.exists.sandbox && (
               <AlertCircle className="w-3 h-3 text-warning" />
             )}
           </TabsTrigger>
@@ -1625,10 +1621,10 @@ export default function ServerConfig() {
                     </ScrollArea>
                   ) : (
                     // Rail mode: vertical category nav + single active category content
-                    <div className="grid gap-0 md:grid-cols-[236px_minmax(0,1fr)]">
+                    <div className="grid gap-0 md:grid-cols-[252px_minmax(0,1fr)]">
                       <nav
                         aria-label="Server settings categories"
-                        className="-mx-2 flex gap-1 overflow-x-auto px-2 pb-2 md:mx-0 md:flex-col md:overflow-x-visible md:overflow-y-auto md:border-r md:border-border/50 md:pb-0 md:pr-3 md:pt-1 md:max-h-[calc(100vh-420px)] md:min-h-[360px]"
+                        className="-mx-2 flex gap-0.5 overflow-x-auto px-2 pb-2 md:mx-0 md:flex-col md:overflow-x-visible md:overflow-y-auto md:border-r md:border-border/50 md:pb-0 md:pr-3 md:pt-1 md:max-h-[calc(100vh-420px)] md:min-h-[360px]"
                       >
                         {INI_CATEGORIES.map(category => {
                           const count = (filteredIniSettings[category.id] || []).length
@@ -1647,8 +1643,8 @@ export default function ServerConfig() {
                               }`}
                             >
                               <span className="min-w-0 flex-1 truncate font-medium">{category.label}</span>
-                              <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-mono tabular-nums ${
-                                isActive ? 'bg-primary/20 text-primary' : 'bg-muted text-muted-foreground'
+                              <span className={`shrink-0 min-w-[1.5rem] rounded text-center px-1 py-0.5 text-[10px] font-mono tabular-nums ${
+                                isActive ? 'text-primary/80' : 'bg-muted text-muted-foreground'
                               }`}>
                                 {count}
                               </span>
@@ -1812,10 +1808,10 @@ export default function ServerConfig() {
                     </ScrollArea>
                   ) : (
                     // Rail mode: vertical category nav + single active category content
-                    <div className="grid gap-0 md:grid-cols-[236px_minmax(0,1fr)]">
+                    <div className="grid gap-0 md:grid-cols-[252px_minmax(0,1fr)]">
                       <nav
                         aria-label="Sandbox categories"
-                        className="-mx-2 flex gap-1 overflow-x-auto px-2 pb-2 md:mx-0 md:flex-col md:overflow-x-visible md:overflow-y-auto md:border-r md:border-border/50 md:pb-0 md:pr-3 md:pt-1 md:max-h-[calc(100vh-420px)] md:min-h-[360px]"
+                        className="-mx-2 flex gap-0.5 overflow-x-auto px-2 pb-2 md:mx-0 md:flex-col md:overflow-x-visible md:overflow-y-auto md:border-r md:border-border/50 md:pb-0 md:pr-3 md:pt-1 md:max-h-[calc(100vh-420px)] md:min-h-[360px]"
                       >
                         {SANDBOX_CATEGORIES.map(category => {
                           const count = (filteredSandboxSettings[category.id] || []).length
@@ -1834,8 +1830,8 @@ export default function ServerConfig() {
                               }`}
                             >
                               <span className="min-w-0 flex-1 truncate font-medium">{category.label}</span>
-                              <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-mono tabular-nums ${
-                                isActive ? 'bg-primary/20 text-primary' : 'bg-muted text-muted-foreground'
+                              <span className={`shrink-0 min-w-[1.5rem] rounded text-center px-1 py-0.5 text-[10px] font-mono tabular-nums ${
+                                isActive ? 'text-primary/80' : 'bg-muted text-muted-foreground'
                               }`}>
                                 {count}
                               </span>
@@ -1858,8 +1854,8 @@ export default function ServerConfig() {
                               title="Settings from mods or keys not recognized by the schema"
                             >
                               <span className="min-w-0 flex-1 truncate font-medium">Uncategorized / Mods</span>
-                              <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-mono tabular-nums ${
-                                isActive ? 'bg-amber-500/20 text-amber-500' : 'bg-muted text-muted-foreground'
+                              <span className={`shrink-0 min-w-[1.5rem] rounded text-center px-1 py-0.5 text-[10px] font-mono tabular-nums ${
+                                isActive ? 'text-amber-500/80' : 'bg-muted text-muted-foreground'
                               }`}>
                                 {uncategorizedSandboxKeys.length}
                               </span>

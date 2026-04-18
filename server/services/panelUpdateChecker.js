@@ -15,6 +15,7 @@ import crypto from 'crypto';
 import { spawn } from 'child_process';
 import { createLogger } from '../utils/logger.js';
 import { getSetting, setSetting } from '../database/init.js';
+import { getDataPaths } from '../utils/paths.js';
 
 const log = createLogger('PanelUpdater');
 
@@ -452,7 +453,13 @@ export class PanelUpdateChecker {
     const { stagedPath, exePath } = staged;
     const oldPath = `${exePath}.old`;
     const ts = Date.now();
-    const logPath = path.join(os.tmpdir(), `zomboid-panel-update-${ts}.log`);
+    // Write helper log to the panel's logs dir so it's always findable after
+    // relaunch, and mirror the latest to a stable filename for the UI.
+    let logsDir;
+    try { logsDir = getDataPaths().logsDir; } catch { logsDir = os.tmpdir(); }
+    try { fs.mkdirSync(logsDir, { recursive: true }); } catch { /* non-fatal */ }
+    const logPath = path.join(logsDir, `panel-update-${ts}.log`);
+    const stableLogPath = path.join(logsDir, 'panel-update-last.log');
     const ps1Path = path.join(os.tmpdir(), `zomboid-panel-apply-${ts}-${process.pid}.ps1`);
 
     const ps = [
@@ -462,9 +469,18 @@ export class PanelUpdateChecker {
       `$stagedPath = ${this.psQuote(stagedPath)}`,
       `$oldPath = ${this.psQuote(oldPath)}`,
       `$logPath = ${this.psQuote(logPath)}`,
+      `$stableLogPath = ${this.psQuote(stableLogPath)}`,
       `$workDir = ${this.psQuote(path.dirname(exePath))}`,
-      'function Log($m) { Add-Content -LiteralPath $logPath -Value ("[{0}] {1}" -f (Get-Date -Format o), $m) }',
-      'Log "Apply helper started"',
+      'function Log($m) {',
+      '  $line = "[{0}] {1}" -f (Get-Date -Format o), $m',
+      '  try { Add-Content -LiteralPath $logPath -Value $line } catch {}',
+      '  try { Add-Content -LiteralPath $stableLogPath -Value $line } catch {}',
+      '}',
+      '# Truncate the stable log on each run so it always reflects the latest attempt',
+      'try { Set-Content -LiteralPath $stableLogPath -Value "" -Force } catch {}',
+      'Log "Apply helper started (pid to watch: $pidToWatch)"',
+      'Log "exePath=$exePath"',
+      'Log "stagedPath=$stagedPath"',
       '# Wait for the panel process to exit (up to 30s)',
       'for ($i=0; $i -lt 60; $i++) {',
       '  try { Get-Process -Id $pidToWatch -ErrorAction Stop | Out-Null; Start-Sleep -Milliseconds 500 }',
@@ -995,6 +1011,59 @@ export class PanelUpdateChecker {
    * Returns up to 8KB of log text or null.
    */
   readMostRecentApplyLog() {
+    // Prefer the stable log file in the panel logs dir (survives relaunch and
+    // is always the latest attempt). Fall back to timestamped logs in logs/
+    // then TEMP for back-compat with older builds.
+    try {
+      const logsDir = getDataPaths().logsDir;
+      const stable = path.join(logsDir, 'panel-update-last.log');
+      if (fs.existsSync(stable)) {
+        const stat = fs.statSync(stable);
+        const MAX_BYTES = 8 * 1024;
+        if (stat.size <= MAX_BYTES) {
+          const content = fs.readFileSync(stable, 'utf8');
+          if (content.trim()) return content;
+        } else {
+          const fd = fs.openSync(stable, 'r');
+          try {
+            const buf = Buffer.alloc(MAX_BYTES);
+            fs.readSync(fd, buf, 0, MAX_BYTES, stat.size - MAX_BYTES);
+            return `... (truncated, tail only)\n${buf.toString('utf8')}`;
+          } finally {
+            fs.closeSync(fd);
+          }
+        }
+      }
+    } catch (err) {
+      log.debug(`readMostRecentApplyLog (stable) failed: ${err.message}`);
+    }
+    try {
+      const dir = getDataPaths().logsDir;
+      const names = fs.readdirSync(dir)
+        .filter(n => /^panel-update-\d+\.log$/.test(n))
+        .map(n => {
+          const fp = path.join(dir, n);
+          try {
+            const stat = fs.statSync(fp);
+            return { fp, mtime: stat.mtimeMs, size: stat.size };
+          } catch { return null; }
+        })
+        .filter(Boolean)
+        .sort((a, b) => b.mtime - a.mtime);
+      if (names.length) {
+        const { fp, size } = names[0];
+        const MAX_BYTES = 8 * 1024;
+        if (size <= MAX_BYTES) return fs.readFileSync(fp, 'utf8');
+        const fd = fs.openSync(fp, 'r');
+        try {
+          const buf = Buffer.alloc(MAX_BYTES);
+          fs.readSync(fd, buf, 0, MAX_BYTES, size - MAX_BYTES);
+          return `... (truncated, tail only)\n${buf.toString('utf8')}`;
+        } finally { fs.closeSync(fd); }
+      }
+    } catch (err) {
+      log.debug(`readMostRecentApplyLog (logs dir) failed: ${err.message}`);
+    }
     try {
       const dir = os.tmpdir();
       const names = fs.readdirSync(dir)
@@ -1070,6 +1139,30 @@ export class PanelUpdateChecker {
       if (toDelete.length > 0) {
         log.debug(`Removed ${toDelete.length} old ${pattern.source} artifact(s) from TEMP`);
       }
+    }
+
+    // Also prune timestamped logs in the panel's logs dir (keep the stable
+    // panel-update-last.log forever).
+    try {
+      const logsDir = getDataPaths().logsDir;
+      const logPattern = /^panel-update-\d+\.log$/;
+      const logEntries = fs.readdirSync(logsDir)
+        .filter(n => logPattern.test(n))
+        .map(n => {
+          const fp = path.join(logsDir, n);
+          try { return { fp, mtime: fs.statSync(fp).mtimeMs }; }
+          catch { return null; }
+        })
+        .filter(Boolean)
+        .sort((a, b) => b.mtime - a.mtime);
+      const toDelete = logEntries.slice(keep);
+      for (const { fp } of toDelete) {
+        try { fs.unlinkSync(fp); } catch (err) {
+          log.debug(`Could not remove old log ${fp}: ${err.message}`);
+        }
+      }
+    } catch (err) {
+      log.debug(`Could not prune logs dir: ${err.message}`);
     }
   }
 

@@ -1752,7 +1752,7 @@ export default function Settings() {
               </Alert>
             )}
 
-            {panelUpdatePreflight && panelUpdatePreflight.ok && panelUpdatePreflight.warnings.length > 0 && (panelUpdateStatus?.updateAvailable || panelUpdateStatus?.stagedUpdate) && (
+            {panelUpdatePreflight && panelUpdatePreflight.ok && panelUpdatePreflight.warnings.length > 0 && (panelUpdateStatus?.updateAvailable || panelUpdateStatus?.stagedUpdate) && !(panelUpdateStatus?.lastApplyResult?.status === 'failed' && !panelApplyResultDismissed) && (
               <Alert variant="warning">
                 <AlertTriangle className="h-4 w-4" />
                 <AlertTitle>Before You Restart</AlertTitle>
