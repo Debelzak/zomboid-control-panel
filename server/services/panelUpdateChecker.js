@@ -390,7 +390,11 @@ export class PanelUpdateChecker {
       //
       // But we DO persist the staged version separately so `getStagedUpdate()`
       // can report it accurately even if `latestRelease` later refreshes to a
-      // newer version between download and apply.
+      // newer version between download and apply. Update the in-memory cache
+      // too — without this, a background update check that publishes a newer
+      // release would make `getStagedUpdate()` fall back to the fresher
+      // `latestRelease.version` and misreport the version actually on disk.
+      this._stagedVersionCache = this.latestRelease.version;
       try {
         await setSetting('stagedPanelUpdateVersion', this.latestRelease.version);
       } catch (persistErr) {
