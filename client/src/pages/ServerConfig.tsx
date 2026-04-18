@@ -2137,64 +2137,55 @@ export default function ServerConfig() {
                   spellCheck={false}
                 />
               ) : (
-                <div className="space-y-4">
-                  <div className="flex justify-end gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setSpawnRegions([...spawnRegions, { name: '', file: 'media/maps/' }])}
-                    >
-                      <Plus className="w-4 h-4 mr-1" /> Add Map Region
-                    </Button>
-                  </div>
-                  
+                <div className="space-y-3">
                   {spawnRegions.length === 0 ? (
                     <EmptyState type="noData" title="No spawn regions found" description="Try switching to Raw mode to view the file contents" compact />
                   ) : (
                     <div className="space-y-2">
                       {spawnRegions.map((region, index) => (
-                        <div key={index} className="flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center">
-                          <span className="text-sm font-medium sm:w-8">#{index + 1}</span>
-                          <div className="min-w-0 flex-1 space-y-2">
-                            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                              <div>
-                                <Label className="text-xs">Display Name</Label>
-                                <Input
-                                  value={region.name}
-                                  onChange={(e) => {
-                                    const newRegions = [...spawnRegions]
-                                    newRegions[index] = { ...region, name: e.target.value }
-                                    setSpawnRegions(newRegions)
-                                  }}
-                                  placeholder="e.g., Muldraugh, KY"
-                                  maxLength={64}
-                                />
-                              </div>
-                              <div>
-                                <Label className="text-xs flex items-center gap-2">
-                                  {region.isServerFile ? 'Server File' : 'Map File Path'}
-                                  {region.isServerFile && (
-                                    <Badge variant="secondary" className="text-xs">serverfile</Badge>
-                                  )}
-                                </Label>
-                                <Input
-                                  value={region.file}
-                                  onChange={(e) => {
-                                    const newRegions = [...spawnRegions]
-                                    newRegions[index] = { ...region, file: e.target.value }
-                                    setSpawnRegions(newRegions)
-                                  }}
-                                  placeholder={region.isServerFile ? "ServerName_spawnpoints.lua" : "media/maps/Muldraugh, KY/spawnpoints.lua"}
-                                  className="font-mono text-xs"
-                                  maxLength={512}
-                                />
-                              </div>
+                        <div key={index} className="flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-start">
+                          <div className="flex items-center gap-2 sm:w-[220px] sm:flex-shrink-0">
+                            <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-md border border-border bg-muted/40 px-1.5 text-xs font-mono font-medium text-muted-foreground">
+                              {index + 1}
+                            </span>
+                            <div className="flex-1 min-w-0">
+                              <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Display Name</Label>
+                              <Input
+                                value={region.name}
+                                onChange={(e) => {
+                                  const newRegions = [...spawnRegions]
+                                  newRegions[index] = { ...region, name: e.target.value }
+                                  setSpawnRegions(newRegions)
+                                }}
+                                placeholder="e.g., Muldraugh, KY"
+                                maxLength={64}
+                                className="mt-0.5 h-9"
+                              />
                             </div>
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <Label className="text-[10px] uppercase tracking-wide text-muted-foreground flex items-center gap-2">
+                              {region.isServerFile ? 'Server File' : 'Map File Path'}
+                              {region.isServerFile && (
+                                <Badge variant="secondary" className="text-[10px] py-0">serverfile</Badge>
+                              )}
+                            </Label>
+                            <Input
+                              value={region.file}
+                              onChange={(e) => {
+                                const newRegions = [...spawnRegions]
+                                newRegions[index] = { ...region, file: e.target.value }
+                                setSpawnRegions(newRegions)
+                              }}
+                              placeholder={region.isServerFile ? "ServerName_spawnpoints.lua" : "media/maps/Muldraugh, KY/spawnpoints.lua"}
+                              className="mt-0.5 h-9 font-mono text-xs"
+                              maxLength={512}
+                            />
                           </div>
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-11 w-11 self-end text-destructive hover:text-destructive sm:h-9 sm:w-9 sm:self-center"
+                            className="h-9 w-9 self-end text-muted-foreground hover:text-destructive sm:self-start sm:mt-[18px]"
                             onClick={() => setSpawnRegions(spawnRegions.filter((_, i) => i !== index))}
                             aria-label={`Delete spawn region ${region.name || index + 1}`}
                           >
@@ -2204,6 +2195,16 @@ export default function ServerConfig() {
                       ))}
                     </div>
                   )}
+
+                  <div className="flex justify-end pt-1">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSpawnRegions([...spawnRegions, { name: '', file: 'media/maps/' }])}
+                    >
+                      <Plus className="w-4 h-4 mr-1" /> Add Map Region
+                    </Button>
+                  </div>
                 </div>
               )}
             </CardContent>

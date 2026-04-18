@@ -2046,88 +2046,125 @@ export default function Events() {
               <Zap className="w-4 h-4 text-primary" />
               Infrastructure
             </CardTitle>
-            <CardDescription>Toggle power and water for the whole world. Requires Bridge.</CardDescription>
+            <CardDescription>Toggle power and water for the whole world. Applies instantly to every player.</CardDescription>
           </CardHeader>
           <CardContent>
               <div className="space-y-4">
-                {/* Disabled notice */}
-                <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
-                  Power/water toggle is currently not working in B42 multiplayer. Server-side sandbox changes don't propagate to connected clients.
+                {/* B42 multiplayer notice — compact inline warning */}
+                <div className="flex items-start gap-2 rounded-md border border-amber-500/25 bg-amber-500/5 px-2.5 py-1.5 text-xs text-amber-200/90">
+                  <AlertTriangle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-amber-400" />
+                  <span>Not working in B42 multiplayer — sandbox changes don't propagate to connected clients.</span>
                 </div>
-                {/* Current Status Display - Always visible */}
-                <div className="flex items-center justify-center gap-6 p-3 bg-muted/30 rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <Zap className={`w-5 h-5 ${utilitiesStatus?.powerOn ? 'text-primary' : 'text-muted-foreground'}`} />
-                    <span className="text-sm font-medium">Power:</span>
-                    <span className={`text-sm font-bold ${utilitiesStatus === null ? 'text-muted-foreground' : utilitiesStatus.powerOn ? 'text-primary' : 'text-destructive'}`}>
-                      {utilitiesStatus === null ? 'Checking...' : utilitiesStatus.powerOn ? 'On' : 'Off'}
+
+                {/* Current status — compact row */}
+                <div className="flex items-center gap-4 rounded-md border border-border/50 bg-muted/20 px-3 py-2 text-sm">
+                  <div className="flex items-center gap-1.5">
+                    <Zap className={`w-4 h-4 ${utilitiesStatus?.powerOn ? 'text-primary' : 'text-muted-foreground'}`} />
+                    <span className="text-muted-foreground">Power</span>
+                    <span className={`font-mono text-xs ${utilitiesStatus === null ? 'text-muted-foreground' : utilitiesStatus.powerOn ? 'text-primary' : 'text-destructive'}`}>
+                      {utilitiesStatus === null ? '…' : utilitiesStatus.powerOn ? 'ON' : 'OFF'}
                     </span>
                   </div>
-                  <div className="w-px h-6 bg-border" />
-                  <div className="flex items-center gap-2">
-                    <Droplets className={`w-5 h-5 ${utilitiesStatus?.waterOn ? 'text-primary' : 'text-muted-foreground'}`} />
-                    <span className="text-sm font-medium">Water:</span>
-                    <span className={`text-sm font-bold ${utilitiesStatus === null ? 'text-muted-foreground' : utilitiesStatus.waterOn ? 'text-primary' : 'text-destructive'}`}>
-                      {utilitiesStatus === null ? 'Checking...' : utilitiesStatus.waterOn ? 'On' : 'Off'}
+                  <div className="w-px h-4 bg-border" />
+                  <div className="flex items-center gap-1.5">
+                    <Droplets className={`w-4 h-4 ${utilitiesStatus?.waterOn ? 'text-primary' : 'text-muted-foreground'}`} />
+                    <span className="text-muted-foreground">Water</span>
+                    <span className={`font-mono text-xs ${utilitiesStatus === null ? 'text-muted-foreground' : utilitiesStatus.waterOn ? 'text-primary' : 'text-destructive'}`}>
+                      {utilitiesStatus === null ? '…' : utilitiesStatus.waterOn ? 'ON' : 'OFF'}
                     </span>
                   </div>
                 </div>
-                
-                <p className="text-sm text-muted-foreground">
-                  These actions apply instantly to the full world and affect every player.
-                </p>
-                
-                <div className="grid grid-cols-2 gap-3">
+
+                {/* 2×2 action matrix: rows = utility, cols = action */}
+                <div className="grid grid-cols-[auto_1fr_1fr] gap-2 items-center">
+                  <span className="text-[10px] uppercase tracking-wide text-muted-foreground text-center px-1"></span>
+                  <span className="text-[10px] uppercase tracking-wide text-muted-foreground text-center">Restore</span>
+                  <span className="text-[10px] uppercase tracking-wide text-muted-foreground text-center">Cut</span>
+
+                  <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground pr-2">
+                    <Zap className="w-3.5 h-3.5" /> Power
+                  </span>
                   <Button
                     variant="outline"
-                    disabled={!bridgeConnected || loading !== null}
-                    onClick={() => handleAction('Restore Utilities', async () => {
-                      await panelBridgeApi.restoreUtilities(true, true)
-                      await checkBridgeStatus()
-                    })}
-                    className="h-11 gap-2"
-                  >
-                    <Zap className="w-4 h-4" />
-                    Restore Power + Water
-                  </Button>
-                  <Button
-                    variant="outline"
-                    disabled={!bridgeConnected || loading !== null}
-                    onClick={() => handleAction('Shut Off Utilities', async () => {
-                      await panelBridgeApi.shutOffUtilities(true, true)
-                      await checkBridgeStatus()
-                    })}
-                    className="h-11 gap-2"
-                  >
-                    <CloudOff className="w-4 h-4" />
-                    Cut Power + Water
-                  </Button>
-                </div>
-                
-                <div className="grid grid-cols-2 gap-3">
-                  <Button
-                    variant="outline"
+                    size="sm"
                     disabled={!bridgeConnected || loading !== null}
                     onClick={() => handleAction('Restore Power', async () => {
                       await panelBridgeApi.restoreUtilities(true, false)
                       await checkBridgeStatus()
                     })}
-                    className="h-11 gap-2"
+                    className="h-9"
                   >
-                    <Zap className="w-4 h-4" />
-                    Restore Power
+                    Restore
                   </Button>
                   <Button
                     variant="outline"
+                    size="sm"
+                    disabled={!bridgeConnected || loading !== null}
+                    onClick={() => handleAction('Shut Off Power', async () => {
+                      await panelBridgeApi.shutOffUtilities(true, false)
+                      await checkBridgeStatus()
+                    })}
+                    className="h-9 text-destructive hover:text-destructive"
+                  >
+                    Cut
+                  </Button>
+
+                  <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground pr-2">
+                    <Droplets className="w-3.5 h-3.5" /> Water
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
                     disabled={!bridgeConnected || loading !== null}
                     onClick={() => handleAction('Restore Water', async () => {
                       await panelBridgeApi.restoreUtilities(false, true)
                       await checkBridgeStatus()
                     })}
-                    className="h-11 gap-2"
+                    className="h-9"
                   >
-                    <Droplets className="w-4 h-4" />
-                    Restore Water
+                    Restore
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={!bridgeConnected || loading !== null}
+                    onClick={() => handleAction('Shut Off Water', async () => {
+                      await panelBridgeApi.shutOffUtilities(false, true)
+                      await checkBridgeStatus()
+                    })}
+                    className="h-9 text-destructive hover:text-destructive"
+                  >
+                    Cut
+                  </Button>
+                </div>
+
+                {/* Both-at-once shortcuts */}
+                <div className="grid grid-cols-2 gap-2 pt-1 border-t border-border/40">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={!bridgeConnected || loading !== null}
+                    onClick={() => handleAction('Restore Utilities', async () => {
+                      await panelBridgeApi.restoreUtilities(true, true)
+                      await checkBridgeStatus()
+                    })}
+                    className="h-9 gap-2 text-xs"
+                  >
+                    <Zap className="w-3.5 h-3.5" />
+                    Restore both
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={!bridgeConnected || loading !== null}
+                    onClick={() => handleAction('Shut Off Utilities', async () => {
+                      await panelBridgeApi.shutOffUtilities(true, true)
+                      await checkBridgeStatus()
+                    })}
+                    className="h-9 gap-2 text-xs text-destructive hover:text-destructive"
+                  >
+                    <CloudOff className="w-3.5 h-3.5" />
+                    Cut both
                   </Button>
                 </div>
               </div>
