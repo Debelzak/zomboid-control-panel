@@ -415,32 +415,29 @@ const SandboxSettingRow = memo(({
 })
 SandboxSettingRow.displayName = 'SandboxSettingRow'
 
-function ConfigSummaryCard({
+function StatChip({
   icon,
   value,
   label,
-  detail,
+  ok,
 }: {
   icon: React.ReactNode
   value: string | number
   label: string
-  detail?: React.ReactNode
+  ok?: boolean
 }) {
   return (
-    <Card className="border-border/60 bg-card/80 shadow-sm">
-      <CardContent className="p-4">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <div className="text-2xl font-semibold tracking-tight">{value}</div>
-            <div className="text-sm text-muted-foreground">{label}</div>
-            {detail ? <div className="mt-1 text-xs text-muted-foreground/80">{detail}</div> : null}
-          </div>
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-primary/20 bg-primary/10 text-primary">
-            {icon}
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+    <span
+      className="inline-flex items-center gap-1.5 normal-case tracking-normal"
+      title={ok === false ? `${label}: file not found` : undefined}
+    >
+      <span className="text-muted-foreground/70">{icon}</span>
+      <span className="font-mono text-sm font-semibold tabular-nums text-foreground">{value}</span>
+      <span className="text-[11px] uppercase tracking-wider text-muted-foreground">{label}</span>
+      {ok === false && (
+        <AlertCircle className="h-3 w-3 text-warning" aria-label="Not found" />
+      )}
+    </span>
   )
 }
 
@@ -467,8 +464,15 @@ export default function ServerConfig() {
   // Raw content for raw editing mode
   const [rawContent, setRawContent] = useState('')
   
-  // Expanded categories
-  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(['general']))
+  // Active category in the vertical rail (one-at-a-time, tab-style)
+  const [activeIniCategory, setActiveIniCategory] = useState<string>(() => {
+    try { return localStorage.getItem('serverconfig-ini-cat') || 'general' } catch { return 'general' }
+  })
+  const [activeSandboxCategory, setActiveSandboxCategory] = useState<string>(() => {
+    try { return localStorage.getItem('serverconfig-sandbox-cat') || 'time' } catch { return 'time' }
+  })
+  useEffect(() => { try { localStorage.setItem('serverconfig-ini-cat', activeIniCategory) } catch { /* ignore */ } }, [activeIniCategory])
+  useEffect(() => { try { localStorage.setItem('serverconfig-sandbox-cat', activeSandboxCategory) } catch { /* ignore */ } }, [activeSandboxCategory])
   
   // Backups dialog
   const [showBackups, setShowBackups] = useState(false)
@@ -983,18 +987,6 @@ export default function ServerConfig() {
     }
   }
 
-  // Toggle category expansion
-  const toggleCategory = (categoryId: string) => {
-    setExpandedCategories(prev => {
-      const next = new Set(prev)
-      if (next.has(categoryId)) {
-        next.delete(categoryId)
-      } else {
-        next.add(categoryId)
-      }
-      return next
-    })
-  }
 
   // Filter settings by search
   const filteredIniSettings = useMemo(() => {
@@ -1188,17 +1180,6 @@ export default function ServerConfig() {
     })
   }, [])
 
-  const expandAll = () => {
-    const all = activeTab === 'ini' 
-      ? INI_CATEGORIES.map(c => c.id) 
-      : [...SANDBOX_CATEGORIES.map(c => c.id), 'uncategorized']
-    setExpandedCategories(new Set(all))
-  }
-
-  const collapseAll = () => {
-    setExpandedCategories(new Set())
-  }
-
   // Reset individual INI setting to original loaded value
   const resetIniValue = useCallback((key: string) => {
     if (originalIniSettings[key] !== undefined) {
@@ -1303,7 +1284,7 @@ export default function ServerConfig() {
   const professionsCount = Object.keys(spawnPoints).length
 
   return (
-    <div className="space-y-6 page-transition">
+    <div className="space-y-5 page-transition">
       {loadError && (
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
@@ -1342,58 +1323,64 @@ export default function ServerConfig() {
         }
       />
 
-      <Card className="border-border/60 bg-card/80">
-        <CardContent className="space-y-4 p-4">
-          {pathsInfo && (
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline" className="max-w-full font-mono text-xs">
-                <FolderOpen className="mr-1 h-3 w-3" />
-                {pathsInfo.serverName}
-              </Badge>
-              <span className="min-w-0 break-all text-xs text-muted-foreground sm:max-w-md">
-                {pathsInfo.configPath}
-              </span>
+      <Card className="border-border/60 border-l-2 border-l-primary/70 bg-card/80">
+        <CardContent className="p-3">
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+            {pathsInfo && (
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="flex h-6 items-center gap-1.5 rounded border border-primary/30 bg-primary/10 px-2 font-mono text-[11px] font-semibold uppercase tracking-wider text-primary">
+                  <FolderOpen className="h-3 w-3" />
+                  {pathsInfo.serverName}
+                </span>
+                <span
+                  className="min-w-0 truncate font-mono text-[11px] text-muted-foreground"
+                  title={pathsInfo.configPath}
+                  dir="ltr"
+                >
+                  {pathsInfo.configPath}
+                </span>
+              </div>
+            )}
+            <div className="ml-auto flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] uppercase tracking-wider text-muted-foreground">
+              <StatChip
+                icon={<Settings className="h-3 w-3" />}
+                value={iniSettingsCount}
+                label="Server"
+                ok={pathsInfo?.exists.ini}
+              />
+              <span className="h-3 w-px bg-border/60" aria-hidden />
+              <StatChip
+                icon={<FileText className="h-3 w-3" />}
+                value={sandboxSettingsCount}
+                label="Sandbox"
+                ok={pathsInfo?.exists.sandbox}
+              />
+              <span className="h-3 w-px bg-border/60" aria-hidden />
+              <StatChip
+                icon={<MapPin className="h-3 w-3" />}
+                value={spawnPointsCount}
+                label={`Spawns · ${professionsCount} prof${professionsCount === 1 ? '' : 's'}`}
+              />
+              <span className="h-3 w-px bg-border/60" aria-hidden />
+              <StatChip
+                icon={<Map className="h-3 w-3" />}
+                value={spawnRegions.length}
+                label="Regions"
+              />
             </div>
-          )}
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 lg:grid-cols-4 stagger-in">
-            <ConfigSummaryCard
-              icon={<Settings className="h-5 w-5" />}
-              value={iniSettingsCount}
-              label="Server Settings"
-              detail={pathsInfo?.exists.ini ? 'Loaded' : 'Not found'}
-            />
-            <ConfigSummaryCard
-              icon={<FileText className="h-5 w-5" />}
-              value={sandboxSettingsCount}
-              label="Sandbox Variables"
-              detail={pathsInfo?.exists.sandbox ? 'Loaded' : 'Not found'}
-            />
-            <ConfigSummaryCard
-              icon={<MapPin className="h-5 w-5" />}
-              value={spawnPointsCount}
-              label="Spawn Points"
-              detail={`Across ${professionsCount} profession${professionsCount !== 1 ? 's' : ''}`}
-            />
-            <ConfigSummaryCard
-              icon={<Map className="h-5 w-5" />}
-              value={spawnRegions.length}
-              label="Spawn Regions"
-              detail="Available towns"
-            />
           </div>
         </CardContent>
       </Card>
 
       {/* Search and Editor Mode */}
-      <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="relative min-w-0 flex-1 sm:max-w-md">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Search settings by name, key, or description..."
+            placeholder="Search settings by name, key, or description…"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9 bg-background/50"
+            className="h-9 bg-background/50 pl-9"
             aria-label="Search server settings"
             maxLength={128}
           />
@@ -1401,48 +1388,35 @@ export default function ServerConfig() {
             <Button
               variant="ghost"
               size="sm"
-              className="absolute right-1 top-1/2 -translate-y-1/2 h-9 w-9 p-0"
+              className="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2 p-0"
               onClick={() => setSearchQuery('')}
               aria-label="Clear search"
             >
-              <X className="w-4 h-4" />
+              <X className="h-4 w-4" />
             </Button>
           )}
         </div>
         {searchQuery && (activeTab === 'ini' || activeTab === 'sandbox') && (
-          <Badge variant="secondary" className="text-xs">
+          <Badge variant="secondary" className="h-6 self-start text-xs sm:self-auto">
             {searchResultsCount} result{searchResultsCount !== 1 ? 's' : ''}
           </Badge>
         )}
-        
-        {/* View Controls */}
-        <div className="flex items-center gap-2">
-          {editorMode === 'structured' && (activeTab === 'ini' || activeTab === 'sandbox') && (
-            <div className="flex items-center gap-1 border rounded-lg p-1 bg-muted/30">
-              <Button variant="ghost" size="sm" onClick={expandAll} className="h-7 text-xs">
-                <ChevronDown className="w-3 h-3 mr-1" /> Expand
-              </Button>
-              <Button variant="ghost" size="sm" onClick={collapseAll} className="h-7 text-xs">
-                <ChevronRight className="w-3 h-3 mr-1" /> Collapse
-              </Button>
-            </div>
-          )}
-          
-          <div className="flex items-center gap-1 border rounded-lg p-1 bg-muted/30">
+
+        <div className="flex items-center gap-2 sm:ml-auto">
+          <div className="flex items-center gap-1 rounded-lg border bg-muted/30 p-1">
             <Button
               variant={editorMode === 'structured' ? 'secondary' : 'ghost'}
               size="sm"
               onClick={() => setEditorMode('structured')}
-              className="gap-1.5"
+              className="h-7 gap-1.5"
             >
-              <FormInput className="w-4 h-4" /> Structured
+              <FormInput className="h-4 w-4" /> Structured
             </Button>
             <Button
               variant={editorMode === 'raw' ? 'secondary' : 'ghost'}
               size="sm"
               onClick={() => {
                 setEditorMode('raw')
-                // Load raw content for current tab
                 const typeMap: Record<string, 'ini' | 'sandbox' | 'spawnpoints' | 'spawnregions'> = {
                   ini: 'ini',
                   sandbox: 'sandbox',
@@ -1451,8 +1425,9 @@ export default function ServerConfig() {
                 }
                 loadRawContent(typeMap[activeTab] || 'ini')
               }}
+              className="h-7 gap-1.5"
             >
-              <Code className="w-4 h-4 mr-1" /> Raw
+              <Code className="h-4 w-4" /> Raw
             </Button>
           </div>
         </div>
@@ -1525,31 +1500,27 @@ export default function ServerConfig() {
         {/* INI Settings Tab */}
         <TabsContent value="ini" className="mt-4">
           <Card className="border-border/60">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="flex items-center gap-2">
-                    <div className="rounded-lg border border-primary/20 bg-primary/10 p-1.5 text-primary">
-                      <Settings className="w-4 h-4" />
-                    </div>
-                    Server Settings (INI)
-                    {hasIniChanges && (
-                      <Badge variant="warning">
-                        <AlertTriangle className="w-3 h-3 mr-1" />
-                        Unsaved
-                      </Badge>
-                    )}
-                  </CardTitle>
-                  <CardDescription className="mt-1">
-                    Configure server behavior, network, and player settings
-                  </CardDescription>
-                </div>
-                <div className="flex items-center gap-2">
+            <CardHeader className="border-b border-border/50 py-3">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                <CardTitle className="flex items-baseline gap-2 text-base font-semibold">
+                  <span>Server Settings</span>
+                  <span className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">INI</span>
+                </CardTitle>
+                <CardDescription className="hidden min-w-0 flex-1 truncate text-xs md:block">
+                  Configure server behavior, network, and player settings
+                </CardDescription>
+                {hasIniChanges && (
+                  <Badge variant="warning" className="h-6">
+                    <AlertTriangle className="mr-1 h-3 w-3" />
+                    Unsaved
+                  </Badge>
+                )}
+                <div className="flex items-center gap-2 sm:ml-auto">
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Button variant="outline" size="icon" className="h-11 w-11 sm:h-9 sm:w-9" onClick={() => handleCreateBackup('ini')} aria-label="Download INI backup">
-                          <Download className="w-4 h-4" />
+                        <Button variant="outline" size="icon" className="h-9 w-9" onClick={() => handleCreateBackup('ini')} aria-label="Download INI backup">
+                          <Download className="h-4 w-4" />
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent>Download INI backup</TooltipContent>
@@ -1559,22 +1530,22 @@ export default function ServerConfig() {
                     href="https://pzwiki.net/wiki/Server_settings"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-xs text-muted-foreground hover:text-primary flex items-center gap-1 px-2 py-1 rounded border bg-muted/30"
+                    className="flex h-9 items-center gap-1 rounded border bg-muted/30 px-2 text-xs text-muted-foreground hover:text-primary"
                   >
-                    <ExternalLink className="w-3 h-3" /> PZ Wiki <span className="sr-only">(opens in new tab)</span>
+                    <ExternalLink className="h-3 w-3" /> PZ Wiki <span className="sr-only">(opens in new tab)</span>
                   </a>
-                  <Button onClick={handleSaveIni} disabled={saving}>
+                  <Button onClick={handleSaveIni} disabled={saving} size="sm" className="h-9">
                     {saving ? (
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     ) : (
-                      <Save className="w-4 h-4 mr-2" />
+                      <Save className="mr-2 h-4 w-4" />
                     )}
-                    Save & Reload
+                    Save &amp; Reload
                   </Button>
                 </div>
               </div>
             </CardHeader>
-            <CardContent>
+            <CardContent className="pt-4">
               {editorMode === 'raw' ? (
                 <div className="relative">
                   <TooltipProvider>
@@ -1604,7 +1575,7 @@ export default function ServerConfig() {
                   />
                 </div>
               ) : (
-                <ScrollArea className="h-[calc(100vh-380px)] min-h-[400px] pr-4">
+                <div className="min-h-[400px]">
                   {iniSettings['DoLuaChecksum']?.toLowerCase() === 'true' && (
                     <Alert variant="destructive" className="mb-4">
                       <AlertTriangle className="h-4 w-4" />
@@ -1614,53 +1585,118 @@ export default function ServerConfig() {
                       </AlertDescription>
                     </Alert>
                   )}
-                  {INI_CATEGORIES.map(category => {
-                    const settings = filteredIniSettings[category.id] || []
-                    if (settings.length === 0) return null
-                    
-                    const isExpanded = expandedCategories.has(category.id)
-                    
-                    return (
-                      <div key={category.id} className="mb-3 perf-section-auto">
-                        <button
-                          onClick={() => toggleCategory(category.id)}
-                          className={`flex items-center gap-3 w-full py-2.5 px-4 rounded-lg transition-[background-color,border-color,box-shadow,color] duration-200 ${
-                            isExpanded 
-                              ? 'border border-primary/30 bg-primary/10 shadow-sm' 
-                              : 'bg-muted/50 hover:bg-muted border border-transparent'
-                          }`}
-                        >
-                          <div className={`p-1 rounded transition-colors ${isExpanded ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>
-                            {isExpanded ? (
-                              <ChevronDown className="w-4 h-4" />
-                            ) : (
-                              <ChevronRight className="w-4 h-4" />
-                            )}
+                  {searchQuery ? (
+                    // Search mode: flat results across all categories, grouped by category label
+                    <ScrollArea className="h-[calc(100vh-420px)] min-h-[360px] pr-4">
+                      {INI_CATEGORIES.map(category => {
+                        const settings = filteredIniSettings[category.id] || []
+                        if (settings.length === 0) return null
+                        return (
+                          <div key={category.id} className="mb-5">
+                            <div className="sticky top-0 z-10 -mx-1 mb-2 flex items-baseline gap-2 bg-card/95 px-1 py-1.5 backdrop-blur">
+                              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                                {category.label}
+                              </span>
+                              <span className="text-[10px] text-muted-foreground/70">
+                                {settings.length} match{settings.length === 1 ? '' : 'es'}
+                              </span>
+                            </div>
+                            <div className="space-y-1">
+                              {settings.map(setting => (
+                                <IniSettingRow
+                                  key={setting.key}
+                                  setting={setting}
+                                  value={iniSettings[setting.key] || ''}
+                                  originalValue={originalIniSettings[setting.key]}
+                                  onChange={updateIniValue}
+                                  onReset={resetIniValue}
+                                  onBrowse={openFileBrowser}
+                                />
+                              ))}
+                            </div>
                           </div>
-                          <span className={`font-medium ${isExpanded ? 'text-primary' : ''}`}>{category.label}</span>
-                          <Badge variant={isExpanded ? "default" : "secondary"} className="ml-auto">
-                            {settings.length}
-                          </Badge>
-                        </button>
-                        {isExpanded && (
-                          <div className="mt-3 ml-4 space-y-1 border-l-2 border-primary/30 pl-4">
-                            {settings.map(setting => (
-                              <IniSettingRow 
-                                key={setting.key} 
-                                setting={setting} 
-                                value={iniSettings[setting.key] || ''} 
-                                originalValue={originalIniSettings[setting.key]}
-                                onChange={updateIniValue}
-                                onReset={resetIniValue}
-                                onBrowse={openFileBrowser}
-                              />
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
-                </ScrollArea>
+                        )
+                      })}
+                      {searchResultsCount === 0 && (
+                        <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
+                          No settings match &ldquo;{searchQuery}&rdquo;.
+                        </div>
+                      )}
+                    </ScrollArea>
+                  ) : (
+                    // Rail mode: vertical category nav + single active category content
+                    <div className="grid gap-0 md:grid-cols-[236px_minmax(0,1fr)]">
+                      <nav
+                        aria-label="Server settings categories"
+                        className="-mx-2 flex gap-1 overflow-x-auto px-2 pb-2 md:mx-0 md:flex-col md:overflow-x-visible md:overflow-y-auto md:border-r md:border-border/50 md:pb-0 md:pr-3 md:pt-1 md:max-h-[calc(100vh-420px)] md:min-h-[360px]"
+                      >
+                        {INI_CATEGORIES.map(category => {
+                          const count = (filteredIniSettings[category.id] || []).length
+                          if (count === 0) return null
+                          const isActive = activeIniCategory === category.id
+                          return (
+                            <button
+                              key={category.id}
+                              type="button"
+                              onClick={() => setActiveIniCategory(category.id)}
+                              aria-current={isActive ? 'page' : undefined}
+                              className={`group relative flex shrink-0 items-center gap-2 whitespace-nowrap border-l-2 px-3 py-2 text-left text-sm transition-colors md:whitespace-normal ${
+                                isActive
+                                  ? 'border-primary bg-primary/10 text-primary'
+                                  : 'border-transparent text-muted-foreground hover:border-primary/30 hover:bg-muted/40 hover:text-foreground'
+                              }`}
+                            >
+                              <span className="min-w-0 flex-1 truncate font-medium">{category.label}</span>
+                              <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-mono tabular-nums ${
+                                isActive ? 'bg-primary/20 text-primary' : 'bg-muted text-muted-foreground'
+                              }`}>
+                                {count}
+                              </span>
+                            </button>
+                          )
+                        })}
+                      </nav>
+                      <ScrollArea className="h-[calc(100vh-420px)] min-h-[360px] md:pl-5 pr-4">
+                        {(() => {
+                          const settings = filteredIniSettings[activeIniCategory] || []
+                          const active = INI_CATEGORIES.find(c => c.id === activeIniCategory)
+                          if (settings.length === 0) {
+                            return (
+                              <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
+                                No settings in this category.
+                              </div>
+                            )
+                          }
+                          return (
+                            <div>
+                              <div className="sticky top-0 z-10 -mx-1 mb-3 flex items-baseline justify-between border-b border-border/50 bg-card/95 px-1 pb-2 pt-1 backdrop-blur">
+                                <h3 className="text-sm font-semibold uppercase tracking-wider text-primary">
+                                  {active?.label}
+                                </h3>
+                                <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+                                  {settings.length} setting{settings.length === 1 ? '' : 's'}
+                                </span>
+                              </div>
+                              <div className="space-y-1">
+                                {settings.map(setting => (
+                                  <IniSettingRow
+                                    key={setting.key}
+                                    setting={setting}
+                                    value={iniSettings[setting.key] || ''}
+                                    originalValue={originalIniSettings[setting.key]}
+                                    onChange={updateIniValue}
+                                    onReset={resetIniValue}
+                                    onBrowse={openFileBrowser}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+                          )
+                        })()}
+                      </ScrollArea>
+                    </div>
+                  )}
+                </div>
               )}
             </CardContent>
           </Card>
@@ -1669,48 +1705,44 @@ export default function ServerConfig() {
         {/* Sandbox Tab */}
         <TabsContent value="sandbox" className="mt-4">
           <Card className="border-border/60">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="flex items-center gap-2">
-                    <div className="rounded-lg border border-primary/20 bg-primary/10 p-1.5 text-primary">
-                      <FileText className="w-4 h-4" />
-                    </div>
-                    Sandbox Settings
-                    {hasSandboxChanges && (
-                      <Badge variant="warning">
-                        <AlertTriangle className="w-3 h-3 mr-1" />
-                        Unsaved
-                      </Badge>
-                    )}
-                  </CardTitle>
-                  <CardDescription className="mt-1">
-                    Configure world generation, zombies, and survival settings
-                  </CardDescription>
-                </div>
-                <div className="flex items-center gap-2">
+            <CardHeader className="border-b border-border/50 py-3">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                <CardTitle className="flex items-baseline gap-2 text-base font-semibold">
+                  <span>Sandbox Settings</span>
+                  <span className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">Lua</span>
+                </CardTitle>
+                <CardDescription className="hidden min-w-0 flex-1 truncate text-xs md:block">
+                  Configure world generation, zombies, and survival settings
+                </CardDescription>
+                {hasSandboxChanges && (
+                  <Badge variant="warning" className="h-6">
+                    <AlertTriangle className="mr-1 h-3 w-3" />
+                    Unsaved
+                  </Badge>
+                )}
+                <div className="flex items-center gap-2 sm:ml-auto">
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Button variant="outline" size="icon" className="h-11 w-11 sm:h-9 sm:w-9" onClick={() => handleCreateBackup('sandbox')} aria-label="Download Sandbox backup">
-                          <Download className="w-4 h-4" />
+                        <Button variant="outline" size="icon" className="h-9 w-9" onClick={() => handleCreateBackup('sandbox')} aria-label="Download Sandbox backup">
+                          <Download className="h-4 w-4" />
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent>Download Sandbox backup</TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
-                  <Button onClick={handleSaveSandbox} disabled={saving}>
+                  <Button onClick={handleSaveSandbox} disabled={saving} size="sm" className="h-9">
                     {saving ? (
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     ) : (
-                      <Save className="w-4 h-4 mr-2" />
+                      <Save className="mr-2 h-4 w-4" />
                     )}
-                    Save & Reload
+                    Save &amp; Reload
                   </Button>
                 </div>
               </div>
             </CardHeader>
-            <CardContent>
+            <CardContent className="pt-4">
               {editorMode === 'raw' ? (
                 <div className="relative">
                   <TooltipProvider>
@@ -1740,134 +1772,218 @@ export default function ServerConfig() {
                   />
                 </div>
               ) : (
-                <ScrollArea className="h-[calc(100vh-380px)] min-h-[400px] pr-4">
-                  {SANDBOX_CATEGORIES.map(category => {
-                    const settings = filteredSandboxSettings[category.id] || []
-                    if (settings.length === 0) return null
-                    
-                    const isExpanded = expandedCategories.has(category.id)
-                    
-                    return (
-                      <div key={category.id} className="mb-3 perf-section-auto">
-                        <button
-                          onClick={() => toggleCategory(category.id)}
-                          className={`flex items-center gap-3 w-full py-2.5 px-4 rounded-lg transition-[background-color,border-color,box-shadow,color] duration-200 ${
-                            isExpanded 
-                              ? 'border border-primary/30 bg-primary/10 shadow-sm' 
-                              : 'bg-muted/50 hover:bg-muted border border-transparent'
-                          }`}
-                        >
-                          <div className={`p-1 rounded transition-colors ${isExpanded ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>
-                            {isExpanded ? (
-                              <ChevronDown className="w-4 h-4" />
-                            ) : (
-                              <ChevronRight className="w-4 h-4" />
-                            )}
+                <div className="min-h-[400px]">
+                  {searchQuery ? (
+                    // Search mode: flat, grouped by category label
+                    <ScrollArea className="h-[calc(100vh-420px)] min-h-[360px] pr-4">
+                      {SANDBOX_CATEGORIES.map(category => {
+                        const settings = filteredSandboxSettings[category.id] || []
+                        if (settings.length === 0) return null
+                        return (
+                          <div key={category.id} className="mb-5">
+                            <div className="sticky top-0 z-10 -mx-1 mb-2 flex items-baseline gap-2 bg-card/95 px-1 py-1.5 backdrop-blur">
+                              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                                {category.label}
+                              </span>
+                              <span className="text-[10px] text-muted-foreground/70">
+                                {settings.length} match{settings.length === 1 ? '' : 'es'}
+                              </span>
+                            </div>
+                            <div className="space-y-1">
+                              {settings.map(setting => (
+                                <SandboxSettingRow
+                                  key={setting.key}
+                                  setting={setting}
+                                  value={(sandboxData?.[(setting.section || 'settings') as keyof SandboxData] as SandboxRecord)?.[setting.key]}
+                                  originalValue={(originalSandboxData?.[(setting.section || 'settings') as keyof SandboxData] as SandboxRecord)?.[setting.key]}
+                                  onChange={updateSandboxValue}
+                                  onReset={resetSandboxValue}
+                                />
+                              ))}
+                            </div>
                           </div>
-                          <span className={`font-medium ${isExpanded ? 'text-primary' : ''}`}>{category.label}</span>
-                          <Badge variant={isExpanded ? "default" : "secondary"} className="ml-auto">
-                            {settings.length}
-                          </Badge>
-                        </button>
-                        {isExpanded && (
-                          <div className="mt-3 ml-4 space-y-1 border-l-2 border-primary/30 pl-4">
-                            {settings.map(setting => (
-                              <SandboxSettingRow 
-                                key={setting.key} 
-                                setting={setting} 
-                                value={(sandboxData?.[(setting.section || 'settings') as keyof SandboxData] as SandboxRecord)?.[setting.key]}
-                                originalValue={(originalSandboxData?.[(setting.section || 'settings') as keyof SandboxData] as SandboxRecord)?.[setting.key]}
-                                onChange={updateSandboxValue}
-                                onReset={resetSandboxValue}
-                              />
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
-
-                  {/* Uncategorized / Mod Settings */}
-                  {uncategorizedSandboxKeys.length > 0 && (
-                    <div className="mb-3 perf-section-auto">
-                      <button
-                        onClick={() => toggleCategory('uncategorized')}
-                        className={`flex items-center gap-3 w-full py-2.5 px-4 rounded-lg transition-[background-color,border-color,box-shadow,color] duration-200 ${
-                          expandedCategories.has('uncategorized')
-                            ? 'border border-amber-500/30 bg-amber-500/10 shadow-sm' 
-                            : 'bg-muted/50 hover:bg-muted border border-transparent'
-                        }`}
-                      >
-                        <div className={`p-1 rounded transition-colors ${expandedCategories.has('uncategorized') ? 'bg-amber-500/20 text-amber-500' : 'bg-muted'}`}>
-                          {expandedCategories.has('uncategorized') ? (
-                            <ChevronDown className="w-4 h-4" />
-                          ) : (
-                            <ChevronRight className="w-4 h-4" />
-                          )}
+                        )
+                      })}
+                      {searchResultsCount === 0 && (
+                        <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
+                          No settings match &ldquo;{searchQuery}&rdquo;.
                         </div>
-                        <span className={`font-medium ${expandedCategories.has('uncategorized') ? 'text-amber-500' : ''}`}>Uncategorized / Mod Settings</span>
-                        <Badge variant={expandedCategories.has('uncategorized') ? "default" : "secondary"} className="ml-auto">
-                          {uncategorizedSandboxKeys.length}
-                        </Badge>
-                      </button>
-                      {expandedCategories.has('uncategorized') && (
-                        <div className="mt-3 ml-4 space-y-1 border-l-2 border-amber-500/30 pl-4">
-                          {uncategorizedSandboxKeys.map(({ section, key, value }) => {
-                            const origSection = originalSandboxData?.[section as keyof SandboxData]
-                            const origValue = typeof origSection === 'object' ? (origSection as Record<string, unknown>)?.[key] : undefined
-                            const isModified = value !== origValue
+                      )}
+                    </ScrollArea>
+                  ) : (
+                    // Rail mode: vertical category nav + single active category content
+                    <div className="grid gap-0 md:grid-cols-[236px_minmax(0,1fr)]">
+                      <nav
+                        aria-label="Sandbox categories"
+                        className="-mx-2 flex gap-1 overflow-x-auto px-2 pb-2 md:mx-0 md:flex-col md:overflow-x-visible md:overflow-y-auto md:border-r md:border-border/50 md:pb-0 md:pr-3 md:pt-1 md:max-h-[calc(100vh-420px)] md:min-h-[360px]"
+                      >
+                        {SANDBOX_CATEGORIES.map(category => {
+                          const count = (filteredSandboxSettings[category.id] || []).length
+                          if (count === 0) return null
+                          const isActive = activeSandboxCategory === category.id
+                          return (
+                            <button
+                              key={category.id}
+                              type="button"
+                              onClick={() => setActiveSandboxCategory(category.id)}
+                              aria-current={isActive ? 'page' : undefined}
+                              className={`group relative flex shrink-0 items-center gap-2 whitespace-nowrap border-l-2 px-3 py-2 text-left text-sm transition-colors md:whitespace-normal ${
+                                isActive
+                                  ? 'border-primary bg-primary/10 text-primary'
+                                  : 'border-transparent text-muted-foreground hover:border-primary/30 hover:bg-muted/40 hover:text-foreground'
+                              }`}
+                            >
+                              <span className="min-w-0 flex-1 truncate font-medium">{category.label}</span>
+                              <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-mono tabular-nums ${
+                                isActive ? 'bg-primary/20 text-primary' : 'bg-muted text-muted-foreground'
+                              }`}>
+                                {count}
+                              </span>
+                            </button>
+                          )
+                        })}
+                        {uncategorizedSandboxKeys.length > 0 && (() => {
+                          const isActive = activeSandboxCategory === 'uncategorized'
+                          return (
+                            <button
+                              key="uncategorized"
+                              type="button"
+                              onClick={() => setActiveSandboxCategory('uncategorized')}
+                              aria-current={isActive ? 'page' : undefined}
+                              className={`group relative mt-1 flex shrink-0 items-center gap-2 whitespace-nowrap border-l-2 px-3 py-2 text-left text-sm transition-colors md:mt-2 md:whitespace-normal md:border-t md:border-t-border/50 md:pt-3 ${
+                                isActive
+                                  ? 'border-l-amber-500 bg-amber-500/10 text-amber-500'
+                                  : 'border-l-transparent text-muted-foreground hover:border-l-amber-500/30 hover:bg-amber-500/5 hover:text-amber-500/80'
+                              }`}
+                              title="Settings from mods or keys not recognized by the schema"
+                            >
+                              <span className="min-w-0 flex-1 truncate font-medium">Uncategorized / Mods</span>
+                              <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-mono tabular-nums ${
+                                isActive ? 'bg-amber-500/20 text-amber-500' : 'bg-muted text-muted-foreground'
+                              }`}>
+                                {uncategorizedSandboxKeys.length}
+                              </span>
+                            </button>
+                          )
+                        })()}
+                      </nav>
+                      <ScrollArea className="h-[calc(100vh-420px)] min-h-[360px] md:pl-5 pr-4">
+                        {(() => {
+                          if (activeSandboxCategory === 'uncategorized') {
+                            if (uncategorizedSandboxKeys.length === 0) {
+                              return (
+                                <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
+                                  No uncategorized settings.
+                                </div>
+                              )
+                            }
                             return (
-                              <div key={`${section}.${key}`} className={`flex items-center justify-between py-2 px-3 rounded-md transition-colors ${isModified ? 'bg-amber-500/10 border border-amber-500/20' : 'hover:bg-muted/50'}`}>
-                                <div className="flex-1 min-w-0 mr-4">
-                                  <div className="flex items-center gap-2 min-w-0">
-                                    <span className="text-sm font-medium truncate" title={key}>{key}</span>
-                                    {section !== 'settings' && (
-                                      <code className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground flex-shrink-0">{section}</code>
-                                    )}
-                                    {isModified && (
-                                      <button
-                                        onClick={() => {
-                                          if (origValue !== undefined) {
+                              <div>
+                                <div className="sticky top-0 z-10 -mx-1 mb-3 flex items-baseline justify-between border-b border-amber-500/30 bg-card/95 px-1 pb-2 pt-1 backdrop-blur">
+                                  <h3 className="text-sm font-semibold uppercase tracking-wider text-amber-500">
+                                    Uncategorized / Mod Settings
+                                  </h3>
+                                  <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+                                    {uncategorizedSandboxKeys.length} key{uncategorizedSandboxKeys.length === 1 ? '' : 's'}
+                                  </span>
+                                </div>
+                                <p className="mb-3 text-xs text-muted-foreground">
+                                  Keys from installed mods or sandbox options not recognized by the schema. Edit with care.
+                                </p>
+                                <div className="space-y-1">
+                                  {uncategorizedSandboxKeys.map(({ section, key, value }) => {
+                                    const origSection = originalSandboxData?.[section as keyof SandboxData]
+                                    const origValue = typeof origSection === 'object' ? (origSection as Record<string, unknown>)?.[key] : undefined
+                                    const isModified = value !== origValue
+                                    return (
+                                      <div key={`${section}.${key}`} className={`flex items-center justify-between py-2 px-3 rounded-md transition-colors ${isModified ? 'bg-amber-500/10 border border-amber-500/20' : 'hover:bg-muted/50'}`}>
+                                        <div className="flex-1 min-w-0 mr-4">
+                                          <div className="flex items-center gap-2 min-w-0">
+                                            <span className="text-sm font-medium truncate" title={key}>{key}</span>
+                                            {section !== 'settings' && (
+                                              <code className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground flex-shrink-0">{section}</code>
+                                            )}
+                                            {isModified && (
+                                              <button
+                                                onClick={() => {
+                                                  if (origValue !== undefined) {
+                                                    setSandboxData(prev => {
+                                                      if (!prev) return prev
+                                                      const s = { ...(prev[section as keyof SandboxData] as Record<string, unknown> || {}) }
+                                                      s[key] = origValue
+                                                      return { ...prev, [section]: s } as SandboxData
+                                                    })
+                                                  }
+                                                }}
+                                                className="text-xs text-amber-500 hover:text-amber-400"
+                                                title="Undo change"
+                                              >↩</button>
+                                            )}
+                                          </div>
+                                        </div>
+                                        <Input
+                                          className="w-48 h-8 text-sm flex-shrink-0"
+                                          value={String(value)}
+                                          maxLength={500}
+                                          onChange={e => {
+                                            const raw = e.target.value
+                                            let parsed: string | number | boolean = raw
+                                            if (raw === 'true') parsed = true
+                                            else if (raw === 'false') parsed = false
+                                            else if (raw !== '' && !isNaN(Number(raw))) parsed = Number(raw)
                                             setSandboxData(prev => {
                                               if (!prev) return prev
                                               const s = { ...(prev[section as keyof SandboxData] as Record<string, unknown> || {}) }
-                                              s[key] = origValue
+                                              s[key] = parsed
                                               return { ...prev, [section]: s } as SandboxData
                                             })
-                                          }
-                                        }}
-                                        className="text-xs text-amber-500 hover:text-amber-400"
-                                        title="Undo change"
-                                      >↩</button>
-                                    )}
-                                  </div>
+                                          }}
+                                        />
+                                      </div>
+                                    )
+                                  })}
                                 </div>
-                                <Input
-                                  className="w-48 h-8 text-sm flex-shrink-0"
-                                  value={String(value)}
-                                  maxLength={500}
-                                  onChange={e => {
-                                    const raw = e.target.value
-                                    let parsed: string | number | boolean = raw
-                                    if (raw === 'true') parsed = true
-                                    else if (raw === 'false') parsed = false
-                                    else if (raw !== '' && !isNaN(Number(raw))) parsed = Number(raw)
-                                    setSandboxData(prev => {
-                                      if (!prev) return prev
-                                      const s = { ...(prev[section as keyof SandboxData] as Record<string, unknown> || {}) }
-                                      s[key] = parsed
-                                      return { ...prev, [section]: s } as SandboxData
-                                    })
-                                  }}
-                                />
                               </div>
                             )
-                          })}
-                        </div>
-                      )}
+                          }
+                          const settings = filteredSandboxSettings[activeSandboxCategory] || []
+                          const active = SANDBOX_CATEGORIES.find(c => c.id === activeSandboxCategory)
+                          if (settings.length === 0) {
+                            return (
+                              <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
+                                No settings in this category.
+                              </div>
+                            )
+                          }
+                          return (
+                            <div>
+                              <div className="sticky top-0 z-10 -mx-1 mb-3 flex items-baseline justify-between border-b border-border/50 bg-card/95 px-1 pb-2 pt-1 backdrop-blur">
+                                <h3 className="text-sm font-semibold uppercase tracking-wider text-primary">
+                                  {active?.label}
+                                </h3>
+                                <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+                                  {settings.length} setting{settings.length === 1 ? '' : 's'}
+                                </span>
+                              </div>
+                              <div className="space-y-1">
+                                {settings.map(setting => (
+                                  <SandboxSettingRow
+                                    key={setting.key}
+                                    setting={setting}
+                                    value={(sandboxData?.[(setting.section || 'settings') as keyof SandboxData] as SandboxRecord)?.[setting.key]}
+                                    originalValue={(originalSandboxData?.[(setting.section || 'settings') as keyof SandboxData] as SandboxRecord)?.[setting.key]}
+                                    onChange={updateSandboxValue}
+                                    onReset={resetSandboxValue}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+                          )
+                        })()}
+                      </ScrollArea>
                     </div>
                   )}
-                </ScrollArea>
+                </div>
               )}
             </CardContent>
           </Card>
