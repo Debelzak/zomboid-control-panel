@@ -861,6 +861,11 @@ app.post('/api/panel/update-download', async (req, res) => {
     const checker = req.app.get('panelUpdateChecker');
     if (!checker) return res.status(500).json({ error: 'Panel update checker not available' });
     const result = await checker.downloadUpdate();
+    if (!result.success) {
+      if (result.code === 'already_downloading') return res.status(409).json(result);
+      if (result.code === 'no_update') return res.status(400).json(result);
+      return res.status(400).json(result);
+    }
     res.json(result);
   } catch (error) {
     log.error(`Panel update download failed: ${error.message}`);

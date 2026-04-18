@@ -49,6 +49,10 @@ export class PanelUpdateChecker {
     this.currentVersion = currentVersion || '0.0.0';
     log.info(`Panel update checker started (current: v${this.currentVersion})`);
 
+    // Load persisted staged-version cache BEFORE reconcile so the banner
+    // reports the correct staged version even if `latestRelease` has drifted.
+    await this.loadStagedVersionCache();
+
     // Confirm or report on any update that was pending from a previous run.
     // This runs once at startup so the client can see a success/failure banner.
     try {
@@ -275,10 +279,10 @@ export class PanelUpdateChecker {
    */
   async downloadUpdate() {
     if (this.isDownloading) {
-      return { success: false, error: 'Download already in progress' };
+      return { success: false, error: 'Download already in progress', code: 'already_downloading' };
     }
     if (!this.updateAvailable || !this.latestRelease) {
-      return { success: false, error: 'No update available' };
+      return { success: false, error: 'No update available', code: 'no_update' };
     }
 
     // Preflight gates the download — we refuse to stage anything if we already
@@ -383,6 +387,15 @@ export class PanelUpdateChecker {
       // would cause a false-positive "Update Failed to Apply" banner if the
       // user downloads but never clicks Restart and Apply. The restart
       // endpoint writes it right before exit instead.
+      //
+      // But we DO persist the staged version separately so `getStagedUpdate()`
+      // can report it accurately even if `latestRelease` later refreshes to a
+      // newer version between download and apply.
+      try {
+        await setSetting('stagedPanelUpdateVersion', this.latestRelease.version);
+      } catch (persistErr) {
+        log.debug(`Could not persist staged version: ${persistErr.message}`);
+      }
 
       log.info(`Update to v${this.latestRelease.version} staged at ${stagedPath}. Restart to apply.`);
       this.io?.emit('panel:updateReady', { version: this.latestRelease.version });
@@ -412,8 +425,10 @@ export class PanelUpdateChecker {
     const exePath = process.execPath;
     const stagedPath = path.join(path.dirname(exePath), `${assetName}.new`);
     if (!fs.existsSync(stagedPath)) return null;
+    let size;
     try {
       const stats = fs.statSync(stagedPath);
+      size = stats.size;
       if (stats.size < 1024 * 1024) {
         // Sanity: any real build is many MB. Anything smaller is a failed download.
         log.warn(`Staged update at ${stagedPath} is suspiciously small (${stats.size} bytes); ignoring.`);
@@ -423,11 +438,26 @@ export class PanelUpdateChecker {
       log.debug(`Could not stat staged update: ${err.message}`);
       return null;
     }
-    return {
-      stagedPath,
-      exePath,
-      version: this.latestRelease?.version || null
-    };
+    // Prefer the version we recorded at stage time. Fall back to the current
+    // latestRelease if we somehow never persisted it (older builds, manual
+    // file drops). Reading the setting synchronously from the in-memory DB
+    // is fine — this method is called often and must stay non-async.
+    let version = this._stagedVersionCache ?? null;
+    if (!version) version = this.latestRelease?.version || null;
+    return { stagedPath, exePath, version, size };
+  }
+
+  /**
+   * Load the persisted staged-update version into memory. Called at start()
+   * so getStagedUpdate() (sync) can surface it without a DB round-trip.
+   */
+  async loadStagedVersionCache() {
+    try {
+      this._stagedVersionCache = await getSetting('stagedPanelUpdateVersion');
+    } catch (err) {
+      log.debug(`Could not load staged version cache: ${err.message}`);
+      this._stagedVersionCache = null;
+    }
   }
 
   /**
@@ -473,20 +503,32 @@ export class PanelUpdateChecker {
       `$workDir = ${this.psQuote(path.dirname(exePath))}`,
       'function Log($m) {',
       '  $line = "[{0}] {1}" -f (Get-Date -Format o), $m',
-      '  try { Add-Content -LiteralPath $logPath -Value $line } catch {}',
-      '  try { Add-Content -LiteralPath $stableLogPath -Value $line } catch {}',
+      '  try { Add-Content -LiteralPath $logPath -Value $line -Encoding UTF8 } catch {}',
+      '  try { Add-Content -LiteralPath $stableLogPath -Value $line -Encoding UTF8 } catch {}',
       '}',
       '# Truncate the stable log on each run so it always reflects the latest attempt',
-      'try { Set-Content -LiteralPath $stableLogPath -Value "" -Force } catch {}',
+      'try { Set-Content -LiteralPath $stableLogPath -Value "" -Force -Encoding UTF8 } catch {}',
       'Log "Apply helper started (pid to watch: $pidToWatch)"',
+      'Log ("Host: " + [System.Environment]::MachineName + " User: " + [System.Environment]::UserName)',
+      'Log ("PSVersion: " + $PSVersionTable.PSVersion.ToString())',
       'Log "exePath=$exePath"',
       'Log "stagedPath=$stagedPath"',
+      'try {',
+      '  $drive = Split-Path -Qualifier $exePath',
+      '  $free = (Get-PSDrive -Name ($drive.TrimEnd(":"))).Free',
+      '  Log ("Free space on $drive : " + [math]::Round($free/1MB,1) + " MB")',
+      '} catch { Log ("Could not probe free space: " + $_.Exception.Message) }',
+      'if (Test-Path -LiteralPath $stagedPath) {',
+      '  try { $sl = (Get-Item -LiteralPath $stagedPath).Length; Log ("Staged size: $sl bytes") } catch {}',
+      '} else { Log "WARNING: staged path is already missing before we started" }',
       '# Wait for the panel process to exit (up to 30s)',
+      '$panelExited = $false',
       'for ($i=0; $i -lt 60; $i++) {',
       '  try { Get-Process -Id $pidToWatch -ErrorAction Stop | Out-Null; Start-Sleep -Milliseconds 500 }',
-      '  catch { break }',
+      '  catch { $panelExited = $true; break }',
       '}',
-      'Log "Panel process exited"',
+      'if ($panelExited) { Log "Panel process exited" }',
+      'else { Log "WARNING: Panel process did NOT exit within 30s; continuing anyway (rename may fail)" }',
       '# Remove previous backup if present',
       'if (Test-Path -LiteralPath $oldPath) {',
       '  try { Remove-Item -LiteralPath $oldPath -Force } catch { Log ("Could not remove old backup: " + $_.Exception.Message) }',
@@ -506,15 +548,43 @@ export class PanelUpdateChecker {
       '}',
       'if (-not $placed) {',
       '  Log "Place failed — rolling back to previous exe"',
-      '  try { Move-Item -LiteralPath $oldPath -Destination $exePath -Force } catch { Log ("Rollback failed: " + $_.Exception.Message) }',
+      '  try { Move-Item -LiteralPath $oldPath -Destination $exePath -Force; Log "Rollback complete" } catch { Log ("Rollback failed: " + $_.Exception.Message) }',
+      '  try { Start-Process -FilePath $exePath -WorkingDirectory $workDir; Log "Relaunched previous version" } catch { Log ("Relaunch after rollback failed: " + $_.Exception.Message) }',
       '  exit 2',
+      '}',
+      '# Verify the exe actually exists and settles on disk (AV / Controlled Folder Access can delete it post-move)',
+      '$verified = $false',
+      'for ($i=0; $i -lt 10; $i++) {',
+      '  if (Test-Path -LiteralPath $exePath) {',
+      '    try { $len = (Get-Item -LiteralPath $exePath).Length; if ($len -gt 0) { $verified = $true; Log ("Placed exe verified (size: $len bytes)"); break } } catch {}',
+      '  }',
+      '  Start-Sleep -Milliseconds 500',
+      '}',
+      'if (-not $verified) {',
+      '  Log "Placed exe disappeared or is empty — likely quarantined by AV / Controlled Folder Access. Rolling back."',
+      '  if (Test-Path -LiteralPath $oldPath) {',
+      '    try { Copy-Item -LiteralPath $oldPath -Destination $exePath -Force; Log "Rollback copy complete" } catch { Log ("Rollback copy failed: " + $_.Exception.Message) }',
+      '  } else { Log "WARNING: backup .old is also missing — rollback not possible" }',
+      '  # Verify rollback actually stuck — AV could eat the .old copy too',
+      '  $rolledBack = $false',
+      '  for ($i=0; $i -lt 6; $i++) {',
+      '    if (Test-Path -LiteralPath $exePath) {',
+      '      try { $len = (Get-Item -LiteralPath $exePath).Length; if ($len -gt 0) { $rolledBack = $true; break } } catch {}',
+      '    }',
+      '    Start-Sleep -Milliseconds 500',
+      '  }',
+      '  if (-not $rolledBack) { Log "CRITICAL: rollback did not stick. Panel has no exe on disk. Add an AV exclusion for $workDir and copy ZomboidControlPanel.exe.new or ZomboidControlPanel.exe.old back manually." }',
+      '  Log "Add an AV exclusion for the panel folder and retry. Panel folder: $workDir"',
+      '  if ($rolledBack) { try { Start-Process -FilePath $exePath -WorkingDirectory $workDir } catch { Log ("Relaunch after rollback failed: " + $_.Exception.Message) } }',
+      '  exit 3',
       '}',
       'Log "Update applied; relaunching panel"',
       'try { Start-Process -FilePath $exePath -WorkingDirectory $workDir } catch { Log ("Relaunch failed: " + $_.Exception.Message) }',
       'Log "Apply helper done"'
     ].join('\r\n');
 
-    fs.writeFileSync(ps1Path, ps, { encoding: 'utf8' });
+    // Write with UTF-8 BOM so Windows PowerShell 5.1 parses non-ASCII paths correctly.
+    fs.writeFileSync(ps1Path, '\uFEFF' + ps, { encoding: 'utf8' });
 
     log.info(`Spawning update apply helper: ${ps1Path} (log: ${logPath})`);
 
@@ -664,6 +734,18 @@ export class PanelUpdateChecker {
    */
   getStatus() {
     const staged = this.getStagedUpdate();
+    // Drop stale apply results: if a previous "success" was recorded for a
+    // version we are no longer running, it's no longer relevant.
+    let lastApplyResult = this.lastApplyResult || null;
+    if (
+      lastApplyResult &&
+      lastApplyResult.status === 'success' &&
+      lastApplyResult.appliedVersion &&
+      this.currentVersion &&
+      lastApplyResult.appliedVersion !== this.currentVersion
+    ) {
+      lastApplyResult = null;
+    }
     return {
       currentVersion: this.currentVersion,
       updateAvailable: this.updateAvailable,
@@ -677,7 +759,7 @@ export class PanelUpdateChecker {
       lastCheck: this.lastCheck,
       lastError: this.lastError,
       stagedUpdate: staged ? { version: staged.version, path: staged.stagedPath } : null,
-      lastApplyResult: this.lastApplyResult || null
+      lastApplyResult
     };
   }
 
@@ -738,13 +820,20 @@ export class PanelUpdateChecker {
 
     // Write permission probe — try to create + remove a test file next to the exe.
     const probePath = path.join(exeDir, `.panel-write-probe.${process.pid}`);
+    let probeCreated = false;
     try {
       fs.writeFileSync(probePath, 'ok');
-      fs.unlinkSync(probePath);
+      probeCreated = true;
       info.writable = true;
     } catch (err) {
       info.writable = false;
       blockers.push(`Panel folder is not writable by this process: ${err.code || err.message}. Try running as Administrator, or move the panel out of a protected folder.`);
+    } finally {
+      if (probeCreated) {
+        try { fs.unlinkSync(probePath); } catch (unlinkErr) {
+          log.debug(`Could not remove write probe ${probePath}: ${unlinkErr.message}`);
+        }
+      }
     }
 
     // Free disk space check — need ~2x asset size (staged + rename buffer).
@@ -976,34 +1065,79 @@ export class PanelUpdateChecker {
 
     log.info(`Reconciling pending panel update: was v${pending}, now v${this.currentVersion}`);
 
-    // Happy path: new version is running.
-    if (this.isSameOrNewer(this.currentVersion, pending)) {
+    // Happy path: we are running EXACTLY the pending version. We deliberately
+    // do NOT accept "newer than pending" as success — that can happen when a
+    // user manually recovers from a failed apply by dropping a later build on
+    // disk, and we'd rather surface that as still-failed than silently green.
+    if (this.currentVersion === pending) {
       this.lastApplyResult = {
         status: 'success',
         appliedVersion: pending,
         at: new Date().toISOString()
       };
       await setSetting('pendingPanelUpdate', null);
+      await setSetting('stagedPanelUpdateVersion', null);
+      this._stagedVersionCache = null;
       log.info(`Panel update applied successfully → v${this.currentVersion}`);
       this.io?.emit('panel:updateApplied', this.lastApplyResult);
       return;
     }
 
-    // Apply failed. Surface the helper log (Windows) so the UI can show it.
+    // Apply failed. Gather as much context as we can for the UI.
     const helperLog = this.readMostRecentApplyLog();
+    const staged = this.getStagedUpdate();
+    const stagedStillPresent = Boolean(staged);
+
+    // Heuristic: the helper ran, reported "Update applied", and then the exe
+    // vanished or the relaunch failed "cannot find the file specified". That
+    // is the AV / Controlled Folder Access signature. Surface it as a hint so
+    // the UI can show recovery guidance without the user having to read logs.
+    const likelyCause = this.classifyApplyFailure(helperLog, stagedStillPresent);
+
     this.lastApplyResult = {
       status: 'failed',
       pendingVersion: pending,
       currentVersion: this.currentVersion,
       at: new Date().toISOString(),
-      stagedStillPresent: Boolean(this.getStagedUpdate()),
-      helperLog
+      stagedStillPresent,
+      helperLog,
+      likelyCause,
+      // Tell the UI whether "click Restart to retry" will work. If the staged
+      // file is gone, the user has to re-download first.
+      canRetryApply: stagedStillPresent,
+      panelFolder: path.dirname(process.execPath)
     };
-    log.warn(`Panel update apply appears to have failed (pending v${pending}, running v${this.currentVersion})`);
+    log.warn(`Panel update apply appears to have failed (pending v${pending}, running v${this.currentVersion}, cause: ${likelyCause})`);
     this.io?.emit('panel:updateApplyFailed', this.lastApplyResult);
 
     // Don't clear pendingPanelUpdate — keep it so the user can retry apply
-    // (the .new file is likely still on disk).
+    // when the staged file is still on disk. If it isn't, the next successful
+    // download will overwrite the pending marker at restart time.
+  }
+
+  /**
+   * Look at the helper log + disk state and guess why apply failed. Used
+   * purely to help the UI render a useful hint. Never throws.
+   *   'av_quarantine' — placed file vanished / relaunch couldn't find it
+   *   'rename_locked' — could not rename the running exe (file in use)
+   *   'permission'    — access denied on move/copy
+   *   'no_helper_log' — no log found at all
+   *   'unknown'       — log exists but doesn't match a known pattern
+   */
+  classifyApplyFailure(helperLog, stagedStillPresent) {
+    if (!helperLog) return 'no_helper_log';
+    const l = helperLog.toLowerCase();
+    if (l.includes('quarantined by av') || l.includes('disappeared or is empty') ||
+        l.includes('cannot find the file specified') || l.includes('controlled folder access')) {
+      return 'av_quarantine';
+    }
+    if (l.includes('could not rename running exe') || l.includes('rename attempt')) {
+      return stagedStillPresent ? 'rename_locked' : 'unknown';
+    }
+    if (l.includes('access is denied') || l.includes('access denied') || l.includes('unauthorized')) {
+      return 'permission';
+    }
+    return 'unknown';
   }
 
   /**
