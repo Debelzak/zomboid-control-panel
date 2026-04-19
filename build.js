@@ -302,17 +302,17 @@ async function main() {
     fs.copyFileSync('./zomboid-panel.service', './release/zomboid-panel.service');
   }
 
-  // Start.bat picks the binary to launch in a fixed priority order:
-  //   1. ZomboidControlPanel.exe.new2  (second auto-update staging slot)
-  //   2. ZomboidControlPanel.exe.new   (first auto-update staging slot)
-  //   3. ZomboidControlPanel.exe       (original / manual install)
+  // Start.bat picks the NEWEST of the possible exe files by LastWriteTime:
+  //   ZomboidControlPanel.exe       (original / manual install)
+  //   ZomboidControlPanel.exe.new   (auto-update staging slot A)
+  //   ZomboidControlPanel.exe.new2  (auto-update staging slot B)
   //
-  // Since v1.0.17 the apply step launches the staged file in place instead of
-  // renaming it — that avoids Windows Defender quarantining a freshly-written
-  // ZomboidControlPanel.exe. The .new/.new2 files are always written by a
-  // newer panel version than the .exe they sit next to, so a simple priority
-  // order is sufficient — no timestamp parsing (which breaks on locale quirks
-  // and nested FOR-loop expansion in cmd.exe).
+  // Since v1.0.17 the apply step launches the staged file in place. The two
+  // .new/.new2 slots alternate across updates, so a fixed priority order
+  // (.new2 > .new > .exe) breaks after 3+ updates: a stale .new2 from two
+  // updates ago would shadow a fresh .new. Picking by mtime is the only
+  // correct answer. We offload the compare to powershell.exe for locale
+  // safety (cmd's %%~tD depends on the user's regional date format).
   const startBat = `@echo off
 setlocal
 cd /d "%~dp0"
@@ -323,13 +323,7 @@ echo Open your browser to: http://localhost:3001
 echo.
 
 set "TARGET="
-if exist "ZomboidControlPanel.exe.new2" (
-  set "TARGET=ZomboidControlPanel.exe.new2"
-) else if exist "ZomboidControlPanel.exe.new" (
-  set "TARGET=ZomboidControlPanel.exe.new"
-) else if exist "ZomboidControlPanel.exe" (
-  set "TARGET=ZomboidControlPanel.exe"
-)
+for /f "usebackq delims=" %%F in (\`powershell -NoProfile -Command "Get-ChildItem -LiteralPath '.' -File | Where-Object { $_.Name -match '^ZomboidControlPanel\\.exe(\\.new2?)?$' } | Sort-Object LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty Name"\`) do set "TARGET=%%F"
 
 if not defined TARGET (
   echo ERROR: No ZomboidControlPanel binary found in this folder.
