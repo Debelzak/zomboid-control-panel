@@ -790,11 +790,19 @@ app.post('/api/panel/restart', async (req, res) => {
         await setSetting('pendingPanelUpdate', staged.version);
         await flushWrites();
       }
-      await fsp.rename(staged.stagedPath, staged.exePath);
-      try { await fsp.chmod(staged.exePath, 0o755); } catch (chmodErr) {
+      // Target the canonical binary path (strip any .new/.new2 suffix — if
+      // we were launched from a staged file the running execPath may carry
+      // that suffix). On Linux overwriting the running binary is safe: the
+      // kernel keeps the old inode mapped until this process exits, and the
+      // next spawn picks up the new file.
+      const targetPath = (typeof checker.getExeBasePath === 'function')
+        ? checker.getExeBasePath()
+        : staged.exePath;
+      await fsp.rename(staged.stagedPath, targetPath);
+      try { await fsp.chmod(targetPath, 0o755); } catch (chmodErr) {
         log.warn(`Could not chmod new binary: ${chmodErr.message}`);
       }
-      log.info(`Linux staged update applied; restarting`);
+      log.info(`Linux staged update applied to ${targetPath}; restarting`);
     } catch (err) {
       log.error(`Failed to apply Linux staged update: ${err.message}`);
       return res.status(500).json({ error: sanitizeError(err.message) });

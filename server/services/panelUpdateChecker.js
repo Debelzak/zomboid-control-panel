@@ -326,12 +326,13 @@ export class PanelUpdateChecker {
 
     const exePath = process.execPath;
     const exeDir = path.dirname(exePath);
-    // Staged binary sits next to the running exe. We do NOT rename the running
-    // binary here — that fails on OneDrive-synced folders, with AV, or when any
-    // other process holds a handle. On Windows the swap happens after shutdown
-    // via an external helper (see applyStagedUpdateAndExit / /api/panel/restart).
-    const stagedPath = path.join(exeDir, `${assetName}.new`);
-    const tmpDownloadPath = path.join(exeDir, `${assetName}.new.partial.${process.pid}`);
+    // Since v1.0.17 the apply helper launches the staged file in place (no
+    // rename) so AV never sees a fresh write at the canonical .exe path. That
+    // means the *currently running* process may itself be a staged file
+    // (ends in .new or .new2). We must stage into a slot that is NOT the file
+    // we're running from, otherwise we'd try to overwrite our own binary.
+    const stagedPath = this.getStageSlotPath();
+    const tmpDownloadPath = `${stagedPath}.partial.${process.pid}`;
 
     try {
       log.info(`Downloading update: ${asset.name} (${(asset.size / 1024 / 1024).toFixed(1)} MB)`);
@@ -419,16 +420,57 @@ export class PanelUpdateChecker {
   }
 
   /**
+   * Resolve the "base" exe path by stripping any .new/.new2 suffix from
+   * process.execPath. After a launch-in-place apply, the running process's
+   * execPath is the staged file (e.g. ...\ZomboidControlPanel.exe.new), but
+   * callers that want the canonical filename for packaging lookups want the
+   * non-suffixed version.
+   */
+  getExeBasePath() {
+    return process.execPath.replace(/\.new2?$/i, '');
+  }
+
+  /**
+   * Pick a staging slot (.new or .new2) that is NOT the file we're currently
+   * running from. Alternates between the two slots so we never try to
+   * overwrite our own binary. Windows file locks prevent that anyway, but
+   * this gives the apply helper a predictable name to launch.
+   */
+  getStageSlotPath() {
+    const base = this.getExeBasePath();
+    const primary = `${base}.new`;
+    const secondary = `${base}.new2`;
+    const self = path.resolve(process.execPath);
+    return path.resolve(primary) === self ? secondary : primary;
+  }
+
+  /**
+   * Find any staged file on disk (.new or .new2) that is NOT the one we're
+   * currently running from. Returns the full path, or null.
+   */
+  findStagedFileOnDisk() {
+    const base = this.getExeBasePath();
+    const selfResolved = path.resolve(process.execPath);
+    const candidates = [`${base}.new`, `${base}.new2`].filter((p) => {
+      try { return path.resolve(p) !== selfResolved && fs.existsSync(p); } catch { return false; }
+    });
+    if (!candidates.length) return null;
+    // Prefer the newer file if both slots are populated.
+    candidates.sort((a, b) => {
+      try { return fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs; } catch { return 0; }
+    });
+    return candidates[0];
+  }
+
+  /**
    * Check if a downloaded-but-not-applied update is staged next to the exe.
    * Returns null if nothing is staged, or { stagedPath, exePath, version }.
    */
   getStagedUpdate() {
     if (typeof process.pkg === 'undefined') return null;
-    const isWindows = process.platform === 'win32';
-    const assetName = isWindows ? 'ZomboidControlPanel.exe' : 'ZomboidControlPanel';
     const exePath = process.execPath;
-    const stagedPath = path.join(path.dirname(exePath), `${assetName}.new`);
-    if (!fs.existsSync(stagedPath)) return null;
+    const stagedPath = this.findStagedFileOnDisk();
+    if (!stagedPath) return null;
     let size;
     try {
       const stats = fs.statSync(stagedPath);
@@ -496,6 +538,19 @@ export class PanelUpdateChecker {
     const stableLogPath = path.join(logsDir, 'panel-update-last.log');
     const ps1Path = path.join(os.tmpdir(), `zomboid-panel-apply-${ts}-${process.pid}.ps1`);
 
+    // === AV-SAFE APPLY STRATEGY (v1.0.17+) ===
+    // The previous strategy (rename .exe -> .old, rename .new -> .exe, launch .exe)
+    // consistently tripped Windows Defender heuristics: the freshly-renamed .exe
+    // was a brand-new PE write that AV scanned aggressively and often quarantined.
+    //
+    // New strategy: DON'T RENAME. The staged .new file has been on disk since
+    // download — AV has already scanned it and either accepted or quarantined
+    // then. If it's still here, it's trusted. Just launch it in place.
+    //   - On success: .exe (old) and .exe.new (running) coexist. Start.bat is
+    //     smart enough to pick the newer one on future restarts.
+    //   - On failure (new version won't even start): relaunch the old .exe.
+    //   - We never write a new file at the canonical .exe path, so the AV
+    //     heuristic never fires.
     const ps = [
       '$ErrorActionPreference = "Stop"',
       `$pidToWatch = ${process.pid}`,
@@ -512,19 +567,17 @@ export class PanelUpdateChecker {
       '}',
       '# Truncate the stable log on each run so it always reflects the latest attempt',
       'try { Set-Content -LiteralPath $stableLogPath -Value "" -Force -Encoding UTF8 } catch {}',
-      'Log "Apply helper started (pid to watch: $pidToWatch)"',
+      'Log "Apply helper started (pid to watch: $pidToWatch) — AV-safe launch-in-place mode"',
       'Log ("Host: " + [System.Environment]::MachineName + " User: " + [System.Environment]::UserName)',
       'Log ("PSVersion: " + $PSVersionTable.PSVersion.ToString())',
       'Log "exePath=$exePath"',
       'Log "stagedPath=$stagedPath"',
-      'try {',
-      '  $drive = Split-Path -Qualifier $exePath',
-      '  $free = (Get-PSDrive -Name ($drive.TrimEnd(":"))).Free',
-      '  Log ("Free space on $drive : " + [math]::Round($free/1MB,1) + " MB")',
-      '} catch { Log ("Could not probe free space: " + $_.Exception.Message) }',
       'if (Test-Path -LiteralPath $stagedPath) {',
       '  try { $sl = (Get-Item -LiteralPath $stagedPath).Length; Log ("Staged size: $sl bytes") } catch {}',
-      '} else { Log "WARNING: staged path is already missing before we started" }',
+      '} else {',
+      '  Log "ERROR: staged file missing before we started — cannot apply update"',
+      '  exit 1',
+      '}',
       '# Wait for the panel process to exit (up to 30s)',
       '$panelExited = $false',
       'for ($i=0; $i -lt 60; $i++) {',
@@ -532,59 +585,55 @@ export class PanelUpdateChecker {
       '  catch { $panelExited = $true; break }',
       '}',
       'if ($panelExited) { Log "Panel process exited" }',
-      'else { Log "WARNING: Panel process did NOT exit within 30s; continuing anyway (rename may fail)" }',
-      '# Remove previous backup if present',
-      'if (Test-Path -LiteralPath $oldPath) {',
-      '  try { Remove-Item -LiteralPath $oldPath -Force } catch { Log ("Could not remove old backup: " + $_.Exception.Message) }',
-      '}',
-      '# Retry the rename in case AV/OneDrive is still holding the handle (10s max)',
-      '$renamed = $false',
-      'for ($i=0; $i -lt 20; $i++) {',
-      '  try { Move-Item -LiteralPath $exePath -Destination $oldPath -Force; $renamed = $true; break }',
-      '  catch { Log ("Rename attempt " + ($i+1) + " failed: " + $_.Exception.Message); Start-Sleep -Milliseconds 500 }',
-      '}',
-      'if (-not $renamed) { Log "Giving up — could not rename running exe. Staged .new file left in place for manual recovery."; exit 1 }',
-      '# Put the new binary in place',
-      '$placed = $false',
-      'for ($i=0; $i -lt 20; $i++) {',
-      '  try { Move-Item -LiteralPath $stagedPath -Destination $exePath -Force; $placed = $true; break }',
-      '  catch { Log ("Place attempt " + ($i+1) + " failed: " + $_.Exception.Message); Start-Sleep -Milliseconds 500 }',
-      '}',
-      'if (-not $placed) {',
-      '  Log "Place failed — rolling back to previous exe"',
-      '  try { Move-Item -LiteralPath $oldPath -Destination $exePath -Force; Log "Rollback complete" } catch { Log ("Rollback failed: " + $_.Exception.Message) }',
-      '  try { Start-Process -FilePath $exePath -WorkingDirectory $workDir; Log "Relaunched previous version" } catch { Log ("Relaunch after rollback failed: " + $_.Exception.Message) }',
+      'else { Log "WARNING: Panel process did NOT exit within 30s; continuing anyway" }',
+      '# Verify the staged file survived the wait (rare: AV could still eat it)',
+      'if (-not (Test-Path -LiteralPath $stagedPath)) {',
+      '  Log "CRITICAL: staged file disappeared while waiting for panel to exit — likely AV quarantine."',
+      '  Log "Attempting to relaunch previous version so user is not left with no panel."',
+      '  if (Test-Path -LiteralPath $exePath) {',
+      '    try { Start-Process -FilePath $exePath -WorkingDirectory $workDir; Log "Relaunched previous version" } catch { Log ("Relaunch failed: " + $_.Exception.Message) }',
+      '  } else {',
+      '    Log "Previous .exe is also missing. User must add AV exclusion for $workDir and restore from ZomboidControlPanel.exe.bak-* if available."',
+      '  }',
       '  exit 2',
       '}',
-      '# Verify the exe actually exists and settles on disk (AV / Controlled Folder Access can delete it post-move)',
-      '$verified = $false',
-      'for ($i=0; $i -lt 10; $i++) {',
-      '  if (Test-Path -LiteralPath $exePath) {',
-      '    try { $len = (Get-Item -LiteralPath $exePath).Length; if ($len -gt 0) { $verified = $true; Log ("Placed exe verified (size: $len bytes)"); break } } catch {}',
-      '  }',
-      '  Start-Sleep -Milliseconds 500',
+      '# Launch the staged file in place — no rename, no fresh .exe write, AV stays quiet',
+      'Log "Launching staged binary in place (no rename)"',
+      '$launchedPid = $null',
+      'try {',
+      '  $proc = Start-Process -FilePath $stagedPath -WorkingDirectory $workDir -PassThru',
+      '  $launchedPid = $proc.Id',
+      '  Log ("Launched staged pid: $launchedPid")',
+      '} catch {',
+      '  Log ("Initial launch of staged file failed: " + $_.Exception.Message)',
       '}',
-      'if (-not $verified) {',
-      '  Log "Placed exe disappeared or is empty — likely quarantined by AV / Controlled Folder Access. Rolling back."',
-      '  if (Test-Path -LiteralPath $oldPath) {',
-      '    try { Copy-Item -LiteralPath $oldPath -Destination $exePath -Force; Log "Rollback copy complete" } catch { Log ("Rollback copy failed: " + $_.Exception.Message) }',
-      '  } else { Log "WARNING: backup .old is also missing — rollback not possible" }',
-      '  # Verify rollback actually stuck — AV could eat the .old copy too',
-      '  $rolledBack = $false',
-      '  for ($i=0; $i -lt 6; $i++) {',
-      '    if (Test-Path -LiteralPath $exePath) {',
-      '      try { $len = (Get-Item -LiteralPath $exePath).Length; if ($len -gt 0) { $rolledBack = $true; break } } catch {}',
-      '    }',
-      '    Start-Sleep -Milliseconds 500',
+      '# Verify the new process actually stays alive for ~10 seconds',
+      '$alive = $false',
+      'if ($launchedPid) {',
+      '  Start-Sleep -Seconds 5',
+      '  try { Get-Process -Id $launchedPid -ErrorAction Stop | Out-Null; $alive = $true } catch { $alive = $false }',
+      '  if ($alive) {',
+      '    Start-Sleep -Seconds 5',
+      '    try { Get-Process -Id $launchedPid -ErrorAction Stop | Out-Null; $alive = $true } catch { $alive = $false }',
       '  }',
-      '  if (-not $rolledBack) { Log "CRITICAL: rollback did not stick. Panel has no exe on disk. Add an AV exclusion for $workDir and copy ZomboidControlPanel.exe.new or ZomboidControlPanel.exe.old back manually." }',
-      '  Log "Add an AV exclusion for the panel folder and retry. Panel folder: $workDir"',
-      '  if ($rolledBack) { try { Start-Process -FilePath $exePath -WorkingDirectory $workDir } catch { Log ("Relaunch after rollback failed: " + $_.Exception.Message) } }',
-      '  exit 3',
       '}',
-      'Log "Update applied; relaunching panel"',
-      'try { Start-Process -FilePath $exePath -WorkingDirectory $workDir } catch { Log ("Relaunch failed: " + $_.Exception.Message) }',
-      'Log "Apply helper done"'
+      'if ($alive) {',
+      '  Log "Update applied successfully — staged version is running"',
+      '  Log "Apply helper done"',
+      '  exit 0',
+      '}',
+      'Log "Staged version did not stay alive — falling back to previous version"',
+      'if (Test-Path -LiteralPath $exePath) {',
+      '  try {',
+      '    $proc = Start-Process -FilePath $exePath -WorkingDirectory $workDir -PassThru',
+      '    Log ("Fallback launch of previous version pid: " + $proc.Id)',
+      '  } catch { Log ("Fallback launch failed: " + $_.Exception.Message) }',
+      '} else {',
+      '  Log "CRITICAL: previous .exe is also missing. Cannot relaunch anything."',
+      '  Log "Recovery: add AV exclusion for $workDir and manually restore ZomboidControlPanel.exe from a .bak-* file."',
+      '}',
+      'Log "Apply helper done (fell back)"',
+      'exit 3'
     ].join('\r\n');
 
     // Write with UTF-8 BOM so Windows PowerShell 5.1 parses non-ASCII paths correctly.

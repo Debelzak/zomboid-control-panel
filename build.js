@@ -302,16 +302,50 @@ async function main() {
     fs.copyFileSync('./zomboid-panel.service', './release/zomboid-panel.service');
   }
 
+  // Start.bat picks the NEWEST of the possible exe files:
+  //   ZomboidControlPanel.exe       (original install)
+  //   ZomboidControlPanel.exe.new   (staged by auto-update, slot A)
+  //   ZomboidControlPanel.exe.new2  (staged by auto-update, slot B)
+  //
+  // Since v1.0.17 the apply step launches the staged file in place instead of
+  // renaming it — that avoids Windows Defender quarantining a freshly-written
+  // ZomboidControlPanel.exe. This launcher therefore has to be smart about
+  // picking the newest one so reboots still land on the upgraded version.
   const startBat = `@echo off
+setlocal EnableDelayedExpansion
+cd /d "%~dp0"
+
 echo Starting Zomboid Control Panel...
 echo.
 echo Open your browser to: http://localhost:3001
 echo.
-if exist ZomboidControlPanel.exe (
-  ZomboidControlPanel.exe
-) else (
-  echo ERROR: ZomboidControlPanel.exe not found in this folder.
+
+set "TARGET="
+set "TARGET_DATE=0"
+for %%F in (ZomboidControlPanel.exe ZomboidControlPanel.exe.new ZomboidControlPanel.exe.new2) do (
+  if exist "%%F" (
+    for %%D in ("%%F") do (
+      set "FDATE=%%~tD"
+      REM Reformat %%~tD (MM/DD/YYYY HH:MM) into YYYYMMDDHHMM for lexical compare.
+      for /f "tokens=1-5 delims=/ :" %%a in ("!FDATE!") do set "FSTAMP=%%c%%a%%b%%d%%e"
+      if "!FSTAMP!" GTR "!TARGET_DATE!" (
+        set "TARGET_DATE=!FSTAMP!"
+        set "TARGET=%%F"
+      )
+    )
+  )
 )
+
+if not defined TARGET (
+  echo ERROR: No ZomboidControlPanel binary found in this folder.
+  echo Expected one of: ZomboidControlPanel.exe, .exe.new, .exe.new2
+  pause
+  exit /b 1
+)
+
+echo Launching !TARGET!
+echo.
+"!TARGET!"
 pause
 `;
   fs.writeFileSync('./release/Start.bat', startBat);
