@@ -1633,7 +1633,7 @@ export interface PanelUpdateApplyResult {
   at: string
   stagedStillPresent?: boolean
   helperLog?: string | null
-  likelyCause?: 'av_quarantine' | 'rename_locked' | 'permission' | 'no_helper_log' | 'unknown'
+  likelyCause?: 'helper_blocked' | 'av_quarantine' | 'rename_locked' | 'permission' | 'no_helper_log' | 'unknown'
   canRetryApply?: boolean
   panelFolder?: string
 }

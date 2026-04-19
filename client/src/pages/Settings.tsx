@@ -1738,6 +1738,20 @@ export default function Settings() {
                         <strong className="text-destructive-foreground">Likely cause:</strong> access denied writing to the panel folder. Relaunch the panel as Administrator or move it out of Program Files.
                       </div>
                     )}
+                    {panelUpdateStatus.lastApplyResult.likelyCause === 'helper_blocked' && (
+                      <div className="rounded-md border border-destructive/40 bg-background/50 p-2 text-xs leading-relaxed">
+                        <strong className="text-destructive-foreground">Likely cause:</strong> the update helper script was blocked from running (Windows Defender ASR, AppLocker, or Group Policy). The staged binary is still on disk.
+                        {panelUpdateStatus.lastApplyResult.panelFolder && (
+                          <div className="mt-1">
+                            <strong>Recovery:</strong> close this panel and double-click <code>Start.bat</code> in:
+                            <pre className="mt-1 rounded bg-background/70 p-1 text-[11px]">{panelUpdateStatus.lastApplyResult.panelFolder}</pre>
+                            <div className="mt-1 text-[11px] opacity-80">
+                              Start.bat picks the newest binary automatically, so the update will apply. To prevent this in the future, add the panel folder to AV exclusions.
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                     {panelUpdateStatus.lastApplyResult.likelyCause === 'no_helper_log' && (
                       <div className="rounded-md border border-destructive/40 bg-background/50 p-2 text-xs leading-relaxed">
                         <strong className="text-destructive-foreground">No helper log was written.</strong> The helper script may have been blocked by execution policy or AV. Check Windows Defender protection history.

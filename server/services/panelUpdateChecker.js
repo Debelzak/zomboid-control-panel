@@ -507,11 +507,21 @@ export class PanelUpdateChecker {
   }
 
   /**
-   * On Windows, a running exe cannot reliably be renamed in-place (OneDrive,
-   * AV, and file-handle holders can block it). We write a helper PowerShell
-   * script to TEMP that waits for this process to exit, swaps the files with
-   * retries, then relaunches the panel. Caller should exit immediately after
-   * spawning.
+   * On Windows we spawn an external helper that:
+   *   1. Waits for this panel process to exit
+   *   2. Launches the staged .new binary in place (no rename, AV-safe)
+   *   3. Falls back to the previous .exe if staged won't start
+   *
+   * v1.0.21+ rewrite: the helper is a plain `.cmd` batch file written next
+   * to the panel exe (not a `.ps1` in %TEMP%). Rationale:
+   *   - ASR rules and Defender heuristics treat scripts in %TEMP% much more
+   *     aggressively than files in the app's own install folder. In v1.0.20
+   *     we saw a PS1 in TEMP get blocked BEFORE PowerShell could even load
+   *     it — no log line was written at all.
+   *   - cmd.exe is a first-party Windows binary that is not ASR-blockable.
+   *     A plain `.cmd` has essentially no heuristic surface.
+   *   - The panel install folder is the folder users/admins are most likely
+   *     to have already AV-excluded.
    *
    * On Linux the caller should just overwrite the running binary directly —
    * the running process keeps its inode, and the new binary takes effect on
@@ -527,137 +537,147 @@ export class PanelUpdateChecker {
     }
 
     const { stagedPath, exePath } = staged;
-    const oldPath = `${exePath}.old`;
     const ts = Date.now();
-    // Write helper log to the panel's logs dir so it's always findable after
-    // relaunch, and mirror the latest to a stable filename for the UI.
     let logsDir;
-    try { logsDir = getDataPaths().logsDir; } catch { logsDir = os.tmpdir(); }
+    try { logsDir = getDataPaths().logsDir; } catch { logsDir = path.join(path.dirname(exePath), 'logs'); }
     try { fs.mkdirSync(logsDir, { recursive: true }); } catch { /* non-fatal */ }
     const logPath = path.join(logsDir, `panel-update-${ts}.log`);
     const stableLogPath = path.join(logsDir, 'panel-update-last.log');
-    const ps1Path = path.join(os.tmpdir(), `zomboid-panel-apply-${ts}-${process.pid}.ps1`);
 
-    // === AV-SAFE APPLY STRATEGY (v1.0.17+) ===
-    // The previous strategy (rename .exe -> .old, rename .new -> .exe, launch .exe)
-    // consistently tripped Windows Defender heuristics: the freshly-renamed .exe
-    // was a brand-new PE write that AV scanned aggressively and often quarantined.
-    //
-    // New strategy: DON'T RENAME. The staged .new file has been on disk since
-    // download — AV has already scanned it and either accepted or quarantined
-    // then. If it's still here, it's trusted. Just launch it in place.
-    //   - On success: .exe (old) and .exe.new (running) coexist. Start.bat is
-    //     smart enough to pick the newer one on future restarts.
-    //   - On failure (new version won't even start): relaunch the old .exe.
-    //   - We never write a new file at the canonical .exe path, so the AV
-    //     heuristic never fires.
-    const ps = [
-      '$ErrorActionPreference = "Stop"',
-      `$pidToWatch = ${process.pid}`,
-      `$exePath = ${this.psQuote(exePath)}`,
-      `$stagedPath = ${this.psQuote(stagedPath)}`,
-      `$oldPath = ${this.psQuote(oldPath)}`,
-      `$logPath = ${this.psQuote(logPath)}`,
-      `$stableLogPath = ${this.psQuote(stableLogPath)}`,
-      `$workDir = ${this.psQuote(path.dirname(exePath))}`,
-      'function Log($m) {',
-      '  $line = "[{0}] {1}" -f (Get-Date -Format o), $m',
-      '  try { Add-Content -LiteralPath $logPath -Value $line -Encoding UTF8 } catch {}',
-      '  try { Add-Content -LiteralPath $stableLogPath -Value $line -Encoding UTF8 } catch {}',
-      '}',
-      '# Truncate the stable log on each run so it always reflects the latest attempt',
-      'try { Set-Content -LiteralPath $stableLogPath -Value "" -Force -Encoding UTF8 } catch {}',
-      'Log "Apply helper started (pid to watch: $pidToWatch) — AV-safe launch-in-place mode"',
-      'Log ("Host: " + [System.Environment]::MachineName + " User: " + [System.Environment]::UserName)',
-      'Log ("PSVersion: " + $PSVersionTable.PSVersion.ToString())',
-      'Log "exePath=$exePath"',
-      'Log "stagedPath=$stagedPath"',
-      'if (Test-Path -LiteralPath $stagedPath) {',
-      '  try { $sl = (Get-Item -LiteralPath $stagedPath).Length; Log ("Staged size: $sl bytes") } catch {}',
-      '} else {',
-      '  Log "ERROR: staged file missing before we started — cannot apply update"',
-      '  exit 1',
-      '}',
-      '# Wait for the panel process to exit (up to 30s)',
-      '$panelExited = $false',
-      'for ($i=0; $i -lt 60; $i++) {',
-      '  try { Get-Process -Id $pidToWatch -ErrorAction Stop | Out-Null; Start-Sleep -Milliseconds 500 }',
-      '  catch { $panelExited = $true; break }',
-      '}',
-      'if ($panelExited) { Log "Panel process exited" }',
-      'else { Log "WARNING: Panel process did NOT exit within 30s; continuing anyway" }',
-      '# Verify the staged file survived the wait (rare: AV could still eat it)',
-      'if (-not (Test-Path -LiteralPath $stagedPath)) {',
-      '  Log "CRITICAL: staged file disappeared while waiting for panel to exit — likely AV quarantine."',
-      '  Log "Attempting to relaunch previous version so user is not left with no panel."',
-      '  if (Test-Path -LiteralPath $exePath) {',
-      '    try { Start-Process -FilePath $exePath -WorkingDirectory $workDir; Log "Relaunched previous version" } catch { Log ("Relaunch failed: " + $_.Exception.Message) }',
-      '  } else {',
-      '    Log "Previous .exe is also missing. User must add AV exclusion for $workDir and restore from ZomboidControlPanel.exe.bak-* if available."',
-      '  }',
-      '  exit 2',
-      '}',
-      '# Launch the staged file in place — no rename, no fresh .exe write, AV stays quiet',
-      'Log "Launching staged binary in place (no rename)"',
-      '$launchedPid = $null',
-      'try {',
-      '  $proc = Start-Process -FilePath $stagedPath -WorkingDirectory $workDir -PassThru',
-      '  $launchedPid = $proc.Id',
-      '  Log ("Launched staged pid: $launchedPid")',
-      '} catch {',
-      '  Log ("Initial launch of staged file failed: " + $_.Exception.Message)',
-      '}',
-      '# Verify the new process actually stays alive for ~10 seconds',
-      '$alive = $false',
-      'if ($launchedPid) {',
-      '  Start-Sleep -Seconds 5',
-      '  try { Get-Process -Id $launchedPid -ErrorAction Stop | Out-Null; $alive = $true } catch { $alive = $false }',
-      '  if ($alive) {',
-      '    Start-Sleep -Seconds 5',
-      '    try { Get-Process -Id $launchedPid -ErrorAction Stop | Out-Null; $alive = $true } catch { $alive = $false }',
-      '  }',
-      '}',
-      'if ($alive) {',
-      '  Log "Update applied successfully — staged version is running"',
-      '  Log "Apply helper done"',
-      '  exit 0',
-      '}',
-      'Log "Staged version did not stay alive — falling back to previous version"',
-      'if (Test-Path -LiteralPath $exePath) {',
-      '  try {',
-      '    $proc = Start-Process -FilePath $exePath -WorkingDirectory $workDir -PassThru',
-      '    Log ("Fallback launch of previous version pid: " + $proc.Id)',
-      '  } catch { Log ("Fallback launch failed: " + $_.Exception.Message) }',
-      '} else {',
-      '  Log "CRITICAL: previous .exe is also missing. Cannot relaunch anything."',
-      '  Log "Recovery: add AV exclusion for $workDir and manually restore ZomboidControlPanel.exe from a .bak-* file."',
-      '}',
-      'Log "Apply helper done (fell back)"',
-      'exit 3'
+    // Helper lives next to the exe. Create a dot-prefixed subfolder so it
+    // doesn't clutter the install dir but stays inside any AV exclusion the
+    // user set for the panel folder.
+    const helperDir = path.join(path.dirname(exePath), '.panel-helpers');
+    try { fs.mkdirSync(helperDir, { recursive: true }); } catch { /* non-fatal */ }
+    const cmdPath = path.join(helperDir, `apply-update-${ts}.cmd`);
+
+    // Pre-spawn sentinel: write a marker line to the STABLE log BEFORE we
+    // spawn the helper. If, after relaunch, the stable log still contains
+    // only this line (no entries from the helper itself), we know the helper
+    // was blocked from running at all (ASR / AV / group policy). That is a
+    // different failure mode than "helper ran and failed" and gets its own
+    // UI hint.
+    const spawnSentinel = `[${new Date().toISOString()}] [PRE-SPAWN] Panel is about to spawn apply helper: ${cmdPath}\r\n` +
+      `[${new Date().toISOString()}] [PRE-SPAWN] If no further lines appear below, the helper was blocked from running (AV / ASR / policy).\r\n` +
+      `[${new Date().toISOString()}] [PRE-SPAWN] Recovery: close any running panel, then double-click Start.bat in ${path.dirname(exePath)}\r\n`;
+    try { fs.writeFileSync(stableLogPath, spawnSentinel, { encoding: 'utf8' }); } catch (err) {
+      log.debug(`Could not write pre-spawn sentinel: ${err.message}`);
+    }
+
+    // Build the .cmd helper. Uses only cmd.exe built-ins (tasklist, start,
+    // timeout, netstat) — no PowerShell, no third-party tools. Paths must
+    // not contain literal double-quotes; Windows file paths never can, so
+    // that's safe. We strip any quotes defensively.
+    const safePath = (s) => String(s).replace(/"/g, '');
+    const workDir = path.dirname(exePath);
+    const cmd = [
+      '@echo off',
+      'setlocal ENABLEEXTENSIONS',
+      `set "PID_WATCH=${process.pid}"`,
+      `set "EXE_PATH=${safePath(exePath)}"`,
+      `set "STAGED=${safePath(stagedPath)}"`,
+      `set "WORK_DIR=${safePath(workDir)}"`,
+      `set "LOG=${safePath(logPath)}"`,
+      `set "STABLE=${safePath(stableLogPath)}"`,
+      `set "SELF=${safePath(cmdPath)}"`,
+      '',
+      'rem === Helper is alive. Overwrite stable log so we know this ran. ===',
+      'call :stamp "Apply helper started (cmd mode, pid to watch: %PID_WATCH%)" NEW',
+      'call :stamp "exePath=%EXE_PATH%"',
+      'call :stamp "stagedPath=%STAGED%"',
+      'if not exist "%STAGED%" (',
+      '  call :stamp "ERROR: staged file missing before helper began"',
+      '  goto :end_fail',
+      ')',
+      '',
+      'rem === Wait up to 30s for panel process to exit. ===',
+      'set /a TRIES=0',
+      ':waitloop',
+      'tasklist /FI "PID eq %PID_WATCH%" 2>nul | find "%PID_WATCH%" >nul',
+      'if errorlevel 1 goto panel_gone',
+      'set /a TRIES+=1',
+      'if %TRIES% geq 60 goto panel_timeout',
+      'timeout /t 1 /nobreak >nul 2>&1',
+      'goto waitloop',
+      '',
+      ':panel_timeout',
+      'call :stamp "WARNING: panel did not exit within 30s, continuing anyway"',
+      'goto after_wait',
+      '',
+      ':panel_gone',
+      'call :stamp "Panel process exited"',
+      '',
+      ':after_wait',
+      'rem === Verify staged file still on disk (AV could eat it during wait). ===',
+      'if not exist "%STAGED%" (',
+      '  call :stamp "CRITICAL: staged file vanished during wait (AV quarantine)"',
+      '  if exist "%EXE_PATH%" (',
+      '    call :stamp "Relaunching previous .exe as fallback"',
+      '    start "" /D "%WORK_DIR%" "%EXE_PATH%"',
+      '  ) else (',
+      '    call :stamp "CRITICAL: previous .exe is also gone — user must add AV exclusion and restore from .bak-*"',
+      '  )',
+      '  goto :end_fail',
+      ')',
+      '',
+      'rem === Launch staged binary in place. No rename. ===',
+      'call :stamp "Launching staged binary in place: %STAGED%"',
+      'start "" /D "%WORK_DIR%" "%STAGED%"',
+      'if errorlevel 1 (',
+      '  call :stamp "start command returned errorlevel %errorlevel% — staged launch may have failed"',
+      '  if exist "%EXE_PATH%" (',
+      '    call :stamp "Falling back to previous .exe"',
+      '    start "" /D "%WORK_DIR%" "%EXE_PATH%"',
+      '  )',
+      '  goto :end_fail',
+      ')',
+      '',
+      'rem === Give the new panel a moment to start. Reconciliation on next ===',
+      'rem === boot will confirm success/failure via version match. If the  ===',
+      'rem === staged panel crashes early, the user can run Start.bat and   ===',
+      'rem === it will launch the newest binary (may be the staged one or   ===',
+      'rem === may be the old .exe, depending on mtimes).                   ===',
+      'timeout /t 3 /nobreak >nul 2>&1',
+      'call :stamp "Update applied — staged version launched. Reconcile will confirm on next boot."',
+      'call :stamp "Apply helper done"',
+      'goto :end_ok',
+      '',
+      ':end_fail',
+      'call :stamp "Apply helper exiting with failure"',
+      '(goto) 2>nul & del /f /q "%SELF%" >nul 2>&1',
+      'exit /b 3',
+      '',
+      ':end_ok',
+      '(goto) 2>nul & del /f /q "%SELF%" >nul 2>&1',
+      'exit /b 0',
+      '',
+      'rem === Helpers ===',
+      ':stamp',
+      'rem %~1 = message, %~2 = "NEW" to overwrite stable log, else append',
+      'for /f "tokens=1-3 delims=:.," %%a in ("%time%") do set "NOW=%date% %%a:%%b:%%c"',
+      'if /I "%~2"=="NEW" (',
+      '  echo [%NOW%] %~1> "%STABLE%"',
+      ') else (',
+      '  echo [%NOW%] %~1>> "%STABLE%"',
+      ')',
+      'echo [%NOW%] %~1>> "%LOG%"',
+      'exit /b 0'
     ].join('\r\n');
 
-    // Write with UTF-8 BOM so Windows PowerShell 5.1 parses non-ASCII paths correctly.
-    fs.writeFileSync(ps1Path, '\uFEFF' + ps, { encoding: 'utf8' });
+    fs.writeFileSync(cmdPath, cmd, { encoding: 'ascii' });
 
-    log.info(`Spawning update apply helper: ${ps1Path} (log: ${logPath})`);
+    log.info(`Spawning update apply helper: ${cmdPath} (log: ${logPath})`);
 
+    // Spawn via cmd.exe /c START — detached, no window, survives our exit.
+    // cmd.exe is a first-party Windows binary and is never ASR-blocked.
     const child = spawn(
-      'powershell.exe',
-      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', ps1Path],
-      { detached: true, stdio: 'ignore', windowsHide: true }
+      process.env.ComSpec || 'cmd.exe',
+      ['/c', 'start', '""', '/B', '/D', path.dirname(cmdPath), cmdPath],
+      { detached: true, stdio: 'ignore', windowsHide: true, cwd: path.dirname(cmdPath) }
     );
     child.unref();
 
-    return { helperPath: ps1Path, logPath };
-  }
-
-  /**
-   * Quote a string for PowerShell single-quoted literal safely.
-   * Single-quoted PS strings only need `'` doubled to escape.
-   */
-  psQuote(value) {
-    const s = String(value).replace(/'/g, "''");
-    return `'${s}'`;
+    return { helperPath: cmdPath, logPath };
   }
 
   /**
@@ -1171,6 +1191,7 @@ export class PanelUpdateChecker {
   /**
    * Look at the helper log + disk state and guess why apply failed. Used
    * purely to help the UI render a useful hint. Never throws.
+   *   'helper_blocked' — helper script was blocked from even starting (ASR)
    *   'av_quarantine' — placed file vanished / relaunch couldn't find it
    *   'rename_locked' — could not rename the running exe (file in use)
    *   'permission'    — access denied on move/copy
@@ -1185,6 +1206,14 @@ export class PanelUpdateChecker {
   classifyApplyFailure(helperLog, stagedStillPresent) {
     if (!helperLog) return 'no_helper_log';
     const l = helperLog.toLowerCase();
+
+    // Helper was blocked from running at all (ASR / AV / Group Policy).
+    // The PRE-SPAWN sentinel line written by the main panel is there, but
+    // no lines from the helper itself. Unique signature of the v1.0.21+
+    // helper framework — we can tell the user exactly what to do.
+    if (l.includes('[pre-spawn]') && !l.includes('apply helper started')) {
+      return 'helper_blocked';
+    }
 
     // AV / Controlled Folder Access — file vanished between helper steps.
     // Patterns cover: post-place verify failure, rollback copy wiped, staged
@@ -1329,28 +1358,32 @@ export class PanelUpdateChecker {
   }
 
   /**
-   * Remove old apply-helper artifacts from %TEMP%, keeping the most recent
-   * few for debugging. Each apply writes one .log and one .ps1; on Windows
-   * these live forever unless Disk Cleanup runs.
+   * Remove old apply-helper artifacts. Each apply writes one .log and one
+   * .cmd (or legacy .ps1). Prune:
+   *   - .ps1 files in %TEMP% (legacy, pre-v1.0.21)
+   *   - .cmd files in <exeDir>/.panel-helpers/ (v1.0.21+)
+   *   - timestamped .log files in logsDir
+   *
+   * Keep the most recent `keep` of each so post-mortem debugging still works.
    */
   cleanupOldHelperArtifacts(keep = 5) {
-    const dir = os.tmpdir();
-    const patterns = [
+    const tmpDir = os.tmpdir();
+    const tmpPatterns = [
       /^zomboid-panel-update-\d+\.log$/,
       /^zomboid-panel-apply-\d+-\d+\.ps1$/
     ];
-    let entries;
+    let tmpEntries;
     try {
-      entries = fs.readdirSync(dir);
+      tmpEntries = fs.readdirSync(tmpDir);
     } catch (err) {
       log.debug(`Could not read TEMP dir: ${err.message}`);
-      return;
+      tmpEntries = [];
     }
-    for (const pattern of patterns) {
-      const matching = entries
+    for (const pattern of tmpPatterns) {
+      const matching = tmpEntries
         .filter(n => pattern.test(n))
         .map(n => {
-          const fp = path.join(dir, n);
+          const fp = path.join(tmpDir, n);
           try { return { fp, mtime: fs.statSync(fp).mtimeMs }; }
           catch { return null; }
         })
@@ -1362,9 +1395,31 @@ export class PanelUpdateChecker {
           log.debug(`Could not remove old helper artifact ${fp}: ${err.message}`);
         }
       }
-      if (toDelete.length > 0) {
-        log.debug(`Removed ${toDelete.length} old ${pattern.source} artifact(s) from TEMP`);
+    }
+
+    // Prune .cmd helpers in <exeDir>/.panel-helpers/ (v1.0.21+)
+    try {
+      const helperDir = path.join(path.dirname(process.execPath), '.panel-helpers');
+      if (fs.existsSync(helperDir)) {
+        const cmdPattern = /^apply-update-\d+\.cmd$/;
+        const cmdEntries = fs.readdirSync(helperDir)
+          .filter(n => cmdPattern.test(n))
+          .map(n => {
+            const fp = path.join(helperDir, n);
+            try { return { fp, mtime: fs.statSync(fp).mtimeMs }; }
+            catch { return null; }
+          })
+          .filter(Boolean)
+          .sort((a, b) => b.mtime - a.mtime);
+        const toDelete = cmdEntries.slice(keep);
+        for (const { fp } of toDelete) {
+          try { fs.unlinkSync(fp); } catch (err) {
+            log.debug(`Could not remove old helper cmd ${fp}: ${err.message}`);
+          }
+        }
       }
+    } catch (err) {
+      log.debug(`Could not prune helper dir: ${err.message}`);
     }
 
     // Also prune timestamped logs in the panel's logs dir (keep the stable
