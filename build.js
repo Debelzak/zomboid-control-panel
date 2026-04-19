@@ -302,17 +302,19 @@ async function main() {
     fs.copyFileSync('./zomboid-panel.service', './release/zomboid-panel.service');
   }
 
-  // Start.bat picks the NEWEST of the possible exe files:
-  //   ZomboidControlPanel.exe       (original install)
-  //   ZomboidControlPanel.exe.new   (staged by auto-update, slot A)
-  //   ZomboidControlPanel.exe.new2  (staged by auto-update, slot B)
+  // Start.bat picks the binary to launch in a fixed priority order:
+  //   1. ZomboidControlPanel.exe.new2  (second auto-update staging slot)
+  //   2. ZomboidControlPanel.exe.new   (first auto-update staging slot)
+  //   3. ZomboidControlPanel.exe       (original / manual install)
   //
   // Since v1.0.17 the apply step launches the staged file in place instead of
   // renaming it — that avoids Windows Defender quarantining a freshly-written
-  // ZomboidControlPanel.exe. This launcher therefore has to be smart about
-  // picking the newest one so reboots still land on the upgraded version.
+  // ZomboidControlPanel.exe. The .new/.new2 files are always written by a
+  // newer panel version than the .exe they sit next to, so a simple priority
+  // order is sufficient — no timestamp parsing (which breaks on locale quirks
+  // and nested FOR-loop expansion in cmd.exe).
   const startBat = `@echo off
-setlocal EnableDelayedExpansion
+setlocal
 cd /d "%~dp0"
 
 echo Starting Zomboid Control Panel...
@@ -321,19 +323,12 @@ echo Open your browser to: http://localhost:3001
 echo.
 
 set "TARGET="
-set "TARGET_DATE=0"
-for %%F in (ZomboidControlPanel.exe ZomboidControlPanel.exe.new ZomboidControlPanel.exe.new2) do (
-  if exist "%%F" (
-    for %%D in ("%%F") do (
-      set "FDATE=%%~tD"
-      REM Reformat %%~tD (MM/DD/YYYY HH:MM) into YYYYMMDDHHMM for lexical compare.
-      for /f "tokens=1-5 delims=/ :" %%a in ("!FDATE!") do set "FSTAMP=%%c%%a%%b%%d%%e"
-      if "!FSTAMP!" GTR "!TARGET_DATE!" (
-        set "TARGET_DATE=!FSTAMP!"
-        set "TARGET=%%F"
-      )
-    )
-  )
+if exist "ZomboidControlPanel.exe.new2" (
+  set "TARGET=ZomboidControlPanel.exe.new2"
+) else if exist "ZomboidControlPanel.exe.new" (
+  set "TARGET=ZomboidControlPanel.exe.new"
+) else if exist "ZomboidControlPanel.exe" (
+  set "TARGET=ZomboidControlPanel.exe"
 )
 
 if not defined TARGET (
@@ -343,9 +338,9 @@ if not defined TARGET (
   exit /b 1
 )
 
-echo Launching !TARGET!
+echo Launching %TARGET%
 echo.
-"!TARGET!"
+"%TARGET%"
 pause
 `;
   fs.writeFileSync('./release/Start.bat', startBat);
