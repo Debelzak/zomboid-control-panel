@@ -550,24 +550,6 @@ export class PanelUpdateChecker {
     const helperDir = path.join(path.dirname(exePath), '.panel-helpers');
     try { fs.mkdirSync(helperDir, { recursive: true }); } catch { /* non-fatal */ }
     const cmdPath = path.join(helperDir, `apply-update-${ts}.cmd`);
-    // VBS shim used to launch the new panel hidden (no console window).
-    // cmd.exe alone cannot hide a CUI process's console — but wscript.exe
-    // with SW_HIDE can. First-party Windows host, no dependencies.
-    const vbsPath = path.join(helperDir, 'launch-hidden.vbs');
-    const vbs = [
-      '\' Launch a process hidden (SW_HIDE). Args:',
-      '\'   0: full path to exe to launch',
-      '\'   1: working directory',
-      'If WScript.Arguments.Count < 2 Then WScript.Quit 1',
-      'Dim sh',
-      'Set sh = CreateObject("WScript.Shell")',
-      'sh.CurrentDirectory = WScript.Arguments(1)',
-      '\' Run with intWindowStyle=0 (hidden), bWaitOnReturn=False (detach).',
-      'sh.Run """" & WScript.Arguments(0) & """", 0, False'
-    ].join('\r\n');
-    try { fs.writeFileSync(vbsPath, vbs, { encoding: 'ascii' }); } catch (err) {
-      log.debug(`Could not write VBS shim: ${err.message}`);
-    }
 
     // Pre-spawn sentinel: write a marker line to the STABLE log BEFORE we
     // spawn the helper. If, after relaunch, the stable log still contains
@@ -598,7 +580,6 @@ export class PanelUpdateChecker {
       `set "LOG=${safePath(logPath)}"`,
       `set "STABLE=${safePath(stableLogPath)}"`,
       `set "SELF=${safePath(cmdPath)}"`,
-      `set "VBS=${safePath(vbsPath)}"`,
       '',
       'rem === Helper is alive. Overwrite stable log so we know this ran. ===',
       'call :stamp "Apply helper started (cmd mode, pid to watch: %PID_WATCH%)" NEW',
@@ -631,28 +612,24 @@ export class PanelUpdateChecker {
       'if not exist "%STAGED%" (',
       '  call :stamp "CRITICAL: staged file vanished during wait (AV quarantine)"',
       '  if exist "%EXE_PATH%" (',
-      '    call :stamp "Relaunching previous .exe as fallback (hidden)"',
-      '    call :launch_hidden "%EXE_PATH%"',
+      '    call :stamp "Relaunching previous .exe as fallback"',
+      '    start "" /D "%WORK_DIR%" "%EXE_PATH%"',
       '  ) else (',
       '    call :stamp "CRITICAL: previous .exe is also gone — user must add AV exclusion and restore from .bak-*"',
       '  )',
       '  goto :end_fail',
       ')',
       '',
-      'rem === Launch staged binary in place, hidden (no console window). ===',
-      'call :stamp "Launching staged binary in place (hidden): %STAGED%"',
-      'call :launch_hidden "%STAGED%"',
+      'rem === Launch staged binary in place. ===',
+      'call :stamp "Launching staged binary in place: %STAGED%"',
+      'start "" /D "%WORK_DIR%" "%STAGED%"',
       'if errorlevel 1 (',
-      '  call :stamp "hidden launch returned errorlevel %errorlevel% — trying visible fallback"',
-      '  start "" /D "%WORK_DIR%" "%STAGED%"',
-      '  if errorlevel 1 (',
-      '    call :stamp "visible launch also failed"',
-      '    if exist "%EXE_PATH%" (',
-      '      call :stamp "Falling back to previous .exe (hidden)"',
-      '      call :launch_hidden "%EXE_PATH%"',
-      '    )',
-      '    goto :end_fail',
+      '  call :stamp "start command returned errorlevel %errorlevel% — staged launch may have failed"',
+      '  if exist "%EXE_PATH%" (',
+      '    call :stamp "Falling back to previous .exe"',
+      '    start "" /D "%WORK_DIR%" "%EXE_PATH%"',
       '  )',
+      '  goto :end_fail',
       ')',
       '',
       'rem === Give the new panel a moment to start. Reconciliation on next ===',
@@ -684,47 +661,25 @@ export class PanelUpdateChecker {
       '  echo [%NOW%] %~1>> "%STABLE%"',
       ')',
       'echo [%NOW%] %~1>> "%LOG%"',
-      'exit /b 0',
-      '',
-      ':launch_hidden',
-      'rem %~1 = full path to exe to launch hidden in %WORK_DIR%',
-      'rem Uses wscript.exe + VBS shim (SW_HIDE). wscript is first-party and',
-      'rem is not blocked by ASR. Fail fast if the shim is missing so caller',
-      'rem can fall back to visible launch.',
-      'if not exist "%VBS%" (',
-      '  call :stamp "VBS shim missing, cannot launch hidden"',
-      '  exit /b 2',
-      ')',
-      'start "" /B wscript.exe //B //Nologo "%VBS%" "%~1" "%WORK_DIR%"',
-      'exit /b %errorlevel%'
+      'exit /b 0'
     ].join('\r\n');
 
     fs.writeFileSync(cmdPath, cmd, { encoding: 'ascii' });
 
     log.info(`Spawning update apply helper: ${cmdPath} (log: ${logPath})`);
 
-    // Spawn via wscript.exe + VBS shim. This fully detaches the cmd helper
-    // from the panel's console — so when the panel exits, its console
-    // window closes IMMEDIATELY (the helper does not inherit/hold it).
-    // wscript.exe is first-party Windows, never ASR-blocked. The VBS
-    // Run(..., 0, False) with a .cmd path launches cmd.exe hidden and
-    // returns without waiting.
-    let child;
-    if (fs.existsSync(vbsPath)) {
-      child = spawn(
-        'wscript.exe',
-        ['//B', '//Nologo', vbsPath, cmdPath, path.dirname(cmdPath)],
-        { detached: true, stdio: 'ignore', windowsHide: true, cwd: path.dirname(cmdPath) }
-      );
-    } else {
-      // Fallback: direct cmd spawn (inherits console, old behavior).
-      log.warn('VBS shim missing, falling back to inherited-console spawn');
-      child = spawn(
-        process.env.ComSpec || 'cmd.exe',
-        ['/c', 'start', '""', '/B', '/D', path.dirname(cmdPath), cmdPath],
-        { detached: true, stdio: 'ignore', windowsHide: true, cwd: path.dirname(cmdPath) }
-      );
-    }
+    // Spawn cmd.exe DIRECTLY (not via `start "" /B`) so the helper gets its
+    // own process group + hidden console and is fully detached from the
+    // panel's console. When the panel calls process.exit(), its console
+    // window closes immediately — it does not wait for the helper.
+    //   - detached: true        -> new process group, survives parent exit
+    //   - windowsHide: true     -> CREATE_NO_WINDOW flag, no console window
+    //   - stdio: 'ignore'       -> no inherited handles keeping parent alive
+    const child = spawn(
+      process.env.ComSpec || 'cmd.exe',
+      ['/c', cmdPath],
+      { detached: true, stdio: 'ignore', windowsHide: true, cwd: path.dirname(cmdPath) }
+    );
     child.unref();
 
     return { helperPath: cmdPath, logPath };
