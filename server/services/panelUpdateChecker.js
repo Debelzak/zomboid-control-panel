@@ -703,13 +703,28 @@ export class PanelUpdateChecker {
 
     log.info(`Spawning update apply helper: ${cmdPath} (log: ${logPath})`);
 
-    // Spawn via cmd.exe /c START — detached, no window, survives our exit.
-    // cmd.exe is a first-party Windows binary and is never ASR-blocked.
-    const child = spawn(
-      process.env.ComSpec || 'cmd.exe',
-      ['/c', 'start', '""', '/B', '/D', path.dirname(cmdPath), cmdPath],
-      { detached: true, stdio: 'ignore', windowsHide: true, cwd: path.dirname(cmdPath) }
-    );
+    // Spawn via wscript.exe + VBS shim. This fully detaches the cmd helper
+    // from the panel's console — so when the panel exits, its console
+    // window closes IMMEDIATELY (the helper does not inherit/hold it).
+    // wscript.exe is first-party Windows, never ASR-blocked. The VBS
+    // Run(..., 0, False) with a .cmd path launches cmd.exe hidden and
+    // returns without waiting.
+    let child;
+    if (fs.existsSync(vbsPath)) {
+      child = spawn(
+        'wscript.exe',
+        ['//B', '//Nologo', vbsPath, cmdPath, path.dirname(cmdPath)],
+        { detached: true, stdio: 'ignore', windowsHide: true, cwd: path.dirname(cmdPath) }
+      );
+    } else {
+      // Fallback: direct cmd spawn (inherits console, old behavior).
+      log.warn('VBS shim missing, falling back to inherited-console spawn');
+      child = spawn(
+        process.env.ComSpec || 'cmd.exe',
+        ['/c', 'start', '""', '/B', '/D', path.dirname(cmdPath), cmdPath],
+        { detached: true, stdio: 'ignore', windowsHide: true, cwd: path.dirname(cmdPath) }
+      );
+    }
     child.unref();
 
     return { helperPath: cmdPath, logPath };
