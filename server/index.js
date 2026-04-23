@@ -30,7 +30,7 @@ import authService from './services/auth.js';
 import authRoutes from './routes/auth.js';
 import { loadOrCreateCerts } from './utils/certs.js';
 import { sanitizeError } from './utils/sanitize.js';
-import { getEmbeddedPanelBridgeLua } from './utils/embeddedLua.js';
+import { getEmbeddedPanelBridgeLua, compareModVersions, writeLuaAtomic } from './utils/embeddedLua.js';
 
 // Prevent EPIPE on stdout/stderr from crashing the process
 // (happens when terminal is closed while the exe keeps running)
@@ -632,13 +632,15 @@ async function tryStartPanelBridge(trigger = 'unknown') {
         const destContent = fs.readFileSync(destLuaFile, 'utf8');
         const srcVersion = (srcContent.match(/VERSION\s*=\s*"([^"]+)"/) || [])[1];
         const destVersion = (destContent.match(/VERSION\s*=\s*"([^"]+)"/) || [])[1];
-        if (srcVersion && destVersion && srcVersion !== destVersion) {
-          fs.writeFileSync(destLuaFile, srcContent);
+        // Only overwrite if embedded version is STRICTLY newer. If the on-disk
+        // Lua is the same or newer (e.g. a dev hand-installed a newer build),
+        // leave it alone — silently downgrading would clobber their work.
+        if (srcVersion && destVersion && compareModVersions(srcVersion, destVersion) > 0) {
+          writeLuaAtomic(destLuaFile, srcContent);
           log.info(`PanelBridge mod auto-updated on server: ${destVersion} → ${srcVersion}`);
         }
       } else if (srcContent && !fs.existsSync(destLuaFile)) {
-        fs.mkdirSync(path.dirname(destLuaFile), { recursive: true });
-        fs.writeFileSync(destLuaFile, srcContent);
+        writeLuaAtomic(destLuaFile, srcContent);
         log.info('PanelBridge mod auto-installed to server');
       }
     }

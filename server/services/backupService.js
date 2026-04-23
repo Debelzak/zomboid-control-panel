@@ -606,32 +606,62 @@ export class BackupService {
       log.info('Extracting backup...');
       const unzip = await getUnzipper();
       const resolvedParent = path.resolve(savesParentPath) + path.sep;
-      
+
       await new Promise((resolve, reject) => {
-        createReadStream(backupPath)
+        // Settle exactly once. Without this, errors on the read stream AND on
+        // an individual entry write stream could both call reject, or one of
+        // them could fire after `resolve` (a Parse 'close' while a write
+        // stream is still flushing). settle() also lets us forward a
+        // createReadStream error that pipe() does NOT propagate.
+        let settled = false;
+        const settle = (err) => {
+          if (settled) return;
+          settled = true;
+          if (err) reject(err); else resolve();
+        };
+
+        const readStream = createReadStream(backupPath);
+        readStream.on('error', settle);
+
+        readStream
           .pipe(unzip.Parse())
           .on('entry', (entry) => {
-            const entryPath = path.join(savesParentPath, entry.path);
-            const resolvedEntry = path.resolve(entryPath);
-            
-            // Block zip-slip: entry must resolve inside the target directory
-            if (!resolvedEntry.startsWith(resolvedParent)) {
-              log.error(`Zip slip attempt blocked: ${entry.path}`);
-              entry.autodrain();
-              return;
-            }
-            
-            if (entry.type === 'Directory') {
-              fs.mkdirSync(resolvedEntry, { recursive: true });
-              entry.autodrain();
-            } else {
-              // Ensure parent directory exists
-              fs.mkdirSync(path.dirname(resolvedEntry), { recursive: true });
-              entry.pipe(fs.createWriteStream(resolvedEntry));
+            try {
+              const entryPath = path.join(savesParentPath, entry.path);
+              const resolvedEntry = path.resolve(entryPath);
+
+              // Block zip-slip: entry must resolve inside the target directory
+              if (!resolvedEntry.startsWith(resolvedParent)) {
+                log.error(`Zip slip attempt blocked: ${entry.path}`);
+                entry.autodrain();
+                return;
+              }
+
+              if (entry.type === 'Directory') {
+                fs.mkdirSync(resolvedEntry, { recursive: true });
+                entry.autodrain();
+              } else {
+                // Ensure parent directory exists
+                fs.mkdirSync(path.dirname(resolvedEntry), { recursive: true });
+                const writeStream = createWriteStream(resolvedEntry);
+                // Per-entry write failures (ENOSPC, EACCES, path too long on
+                // Windows) surface as 'error' on the WriteStream and are NOT
+                // forwarded by pipe(). Without this listener the event is
+                // unhandled and crashes the process.
+                writeStream.on('error', (err) => {
+                  try { entry.unpipe(writeStream); } catch { /* ignore */ }
+                  try { entry.autodrain(); } catch { /* ignore */ }
+                  settle(err);
+                });
+                entry.on('error', settle);
+                entry.pipe(writeStream);
+              }
+            } catch (err) {
+              settle(err);
             }
           })
-          .on('close', resolve)
-          .on('error', reject);
+          .on('close', () => settle())
+          .on('error', settle);
       });
 
       // Verify the restore

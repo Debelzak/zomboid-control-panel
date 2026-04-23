@@ -308,6 +308,13 @@ export class ServerManager {
     if (this._starting) {
       throw new Error('Server start already in progress');
     }
+    // Prevent start while a stop is still in flight. Without this guard, a
+    // start() during a 1-second stop window can have its freshly-set state
+    // wiped by the pending stop-timeout callback, leaving a live process
+    // orphaned while the manager reports running:false.
+    if (this._stopping) {
+      throw new Error('Server stop in progress, try again in a moment');
+    }
     this._starting = true;
 
     try {
@@ -449,7 +456,15 @@ export class ServerManager {
       return { success: true, message: 'Use RCON quit command for graceful shutdown' };
     }
 
+    // Block overlapping starts while kill/state-clear is pending.
+    this._stopping = true;
+    const clearStopping = () => { this._stopping = false; };
+
     return new Promise((resolve, reject) => {
+      // Ensure the flag is always cleared even on early returns inside the
+      // branch logic below.
+      const done = (result) => { clearStopping(); resolve(result); };
+      const fail = (err) => { clearStopping(); reject(err); };
       if (isWindows) {
         // Windows: Accurately identify and kill PZ server processes to respect wrapper edge-cases like WinGSM
         log.debug('stopServer: Identifying Windows dedicated server processes...');
@@ -478,13 +493,18 @@ export class ServerManager {
 
           if (pidsToKill.length === 0 && !fallback) {
             log.debug('stopServer: No matching PZ server processes found.');
-            resolve({ success: true, message: 'Server was not running' });
+            done({ success: true, message: 'Server was not running' });
             return;
           }
           
           if (fallback) {
             log.warn('stopServer: WMI process detection failed. Falling back to generic force stop.');
-            exec('taskkill /IM ProjectZomboid64.exe /F', () => resolve({ success: true, message: 'Forced fallback kill executed' }));
+            // Clear state fields so getServerStatus doesn't report a stale
+            // startTime / old serverProcess handle after a fallback kill.
+            this.isRunning = false;
+            this.serverProcess = null;
+            this.startTime = null;
+            exec('taskkill /IM ProjectZomboid64.exe /F', () => done({ success: true, message: 'Forced fallback kill executed' }));
             exec('powershell -Command "Get-CimInstance Win32_Process -Filter \\"Name=\'java.exe\'\\" | Where-Object { $_.CommandLine -like \'*zombie.network.gameserver*\' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"');
             return;
           }
@@ -504,7 +524,7 @@ export class ServerManager {
             this.startTime = null;
             
             logServerEvent('server_stop', 'Server force stopped').catch(e => log.warn(`Failed to log event: ${e.message}`));
-            resolve({ success: true, message: 'Server stopped' });
+            done({ success: true, message: 'Server stopped' });
           }, 1000);
         });
       } else {
@@ -529,7 +549,7 @@ export class ServerManager {
         
         const killPids = (pids) => {
           if (pids.length === 0) {
-            resolve({ success: true, message: 'Server was not running' });
+            done({ success: true, message: 'Server was not running' });
             return;
           }
           
@@ -547,7 +567,7 @@ export class ServerManager {
             logServerEvent('server_stop', `Server force stopped (killed PIDs: ${pids.join(', ')})`).catch(e => log.warn(`Failed to log event: ${e.message}`));
             log.info(`Server force stopped (killed ${pids.length} process(es): ${pids.join(', ')})`);
             
-            resolve({ success: true, message: 'Server stopped' });
+            done({ success: true, message: 'Server stopped' });
           });
         };
       }

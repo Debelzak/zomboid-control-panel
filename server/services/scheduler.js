@@ -268,7 +268,15 @@ export class Scheduler {
     // Schedule the actual restart
     this.autoRestartJob = cron.schedule(cronExpression, async () => {
       log.info('Executing scheduled auto-restart');
-      await this.performRestart();
+      try {
+        await this.performRestart();
+      } catch (err) {
+        // performRestart re-throws on failure. node-cron does not consume the
+        // returned promise, so without this catch the rejection is unhandled
+        // and takes the whole panel process down. Errors are already logged
+        // + schedule-execution-logged inside performRestart's catch block.
+        log.error(`Auto-restart cron tick failed: ${err.message}`);
+      }
     });
 
     log.info(`Auto-restart scheduled: ${cronExpression}`);

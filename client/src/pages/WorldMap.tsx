@@ -644,6 +644,12 @@ export default function WorldMap() {
     }
     img.onerror = () => {
       pendingTileLoadsRef.current--
+      // Drop the pending entry so a retry (next redraw pass / next pan) can
+      // re-request. Leaving the null in place permanently marks this tile as
+      // "loading forever" and it never reappears until the user changes floor.
+      if (floorRef.current === f) {
+        delete tileCacheRef.current[key]
+      }
     }
     const ext = f === 0 ? 'jpg' : 'webp'
     const floorParam = f !== 0 ? `?floor=${f}` : ''

@@ -12,7 +12,7 @@ import { fileURLToPath } from 'url';
 import bridge from '../services/panelBridge.js';
 import { getActiveServer, getServer, getAllSettings, getDb, logBridgeCommand } from '../database/init.js';
 import { sanitizeError } from '../utils/sanitize.js';
-import { getEmbeddedPanelBridgeLua } from '../utils/embeddedLua.js';
+import { getEmbeddedPanelBridgeLua, compareModVersions, writeLuaAtomic } from '../utils/embeddedLua.js';
 import { createLogger } from '../utils/logger.js';
 const log = createLogger('API:PanelBridge');
 
@@ -269,14 +269,16 @@ router.post('/auto-configure', async (req, res) => {
         if (srcContent) {
           let needsCopy = !fs.existsSync(destLuaFile);
           
-          // If dest exists, compare VERSION strings to decide if we should update
+          // If dest exists, compare VERSION strings and only upgrade if
+          // embedded is strictly newer (avoids silent downgrade of hand-
+          // installed dev builds).
           if (!needsCopy) {
             modInstalled = true;
             try {
               const destContent = fs.readFileSync(destLuaFile, 'utf8');
               const srcVersion = (srcContent.match(/VERSION\s*=\s*"([^"]+)"/) || [])[1];
               const destVersion = (destContent.match(/VERSION\s*=\s*"([^"]+)"/) || [])[1];
-              if (srcVersion && destVersion && srcVersion !== destVersion) {
+              if (srcVersion && destVersion && compareModVersions(srcVersion, destVersion) > 0) {
                 needsCopy = true;
                 modUpdated = true;
                 log.info(`PanelBridge mod update: ${destVersion} → ${srcVersion}`);
@@ -285,8 +287,7 @@ router.post('/auto-configure', async (req, res) => {
           }
           
           if (needsCopy) {
-            fs.mkdirSync(path.dirname(destLuaFile), { recursive: true });
-            fs.writeFileSync(destLuaFile, srcContent);
+            writeLuaAtomic(destLuaFile, srcContent);
             modInstalled = true;
             if (modUpdated) {
               log.info('PanelBridge mod updated on server');
@@ -1444,11 +1445,6 @@ router.post('/install-mod-auto', async (req, res) => {
     const luaServerPath = path.join(serverInstallDir, 'media', 'lua', 'server');
     const destLuaFile = path.join(luaServerPath, 'PanelBridge.lua');
     
-    // Ensure destination directory exists
-    if (!fs.existsSync(luaServerPath)) {
-      fs.mkdirSync(luaServerPath, { recursive: true });
-    }
-    
     // Prefer embedded Lua (guaranteed to match running binary version).
     let srcContent = getEmbeddedPanelBridgeLua();
     let sourceLocation = srcContent ? 'embedded' : null;
@@ -1473,7 +1469,7 @@ router.post('/install-mod-auto', async (req, res) => {
       return res.status(404).json({ error: 'Source mod not found (no embedded Lua and no on-disk pz-mod).' });
     }
     
-    fs.writeFileSync(destLuaFile, srcContent);
+    writeLuaAtomic(destLuaFile, srcContent);
     
     res.json({ 
       success: true, 
@@ -1565,9 +1561,9 @@ router.post('/install-mod', (req, res) => {
       fs.mkdirSync(realTarget, { recursive: true, mode: 0o755 });
     }
     
-    // Write the Lua file
+    // Atomic write of the Lua file
     const destPath = path.join(realTarget, 'PanelBridge.lua');
-    fs.writeFileSync(destPath, srcContent);
+    writeLuaAtomic(destPath, srcContent);
     
     res.json({ 
       success: true, 
