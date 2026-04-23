@@ -1438,11 +1438,16 @@ router.post('/install-mod-auto', async (req, res) => {
       serverInstallDir = path.dirname(serverInstallDir);
     }
     
-    // Find source mod
+    // Find source mod. Check the __dirname-relative path FIRST — in packaged
+    // pkg builds pz-mod is embedded next to the bundled server.cjs via pkg
+    // assets, which guarantees the Lua source matches the running binary's
+    // version. The cwd/execPath fallbacks handle dev mode and tar.gz installs.
     const possiblePaths = [
+      path.join(__dirname, 'pz-mod', 'PanelBridge'),
+      path.join(__dirname, '..', 'pz-mod', 'PanelBridge'),
+      path.join(__dirname, '..', '..', 'pz-mod', 'PanelBridge'),
       path.join(process.cwd(), 'pz-mod', 'PanelBridge'),
       path.join(path.dirname(process.execPath), 'pz-mod', 'PanelBridge'),
-      path.join(__dirname, '..', '..', 'pz-mod', 'PanelBridge'),
     ];
     
     let sourcePath = null;

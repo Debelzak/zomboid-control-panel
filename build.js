@@ -196,12 +196,28 @@ async function main() {
 
   console.log('Server bundled successfully');
 
+  // Copy pz-mod into dist-exe so pkg can embed it as a snapshot asset. This
+  // makes the latest bundled PanelBridge.lua ship INSIDE the binary itself,
+  // so users who auto-update (binary-only swap) still get the fresh Lua
+  // when tryStartPanelBridge() / install-mod-auto look it up via __dirname.
+  // Without this the on-disk pz-mod/ folder can lag several versions behind
+  // the binary, causing the in-game mod to stay on a stale version.
+  const embeddedPzMod = path.join(distDir, 'pz-mod');
+  if (fs.existsSync(embeddedPzMod)) {
+    fs.rmSync(embeddedPzMod, { recursive: true, force: true });
+  }
+  if (fs.existsSync('./pz-mod')) {
+    fs.cpSync('./pz-mod', embeddedPzMod, { recursive: true });
+    console.log('pz-mod embedded into binary snapshot');
+  }
+
   const pkgConfig = {
     name: 'zomboid-control-panel',
     version: panelVersion,
     bin: 'server.cjs',
     pkg: {
       scripts: 'server.cjs',
+      assets: ['pz-mod/**/*'],
       targets: targets.map((target) => `node18-${target}-x64`),
       outputPath: '.',
     },

@@ -609,8 +609,15 @@ async function tryStartPanelBridge(trigger = 'unknown') {
         : serverInstallDir;
       const destLuaFile = path.join(installDir, 'media', 'lua', 'server', 'PanelBridge.lua');
 
-      // Find bundled source mod
+      // Find bundled source mod. In pkg builds the pz-mod folder is embedded
+      // into the binary snapshot next to server.cjs (see build.js). __dirname
+      // resolves to that snapshot path at runtime, so it must be checked
+      // FIRST — it's the only source guaranteed to match the running binary's
+      // version. cwd/execPath paths are kept as fallbacks for dev mode and
+      // for side-by-side tar.gz installs.
       const possibleModPaths = [
+        path.join(__dirname, 'pz-mod', 'PanelBridge'),
+        path.join(__dirname, '..', 'pz-mod', 'PanelBridge'),
         path.join(process.cwd(), 'pz-mod', 'PanelBridge'),
         path.join(path.dirname(process.execPath), 'pz-mod', 'PanelBridge'),
       ];
