@@ -212,33 +212,45 @@ export class ServerManager {
       }, 10000);
       
       if (isWindows) {
-        // Windows: Use PowerShell Get-CimInstance to inspect command lines
-        exec('powershell -Command "Get-CimInstance Win32_Process -Filter \\"Name=\'java.exe\'\\" | Select-Object CommandLine | Format-List"', { timeout: 8000 }, (psError, psStdout) => {
-          if (!psError && psStdout) {
-            const isPZServer = isWindowsDedicatedServerCommandLine(psStdout);
-            if (isPZServer) {
-              clearTimeout(timeout);
-              this.isRunning = true;
-              resolve(true);
-              return;
+        // Windows: enumerate java.exe + ProjectZomboid*.exe and inspect EACH
+        // process's command line individually. Previous versions concatenated
+        // all command lines into one string and ran the detector against the
+        // whole blob, which false-positived on dev machines where one java.exe
+        // mentioned "zomboid" (log path, classpath) and a different java.exe
+        // had "-server" (a very common JVM flag) — making the panel believe
+        // the dedicated server was still running after a clean shutdown.
+        // CSV output is used so command lines containing commas / quotes
+        // don't break the per-process parse.
+        const psCmd = 'powershell -Command "Get-CimInstance Win32_Process | Where-Object { $_.Name -match \'^(java\\.exe|ProjectZomboid64\\.exe|ProjectZomboid32\\.exe)$\' } | Select-Object CommandLine | ConvertTo-Csv -NoTypeInformation"';
+        exec(psCmd, { timeout: 8000 }, (psError, psStdout) => {
+          clearTimeout(timeout);
+          if (psError || !psStdout) {
+            this.isRunning = false;
+            resolve(false);
+            return;
+          }
+
+          const lines = psStdout.split(/\r?\n/);
+          let matched = false;
+          for (let raw of lines) {
+            raw = raw.trim();
+            if (!raw || raw === '"CommandLine"') continue;
+            // CSV row is a single quoted field; strip the outer quotes and
+            // un-double any internal "" escapes produced by ConvertTo-Csv.
+            let cmd = raw;
+            if (cmd.startsWith('"') && cmd.endsWith('"')) {
+              cmd = cmd.slice(1, -1).replace(/""/g, '"');
+            }
+            if (!cmd) continue;
+            if (isWindowsDedicatedServerCommandLine(cmd)) {
+              log.debug(`checkServerRunning: matched PZ server process: ${cmd.substring(0, 200)}`);
+              matched = true;
+              break;
             }
           }
-          
-          // Fallback: Check for standalone server builds (ProjectZomboid64.exe with -server flag)
-          exec('powershell -Command "Get-CimInstance Win32_Process -Filter \\"Name=\'ProjectZomboid64.exe\'\\" | Select-Object CommandLine | Format-List"', { timeout: 8000 }, (psError2, psStdout2) => {
-            clearTimeout(timeout);
-            if (psError2 || !psStdout2) {
-              this.isRunning = false;
-              resolve(false);
-              return;
-            }
-            
-            const cmdLine = psStdout2.toLowerCase();
-            const isServer = isWindowsDedicatedServerCommandLine(cmdLine);
-            
-            this.isRunning = isServer;
-            resolve(isServer);
-          });
+
+          this.isRunning = matched;
+          resolve(matched);
         });
       } else {
         // Linux/macOS: Use ps + grep to find the PZ server process
@@ -255,6 +267,9 @@ export class ServerManager {
             return;
           }
           // Fallback: ps aux (works on all distros including CentOS minimal)
+          // Check each process line individually — concatenating stdout then
+          // substring-matching would false-positive when multiple unrelated
+          // processes happen to mention zomboid-adjacent words across lines.
           log.debug('checkServerRunning: pgrep failed or empty, falling back to ps aux -ww');
           exec('ps aux -ww', { timeout: 8000 }, (err, stdout) => {
             clearTimeout(timeout);
@@ -263,11 +278,23 @@ export class ServerManager {
               resolve(false);
               return;
             }
-            
-            const lines = stdout.toLowerCase();
-            const isPZServer = lines.includes('zombie.network.gameserver') ||
-                              lines.includes('projectzomboid64') ||
-                              lines.includes('projectzomboid32');
+
+            const procLines = stdout.split(/\r?\n/);
+            let isPZServer = false;
+            for (const line of procLines) {
+              const lower = line.toLowerCase();
+              if (lower.includes('zombie.network.gameserver') ||
+                  lower.includes('projectzomboid64') ||
+                  lower.includes('projectzomboid32')) {
+                // Skip the ps/grep command itself if it ever slips in.
+                if (/\b(ps|pgrep|grep)\b.*\b(zombie|projectzomboid)/.test(lower) &&
+                    !lower.includes('java') && !lower.includes('-server')) {
+                  continue;
+                }
+                isPZServer = true;
+                break;
+              }
+            }
             this.isRunning = isPZServer;
             resolve(isPZServer);
           });

@@ -141,12 +141,18 @@ export async function countVehiclesInBoxes(savePath, boxes) {
  * Delete rows from vehicles.db for every vehicle whose tile coordinates fall
  * inside any of the provided tile bounding boxes.
  *
+ * If a box also provides wx0/wx1/wy0/wy1 (chunk-coord bounds), those are
+ * OR'd into the WHERE clause. PZ stores both tile (x,y) and chunk (wx,wy)
+ * coords on each vehicle row, and there are rare cases where a vehicle mid-
+ * move has drifted tile coords out of sync with its chunk coords. Matching
+ * on BOTH guarantees we catch everything the chunk file represented.
+ *
  * This works whether the server is stopped or running, but the caller SHOULD
  * stop the server first — otherwise the running process may hold the DB file
  * open (on Windows) or write back stale state when it shuts down.
  *
  * @param {string} savePath Absolute path to the save directory
- * @param {Array<{x0:number,y0:number,x1:number,y1:number}>} boxes Tile bboxes (half-open: [x0,x1))
+ * @param {Array<{x0:number,y0:number,x1:number,y1:number,wx0?:number,wx1?:number,wy0?:number,wy1?:number}>} boxes Tile bboxes (half-open: [x0,x1)), optionally with chunk-coord bboxes
  * @param {object}   [opts]
  * @param {string}   [opts.backupPath]  If set, copy vehicles.db here before mutation
  * @returns {Promise<{deleted:number, skipped:boolean, reason?:string}>}
@@ -198,21 +204,55 @@ export async function deleteVehiclesInBoxes(savePath, boxes, opts = {}) {
       }
 
       let deleted = 0;
+      // Detect whether a wx column exists (should on all PZ versions, but
+      // be defensive — some early B42 builds/modded schemas may differ).
+      let hasWxColumn = false;
+      try {
+        const probe = db.prepare('SELECT wx, wy FROM vehicles LIMIT 1');
+        probe.free();
+        hasWxColumn = true;
+      } catch { /* column missing — fall back to tile-only delete */ }
+
       db.exec('BEGIN');
       try {
-        const stmt = db.prepare(
+        // Tile-coord pass — primary match on (x, y) in tile space.
+        const tileStmt = db.prepare(
           'DELETE FROM vehicles WHERE x >= ? AND x < ? AND y >= ? AND y < ?'
         );
         try {
           for (const b of boxes) {
-            stmt.bind([b.x0, b.x1, b.y0, b.y1]);
-            stmt.step();
-            stmt.reset();
+            tileStmt.bind([b.x0, b.x1, b.y0, b.y1]);
+            tileStmt.step();
+            tileStmt.reset();
             deleted += db.getRowsModified();
           }
         } finally {
-          stmt.free();
+          tileStmt.free();
         }
+
+        // Chunk-coord pass — catches vehicles whose tile coords drifted out
+        // of sync with their chunk coords (rare but observed when a vehicle
+        // was mid-move at save time). Only runs for boxes that supplied
+        // wx0/wx1/wy0/wy1 AND on schemas that actually have the columns.
+        if (hasWxColumn) {
+          const chunkStmt = db.prepare(
+            'DELETE FROM vehicles WHERE wx >= ? AND wx < ? AND wy >= ? AND wy < ?'
+          );
+          try {
+            for (const b of boxes) {
+              if (!Number.isFinite(b.wx0) || !Number.isFinite(b.wx1)
+                || !Number.isFinite(b.wy0) || !Number.isFinite(b.wy1)
+                || b.wx1 <= b.wx0 || b.wy1 <= b.wy0) continue;
+              chunkStmt.bind([b.wx0, b.wx1, b.wy0, b.wy1]);
+              chunkStmt.step();
+              chunkStmt.reset();
+              deleted += db.getRowsModified();
+            }
+          } finally {
+            chunkStmt.free();
+          }
+        }
+
         db.exec('COMMIT');
       } catch (err) {
         try { db.exec('ROLLBACK'); } catch { /* ignore */ }
@@ -247,6 +287,10 @@ export async function deleteVehiclesInChunks(savePath, chunks, tilesPerChunk, op
     x1: c.x * tilesPerChunk + tilesPerChunk,
     y0: c.y * tilesPerChunk,
     y1: c.y * tilesPerChunk + tilesPerChunk,
+    wx0: c.x,
+    wx1: c.x + 1,
+    wy0: c.y,
+    wy1: c.y + 1,
   }));
   return deleteVehiclesInBoxes(savePath, boxes, opts);
 }

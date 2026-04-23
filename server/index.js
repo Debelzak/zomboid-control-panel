@@ -782,6 +782,9 @@ app.post('/api/panel/restart', async (req, res) => {
   }
 
   // Linux + packaged + staged update → overwrite in place (safe on Linux), then restart.
+  // Track the path to spawn after apply — may differ from process.execPath if we
+  // were launched from a .new/.new2 slot (that file gets renamed away).
+  let linuxRespawnPath = null;
   if (isPackaged && !isWindows && staged) {
     try {
       const fssync = await import('fs');
@@ -802,6 +805,7 @@ app.post('/api/panel/restart', async (req, res) => {
       try { await fsp.chmod(targetPath, 0o755); } catch (chmodErr) {
         log.warn(`Could not chmod new binary: ${chmodErr.message}`);
       }
+      linuxRespawnPath = targetPath;
       log.info(`Linux staged update applied to ${targetPath}; restarting`);
     } catch (err) {
       log.error(`Failed to apply Linux staged update: ${err.message}`);
@@ -815,8 +819,32 @@ app.post('/api/panel/restart', async (req, res) => {
   setTimeout(async () => {
     try { await flushWrites(); } catch { /* best effort */ }
     if (isPackaged) {
-      // Running as packaged exe — spawn self then exit
-      spawn(process.execPath, [], { detached: true, stdio: 'ignore' }).unref();
+      // Detect if we're running under an orchestrator that will restart us.
+      // - systemd sets INVOCATION_ID (service unit) or NOTIFY_SOCKET
+      // - Docker creates /.dockerenv at root (or /run/.containerenv on podman)
+      // In those cases, just exit cleanly — the orchestrator handles respawn.
+      // Respawning ourselves under systemd causes a duplicate process; under
+      // Docker (PID 1) the detached child dies with the container anyway.
+      let orchestrated = false;
+      try {
+        if (process.env.INVOCATION_ID || process.env.NOTIFY_SOCKET) orchestrated = true;
+        const fssync = await import('fs');
+        if (fssync.existsSync('/.dockerenv') || fssync.existsSync('/run/.containerenv')) {
+          orchestrated = true;
+        }
+      } catch { /* best effort */ }
+
+      if (!orchestrated) {
+        // Running as packaged exe standalone — spawn self, then exit.
+        // On Linux, prefer the freshly-applied binary path (linuxRespawnPath)
+        // since process.execPath may point at a .new slot we just renamed away.
+        // On Windows we don't reach this path when a staged update exists
+        // (the helper handles it), so process.execPath is safe.
+        const respawnTarget = linuxRespawnPath || process.execPath;
+        spawn(respawnTarget, [], { detached: true, stdio: 'ignore' }).unref();
+      } else {
+        log.info('Running under orchestrator (systemd/Docker) — exiting for external restart');
+      }
     }
     process.exit(0);
   }, 1000);

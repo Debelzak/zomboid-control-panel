@@ -14,6 +14,26 @@ const router = express.Router();
 function cellDivisorFor(isB42) { return isB42 ? 32 : 30; }
 function tilesPerChunkFor(isB42) { return isB42 ? 8 : 10; }
 
+// Filesystem-based B42 detection. Much more reliable than inferring from a
+// filename pattern because selections can be chunkdata-only (no `map/X/Y.bin`
+// path, which would falsely look like B41). Order:
+//   1. map/ contains numeric X subdirectories → B42 layout
+//   2. B42 indicator files in save root (WorldDictionary.bin etc)
+//   3. fall back to flat B41 layout
+function detectSaveIsB42Sync(savePath) {
+  try {
+    const mapPath = path.join(savePath, 'map');
+    if (fs.existsSync(mapPath)) {
+      const entries = fs.readdirSync(mapPath, { withFileTypes: true });
+      if (entries.some(e => e.isDirectory() && /^\d+$/.test(e.name))) return true;
+    }
+  } catch { /* ignore */ }
+  const b42Indicators = ['WorldDictionary.bin', 'global_mod_data.bin', 'entity_data.bin'];
+  return b42Indicators.some(f => {
+    try { return fs.existsSync(path.join(savePath, f)); } catch { return false; }
+  });
+}
+
 // Given the set of cells touched by a chunk-deletion pass, determine which
 // cells are now FULLY empty (no surviving chunk files anywhere in the cell's
 // chunk range) and delete the per-cell auxiliary files (chunkdata, zpop,
@@ -24,7 +44,12 @@ function tilesPerChunkFor(isB42) { return isB42 ? 8 : 10; }
 // Only handles the B42 map/X/Y.bin layout. For B41 flat layouts, cell files
 // typically don't exist or aren't used the same way — we leave them alone to
 // avoid clobbering unrelated saves.
-async function cleanupEmptyCellFiles(savePath, touchedCells, isB42) {
+//
+// If backupPath is provided, each aux file is copied into it before deletion
+// so a restore can rebuild the cell exactly. Without this, a "restore from
+// backup" leaves the save with chunk files present but no cell metadata —
+// PZ would regenerate the cell partially and we'd get inconsistent state.
+async function cleanupEmptyCellFiles(savePath, touchedCells, isB42, backupPath = null) {
   if (!isB42 || touchedCells.size === 0) return { removed: [] };
   const divisor = cellDivisorFor(true);
   const mapPath = path.join(savePath, 'map');
@@ -73,6 +98,20 @@ async function cleanupEmptyCellFiles(savePath, touchedCells, isB42) {
     for (const [folder, file] of cellFiles) {
       const full = path.join(savePath, folder, file);
       try {
+        // Back up before deletion if a backup folder was passed. Nested under
+        // cellaux/ so the restore script can distinguish these from chunk
+        // backups (which live at the top level of backupPath).
+        if (backupPath) {
+          try {
+            const cellAuxDir = path.join(backupPath, 'cellaux', folder);
+            await fs.promises.mkdir(cellAuxDir, { recursive: true });
+            await fs.promises.copyFile(full, path.join(cellAuxDir, file));
+          } catch (cpErr) {
+            if (cpErr.code !== 'ENOENT') {
+              log.debug(`Failed to back up cell aux ${folder}/${file}: ${cpErr.message}`);
+            }
+          }
+        }
         await fs.promises.unlink(full);
         removed.push(`${folder}/${file}`);
       } catch (e) {
@@ -483,6 +522,14 @@ router.get('/chunks/:saveName', async (req, res) => {
     // In B42 saves, chunkdata uses CELL coordinates and is converted here to
     // native B42 chunk coordinates (× 32). Original cell coords are preserved
     // in cellX/cellY for deletion operations.
+    //
+    // NOTE: chunkdata entries are kept in a SEPARATE dedup namespace from map
+    // chunks. A chunkdata entry represents an entire cell's state (256×256
+    // tiles on B42), not just the corner chunk. Previously these got dropped
+    // when `map/0/0.bin` already claimed coord (0,0) — which meant the user
+    // could not select the cell-wide chunkdata entry, and its cell-span
+    // vehicle/state cleanup never ran.
+    const seenChunkDataCoords = new Set();
     {
       const chunkDataPath = path.join(savePath, 'chunkdata');
       if (fs.existsSync(chunkDataPath)) {
@@ -495,11 +542,21 @@ router.get('/chunks/:saveName', async (req, res) => {
           if (match) {
             const rawX = parseInt(match[1], 10);
             const rawY = parseInt(match[2], 10);
-            
+
             const displayX = isB42 ? rawX * 32 : rawX * 30;
             const displayY = isB42 ? rawY * 32 : rawY * 30;
 
-            if (!rememberChunkCoord(displayX, displayY)) continue;
+            // Dedup against ONLY other chunkdata entries, not against map
+            // chunks — the two sources cover different amounts of world state.
+            const cdKey = `${displayX},${displayY}`;
+            if (seenChunkDataCoords.has(cdKey)) continue;
+            seenChunkDataCoords.add(cdKey);
+            // Track for bounds even though rememberChunkCoord was skipped.
+            minX = Math.min(minX, displayX);
+            maxX = Math.max(maxX, displayX);
+            minY = Math.min(minY, displayY);
+            maxY = Math.max(maxY, displayY);
+            totalChunks++;
 
             chunkEntries.push({ file, rawX, rawY, displayX, displayY });
           }
@@ -580,6 +637,15 @@ router.post('/delete-chunks', async (req, res) => {
       return res.status(400).json({ error: 'Save name and chunks array required' });
     }
 
+    // Cap chunk count explicitly. Express body-parser already rejects >1MB
+    // payloads with a cryptic PayloadTooLargeError; this check fires earlier
+    // and gives a clear message. 100k matches the region endpoint's cap.
+    if (chunks.length > 100000) {
+      return res.status(400).json({
+        error: `Too many chunks (${chunks.length.toLocaleString()}). Maximum is 100,000 per request — split into smaller batches.`
+      });
+    }
+
     // Sanitize saveName to prevent path traversal
     const sanitizedSaveName = path.basename(saveName);
     if (!sanitizedSaveName || sanitizedSaveName !== saveName) {
@@ -611,24 +677,6 @@ router.post('/delete-chunks', async (req, res) => {
       }
     }
 
-    // B42 vs B41 detection
-    const isB42 = chunks.some(c => c.file && c.file.includes('/'));
-    const cellDivisor = cellDivisorFor(isB42);
-    const tilesPerChunk = tilesPerChunkFor(isB42);
-
-    // Backfill cell coordinates for chunkdata-origin and map-origin chunks.
-    for (const chunk of chunks) {
-      if (chunk.source === 'chunkdata' && chunk.cellX === undefined) {
-        const cdMatch = chunk.file.match(/(\d+)_(\d+)/);
-        if (cdMatch) {
-          chunk.cellX = parseInt(cdMatch[1], 10);
-          chunk.cellY = parseInt(cdMatch[2], 10);
-        }
-      }
-      if (chunk.cellX === undefined) chunk.cellX = Math.floor(chunk.x / cellDivisor);
-      if (chunk.cellY === undefined) chunk.cellY = Math.floor(chunk.y / cellDivisor);
-    }
-
     const zomboidDataPath = customPath
       ? resolveCustomOrDefaultDataPath(String(customPath))
       : await getZomboidDataPath();
@@ -643,6 +691,31 @@ router.post('/delete-chunks', async (req, res) => {
       return res.status(404).json({ error: 'Save not found' });
     }
 
+    // B42 vs B41 detection — filesystem-based, not filename-based.
+    // Filename inference (chunks.some(c => c.file.includes('/'))) silently
+    // mis-detects selections made of only `chunkdata_X_Y.bin` entries on B42
+    // saves. That would compute the wrong cell size and the wrong vehicle
+    // bbox (30×10 B41 tiles vs 32×8 B42 tiles).
+    const isB42 = detectSaveIsB42Sync(savePath);
+    const cellDivisor = cellDivisorFor(isB42);
+    const tilesPerChunk = tilesPerChunkFor(isB42);
+
+    // Backfill cell coordinates for chunkdata-origin and map-origin chunks.
+    // Use == null (not === undefined) so a null from the client JSON payload
+    // is also treated as "needs backfill" — otherwise touchedCells ends up
+    // with "null,null" keys and per-cell aux cleanup silently skips.
+    for (const chunk of chunks) {
+      if (chunk.source === 'chunkdata' && chunk.cellX == null) {
+        const cdMatch = chunk.file.match(/(\d+)_(\d+)/);
+        if (cdMatch) {
+          chunk.cellX = parseInt(cdMatch[1], 10);
+          chunk.cellY = parseInt(cdMatch[2], 10);
+        }
+      }
+      if (chunk.cellX == null) chunk.cellX = Math.floor(chunk.x / cellDivisor);
+      if (chunk.cellY == null) chunk.cellY = Math.floor(chunk.y / cellDivisor);
+    }
+
     // Create backup if requested. We back up map files AND vehicles.db (if
     // vehicles are being deleted) so the operation is fully reversible.
     let backupPath = null;
@@ -652,11 +725,18 @@ router.post('/delete-chunks', async (req, res) => {
 
       await Promise.all(chunks.map(async chunk => {
         try {
+          // Use source as a prefix so a B42 map chunk (`0/0.bin`) and a B41
+          // save-root chunk (`0_0.bin`) can coexist in the same backup without
+          // colliding to `map_0_0.bin` + EEXIST (which COPYFILE_EXCL would
+          // otherwise silently drop as a warn).
+          const srcTag = chunk.source === 'saveroot' ? 'saveroot'
+                       : chunk.source === 'chunkdata' ? 'chunkdata'
+                       : 'map';
           const mapFile = chunk.source === 'saveroot'
             ? path.join(savePath, chunk.file)
             : path.join(savePath, 'map', chunk.file);
           try {
-            const backupName = `map_${chunk.file.replace(/[/\\]/g, '_')}`;
+            const backupName = `${srcTag}_${chunk.file.replace(/[/\\]/g, '_')}`;
             await fs.promises.copyFile(mapFile, path.join(backupPath, backupName), fs.constants.COPYFILE_EXCL);
           } catch (e) {
             if (e.code !== 'ENOENT') throw e;
@@ -727,7 +807,7 @@ router.post('/delete-chunks', async (req, res) => {
     // ─── Pass 2: remove per-cell aux files only for cells that are now empty ───
     // (Fixes the overreach bug that made one chunk deletion wipe cell state
     // for 1023 innocent neighbours.)
-    const cellCleanup = await cleanupEmptyCellFiles(savePath, touchedCells, isB42);
+    const cellCleanup = await cleanupEmptyCellFiles(savePath, touchedCells, isB42, backupPath);
 
     // Clean up empty X directories (B42)
     const deletedXDirs = new Set();
@@ -754,18 +834,29 @@ router.post('/delete-chunks', async (req, res) => {
       // Build tile bboxes. chunkdata-source entries cover a whole cell
       // (not just one chunk) — expand them so we don't miss vehicles in the
       // other 1023 chunks of that cell.
+      // Also supply wx/wy (chunk-coord) bounds so vehicles with drifted tile
+      // coords but valid chunk coords still get matched.
       const cellTileSpan = cellDivisor * tilesPerChunk;
       const boxes = chunks
-        .filter(c => c.cellX !== undefined && c.cellY !== undefined)
+        .filter(c => c.cellX != null && c.cellY != null)
         .map(c => {
           if (c.source === 'chunkdata') {
             const x0 = c.cellX * cellTileSpan;
             const y0 = c.cellY * cellTileSpan;
-            return { x0, x1: x0 + cellTileSpan, y0, y1: y0 + cellTileSpan };
+            // chunkdata covers the whole cell, so wx spans cellDivisor chunks.
+            const wx0 = c.cellX * cellDivisor;
+            const wy0 = c.cellY * cellDivisor;
+            return {
+              x0, x1: x0 + cellTileSpan, y0, y1: y0 + cellTileSpan,
+              wx0, wx1: wx0 + cellDivisor, wy0, wy1: wy0 + cellDivisor,
+            };
           }
           const x0 = c.x * tilesPerChunk;
           const y0 = c.y * tilesPerChunk;
-          return { x0, x1: x0 + tilesPerChunk, y0, y1: y0 + tilesPerChunk };
+          return {
+            x0, x1: x0 + tilesPerChunk, y0, y1: y0 + tilesPerChunk,
+            wx0: c.x, wx1: c.x + 1, wy0: c.y, wy1: c.y + 1,
+          };
         });
       try {
         vehiclesResult = await deleteVehiclesInBoxes(savePath, boxes, { backupPath: dbBackup });
@@ -776,7 +867,7 @@ router.post('/delete-chunks', async (req, res) => {
       }
     }
 
-    log.info(`Deleted ${deleted} chunks from save ${sanitizedSaveName} (cells emptied: ${cellCleanup.removed.length / 4 | 0}, vehicles removed: ${vehiclesResult.deleted})`);
+    log.info(`Deleted ${deleted} chunks from save ${sanitizedSaveName} (cell aux files removed: ${cellCleanup.removed.length}, vehicles removed: ${vehiclesResult.deleted})`);
 
     res.json({
       success: true,
@@ -824,8 +915,15 @@ router.post('/delete-region', async (req, res) => {
     
     // Validate bounds are numbers
     if (typeof minX !== 'number' || typeof maxX !== 'number' || 
-        typeof minY !== 'number' || typeof maxY !== 'number') {
-      return res.status(400).json({ error: 'Region bounds must be numbers' });
+        typeof minY !== 'number' || typeof maxY !== 'number' ||
+        !Number.isFinite(minX) || !Number.isFinite(maxX) ||
+        !Number.isFinite(minY) || !Number.isFinite(maxY)) {
+      return res.status(400).json({ error: 'Region bounds must be finite numbers' });
+    }
+    // Reject swapped bounds — otherwise a non-invert selection silently
+    // matches nothing and the caller sees an unhelpful "0 deleted".
+    if (minX > maxX || minY > maxY) {
+      return res.status(400).json({ error: 'Region bounds inverted (minX > maxX or minY > maxY)' });
     }
     
     const zomboidDataPath = customPath
@@ -939,8 +1037,9 @@ router.post('/delete-region', async (req, res) => {
     }
     
     // Create backup if requested
+    let backupPath = null;
     if (createBackup) {
-      const backupPath = path.join(zomboidDataPath, 'backups', `${sanitizedSaveName}_region_${Date.now()}`);
+      backupPath = path.join(zomboidDataPath, 'backups', `${sanitizedSaveName}_region_${Date.now()}`);
       await fs.promises.mkdir(backupPath, { recursive: true });
       
       // Parallel backup
@@ -985,7 +1084,7 @@ router.post('/delete-region', async (req, res) => {
     }));
 
     // Per-cell aux cleanup — only for cells that are now fully empty on disk.
-    const cellCleanup = await cleanupEmptyCellFiles(savePath, touchedCells, regionIsB42);
+    const cellCleanup = await cleanupEmptyCellFiles(savePath, touchedCells, regionIsB42, backupPath);
     
     // Clean up empty X directories after B42 chunk deletion
     const deletedXDirs = new Set();
@@ -1004,16 +1103,22 @@ router.post('/delete-region', async (req, res) => {
     }
 
     // Vehicles.db cleanup (optional, destructive).
+    // Backup lives inside the chunk backup folder (if one was made) so a
+    // single restore operation covers everything from this call. Matches the
+    // layout used by /delete-chunks.
     let vehiclesResult = { deleted: 0, skipped: true };
     if (deleteVehicles && deleted > 0) {
       const tilesPerChunk = tilesPerChunkFor(regionIsB42);
-      const dbBackup = createBackup
-        ? path.join(zomboidDataPath, 'backups', `${sanitizedSaveName}_region_${Date.now()}_vehicles.db.bak`)
+      const dbBackup = createBackup && typeof backupPath === 'string'
+        ? path.join(backupPath, 'vehicles.db.bak')
         : null;
       const boxes = chunksToDelete.map(c => {
         const x0 = c.x * tilesPerChunk;
         const y0 = c.y * tilesPerChunk;
-        return { x0, x1: x0 + tilesPerChunk, y0, y1: y0 + tilesPerChunk };
+        return {
+          x0, x1: x0 + tilesPerChunk, y0, y1: y0 + tilesPerChunk,
+          wx0: c.x, wx1: c.x + 1, wy0: c.y, wy1: c.y + 1,
+        };
       });
       try {
         vehiclesResult = await deleteVehiclesInBoxes(savePath, boxes, { backupPath: dbBackup });

@@ -258,7 +258,7 @@ export default function ChunkCleaner() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [createBackup, setCreateBackup] = useState(true)
   const [deleting, setDeleting] = useState(false)
-  const [deleteVehicles, setDeleteVehicles] = useState(false)
+  const [deleteVehicles, setDeleteVehicles] = useState(true)
 
   // Vehicle & safehouse overlays
   const [chunkVehicles, setChunkVehicles] = useState<ChunkVehicle[]>([])
@@ -1121,7 +1121,7 @@ export default function ChunkCleaner() {
           setSelectedChunks(new Set())
           break
         case 'Delete':
-          if (selectedChunks.size > 0) { setDeleteVehicles(false); setDeleteDialogOpen(true) }
+          if (selectedChunks.size > 0) { setDeleteVehicles(true); setDeleteDialogOpen(true) }
           break
         case '1':
           setTool('select')
@@ -1354,7 +1354,7 @@ export default function ChunkCleaner() {
       
       setDeleteDialogOpen(false)
       setSelectedChunks(new Set())
-      setDeleteVehicles(false)
+      setDeleteVehicles(true)
       await loadChunks()
       await fetchOverlayData()
     } catch (error) {
@@ -1650,7 +1650,7 @@ export default function ChunkCleaner() {
               <Button 
                 variant="destructive" 
                 className="w-full h-9 text-sm"
-                onClick={() => { setDeleteVehicles(false); setDeleteDialogOpen(true) }}
+                onClick={() => { setDeleteVehicles(true); setDeleteDialogOpen(true) }}
               >
                 <Trash2 className="w-4 h-4 mr-2" />
                 Delete {selectedChunks.size} Chunk{selectedChunks.size === 1 ? '' : 's'}
