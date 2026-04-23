@@ -30,6 +30,7 @@ import authService from './services/auth.js';
 import authRoutes from './routes/auth.js';
 import { loadOrCreateCerts } from './utils/certs.js';
 import { sanitizeError } from './utils/sanitize.js';
+import { getEmbeddedPanelBridgeLua } from './utils/embeddedLua.js';
 
 // Prevent EPIPE on stdout/stderr from crashing the process
 // (happens when terminal is closed while the exe keeps running)
@@ -609,36 +610,35 @@ async function tryStartPanelBridge(trigger = 'unknown') {
         : serverInstallDir;
       const destLuaFile = path.join(installDir, 'media', 'lua', 'server', 'PanelBridge.lua');
 
-      // Find bundled source mod. In pkg builds the pz-mod folder is embedded
-      // into the binary snapshot next to server.cjs (see build.js). __dirname
-      // resolves to that snapshot path at runtime, so it must be checked
-      // FIRST — it's the only source guaranteed to match the running binary's
-      // version. cwd/execPath paths are kept as fallbacks for dev mode and
-      // for side-by-side tar.gz installs.
-      const possibleModPaths = [
-        path.join(__dirname, 'pz-mod', 'PanelBridge'),
-        path.join(__dirname, '..', 'pz-mod', 'PanelBridge'),
-        path.join(process.cwd(), 'pz-mod', 'PanelBridge'),
-        path.join(path.dirname(process.execPath), 'pz-mod', 'PanelBridge'),
-      ];
-      let sourceLuaFile = null;
-      for (const modPath of possibleModPaths) {
-        const candidate = path.join(modPath, 'media', 'lua', 'server', 'PanelBridge.lua');
-        if (fs.existsSync(candidate)) { sourceLuaFile = candidate; break; }
+      // Prefer the Lua content embedded in the binary at bundle time — this is
+      // the only source guaranteed to match the running panel version after a
+      // binary-only auto-update. Falls back to on-disk pz-mod for dev mode and
+      // legacy builds that lack the embedded string.
+      let srcContent = getEmbeddedPanelBridgeLua();
+
+      if (!srcContent) {
+        const possibleModPaths = [
+          path.join(__dirname, '..', 'pz-mod', 'PanelBridge'),
+          path.join(process.cwd(), 'pz-mod', 'PanelBridge'),
+          path.join(path.dirname(process.execPath), 'pz-mod', 'PanelBridge'),
+        ];
+        for (const modPath of possibleModPaths) {
+          const candidate = path.join(modPath, 'media', 'lua', 'server', 'PanelBridge.lua');
+          if (fs.existsSync(candidate)) { srcContent = fs.readFileSync(candidate, 'utf8'); break; }
+        }
       }
 
-      if (sourceLuaFile && fs.existsSync(destLuaFile)) {
-        const srcContent = fs.readFileSync(sourceLuaFile, 'utf8');
+      if (srcContent && fs.existsSync(destLuaFile)) {
         const destContent = fs.readFileSync(destLuaFile, 'utf8');
         const srcVersion = (srcContent.match(/VERSION\s*=\s*"([^"]+)"/) || [])[1];
         const destVersion = (destContent.match(/VERSION\s*=\s*"([^"]+)"/) || [])[1];
         if (srcVersion && destVersion && srcVersion !== destVersion) {
-          fs.copyFileSync(sourceLuaFile, destLuaFile);
+          fs.writeFileSync(destLuaFile, srcContent);
           log.info(`PanelBridge mod auto-updated on server: ${destVersion} → ${srcVersion}`);
         }
-      } else if (sourceLuaFile && !fs.existsSync(destLuaFile)) {
+      } else if (srcContent && !fs.existsSync(destLuaFile)) {
         fs.mkdirSync(path.dirname(destLuaFile), { recursive: true });
-        fs.copyFileSync(sourceLuaFile, destLuaFile);
+        fs.writeFileSync(destLuaFile, srcContent);
         log.info('PanelBridge mod auto-installed to server');
       }
     }

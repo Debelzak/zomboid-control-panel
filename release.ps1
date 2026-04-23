@@ -164,10 +164,13 @@ if ($gitStatus) {
 
 # Verify \\garage is reachable (unless skipping deploy)
 if (-not $SkipDeploy) {
-    if (Test-Path "\\\\garage" -ErrorAction SilentlyContinue) {
-        Write-Ok "\\\\garage is reachable"
+    # Test-Path on a bare \\host (no share) can fail even when shares are reachable.
+    # Check a known share path instead. Use single-backslash form (double-escaped
+    # form "\\\\garage\\PZ" doesn't parse as a valid UNC on some PowerShell versions).
+    if (Test-Path '\\garage\PZ' -ErrorAction SilentlyContinue) {
+        Write-Ok "\\garage is reachable"
     } else {
-        Write-Host "  ERROR: \\\\garage is not reachable. Use -SkipDeploy to skip deployment." -ForegroundColor Red
+        Write-Host "  ERROR: \\garage\PZ is not reachable. Use -SkipDeploy to skip deployment." -ForegroundColor Red
         exit 1
     }
 }

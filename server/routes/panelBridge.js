@@ -12,6 +12,7 @@ import { fileURLToPath } from 'url';
 import bridge from '../services/panelBridge.js';
 import { getActiveServer, getServer, getAllSettings, getDb, logBridgeCommand } from '../database/init.js';
 import { sanitizeError } from '../utils/sanitize.js';
+import { getEmbeddedPanelBridgeLua } from '../utils/embeddedLua.js';
 import { createLogger } from '../utils/logger.js';
 const log = createLogger('API:PanelBridge');
 
@@ -247,30 +248,31 @@ router.post('/auto-configure', async (req, res) => {
         
         const destLuaFile = path.join(installDir, 'media', 'lua', 'server', 'PanelBridge.lua');
         
-        // Find source mod
-        const possibleModPaths = [
-          path.join(process.cwd(), 'pz-mod', 'PanelBridge'),
-          path.join(path.dirname(process.execPath), 'pz-mod', 'PanelBridge'),
-          path.join(__dirname, '..', '..', 'pz-mod', 'PanelBridge'),
-        ];
+        // Prefer embedded Lua (guaranteed to match running binary version).
+        let srcContent = getEmbeddedPanelBridgeLua();
         
-        let sourceLuaFile = null;
-        for (const modPath of possibleModPaths) {
-          const candidate = path.join(modPath, 'media', 'lua', 'server', 'PanelBridge.lua');
-          if (fs.existsSync(candidate)) {
-            sourceLuaFile = candidate;
-            break;
+        if (!srcContent) {
+          const possibleModPaths = [
+            path.join(process.cwd(), 'pz-mod', 'PanelBridge'),
+            path.join(path.dirname(process.execPath), 'pz-mod', 'PanelBridge'),
+            path.join(__dirname, '..', '..', 'pz-mod', 'PanelBridge'),
+          ];
+          for (const modPath of possibleModPaths) {
+            const candidate = path.join(modPath, 'media', 'lua', 'server', 'PanelBridge.lua');
+            if (fs.existsSync(candidate)) {
+              srcContent = fs.readFileSync(candidate, 'utf8');
+              break;
+            }
           }
         }
         
-        if (sourceLuaFile) {
+        if (srcContent) {
           let needsCopy = !fs.existsSync(destLuaFile);
           
           // If dest exists, compare VERSION strings to decide if we should update
           if (!needsCopy) {
             modInstalled = true;
             try {
-              const srcContent = fs.readFileSync(sourceLuaFile, 'utf8');
               const destContent = fs.readFileSync(destLuaFile, 'utf8');
               const srcVersion = (srcContent.match(/VERSION\s*=\s*"([^"]+)"/) || [])[1];
               const destVersion = (destContent.match(/VERSION\s*=\s*"([^"]+)"/) || [])[1];
@@ -284,7 +286,7 @@ router.post('/auto-configure', async (req, res) => {
           
           if (needsCopy) {
             fs.mkdirSync(path.dirname(destLuaFile), { recursive: true });
-            fs.copyFileSync(sourceLuaFile, destLuaFile);
+            fs.writeFileSync(destLuaFile, srcContent);
             modInstalled = true;
             if (modUpdated) {
               log.info('PanelBridge mod updated on server');
@@ -1438,33 +1440,8 @@ router.post('/install-mod-auto', async (req, res) => {
       serverInstallDir = path.dirname(serverInstallDir);
     }
     
-    // Find source mod. Check the __dirname-relative path FIRST — in packaged
-    // pkg builds pz-mod is embedded next to the bundled server.cjs via pkg
-    // assets, which guarantees the Lua source matches the running binary's
-    // version. The cwd/execPath fallbacks handle dev mode and tar.gz installs.
-    const possiblePaths = [
-      path.join(__dirname, 'pz-mod', 'PanelBridge'),
-      path.join(__dirname, '..', 'pz-mod', 'PanelBridge'),
-      path.join(__dirname, '..', '..', 'pz-mod', 'PanelBridge'),
-      path.join(process.cwd(), 'pz-mod', 'PanelBridge'),
-      path.join(path.dirname(process.execPath), 'pz-mod', 'PanelBridge'),
-    ];
-    
-    let sourcePath = null;
-    for (const p of possiblePaths) {
-      if (fs.existsSync(p)) {
-        sourcePath = p;
-        break;
-      }
-    }
-    
-    if (!sourcePath) {
-      return res.status(404).json({ error: 'Source mod not found.' });
-    }
-    
     // Install to: {serverInstallDir}/media/lua/server/PanelBridge.lua
     const luaServerPath = path.join(serverInstallDir, 'media', 'lua', 'server');
-    const sourceLuaFile = path.join(sourcePath, 'media', 'lua', 'server', 'PanelBridge.lua');
     const destLuaFile = path.join(luaServerPath, 'PanelBridge.lua');
     
     // Ensure destination directory exists
@@ -1472,17 +1449,37 @@ router.post('/install-mod-auto', async (req, res) => {
       fs.mkdirSync(luaServerPath, { recursive: true });
     }
     
-    // Copy the Lua file
-    if (!fs.existsSync(sourceLuaFile)) {
-      return res.status(404).json({ error: `Source Lua file not found at: ${sourceLuaFile}` });
+    // Prefer embedded Lua (guaranteed to match running binary version).
+    let srcContent = getEmbeddedPanelBridgeLua();
+    let sourceLocation = srcContent ? 'embedded' : null;
+    
+    if (!srcContent) {
+      const possiblePaths = [
+        path.join(__dirname, '..', '..', 'pz-mod', 'PanelBridge'),
+        path.join(process.cwd(), 'pz-mod', 'PanelBridge'),
+        path.join(path.dirname(process.execPath), 'pz-mod', 'PanelBridge'),
+      ];
+      for (const p of possiblePaths) {
+        const candidate = path.join(p, 'media', 'lua', 'server', 'PanelBridge.lua');
+        if (fs.existsSync(candidate)) {
+          srcContent = fs.readFileSync(candidate, 'utf8');
+          sourceLocation = candidate;
+          break;
+        }
+      }
     }
     
-    fs.copyFileSync(sourceLuaFile, destLuaFile);
+    if (!srcContent) {
+      return res.status(404).json({ error: 'Source mod not found (no embedded Lua and no on-disk pz-mod).' });
+    }
+    
+    fs.writeFileSync(destLuaFile, srcContent);
     
     res.json({ 
       success: true, 
       message: 'PanelBridge.lua installed to server Lua folder', 
       path: destLuaFile,
+      source: sourceLocation,
       serverName: targetServer.serverName || targetServer.name
     });
   } catch (error) {
@@ -1541,30 +1538,26 @@ router.post('/install-mod', (req, res) => {
   }
   
   try {
-    // Find source mod from multiple possible locations
-    const possiblePaths = [
-      path.join(process.cwd(), 'pz-mod', 'PanelBridge'),
-      path.join(path.dirname(process.execPath), 'pz-mod', 'PanelBridge'),
-      path.join(__dirname, '..', '..', 'pz-mod', 'PanelBridge'),
-    ];
+    // Prefer embedded Lua (guaranteed to match running binary version).
+    let srcContent = getEmbeddedPanelBridgeLua();
     
-    let sourcePath = null;
-    for (const p of possiblePaths) {
-      if (fs.existsSync(p)) {
-        sourcePath = p;
-        break;
+    if (!srcContent) {
+      const possiblePaths = [
+        path.join(process.cwd(), 'pz-mod', 'PanelBridge'),
+        path.join(path.dirname(process.execPath), 'pz-mod', 'PanelBridge'),
+        path.join(__dirname, '..', '..', 'pz-mod', 'PanelBridge'),
+      ];
+      for (const p of possiblePaths) {
+        const candidate = path.join(p, 'media', 'lua', 'server', 'PanelBridge.lua');
+        if (fs.existsSync(candidate)) {
+          srcContent = fs.readFileSync(candidate, 'utf8');
+          break;
+        }
       }
     }
     
-    if (!sourcePath) {
-      return res.status(404).json({ error: 'Source mod not found. Checked: ' + possiblePaths.join(', ') });
-    }
-    
-    // Source Lua file
-    const sourceLuaFile = path.join(sourcePath, 'media', 'lua', 'server', 'PanelBridge.lua');
-    
-    if (!fs.existsSync(sourceLuaFile)) {
-      return res.status(404).json({ error: `Source Lua file not found at: ${sourceLuaFile}` });
+    if (!srcContent) {
+      return res.status(404).json({ error: 'Source mod not found (no embedded Lua and no on-disk pz-mod).' });
     }
     
     // Ensure target directory exists (use realTarget for safety)
@@ -1572,9 +1565,9 @@ router.post('/install-mod', (req, res) => {
       fs.mkdirSync(realTarget, { recursive: true, mode: 0o755 });
     }
     
-    // Copy the Lua file
+    // Write the Lua file
     const destPath = path.join(realTarget, 'PanelBridge.lua');
-    fs.copyFileSync(sourceLuaFile, destPath);
+    fs.writeFileSync(destPath, srcContent);
     
     res.json({ 
       success: true, 

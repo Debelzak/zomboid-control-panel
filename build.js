@@ -177,6 +177,22 @@ async function main() {
   const panelVersion = rootPkg.version || '0.0.0';
   console.log(`Version: ${panelVersion}`);
 
+  // Read PanelBridge.lua and inline it as a base64 define so it lives INSIDE
+  // server.cjs (and therefore inside the pkg binary). pkg's `assets` glob was
+  // silently skipping the file, leaving the on-disk pz-mod/ folder as the only
+  // source — which goes stale after a binary-only auto-update and is the root
+  // cause of the "worldmap blank on Linux / mod version mismatch" bug.
+  const luaSourcePath = './pz-mod/PanelBridge/media/lua/server/PanelBridge.lua';
+  let panelBridgeLuaB64 = '';
+  if (fs.existsSync(luaSourcePath)) {
+    panelBridgeLuaB64 = fs.readFileSync(luaSourcePath).toString('base64');
+    const luaVerMatch = fs.readFileSync(luaSourcePath, 'utf8').match(/VERSION\s*=\s*"([^"]+)"/);
+    const luaVer = luaVerMatch ? luaVerMatch[1] : 'unknown';
+    console.log(`Embedding PanelBridge.lua v${luaVer} (${panelBridgeLuaB64.length} base64 chars)`);
+  } else {
+    console.warn(`WARNING: ${luaSourcePath} not found — binary will not be able to auto-update the Lua mod.`);
+  }
+
   await esbuild.build({
     entryPoints: ['./server/index.js'],
     bundle: true,
@@ -188,6 +204,7 @@ async function main() {
     define: {
       'import.meta.url': 'import_meta_url',
       PANEL_VERSION: JSON.stringify(panelVersion),
+      PANEL_BRIDGE_LUA_B64: JSON.stringify(panelBridgeLuaB64),
     },
     banner: {
       js: "const import_meta_url = require('url').pathToFileURL(__filename).href;",
@@ -196,28 +213,12 @@ async function main() {
 
   console.log('Server bundled successfully');
 
-  // Copy pz-mod into dist-exe so pkg can embed it as a snapshot asset. This
-  // makes the latest bundled PanelBridge.lua ship INSIDE the binary itself,
-  // so users who auto-update (binary-only swap) still get the fresh Lua
-  // when tryStartPanelBridge() / install-mod-auto look it up via __dirname.
-  // Without this the on-disk pz-mod/ folder can lag several versions behind
-  // the binary, causing the in-game mod to stay on a stale version.
-  const embeddedPzMod = path.join(distDir, 'pz-mod');
-  if (fs.existsSync(embeddedPzMod)) {
-    fs.rmSync(embeddedPzMod, { recursive: true, force: true });
-  }
-  if (fs.existsSync('./pz-mod')) {
-    fs.cpSync('./pz-mod', embeddedPzMod, { recursive: true });
-    console.log('pz-mod embedded into binary snapshot');
-  }
-
   const pkgConfig = {
     name: 'zomboid-control-panel',
     version: panelVersion,
     bin: 'server.cjs',
     pkg: {
       scripts: 'server.cjs',
-      assets: ['pz-mod/**/*'],
       targets: targets.map((target) => `node18-${target}-x64`),
       outputPath: '.',
     },
