@@ -31,7 +31,6 @@ interface ChatMessage {
 
 interface Player {
   name: string
-  online: boolean
 }
 
 export default function Chat() {
@@ -39,18 +38,38 @@ export default function Chat() {
   const [players, setPlayers] = useState<Player[]>([])
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([])
   const [sending, setSending] = useState(false)
-  
+
   const chatEndRef = useRef<HTMLDivElement>(null)
+  const scrollViewportRef = useRef<HTMLDivElement | null>(null)
+  const messageInputRef = useRef<HTMLInputElement>(null)
+  const stickToBottomRef = useRef(true)
   const sendingRef = useRef(false)
   const { toast } = useToast()
   const socket = useSocket()
 
-  const scrollToBottom = () => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }
+  // Track whether the user is parked at (or near) the bottom of the
+  // scroll viewport. We only auto-scroll on new messages when they are,
+  // so reading older history isn't yanked back by every incoming line.
+  const handleScroll = useCallback(() => {
+    const el = scrollViewportRef.current
+    if (!el) return
+    const distance = el.scrollHeight - (el.scrollTop + el.clientHeight)
+    stickToBottomRef.current = distance < 80
+  }, [])
 
   useEffect(() => {
-    scrollToBottom()
+    // ScrollArea (Radix) renders a viewport div with [data-radix-scroll-area-viewport].
+    const root = chatEndRef.current?.closest('[data-radix-scroll-area-viewport]') as HTMLDivElement | null
+    scrollViewportRef.current = root
+    if (!root) return
+    root.addEventListener('scroll', handleScroll, { passive: true })
+    return () => root.removeEventListener('scroll', handleScroll)
+  }, [handleScroll])
+
+  useEffect(() => {
+    if (stickToBottomRef.current) {
+      chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+    }
   }, [chatHistory])
 
   const fetchPlayers = useCallback(async () => {
@@ -80,20 +99,25 @@ export default function Chat() {
         const msg = data.message
         if (!msg) return
         setChatHistory(prev => {
-             const recent = prev.slice(-5);
-             const isDuplicate = recent.some(m => 
-                 m.message === msg && 
+             // Coalesce optimistic broadcasts with their echoed log line.
+             // The log tailer's timestamp can lag by several seconds when the
+             // PZ log is buffered, so match on (author, message) within the
+             // last 30s rather than a tight 2s window.
+             const incomingTs = new Date(data.timestamp || Date.now()).getTime();
+             const recent = prev.slice(-10);
+             const isDuplicate = recent.some(m =>
+                 m.message === msg &&
                  m.author === data.author &&
-                 Math.abs(m.timestamp.getTime() - new Date(data.timestamp || Date.now()).getTime()) < 2000
+                 Math.abs(m.timestamp.getTime() - incomingTs) < 30000
              );
              if (isDuplicate) return prev;
 
              const newMessage: ChatMessage = {
-                id: data.id || Date.now().toString(),
+                id: data.id || `${incomingTs}-${Math.random().toString(36).slice(2, 8)}`,
                 type: data.type || 'general',
                 author: data.author,
                 message: msg,
-                timestamp: new Date(data.timestamp || Date.now())
+                timestamp: new Date(incomingTs)
              };
 
              return [...prev, newMessage].slice(-200);
@@ -114,13 +138,17 @@ export default function Chat() {
       const result = await panelBridgeApi.sendToServerChat(message, false)
 
       if (result?.success) {
+        const sentAt = new Date()
         setChatHistory(prev => [...prev, {
-          id: Date.now().toString(),
+          id: `local-${sentAt.getTime()}-${Math.random().toString(36).slice(2, 8)}`,
           type: 'server',
           author: 'Server',
           message: message,
-          timestamp: new Date()
+          timestamp: sentAt
         }].slice(-200))
+        // Sending always pins the user back to the bottom — they just
+        // posted, so they want to see the result.
+        stickToBottomRef.current = true
         setMessage('')
         toast({
           title: 'Broadcast Sent',
@@ -178,7 +206,7 @@ export default function Chat() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Chat Window */}
         <div className="lg:col-span-2">
-          <Card className="h-[24rem] min-h-[300px] sm:h-[30rem] lg:h-[36rem] flex flex-col">
+          <Card className="h-[calc(100vh-260px)] min-h-[420px] flex flex-col">
             <CardHeader className="pb-3 border-b shrink-0">
               <CardTitle className="flex items-center gap-2">
                 <MessagesSquare className="w-4 h-4 text-primary" />
@@ -221,6 +249,7 @@ export default function Chat() {
               <div className="p-4 border-t bg-muted/30">
                 <div className="flex gap-2">
                   <Input
+                    ref={messageInputRef}
                     placeholder="Broadcast a message to all players... (Enter to send)"
                     aria-label="Broadcast message"
                     value={message}
@@ -239,6 +268,16 @@ export default function Chat() {
                     Send
                   </Button>
                 </div>
+                <div className="mt-1.5 flex items-center justify-between text-[11px] text-muted-foreground">
+                  <span>
+                    {players.length === 0
+                      ? 'No players online — messages will only appear in the server log.'
+                      : `Broadcasting to ${players.length} ${players.length === 1 ? 'player' : 'players'}.`}
+                  </span>
+                  <span className={cn('tabular-nums', message.length > 450 ? 'text-warning' : '')}>
+                    {message.length}/500
+                  </span>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -253,7 +292,7 @@ export default function Chat() {
                 <Users className="w-4 h-4 text-primary" />
                 Online Players
               </CardTitle>
-              <CardDescription>{players.length} players</CardDescription>
+              <CardDescription>{players.length === 1 ? '1 player' : `${players.length} players`}</CardDescription>
             </CardHeader>
             <CardContent>
               {players.length === 0 ? (
@@ -292,7 +331,10 @@ export default function Chat() {
                   variant="outline"
                   size="sm"
                   className="min-h-11 w-full justify-start whitespace-normal px-3 py-2 text-left"
-                  onClick={() => setMessage(quickMsg)}
+                  onClick={() => {
+                    setMessage(quickMsg)
+                    messageInputRef.current?.focus()
+                  }}
                 >
                   {quickMsg}
                 </Button>

@@ -38,6 +38,7 @@ import {
   BellRing,
   Megaphone,
   Save,
+  AlertTriangle,
 } from 'lucide-react'
 import { PageHeader } from '@/components/PageHeader'
 import { BridgeStatusBadge } from '@/components/BridgeStatusBadge'
@@ -544,6 +545,11 @@ export default function WorldMap() {
     // Clean up: any null entries (pending) in old cache will complete
     // but write to the detached object — harmless
     void oldCache
+    // Reset failure/backoff state — the new floor's tiles are independent
+    // and shouldn't inherit a stale "can't reach upstream" banner.
+    tileFailRef.current = {}
+    tileFailureCountRef.current = 0
+    setTileLoadFailing(false)
     // Trigger redraw
     if (drawRequestRef.current === 0) {
       drawRequestRef.current = requestAnimationFrame(() => { drawRequestRef.current = 0 })
@@ -573,8 +579,19 @@ export default function WorldMap() {
         if (isB41) {
           setMapCfg(MAP_B41)
           mapCfgRef.current = MAP_B41
-          // Clear tile cache when switching maps
+          // B41 has no multi-floor tiles — force floor back to 0 so we don't
+          // request `.webp` URLs the B41 backend regex rejects (which would
+          // 400 every tile and trigger the "tiles not loading" banner with
+          // no way for the user to recover, since the floor selector is
+          // hidden on B41).
+          setFloor(0)
+          floorRef.current = 0
+          // Clear tile cache and failure state when switching maps — tile
+          // URLs differ entirely so old backoff entries are meaningless.
           tileCacheRef.current = {}
+          tileFailRef.current = {}
+          tileFailureCountRef.current = 0
+          setTileLoadFailing(false)
           // Re-center on B41 default center
           const el = containerRef.current
           if (el) {
@@ -625,11 +642,24 @@ export default function WorldMap() {
   const pendingTileLoadsRef = useRef(0)
   const MAX_CONCURRENT_TILES = 8
 
+  // Per-tile failure tracking with exponential backoff. The draw loop runs at
+  // ~60fps and re-calls loadDziTile() for every visible tile every frame, so
+  // without backoff a dead upstream (firewall, DNS failure, 502 from the
+  // proxy) results in thousands of retries per second and an apparent
+  // "infinite loading" state. See issue #6.
+  const tileFailRef = useRef<Record<string, { count: number; nextAt: number }>>({})
+  const tileFailureCountRef = useRef(0)
+  const [tileLoadFailing, setTileLoadFailing] = useState(false)
+  const TILE_RETRY_MS = [2_000, 10_000, 60_000] // backoff schedule per tile
+
   const loadDziTile = useCallback((level: number, col: number, row: number) => {
     const f = floorRef.current
     const key = `${f}/${level}/${col}_${row}`
     if (key in tileCacheRef.current) return
     if (pendingTileLoadsRef.current >= MAX_CONCURRENT_TILES) return
+    // Honour per-tile backoff after previous failures.
+    const fail = tileFailRef.current[key]
+    if (fail && Date.now() < fail.nextAt) return
     tileCacheRef.current[key] = null
     pendingTileLoadsRef.current++
     const img = new window.Image()
@@ -638,17 +668,36 @@ export default function WorldMap() {
       // Discard if floor changed while loading (key belongs to old floor)
       if (floorRef.current !== f) return
       tileCacheRef.current[key] = img
+      // Tile recovered — clear failure state. Only decrement the global
+      // counter when *this* tile was actually in the failure set, otherwise
+      // unrelated successful loads would prematurely hide the banner while
+      // the originally-failing tiles are still in backoff.
+      if (tileFailRef.current[key]) {
+        delete tileFailRef.current[key]
+        if (tileFailureCountRef.current > 0) {
+          tileFailureCountRef.current = Math.max(0, tileFailureCountRef.current - 1)
+          if (tileFailureCountRef.current === 0) setTileLoadFailing(false)
+        }
+      }
       if (drawRequestRef.current === 0) {
         drawRequestRef.current = requestAnimationFrame(() => { drawRequestRef.current = 0 })
       }
     }
     img.onerror = () => {
       pendingTileLoadsRef.current--
-      // Drop the pending entry so a retry (next redraw pass / next pan) can
-      // re-request. Leaving the null in place permanently marks this tile as
-      // "loading forever" and it never reappears until the user changes floor.
       if (floorRef.current === f) {
+        // Drop the pending entry so the per-tile backoff guard above is what
+        // gates the next retry (rather than the "key in cache" check).
         delete tileCacheRef.current[key]
+        const prev = tileFailRef.current[key]
+        const count = (prev?.count ?? 0) + 1
+        const delay = TILE_RETRY_MS[Math.min(count - 1, TILE_RETRY_MS.length - 1)]
+        tileFailRef.current[key] = { count, nextAt: Date.now() + delay }
+        // Surface a user-visible warning if many distinct tiles are failing.
+        if (count === 1) {
+          tileFailureCountRef.current++
+          if (tileFailureCountRef.current >= 6) setTileLoadFailing(true)
+        }
       }
     }
     const ext = f === 0 ? 'jpg' : 'webp'
@@ -1050,7 +1099,7 @@ export default function WorldMap() {
 
       const isHovered = hoveredPlayer === player.username
       const isSelected = selectedPlayer?.username === player.username
-      const isAdmin = player.accessLevel && player.accessLevel !== '' && player.accessLevel !== 'none'
+      const isAdmin = player.accessLevel && player.accessLevel !== '' && player.accessLevel !== 'none' && player.accessLevel !== 'user'
       const isDead = player.isAlive === false
       const isInfected = !!player.isInfected && !isDead
       const pinScale = isHovered || isSelected ? 1.2 : 1
@@ -2199,6 +2248,25 @@ export default function WorldMap() {
           </button>
         </div>
 
+        {/* Tile-load failure banner — appears when many tiles fail (network
+            outage, firewall blocking b42map.com / map.projectzomboid.com,
+            or upstream tile server down). Without this the user just sees an
+            indefinite empty map. See issue #6. */}
+        {tileLoadFailing && (
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 max-w-md">
+            <div className="rounded-lg border border-warning/50 bg-warning/15 backdrop-blur px-3 py-2 text-xs text-warning-foreground flex items-start gap-2 shadow-lg">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-warning" />
+              <div className="leading-snug">
+                <div className="font-semibold">Map tiles aren't loading</div>
+                <div className="text-muted-foreground">
+                  The panel can't reach <span className="font-mono">{mapCfg.label === 'B41' ? 'map.projectzomboid.com' : 'b42map.com'}</span>.
+                  Check the server's outbound HTTPS access and try Refresh.
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Player list panel */}
         <div className="absolute top-3 right-3 z-10 w-52">
           <div className="rounded-lg bg-background/85 backdrop-blur border border-border/60 overflow-hidden">
@@ -2310,7 +2378,7 @@ export default function WorldMap() {
                     </div>
                   </div>
                 )}
-                {selectedPlayer.accessLevel && selectedPlayer.accessLevel !== 'none' && selectedPlayer.accessLevel !== '' && (
+                {selectedPlayer.accessLevel && selectedPlayer.accessLevel !== 'none' && selectedPlayer.accessLevel !== 'user' && selectedPlayer.accessLevel !== '' && (
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Role</span>
                     <span className="text-warning capitalize">{selectedPlayer.accessLevel}</span>
@@ -2577,7 +2645,7 @@ export default function WorldMap() {
                 {playersRef.current.slice(0, 6).map((pl) => {
                   const pColor = pl.isInfected
                     ? 'text-destructive'
-                    : pl.accessLevel && pl.accessLevel !== '' && pl.accessLevel !== 'none'
+                    : pl.accessLevel && pl.accessLevel !== '' && pl.accessLevel !== 'none' && pl.accessLevel !== 'user'
                       ? 'text-warning'
                       : 'text-info'
                   return (
@@ -3170,7 +3238,7 @@ function ContextMenuItem({ icon, label, onClick, loading, description, disabled 
 function getPlayerColor(player: MapPlayer, alpha: number): string {
   if (!player.isAlive && player.isAlive !== undefined) return hslToken('--muted-foreground', alpha)
   if (player.isInfected) return hslToken('--destructive', alpha)
-  if (player.accessLevel && player.accessLevel !== '' && player.accessLevel !== 'none')
+  if (player.accessLevel && player.accessLevel !== '' && player.accessLevel !== 'none' && player.accessLevel !== 'user')
     return hslToken('--warning', alpha)
   return hslToken('--info', alpha)
 }

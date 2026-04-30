@@ -9,6 +9,13 @@ export class ApiError extends Error {
   isRetryable: boolean
   isTimeout: boolean
   isNetworkError: boolean
+  /**
+   * Full parsed JSON payload from the failing response (when available).
+   * Lets callers read structured fields the server returned alongside the
+   * `error` message — e.g. `code: 'server_running'` and `matched: [...]`
+   * from the chunk-cleanup endpoints (issue #5).
+   */
+  data?: unknown
 
   constructor(
     message: string,
@@ -18,6 +25,7 @@ export class ApiError extends Error {
       isRetryable?: boolean
       isTimeout?: boolean
       isNetworkError?: boolean
+      data?: unknown
     }
   ) {
     super(message)
@@ -27,6 +35,7 @@ export class ApiError extends Error {
     this.isRetryable = Boolean(options?.isRetryable)
     this.isTimeout = Boolean(options?.isTimeout)
     this.isNetworkError = Boolean(options?.isNetworkError)
+    this.data = options?.data
   }
 }
 
@@ -206,10 +215,18 @@ function buildResponseError(response: Response, payload?: unknown): ApiError {
       ? payload.trim()
       : getStatusMessage(response.status)
 
+  // Prefer the server-provided `code` over a generic HTTP_<status> tag so
+  // callers can switch on application-level codes like `server_running`.
+  const codeFromPayload =
+    payload && typeof payload === 'object' && 'code' in payload && typeof (payload as { code: unknown }).code === 'string'
+      ? (payload as { code: string }).code
+      : `HTTP_${response.status}`
+
   return new ApiError(messageFromPayload, {
     status: response.status,
-    code: `HTTP_${response.status}`,
+    code: codeFromPayload,
     isRetryable: response.status >= 500 || response.status === 429 || response.status === 408,
+    data: payload,
   })
 }
 
@@ -703,9 +720,13 @@ export const modsApi = {
     }>,
 
   // Missing Dependencies: Search Steam Workshop for a mod by name/ID
-  searchWorkshopMods: (query: string) => apiPost('/mods/search-workshop-mods', { query }) as Promise<{
+  searchWorkshopMods: (query: string, opts?: { parentName?: string; parentWorkshopId?: string; parentModId?: string }) =>
+    apiPost('/mods/search-workshop-mods', { query, ...(opts || {}) }) as Promise<{
     success: boolean
     query: string
+    variantsTried?: string[]
+    steamSearchEnabled?: boolean
+    steamSearchAttempted?: boolean
     results: Array<{
       workshopId: string
       modId?: string
@@ -714,6 +735,8 @@ export const modsApi = {
       subscriberCount?: number
       source: 'local' | 'steam'
       isDownloaded: boolean
+      matchedVariant?: string
+      relevance?: number
     }>
     searchUrl: string
   }>,
@@ -725,6 +748,35 @@ export const modsApi = {
       deps: Array<{ missingDep: string; resolvedWorkshopId?: string; resolvedModName?: string }>
       resolvedCount: number
     }>,
+
+  // ── Workshop collection sync ────────────────────────────────────────
+  collectionDiff: () => apiGet('/mods/collection/diff') as Promise<{
+    ok: boolean
+    error?: string
+    title?: string | null
+    inCollection: string[]
+    toAdd: string[]
+    toRemove: string[]
+    collectionId: string | null
+    autoSync: boolean
+    hasCredentials: boolean
+    trackedCount: number
+  }>,
+  collectionSync: () => apiPost('/mods/collection/sync', {}) as Promise<{
+    success: boolean
+    collectionId: string
+    added: string[]
+    removed: string[]
+    errors: Array<{ action: 'add' | 'remove'; id: string; error: string }>
+    message: string
+  }>,
+  collectionTest: () => apiPost('/mods/collection/test', {}) as Promise<{
+    success: boolean
+    collectionId: string
+    title: string | null
+    itemCount: number
+    message: string
+  }>,
   
   // Sync mod IDs from downloaded workshop mods - reads mod.info files and updates Mods= in ini
   syncModIds: () => apiPost('/mods/sync-mod-ids'),
@@ -784,7 +836,8 @@ export const chunksApi = {
     createBackup: boolean = true,
     customPath?: string,
     deleteVehicles: boolean = false,
-  ) => apiPost('/chunks/delete-chunks', { saveName, chunks, createBackup, customPath, deleteVehicles }),
+    force: boolean = false,
+  ) => apiPost('/chunks/delete-chunks', { saveName, chunks, createBackup, customPath, deleteVehicles, force }),
   deleteRegion: (
     saveName: string,
     minX: number,
@@ -795,7 +848,8 @@ export const chunksApi = {
     invert: boolean = false,
     customPath?: string,
     deleteVehicles: boolean = false,
-  ) => apiPost('/chunks/delete-region', { saveName, minX, maxX, minY, maxY, createBackup, invert, customPath, deleteVehicles }),
+    force: boolean = false,
+  ) => apiPost('/chunks/delete-region', { saveName, minX, maxX, minY, maxY, createBackup, invert, customPath, deleteVehicles, force }),
   browse: (browsePath?: string) => apiGet(`/chunks/browse${browsePath ? `?path=${encodeURIComponent(browsePath)}` : ''}`),
 }
 

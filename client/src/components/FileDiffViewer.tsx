@@ -53,6 +53,16 @@ interface FileDiffViewerProps {
   modBName: string
   severity: 'high' | 'medium' | 'low'
   categoryLabel?: string
+  /** Mod name that wins this file given the current load order. */
+  winnerName?: string | null
+  /** Loser-side label to show alongside ("X loses"). Optional, derived from
+   *  whichever of modA/modB is not the winner. */
+  loserName?: string | null
+  overlap?: {
+    kind: 'lua-symbols' | 'lua-shadow' | 'script-defs' | 'clothing-items' | 'translation-keys'
+    items: string[]
+    total: number
+  } | null
 }
 
 function formatSize(bytes: number): string {
@@ -61,7 +71,17 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-export const FileDiffViewer = memo(function FileDiffViewer({ file, modAId, modBId, modAName, modBName, severity, categoryLabel }: FileDiffViewerProps) {
+function overlapKindLabel(kind: 'lua-symbols' | 'lua-shadow' | 'script-defs' | 'clothing-items' | 'translation-keys'): string {
+  switch (kind) {
+    case 'lua-symbols': return 'function/event names'
+    case 'lua-shadow': return 'symbols'
+    case 'script-defs': return 'item/recipe definitions'
+    case 'clothing-items': return 'clothing items'
+    case 'translation-keys': return 'translation keys'
+  }
+}
+
+export const FileDiffViewer = memo(function FileDiffViewer({ file, modAId, modBId, modAName, modBName, severity, categoryLabel, winnerName, loserName, overlap }: FileDiffViewerProps) {
   const [expanded, setExpanded] = useState(false)
   const [loading, setLoading] = useState(false)
   const [diff, setDiff] = useState<DiffResult | null>(null)
@@ -122,9 +142,33 @@ export const FileDiffViewer = memo(function FileDiffViewer({ file, modAId, modBI
         <div aria-hidden="true" className={`w-1.5 h-1.5 rounded-full shrink-0 ${
           severity === 'high' ? 'bg-destructive' : severity === 'medium' ? 'bg-warning' : 'bg-primary/50'
         }`} />
-        <code className="font-mono text-[11px] flex-1 min-w-0 truncate text-foreground/80" title={file}>
+        <code className="font-mono text-[11px] flex-1 min-w-0 truncate text-foreground/80">
           {file}
         </code>
+        {overlap && overlap.total > 0 && (
+          <span
+            className={`text-[10px] px-1.5 py-0.5 rounded shrink-0 font-medium ${
+              overlap.kind === 'lua-symbols' || overlap.kind === 'script-defs' || overlap.kind === 'clothing-items'
+                ? 'bg-destructive/15 text-destructive'
+                : 'bg-warning/15 text-warning'
+            }`}
+            title={`${overlap.total} overlapping ${overlapKindLabel(overlap.kind)}:\n${overlap.items.slice(0, 25).join('\n')}${overlap.items.length > 25 ? `\n+${overlap.items.length - 25} more` : ''}`}
+          >
+            {overlap.total} clash{overlap.total !== 1 ? 'es' : ''}
+          </span>
+        )}
+        {overlap && overlap.kind === 'lua-shadow' && (
+          <span className="text-[10px] px-1.5 py-0.5 rounded shrink-0 bg-muted/60 text-muted-foreground" title="Both mods ship this Lua file but no symbol names overlap — the loser is fully shadowed but nothing fights for the same name.">
+            shadowed
+          </span>
+        )}
+        {winnerName && loserName && (
+          <span className="text-[10px] shrink-0 text-muted-foreground/80 max-w-[180px] truncate" title={`${winnerName} wins (loaded last) — ${loserName}'s version is ignored`}>
+            <span className="text-success/80">{winnerName}</span>
+            <span className="text-muted-foreground/50"> &gt; </span>
+            <span className="text-muted-foreground/60 line-through">{loserName}</span>
+          </span>
+        )}
         {categoryLabel && (
           <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted/60 text-muted-foreground shrink-0" title={`File type: ${categoryLabel}`}>
             {categoryLabel}
@@ -142,6 +186,34 @@ export const FileDiffViewer = memo(function FileDiffViewer({ file, modAId, modBI
       {/* Expanded diff panel */}
       {expanded && (
         <div className="diff-panel-enter ml-5 mr-2 mt-1.5 mb-2.5 rounded-md border border-border/50 overflow-hidden bg-background/50">
+          {overlap && overlap.total > 0 && overlap.kind !== 'lua-shadow' && overlap.items.length > 0 && (
+            <div className="px-3 py-2 border-b border-border/30 bg-muted/20">
+              <div className="text-[10px] uppercase tracking-wide text-muted-foreground/70 mb-1">
+                Overlapping {overlapKindLabel(overlap.kind)} ({overlap.total})
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {overlap.items.slice(0, 30).map(item => (
+                  <code
+                    key={item}
+                    className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-warning/10 text-warning ring-1 ring-warning/30"
+                  >
+                    {item}
+                  </code>
+                ))}
+                {overlap.items.length > 30 && (
+                  <span className="text-[10px] text-muted-foreground/60 self-center">
+                    +{overlap.items.length - 30} more
+                  </span>
+                )}
+              </div>
+              {overlap.kind === 'translation-keys' && (
+                <div className="text-[10px] text-muted-foreground/60 mt-1.5 leading-relaxed">
+                  Translation files merge across mods — only these specific keys actually clash.
+                  Other keys in the diff coexist fine.
+                </div>
+              )}
+            </div>
+          )}
           {loading && (
             <div aria-busy="true" className="flex items-center justify-center py-6 text-muted-foreground text-xs">
               <Loader2 aria-hidden="true" className="w-3.5 h-3.5 animate-spin mr-2" /> Comparing files...

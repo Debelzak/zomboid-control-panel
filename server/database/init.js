@@ -731,6 +731,30 @@ export async function setModUpdateAvailable(workshopId, available) {
   }
 }
 
+/**
+ * Batch-mark mods as just-checked.
+ * - Sets `last_checked = now()` for every workshop_id in `checkedIds`.
+ * - Sets `update_available` from the `updatesById` map (workshopId -> 0|1).
+ *   Mods present in `checkedIds` but not in `updatesById` are cleared (0).
+ * - Mods not in `checkedIds` are left untouched (e.g. Steam API failures).
+ */
+export async function markModsChecked(checkedIds, updatesById = new Map()) {
+  if (!checkedIds || checkedIds.size === 0) return;
+  const db = await getDb();
+  const serverId = await getActiveServerId();
+  const now = new Date().toISOString();
+  let touched = 0;
+  for (const mod of db.data.tracked_mods) {
+    if (mod.server_id !== serverId && mod.server_id) continue;
+    if (!checkedIds.has(mod.workshop_id)) continue;
+    mod.last_checked = now;
+    mod.update_available = updatesById.get(mod.workshop_id) ? 1 : 0;
+    if (!mod.server_id && serverId) mod.server_id = serverId; // migrate legacy
+    touched++;
+  }
+  if (touched > 0) scheduleWrite();
+}
+
 export async function removeTrackedMod(workshopId) {
   const db = await getDb();
   const serverId = await getActiveServerId();

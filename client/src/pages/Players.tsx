@@ -92,7 +92,27 @@ interface Player {
   online: boolean
 }
 
-const ACCESS_LEVELS = ['admin', 'moderator', 'overseer', 'gm', 'observer', 'none']
+const ACCESS_LEVELS = ['admin', 'moderator', 'overseer', 'gm', 'observer', 'user', 'none']
+
+// Labels for the access-level dropdown.
+//
+// Per the official PZ Admin Commands wiki (Build 42.17.0), the documented
+// values are: Admin, Moderator, Overseer, GM, Observer, none. "none" is the
+// canonical way to demote a player back to a regular user.
+//
+// However, PZ's player list displays "user" as the role for regular players,
+// and many server builds also accept `setaccesslevel "<user>" "user"` directly.
+// Some operators report that "none" silently does nothing on their build while
+// "user" works. We expose both so admins can pick whichever their build accepts.
+const ACCESS_LEVEL_LABELS: Record<string, string> = {
+  admin: 'Admin',
+  moderator: 'Moderator',
+  overseer: 'Overseer',
+  gm: 'GM',
+  observer: 'Observer',
+  user: 'User (demote — try this first)',
+  none: 'None (official demote value)',
+}
 
 // Common teleport locations in Project Zomboid
 const TELEPORT_PRESETS = [
@@ -146,8 +166,8 @@ function ActionTile({
   return (
     <div
       className={[
-        'flex w-full items-center justify-center rounded-xl border text-center transition-colors',
-        compact ? 'min-h-14 flex-row gap-1.5 px-2.5 py-2' : 'min-h-20 flex-col gap-2 px-3 py-3',
+        'flex w-full flex-col items-center justify-center rounded-xl border text-center transition-colors',
+        compact ? 'min-h-16 gap-1 px-2 py-2' : 'min-h-20 gap-2 px-3 py-3',
         emphasis === 'danger'
           ? 'border-destructive/30 text-destructive hover:bg-destructive/5'
           : 'border-border/60 hover:bg-accent/40',
@@ -155,7 +175,7 @@ function ActionTile({
       ].join(' ')}
     >
       {icon}
-      <span className={compact ? 'text-[11px] font-medium' : 'text-xs font-medium'}>{label}</span>
+      <span className={compact ? 'text-[11px] font-medium leading-tight' : 'text-xs font-medium leading-tight'}>{label}</span>
     </div>
   )
 }
@@ -788,12 +808,28 @@ export default function Players() {
       )}
 
       {/* Stats summary */}
-      {players.length > 0 && (
-      <div className="flex flex-wrap items-center gap-6 stagger-in">
+      <div className="flex flex-wrap items-center gap-4 stagger-in">
         <SummaryCard icon={<Users className="h-5 w-5" />} label="Online Now" value={players.length} />
         <SummaryCard icon={<TrendingUp className="h-5 w-5" />} label="Peak Today" value={peakPlayers} />
+        {bannedSteamIds.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setUnbanSteamIdDialogOpen(true)}
+            className="rounded-lg border border-border/60 bg-card/80 shadow-sm transition-colors hover:border-destructive/40 hover:bg-destructive/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
+            aria-label={`View ${bannedSteamIds.length} banned SteamIDs`}
+          >
+            <div className="flex items-center gap-3 p-4">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-destructive/30 bg-destructive/10 text-destructive">
+                <Ban className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 text-left">
+                <p className="text-2xl font-semibold tracking-tight">{bannedSteamIds.length}</p>
+                <p className="text-xs text-muted-foreground">Banned SteamIDs</p>
+              </div>
+            </div>
+          </button>
+        )}
       </div>
-      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Player List */}
@@ -827,7 +863,26 @@ export default function Players() {
                   <Loader2 className="w-6 h-6 animate-spin text-primary" />
                 </div>
               ) : players.length === 0 ? (
-                <EmptyState type="noPlayers" title="No players online" description="Players will appear here when they join the server" compact />
+                <div className="flex flex-col items-center justify-center px-4 py-8 text-center">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full border border-border/60 bg-muted/30">
+                    <Users className="h-6 w-6 text-muted-foreground/70" />
+                  </div>
+                  <p className="mt-3 text-sm font-medium">No players online</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Players appear here when they connect.
+                  </p>
+                  {bannedSteamIds.length > 0 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="mt-4 text-xs text-muted-foreground"
+                      onClick={() => setUnbanSteamIdDialogOpen(true)}
+                    >
+                      <Ban className="mr-1.5 h-3.5 w-3.5" />
+                      Review {bannedSteamIds.length} banned {bannedSteamIds.length === 1 ? 'SteamID' : 'SteamIDs'}
+                    </Button>
+                  )}
+                </div>
               ) : filteredPlayers.length === 0 ? (
                 <EmptyState type="noResults" title={`No matches for "${playerSearchFilter}"`} description="Try a different search term" compact />
               ) : (
@@ -1180,7 +1235,7 @@ export default function Players() {
                           <SelectContent>
                             {ACCESS_LEVELS.map((level) => (
                               <SelectItem key={level} value={level}>
-                                {level.charAt(0).toUpperCase() + level.slice(1)}
+                                {ACCESS_LEVEL_LABELS[level] || level.charAt(0).toUpperCase() + level.slice(1)}
                               </SelectItem>
                             ))}
                           </SelectContent>

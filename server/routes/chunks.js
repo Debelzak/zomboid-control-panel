@@ -613,24 +613,44 @@ router.get('/chunks/:saveName', async (req, res) => {
 // Delete selected chunks
 router.post('/delete-chunks', async (req, res) => {
   try {
-    const { saveName, chunks, createBackup = true, customPath = null, deleteVehicles = false } = req.body;
-    log.info(`POST /delete-chunks: saveName=${saveName}, chunkCount=${chunks?.length || 0}, createBackup=${createBackup}, deleteVehicles=${!!deleteVehicles}`);
+    const { saveName, chunks, createBackup = true, customPath = null, deleteVehicles = false, force = false } = req.body;
+    log.info(`POST /delete-chunks: saveName=${saveName}, chunkCount=${chunks?.length || 0}, createBackup=${createBackup}, deleteVehicles=${!!deleteVehicles}, force=${!!force}`);
 
     // Refuse to mutate save files while the server is running — it will write
     // them back on shutdown and corrupt the save, or hold vehicles.db open
     // on Windows and cause the DB write to fail mid-flight.
-    try {
-      const serverManager = req.app.get('serverManager');
-      if (serverManager && typeof serverManager.checkServerRunning === 'function') {
-        const isRunning = await serverManager.checkServerRunning();
-        if (isRunning) {
-          return res.status(400).json({
-            error: 'Stop the server before deleting chunks. Running servers hold save files open and will overwrite your changes on shutdown.'
-          });
+    //
+    // Issue #5: detection can false-positive when the user runs the server
+    // via a custom systemd unit / launcher we don't recognise, or when an
+    // unrelated java process matches our heuristics. We surface the matched
+    // process info and accept `force: true` so users can override after
+    // confirming the server really is stopped.
+    if (!force) {
+      try {
+        const serverManager = req.app.get('serverManager');
+        if (serverManager && typeof serverManager.getServerProcessDetails === 'function') {
+          const details = await serverManager.getServerProcessDetails();
+          if (details.running) {
+            return res.status(400).json({
+              error: 'Stop the server before deleting chunks. Running servers hold save files open and will overwrite your changes on shutdown.',
+              code: 'server_running',
+              matched: details.matched
+            });
+          }
+        } else if (serverManager && typeof serverManager.checkServerRunning === 'function') {
+          const isRunning = await serverManager.checkServerRunning();
+          if (isRunning) {
+            return res.status(400).json({
+              error: 'Stop the server before deleting chunks. Running servers hold save files open and will overwrite your changes on shutdown.',
+              code: 'server_running'
+            });
+          }
         }
+      } catch (e) {
+        log.warn(`Server-running check failed (proceeding cautiously): ${e.message}`);
       }
-    } catch (e) {
-      log.warn(`Server-running check failed (proceeding cautiously): ${e.message}`);
+    } else {
+      log.warn('delete-chunks: server-running check bypassed via force=true');
     }
 
     if (!saveName || !chunks || !Array.isArray(chunks) || chunks.length === 0) {
@@ -886,21 +906,37 @@ router.post('/delete-chunks', async (req, res) => {
 // Delete chunks by region (x/y coordinate range)
 router.post('/delete-region', async (req, res) => {
   try {
-    const { saveName, minX, maxX, minY, maxY, createBackup = true, invert = false, customPath = null, deleteVehicles = false } = req.body;
+    const { saveName, minX, maxX, minY, maxY, createBackup = true, invert = false, customPath = null, deleteVehicles = false, force = false } = req.body;
 
-    // Refuse to mutate save files while the server is running.
-    try {
-      const serverManager = req.app.get('serverManager');
-      if (serverManager && typeof serverManager.checkServerRunning === 'function') {
-        const isRunning = await serverManager.checkServerRunning();
-        if (isRunning) {
-          return res.status(400).json({
-            error: 'Stop the server before deleting chunks. Running servers hold save files open and will overwrite your changes on shutdown.'
-          });
+    // Refuse to mutate save files while the server is running. See the
+    // delete-chunks handler above for the full rationale and `force` escape
+    // hatch (issue #5: detection can false-positive on custom launchers).
+    if (!force) {
+      try {
+        const serverManager = req.app.get('serverManager');
+        if (serverManager && typeof serverManager.getServerProcessDetails === 'function') {
+          const details = await serverManager.getServerProcessDetails();
+          if (details.running) {
+            return res.status(400).json({
+              error: 'Stop the server before deleting chunks. Running servers hold save files open and will overwrite your changes on shutdown.',
+              code: 'server_running',
+              matched: details.matched
+            });
+          }
+        } else if (serverManager && typeof serverManager.checkServerRunning === 'function') {
+          const isRunning = await serverManager.checkServerRunning();
+          if (isRunning) {
+            return res.status(400).json({
+              error: 'Stop the server before deleting chunks. Running servers hold save files open and will overwrite your changes on shutdown.',
+              code: 'server_running'
+            });
+          }
         }
+      } catch (e) {
+        log.warn(`Server-running check failed (proceeding cautiously): ${e.message}`);
       }
-    } catch (e) {
-      log.warn(`Server-running check failed (proceeding cautiously): ${e.message}`);
+    } else {
+      log.warn('delete-region: server-running check bypassed via force=true');
     }
 
     if (!saveName || minX === undefined || maxX === undefined || minY === undefined || maxY === undefined) {

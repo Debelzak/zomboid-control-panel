@@ -874,7 +874,30 @@ export class RconService extends EventEmitter {
   }
 
   async serverMessage(message, { skipLog = false } = {}) {
-    return this.execute(`servermsg "${this.sanitize(message)}"`, { skipLog });
+    // PZ's RCON does not handle non-ASCII bytes (emojis, smart quotes, accents)
+    // reliably — it can return the help text instead of broadcasting. Strip to
+    // a safe printable-ASCII subset before sending. We keep tabs/newlines out
+    // (sanitize() already drops control chars).
+    const ascii = String(message ?? '')
+      .replace(/[\u2018\u2019]/g, "'")        // curly single quotes -> '
+      .replace(/[\u201C\u201D]/g, '"')        // curly double quotes -> "
+      .replace(/[\u2013\u2014]/g, '-')        // en/em dash -> -
+      .replace(/[\u2026]/g, '...')            // ellipsis
+      .replace(/[^\x20-\x7E]/g, '')           // drop everything else outside printable ASCII
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!ascii) {
+      log.warn('serverMessage: message reduced to empty after ASCII sanitization, skipping');
+      return { success: false, response: 'Empty message after sanitization' };
+    }
+    const result = await this.execute(`servermsg "${this.sanitize(ascii)}"`, { skipLog });
+    // Detect the case where PZ returns the help text instead of broadcasting
+    if (result?.success && typeof result.response === 'string' &&
+        /Use:\s*\/servermsg/i.test(result.response)) {
+      log.warn(`servermsg appears to have been rejected by PZ (help text returned). Message was: ${ascii.substring(0, 80)}`);
+      return { success: false, response: result.response, rejected: true };
+    }
+    return result;
   }
 
   async getPlayers() {

@@ -20,7 +20,11 @@ const VALID_SETTINGS_KEYS = [
   'corsAllowedOrigins', 'corsAllowAll', 'corsAllowPrivateNetworks', 'corsDebug',
   'panelBridgeAutoUpdate',
   'autoExportOnLogin',
-  'autoExportMaxPerPlayer'
+  'autoExportMaxPerPlayer',
+  // Workshop collection sync — mirrors tracked mods into a Steam collection.
+  // steamSessionId / steamLoginSecure are cookie pairs; treated as secrets.
+  'workshopCollectionId', 'workshopCollectionAutoSync',
+  'steamSessionId', 'steamLoginSecure'
 ];
 
 const OPTION_NAME_REGEX = /^[a-zA-Z0-9_]{1,64}$/;
@@ -158,7 +162,7 @@ router.post('/option', async (req, res) => {
 });
 
 // Sensitive keys that should be masked in API responses
-const SENSITIVE_KEYS = ['rconPassword', 'discordToken', 'steamApiKey'];
+const SENSITIVE_KEYS = ['rconPassword', 'discordToken', 'steamApiKey', 'steamSessionId', 'steamLoginSecure'];
 
 function maskSensitiveSettings(settings) {
   const masked = { ...settings };

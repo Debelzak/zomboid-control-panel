@@ -30,7 +30,33 @@ import {
   Bookmark,
   FolderOpen,
   X,
-  Undo2
+  Undo2,
+  Globe,
+  Swords,
+  MessageSquare,
+  Users,
+  Home,
+  Package,
+  Cloud,
+  Mic,
+  MessageCircle,
+  Terminal,
+  Archive,
+  Car,
+  Shield,
+  Wrench,
+  Radio,
+  Clock,
+  Gem,
+  Heart,
+  Crosshair,
+  Leaf,
+  Compass,
+  Skull,
+  TrendingUp,
+  BarChart,
+  Layers,
+  type LucideIcon
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -426,19 +452,66 @@ function StatChip({
   label: string
   ok?: boolean
 }) {
+  const numericValue = typeof value === 'number' ? value : Number(value)
+  const isZero = !Number.isNaN(numericValue) && numericValue === 0
+  const muted = isZero || ok === false
   return (
     <span
-      className="inline-flex items-center gap-1.5 normal-case tracking-normal"
+      className={`inline-flex items-center gap-1.5 normal-case tracking-normal ${muted ? 'opacity-55' : ''}`}
       title={ok === false ? `${label}: file not found` : undefined}
     >
-      <span className="text-muted-foreground/70">{icon}</span>
-      <span className="font-mono text-sm font-semibold tabular-nums text-foreground">{value}</span>
+      <span className={muted ? 'text-muted-foreground/50' : 'text-primary/70'}>{icon}</span>
+      <span className={`font-mono text-sm font-semibold tabular-nums ${muted ? 'text-muted-foreground' : 'text-foreground'}`}>{value}</span>
       <span className="text-[11px] uppercase tracking-wider text-muted-foreground">{label}</span>
       {ok === false && (
         <AlertCircle className="h-3 w-3 text-warning" aria-label="Not found" />
       )}
     </span>
   )
+}
+
+// Map of icon names used by INI/Sandbox category schemas to lucide components.
+// Each entry also has a hue token used to subtly tint the sidebar icon so categories
+// are scannable by shape+color without going neon.
+const CATEGORY_ICONS: Record<string, { icon: LucideIcon; tone: string }> = {
+  // INI categories
+  Settings: { icon: Settings, tone: 'text-primary/80' },
+  Globe: { icon: Globe, tone: 'text-sky-400/80' },
+  Swords: { icon: Swords, tone: 'text-rose-400/80' },
+  MessageSquare: { icon: MessageSquare, tone: 'text-cyan-400/80' },
+  Users: { icon: Users, tone: 'text-amber-300/80' },
+  Home: { icon: Home, tone: 'text-emerald-300/80' },
+  Package: { icon: Package, tone: 'text-orange-300/80' },
+  Puzzle: { icon: Puzzle, tone: 'text-violet-400/80' },
+  Cloud: { icon: Cloud, tone: 'text-sky-300/80' },
+  Mic: { icon: Mic, tone: 'text-pink-300/80' },
+  MessageCircle: { icon: MessageCircle, tone: 'text-indigo-300/80' },
+  Terminal: { icon: Terminal, tone: 'text-emerald-400/80' },
+  Archive: { icon: Archive, tone: 'text-amber-400/80' },
+  Car: { icon: Car, tone: 'text-yellow-300/80' },
+  Shield: { icon: Shield, tone: 'text-blue-300/80' },
+  Filter: { icon: Filter, tone: 'text-slate-300/80' },
+  Radio: { icon: Radio, tone: 'text-fuchsia-300/80' },
+  FileText: { icon: FileText, tone: 'text-zinc-300/80' },
+  Wrench: { icon: Wrench, tone: 'text-stone-300/80' },
+  // Sandbox categories
+  Clock: { icon: Clock, tone: 'text-amber-300/80' },
+  Gem: { icon: Gem, tone: 'text-fuchsia-300/80' },
+  Heart: { icon: Heart, tone: 'text-rose-300/80' },
+  Crosshair: { icon: Crosshair, tone: 'text-rose-400/80' },
+  Leaf: { icon: Leaf, tone: 'text-emerald-300/80' },
+  Map: { icon: Map, tone: 'text-emerald-400/80' },
+  Compass: { icon: Compass, tone: 'text-cyan-300/80' },
+  Skull: { icon: Skull, tone: 'text-rose-300/80' },
+  TrendingUp: { icon: TrendingUp, tone: 'text-orange-300/80' },
+  BarChart: { icon: BarChart, tone: 'text-amber-300/80' },
+  Layers: { icon: Layers, tone: 'text-stone-300/80' },
+}
+
+function CategoryIcon({ name, isActive, className }: { name?: string; isActive?: boolean; className?: string }) {
+  const entry = name ? CATEGORY_ICONS[name] : undefined
+  const Icon = entry?.icon ?? Settings
+  return <Icon className={`${className ?? 'h-4 w-4'} ${isActive ? 'text-primary' : entry?.tone ?? 'text-muted-foreground/70'}`} />
 }
 
 export default function ServerConfig() {
@@ -505,33 +578,56 @@ export default function ServerConfig() {
   const [modSettingsLoading, setModSettingsLoading] = useState(false)
   const [modSettingsError, setModSettingsError] = useState<string | null>(null)
   const [modSettingsSearch, setModSettingsSearch] = useState('')
+  const [modSettingsModifiedOnly, setModSettingsModifiedOnly] = useState(false)
   const [expandedModGroups, setExpandedModGroups] = useState<Set<string>>(new Set())
   const [modSettingsLastLoaded, setModSettingsLastLoaded] = useState<Date | null>(null)
   const modSettingsAbortRef = useRef<AbortController | null>(null)
+  const modSettingsSearchRef = useRef<HTMLInputElement | null>(null)
   const [savingOptions, setSavingOptions] = useState<Set<string>>(new Set())
+
+  // Shared helper: is this mod option modified from its default?
+  const isOptModified = useCallback((opt: { default?: unknown; value?: unknown }) => {
+    if (opt.default === undefined || opt.default === null) return false
+    const d = opt.default, v = opt.value
+    if (typeof d === 'number' && typeof v === 'number') return Math.abs(d - v) >= 0.0001
+    return String(d) !== String(v)
+  }, [])
+
+  // Total count of modified mod options across all groups
+  const modifiedModSettingsCount = useMemo(() => {
+    if (!modSettings) return 0
+    let c = 0
+    for (const opts of Object.values(modSettings)) {
+      for (const o of opts) if (isOptModified(o)) c++
+    }
+    return c
+  }, [modSettings, isOptModified])
 
   // Memoize filtered mod settings groups to avoid duplicate filter logic
   const filteredModGroups = useMemo(() => {
     if (!modSettings || !modSettingsGroups.length) return []
+    const q = modSettingsSearch.toLowerCase().trim()
     return modSettingsGroups
       .map(group => {
-        const opts = modSettings[group.name] || []
-        if (!modSettingsSearch) return { ...group, filteredOpts: opts }
-        const q = modSettingsSearch.toLowerCase()
-        const groupMatches = group.name.toLowerCase().includes(q)
-        const filteredOpts = groupMatches
-          ? opts
-          : opts.filter(o =>
+        let opts = modSettings[group.name] || []
+        if (modSettingsModifiedOnly) opts = opts.filter(isOptModified)
+        if (q) {
+          const groupMatches = group.name.toLowerCase().includes(q)
+          if (!groupMatches) {
+            opts = opts.filter(o =>
               (o.name || '').toLowerCase().includes(q) ||
               (o.shortName || '').toLowerCase().includes(q) ||
               (o.translatedName || '').toLowerCase().includes(q) ||
               (o.tooltip || '').toLowerCase().includes(q) ||
               (o.tooltipText || '').toLowerCase().includes(q)
             )
-        return { ...group, filteredOpts }
+          }
+        }
+        return { ...group, filteredOpts: opts }
       })
       .filter(g => g.filteredOpts.length > 0)
-  }, [modSettings, modSettingsGroups, modSettingsSearch])
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [modSettings, modSettingsGroups, modSettingsSearch, modSettingsModifiedOnly, isOptModified])
   
   // Copy state
   const [copied, setCopied] = useState(false)
@@ -736,6 +832,33 @@ export default function ServerConfig() {
       if (!controller.signal.aborted) setModSettingsLoading(false)
     }
   }, [])
+
+  // Auto-load mod settings the first time the user opens the tab.
+  // After an error, we don't auto-retry — the user can click "Retry".
+  useEffect(() => {
+    if (activeTab === 'modsettings' && !modSettings && !modSettingsLoading && !modSettingsError) {
+      loadModSettings()
+    }
+  }, [activeTab, modSettings, modSettingsLoading, modSettingsError, loadModSettings])
+
+  // Keyboard shortcut: '/' focuses the mod settings search when the tab is active.
+  // Skip when the user is already typing in a field or has a modifier held.
+  useEffect(() => {
+    if (activeTab !== 'modsettings') return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey) return
+      const t = e.target as HTMLElement | null
+      const tag = t?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t?.isContentEditable) return
+      if (modSettingsSearchRef.current) {
+        e.preventDefault()
+        modSettingsSearchRef.current.focus()
+        modSettingsSearchRef.current.select()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [activeTab])
 
   const handleOptionChange = useCallback(async (optName: string, newValue: unknown, groupName: string) => {
     // Prevent duplicate inflight requests for the same option
@@ -1187,6 +1310,16 @@ export default function ServerConfig() {
     }
   }, [originalIniSettings])
 
+  // Discard all unsaved INI changes (sticky save bar)
+  const discardIniChanges = useCallback(() => {
+    setIniSettings({ ...originalIniSettings })
+  }, [originalIniSettings])
+
+  // Discard all unsaved Sandbox changes (sticky save bar)
+  const discardSandboxChanges = useCallback(() => {
+    if (originalSandboxData) setSandboxData(JSON.parse(JSON.stringify(originalSandboxData)))
+  }, [originalSandboxData])
+
   // Reset individual Sandbox setting to original loaded value
   const resetSandboxValue = useCallback((key: string) => {
     if (!originalSandboxData || !sandboxData) return
@@ -1284,7 +1417,7 @@ export default function ServerConfig() {
   const professionsCount = Object.keys(spawnPoints).length
 
   return (
-    <div className="space-y-5 page-transition">
+    <div className="space-y-5 page-transition pb-24">
       {loadError && (
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
@@ -1303,21 +1436,21 @@ export default function ServerConfig() {
         description="Fine-tune your server settings, sandbox variables, and spawn points"
         icon={<Settings className="h-5 w-5 text-primary" />}
         actions={
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5">
             {(hasIniChanges || hasSandboxChanges) && (
               <Badge variant="warning" className="animate-pulse">
                 <AlertTriangle className="mr-1 h-3 w-3" />
                 Unsaved Changes
               </Badge>
             )}
-            <Button variant="outline" size="sm" onClick={loadTemplates}>
-              <Bookmark className="mr-2 h-4 w-4" /> Templates
+            <Button variant="outline" size="sm" className="h-9 gap-1.5" onClick={loadTemplates}>
+              <Bookmark className="h-4 w-4" /> Templates
             </Button>
-            <Button variant="outline" size="sm" onClick={loadBackups}>
-              <History className="mr-2 h-4 w-4" /> Backups
+            <Button variant="outline" size="sm" className="h-9 gap-1.5" onClick={loadBackups}>
+              <History className="h-4 w-4" /> Backups
             </Button>
-            <Button variant="outline" size="sm" onClick={loadData}>
-              <RefreshCw className="mr-2 h-4 w-4" /> Refresh
+            <Button variant="outline" size="sm" className="h-9 gap-1.5" onClick={loadData}>
+              <RefreshCw className="h-4 w-4" /> Refresh
             </Button>
           </div>
         }
@@ -1371,67 +1504,6 @@ export default function ServerConfig() {
           </div>
         </CardContent>
       </Card>
-
-      {/* Search and Editor Mode */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <div className="relative min-w-0 flex-1 sm:max-w-md">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Search settings by name, key, or description…"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="h-9 bg-background/50 pl-9"
-            aria-label="Search server settings"
-            maxLength={128}
-          />
-          {searchQuery && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2 p-0"
-              onClick={() => setSearchQuery('')}
-              aria-label="Clear search"
-            >
-              <X className="h-4 w-4" />
-            </Button>
-          )}
-        </div>
-        {searchQuery && (activeTab === 'ini' || activeTab === 'sandbox') && (
-          <Badge variant="secondary" className="h-6 self-start text-xs sm:self-auto">
-            {searchResultsCount} result{searchResultsCount !== 1 ? 's' : ''}
-          </Badge>
-        )}
-
-        <div className="flex items-center gap-2 sm:ml-auto">
-          <div className="flex items-center gap-1 rounded-lg border bg-muted/30 p-1">
-            <Button
-              variant={editorMode === 'structured' ? 'secondary' : 'ghost'}
-              size="sm"
-              onClick={() => setEditorMode('structured')}
-              className="h-7 gap-1.5"
-            >
-              <FormInput className="h-4 w-4" /> Structured
-            </Button>
-            <Button
-              variant={editorMode === 'raw' ? 'secondary' : 'ghost'}
-              size="sm"
-              onClick={() => {
-                setEditorMode('raw')
-                const typeMap: Record<string, 'ini' | 'sandbox' | 'spawnpoints' | 'spawnregions'> = {
-                  ini: 'ini',
-                  sandbox: 'sandbox',
-                  spawnpoints: 'spawnpoints',
-                  spawnregions: 'spawnregions'
-                }
-                loadRawContent(typeMap[activeTab] || 'ini')
-              }}
-              className="h-7 gap-1.5"
-            >
-              <Code className="h-4 w-4" /> Raw
-            </Button>
-          </div>
-        </div>
-      </div>
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={(v) => {
@@ -1489,6 +1561,11 @@ export default function ServerConfig() {
           <TabsTrigger value="modsettings" className="min-h-10 shrink-0 rounded-md px-3">
             <Puzzle className="w-4 h-4" />
             <span className="font-medium">Mod Settings</span>
+            {modifiedModSettingsCount > 0 && (
+              <Badge variant="warning" className="h-4 px-1.5 py-0 text-xs" title={`${modifiedModSettingsCount} option${modifiedModSettingsCount === 1 ? '' : 's'} differ from default`}>
+                {modifiedModSettingsCount}
+              </Badge>
+            )}
           </TabsTrigger>
         </TabsList>
         </div>
@@ -1498,20 +1575,42 @@ export default function ServerConfig() {
           <Card className="border-border/60">
             <CardHeader className="border-b border-border/50 py-3">
               <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                <CardTitle className="flex items-baseline gap-2 text-base font-semibold">
-                  <span>Server Settings</span>
-                  <span className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">INI</span>
-                </CardTitle>
-                <CardDescription className="hidden min-w-0 flex-1 truncate text-xs md:block">
+                <span className="flex h-6 items-center gap-1.5 rounded border border-border/60 bg-muted/40 px-2 font-mono text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  <FileText className="h-3 w-3" /> INI
+                </span>
+                <CardDescription className="min-w-0 flex-1 truncate text-xs">
                   Configure server behavior, network, and player settings
                 </CardDescription>
                 {hasIniChanges && (
                   <Badge variant="warning" className="h-6">
                     <AlertTriangle className="mr-1 h-3 w-3" />
-                    Unsaved
+                    {changedIniCount} unsaved
                   </Badge>
                 )}
                 <div className="flex items-center gap-2 sm:ml-auto">
+                  <div className="flex items-center gap-0.5 rounded-md border border-border/60 bg-muted/30 p-0.5">
+                    <Button
+                      variant={editorMode === 'structured' ? 'secondary' : 'ghost'}
+                      size="sm"
+                      onClick={() => setEditorMode('structured')}
+                      className="h-8 gap-1.5 px-2 text-xs"
+                      aria-pressed={editorMode === 'structured'}
+                    >
+                      <FormInput className="h-3.5 w-3.5" /> Structured
+                    </Button>
+                    <Button
+                      variant={editorMode === 'raw' ? 'secondary' : 'ghost'}
+                      size="sm"
+                      onClick={() => {
+                        setEditorMode('raw')
+                        loadRawContent('ini')
+                      }}
+                      className="h-8 gap-1.5 px-2 text-xs"
+                      aria-pressed={editorMode === 'raw'}
+                    >
+                      <Code className="h-3.5 w-3.5" /> Raw
+                    </Button>
+                  </div>
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
@@ -1572,6 +1671,36 @@ export default function ServerConfig() {
                 </div>
               ) : (
                 <div className="min-h-[400px]">
+                  {/* Scoped search — applies to all categories on this tab */}
+                  <div className="mb-3 flex flex-wrap items-center gap-2">
+                    <div className="relative min-w-0 flex-1 sm:max-w-md">
+                      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        placeholder="Search server settings…"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="h-9 bg-background/50 pl-9"
+                        aria-label="Search server settings"
+                        maxLength={128}
+                      />
+                      {searchQuery && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2 p-0"
+                          onClick={() => setSearchQuery('')}
+                          aria-label="Clear search"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
+                    {searchQuery && (
+                      <Badge variant="secondary" className="h-6 text-xs">
+                        {searchResultsCount} result{searchResultsCount !== 1 ? 's' : ''}
+                      </Badge>
+                    )}
+                  </div>
                   {iniSettings['DoLuaChecksum']?.toLowerCase() === 'true' && (
                     <Alert variant="destructive" className="mb-4">
                       <AlertTriangle className="h-4 w-4" />
@@ -1642,6 +1771,7 @@ export default function ServerConfig() {
                                   : 'border-transparent text-muted-foreground hover:border-primary/30 hover:bg-muted/40 hover:text-foreground'
                               }`}
                             >
+                              <CategoryIcon name={category.icon} isActive={isActive} className="h-4 w-4 shrink-0" />
                               <span className="min-w-0 flex-1 truncate font-medium">{category.label}</span>
                               <span className={`shrink-0 min-w-[1.5rem] rounded text-center px-1 py-0.5 text-[10px] font-mono tabular-nums ${
                                 isActive ? 'text-primary/80' : 'bg-muted text-muted-foreground'
@@ -1703,20 +1833,42 @@ export default function ServerConfig() {
           <Card className="border-border/60">
             <CardHeader className="border-b border-border/50 py-3">
               <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                <CardTitle className="flex items-baseline gap-2 text-base font-semibold">
-                  <span>Sandbox Settings</span>
-                  <span className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">Lua</span>
-                </CardTitle>
-                <CardDescription className="hidden min-w-0 flex-1 truncate text-xs md:block">
+                <span className="flex h-6 items-center gap-1.5 rounded border border-border/60 bg-muted/40 px-2 font-mono text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  <Code className="h-3 w-3" /> Lua
+                </span>
+                <CardDescription className="min-w-0 flex-1 truncate text-xs">
                   Configure world generation, zombies, and survival settings
                 </CardDescription>
                 {hasSandboxChanges && (
                   <Badge variant="warning" className="h-6">
                     <AlertTriangle className="mr-1 h-3 w-3" />
-                    Unsaved
+                    {changedSandboxCount} unsaved
                   </Badge>
                 )}
                 <div className="flex items-center gap-2 sm:ml-auto">
+                  <div className="flex items-center gap-0.5 rounded-md border border-border/60 bg-muted/30 p-0.5">
+                    <Button
+                      variant={editorMode === 'structured' ? 'secondary' : 'ghost'}
+                      size="sm"
+                      onClick={() => setEditorMode('structured')}
+                      className="h-8 gap-1.5 px-2 text-xs"
+                      aria-pressed={editorMode === 'structured'}
+                    >
+                      <FormInput className="h-3.5 w-3.5" /> Structured
+                    </Button>
+                    <Button
+                      variant={editorMode === 'raw' ? 'secondary' : 'ghost'}
+                      size="sm"
+                      onClick={() => {
+                        setEditorMode('raw')
+                        loadRawContent('sandbox')
+                      }}
+                      className="h-8 gap-1.5 px-2 text-xs"
+                      aria-pressed={editorMode === 'raw'}
+                    >
+                      <Code className="h-3.5 w-3.5" /> Raw
+                    </Button>
+                  </div>
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
@@ -1769,6 +1921,36 @@ export default function ServerConfig() {
                 </div>
               ) : (
                 <div className="min-h-[400px]">
+                  {/* Scoped search — applies to all categories on this tab */}
+                  <div className="mb-3 flex flex-wrap items-center gap-2">
+                    <div className="relative min-w-0 flex-1 sm:max-w-md">
+                      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        placeholder="Search sandbox settings…"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="h-9 bg-background/50 pl-9"
+                        aria-label="Search sandbox settings"
+                        maxLength={128}
+                      />
+                      {searchQuery && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2 p-0"
+                          onClick={() => setSearchQuery('')}
+                          aria-label="Clear search"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
+                    {searchQuery && (
+                      <Badge variant="secondary" className="h-6 text-xs">
+                        {searchResultsCount} result{searchResultsCount !== 1 ? 's' : ''}
+                      </Badge>
+                    )}
+                  </div>
                   {searchQuery ? (
                     // Search mode: flat, grouped by category label
                     <ScrollArea className="h-[calc(100vh-420px)] min-h-[360px] pr-4">
@@ -1829,6 +2011,7 @@ export default function ServerConfig() {
                                   : 'border-transparent text-muted-foreground hover:border-primary/30 hover:bg-muted/40 hover:text-foreground'
                               }`}
                             >
+                              <CategoryIcon name={category.icon} isActive={isActive} className="h-4 w-4 shrink-0" />
                               <span className="min-w-0 flex-1 truncate font-medium">{category.label}</span>
                               <span className={`shrink-0 min-w-[1.5rem] rounded text-center px-1 py-0.5 text-[10px] font-mono tabular-nums ${
                                 isActive ? 'text-primary/80' : 'bg-muted text-muted-foreground'
@@ -2246,11 +2429,12 @@ export default function ServerConfig() {
               </div>
 
               {modSettings && modSettingsGroups.length > 0 && (
-                <div className="mt-3 flex items-center gap-2">
-                  <div className="relative flex-1">
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <div className="relative flex-1 min-w-[200px]">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <Input
-                      placeholder="Search mod settings..."
+                      ref={modSettingsSearchRef}
+                      placeholder="Search mod settings…  (press /)"
                       value={modSettingsSearch}
                       onChange={(e) => setModSettingsSearch(e.target.value)}
                       onKeyDown={(e) => { if (e.key === 'Escape') { setModSettingsSearch(''); e.currentTarget.blur() } }}
@@ -2267,6 +2451,23 @@ export default function ServerConfig() {
                       </button>
                     )}
                   </div>
+                  <Button
+                    variant={modSettingsModifiedOnly ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setModSettingsModifiedOnly(v => !v)}
+                    disabled={modifiedModSettingsCount === 0 && !modSettingsModifiedOnly}
+                    className="shrink-0 h-9 gap-1.5"
+                    aria-pressed={modSettingsModifiedOnly}
+                    title={modifiedModSettingsCount === 0 ? 'No options differ from default' : 'Show only options changed from default'}
+                  >
+                    <Filter className="w-3.5 h-3.5" />
+                    Modified
+                    {modifiedModSettingsCount > 0 && (
+                      <Badge variant={modSettingsModifiedOnly ? 'secondary' : 'warning'} className="ml-0.5 h-4 px-1.5 py-0 text-xs">
+                        {modifiedModSettingsCount}
+                      </Badge>
+                    )}
+                  </Button>
                   <Button
                     variant="ghost"
                     size="sm"
@@ -2293,8 +2494,8 @@ export default function ServerConfig() {
               {!modSettings && !modSettingsLoading && !modSettingsError && (
                 <EmptyState
                   type="noMods"
-                  title="Mod settings not loaded"
-                  description="Click 'Load from Server' to fetch sandbox options from all installed mods via PanelBridge. The PZ server must be running with PanelBridge active."
+                  title="Loading mod settings…"
+                  description="Fetching sandbox options from all installed mods via PanelBridge. The PZ server must be running with PanelBridge active."
                 />
               )}
 
@@ -2328,16 +2529,22 @@ export default function ServerConfig() {
 
               {modSettings && modSettingsGroups.length > 0 && (
                 <ScrollArea className="h-[calc(100vh-440px)] min-h-[400px] pr-4">
-                  <div className="mb-3 flex items-center gap-3 text-sm text-muted-foreground flex-wrap">
+                  <div className="mb-3 flex items-center gap-2 text-sm text-muted-foreground flex-wrap">
                     <Badge variant="secondary">
-                      {modSettingsSearch ? `${filteredModGroups.length} / ${modSettingsGroups.length}` : modSettingsGroups.length} groups
+                      {modSettingsSearch || modSettingsModifiedOnly ? `${filteredModGroups.length} / ${modSettingsGroups.length}` : modSettingsGroups.length} groups
                     </Badge>
                     <Badge variant="secondary">
-                      {modSettingsSearch
+                      {modSettingsSearch || modSettingsModifiedOnly
                         ? `${filteredModGroups.reduce((s, g) => s + g.filteredOpts.length, 0)} / ${modSettingsGroups.reduce((s, g) => s + g.count, 0)}`
                         : modSettingsGroups.reduce((s, g) => s + g.count, 0)
                       } options
                     </Badge>
+                    {modifiedModSettingsCount > 0 && (
+                      <Badge variant="warning" className="gap-1" title="Options that differ from their default value">
+                        <AlertTriangle className="w-3 h-3" />
+                        {modifiedModSettingsCount} modified
+                      </Badge>
+                    )}
                     {modSettingsLastLoaded && (
                       <span className="text-xs text-muted-foreground/60 ml-auto">
                         Loaded {modSettingsLastLoaded.toLocaleTimeString()}
@@ -2346,8 +2553,14 @@ export default function ServerConfig() {
                   </div>
                   {filteredModGroups
                     .map(group => {
-                      const isExpanded = expandedModGroups.has(group.name)
+                      // When the user is actively filtering, force groups open so matches
+                      // are immediately visible (otherwise hits hide behind collapsed headers).
+                      const isFiltering = !!modSettingsSearch.trim() || modSettingsModifiedOnly
+                      const isExpanded = isFiltering || expandedModGroups.has(group.name)
                       const filteredOpts = group.filteredOpts
+                      // Modified count for this whole group (not just visible/filtered)
+                      const groupAllOpts = modSettings[group.name] || []
+                      const groupModifiedCount = groupAllOpts.reduce((c, o) => c + (isOptModified(o) ? 1 : 0), 0)
 
                       return (
                         <div key={group.name} className="mb-3">
@@ -2376,6 +2589,11 @@ export default function ServerConfig() {
                               )}
                             </div>
                             <span className={`font-medium truncate min-w-0 ${isExpanded ? 'text-primary' : ''}`} title={group.name}>{group.name}</span>
+                            {groupModifiedCount > 0 && (
+                              <Badge variant="warning" className="h-5 px-1.5 py-0 text-[10px] font-mono shrink-0" title={`${groupModifiedCount} option${groupModifiedCount === 1 ? '' : 's'} differ from default`}>
+                                {groupModifiedCount} mod
+                              </Badge>
+                            )}
                             <Badge variant={isExpanded ? "default" : "secondary"} className="ml-auto">
                               {filteredOpts.length}
                             </Badge>
@@ -2408,11 +2626,7 @@ export default function ServerConfig() {
                                   ? (rawVal === true || rawVal === 'true' || rawVal === 1)
                                   : false
                                 const isSaving = opt.name ? savingOptions.has(opt.name) : false
-                                const isModified = opt.default !== undefined && opt.default !== null && (() => {
-                                  const d = opt.default, v = opt.value
-                                  if (typeof d === 'number' && typeof v === 'number') return Math.abs(d - v) >= 0.0001
-                                  return String(d) !== String(v)
-                                })()
+                                const isModified = isOptModified(opt)
 
                                 return (
                                   <div
@@ -2547,13 +2761,34 @@ export default function ServerConfig() {
                         </div>
                       )
                     })}
-                  {modSettingsSearch && filteredModGroups.length === 0 && (
+                  {filteredModGroups.length === 0 && (modSettingsSearch || modSettingsModifiedOnly) && (
                     <div className="flex flex-col items-center justify-center py-8 text-muted-foreground gap-2">
-                      <Search className="w-5 h-5 opacity-50" />
-                      <p className="text-sm">No settings match &ldquo;{modSettingsSearch.length > 60 ? modSettingsSearch.slice(0, 60) + '…' : modSettingsSearch}&rdquo;</p>
-                      <Button variant="ghost" size="sm" onClick={() => setModSettingsSearch('')} className="text-xs">
-                        Clear search
-                      </Button>
+                      {modSettingsModifiedOnly && !modSettingsSearch ? (
+                        <>
+                          <Filter className="w-5 h-5 opacity-50" />
+                          <p className="text-sm">No options have been modified from their defaults.</p>
+                          <Button variant="ghost" size="sm" onClick={() => setModSettingsModifiedOnly(false)} className="text-xs">
+                            Show all options
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <Search className="w-5 h-5 opacity-50" />
+                          <p className="text-sm">No settings match &ldquo;{modSettingsSearch.length > 60 ? modSettingsSearch.slice(0, 60) + '…' : modSettingsSearch}&rdquo;{modSettingsModifiedOnly ? ' in modified options' : ''}</p>
+                          <div className="flex gap-2">
+                            {modSettingsSearch && (
+                              <Button variant="ghost" size="sm" onClick={() => setModSettingsSearch('')} className="text-xs">
+                                Clear search
+                              </Button>
+                            )}
+                            {modSettingsModifiedOnly && (
+                              <Button variant="ghost" size="sm" onClick={() => setModSettingsModifiedOnly(false)} className="text-xs">
+                                Show all options
+                              </Button>
+                            )}
+                          </div>
+                        </>
+                      )}
                     </div>
                   )}
                 </ScrollArea>
@@ -2562,6 +2797,48 @@ export default function ServerConfig() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Sticky save bar — appears when there are unsaved changes on the active tab */}
+      {((activeTab === 'ini' && hasIniChanges) || (activeTab === 'sandbox' && hasSandboxChanges)) && (
+        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-4 pb-4 sm:px-6 sm:pb-5">
+          <div
+            role="status"
+            aria-live="polite"
+            className="pointer-events-auto flex w-full max-w-3xl items-center gap-3 rounded-lg border border-warning/40 bg-card/95 px-4 py-2.5 shadow-lg shadow-black/30 backdrop-blur supports-[backdrop-filter]:bg-card/80 motion-safe:animate-in motion-safe:slide-in-from-bottom-4 motion-safe:fade-in"
+          >
+            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-warning/15 text-warning">
+              <AlertTriangle className="h-4 w-4" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-semibold text-foreground">
+                {activeTab === 'ini' ? changedIniCount : changedSandboxCount}{' '}
+                unsaved {((activeTab === 'ini' ? changedIniCount : changedSandboxCount) === 1) ? 'change' : 'changes'}
+              </div>
+              <div className="text-[11px] text-muted-foreground">
+                {activeTab === 'ini' ? 'Server INI' : 'Sandbox (Lua)'} · Ctrl+S to save · changes apply on reload
+              </div>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={activeTab === 'ini' ? discardIniChanges : discardSandboxChanges}
+              disabled={saving}
+              className="h-8 text-muted-foreground hover:text-destructive"
+            >
+              <Undo2 className="mr-1.5 h-3.5 w-3.5" /> Discard
+            </Button>
+            <Button
+              size="sm"
+              onClick={activeTab === 'ini' ? handleSaveIni : handleSaveSandbox}
+              disabled={saving}
+              className="h-8"
+            >
+              {saving ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Save className="mr-1.5 h-3.5 w-3.5" />}
+              Save &amp; Reload
+            </Button>
+          </div>
+        </div>
+      )}
       <Dialog open={showBackups} onOpenChange={setShowBackups}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>

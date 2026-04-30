@@ -252,9 +252,22 @@ if ($SkipBuild) {
         Write-Ok "Checksums and manifest generated"
 
         # Package Windows release archive (full folder with client/dist, pz-mod, scripts etc.)
+        # Belt-and-braces: explicitly exclude data/db.json and data/backups so a stray
+        # runtime database from local testing can never end up in a public release
+        # (issue #5: clobbering users' admin/server config on extract).
         $zipPath = Join-Path $Dev1Dir $WinZipPath
         if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
         $releaseFolder = Join-Path $Dev1Dir $ReleaseDir
+        $strayDb = Join-Path $releaseFolder "data\db.json"
+        if (Test-Path $strayDb) {
+            Write-Warn "Removing stray data\db.json from release\ before archiving"
+            Remove-Item $strayDb -Force
+        }
+        $strayBackups = Join-Path $releaseFolder "data\backups"
+        if (Test-Path $strayBackups) {
+            Write-Warn "Removing stray data\backups\ from release\ before archiving"
+            Remove-Item $strayBackups -Recurse -Force
+        }
         Compress-Archive -Path "$releaseFolder\*" -DestinationPath $zipPath
         $zipSize = [math]::Round((Get-Item $zipPath).Length / 1MB, 1)
         Write-Ok "Windows archive created: ZomboidControlPanel-windows.zip ($zipSize MB)"
@@ -263,7 +276,7 @@ if ($SkipBuild) {
         $tarPath = Join-Path $Dev1Dir $LinuxTarPath
         if (Test-Path $tarPath) { Remove-Item $tarPath -Force }
         Push-Location $releaseFolder
-        tar -czf $tarPath --exclude="ZomboidControlPanel.exe" --exclude="ZomboidControlPanel-windows.zip" --exclude="ZomboidControlPanel-linux.tar.gz" --exclude="Start.bat" *
+        tar -czf $tarPath --exclude="ZomboidControlPanel.exe" --exclude="ZomboidControlPanel-windows.zip" --exclude="ZomboidControlPanel-linux.tar.gz" --exclude="Start.bat" --exclude="data/db.json" --exclude="data/backups" *
         Pop-Location
         $tarSize = [math]::Round((Get-Item $tarPath).Length / 1MB, 1)
         Write-Ok "Linux archive created: ZomboidControlPanel-linux.tar.gz ($tarSize MB)"

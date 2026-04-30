@@ -1,10 +1,11 @@
 import { createLogger } from '../utils/logger.js';
 const log = createLogger('Mods');
-import { getTrackedMods, updateModTimestamp, logServerEvent, getSetting, setSetting, addTrackedMod, getActiveServer, isModIgnored } from '../database/init.js';
+import { getTrackedMods, updateModTimestamp, logServerEvent, getSetting, setSetting, addTrackedMod, getActiveServer, isModIgnored, markModsChecked } from '../database/init.js';
 import fs from 'fs';
 import path from 'path';
 import { EventEmitter } from 'events';
 import { sanitizeError } from '../utils/sanitize.js';
+import panelBridge from './panelBridge.js';
 
 export class ModChecker extends EventEmitter {
   constructor() {
@@ -597,12 +598,37 @@ export class ModChecker extends EventEmitter {
     }
     
     try {
-      // Send warning message
-      log.info(`Sending RCON warning: ${modNames.substring(0, 100)} — restart in ${this.restartWarningMinutes} min`);
-      await this.scheduler.rconService?.serverMessage(
-        `🔧 Mod updates detected: ${modNames.substring(0, 100)}${modNames.length > 100 ? '...' : ''}. Server will restart in ${this.restartWarningMinutes} minute(s).`
-      );
-      
+      // Send warning message — use both PanelBridge (rich, UTF-8 safe) and RCON
+      // (always-on global broadcast). PZ's RCON does not handle non-ASCII so the
+      // RCON path strips emoji/unicode automatically inside serverMessage().
+      const trimmedNames = modNames.length > 100 ? `${modNames.substring(0, 100)}...` : modNames;
+      const warningMessage = `🔧 Mod updates detected: ${trimmedNames}. Server will restart in ${this.restartWarningMinutes} minute(s).`;
+      log.info(`Sending mod-restart warning: ${trimmedNames} — restart in ${this.restartWarningMinutes} min`);
+
+      let rconBroadcastOk = false;
+      try {
+        const rconResult = await this.scheduler.rconService?.serverMessage(warningMessage);
+        if (rconResult?.success && !rconResult.rejected) {
+          rconBroadcastOk = true;
+        } else if (rconResult?.rejected) {
+          log.warn('RCON servermsg was rejected by PZ — will rely on PanelBridge fallback');
+        }
+      } catch (rconErr) {
+        log.warn(`RCON serverMessage failed: ${rconErr?.message || rconErr}`);
+      }
+
+      // Always also try PanelBridge if available — it can render the full
+      // unicode message in chat and acts as a fallback if RCON was rejected.
+      try {
+        if (panelBridge?.isRunning && panelBridge?.isModConnected?.()) {
+          await panelBridge.sendCommand('sendToServerChat', { message: warningMessage, alert: true });
+        } else if (!rconBroadcastOk) {
+          log.warn('Mod restart warning: neither RCON broadcast nor PanelBridge succeeded — players may not see the warning');
+        }
+      } catch (bridgeErr) {
+        log.warn(`PanelBridge sendToServerChat failed: ${bridgeErr?.message || bridgeErr}`);
+      }
+
       // Perform restart with configured warning time
       log.info(`Calling scheduler.performRestart(${this.restartWarningMinutes})`);
       const result = await this.scheduler.performRestart(this.restartWarningMinutes);
@@ -831,6 +857,24 @@ export class ModChecker extends EventEmitter {
 
       this.lastCheck = new Date();
       this.modsNeedingUpdate = updatedMods;
+
+      // Batch-mark every mod we successfully queried as "just checked".
+      // Without this, individual rows in the UI keep showing "Never checked"
+      // even after the global timestamp updates, making the button feel broken.
+      try {
+        const updatesById = new Map(updatedMods.map(m => [m.workshopId, 1]));
+        let checkedIds;
+        if (steamData.size > 0) {
+          // Steam API succeeded — every queried id was definitively checked
+          checkedIds = new Set(steamData.keys());
+        } else {
+          // ACF-only fallback — every locally-installed mod was compared
+          checkedIds = new Set(localTimestamps.keys());
+        }
+        await markModsChecked(checkedIds, updatesById);
+      } catch (markErr) {
+        log.warn(`Failed to mark mods as checked: ${markErr.message}`);
+      }
 
       if (updatedMods.length > 0) {
         log.info(`${updatedMods.length} mod(s) have updates available`);

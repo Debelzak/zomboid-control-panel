@@ -158,6 +158,8 @@ export default function Debug() {
   const [logFiles, setLogFiles] = useState<LogFile[]>([])
   const [downloadingLogArchive, setDownloadingLogArchive] = useState(false)
   const [performanceHistory, setPerformanceHistory] = useState<PerformanceSnapshot[]>([])
+  const [perfRange, setPerfRange] = useState<'1h' | '6h' | '24h'>('1h')
+  const [refreshingPerformance, setRefreshingPerformance] = useState(false)
   const [crashLogs, setCrashLogs] = useState<CrashLog[]>([])
   const [selectedCrashLog, setSelectedCrashLog] = useState<string | null>(null)
   const [crashLogContent, setCrashLogContent] = useState<string>('')
@@ -168,7 +170,10 @@ export default function Debug() {
   const [activityEntries, setActivityEntries] = useState<ActivityEntry[]>([])
   const [activitySource, setActivitySource] = useState<string>('all')
   const [activitySearch, setActivitySearch] = useState('')
+  const [activityResultFilter, setActivityResultFilter] = useState<'all' | 'success' | 'failed'>('all')
   const [refreshingActivity, setRefreshingActivity] = useState(false)
+  const [activityPaused, setActivityPaused] = useState(false)
+  const [activityLastLoaded, setActivityLastLoaded] = useState<Date | null>(null)
   const [expandedActivity, setExpandedActivity] = useState<Set<string>>(new Set())
   const [autoScroll, setAutoScroll] = useState(true)
   const [paused, setPaused] = useState(false)
@@ -275,8 +280,10 @@ export default function Debug() {
   }
   
   const fetchPerformanceHistory = useCallback(async () => {
+    setRefreshingPerformance(true)
     try {
-      const res = await authFetch('/api/debug/performance-history?limit=60')
+      const limit = perfRange === '24h' ? 1440 : perfRange === '6h' ? 360 : 60
+      const res = await authFetch(`/api/debug/performance-history?limit=${limit}`)
       if (!res.ok) return
       const data = await res.json()
       if (data.history) {
@@ -292,8 +299,10 @@ export default function Debug() {
       }
     } catch {
       // Endpoint may not exist yet
+    } finally {
+      setRefreshingPerformance(false)
     }
-  }, [authFetch])
+  }, [authFetch, perfRange])
 
   const fetchCrashLogs = async () => {
     setRefreshingCrashLogs(true)
@@ -360,6 +369,7 @@ export default function Debug() {
       const data = await res.json()
       if (data.entries) {
         setActivityEntries(data.entries)
+        setActivityLastLoaded(new Date())
       }
     } catch {
       // Endpoint may not exist yet
@@ -391,11 +401,12 @@ export default function Debug() {
     fetchActivity()
     const interval = setInterval(() => {
       if (document.visibilityState === 'hidden') return
+      if (activityPaused) return
       fetchActivity()
     }, 15000)
 
     return () => clearInterval(interval)
-  }, [activeTab, fetchActivity])
+  }, [activeTab, fetchActivity, activityPaused])
 
   useEffect(() => {
     if (activeTab !== 'performance') {
@@ -715,6 +726,97 @@ export default function Debug() {
     debug: logs.filter(l => l.level === 'debug').length,
   }), [logs])
 
+  // Activity stats — based on the server-filtered entries (already narrowed by Source select)
+  const activityStats = useMemo(() => {
+    const stats = { total: activityEntries.length, success: 0, failed: 0, rcon: 0, bridge: 0, player: 0, server: 0 }
+    for (const e of activityEntries) {
+      if (e.success) stats.success++; else stats.failed++
+      if (e.source === 'rcon') stats.rcon++
+      else if (e.source === 'bridge') stats.bridge++
+      else if (e.source === 'player') stats.player++
+      else if (e.source === 'server') stats.server++
+    }
+    return stats
+  }, [activityEntries])
+
+  // Memoized + searched + result-filtered activity rows
+  const filteredActivityEntries = useMemo(() => {
+    const q = activitySearch.trim().toLowerCase()
+    return activityEntries.filter(e => {
+      if (activityResultFilter === 'success' && !e.success) return false
+      if (activityResultFilter === 'failed' && e.success) return false
+      if (!q) return true
+      return e.action.toLowerCase().includes(q)
+        || e.detail.toLowerCase().includes(q)
+        || e.source.toLowerCase().includes(q)
+    })
+  }, [activityEntries, activitySearch, activityResultFilter])
+
+  const copyActivityEntry = useCallback(async (entry: ActivityEntry) => {
+    const ts = new Date(entry.timestamp).toISOString()
+    const argsStr = entry.args && Object.keys(entry.args).length > 0 ? `\nargs: ${JSON.stringify(entry.args)}` : ''
+    const durStr = entry.duration_ms != null ? ` (${entry.duration_ms}ms)` : ''
+    const text = `[${ts}] [${entry.source}] ${entry.success ? 'OK' : 'FAIL'} ${entry.action}${durStr}\n${entry.detail}${argsStr}`
+    const ok = await copyText(text)
+    toast({
+      title: ok ? 'Copied' : 'Copy failed',
+      description: ok ? 'Activity entry copied to clipboard.' : 'Could not copy. Select the row and press Ctrl+C.',
+      variant: ok ? ('success' as const) : 'destructive',
+    })
+  }, [toast])
+
+  // Performance stats — averages, peaks, span — derived from history
+  const performanceStats = useMemo(() => {
+    const collect = (sel: (p: PerformanceSnapshot) => number | null | undefined) => {
+      const vals: number[] = []
+      for (const p of performanceHistory) {
+        const v = sel(p)
+        if (v != null && Number.isFinite(v)) vals.push(v)
+      }
+      if (vals.length === 0) return { avg: null as number | null, max: null as number | null, count: 0 }
+      const sum = vals.reduce((a, b) => a + b, 0)
+      return { avg: sum / vals.length, max: Math.max(...vals), count: vals.length }
+    }
+    const cpu = collect(p => p.cpuLoad)
+    const hostGB = collect(p => p.hostMemUsedGB)
+    const pzMB = collect(p => p.pzMemMB)
+    const players = collect(p => p.playerCount)
+
+    let spanMs = 0
+    if (performanceHistory.length >= 2) {
+      const first = new Date(performanceHistory[0].timestamp).getTime()
+      const last = new Date(performanceHistory[performanceHistory.length - 1].timestamp).getTime()
+      spanMs = Math.max(0, last - first)
+    }
+    return { cpu, hostGB, pzMB, players, spanMs }
+  }, [performanceHistory])
+
+  const downloadPerformanceCsv = useCallback(() => {
+    if (performanceHistory.length === 0) return
+    const header = ['timestamp', 'cpu_pct', 'host_mem_used_gb', 'host_mem_total_gb', 'pz_mem_mb', 'panel_mem_mb', 'player_count', 'server_running']
+    const rows = performanceHistory.map(p => [
+      new Date(p.timestamp).toISOString(),
+      p.cpuLoad ?? '',
+      p.hostMemUsedGB ?? '',
+      p.hostMemGB ?? '',
+      p.pzMemMB ?? '',
+      p.memoryMB ?? '',
+      p.playerCount ?? '',
+      p.serverRunning ? '1' : '0',
+    ])
+    const csv = [header, ...rows].map(r => r.join(',')).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `performance-${perfRange}-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.csv`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    window.setTimeout(() => window.URL.revokeObjectURL(url), 1000)
+    toast({ title: 'Exported', description: `${performanceHistory.length} snapshots exported as CSV.`, variant: 'success' as const })
+  }, [performanceHistory, perfRange, toast])
+
   const getLevelIcon = (level: string) => {
     switch (level) {
       case 'error': return <AlertCircle className="w-4 h-4 text-destructive" />
@@ -783,30 +885,140 @@ export default function Debug() {
                   </CardTitle>
                   <CardDescription>Unified view of RCON commands, Bridge actions, player events, and server events</CardDescription>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <Select value={activitySource} onValueChange={(v) => setActivitySource(v)}>
-                    <SelectTrigger className="w-[130px] h-8">
+                    <SelectTrigger className="w-[130px] h-8" aria-label="Filter by source">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">All Sources</SelectItem>
-                      <SelectItem value="rcon">RCON</SelectItem>
-                      <SelectItem value="bridge">Bridge</SelectItem>
-                      <SelectItem value="player">Player</SelectItem>
-                      <SelectItem value="server">Server</SelectItem>
+                      <SelectItem value="all">All Sources{activityStats.total > 0 ? ` (${activityStats.total})` : ''}</SelectItem>
+                      <SelectItem value="rcon">RCON{activityStats.rcon > 0 ? ` (${activityStats.rcon})` : ''}</SelectItem>
+                      <SelectItem value="bridge">Bridge{activityStats.bridge > 0 ? ` (${activityStats.bridge})` : ''}</SelectItem>
+                      <SelectItem value="player">Player{activityStats.player > 0 ? ` (${activityStats.player})` : ''}</SelectItem>
+                      <SelectItem value="server">Server{activityStats.server > 0 ? ` (${activityStats.server})` : ''}</SelectItem>
                     </SelectContent>
                   </Select>
-                  <Input
-                    placeholder="Search..."
-                    value={activitySearch}
-                    onChange={(e) => setActivitySearch(e.target.value)}
-                    className="w-[180px] h-8"
-                  />
-                  <Button variant="outline" size="sm" onClick={fetchActivity} disabled={refreshingActivity}>
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                    <Input
+                      placeholder="Search action / detail…"
+                      value={activitySearch}
+                      onChange={(e) => setActivitySearch(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Escape') { setActivitySearch(''); e.currentTarget.blur() } }}
+                      className="w-[200px] h-8 pl-7 pr-7"
+                      maxLength={200}
+                      aria-label="Search activity"
+                    />
+                    {activitySearch && (
+                      <button
+                        type="button"
+                        onClick={() => setActivitySearch('')}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                        aria-label="Clear search"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant={activityPaused ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => setActivityPaused(p => !p)}
+                        className="gap-1.5"
+                        aria-pressed={activityPaused}
+                      >
+                        {activityPaused ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}
+                        {activityPaused ? 'Resume' : 'Live'}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>{activityPaused ? 'Resume auto-refresh (15s)' : 'Pause auto-refresh'}</TooltipContent>
+                  </Tooltip>
+                  <Button variant="outline" size="sm" onClick={fetchActivity} disabled={refreshingActivity} aria-label="Refresh now">
                     <RefreshCw className={cn("w-4 h-4", refreshingActivity && "animate-spin")} />
                   </Button>
                 </div>
               </div>
+
+              {/* Stat row: counts + result filter pills + last-updated */}
+              {activityEntries.length > 0 && (
+                <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+                  <Badge variant="secondary" className="gap-1">
+                    <Activity className="w-3 h-3" />
+                    {activitySearch || activityResultFilter !== 'all'
+                      ? `${filteredActivityEntries.length} / ${activityStats.total}`
+                      : activityStats.total} entries
+                  </Badge>
+                  <button
+                    type="button"
+                    onClick={() => setActivityResultFilter('all')}
+                    className={cn(
+                      "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition-colors",
+                      activityResultFilter === 'all'
+                        ? "border-foreground/30 bg-muted text-foreground"
+                        : "border-border/50 text-muted-foreground hover:border-foreground/30 hover:text-foreground"
+                    )}
+                    aria-pressed={activityResultFilter === 'all'}
+                  >
+                    All
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActivityResultFilter(r => r === 'success' ? 'all' : 'success')}
+                    disabled={activityStats.success === 0}
+                    className={cn(
+                      "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
+                      activityResultFilter === 'success'
+                        ? "border-success/50 bg-success/15 text-success"
+                        : "border-border/50 text-muted-foreground hover:border-success/40 hover:text-success"
+                    )}
+                    aria-pressed={activityResultFilter === 'success'}
+                    title="Show only successful entries"
+                  >
+                    <CheckCircle className="w-3 h-3" /> {activityStats.success} success
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActivityResultFilter(r => r === 'failed' ? 'all' : 'failed')}
+                    disabled={activityStats.failed === 0}
+                    className={cn(
+                      "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
+                      activityResultFilter === 'failed'
+                        ? "border-destructive/50 bg-destructive/15 text-destructive"
+                        : "border-border/50 text-muted-foreground hover:border-destructive/40 hover:text-destructive"
+                    )}
+                    aria-pressed={activityResultFilter === 'failed'}
+                    title="Show only failed entries"
+                  >
+                    <AlertCircle className="w-3 h-3" /> {activityStats.failed} failed
+                  </button>
+                  {filteredActivityEntries.length > 0 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="ml-auto h-6 gap-1 px-2 text-xs"
+                      onClick={() => {
+                        const allExpanded = filteredActivityEntries.every(e => expandedActivity.has(e.id))
+                        if (allExpanded) {
+                          setExpandedActivity(new Set())
+                        } else {
+                          setExpandedActivity(new Set(filteredActivityEntries.map(e => e.id)))
+                        }
+                      }}
+                    >
+                      {filteredActivityEntries.every(e => expandedActivity.has(e.id))
+                        ? <><ChevronDown className="w-3 h-3" /> Collapse all</>
+                        : <><ChevronRight className="w-3 h-3" /> Expand all</>}
+                    </Button>
+                  )}
+                  {activityLastLoaded && (
+                    <span className={cn("text-[11px]", filteredActivityEntries.length > 0 ? "" : "ml-auto", activityPaused ? "text-warning" : "text-muted-foreground/70")}>
+                      {activityPaused ? 'Paused · ' : ''}Last refresh {activityLastLoaded.toLocaleTimeString()}
+                    </span>
+                  )}
+                </div>
+              )}
             </CardHeader>
             <CardContent>
               {activityEntries.length === 0 ? (
@@ -815,24 +1027,29 @@ export default function Debug() {
                   description="Commands and events will appear here as the panel is used."
                   icon={<Zap className="w-6 h-6" />}
                 />
+              ) : filteredActivityEntries.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-10 text-muted-foreground gap-2">
+                  <Search className="w-5 h-5 opacity-60" />
+                  <p className="text-sm">No entries match the current filters.</p>
+                  <div className="flex gap-2">
+                    {activitySearch && (
+                      <Button variant="ghost" size="sm" onClick={() => setActivitySearch('')} className="text-xs">Clear search</Button>
+                    )}
+                    {activityResultFilter !== 'all' && (
+                      <Button variant="ghost" size="sm" onClick={() => setActivityResultFilter('all')} className="text-xs">Show all results</Button>
+                    )}
+                  </div>
+                </div>
               ) : (
-                <ScrollArea className="h-[600px]">
+                <ScrollArea className="h-[calc(100vh-440px)] min-h-[400px]">
                   <div className="space-y-1 font-mono text-xs">
-                    {activityEntries
-                      .filter(e => {
-                        if (!activitySearch) return true
-                        const q = activitySearch.toLowerCase()
-                        return e.action.toLowerCase().includes(q) ||
-                               e.detail.toLowerCase().includes(q) ||
-                               e.source.toLowerCase().includes(q)
-                      })
-                      .map(entry => {
+                    {filteredActivityEntries.map(entry => {
                         const isExpanded = expandedActivity.has(entry.id)
                         return (
                           <div
                             key={entry.id}
                             className={cn(
-                              "flex flex-col gap-0",
+                              "group flex flex-col gap-0",
                               !entry.success && "bg-destructive/5 rounded"
                             )}
                           >
@@ -847,7 +1064,7 @@ export default function Debug() {
                                 })
                               }}
                             >
-                              <span className="text-muted-foreground shrink-0 w-[65px]">
+                              <span className="text-muted-foreground shrink-0 w-[65px]" title={new Date(entry.timestamp).toLocaleString()}>
                                 {new Date(entry.timestamp).toLocaleTimeString()}
                               </span>
                               <Badge variant="outline" className={cn(
@@ -866,11 +1083,25 @@ export default function Debug() {
                               )}
                               <span className="font-medium text-foreground shrink-0">{entry.action}</span>
                               {entry.duration_ms != null && (
-                                <span className="text-muted-foreground shrink-0">{entry.duration_ms}ms</span>
+                                <span className={cn(
+                                  "shrink-0",
+                                  entry.duration_ms > 1000 ? "text-warning" : "text-muted-foreground"
+                                )} title={entry.duration_ms > 1000 ? 'Slow (over 1s)' : undefined}>
+                                  {entry.duration_ms}ms
+                                </span>
                               )}
-                              <span className="text-muted-foreground truncate flex-1">
-                                {entry.detail.substring(0, 120)}
+                              <span className="text-muted-foreground truncate flex-1" title={entry.detail}>
+                                {entry.detail.length > 120 ? entry.detail.substring(0, 120) + '…' : entry.detail}
                               </span>
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); copyActivityEntry(entry) }}
+                                className="shrink-0 mt-0.5 text-muted-foreground/50 hover:text-foreground opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+                                aria-label="Copy entry"
+                                title="Copy entry"
+                              >
+                                <Copy className="w-3.5 h-3.5" />
+                              </button>
                               {isExpanded ? <ChevronDown className="w-3.5 h-3.5 shrink-0 mt-0.5" /> : <ChevronRight className="w-3.5 h-3.5 shrink-0 mt-0.5" />}
                             </div>
                             {isExpanded && (
@@ -1218,42 +1449,55 @@ export default function Debug() {
             {/* Crash Log List */}
             <Card className="lg:col-span-1">
               <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2">
-                  <AlertCircle className="w-5 h-5" />
-                  Crash Logs
-                </CardTitle>
-                <CardDescription>Java crash dumps and error logs.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="flex justify-end mb-3">
-                  <Button variant="outline" size="sm" onClick={fetchCrashLogs} disabled={refreshingCrashLogs}>
-                    <RefreshCw className={cn("w-4 h-4 mr-2", refreshingCrashLogs && "animate-spin")} />
-                    Refresh
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <AlertCircle className={cn("w-5 h-5", crashLogs.length > 0 ? "text-destructive" : "text-muted-foreground")} />
+                      Crash Logs
+                      {crashLogs.length > 0 && (
+                        <Badge variant="destructive" className="ml-1">{crashLogs.length}</Badge>
+                      )}
+                    </CardTitle>
+                    <CardDescription>Java crash dumps and error logs.</CardDescription>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={fetchCrashLogs} disabled={refreshingCrashLogs} aria-label="Refresh crash logs">
+                    <RefreshCw className={cn("w-4 h-4", refreshingCrashLogs && "animate-spin")} />
                   </Button>
                 </div>
+              </CardHeader>
+              <CardContent>
                 {crashLogs.length === 0 ? (
                   <EmptyState compact type="noData" title="No crash logs found" description="That's good news!" />
                 ) : (
-                  <ScrollArea className="h-[300px] sm:h-[400px]">
-                    <div className="space-y-2">
-                      {crashLogs.map((log) => (
-                        <div
-                          key={log.name}
-                          className={`p-3 rounded-lg border cursor-pointer transition-colors ${
-                            selectedCrashLog === log.name
-                              ? 'bg-primary/10 border-primary'
-                              : 'hover:bg-muted/50'
-                          }`}
-                          onClick={() => loadCrashLogContent(log.name)}
-                        >
-                          <p className="font-mono text-sm truncate">{log.name}</p>
-                          <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
-                            <span>{(log.size / 1024).toFixed(1)} KB</span>
-                            <span>•</span>
-                            <span>{new Date(log.modified).toLocaleString()}</span>
-                          </div>
-                        </div>
-                      ))}
+                  <ScrollArea className="h-[calc(100vh-360px)] min-h-[300px]">
+                    <div className="space-y-2 pr-2">
+                      {[...crashLogs].sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime()).map((log) => {
+                        const ageMs = Date.now() - new Date(log.modified).getTime()
+                        const isRecent = ageMs < 24 * 60 * 60 * 1000
+                        return (
+                          <button
+                            type="button"
+                            key={log.name}
+                            className={cn(
+                              "w-full text-left p-3 rounded-lg border transition-colors",
+                              selectedCrashLog === log.name
+                                ? 'bg-primary/10 border-primary'
+                                : 'hover:bg-muted/50'
+                            )}
+                            onClick={() => loadCrashLogContent(log.name)}
+                          >
+                            <div className="flex items-center gap-2">
+                              <p className="font-mono text-sm truncate flex-1">{log.name}</p>
+                              {isRecent && <Badge variant="destructive" className="text-[10px] h-5 shrink-0">NEW</Badge>}
+                            </div>
+                            <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                              <span>{formatFileSize(log.size)}</span>
+                              <span>•</span>
+                              <span title={new Date(log.modified).toLocaleString()}>{formatTimestamp(new Date(log.modified))}</span>
+                            </div>
+                          </button>
+                        )
+                      })}
                     </div>
                   </ScrollArea>
                 )}
@@ -1263,22 +1507,69 @@ export default function Debug() {
             {/* Crash Log Viewer */}
             <Card className="lg:col-span-2">
               <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 min-w-0">
-                  <FileText className="w-5 h-5 shrink-0" />
-                  <span className="truncate">{selectedCrashLog || 'Crash Log Viewer'}</span>
-                </CardTitle>
+                <div className="flex items-center justify-between gap-2">
+                  <CardTitle className="flex items-center gap-2 min-w-0">
+                    <FileText className="w-5 h-5 shrink-0" />
+                    <span className="truncate">{selectedCrashLog || 'Crash Log Viewer'}</span>
+                  </CardTitle>
+                  {selectedCrashLog && !loadingCrashLog && crashLogContent && (
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={async () => {
+                              const ok = await copyText(crashLogContent)
+                              toast({
+                                title: ok ? 'Copied' : 'Copy failed',
+                                description: ok ? `${selectedCrashLog} copied to clipboard.` : 'Could not access clipboard.',
+                                variant: ok ? ('success' as const) : 'destructive',
+                              })
+                            }}
+                          >
+                            <Copy className="w-4 h-4" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Copy contents</TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              const blob = new Blob([crashLogContent], { type: 'text/plain' })
+                              const url = window.URL.createObjectURL(blob)
+                              const a = document.createElement('a')
+                              a.href = url
+                              a.download = selectedCrashLog
+                              document.body.appendChild(a)
+                              a.click()
+                              a.remove()
+                              window.setTimeout(() => window.URL.revokeObjectURL(url), 1000)
+                            }}
+                          >
+                            <Download className="w-4 h-4" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Download file</TooltipContent>
+                      </Tooltip>
+                    </div>
+                  )}
+                </div>
               </CardHeader>
               <CardContent>
                 {!selectedCrashLog ? (
-                  <div className="h-[300px] sm:h-[400px] flex items-center justify-center text-muted-foreground">
+                  <div className="h-[calc(100vh-360px)] min-h-[300px] flex items-center justify-center text-muted-foreground">
                     Select a crash log to view its contents
                   </div>
                 ) : loadingCrashLog ? (
-                  <div className="h-[300px] sm:h-[400px] flex items-center justify-center">
+                  <div className="h-[calc(100vh-360px)] min-h-[300px] flex items-center justify-center">
                     <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
                   </div>
                 ) : (
-                  <ScrollArea className="h-[300px] sm:h-[400px]">
+                  <ScrollArea className="h-[calc(100vh-360px)] min-h-[300px]">
                     <pre className="text-xs font-mono whitespace-pre-wrap break-all p-2 bg-muted/30 rounded">
                       {crashLogContent}
                     </pre>
@@ -1291,43 +1582,129 @@ export default function Debug() {
 
         {/* Performance Tab */}
         <TabsContent value="performance" className="space-y-4">
+          {/* Toolbar */}
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Activity className="w-4 h-4" />
+              {performanceStats.spanMs > 0 ? (
+                <span>Showing {performanceHistory.length} snapshots over {formatUptime(Math.round(performanceStats.spanMs / 1000))}</span>
+              ) : (
+                <span>Performance snapshots are recorded every 60 seconds.</span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <Select value={perfRange} onValueChange={(v) => setPerfRange(v as '1h' | '6h' | '24h')}>
+                <SelectTrigger className="w-[110px] h-8" aria-label="Time range">
+                  <Clock className="w-3.5 h-3.5 mr-1" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1h">Last hour</SelectItem>
+                  <SelectItem value="6h">Last 6h</SelectItem>
+                  <SelectItem value="24h">Last 24h</SelectItem>
+                </SelectContent>
+              </Select>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="outline" size="sm" onClick={downloadPerformanceCsv} disabled={performanceHistory.length === 0}>
+                    <Download className="w-4 h-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Export as CSV</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="outline" size="sm" onClick={fetchPerformanceHistory} disabled={refreshingPerformance} aria-label="Refresh">
+                    <RefreshCw className={cn("w-4 h-4", refreshingPerformance && "animate-spin")} />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Refresh now</TooltipContent>
+              </Tooltip>
+            </div>
+          </div>
+
           {/* Current Snapshot Cards */}
           {(() => {
             const latest = performanceHistory.length > 0 ? performanceHistory[performanceHistory.length - 1] : null
+            const cpuTone = latest?.cpuLoad != null
+              ? latest.cpuLoad >= 90 ? 'destructive' : latest.cpuLoad >= 75 ? 'warning' : null
+              : null
+            const hostPct = latest?.hostMemUsedGB != null && latest.hostMemGB
+              ? (latest.hostMemUsedGB / latest.hostMemGB) * 100
+              : null
+            const hostTone = hostPct != null
+              ? hostPct >= 90 ? 'destructive' : hostPct >= 75 ? 'warning' : null
+              : null
+            const pzTone = latest?.pzMemMB != null
+              ? latest.pzMemMB > 7600 ? 'destructive' : latest.pzMemMB > 6000 ? 'warning' : null
+              : null
+            const fmtBool = (b: boolean) => b ? 'Running' : 'Stopped'
             return (
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-                <Card>
+                <Card className={cn(hostTone === 'destructive' && "border-destructive/50", hostTone === 'warning' && "border-warning/50")}>
                   <CardContent className="p-4">
                     <p className="text-xs text-muted-foreground uppercase tracking-wide">Host RAM</p>
-                    <p className="text-xl font-bold mt-1">
+                    <p className={cn(
+                      "text-xl font-bold mt-1",
+                      hostTone === 'destructive' && "text-destructive",
+                      hostTone === 'warning' && "text-warning",
+                    )}>
                       {latest?.hostMemUsedGB != null ? `${latest.hostMemUsedGB} / ${latest.hostMemGB} GB` : 'N/A'}
                     </p>
+                    {performanceStats.hostGB.avg != null && (
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
+                        avg {performanceStats.hostGB.avg.toFixed(1)} · max {performanceStats.hostGB.max!.toFixed(1)} GB
+                      </p>
+                    )}
                   </CardContent>
                 </Card>
-                <Card>
+                <Card className={cn(cpuTone === 'destructive' && "border-destructive/50", cpuTone === 'warning' && "border-warning/50")}>
                   <CardContent className="p-4">
                     <p className="text-xs text-muted-foreground uppercase tracking-wide">Host CPU</p>
-                    <p className="text-xl font-bold mt-1">
+                    <p className={cn(
+                      "text-xl font-bold mt-1",
+                      cpuTone === 'destructive' && "text-destructive",
+                      cpuTone === 'warning' && "text-warning",
+                    )}>
                       {latest?.cpuLoad != null ? `${latest.cpuLoad}%` : 'N/A'}
                     </p>
+                    {performanceStats.cpu.avg != null && (
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
+                        avg {performanceStats.cpu.avg.toFixed(1)}% · max {performanceStats.cpu.max!.toFixed(1)}%
+                      </p>
+                    )}
                   </CardContent>
                 </Card>
-                <Card className={cn(latest?.pzMemMB != null && latest.pzMemMB > 7600 && "border-destructive/50")}>
+                <Card className={cn(pzTone === 'destructive' && "border-destructive/50", pzTone === 'warning' && "border-warning/50")}>
                   <CardContent className="p-4">
                     <p className="text-xs text-muted-foreground uppercase tracking-wide">PZ Server RAM</p>
-                    <p className={cn("text-xl font-bold mt-1", latest?.pzMemMB != null && latest.pzMemMB > 7600 && "text-destructive")}>
+                    <p className={cn(
+                      "text-xl font-bold mt-1",
+                      pzTone === 'destructive' && "text-destructive",
+                      pzTone === 'warning' && "text-warning",
+                    )}>
                       {latest?.pzMemMB != null ? `${(latest.pzMemMB / 1024).toFixed(1)} GB` : 'N/A'}
                     </p>
+                    {performanceStats.pzMB.avg != null && (
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
+                        avg {(performanceStats.pzMB.avg / 1024).toFixed(1)} GB
+                      </p>
+                    )}
                   </CardContent>
                 </Card>
                 <Card>
                   <CardContent className="p-4">
                     <p className="text-xs text-muted-foreground uppercase tracking-wide">PZ Peak</p>
                     <p className="text-xl font-bold mt-1">
-                      {performanceHistory.some(p => p.pzMemMB != null)
-                        ? `${(Math.max(...performanceHistory.filter(p => p.pzMemMB != null).map(p => p.pzMemMB!)) / 1024).toFixed(1)} GB`
+                      {performanceStats.pzMB.max != null
+                        ? `${(performanceStats.pzMB.max / 1024).toFixed(1)} GB`
                         : 'N/A'}
                     </p>
+                    {performanceStats.pzMB.count > 0 && (
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
+                        across {performanceStats.pzMB.count} samples
+                      </p>
+                    )}
                   </CardContent>
                 </Card>
                 <Card>
@@ -1336,13 +1713,25 @@ export default function Debug() {
                     <p className="text-xl font-bold mt-1">
                       {latest?.playerCount ?? 'N/A'}
                     </p>
+                    {performanceStats.players.max != null && (
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
+                        peak {performanceStats.players.max} · avg {performanceStats.players.avg!.toFixed(1)}
+                      </p>
+                    )}
                   </CardContent>
                 </Card>
                 <Card>
                   <CardContent className="p-4">
-                    <p className="text-xs text-muted-foreground uppercase tracking-wide">Data Points</p>
-                    <p className="text-xl font-bold mt-1">{performanceHistory.length}</p>
-                    <p className="text-xs text-muted-foreground">1 per minute</p>
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide">Server</p>
+                    <p className={cn(
+                      "text-xl font-bold mt-1",
+                      latest?.serverRunning ? "text-success" : "text-muted-foreground"
+                    )}>
+                      {latest ? fmtBool(latest.serverRunning) : 'N/A'}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      {performanceHistory.length} {performanceHistory.length === 1 ? 'sample' : 'samples'}
+                    </p>
                   </CardContent>
                 </Card>
               </div>
@@ -1399,10 +1788,13 @@ export default function Debug() {
                       {healthStatus?.status === 'ok' ? 'Healthy' : 'Issues Detected'}
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      Last checked: {healthStatus?.timestamp 
-                        ? new Date(healthStatus.timestamp).toLocaleTimeString()
-                        : 'Never'}
+                      {healthStatus?.timestamp ? (
+                        <span title={new Date(healthStatus.timestamp).toLocaleString()}>
+                          Last checked {formatTimestamp(new Date(healthStatus.timestamp))}
+                        </span>
+                      ) : 'Never checked'}
                     </p>
+                    <p className="text-xs text-muted-foreground/70 mt-0.5">Auto-refreshes every 30s</p>
                   </div>
                 </div>
               </CardContent>
@@ -1417,30 +1809,47 @@ export default function Debug() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                {healthStatus?.memory && (
-                  <>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Heap Used</span>
-                      <span className="font-mono">{formatMemory(healthStatus.memory.heapUsed)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Heap Total</span>
-                      <span className="font-mono">{formatMemory(healthStatus.memory.heapTotal)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">RSS</span>
-                      <span className="font-mono">{formatMemory(healthStatus.memory.rss)}</span>
-                    </div>
-                    <div className="w-full bg-muted rounded-full h-2 mt-2 overflow-hidden">
-                      <div 
-                        className="bg-primary h-2 rounded-full transition-all"
-                        style={{ 
-                          width: `${Math.min(100, (healthStatus.memory.heapUsed / healthStatus.memory.heapTotal) * 100)}%` 
-                        }}
-                      />
-                    </div>
-                  </>
-                )}
+                {healthStatus?.memory && (() => {
+                  const heapPct = healthStatus.memory.heapTotal > 0
+                    ? (healthStatus.memory.heapUsed / healthStatus.memory.heapTotal) * 100
+                    : 0
+                  const tone = heapPct >= 90 ? 'destructive' : heapPct >= 75 ? 'warning' : 'primary'
+                  return (
+                    <>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Heap Used</span>
+                        <span className="font-mono">{formatMemory(healthStatus.memory.heapUsed)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Heap Total</span>
+                        <span className="font-mono">{formatMemory(healthStatus.memory.heapTotal)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">RSS</span>
+                        <span className="font-mono">{formatMemory(healthStatus.memory.rss)}</span>
+                      </div>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-muted-foreground">Heap usage</span>
+                        <span className={cn(
+                          "font-mono",
+                          tone === 'destructive' && "text-destructive",
+                          tone === 'warning' && "text-warning",
+                        )}>{heapPct.toFixed(1)}%</span>
+                      </div>
+                      <div className="w-full bg-muted rounded-full h-2 mt-2 overflow-hidden">
+                        <div
+                          className={cn(
+                            "h-2 rounded-full transition-all",
+                            tone === 'destructive' && "bg-destructive",
+                            tone === 'warning' && "bg-warning",
+                            tone === 'primary' && "bg-primary",
+                          )}
+                          style={{ width: `${Math.min(100, heapPct)}%` }}
+                        />
+                      </div>
+                    </>
+                  )
+                })()}
               </CardContent>
             </Card>
           </div>
@@ -1659,13 +2068,49 @@ export default function Debug() {
                 </div>
               ) : (
                 <div className="space-y-3 font-mono text-sm">
-                  <div className="flex gap-4 p-3 rounded-lg bg-muted/50">
+                  <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
                     <span className="text-muted-foreground w-32 shrink-0">Database:</span>
-                    <span className="break-all">{systemInfo?.dbPath || '-'}</span>
+                    <span className="break-all flex-1">{systemInfo?.dbPath || '-'}</span>
+                    {systemInfo?.dbPath && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-7 p-0 shrink-0"
+                            onClick={async () => {
+                              const ok = await copyText(systemInfo.dbPath)
+                              toast({ title: ok ? 'Copied' : 'Copy failed', description: ok ? systemInfo.dbPath : 'Could not access clipboard.', variant: ok ? ('success' as const) : 'destructive' })
+                            }}
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Copy path</TooltipContent>
+                      </Tooltip>
+                    )}
                   </div>
-                  <div className="flex gap-4 p-3 rounded-lg bg-muted/50">
+                  <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
                     <span className="text-muted-foreground w-32 shrink-0">Logs folder:</span>
-                    <span className="break-all">{systemInfo?.logsPath || '-'}</span>
+                    <span className="break-all flex-1">{systemInfo?.logsPath || '-'}</span>
+                    {systemInfo?.logsPath && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-7 p-0 shrink-0"
+                            onClick={async () => {
+                              const ok = await copyText(systemInfo.logsPath)
+                              toast({ title: ok ? 'Copied' : 'Copy failed', description: ok ? systemInfo.logsPath : 'Could not access clipboard.', variant: ok ? ('success' as const) : 'destructive' })
+                            }}
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Copy path</TooltipContent>
+                      </Tooltip>
+                    )}
                   </div>
                 </div>
               )}

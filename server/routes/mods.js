@@ -8,6 +8,13 @@ import { createLogger } from '../utils/logger.js';
 const log = createLogger('API:Mods');
 import { getTrackedMods, addTrackedMod, removeTrackedMod, clearModUpdates, getSetting, getActiveServer, getModPresets, createModPreset, updateModPreset, deleteModPreset, addIgnoredMod, getIgnoredMods, removeIgnoredMod, clearAllIgnoredMods, isModIgnored } from '../database/init.js';
 import { sanitizeError, sanitizeIniValue, sanitizeIniList } from '../utils/sanitize.js';
+import {
+  getCollectionContents,
+  addItemToCollection,
+  removeItemFromCollection,
+  computeDiff as computeCollectionDiff,
+  syncSingleChange as autoSyncCollection,
+} from '../services/workshopCollectionSync.js';
 
 const router = express.Router();
 
@@ -172,6 +179,9 @@ router.post('/track', async (req, res) => {
     await removeIgnoredMod(workshopIdStr);
     
     const result = await modChecker.addModToTrack(workshopIdStr);
+    // Best-effort Workshop collection mirror — fire-and-forget so the user's
+    // tracking action never blocks on Steam being slow or cookies being stale.
+    autoSyncCollection('add', workshopIdStr).catch(() => {});
     res.json(result);
   } catch (error) {
     log.error(`Failed to add mod to track: ${error.message}`);
@@ -196,6 +206,8 @@ router.delete('/track/:workshopId', async (req, res) => {
     await removeTrackedMod(workshopId);
     // Add to ignored list so auto-sync won't re-add it
     await addIgnoredMod(workshopId, mod?.name || null);
+    // Mirror removal into the Workshop collection if auto-sync is on.
+    autoSyncCollection('remove', workshopId).catch(() => {});
     res.json({ success: true, message: 'Mod removed from tracking and added to ignore list' });
   } catch (error) {
     log.error(`Failed to remove tracked mod: ${error.message}`);
@@ -555,6 +567,129 @@ router.post('/clear-updates', async (req, res) => {
     res.json({ success: true, message: 'Update flags cleared' });
   } catch (error) {
     log.error(`Failed to clear mod updates: ${error.message}`);
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
+// ============================================
+// Workshop Collection Sync
+// Mirrors the tracked-mod list into a user-owned Steam Workshop collection.
+// Reads are public; writes need the user's session cookies (settings).
+// ============================================
+
+router.get('/collection/diff', async (req, res) => {
+  try {
+    const tracked = await getTrackedMods();
+    const ids = tracked.map((m) => String(m.workshop_id));
+    const diff = await computeCollectionDiff(ids);
+    res.json({
+      ...diff,
+      collectionId: await getSetting('workshopCollectionId') || null,
+      autoSync: !!(await getSetting('workshopCollectionAutoSync')),
+      hasCredentials: !!((await getSetting('steamSessionId')) && (await getSetting('steamLoginSecure'))),
+      trackedCount: ids.length,
+    });
+  } catch (error) {
+    log.error(`Collection diff failed: ${error.message}`);
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
+router.post('/collection/sync', async (req, res) => {
+  try {
+    const collectionId = await getSetting('workshopCollectionId');
+    if (!collectionId) {
+      return res.status(400).json({ error: 'Collection ID not configured' });
+    }
+    const tracked = await getTrackedMods();
+    const trackedIds = tracked.map((m) => String(m.workshop_id));
+    const diff = await computeCollectionDiff(trackedIds);
+    if (!diff.ok) {
+      return res.status(502).json({ error: diff.error || 'Could not read collection' });
+    }
+
+    const added = [];
+    const removed = [];
+    const errors = [];
+    let staleSession = false;
+
+    // Sequential with a small delay keeps Steam happy when a fresh setup has
+    // dozens of pending changes. Steam will silently throttle / 429 a tight
+    // loop. The lists are usually small after the first run.
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const STALE_RE = /session expired|HTTP 302|HTTP 401|HTTP 403/i;
+
+    for (const id of diff.toAdd) {
+      const r = await addItemToCollection(collectionId, id);
+      if (r.ok) added.push(id);
+      else {
+        errors.push({ action: 'add', id, error: r.error });
+        if (r.error && STALE_RE.test(r.error)) { staleSession = true; break; }
+      }
+      await sleep(300);
+    }
+    if (!staleSession) {
+      for (const id of diff.toRemove) {
+        const r = await removeItemFromCollection(collectionId, id);
+        if (r.ok) removed.push(id);
+        else {
+          errors.push({ action: 'remove', id, error: r.error });
+          if (r.error && STALE_RE.test(r.error)) { staleSession = true; break; }
+        }
+        await sleep(300);
+      }
+    }
+
+    res.json({
+      success: errors.length === 0,
+      collectionId,
+      added,
+      removed,
+      errors,
+      staleSession,
+      message: errors.length === 0
+        ? `Synced \u2014 added ${added.length}, removed ${removed.length}`
+        : staleSession
+          ? 'Steam session expired \u2014 paste fresh cookies and try again'
+          : `Partial sync \u2014 ${errors.length} error${errors.length !== 1 ? 's' : ''}`,
+    });
+  } catch (error) {
+    log.error(`Collection sync failed: ${error.message}`);
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
+// Validate that the configured cookies can edit the collection. Tries a
+// no-mutation read of the collection first, then attempts a tiny add+remove
+// dance on a known item to prove write access. We use the FIRST item already
+// in the collection to avoid actually changing its contents.
+router.post('/collection/test', async (req, res) => {
+  try {
+    const collectionId = await getSetting('workshopCollectionId');
+    if (!collectionId) return res.status(400).json({ error: 'Collection ID not configured' });
+    const sessionId = await getSetting('steamSessionId');
+    const loginSecure = await getSetting('steamLoginSecure');
+    if (!sessionId || !loginSecure) return res.status(400).json({ error: 'Steam session cookies not configured' });
+
+    const contents = await getCollectionContents(collectionId);
+    if (!contents.ok) return res.status(502).json({ error: contents.error || 'Could not read collection' });
+
+    // Read-only test: confirms the collection ID is valid and reachable. We
+    // deliberately do NOT exercise write access here — any write probe would
+    // mutate the user's real collection. Write capability is verified the
+    // first time a real sync runs, where a stale session surfaces clearly.
+    res.json({
+      success: true,
+      collectionId,
+      title: contents.title,
+      itemCount: contents.items.length,
+      writeVerified: false,
+      message: contents.title
+        ? `Collection "${contents.title}" found (${contents.items.length} items). Write access is verified on first sync.`
+        : `Collection found (${contents.items.length} items). Write access is verified on first sync.`,
+    });
+  } catch (error) {
+    log.error(`Collection test failed: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
@@ -1902,6 +2037,18 @@ router.post('/batch-remove', async (req, res) => {
       }
     }
 
+    // Best-effort: mirror these removes into the configured Steam Workshop
+    // collection if auto-sync is enabled. Sequential with a small delay so
+    // a 50-mod purge doesn't fire 50 simultaneous Steam requests.
+    if (validIds.length > 0) {
+      (async () => {
+        for (const wsId of validIds) {
+          try { await autoSyncCollection('remove', wsId); } catch { /* logged inside */ }
+          await new Promise((r) => setTimeout(r, 250));
+        }
+      })().catch(() => {});
+    }
+
     res.json({
       success: true,
       total: validIds.length,
@@ -2300,7 +2447,7 @@ router.post('/add-all-resolved-deps', async (req, res) => {
 // ─── Missing Dependencies: Search Steam Workshop for a mod by name ──────────
 router.post('/search-workshop-mods', async (req, res) => {
   try {
-    const { query } = req.body;
+    const { query, parentName, parentWorkshopId, parentModId } = req.body;
     if (!query || typeof query !== 'string' || query.trim().length < 2) {
       return res.status(400).json({ error: 'Query must be at least 2 characters' });
     }
@@ -2310,7 +2457,50 @@ router.post('/search-workshop-mods', async (req, res) => {
       log.debug(`Search query truncated from ${trimmed.length} to 100 chars`);
     }
     const searchTerm = trimmed.substring(0, 100);
+    const parentNameClean = (typeof parentName === 'string' ? parentName.trim().substring(0, 100) : '');
+    const parentWsClean = (typeof parentWorkshopId === 'string' && /^\d{1,15}$/.test(parentWorkshopId)) ? parentWorkshopId : '';
+    const parentModClean = (typeof parentModId === 'string' && parentModId.length < 100) ? parentModId : '';
     const serverPath = await getServerPath();
+
+    // ── Build a small list of search variants to try in order. Mod IDs in PZ
+    // are typically PascalCase, snake_case, or all-lowercase like "truemusic".
+    // Steam's text search treats the whole token as one word, so "truemusic"
+    // misses the actual mod titled "True Music". We try the raw form first,
+    // then a humanized version, then strip common suffixes (_b41, _b42, _fix,
+    // _v2…), and finally fall back to the parent mod's name with the same
+    // suffix-stripping. Duplicates and very short variants (<3 chars) get
+    // dropped so we never spam Steam with noise.
+    const buildSearchVariants = (raw, parent) => {
+      const variants = [];
+      const seen = new Set();
+      const push = (v) => {
+        if (!v) return;
+        const s = v.trim().toLowerCase();
+        if (s.length < 3 || seen.has(s)) return;
+        seen.add(s); variants.push(v.trim());
+      };
+      const stripSuffixes = (s) => s.replace(/[_-]?(b4[12]fix|b4[12]_fix|b4[12]|fix(es)?|patch|patches|update|updates|v\d+(\.\d+)*|rev\d+|reupload|continued|continuation|port|ported|edition)$/gi, '').trim();
+      const humanize = (s) => s
+        .replace(/([a-z])([A-Z])/g, '$1 $2')          // camelCase → camel Case
+        .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')    // ABCWord  → ABC Word
+        .replace(/[_\-]+/g, ' ')                       // snake / kebab → spaces
+        .replace(/\s+/g, ' ')
+        .trim();
+      push(raw);
+      const humanized = humanize(raw);
+      if (humanized.toLowerCase() !== raw.toLowerCase()) push(humanized);
+      const stripped = stripSuffixes(raw);
+      if (stripped.toLowerCase() !== raw.toLowerCase()) push(stripped);
+      const humanizedStripped = humanize(stripped);
+      if (humanizedStripped.toLowerCase() !== humanized.toLowerCase() && humanizedStripped.toLowerCase() !== stripped.toLowerCase()) push(humanizedStripped);
+      if (parent) {
+        push(parent);
+        const parentStripped = stripSuffixes(parent);
+        if (parentStripped.toLowerCase() !== parent.toLowerCase()) push(parentStripped);
+      }
+      return variants;
+    };
+    const searchVariants = buildSearchVariants(searchTerm, parentNameClean);
 
     // Phase 1: Search locally downloaded mods — match by mod ID (exact or partial) and mod name
     const localResults = [];
@@ -2327,9 +2517,12 @@ router.post('/search-workshop-mods', async (req, res) => {
           for (const entry of fs.readdirSync(workshopBase, { withFileTypes: true })) {
             if (!entry.isDirectory()) continue;
             if (localResults.length >= 20) break;
+            // Don't suggest the parent mod itself as a candidate for its own dependency
+            if (parentWsClean && entry.name === parentWsClean) continue;
             try {
               const details = getModDetailsFromWorkshop(entry.name, serverPath);
               for (const mod of details) {
+                if (parentModClean && mod.id === parentModClean) continue;
                 const idMatch = mod.id.toLowerCase() === searchLower; // exact ID match (highest priority)
                 const partialMatch = mod.id.toLowerCase().includes(searchLower) || mod.name.toLowerCase().includes(searchLower);
                 if (idMatch || partialMatch) {
@@ -2389,45 +2582,100 @@ router.post('/search-workshop-mods', async (req, res) => {
       }
     }
 
-    // Phase 3: Steam Workshop text search via IPublishedFileService/QueryFiles (requires API key)
-    if (localResults.length < 5 && !/^\d{5,15}$/.test(searchTerm)) {
+    // Phase 3: Steam Workshop text search via IPublishedFileService/QueryFiles (requires API key).
+    // Tries each query variant until enough candidates are found. We keep going
+    // even when local matches exist for short queries, since a one-word mod ID
+    // may have come from a sibling mod that happens to share the substring.
+    let steamSearchEnabled = false;
+    let steamSearchAttempted = false;
+    if (!/^\d{5,15}$/.test(searchTerm)) {
       try {
         const steamApiKey = await getSetting('steamApiKey');
         if (steamApiKey && typeof steamApiKey === 'string' && steamApiKey.length > 10) {
-          const params = new URLSearchParams({
-            key: steamApiKey,
-            'query_type': '12',             // k_PublishedFileQueryType_RankedByTextSearch
-            'page': '1',
-            'numperpage': '15',
-            'appid': '108600',              // Project Zomboid
-            'search_text': searchTerm,
-            'return_short_description': 'true',
-            'return_metadata': 'true',
-          });
-          const controller = new AbortController();
-          const timeout = setTimeout(() => controller.abort(), 8000);
-          const response = await fetch(`https://api.steampowered.com/IPublishedFileService/QueryFiles/v1/?${params}`, {
-            signal: controller.signal,
-          });
-          clearTimeout(timeout);
-          if (response.ok) {
-            const data = await response.json();
-            const files = data.response?.publishedfiledetails || [];
-            for (const item of files) {
-              if (!item.publishedfileid || item.result !== 1) continue;
-              const wsId = String(item.publishedfileid);
-              // Skip items already found locally
-              const alreadyFound = localResults.some(r => r.workshopId === wsId) || steamResults.some(r => r.workshopId === wsId);
-              if (alreadyFound) continue;
-              steamResults.push({
-                workshopId: wsId,
-                modName: item.title || `Workshop ${wsId}`,
-                description: item.short_description?.substring(0, 200) || '',
-                subscriberCount: item.subscriptions || 0,
-                source: 'steam',
-                isDownloaded: false,
+          steamSearchEnabled = true;
+          // Score candidates so the most likely match floats to the top: exact
+          // ID/name match first, then prefix/contains, then sub count tiebreak.
+          const lowerOriginal = searchTerm.toLowerCase();
+          const scoreCandidate = (title) => {
+            const t = (title || '').toLowerCase();
+            if (!t) return 0;
+            if (t === lowerOriginal) return 1000;
+            if (t.replace(/[\s_-]/g, '') === lowerOriginal) return 900;
+            if (t.startsWith(lowerOriginal)) return 700;
+            if (t.includes(lowerOriginal)) return 500;
+            // Token overlap fallback for humanized variants
+            const queryTokens = lowerOriginal.replace(/([a-z])([A-Z])/g, '$1 $2').split(/[\s_-]+/).filter(x => x.length > 2);
+            if (queryTokens.length === 0) return 0;
+            const matched = queryTokens.filter(tok => t.includes(tok)).length;
+            return Math.round((matched / queryTokens.length) * 400);
+          };
+
+          const seenSteamIds = new Set([
+            ...localResults.map(r => r.workshopId),
+            ...steamResults.map(r => r.workshopId),
+          ]);
+          if (parentWsClean) seenSteamIds.add(parentWsClean);
+          const collected = []; // { workshopId, modName, description, subscriberCount, score, variant }
+          const targetCount = 12;
+
+          for (const variant of searchVariants) {
+            if (collected.length >= targetCount) break;
+            steamSearchAttempted = true;
+            const params = new URLSearchParams({
+              key: steamApiKey,
+              'query_type': '12',             // k_PublishedFileQueryType_RankedByTextSearch
+              'page': '1',
+              'numperpage': '15',
+              'appid': '108600',              // Project Zomboid
+              'search_text': variant,
+              'return_short_description': 'true',
+              'return_metadata': 'true',
+            });
+            try {
+              const controller = new AbortController();
+              const timeout = setTimeout(() => controller.abort(), 8000);
+              const response = await fetch(`https://api.steampowered.com/IPublishedFileService/QueryFiles/v1/?${params}`, {
+                signal: controller.signal,
               });
+              clearTimeout(timeout);
+              if (!response.ok) continue;
+              const data = await response.json();
+              const files = data.response?.publishedfiledetails || [];
+              for (const item of files) {
+                if (!item.publishedfileid || item.result !== 1) continue;
+                const wsId = String(item.publishedfileid);
+                if (seenSteamIds.has(wsId)) continue;
+                seenSteamIds.add(wsId);
+                const title = item.title || `Workshop ${wsId}`;
+                const desc = item.short_description?.substring(0, 200) || '';
+                const score = scoreCandidate(title) + Math.min(50, Math.log10((item.subscriptions || 0) + 1) * 10);
+                collected.push({
+                  workshopId: wsId,
+                  modName: title,
+                  description: desc,
+                  subscriberCount: item.subscriptions || 0,
+                  score,
+                  matchedVariant: variant,
+                });
+              }
+            } catch (e) {
+              log.debug?.(`Steam text search variant "${variant}" failed (non-fatal): ${e.message}`);
             }
+          }
+
+          // Sort by score and keep the strongest matches
+          collected.sort((a, b) => b.score - a.score);
+          for (const c of collected.slice(0, targetCount)) {
+            steamResults.push({
+              workshopId: c.workshopId,
+              modName: c.modName,
+              description: c.description,
+              subscriberCount: c.subscriberCount,
+              source: 'steam',
+              isDownloaded: false,
+              matchedVariant: c.matchedVariant,
+              relevance: c.score,
+            });
           }
         }
       } catch (e) {
@@ -2438,6 +2686,9 @@ router.post('/search-workshop-mods', async (req, res) => {
     res.json({
       success: true,
       query: searchTerm,
+      variantsTried: searchVariants,
+      steamSearchEnabled,
+      steamSearchAttempted,
       results: [...localResults, ...steamResults],
       searchUrl: `https://steamcommunity.com/workshop/browse/?appid=108600&searchtext=${encodeURIComponent(searchTerm)}`,
     });
@@ -3208,6 +3459,10 @@ router.post('/add-mod-advanced', async (req, res) => {
       // Ignore if already tracked
     }
 
+    // Best-effort: mirror this add into the configured Steam Workshop
+    // collection if auto-sync is enabled. Never blocks the response.
+    autoSyncCollection('add', String(workshopId)).catch(() => {});
+
     log.info(`Added mod ${workshopId} with ${lockResult.addedModIds.length} mod IDs: ${lockResult.addedModIds.join(', ')}`);
 
     res.json({
@@ -3341,6 +3596,7 @@ const SEVERITY_MAP = {
   'lua-shared': 'high',
   'lua-client': 'high',
   'lua-other': 'high',
+  'lua-cross-file': 'high',
   'scripts': 'medium',
   'clothing': 'medium',
   'sandbox-options': 'low',
@@ -3360,6 +3616,7 @@ const CATEGORY_LABELS = {
   'lua-shared': 'Shared Lua Scripts',
   'lua-client': 'Client Lua Scripts',
   'lua-other': 'Lua Scripts',
+  'lua-cross-file': 'Lua Symbol Clash (same workshop, different files)',
   'scripts': 'Item/Recipe/Vehicle Scripts',
   'clothing': 'Clothing Definitions',
   'sandbox-options': 'Sandbox Options',
@@ -3383,7 +3640,10 @@ function extractTranslationKeys(filePath) {
     const content = stripBom(fs.readFileSync(filePath, 'utf-8'));
     const keys = new Set();
     // Match lines like:   IGUI_perks_Lightfoot = "靈巧",
-    const re = /^\s*([A-Za-z_]\w*)\s*=/gm;
+    // The value must look like a string ("..." or '...' or [[...]]).
+    // This skips the wrapping table declaration `IGUI_EN = {` (false-positive
+    // source: every translation file has one and the names sometimes match).
+    const re = /^\s*([A-Za-z_]\w*)\s*=\s*(?:"|'|\[\[)/gm;
     let m;
     while ((m = re.exec(content)) !== null) keys.add(m[1]);
     return keys;
@@ -3439,8 +3699,9 @@ function extractScriptDefinitions(filePath) {
         pos++;
       }
       const moduleBody = content.slice(moduleStart, pos - 1);
-      // Extract top-level definitions: item, recipe, vehicle, fixing, model, sound, etc.
-      const defRe = /^\s*(item|recipe|vehicle|fixing|model|sound|animation|mannequin|evolvedrecipe|uniquerecipe|multistagebuild)\s+(\S+)/gim;
+      // Extract top-level definitions. B41 + B42 keywords (B42 adds craftRecipe, entity,
+      // xuiSkin, componentTemplate, bodyLocation, wallpaper, material, etc.).
+      const defRe = /^\s*(item|recipe|craftrecipe|vehicle|fixing|model|sound|animation|mannequin|evolvedrecipe|uniquerecipe|multistagebuild|entity|xuiskin|componenttemplate|bodylocation|wallpaper|material|template|electrical|liquid|liquidvacuumdef|stash|profession|trait|bodypart)\s+(\S+)/gim;
       let defMatch;
       while ((defMatch = defRe.exec(moduleBody)) !== null) {
         defs.add(`${moduleName}.${defMatch[1].toLowerCase()}.${defMatch[2]}`);
@@ -3518,6 +3779,61 @@ function compareClothingDefinitions(modEntries) {
   return { disjoint: overlapping.size === 0, overlapping: [...overlapping] };
 }
 
+// ─── Lua symbol extraction ──────────────────────────────────────────────────
+// PZ does NOT merge Lua files: when two mods ship the same lua/.../foo.lua,
+// the last-loaded one wins outright and the loser is discarded entirely.
+// We extract the *names* both files define so the UI can show what would clash
+// vs what would merely be shadowed:
+//   fn:Foo.bar          — function declarations  (function Foo:bar / Foo.bar / function bar)
+//   event:OnPlayerMove  — Events.X.Add subscriptions
+//   class:ISFoo         — ISClass:derive("ISFoo") declarations
+//   tbl:Foo             — top-level table assigns (Foo = {...})
+function extractLuaSymbols(filePath) {
+  try {
+    const content = stripBom(fs.readFileSync(filePath, 'utf-8'));
+    if (content.length > 2 * 1024 * 1024) return null;
+    // Strip --[[ block comments ]] and -- line comments to avoid false positives
+    const stripped = content
+      .replace(/--\[\[[\s\S]*?\]\]/g, '')
+      .replace(/--[^\n]*/g, '');
+    const symbols = new Set();
+    let m;
+    // function Foo:bar(...)  |  function Foo.bar.baz(...)  |  function bar(...)
+    const fnRe = /(?:^|\n)\s*(?:local\s+)?function\s+([A-Za-z_][\w.:]*)\s*\(/g;
+    while ((m = fnRe.exec(stripped)) !== null) symbols.add(`fn:${m[1]}`);
+    // X.Y = function(...)
+    const assignFnRe = /(?:^|\n)\s*([A-Za-z_][\w.]*)\s*=\s*function\s*\(/g;
+    while ((m = assignFnRe.exec(stripped)) !== null) symbols.add(`fn:${m[1]}`);
+    // Events.OnPlayerMove.Add(...)  /  .Remove(...)
+    const evRe = /\bEvents\.([A-Za-z_]\w*)\.(?:Add|Remove)\s*\(/g;
+    while ((m = evRe.exec(stripped)) !== null) symbols.add(`event:${m[1]}`);
+    // ISFoo = ISBar:derive("ISFoo")  — class declarations
+    const classRe = /(?:^|\n)\s*([A-Z][\w]*)\s*=\s*[A-Z][\w]*\s*:\s*derive\s*\(/g;
+    while ((m = classRe.exec(stripped)) !== null) symbols.add(`class:${m[1]}`);
+    return symbols;
+  } catch (e) { log.debug(`Error parsing Lua file ${filePath}: ${e.message}`); return null; }
+}
+
+// Compare Lua files at the same path across multiple mods.
+// Returns { overlapping: [...], parsed: number } or null when nothing parsable.
+function compareLuaSymbols(modEntries) {
+  const symsByMod = [];
+  for (const entry of modEntries) {
+    const s = extractLuaSymbols(entry.absPath);
+    if (!s || s.size === 0) continue;
+    symsByMod.push({ mod: entry, symbols: s });
+  }
+  if (symsByMod.length < 2) return null;
+  const overlapping = new Set();
+  for (let i = 0; i < symsByMod.length; i++) {
+    for (let j = i + 1; j < symsByMod.length; j++) {
+      if (symsByMod[i].mod.modId === symsByMod[j].mod.modId) continue;
+      for (const s of symsByMod[i].symbols) if (symsByMod[j].symbols.has(s)) overlapping.add(s);
+    }
+  }
+  return { overlapping: [...overlapping], parsed: symsByMod.length };
+}
+
 // ─── Shared scan helpers ────────────────────────────────────────────────────
 // Yield to event loop (allows SSE writes, incoming requests, etc.)
 const yieldTick = () => new Promise(resolve => setImmediate(resolve));
@@ -3588,8 +3904,8 @@ async function buildFileIndex(workshopIds, serverPath, onModScanned, activeModId
       if (fs.existsSync(p)) { workshopPath = p; break; }
     }
     if (!workshopPath) {
+      // Counted in modsNotFound; not pushed to warnings — would otherwise drown out real ones.
       modsNotFound++;
-      warnings.push(`Workshop ${wsId}: not found on disk (not downloaded?)`);
       continue;
     }
     const modDetails = getModDetailsFromWorkshop(wsId, serverPath);
@@ -3680,9 +3996,27 @@ async function detectConflicts(fileIndex, onConflictFound) {
     // ─── PZ additive files: these are NOT real conflicts ───
 
     // Translation files: mods add their own keys to shared filenames.
+    // Only flag as a real conflict when keys actually overlap.
     if (category === 'translate') {
-      additiveSkipped++;
-      pzAdditiveBreakdown.translate++;
+      const comparison = compareTranslationKeys(mods);
+      if (comparison.disjoint) {
+        additiveSkipped++;
+        pzAdditiveBreakdown.translate++;
+        continue;
+      }
+      // Has overlapping keys — surface as a low-severity conflict with the keys attached.
+      const conflict = {
+        file: filePath,
+        category,
+        categoryLabel: CATEGORY_LABELS[category] || category,
+        severity: 'low',
+        identical: false,
+        overlap: { kind: 'translation-keys', items: comparison.overlapping.slice(0, 50), total: comparison.overlapping.length },
+        mods: mods.map(m => ({ workshopId: m.workshopId, modId: m.modId, modName: m.modName }))
+      };
+      conflicts.push(conflict);
+      if (onConflictFound) onConflictFound(conflict);
+      if (++processed % 20 === 0) await yieldTick();
       continue;
     }
 
@@ -3704,6 +4038,7 @@ async function detectConflicts(fileIndex, onConflictFound) {
 
     // PZ script files: parse for overlapping module.type.name definitions.
     // PZ loads ALL .txt from every mod's scripts/ and merges them.
+    let scriptOverlap = null;
     if (category === 'scripts') {
       const comparison = compareScriptDefinitions(mods);
       if (comparison.disjoint) {
@@ -3711,11 +4046,13 @@ async function detectConflicts(fileIndex, onConflictFound) {
         pzAdditiveBreakdown.scripts++;
         continue;
       }
+      scriptOverlap = comparison.overlapping;
       // Has overlapping defs — this IS a real conflict
     }
 
     // Clothing XMLs: PZ merges all clothing definitions from all mods.
     // Only flag if clothing item IDs actually overlap.
+    let clothingOverlap = null;
     if (category === 'clothing') {
       const comparison = compareClothingDefinitions(mods);
       if (comparison.disjoint) {
@@ -3723,7 +4060,15 @@ async function detectConflicts(fileIndex, onConflictFound) {
         pzAdditiveBreakdown.clothing++;
         continue;
       }
+      clothingOverlap = comparison.overlapping;
       // Has overlapping clothing IDs — real conflict
+    }
+
+    // Lua: not merged — last-loaded wins. Parse symbol names so the UI can show
+    // exactly which functions/events/classes clash vs which are silently shadowed.
+    let luaOverlap = null;
+    if (category === 'lua-server' || category === 'lua-shared' || category === 'lua-client' || category === 'lua-other') {
+      luaOverlap = compareLuaSymbols(mods); // null when files unparsable / no symbols
     }
 
     const conflict = {
@@ -3734,12 +4079,128 @@ async function detectConflicts(fileIndex, onConflictFound) {
       identical: false,
       mods: mods.map(m => ({ workshopId: m.workshopId, modId: m.modId, modName: m.modName }))
     };
+    if (scriptOverlap && scriptOverlap.length > 0) {
+      conflict.overlap = { kind: 'script-defs', items: scriptOverlap.slice(0, 50), total: scriptOverlap.length };
+    } else if (clothingOverlap && clothingOverlap.length > 0) {
+      conflict.overlap = { kind: 'clothing-items', items: clothingOverlap.slice(0, 50), total: clothingOverlap.length };
+    } else if (luaOverlap) {
+      if (luaOverlap.overlapping.length > 0) {
+        conflict.overlap = { kind: 'lua-symbols', items: luaOverlap.overlapping.slice(0, 50), total: luaOverlap.overlapping.length };
+      } else {
+        // Lua files at the same path with no overlapping named symbols — one fully
+        // shadows the other but they don't fight for the same names. Demote severity.
+        conflict.severity = 'medium';
+        conflict.overlap = { kind: 'lua-shadow', items: [], total: 0 };
+      }
+    }
     conflicts.push(conflict);
     if (onConflictFound) onConflictFound(conflict);
     // Yield every 20 files to keep event loop responsive
     if (++processed % 20 === 0) await yieldTick();
   }
   return { conflicts, identicalSkipped, additiveSkipped, pzAdditiveSkipped, pzAdditiveBreakdown };
+}
+
+// Detect Lua symbol clashes across DIFFERENT files between mod IDs that ship
+// inside the SAME workshop item. The per-file scanner above only catches
+// collisions when two mods place a file at the same relative path. Many
+// "variant bundles" (e.g. TombBodyTexNUDE / TombBodyTexDOLL, Backpacks+
+// "Lite" vs "Full") use unique filenames but redefine the same Lua names,
+// which would silently overwrite each other at runtime. This pass surfaces
+// those so the existing same-workshop "File conflict — pick one" UI fires.
+//
+// Skips pairs that already produced a same-path conflict in the per-file
+// pass (avoids duplicate UI rows). Only Lua categories are considered.
+async function detectSameWorkshopLuaSymbolConflicts(fileIndex, existingConflicts, onConflictFound) {
+  // Build set of (modId|modId) pairs already covered by the per-file pass.
+  const coveredPairs = new Set();
+  for (const c of existingConflicts) {
+    const ids = c.mods.map(m => m.modId).sort();
+    for (let i = 0; i < ids.length; i++) {
+      for (let j = i + 1; j < ids.length; j++) {
+        coveredPairs.add(`${ids[i]}|${ids[j]}`);
+      }
+    }
+  }
+
+  // Group lua files by workshopId → modId.
+  // { wsId: { modId: [{relPath, absPath, modName}] } }
+  const wsModFiles = {};
+  for (const [relPath, mods] of Object.entries(fileIndex)) {
+    const cat = classifyFile(relPath);
+    if (cat !== 'lua-server' && cat !== 'lua-shared' && cat !== 'lua-client' && cat !== 'lua-other') continue;
+    for (const m of mods) {
+      if (!wsModFiles[m.workshopId]) wsModFiles[m.workshopId] = {};
+      if (!wsModFiles[m.workshopId][m.modId]) wsModFiles[m.workshopId][m.modId] = [];
+      wsModFiles[m.workshopId][m.modId].push({ relPath, absPath: m.absPath, modName: m.modName });
+    }
+  }
+
+  const conflicts = [];
+  let scanned = 0;
+  for (const [wsId, modFilesMap] of Object.entries(wsModFiles)) {
+    const modIds = Object.keys(modFilesMap);
+    if (modIds.length < 2) continue;
+
+    // Build per-modId symbol union with first-seen file per symbol (for display).
+    // modId → Map<symbol, { relPath, modName }>
+    const symsByMod = {};
+    for (const modId of modIds) {
+      const symMap = new Map();
+      for (const f of modFilesMap[modId]) {
+        const syms = extractLuaSymbols(f.absPath);
+        if (!syms || syms.size === 0) continue;
+        for (const s of syms) {
+          if (!symMap.has(s)) symMap.set(s, { relPath: f.relPath, modName: f.modName });
+        }
+      }
+      symsByMod[modId] = symMap;
+    }
+
+    // Pairwise overlap detection.
+    for (let i = 0; i < modIds.length; i++) {
+      for (let j = i + 1; j < modIds.length; j++) {
+        const idA = modIds[i], idB = modIds[j];
+        const pairKey = [idA, idB].sort().join('|');
+        if (coveredPairs.has(pairKey)) continue;
+        const symsA = symsByMod[idA];
+        const symsB = symsByMod[idB];
+        if (!symsA || !symsB || symsA.size === 0 || symsB.size === 0) continue;
+
+        const overlap = [];
+        for (const s of symsA.keys()) {
+          if (symsB.has(s)) overlap.push(s);
+        }
+        if (overlap.length === 0) continue;
+
+        const firstSym = overlap[0];
+        const fileA = symsA.get(firstSym);
+        const fileB = symsB.get(firstSym);
+        const conflict = {
+          // Synthetic file label that shows BOTH source files so the UI
+          // makes the situation legible. groupIntoPairs treats this as one
+          // "file" entry for the pair.
+          file: fileA.relPath === fileB.relPath
+            ? fileA.relPath
+            : `${fileA.relPath} ↔ ${fileB.relPath}`,
+          category: 'lua-cross-file',
+          categoryLabel: CATEGORY_LABELS['lua-cross-file'],
+          severity: 'high',
+          identical: false,
+          crossFile: true,
+          overlap: { kind: 'lua-symbols', items: overlap.slice(0, 50), total: overlap.length },
+          mods: [
+            { workshopId: wsId, modId: idA, modName: fileA.modName },
+            { workshopId: wsId, modId: idB, modName: fileB.modName },
+          ],
+        };
+        conflicts.push(conflict);
+        if (onConflictFound) onConflictFound(conflict);
+        if (++scanned % 20 === 0) await yieldTick();
+      }
+    }
+  }
+  return conflicts;
 }
 
 // Group flat conflict list into mod pairs
@@ -3754,20 +4215,69 @@ function groupIntoPairs(conflicts) {
           pairConflicts[pairKey] = {
             modA: conflict.mods.find(m => m.modId === modIds[i]),
             modB: conflict.mods.find(m => m.modId === modIds[j]),
-            files: [], highCount: 0, mediumCount: 0, lowCount: 0
+            files: [], highCount: 0, mediumCount: 0, lowCount: 0,
+            aWins: 0, bWins: 0, thirdPartyWins: 0, unknownWins: 0,
           };
         }
         pairConflicts[pairKey].files.push({
           file: conflict.file, category: conflict.category,
-          categoryLabel: conflict.categoryLabel, severity: conflict.severity
+          categoryLabel: conflict.categoryLabel, severity: conflict.severity,
+          winner: conflict.winner || null,
+          overlap: conflict.overlap || null,
         });
         pairConflicts[pairKey][`${conflict.severity}Count`]++;
+        // Per-file winner tally for the pair card
+        if (conflict.winner == null) pairConflicts[pairKey].unknownWins++;
+        else if (conflict.winner.modId === modIds[i]) pairConflicts[pairKey].aWins++;
+        else if (conflict.winner.modId === modIds[j]) pairConflicts[pairKey].bWins++;
+        else pairConflicts[pairKey].thirdPartyWins++;
       }
     }
   }
   return Object.values(pairConflicts).sort((a, b) =>
     (b.highCount - a.highCount) || (b.mediumCount - a.mediumCount) || (b.files.length - a.files.length)
   );
+}
+
+// Annotate each conflict with the winning mod, based on the `Mods=` load order.
+// PZ loads mods left-to-right; later entries override earlier ones, so the highest
+// index in modLoadOrder wins. Conflicts where neither mod is in the list (rare,
+// e.g., the multi-mod-id workshop case) get `winner: null`.
+function annotateWinners(conflicts, modLoadOrder) {
+  const order = new Map(modLoadOrder.map((id, i) => [id, i]));
+  for (const c of conflicts) {
+    let bestIdx = -1;
+    let winner = null;
+    for (const m of c.mods) {
+      const idx = order.get(m.modId);
+      if (idx == null) continue;
+      if (idx > bestIdx) { bestIdx = idx; winner = m; }
+    }
+    c.winner = winner ? { modId: winner.modId, modName: winner.modName, workshopId: winner.workshopId } : null;
+  }
+}
+
+// Detect cases where multiple workshop items declare the same internal mod id.
+// PZ loads only one of them (whichever is listed first / found first), the others
+// are silently ignored. Highly common cause of "my mod isn't working" issues.
+function findIdCollisions(modInfoMap, modIdsFromIni) {
+  const activeSet = new Set(modIdsFromIni);
+  const byModId = new Map();
+  for (const [wsId, details] of Object.entries(modInfoMap)) {
+    for (const mod of details) {
+      if (!byModId.has(mod.id)) byModId.set(mod.id, []);
+      byModId.get(mod.id).push({ workshopId: wsId, modName: mod.name, active: activeSet.has(mod.id) });
+    }
+  }
+  const collisions = [];
+  for (const [modId, sources] of byModId.entries()) {
+    // Distinct workshop IDs declaring the same mod id
+    const distinctWs = [...new Map(sources.map(s => [s.workshopId, s])).values()];
+    if (distinctWs.length > 1) {
+      collisions.push({ modId, active: distinctWs.some(s => s.active), sources: distinctWs });
+    }
+  }
+  return collisions;
 }
 
 // Compute missing dependencies, then try to resolve each to a workshop ID by scanning all downloaded folders
@@ -3983,6 +4493,13 @@ router.get('/conflicts', async (req, res) => {
     }
     const { fileIndex, modInfoMap, modsScanned, modsNotFound, modsSkippedInactive, warnings } = await buildFileIndex(workshopIds, serverPath, null, modIdsFromIni);
     const { conflicts, identicalSkipped, additiveSkipped, pzAdditiveSkipped, pzAdditiveBreakdown } = await detectConflicts(fileIndex);
+    // Second pass: catch variant-bundle clashes (NUDE/DOLL/Tex etc.) where
+    // two mod IDs in the same workshop redefine the same Lua names from
+    // different filenames. These slip past the per-file pass.
+    const crossFileConflicts = await detectSameWorkshopLuaSymbolConflicts(fileIndex, conflicts);
+    if (crossFileConflicts.length > 0) conflicts.push(...crossFileConflicts);
+    annotateWinners(conflicts, modIdsFromIni);
+    const idCollisions = findIdCollisions(modInfoMap, modIdsFromIni);
     const severityOrder = { high: 0, medium: 1, low: 2 };
     conflicts.sort((a, b) => (severityOrder[a.severity] ?? 3) - (severityOrder[b.severity] ?? 3) || a.file.localeCompare(b.file));
     const pairs = groupIntoPairs(conflicts);
@@ -3993,7 +4510,7 @@ router.get('/conflicts', async (req, res) => {
       steamDeps = steamResult.deps;
       warnings.push(...steamResult.warnings);
     } catch (e) { log.debug(`Steam deps lookup failed during batch scan (non-fatal): ${e.message}`); }
-    const result = { totalConflicts: conflicts.length, identicalSkipped, additiveSkipped, pzAdditiveSkipped, pzAdditiveBreakdown, pairs, totalPairs: pairs.length, modsScanned, modsNotFound, modsSkippedInactive, totalWorkshopIds: workshopIds.length, missingDeps, steamDeps, modLoadOrder: modIdsFromIni, warnings, scanDurationMs: Date.now() - scanStart };
+    const result = { totalConflicts: conflicts.length, identicalSkipped, additiveSkipped, pzAdditiveSkipped, pzAdditiveBreakdown, pairs, totalPairs: pairs.length, modsScanned, modsNotFound, modsSkippedInactive, totalWorkshopIds: workshopIds.length, missingDeps, steamDeps, idCollisions, modLoadOrder: modIdsFromIni, warnings, scanDurationMs: Date.now() - scanStart };
     lastScanWorkshopSnapshot = workshopIds.slice().sort().join(',');
     lastScanModSnapshot = modIdsFromIni?.slice().sort().join(',') || null;
     lastScanResult = result;
@@ -4091,7 +4608,24 @@ router.get('/conflicts/stream', async (req, res) => {
     if (aborted) { res.end(); return; }
     send('phase', { phase: 'grouping', progress: 85 });
 
+    // Second pass: catch variant-bundle clashes within the same workshop
+    // where mod IDs redefine the same Lua names from different filenames.
+    const crossFileConflicts = await detectSameWorkshopLuaSymbolConflicts(fileIndex, conflicts, (conflict) => {
+      if (aborted) return;
+      conflictCount++;
+      send('conflict-found', {
+        file: conflict.file,
+        severity: conflict.severity,
+        categoryLabel: conflict.categoryLabel,
+        mods: conflict.mods.map(m => m.modName),
+        conflictsSoFar: conflictCount,
+      });
+    });
+    if (crossFileConflicts.length > 0) conflicts.push(...crossFileConflicts);
+
     // Phase 3: group & sort
+    annotateWinners(conflicts, modIdsFromIni);
+    const idCollisions = findIdCollisions(modInfoMap, modIdsFromIni);
     const severityOrder = { high: 0, medium: 1, low: 2 };
     conflicts.sort((a, b) => (severityOrder[a.severity] ?? 3) - (severityOrder[b.severity] ?? 3) || a.file.localeCompare(b.file));
     const pairs = groupIntoPairs(conflicts);
@@ -4122,6 +4656,7 @@ router.get('/conflicts/stream', async (req, res) => {
       totalWorkshopIds: workshopIds.length,
       missingDeps,
       steamDeps,
+      idCollisions,
       modLoadOrder: modIdsFromIni,
       warnings,
       scanDurationMs: Date.now() - scanStart,

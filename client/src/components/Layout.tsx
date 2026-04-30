@@ -24,12 +24,13 @@ import {
   AlertCircle,
   RefreshCw,
   Github,
+  Coffee,
   PanelLeftClose,
   PanelLeft
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ConnectionStatus } from './ConnectionStatus'
-import { serversApi, ServerInstance, updateApi, UpdateStatus } from '@/lib/api'
+import { serversApi, ServerInstance, updateApi, UpdateStatus, serverApi, modsApi, panelUpdateApi } from '@/lib/api'
 import { SocketContext } from '@/contexts/SocketContext'
 
 import { useAuth } from '@/contexts/AuthContext'
@@ -210,13 +211,13 @@ function AuthFooter() {
   if (!authEnabled || !user) return null
   
   return (
-    <span className="inline-flex items-center gap-1.5 text-[11px] min-w-0">
-      <span className="truncate text-foreground/60" title={user.username}>{user.username}</span>
-      <span className="text-muted-foreground/30">·</span>
+    <span className="inline-flex items-center gap-1.5 text-xs min-w-0">
+      <span className="truncate text-foreground/85 font-medium" title={user.username}>{user.username}</span>
+      <span className="text-muted-foreground/50">·</span>
       <button
         type="button"
         onClick={logout}
-        className="shrink-0 text-muted-foreground/40 hover:text-foreground transition-colors"
+        className="shrink-0 text-muted-foreground/70 hover:text-foreground transition-colors"
         title="Sign out"
       >
         sign out
@@ -270,10 +271,24 @@ export default function Layout({ children }: LayoutProps) {
   const [servers, setServers] = useState<ServerInstance[]>([])
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('sidebarCollapsed') === 'true')
-  const [openSections, setOpenSections] = useState<Set<string>>(new Set(['active', 'world']))
+  const [openSections, setOpenSections] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem('sidebarOpenSections')
+      if (raw) {
+        const parsed = JSON.parse(raw)
+        if (Array.isArray(parsed)) return new Set(parsed.filter((x): x is string => typeof x === 'string'))
+      }
+    } catch {
+      // ignore corrupt localStorage value
+    }
+    return new Set(['active', 'world'])
+  })
   const [updateInfo, setUpdateInfo] = useState<UpdateStatus | null>(null)
   const [updateDismissed, setUpdateDismissed] = useState(() => sessionStorage.getItem('updateBannerDismissed') === 'true')
   const [playerCount, setPlayerCount] = useState<number>(0)
+  const [serverRunState, setServerRunState] = useState<'unknown' | 'running' | 'stopped' | 'transitioning'>('unknown')
+  const [modUpdatesAvailable, setModUpdatesAvailable] = useState<number>(0)
+  const [panelUpdateAvailable, setPanelUpdateAvailable] = useState<{ version: string | null } | null>(null)
   const [panelVersion, setPanelVersion] = useState('')
   const socket = useContext(SocketContext)
   const { toast } = useToast()
@@ -315,6 +330,11 @@ export default function Layout({ children }: LayoutProps) {
       } else {
         newSet.add(sectionId)
       }
+      try {
+        localStorage.setItem('sidebarOpenSections', JSON.stringify(Array.from(newSet)))
+      } catch {
+        // ignore quota / disabled storage
+      }
       return newSet
     })
   }
@@ -333,11 +353,78 @@ export default function Layout({ children }: LayoutProps) {
     const currentPath = location.pathname
     for (const section of navSections) {
       if (section.items.some(item => item.to === currentPath)) {
-        setOpenSections(prev => new Set([...prev, section.id]))
+        setOpenSections(prev => {
+          if (prev.has(section.id)) return prev
+          const next = new Set([...prev, section.id])
+          try {
+            localStorage.setItem('sidebarOpenSections', JSON.stringify(Array.from(next)))
+          } catch { /* ignore */ }
+          return next
+        })
         break
       }
     }
   }, [location.pathname])
+
+  // Track server run state for status dot on Active Server card
+  useEffect(() => {
+    let cancelled = false
+    const apply = (data: { isRunning?: boolean; isStarting?: boolean; isStopping?: boolean } | null) => {
+      if (cancelled || !data) return
+      if (data.isStarting || data.isStopping) setServerRunState('transitioning')
+      else setServerRunState(data.isRunning ? 'running' : 'stopped')
+    }
+    serverApi.getStatus().then(apply).catch(() => { /* ignore — keep 'unknown' */ })
+    return () => { cancelled = true }
+  }, [activeServer?.id])
+
+  useEffect(() => {
+    if (!socket) return
+    const onStatus = (data: { isRunning?: boolean; isStarting?: boolean; isStopping?: boolean } | undefined) => {
+      if (!data) return
+      if (data.isStarting || data.isStopping) setServerRunState('transitioning')
+      else if (typeof data.isRunning === 'boolean') setServerRunState(data.isRunning ? 'running' : 'stopped')
+    }
+    socket.on('server:status', onStatus)
+    return () => { socket.off('server:status', onStatus) }
+  }, [socket])
+
+  // Track mod updates available count for Mod Manager nav badge
+  useEffect(() => {
+    let cancelled = false
+    const refreshModStatus = async () => {
+      try {
+        const data = await modsApi.getStatus() as { updatesAvailable?: number } | undefined
+        if (!cancelled && typeof data?.updatesAvailable === 'number') {
+          setModUpdatesAvailable(data.updatesAvailable)
+        }
+      } catch {
+        // ignore — likely 503 / not running
+      }
+    }
+    refreshModStatus()
+    if (!socket) return () => { cancelled = true }
+    socket.on('mods:updates_available', refreshModStatus)
+    socket.on('mods:update_detected', refreshModStatus)
+    return () => {
+      cancelled = true
+      socket.off('mods:updates_available', refreshModStatus)
+      socket.off('mods:update_detected', refreshModStatus)
+    }
+  }, [socket, activeServer?.id])
+
+  // Track panel self-update availability (separate from PZ server update)
+  useEffect(() => {
+    let cancelled = false
+    panelUpdateApi.getStatus()
+      .then(s => {
+        if (cancelled) return
+        if (s?.updateAvailable) setPanelUpdateAvailable({ version: s.latestVersion })
+        else setPanelUpdateAvailable(null)
+      })
+      .catch(() => { /* ignore */ })
+    return () => { cancelled = true }
+  }, [])
 
   // Close mobile menu on route change
   useEffect(() => {
@@ -535,9 +622,41 @@ export default function Layout({ children }: LayoutProps) {
                 >
                   <div className="min-w-0">
                     <p className="text-xs font-medium uppercase leading-none tracking-[0.18em] text-muted-foreground">Active Server</p>
-                    <p className="mt-1 truncate text-sm font-semibold leading-5 group-hover:text-primary">
-                      {activeServer?.name || 'No server selected'}
-                    </p>
+                    <div className="mt-1 flex items-center gap-2">
+                      <span
+                        className={cn(
+                          'inline-block h-2 w-2 shrink-0 rounded-full transition-colors',
+                          serverRunState === 'running' && 'bg-success shadow-[0_0_0_3px_rgba(34,197,94,0.18)] motion-safe:animate-pulse',
+                          serverRunState === 'stopped' && 'bg-destructive/70',
+                          serverRunState === 'transitioning' && 'bg-warning motion-safe:animate-pulse',
+                          serverRunState === 'unknown' && 'bg-muted-foreground/40'
+                        )}
+                        aria-hidden
+                      />
+                      <p className="truncate text-sm font-semibold leading-5 group-hover:text-primary">
+                        {activeServer?.name || 'No server selected'}
+                      </p>
+                      {serverRunState === 'running' && playerCount > 0 && (
+                        <Badge
+                          variant="success"
+                          className="ml-1 shrink-0 px-1.5 py-0 text-[10px] leading-none"
+                          title={`${playerCount} player${playerCount === 1 ? '' : 's'} online`}
+                        >
+                          {playerCountLabel}
+                        </Badge>
+                      )}
+                      {activeServer?.isRemote && (
+                        <Badge variant="outline" className="ml-auto shrink-0 px-1.5 py-0 text-[10px] uppercase tracking-wider text-muted-foreground/80" title="Remote (RCON-only) server">
+                          Remote
+                        </Badge>
+                      )}
+                      <span className="sr-only">
+                        {serverRunState === 'running' && 'Server is running'}
+                        {serverRunState === 'stopped' && 'Server is stopped'}
+                        {serverRunState === 'transitioning' && 'Server is starting or stopping'}
+                        {serverRunState === 'unknown' && 'Server status unknown'}
+                      </span>
+                    </div>
                   </div>
                   <ChevronDown className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 group-data-[state=open]:rotate-180 group-hover:text-primary" />
                 </Button>
@@ -560,6 +679,11 @@ export default function Layout({ children }: LayoutProps) {
                         <Server className={cn("w-4 h-4", server.isActive && "text-primary")} />
                       </div>
                       <span className="truncate flex-1 font-medium">{server.name}</span>
+                      {server.isRemote && (
+                        <Badge variant="outline" className="px-1.5 py-0 text-[10px] uppercase tracking-wider text-muted-foreground/80" title="Remote (RCON-only) server">
+                          Remote
+                        </Badge>
+                      )}
                       {server.isActive && (
                         <Badge variant="secondary" className="px-2 py-0.5 text-xs uppercase tracking-wide">
                           Active
@@ -698,6 +822,25 @@ export default function Layout({ children }: LayoutProps) {
                       {hasActiveChild && !isOpen && (
                         <span className={cn("h-1.5 w-1.5 rounded-full", tone.childDot)} />
                       )}
+                      {/* Section-level update/notification dots: surface key signals when collapsed */}
+                      {!isOpen && section.id === 'config' && modUpdatesAvailable > 0 && (
+                        <span
+                          className="ml-1 h-1.5 w-1.5 rounded-full bg-warning motion-safe:animate-pulse"
+                          title={`${modUpdatesAvailable} mod update${modUpdatesAvailable === 1 ? '' : 's'} available`}
+                        />
+                      )}
+                      {!isOpen && section.id === 'active' && playerCount > 0 && (
+                        <span
+                          className="ml-1 h-1.5 w-1.5 rounded-full bg-success"
+                          title={`${playerCount} player${playerCount === 1 ? '' : 's'} online`}
+                        />
+                      )}
+                      {!isOpen && section.id === 'system' && panelUpdateAvailable && (
+                        <span
+                          className="ml-1 h-1.5 w-1.5 rounded-full bg-warning motion-safe:animate-pulse"
+                          title={`Panel update available${panelUpdateAvailable.version ? `: v${panelUpdateAvailable.version}` : ''}`}
+                        />
+                      )}
                     </div>
                     <ChevronDown className={cn(
                       "w-3.5 h-3.5 text-foreground/78 group-hover:text-foreground transition-transform duration-200",
@@ -781,6 +924,15 @@ export default function Layout({ children }: LayoutProps) {
                                   {playerCountLabel}
                                 </Badge>
                               )}
+                              {item.to === '/mods' && modUpdatesAvailable > 0 && (
+                                <Badge
+                                  variant="warning"
+                                  className="ml-auto min-w-[26px] justify-center px-1.5 py-0.5 text-xs leading-none"
+                                  title={`${modUpdatesAvailable} mod update${modUpdatesAvailable === 1 ? '' : 's'} available`}
+                                >
+                                  {modUpdatesAvailable > 99 ? '99+' : modUpdatesAvailable}
+                                </Badge>
+                              )}
                             </>
                           )}
                         </NavLink>
@@ -803,25 +955,46 @@ export default function Layout({ children }: LayoutProps) {
                 <AuthFooter />
                 <span className="flex items-center gap-1.5 shrink-0">
                   <a
+                    href="https://ko-fi.com/fpsacha"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-muted-foreground/70 hover:text-[#FF5E5B] transition-colors"
+                    aria-label="Support on Ko-fi (opens in new tab)"
+                    title="Buy me a coffee"
+                  >
+                    <Coffee className="w-3.5 h-3.5" />
+                  </a>
+                  <a
                     href="https://github.com/fpsacha/zomboid-control-panel"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-muted-foreground/30 hover:text-muted-foreground transition-colors"
+                    className="text-muted-foreground/70 hover:text-foreground transition-colors"
                     aria-label="GitHub repository (opens in new tab)"
                   >
-                    <Github className="w-3 h-3" />
+                    <Github className="w-3.5 h-3.5" />
                   </a>
                   <button
                     onClick={() => setHelpOpen(true)}
-                    className="text-muted-foreground/30 hover:text-muted-foreground transition-colors"
+                    className="text-muted-foreground/70 hover:text-foreground transition-colors"
                     aria-label="Keyboard shortcuts"
                   >
-                    <kbd className="inline-flex items-center justify-center w-3.5 h-3.5 rounded border border-border/20 text-[9px] font-mono leading-none">?</kbd>
+                    <kbd className="inline-flex items-center justify-center w-4 h-4 rounded border border-border/40 text-[10px] font-mono leading-none">?</kbd>
                   </button>
                 </span>
               </div>
-              <div className="text-[10px] text-muted-foreground/25 shell-brand-subtitle truncate">
-                Zomboid Control Panel{panelVersion && ` v${panelVersion}`}
+              <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground/60 shell-brand-subtitle">
+                <span className="truncate">Zomboid Control Panel{panelVersion && ` v${panelVersion}`}</span>
+                {panelUpdateAvailable && (
+                  <NavLink
+                    to="/settings"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="shrink-0 inline-flex items-center gap-1 rounded-full border border-warning/40 bg-warning/10 px-1.5 py-0 text-[10px] font-medium uppercase tracking-wider text-warning hover:bg-warning/20 transition-colors"
+                    title={`Panel update available${panelUpdateAvailable.version ? `: v${panelUpdateAvailable.version}` : ''}. Open Panel Settings.`}
+                  >
+                    <span className="h-1.5 w-1.5 rounded-full bg-warning motion-safe:animate-pulse" />
+                    Update
+                  </NavLink>
+                )}
               </div>
             </>
           )}

@@ -404,12 +404,18 @@ export const PERKS = [
   'PlantScavenging'
 ];
 
-// Access levels
+// Access levels accepted by PZ's setaccesslevel command.
+// Per the official PZ Admin Commands wiki (Build 42.17.0): admin, moderator,
+// overseer, gm, observer, none.
+// 'user' is also exposed because PZ's in-game player list displays "user" as
+// the default role and some server builds accept it as the demote keyword
+// while reporting that "none" is a no-op.
 export const ACCESS_LEVELS = [
   'admin',
   'moderator',
   'overseer',
   'gm',
   'observer',
+  'user',
   'none'
 ];

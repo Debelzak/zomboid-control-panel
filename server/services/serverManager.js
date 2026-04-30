@@ -201,106 +201,151 @@ export class ServerManager {
   }
 
   async checkServerRunning() {
+    const details = await this.getServerProcessDetails();
+    return details.running;
+  }
+
+  /**
+   * Like `checkServerRunning` but returns *which* processes the OS scan
+   * matched. Used by chunk-cleanup endpoints (issue #5) so the UI can show
+   * the user exactly which process the panel thinks is the dedicated server,
+   * and offer a "force delete anyway" override when the detection is a
+   * false positive (e.g. an unrelated java process matched, or a custom
+   * launcher script the panel doesn't recognise).
+   *
+   * Resolves to: `{ running: boolean, matched: Array<{ pid?: string, cmd: string }> }`.
+   * `matched` is truncated to the first 3 entries and each cmd is capped at
+   * 240 chars to keep the JSON payload sane.
+   */
+  async getServerProcessDetails() {
     return new Promise((resolve) => {
-      // Check if ProjectZomboid DEDICATED SERVER is running
-      // The dedicated server runs as java with zombie.network.GameServer class
-      log.debug(`checkServerRunning: starting detection (platform=${process.platform})`);
-      
+      log.debug(`getServerProcessDetails: starting detection (platform=${process.platform})`);
+      const matched = [];
+      const pushMatch = (cmd, pid) => {
+        if (matched.length >= 3) return;
+        const trimmed = String(cmd || '').slice(0, 240);
+        matched.push(pid ? { pid: String(pid), cmd: trimmed } : { cmd: trimmed });
+      };
+
       const timeout = setTimeout(() => {
-        log.warn('checkServerRunning: Process detection timed out, assuming server is not running');
-        resolve(false);
+        log.warn('getServerProcessDetails: process detection timed out, assuming server is not running');
+        resolve({ running: false, matched: [] });
       }, 10000);
-      
+
       if (isWindows) {
-        // Windows: enumerate java.exe + ProjectZomboid*.exe and inspect EACH
-        // process's command line individually. Previous versions concatenated
-        // all command lines into one string and ran the detector against the
-        // whole blob, which false-positived on dev machines where one java.exe
-        // mentioned "zomboid" (log path, classpath) and a different java.exe
-        // had "-server" (a very common JVM flag) — making the panel believe
-        // the dedicated server was still running after a clean shutdown.
-        // CSV output is used so command lines containing commas / quotes
-        // don't break the per-process parse.
-        const psCmd = 'powershell -Command "Get-CimInstance Win32_Process | Where-Object { $_.Name -match \'^(java\\.exe|ProjectZomboid64\\.exe|ProjectZomboid32\\.exe)$\' } | Select-Object CommandLine | ConvertTo-Csv -NoTypeInformation"';
+        const psCmd = 'powershell -Command "Get-CimInstance Win32_Process | Where-Object { $_.Name -match \'^(java\\.exe|ProjectZomboid64\\.exe|ProjectZomboid32\\.exe)$\' } | Select-Object ProcessId,CommandLine | ConvertTo-Csv -NoTypeInformation"';
         exec(psCmd, { timeout: 8000 }, (psError, psStdout) => {
           clearTimeout(timeout);
           if (psError || !psStdout) {
             this.isRunning = false;
-            resolve(false);
+            resolve({ running: false, matched: [] });
             return;
           }
 
           const lines = psStdout.split(/\r?\n/);
-          let matched = false;
           for (let raw of lines) {
             raw = raw.trim();
-            if (!raw || raw === '"CommandLine"') continue;
-            // CSV row is a single quoted field; strip the outer quotes and
-            // un-double any internal "" escapes produced by ConvertTo-Csv.
-            let cmd = raw;
-            if (cmd.startsWith('"') && cmd.endsWith('"')) {
-              cmd = cmd.slice(1, -1).replace(/""/g, '"');
-            }
+            if (!raw || raw.startsWith('"ProcessId"')) continue;
+            // CSV: "<pid>","<cmd>" — strip outer quotes / un-double internal "" pairs.
+            const csvMatch = raw.match(/^"([^"]*)","((?:[^"]|"")*)"$/);
+            if (!csvMatch) continue;
+            const pid = csvMatch[1];
+            const cmd = csvMatch[2].replace(/""/g, '"');
             if (!cmd) continue;
             if (isWindowsDedicatedServerCommandLine(cmd)) {
-              log.debug(`checkServerRunning: matched PZ server process: ${cmd.substring(0, 200)}`);
-              matched = true;
-              break;
+              log.debug(`getServerProcessDetails: matched PZ server process pid=${pid}: ${cmd.substring(0, 200)}`);
+              pushMatch(cmd, pid);
             }
           }
 
-          this.isRunning = matched;
-          resolve(matched);
+          this.isRunning = matched.length > 0;
+          resolve({ running: matched.length > 0, matched });
         });
       } else {
-        // Linux/macOS: Use ps + grep to find the PZ server process
-        // Check both the Java class name (zombie.network.GameServer) and
-        // the native launcher (ProjectZomboid64 / projectzomboid64)
-        // Use pgrep first (more reliable), fall back to ps aux
-        log.debug('checkServerRunning: trying pgrep -af first...');
+        // Linux/macOS: pgrep first (faster, more reliable), fall back to ps aux -ww.
+        // Use the same dedicated-server heuristics as Windows so a player
+        // running the *game* (ProjectZomboid64) on the same box doesn't
+        // false-positive as a running dedicated server. Direct
+        // `zombie.network.GameServer` java invocations always qualify.
+        const isLinuxDedicatedServerCommandLine = (cmd) => {
+          const lower = String(cmd || '').toLowerCase();
+          if (!lower) return false;
+          if (lower.includes('zombie.network.gameserver')) return true;
+          if (lower.includes('projectzomboid64') || lower.includes('projectzomboid32')) {
+            if (lower.includes('-server') || lower.includes('startserver') || lower.includes('-servername')) {
+              return true;
+            }
+            return false;
+          }
+          if (lower.includes('zomboid') && (lower.includes('-server') || lower.includes('startserver'))) {
+            return true;
+          }
+          return false;
+        };
+
+        log.debug('getServerProcessDetails: trying pgrep -af first...');
         exec('pgrep -af "zombie.network.[Gg]ame[Ss]erver|[Pp]roject[Zz]omboid64|[Pp]roject[Zz]omboid32"', { timeout: 8000 }, (pgrepErr, pgrepOut) => {
           if (!pgrepErr && pgrepOut && pgrepOut.trim()) {
-            log.debug(`checkServerRunning: pgrep found PZ server process: ${pgrepOut.trim().substring(0, 200)}`);
+            for (const line of pgrepOut.split(/\r?\n/)) {
+              const trimmed = line.trim();
+              if (!trimmed) continue;
+              // pgrep -af format: "<pid> <cmdline>"
+              const m = trimmed.match(/^(\d+)\s+(.*)$/);
+              const pid = m ? m[1] : undefined;
+              const cmd = m ? m[2] : trimmed;
+              if (!isLinuxDedicatedServerCommandLine(cmd)) {
+                log.debug(`getServerProcessDetails: pgrep candidate ignored (not a dedicated server): ${cmd.substring(0, 200)}`);
+                continue;
+              }
+              pushMatch(cmd, pid);
+            }
+            log.debug(`getServerProcessDetails: pgrep matched ${matched.length} process(es)`);
             clearTimeout(timeout);
-            this.isRunning = true;
-            resolve(true);
+            this.isRunning = matched.length > 0;
+            resolve({ running: matched.length > 0, matched });
             return;
           }
-          // Fallback: ps aux (works on all distros including CentOS minimal)
-          // Check each process line individually — concatenating stdout then
-          // substring-matching would false-positive when multiple unrelated
-          // processes happen to mention zomboid-adjacent words across lines.
-          log.debug('checkServerRunning: pgrep failed or empty, falling back to ps aux -ww');
+          // Fallback: ps aux
+          log.debug('getServerProcessDetails: pgrep failed or empty, falling back to ps aux -ww');
           exec('ps aux -ww', { timeout: 8000 }, (err, stdout) => {
             clearTimeout(timeout);
             if (err || !stdout) {
               this.isRunning = false;
-              resolve(false);
+              resolve({ running: false, matched: [] });
               return;
             }
-
-            const procLines = stdout.split(/\r?\n/);
-            let isPZServer = false;
-            for (const line of procLines) {
+            for (const line of stdout.split(/\r?\n/)) {
               const lower = line.toLowerCase();
-              if (lower.includes('zombie.network.gameserver') ||
-                  lower.includes('projectzomboid64') ||
-                  lower.includes('projectzomboid32')) {
-                // Skip the ps/grep command itself if it ever slips in.
-                if (/\b(ps|pgrep|grep)\b.*\b(zombie|projectzomboid)/.test(lower) &&
-                    !lower.includes('java') && !lower.includes('-server')) {
-                  continue;
-                }
-                isPZServer = true;
-                break;
+              if (!lower.includes('zombie.network.gameserver') &&
+                  !lower.includes('projectzomboid64') &&
+                  !lower.includes('projectzomboid32')) {
+                continue;
               }
+              // Skip our own grep / pgrep / ps invocations
+              if (/\b(ps|pgrep|grep)\b.*\b(zombie|projectzomboid)/.test(lower) &&
+                  !lower.includes('java') && !lower.includes('-server')) {
+                continue;
+              }
+              // ps aux columns: USER PID %CPU %MEM VSZ RSS TTY STAT START TIME COMMAND
+              const m = line.trim().match(/^\S+\s+(\d+)\s+\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+(.*)$/);
+              const pid = m ? m[1] : undefined;
+              const cmd = m ? m[2] : line.trim();
+              if (!isLinuxDedicatedServerCommandLine(cmd)) continue;
+              pushMatch(cmd, pid);
+              if (matched.length >= 3) break;
             }
-            this.isRunning = isPZServer;
-            resolve(isPZServer);
+            this.isRunning = matched.length > 0;
+            resolve({ running: matched.length > 0, matched });
           });
         });
       }
     });
+  }
+
+  async _legacyCheckServerRunning() {
+    // Removed in favour of getServerProcessDetails() above. Kept as a stub
+    // briefly during refactor — safe to delete.
+    return false;
   }
 
   async startServer({ skipRunningCheck = false } = {}) {

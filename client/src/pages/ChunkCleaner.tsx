@@ -50,7 +50,7 @@ import {
 import { useToast } from '@/components/ui/use-toast'
 import { Separator } from '@/components/ui/separator'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import { chunksApi, serversApi, panelBridgeApi } from '@/lib/api'
+import { chunksApi, serversApi, panelBridgeApi, ApiError } from '@/lib/api'
 import { useTheme } from '@/contexts/ThemeContext'
 
 interface SaveInfo {
@@ -127,10 +127,16 @@ const B42_DZI_MAX_LEVEL = 15   // ceil(log2(max(W,H)))
 // B42 chunks are 8×8 tiles → 8 DZI px per B42 chunk (native coords, no B41 conversion)
 const B42_CHUNK_TO_DZI_PX = 8
 
-// Known PZ city / landmark positions (in B41 chunk coordinates)
-// Derived from map.projectzomboid.com overlays.json POI centroids (game-tile ÷ 10)
-// For B42, multiply by 10/8 (= 1.25) to convert to B42 chunk space
-const PZ_LANDMARKS: { name: string; x: number; y: number }[] = [
+// Known PZ city / landmark positions.
+// Coordinates are stored in B41 chunk space (game-tile ÷ 10). For B42 saves,
+// the renderer multiplies by 1.25 to convert into B42 chunk space (8 tiles
+// per B42 chunk vs 10 per B41 chunk → 10/8 = 1.25).
+//
+// `b42Only` markers are new towns introduced in build 42 and are hidden on
+// B41 saves. Coordinates for B42-only entries come from b42map.com's
+// poi.json (B42 game-tile / 10).
+const PZ_LANDMARKS: { name: string; x: number; y: number; b42Only?: boolean }[] = [
+  // Shared B41 + B42 towns (values from map.projectzomboid.com overlays.json)
   { name: 'Muldraugh',      x: 1063, y:  980 },
   { name: 'West Point',     x: 1190, y:  690 },
   { name: 'Rosewood',       x:  809, y: 1150 },
@@ -138,6 +144,13 @@ const PZ_LANDMARKS: { name: string; x: number; y: number }[] = [
   { name: 'Louisville',     x: 1270, y:  170 },
   { name: 'March Ridge',    x: 1010, y: 1270 },
   { name: 'Valley Station', x: 1320, y:  530 },
+  // B42 new towns (values from b42map.com poi.json ÷ 10)
+  { name: 'Ekron',             x:   55, y:  975, b42Only: true },
+  { name: 'Brandenburg',       x:  210, y:  608, b42Only: true },
+  { name: 'Irvington',         x:  250, y: 1425, b42Only: true },
+  { name: 'Echo Creek',        x:  352, y: 1093, b42Only: true },
+  { name: 'Fallas Lake',       x:  728, y:  835, b42Only: true },
+  { name: 'Louisville Airport', x: 1544, y:  294, b42Only: true },
 ]
 
 function formatSize(bytes: number): string {
@@ -259,6 +272,17 @@ export default function ChunkCleaner() {
   const [createBackup, setCreateBackup] = useState(true)
   const [deleting, setDeleting] = useState(false)
   const [deleteVehicles, setDeleteVehicles] = useState(true)
+
+  // Server-running override dialog (issue #5: process detection can false-
+  // positive on custom systemd units / wrapper scripts the panel doesn't
+  // recognise). When the server-side check blocks the delete, we surface
+  // the matched processes here and let the operator confirm-and-override.
+  const [serverRunningDialog, setServerRunningDialog] = useState<{
+    open: boolean
+    matched: Array<{ pid?: string; cmd: string }>
+    /** Resolved with `true` to retry with force, `false` to cancel. */
+    resolve?: (force: boolean) => void
+  }>({ open: false, matched: [] })
 
   // Vehicle & safehouse overlays
   const [chunkVehicles, setChunkVehicles] = useState<ChunkVehicle[]>([])
@@ -503,15 +527,28 @@ export default function ChunkCleaner() {
     })
   }, [chunks, canvasSize])
 
-  // Auto-fit when chunks load or canvas resizes
-  useEffect(() => { fitView() }, [fitView])
+  // Auto-fit only once per save load. Re-fitting on every canvasSize change
+  // would yank the user back to the default view whenever they resize the
+  // window or toggle a sidebar pane mid-session.
+  const hasAutoFittedRef = useRef(false)
 
-  // Safety net: re-fit after a frame when canvas container appears
+  // Reset the auto-fit flag whenever a new save is selected.
   useEffect(() => {
-    if (!bounds || !hasCanvas) return
-    const id = requestAnimationFrame(() => fitView())
+    hasAutoFittedRef.current = false
+  }, [selectedSave])
+
+  useEffect(() => {
+    if (hasAutoFittedRef.current) return
+    if (chunks.length === 0) return
+    if (canvasSize.width === 0 || canvasSize.height === 0) return
+    // Defer one frame so the canvas element is mounted and sized before
+    // we read its rect inside fitView's fallback path.
+    const id = requestAnimationFrame(() => {
+      hasAutoFittedRef.current = true
+      fitView()
+    })
     return () => cancelAnimationFrame(id)
-  }, [bounds, hasCanvas, fitView])
+  }, [chunks, canvasSize, fitView])
 
   // ─── Canvas resize observer ───
   useEffect(() => {
@@ -546,9 +583,13 @@ export default function ChunkCleaner() {
     img.onload = () => {
       tileCacheRef.current[key] = img
       tileLoadCountRef.current++
-      // Trigger a redraw when tile loads
+      // Schedule a redraw so the new tile actually appears without
+      // requiring the user to pan or zoom first.
       if (drawRequestRef.current === 0) {
-        drawRequestRef.current = requestAnimationFrame(() => { drawRequestRef.current = 0 })
+        drawRequestRef.current = requestAnimationFrame(() => {
+          drawRequestRef.current = 0
+          drawCanvasRef.current()
+        })
       }
     }
     img.onerror = () => { /* tile missing, keep null */ }
@@ -569,8 +610,12 @@ export default function ChunkCleaner() {
     const img = new window.Image()
     img.onload = () => {
       dziCacheRef.current[key] = img
+      // Schedule a redraw so the new tile appears without user interaction.
       if (drawRequestRef.current === 0) {
-        drawRequestRef.current = requestAnimationFrame(() => { drawRequestRef.current = 0 })
+        drawRequestRef.current = requestAnimationFrame(() => {
+          drawRequestRef.current = 0
+          drawCanvasRef.current()
+        })
       }
     }
     img.onerror = () => { /* tile missing */ }
@@ -732,6 +777,8 @@ export default function ChunkCleaner() {
         ctx.textBaseline = 'middle'
         
         for (const lm of PZ_LANDMARKS) {
+          // B42-only towns don't exist on the B41 map.
+          if (lm.b42Only && !isB42Save) continue
           // Landmarks are in B41 chunk coords; for B42, convert to B42 chunk space (×1.25)
           const lx = isB42Save ? lm.x * 1.25 : lm.x
           const ly = isB42Save ? lm.y * 1.25 : lm.y
@@ -1258,8 +1305,10 @@ export default function ChunkCleaner() {
   }, [])
 
   // ─── Touch support ─────────────────────────────────────
-  const touchRef = useRef<{ startX: number; startY: number; offX: number; offY: number; pinchDist: number | null }>({
-    startX: 0, startY: 0, offX: 0, offY: 0, pinchDist: null,
+  // moveDist tracks how far the finger has travelled since touchstart so we
+  // can distinguish a tap (toggle a chunk) from a pan.
+  const touchRef = useRef<{ startX: number; startY: number; offX: number; offY: number; pinchDist: number | null; moveDist: number }>({
+    startX: 0, startY: 0, offX: 0, offY: 0, pinchDist: null, moveDist: 0,
   })
 
   const getTouchDist = (touches: React.TouchList) => {
@@ -1270,7 +1319,7 @@ export default function ChunkCleaner() {
 
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
     if (e.touches.length === 1) {
-      touchRef.current = { startX: e.touches[0].clientX, startY: e.touches[0].clientY, offX: offset.x, offY: offset.y, pinchDist: null }
+      touchRef.current = { startX: e.touches[0].clientX, startY: e.touches[0].clientY, offX: offset.x, offY: offset.y, pinchDist: null, moveDist: 0 }
       isPanningRef.current = true
     } else if (e.touches.length === 2) {
       touchRef.current.pinchDist = getTouchDist(e.touches)
@@ -1296,14 +1345,44 @@ export default function ChunkCleaner() {
     } else if (e.touches.length === 1 && isPanningRef.current) {
       const t = e.touches[0]
       const tr = touchRef.current
-      setOffset({ x: tr.offX + (t.clientX - tr.startX), y: tr.offY + (t.clientY - tr.startY) })
+      const dx = t.clientX - tr.startX
+      const dy = t.clientY - tr.startY
+      tr.moveDist = Math.max(tr.moveDist, Math.sqrt(dx * dx + dy * dy))
+      setOffset({ x: tr.offX + dx, y: tr.offY + dy })
     }
   }, [scale, offset])
 
-  const handleTouchEnd = useCallback(() => {
+  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
+    // If the user barely moved during a single-finger touch and the select
+    // tool is active, treat it as a tap that toggles the chunk under the
+    // touch point. Without this, mobile users have no way to select.
+    const tr = touchRef.current
+    const wasTap = isPanningRef.current && tr.moveDist < 8 && tr.pinchDist === null
     isPanningRef.current = false
-    touchRef.current.pinchDist = null
-  }, [])
+    touchRef.current = { ...tr, pinchDist: null, moveDist: 0 }
+
+    if (wasTap && tool === 'select') {
+      const canvas = canvasRef.current
+      const ct = e.changedTouches[0]
+      if (canvas && ct) {
+        const rect = canvas.getBoundingClientRect()
+        const sx = ct.clientX - rect.left
+        const sy = ct.clientY - rect.top
+        const world = { x: (sx - offset.x) / scale, y: (sy - offset.y) / scale }
+        const cx = Math.floor(world.x)
+        const cy = Math.floor(world.y)
+        const key = `${cx}_${cy}`
+        if (chunkMap[key]) {
+          setSelectedChunks(prev => {
+            const next = new Set(prev)
+            if (next.has(key)) next.delete(key)
+            else next.add(key)
+            return next
+          })
+        }
+      }
+    }
+  }, [tool, offset, scale, chunkMap])
 
   // ─── Delete handlers ───
   const handleDelete = async () => {
@@ -1336,13 +1415,43 @@ export default function ChunkCleaner() {
         } catch { /* server stopped — fine, DB cleanup will handle it */ }
       }
 
-      const result = await chunksApi.deleteChunks(
+      // Try without force first. If the server-running guard fires, the
+      // server returns `code: 'server_running'` + the matched processes;
+      // we open the override dialog so the operator can confirm.
+      const tryDelete = async (force: boolean) => chunksApi.deleteChunks(
         selectedSave,
         chunksToDelete,
         createBackup,
         customPath || undefined,
         deleteVehicles,
+        force,
       )
+
+      let result: Awaited<ReturnType<typeof tryDelete>>
+      try {
+        result = await tryDelete(false)
+      } catch (err) {
+        if (err instanceof ApiError && err.code === 'server_running') {
+          const matched = (err.data && typeof err.data === 'object' && 'matched' in err.data
+            ? (err.data as { matched?: Array<{ pid?: string; cmd: string }> }).matched
+            : []) || []
+          const userForced = await new Promise<boolean>((resolve) => {
+            setServerRunningDialog({ open: true, matched, resolve })
+          })
+          if (!userForced) {
+            // User cancelled — surface the original message and bail out.
+            toast({
+              title: 'Server appears to be running',
+              description: err.message,
+              variant: 'destructive',
+            })
+            return
+          }
+          result = await tryDelete(true)
+        } else {
+          throw err
+        }
+      }
 
       const vDel = (result as { vehiclesDeleted?: number }).vehiclesDeleted ?? 0
       toast({
@@ -1839,6 +1948,84 @@ export default function ChunkCleaner() {
                     Delete selected chunks
                   </>
                 )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Server-running override dialog (issue #5: false-positive process
+            detection). Shows the matched processes and lets the user force
+            the delete after confirming the server really is stopped. */}
+        <Dialog
+          open={serverRunningDialog.open}
+          onOpenChange={(open) => {
+            if (!open && serverRunningDialog.resolve) {
+              serverRunningDialog.resolve(false)
+              setServerRunningDialog({ open: false, matched: [] })
+            }
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-warning" />
+                Server appears to be running
+              </DialogTitle>
+              <DialogDescription>
+                The panel detected processes that look like a Project Zomboid dedicated server.
+                Deleting chunks while the server is live will corrupt the save when it writes back on shutdown.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-3 py-2">
+              {serverRunningDialog.matched.length > 0 ? (
+                <div className="rounded-lg border bg-muted/40 p-3">
+                  <p className="text-xs font-medium text-muted-foreground mb-2">
+                    Matched process{serverRunningDialog.matched.length !== 1 ? 'es' : ''}:
+                  </p>
+                  <ul className="space-y-1.5 text-xs font-mono break-all">
+                    {serverRunningDialog.matched.map((m, i) => (
+                      <li key={i} className="flex gap-2">
+                        {m.pid && <span className="text-muted-foreground shrink-0">pid {m.pid}</span>}
+                        <span className="text-foreground/85">{m.cmd}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  No matched process info was returned, but the detector reported the server as running.
+                </p>
+              )}
+              <div className="rounded-lg border border-warning/25 bg-warning/8 p-3 text-xs">
+                <p className="font-medium text-warning mb-1">Only override if you are sure</p>
+                <p className="text-muted-foreground">
+                  If you stopped the server with a custom systemd unit / launcher we don&apos;t recognise,
+                  or one of the processes above is unrelated (e.g. a different Java app),
+                  you can force the delete. Otherwise, stop the server first.
+                </p>
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  serverRunningDialog.resolve?.(false)
+                  setServerRunningDialog({ open: false, matched: [] })
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => {
+                  serverRunningDialog.resolve?.(true)
+                  setServerRunningDialog({ open: false, matched: [] })
+                }}
+              >
+                <Trash2 className="w-4 h-4 mr-2" />
+                Server is stopped — force delete
               </Button>
             </DialogFooter>
           </DialogContent>

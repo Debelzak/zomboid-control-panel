@@ -9,15 +9,11 @@ const router = express.Router();
 // pool on a busy map view.
 const TILE_FETCH_TIMEOUT_MS = 10_000;
 
-async function fetchTileWithTimeout(url) {
-  // Node 18+ supports AbortSignal.timeout; older runtimes would throw a
-  // TypeError which we catch and surface as a 502 (same as any network error).
-  try {
-    return await fetch(url, { signal: AbortSignal.timeout(TILE_FETCH_TIMEOUT_MS) });
-  } catch (err) {
-    // Normalise timeout/abort errors so the caller can log them uniformly.
-    throw err;
-  }
+function fetchTileWithTimeout(url) {
+  // Node 18+ supports AbortSignal.timeout; older runtimes throw a TypeError
+  // which propagates to the caller's catch block and is surfaced as a 502
+  // (same shape as any network error).
+  return fetch(url, { signal: AbortSignal.timeout(TILE_FETCH_TIMEOUT_MS) });
 }
 
 // Proxy DZI tiles from b42map.com to avoid CORS restrictions.
@@ -32,7 +28,9 @@ router.get('/tiles/:level/:tile', async (req, res) => {
   if (isNaN(level) || level < 0 || level > 22) {
     return res.status(400).json({ error: 'Invalid level' });
   }
-  if (isNaN(floor) || floor < -17 || floor > 30) {
+  // Client clamps floor to -17..29 (WorldMap.tsx changeFloor); keep the
+  // backend in sync so anything outside the real range is rejected early.
+  if (isNaN(floor) || floor < -17 || floor > 29) {
     return res.status(400).json({ error: 'Invalid floor' });
   }
   // layer0 uses jpg, all other layers use webp

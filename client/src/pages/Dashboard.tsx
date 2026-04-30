@@ -30,6 +30,9 @@ import {
   Trash2,
   Download,
   Sparkles,
+  CalendarClock,
+  Package,
+  CheckCircle2,
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -52,7 +55,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { serverApi, rconApi, playersApi, panelBridgeApi, backupApi, configApi, serversApi, debugApi, panelUpdateApi, ServerInstance, PanelUpdateStatus } from '@/lib/api'
+import { serverApi, rconApi, playersApi, panelBridgeApi, backupApi, configApi, serversApi, debugApi, panelUpdateApi, modsApi, schedulerApi, ServerInstance, PanelUpdateStatus } from '@/lib/api'
 import { formatUptime } from '@/lib/utils'
 import { useSocket } from '@/contexts/SocketContext'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -187,6 +190,23 @@ export default function Dashboard() {
   const [panelUpdate, setPanelUpdate] = useState<PanelUpdateStatus | null>(null)
   const [panelUpdateDismissedVersion, setPanelUpdateDismissedVersion] = useState<string | null>(() => {
     try { return sessionStorage.getItem('panel-update-banner-dismissed') } catch { return null }
+  })
+
+  // Maintenance summary (last backup, mod updates, scheduled tasks)
+  const [maintenance, setMaintenance] = useState<{
+    lastBackup: { name: string; size: number; created: string } | null
+    backupCount: number
+    modUpdatesAvailable: number
+    modsTracked: number
+    scheduledTasksCount: number
+    schedulerLoaded: boolean
+  }>({
+    lastBackup: null,
+    backupCount: 0,
+    modUpdatesAvailable: 0,
+    modsTracked: 0,
+    scheduledTasksCount: 0,
+    schedulerLoaded: false,
   })
 
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -366,6 +386,24 @@ export default function Dashboard() {
     }
   }, [])
 
+  const fetchMaintenance = useCallback(async () => {
+    const [backupRes, modsRes, tasksRes] = await Promise.allSettled([
+      backupApi.getStatus(),
+      modsApi.getStatus(),
+      schedulerApi.getTasks() as Promise<{ tasks: Array<{ enabled?: number | boolean }> }>,
+    ])
+    setMaintenance(prev => ({
+      lastBackup: backupRes.status === 'fulfilled' ? backupRes.value.lastBackup : prev.lastBackup,
+      backupCount: backupRes.status === 'fulfilled' ? (backupRes.value.backupCount ?? 0) : prev.backupCount,
+      modUpdatesAvailable: modsRes.status === 'fulfilled' ? ((modsRes.value as { updatesAvailable?: number }).updatesAvailable ?? 0) : prev.modUpdatesAvailable,
+      modsTracked: modsRes.status === 'fulfilled' ? ((modsRes.value as { totalModsTracked?: number }).totalModsTracked ?? 0) : prev.modsTracked,
+      scheduledTasksCount: tasksRes.status === 'fulfilled'
+        ? (tasksRes.value.tasks ?? []).filter(t => t.enabled === 1 || t.enabled === true).length
+        : prev.scheduledTasksCount,
+      schedulerLoaded: true,
+    }))
+  }, [])
+
   const handleAutoStartChange = async (checked: boolean) => {
     setAutoStartServer(checked)
     try {
@@ -405,6 +443,7 @@ export default function Dashboard() {
           fetchAutoStartSetting(),
           serverApi.getPanelInfo().then(setPanelInfo).catch(() => setPanelInfo(null)),
           fetchActiveServer(),
+          fetchMaintenance(),
         ])
       } catch {
         setFetchError('Failed to load dashboard status.')
@@ -431,16 +470,23 @@ export default function Dashboard() {
       }
     }, 15000)
 
+    // Maintenance summary refreshes less often (60s) — backup/mod/scheduler state changes slowly.
+    const maintenanceInterval = setInterval(() => {
+      if (document.visibilityState === 'hidden') return
+      fetchMaintenance()
+    }, 60000)
+
     return () => {
       clearTimeout(loadingTimeout)
       clearInterval(interval)
+      clearInterval(maintenanceInterval)
       // Also clean up the poll interval on unmount
       if (pollIntervalRef.current) {
         clearInterval(pollIntervalRef.current)
         pollIntervalRef.current = null
       }
     }
-  }, [fetchStatus, fetchPlayers, fetchBridgeStatus, fetchPlayerActivity, fetchPerformanceHistory, fetchAutoStartSetting, fetchActiveServer, showPerformanceCharts])
+  }, [fetchStatus, fetchPlayers, fetchBridgeStatus, fetchPlayerActivity, fetchPerformanceHistory, fetchAutoStartSetting, fetchActiveServer, fetchMaintenance, showPerformanceCharts])
 
   useEffect(() => {
     if (socket) {
@@ -1080,7 +1126,7 @@ export default function Dashboard() {
                 </div>
               }
             >
-              {showPerformanceCharts ? <DashboardPerformanceCharts performanceHistory={performanceHistory} /> : null}
+              {showPerformanceCharts ? <DashboardPerformanceCharts performanceHistory={performanceHistory} serverRunning={!!status?.running} /> : null}
             </Suspense>
           ) : (
             <div className="rounded-xl border border-border/60 bg-card/50 px-5 py-4 flex flex-col h-full">
@@ -1182,6 +1228,131 @@ export default function Dashboard() {
           )}
         </section>
       </div>
+
+      {/* Maintenance summary — last backup, mod updates, scheduled tasks */}
+      {maintenance.schedulerLoaded && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          {/* Last Backup */}
+          <section className="rounded-xl border border-border/60 bg-card/50 p-4">
+            <div className="mb-2 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Archive className="h-4 w-4 text-muted-foreground" />
+                <h3 className="text-sm font-semibold">Last Backup</h3>
+              </div>
+              <Link to="/backups" className="text-xs text-muted-foreground hover:text-primary">View all</Link>
+            </div>
+            {maintenance.lastBackup ? (
+              <div className="space-y-2">
+                <p className="text-2xl font-bold tabular-nums leading-none">
+                  {(() => {
+                    const ageMs = Date.now() - new Date(maintenance.lastBackup.created).getTime()
+                    const mins = Math.floor(ageMs / 60000)
+                    if (mins < 1) return 'Just now'
+                    if (mins < 60) return `${mins}m ago`
+                    const hrs = Math.floor(mins / 60)
+                    if (hrs < 24) return `${hrs}h ago`
+                    const days = Math.floor(hrs / 24)
+                    return `${days}d ago`
+                  })()}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {(maintenance.lastBackup.size / (1024 * 1024)).toFixed(0)} MB · {maintenance.backupCount} total
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="w-full gap-1.5 text-xs"
+                  disabled={loading !== null || activeServer?.isRemote}
+                  onClick={() => handleAction('Create backup', () => backupApi.createBackup({ includeDb: true }).then(() => fetchMaintenance()))}
+                >
+                  {loading === 'Create backup' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Archive className="h-3.5 w-3.5" />}
+                  Backup now
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-sm text-muted-foreground">No backups yet</p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="w-full gap-1.5 text-xs"
+                  disabled={loading !== null || activeServer?.isRemote}
+                  onClick={() => handleAction('Create backup', () => backupApi.createBackup({ includeDb: true }).then(() => fetchMaintenance()))}
+                >
+                  <Archive className="h-3.5 w-3.5" />
+                  Create first backup
+                </Button>
+              </div>
+            )}
+          </section>
+
+          {/* Mod Updates */}
+          <section className="rounded-xl border border-border/60 bg-card/50 p-4">
+            <div className="mb-2 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Package className="h-4 w-4 text-muted-foreground" />
+                <h3 className="text-sm font-semibold">Mod Updates</h3>
+              </div>
+              <Link to="/mods" className="text-xs text-muted-foreground hover:text-primary">Manage</Link>
+            </div>
+            {maintenance.modUpdatesAvailable > 0 ? (
+              <div className="space-y-2">
+                <p className="text-2xl font-bold tabular-nums leading-none text-warning">
+                  {maintenance.modUpdatesAvailable} pending
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {maintenance.modUpdatesAvailable === 1 ? 'mod has' : 'mods have'} a new version available
+                </p>
+                <Link to="/mods" className={cn(buttonVariants({ size: 'sm', variant: 'outline' }), 'w-full gap-1.5 text-xs border-warning/50 text-warning hover:text-warning')}>
+                  <Download className="h-3.5 w-3.5" />
+                  Review updates
+                </Link>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <p className="flex items-center gap-2 text-2xl font-bold leading-none text-success">
+                  <CheckCircle2 className="h-5 w-5" />
+                  Up to date
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {maintenance.modsTracked} {maintenance.modsTracked === 1 ? 'mod' : 'mods'} tracked
+                </p>
+              </div>
+            )}
+          </section>
+
+          {/* Scheduled Tasks */}
+          <section className="rounded-xl border border-border/60 bg-card/50 p-4">
+            <div className="mb-2 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CalendarClock className="h-4 w-4 text-muted-foreground" />
+                <h3 className="text-sm font-semibold">Scheduled Tasks</h3>
+              </div>
+              <Link to="/scheduler" className="text-xs text-muted-foreground hover:text-primary">Manage</Link>
+            </div>
+            <div className="space-y-2">
+              <p className="text-2xl font-bold tabular-nums leading-none">
+                {maintenance.scheduledTasksCount}
+                <span className="ml-1 text-xs font-normal text-muted-foreground">
+                  {maintenance.scheduledTasksCount === 1 ? 'active' : 'active'}
+                </span>
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {maintenance.scheduledTasksCount === 0
+                  ? 'Set up automatic restarts, backups, and announcements'
+                  : 'Restarts, backups, and announcements running on schedule'}
+              </p>
+              <Link
+                to="/scheduler"
+                className={cn(buttonVariants({ size: 'sm', variant: 'outline' }), 'w-full gap-1.5 text-xs')}
+              >
+                <CalendarClock className="h-3.5 w-3.5" />
+                {maintenance.scheduledTasksCount === 0 ? 'Add task' : 'View schedule'}
+              </Link>
+            </div>
+          </section>
+        </div>
+      )}
 
       {/* Confirmation Dialog */}
       <AlertDialog open={!!confirmAction} onOpenChange={(open) => !open && setConfirmAction(null)}>

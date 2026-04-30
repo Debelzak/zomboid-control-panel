@@ -1659,7 +1659,8 @@ export default function Events() {
             <CardContent className="flex flex-col items-center justify-center py-10 text-center">
               <Snowflake className="w-6 h-6 text-muted-foreground/50 mb-2" />
               <p className="text-sm font-medium text-muted-foreground">Advanced Weather</p>
-              <p className="text-xs text-muted-foreground/70 mt-1">Blizzards, tropical storms, and snow require PanelBridge</p>
+              <p className="text-xs text-muted-foreground/70 mt-1 max-w-xs">Blizzards, tropical storms, and snow toggles need PanelBridge.lua running on the server.</p>
+              <Link to="/settings" className="mt-3 inline-flex text-xs text-primary underline hover:text-foreground">Open Bridge Setup</Link>
             </CardContent>
           </Card>
         )}

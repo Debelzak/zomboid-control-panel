@@ -53,7 +53,7 @@ import {
 } from '@/components/ui/select'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { useToast } from '@/components/ui/use-toast'
-import { schedulerApi, rconApi, ScheduleHistoryEntry } from '@/lib/api'
+import { schedulerApi, rconApi, serverApi, ScheduleHistoryEntry } from '@/lib/api'
 import { EmptyState } from '@/components/EmptyState'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 
@@ -109,6 +109,7 @@ export default function Scheduler() {
 
   // Restart form
   const [restartMinutes, setRestartMinutes] = useState(5)
+  const [serverRunning, setServerRunning] = useState<boolean>(false)
 
   const fetchData = useCallback(async () => {
     setFetchError(null)
@@ -134,6 +135,22 @@ export default function Scheduler() {
   useEffect(() => {
     fetchData()
   }, [fetchData])
+
+  // Poll server status so Manual Restart / Quick Broadcasts stay accurate.
+  useEffect(() => {
+    let cancelled = false
+    const pull = async () => {
+      try {
+        const s = await serverApi.getStatus()
+        if (!cancelled) setServerRunning(!!s?.running)
+      } catch {
+        if (!cancelled) setServerRunning(false)
+      }
+    }
+    pull()
+    const id = setInterval(pull, 15000)
+    return () => { cancelled = true; clearInterval(id) }
+  }, [])
 
   // Simple cron validation
   const isValidCron = (cron: string): boolean => {
@@ -617,7 +634,9 @@ export default function Scheduler() {
         <CardHeader>
           <CardTitle>Manual Restart</CardTitle>
           <CardDescription>
-            Restart with warning messages.
+            {serverRunning
+              ? 'Restart with warning messages.'
+              : 'Server is offline — start it before issuing a restart.'}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -625,7 +644,7 @@ export default function Scheduler() {
           <div className="flex flex-wrap gap-2">
             <Button 
               onClick={() => handleRestartWithWarning(15)} 
-              disabled={loading}
+              disabled={loading || !serverRunning}
               variant="outline"
               size="sm"
             >
@@ -634,7 +653,7 @@ export default function Scheduler() {
             </Button>
             <Button 
               onClick={() => handleRestartWithWarning(10)} 
-              disabled={loading}
+              disabled={loading || !serverRunning}
               variant="outline"
               size="sm"
             >
@@ -643,7 +662,7 @@ export default function Scheduler() {
             </Button>
             <Button 
               onClick={() => handleRestartWithWarning(5)} 
-              disabled={loading}
+              disabled={loading || !serverRunning}
               variant="outline"
               size="sm"
             >
@@ -652,7 +671,7 @@ export default function Scheduler() {
             </Button>
             <Button 
               onClick={() => handleRestartWithWarning(1)} 
-              disabled={loading}
+              disabled={loading || !serverRunning}
               variant="destructive"
               size="sm"
             >
@@ -675,7 +694,7 @@ export default function Scheduler() {
             </div>
             <Button 
               onClick={handleRestartNow} 
-              disabled={loading}
+              disabled={loading || !serverRunning}
               variant="warning"
             >
               <RotateCcw className="w-4 h-4 mr-2" />
@@ -693,7 +712,9 @@ export default function Scheduler() {
         <CardHeader>
           <CardTitle>Quick Broadcasts</CardTitle>
           <CardDescription>
-            Send common announcements to all players.
+            {serverRunning
+              ? 'Send common announcements to all players.'
+              : 'Server is offline — broadcasts require a running server.'}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -702,7 +723,7 @@ export default function Scheduler() {
               onClick={() => handleBroadcast('Server entering MAINTENANCE MODE - Please save and disconnect')}
               variant="outline"
               size="sm"
-              disabled={loading}
+              disabled={loading || !serverRunning}
             >
               Maintenance Start
             </Button>
@@ -710,7 +731,7 @@ export default function Scheduler() {
               onClick={() => handleBroadcast('Maintenance complete - Server is back online!')}
               variant="outline"
               size="sm"
-              disabled={loading}
+              disabled={loading || !serverRunning}
             >
               Maintenance End
             </Button>
@@ -718,7 +739,7 @@ export default function Scheduler() {
               onClick={() => handleBroadcast('Server will save in 30 seconds - Brief lag expected')}
               variant="outline"
               size="sm"
-              disabled={loading}
+              disabled={loading || !serverRunning}
             >
               Save Warning
             </Button>
@@ -726,7 +747,7 @@ export default function Scheduler() {
               onClick={() => handleBroadcast('Welcome! Please read the rules at spawn')}
               variant="outline"
               size="sm"
-              disabled={loading}
+              disabled={loading || !serverRunning}
             >
               Welcome
             </Button>

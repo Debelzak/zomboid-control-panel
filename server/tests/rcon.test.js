@@ -134,4 +134,66 @@ describe('RconService', () => {
       vi.useRealTimers();
     });
   });
+
+  describe('serverMessage (ASCII safety)', () => {
+    it('strips emoji and other non-ASCII chars before sending to PZ', async () => {
+      const liveRcon = new RconService();
+      const executeSpy = vi.spyOn(liveRcon, 'execute').mockResolvedValue({ success: true, response: 'ok' });
+
+      await liveRcon.serverMessage('🔧 Mod updates detected: CleanUI. Server will restart in 5 minute(s).');
+
+      expect(executeSpy).toHaveBeenCalledTimes(1);
+      const sent = executeSpy.mock.calls[0][0];
+      expect(sent).not.toMatch(/[^\x20-\x7E"]/);
+      expect(sent).toContain('Mod updates detected');
+      expect(sent).toContain('5 minute(s)');
+      expect(sent).not.toContain('🔧');
+    });
+
+    it('replaces curly quotes/dashes with ASCII equivalents', async () => {
+      const liveRcon = new RconService();
+      const executeSpy = vi.spyOn(liveRcon, 'execute').mockResolvedValue({ success: true, response: 'ok' });
+
+      await liveRcon.serverMessage('It\u2019s \u2014 \u201Ctest\u201D');
+
+      const sent = executeSpy.mock.calls[0][0];
+      // Curly apostrophe -> straight apostrophe (kept), em-dash -> hyphen,
+      // curly double quotes get normalized to ", which sanitize() then strips
+      // for RCON shell safety. Either way, no non-ASCII bytes remain.
+      expect(sent).toContain("It's");
+      expect(sent).toContain('-');
+      expect(sent).toContain('test');
+      expect(sent).not.toMatch(/[\u2018\u2019\u201C\u201D\u2013\u2014]/);
+    });
+
+    it('returns rejected:true when PZ replies with the help text', async () => {
+      const liveRcon = new RconService();
+      vi.spyOn(liveRcon, 'execute').mockResolvedValue({
+        success: true,
+        response: 'Broadcast a message to all connected players. Use: /servermsg "My Message"',
+      });
+
+      const result = await liveRcon.serverMessage('Hello');
+      expect(result.rejected).toBe(true);
+      expect(result.success).toBe(false);
+    });
+
+    it('returns success when PZ broadcasts normally', async () => {
+      const liveRcon = new RconService();
+      vi.spyOn(liveRcon, 'execute').mockResolvedValue({ success: true, response: 'Command executed successfully' });
+
+      const result = await liveRcon.serverMessage('Hello players');
+      expect(result.success).toBe(true);
+      expect(result.rejected).toBeUndefined();
+    });
+
+    it('skips sending when message reduces to empty after sanitization', async () => {
+      const liveRcon = new RconService();
+      const executeSpy = vi.spyOn(liveRcon, 'execute').mockResolvedValue({ success: true });
+
+      const result = await liveRcon.serverMessage('🔧🎯💀');
+      expect(executeSpy).not.toHaveBeenCalled();
+      expect(result.success).toBe(false);
+    });
+  });
 });

@@ -416,7 +416,6 @@ export default function Backups() {
             </Button>
             <Button
               variant="outline"
-              size="sm"
               onClick={() => setShowSettings(!showSettings)}
               className="gap-2"
             >
@@ -425,7 +424,7 @@ export default function Backups() {
             </Button>
             <Button
               variant="outline"
-              size="sm"
+              size="icon"
               onClick={refreshAll}
               disabled={loading}
               aria-label="Refresh backup status"

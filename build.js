@@ -125,7 +125,9 @@ See docker-compose.yml comments for volume mount and UID configuration.
 - start.sh                 - Linux launch script
 - zomboid-panel.service    - systemd unit file (Linux)
 - client/dist/             - Web interface (required, must stay alongside binary)
-- data/db.json             - Configuration database (created on first run)
+- data/db.json             - Configuration database (created on first run; NEVER overwrite when upgrading — see data/README.txt)
+- data/db.example.json     - Reference db structure (safe to delete)
+- data/README.txt          - Upgrade-safety notes for the data/ folder
 - logs/                    - Application logs
 - pz-mod/                  - PanelBridge server-side Lua (drop into Install/media/lua/server)
 - checksums.txt            - SHA256 hashes for release archives
@@ -143,6 +145,16 @@ server-side drop-in, NOT a Workshop mod — there is no client component.
 - Keep all files in the same folder structure — the binary needs client/dist/.
 - The app runs on port 3001 by default.
 - First run: go to Settings to configure your PZ server path.
+
+## Upgrading
+- The panel auto-update feature handles upgrades safely — prefer it.
+- For MANUAL upgrades, do NOT extract the archive over data/. Your db.json
+  (admin account + all configs) lives there and the archive must not clobber
+  it. Modern releases ship only data/db.example.json inside the archive, so
+  a plain extract is safe; back up data/ first if you are unsure. See
+  data/README.txt for tar/zip flags.
+- If you ever lose db.json, check data/backups/ — the panel keeps the last
+  5 auto-snapshots and will restore from the newest on next startup.
 `;
 
   fs.writeFileSync('./release/README.txt', readme);
@@ -272,9 +284,25 @@ async function main() {
     process.exit(1);
   }
 
+  // IMPORTANT: do NOT ship a real `data/db.json` in the release tarball.
+  //
+  // Users who extract a new release over an existing install (e.g. `tar xzf`
+  // or unzipping into the install directory) would have their live database
+  // — admin account, server configs, scheduled tasks, all settings —
+  // overwritten by an empty stub. We learned this the hard way from issue #5
+  // where a user lost everything on a manual upgrade to v1.0.15.
+  //
+  // The server creates `data/db.json` automatically on first run via LowDB's
+  // `defaultData` (see server/database/init.js). We only ship a reference
+  // example file and a README warning so users see what shape the file takes
+  // without risking their real data.
   fs.mkdirSync('./release/data', { recursive: true });
-  const releaseDbPath = './release/data/db.json';
-  if (!fs.existsSync(releaseDbPath)) {
+
+  const exampleDbSrc = './data/db.example.json';
+  if (fs.existsSync(exampleDbSrc)) {
+    fs.copyFileSync(exampleDbSrc, './release/data/db.example.json');
+  } else {
+    // Fallback if the example file isn't present in dev — write a minimal one.
     const defaultDb = {
       settings: {
         serverPath: '',
@@ -294,8 +322,43 @@ async function main() {
         adminRoleId: '',
       },
     };
-    fs.writeFileSync(releaseDbPath, JSON.stringify(defaultDb, null, 2));
+    fs.writeFileSync('./release/data/db.example.json', JSON.stringify(defaultDb, null, 2));
   }
+
+  // Drop a clear upgrade warning next to the example so anyone poking around
+  // the data folder during a manual upgrade understands what NOT to overwrite.
+  const dataReadme = `data/ — Panel runtime database
+=================================
+
+This folder holds the panel's runtime state:
+
+  db.json          Created automatically on first run. Contains your admin
+                   account, server configurations, scheduled tasks, mod
+                   tracking data, scheduled task history, and all settings.
+                   DO NOT delete or overwrite this file — you will lose all
+                   your configuration.
+
+  backups/         Auto-rotating snapshots of db.json (every 6h, last 5 kept).
+                   The panel will try to restore from the most recent backup
+                   if db.json becomes corrupt.
+
+  db.example.json  Reference structure only. Safe to delete.
+
+UPGRADING THE PANEL
+-------------------
+When upgrading by extracting a release archive over your existing install,
+make sure your archive tool does NOT overwrite \`data/db.json\` (or the
+\`data/backups/\` folder). Modern releases ship only \`data/db.example.json\`
+inside the archive precisely so a plain extract is safe — but if you are
+restoring from an older release that contained a real \`db.json\`, exclude
+the data/ folder from extraction.
+
+Recommended safe-upgrade commands:
+
+  Linux:   tar xzf release.tar.gz --exclude='data/db.json' --exclude='data/backups'
+  Windows: extract everything EXCEPT the data/ folder, or back up data/ first.
+`;
+  fs.writeFileSync('./release/data/README.txt', dataReadme);
 
   fs.mkdirSync('./release/logs', { recursive: true });
   fs.writeFileSync('./release/logs/.gitkeep', '');

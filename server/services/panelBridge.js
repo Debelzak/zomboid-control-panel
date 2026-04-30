@@ -14,6 +14,20 @@ import { logPlayerAction, recordPlayerSession } from '../database/init.js';
 import { createLogger } from '../utils/logger.js';
 const log = createLogger('Bridge');
 
+// Format an age in milliseconds as a short human string ("38d", "2h", "45s").
+// Used for diagnostics messages so users don't read raw seconds-since-epoch.
+function formatAge(ms) {
+  if (!Number.isFinite(ms) || ms < 0) return 'unknown';
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.round(m / 60);
+  if (h < 48) return `${h}h`;
+  const d = Math.round(h / 24);
+  return `${d}d`;
+}
+
 class PanelBridge extends EventEmitter {
   constructor() {
     super();
@@ -324,7 +338,7 @@ class PanelBridge extends EventEmitter {
         checks.statusAgeMs = ageMs;
         checks.statusFresh = ageMs < diagStaleMs;
         if (!checks.statusFresh) {
-          issues.push(`Status file is stale (${Math.round(ageMs / 1000)}s old).`);
+          issues.push(`Status file is stale (${formatAge(ageMs)} old) — is the PZ server running?`);
         }
       } catch (e) {
         issues.push(`Could not read status file metadata: ${e.message}`);

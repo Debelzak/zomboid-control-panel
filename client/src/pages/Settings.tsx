@@ -30,7 +30,10 @@ import {
   User,
   ExternalLink,
   FolderOpen,
-  Palette
+  Palette,
+  Check,
+  Heart,
+  Coffee
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { reportClientError } from '@/lib/client-errors'
@@ -64,6 +67,7 @@ import {
   serversApi,
   serverApi,
   panelUpdateApi,
+  modsApi,
   BackupStatus,
   BackupFile,
   PanelUpdateStatus,
@@ -107,6 +111,12 @@ interface AppSettings {
   
   // API Keys
   steamApiKey: string
+
+  // Workshop Collection Sync
+  workshopCollectionId: string
+  workshopCollectionAutoSync: boolean
+  steamSessionId: string
+  steamLoginSecure: string
   
   // General Settings
   darkMode: boolean
@@ -143,6 +153,19 @@ interface CorsDiagnostics {
 const MAX_CORS_ALLOWED_ORIGINS = 100
 const MAX_CORS_ORIGIN_LENGTH = 256
 
+// Human-friendly age string for bridge diagnostics. Avoids showing the user
+// raw seconds counts like "3344627s" which read as gibberish.
+function formatBridgeAge(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return 'unknown'
+  if (seconds < 60) return `${Math.round(seconds)}s`
+  const m = Math.round(seconds / 60)
+  if (m < 60) return `${m}m`
+  const h = Math.round(m / 60)
+  if (h < 48) return `${h}h`
+  const d = Math.round(h / 24)
+  return `${d}d`
+}
+
 function ThemeSelect() {
   const { theme, setTheme } = useTheme()
   return (
@@ -166,6 +189,10 @@ export default function Settings() {
     modAutoRestart: true,
     modRestartDelay: '5',
     steamApiKey: '',
+    workshopCollectionId: '',
+    workshopCollectionAutoSync: false,
+    steamSessionId: '',
+    steamLoginSecure: '',
     darkMode: true,
     autoReconnect: true,
     reconnectInterval: '5',
@@ -281,15 +308,15 @@ export default function Settings() {
 
   // Section navigation via tabs
   const settingsSections = [
-    { id: 'panel', label: 'Panel', icon: Globe, group: 'core', tip: 'Port, theme, and panel updates' },
-    { id: 'https', label: 'HTTPS', icon: Lock, group: 'core', tip: 'SSL/TLS encryption for secure connections' },
-    { id: 'rcon', label: 'RCON', icon: Link, group: 'connections', tip: 'Remote console \u2014 built-in game server protocol for commands' },
-    { id: 'bridge', label: 'Bridge', icon: Zap, group: 'connections', tip: 'PanelBridge Lua mod \u2014 adds weather, teleport, and world control' },
-    { id: 'mods', label: 'Mods', icon: Clock, group: 'features', tip: 'Auto-update checking and restart behavior' },
-    { id: 'api-keys', label: 'API Keys', icon: Key, group: 'features', tip: 'Steam API key for Workshop mod lookups' },
-    { id: 'backups', label: 'Backups', icon: Archive, group: 'features', tip: 'Scheduled backup frequency and retention' },
-    { id: 'security', label: 'Security', icon: Shield, group: 'system', tip: 'Password and access control' },
-    { id: 'about', label: 'About', icon: Server, group: 'system', tip: 'Version info and diagnostics' },
+    { id: 'panel', label: 'Panel', icon: Globe, group: 'core', tip: 'Port, theme, and panel updates', description: 'Panel port, theme, and update behaviour for this admin interface.' },
+    { id: 'https', label: 'HTTPS', icon: Lock, group: 'core', tip: 'SSL/TLS encryption for secure connections', description: 'TLS termination — enable this when exposing the panel beyond your LAN.' },
+    { id: 'rcon', label: 'RCON', icon: Link, group: 'connections', tip: 'Remote console \u2014 built-in game server protocol for commands', description: 'RCON connection to the Project Zomboid server. Required for kick, ban, and console commands.' },
+    { id: 'bridge', label: 'Bridge', icon: Zap, group: 'connections', tip: 'PanelBridge Lua mod \u2014 adds weather, teleport, and world control', description: 'PanelBridge Lua mod link — unlocks weather, teleport, item spawn, and chat features.' },
+    { id: 'mods', label: 'Mods', icon: Clock, group: 'features', tip: 'Auto-update checking and restart behavior', description: 'Workshop mod tracking, update detection, and Steam Workshop collection sync.' },
+    { id: 'api-keys', label: 'API Keys', icon: Key, group: 'features', tip: 'Steam API key for Workshop mod lookups', description: 'Third-party API credentials used for mod metadata and Workshop lookups.' },
+    { id: 'backups', label: 'Backups', icon: Archive, group: 'features', tip: 'Scheduled backup frequency and retention', description: 'Automatic save backups — frequency, retention, and target directory.' },
+    { id: 'security', label: 'Security', icon: Shield, group: 'system', tip: 'Password and access control', description: 'Authentication, password policy, and CORS/remote access controls.' },
+    { id: 'about', label: 'About', icon: Server, group: 'system', tip: 'Version info and diagnostics', description: 'Panel version, runtime info, and diagnostics.' },
   ]
   const validTabs = settingsSections.map(s => s.id)
   const [searchParams, setSearchParams] = useSearchParams()
@@ -1320,7 +1347,10 @@ export default function Settings() {
       
       <PageHeader
         title="Settings"
-        description="Panel port, remote access, server integrations, backups, and security."
+        description={
+          settingsSections.find((s) => s.id === activeSection)?.description
+            ?? 'Panel port, remote access, server integrations, backups, and security.'
+        }
         eyebrow="Configuration"
         tone="config"
         icon={<Settings2 className="w-5 h-5" />}
@@ -1333,27 +1363,34 @@ export default function Settings() {
       />
 
       <Tabs value={activeSection} onValueChange={handleTabChange} className="mt-6">
-        <TabsList className="flex h-auto flex-wrap gap-1 bg-muted/40 p-1 rounded-lg w-full">
+        <TabsList
+          aria-label="Settings sections"
+          className="flex h-auto flex-wrap gap-1 bg-muted/40 p-1 rounded-lg w-full"
+        >
           {settingsSections.map((section, idx) => {
             const Icon = section.icon
             const prevGroup = idx > 0 ? settingsSections[idx - 1].group : section.group
             const showSeparator = idx > 0 && section.group !== prevGroup
             return (
               <React.Fragment key={section.id}>
-                {showSeparator && <div className="mx-0.5 hidden sm:block w-px self-stretch bg-border/40" />}
+                {showSeparator && (
+                  <div
+                    aria-hidden="true"
+                    className="mx-0.5 w-px self-stretch bg-border/50"
+                  />
+                )}
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <span>
-                      <TabsTrigger
-                        value={section.id}
-                        className="flex items-center gap-1.5 px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-sm"
-                      >
-                        <Icon className="w-3.5 h-3.5 shrink-0" />
-                        <span className="hidden sm:inline">{section.label}</span>
-                      </TabsTrigger>
-                    </span>
+                    <TabsTrigger
+                      value={section.id}
+                      aria-label={section.label}
+                      className="flex items-center gap-1.5 px-2.5 py-2 text-[11px] sm:text-sm whitespace-nowrap data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-sm focus-visible:ring-2 focus-visible:ring-primary/60 focus-visible:ring-offset-1"
+                    >
+                      <Icon className="w-3.5 h-3.5 shrink-0" />
+                      <span>{section.label}</span>
+                    </TabsTrigger>
                   </TooltipTrigger>
-                  <TooltipContent side="bottom" className="max-w-[200px]">
+                  <TooltipContent side="bottom" className="max-w-[220px]">
                     <p className="text-xs">{section.tip}</p>
                   </TooltipContent>
                 </Tooltip>
@@ -1384,9 +1421,11 @@ export default function Settings() {
               type="number"
               value={settings.panelPort}
               onChange={(e) => updateSetting('panelPort', e.target.value)}
+              onWheel={(e) => e.currentTarget.blur()}
               min="1024"
               max="65535"
               placeholder="3001"
+              inputMode="numeric"
             />
             <p className="text-xs text-muted-foreground mt-1">
               Port used to access the panel (default: 3001).
@@ -1968,9 +2007,11 @@ export default function Settings() {
                   type="number"
                   value={settings.httpsPort}
                   onChange={(e) => updateSetting('httpsPort', e.target.value)}
+                  onWheel={(e) => e.currentTarget.blur()}
                   min="1024"
                   max="65535"
                   placeholder="3443"
+                  inputMode="numeric"
                 />
                 <p className="text-xs text-muted-foreground mt-1">
                   HTTPS listener port (recommended 3443).
@@ -2075,12 +2116,14 @@ export default function Settings() {
                 type="number"
                 value={settings.reconnectInterval}
                 onChange={(e) => updateSetting('reconnectInterval', e.target.value)}
+                onWheel={(e) => e.currentTarget.blur()}
                 min="1"
                 max="60"
+                inputMode="numeric"
               />
             </div>
           )}
-          <div className="p-4 bg-muted rounded-lg text-sm">
+          <div className="p-4 bg-muted rounded-xl text-sm">
             <p className="font-medium mb-2">RCON is configured per-server:</p>
             <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
               <li>Go to <strong>Servers</strong> page</li>
@@ -2324,8 +2367,12 @@ export default function Settings() {
                       const passed = val === true
                       return (
                         <div key={key} className="flex items-center gap-1.5">
-                          <div className={cn('w-1.5 h-1.5 rounded-full shrink-0', passed ? 'bg-primary' : 'bg-destructive/60')} />
-                          <span className={cn(passed ? 'text-muted-foreground' : 'text-destructive/80')}>{label}</span>
+                          {passed ? (
+                            <CheckCircle2 className="w-3 h-3 text-primary shrink-0" aria-hidden="true" />
+                          ) : (
+                            <XCircle className="w-3 h-3 text-destructive shrink-0" aria-hidden="true" />
+                          )}
+                          <span className={cn(passed ? 'text-muted-foreground' : 'text-destructive/90')}>{label}</span>
                         </div>
                       )
                     })}
@@ -2341,7 +2388,7 @@ export default function Settings() {
                         {bridgeStatus.statusFile.exists ? 'Present' : 'Not found'}
                       </span>
                       {bridgeStatus.statusFile.ageSeconds != null && (
-                        <span className="opacity-50">({bridgeStatus.statusFile.ageSeconds}s ago)</span>
+                        <span className="opacity-50">({formatBridgeAge(bridgeStatus.statusFile.ageSeconds)} ago)</span>
                       )}
                     </div>
                     {bridgeStatus.statusFile.path && (
@@ -2484,9 +2531,11 @@ export default function Settings() {
               type="number"
               value={settings.modCheckInterval}
               onChange={(e) => updateSetting('modCheckInterval', e.target.value)}
+              onWheel={(e) => e.currentTarget.blur()}
               min="5"
               max="120"
               className="h-11"
+              inputMode="numeric"
             />
             <p className="text-sm text-muted-foreground">
               Minutes between Steam Workshop checks.
@@ -2511,9 +2560,11 @@ export default function Settings() {
                 type="number"
                 value={settings.modRestartDelay}
                 onChange={(e) => updateSetting('modRestartDelay', e.target.value)}
+                onWheel={(e) => e.currentTarget.blur()}
                 min="1"
                 max="30"
                 className="h-11"
+                inputMode="numeric"
               />
               <p className="text-sm text-muted-foreground">
                 Players are warned before the restart happens.
@@ -2522,6 +2573,12 @@ export default function Settings() {
           )}
         </CardContent>
       </Card>
+
+      {/* Workshop Collection Sync ──────────────────────────────────────── */}
+      <WorkshopCollectionSyncCard
+        settings={settings}
+        updateSetting={updateSetting}
+      />
         </TabsContent>
 
         <TabsContent value="api-keys" className="mt-0">
@@ -2536,7 +2593,25 @@ export default function Settings() {
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="space-y-2">
-            <Label htmlFor="steam-api-key" className="text-base">Steam Web API Key</Label>
+            <div className="flex items-center gap-2 flex-wrap">
+              <Label htmlFor="steam-api-key" className="text-base">Steam Web API Key</Label>
+              {/* Configured indicator — the API masks the value as "••••••••XXXX"
+                  when set, so the presence of the bullets is a reliable signal
+                  that a key is stored on the server. */}
+              {settings.steamApiKey && settings.steamApiKey.startsWith('•') ? (
+                <span className="inline-flex items-center gap-1 rounded border border-success/40 bg-success/10 px-1.5 py-0.5 text-[11px] font-medium text-success">
+                  <Check className="w-3 h-3" aria-hidden="true" /> Configured
+                </span>
+              ) : settings.steamApiKey ? (
+                <span className="inline-flex items-center gap-1 rounded border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-[11px] font-medium text-warning">
+                  <AlertTriangle className="w-3 h-3" aria-hidden="true" /> Pending save
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 rounded border border-muted-foreground/30 bg-muted/40 px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+                  Not configured
+                </span>
+              )}
+            </div>
             <div className="relative max-w-md">
               <Input
                 id="steam-api-key"
@@ -2559,7 +2634,7 @@ export default function Settings() {
             <p className="text-sm text-muted-foreground">
               Used for Steam Workshop mod information and server finder features.
             </p>
-            <div className="p-4 bg-muted rounded-lg text-sm mt-3">
+            <div className="p-4 bg-muted rounded-xl text-sm mt-3">
               <p className="font-medium mb-2">How to get a Steam API Key:</p>
               <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
                 <li>Go to <a href="https://steamcommunity.com/dev/apikey" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Steam API Key Registration <span className="sr-only">(opens in new tab)</span></a></li>
@@ -2602,7 +2677,7 @@ export default function Settings() {
         <CardContent className="space-y-6">
           {/* Status */}
           {backupStatus && (
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 bg-muted/50 rounded-lg">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 bg-muted/50 rounded-xl">
               <div className="flex items-center gap-2">
                 <HardDrive className="w-4 h-4 text-muted-foreground" />
                 <span className="text-sm">
@@ -2672,7 +2747,14 @@ export default function Settings() {
                     max={100}
                     value={backupMaxCount}
                     onChange={(e) => setBackupMaxCount(parseInt(e.target.value) || 10)}
+                    onBlur={(e) => {
+                      const v = parseInt(e.target.value)
+                      if (!Number.isFinite(v) || v < 1) setBackupMaxCount(1)
+                      else if (v > 100) setBackupMaxCount(100)
+                    }}
+                    onWheel={(e) => e.currentTarget.blur()}
                     className="max-w-24"
+                    inputMode="numeric"
                   />
                   <p className="text-xs text-muted-foreground">
                     The panel deletes the oldest backups when this limit is reached.
@@ -2843,7 +2925,26 @@ export default function Settings() {
           {authEnabled && (
             <div className="space-y-4">
               <p className="text-base font-medium">Change Password</p>
-              <div className="max-w-sm space-y-3">
+              <form
+                className="max-w-sm space-y-3"
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  if (changingPassword) return
+                  if (!currentPassword || !newPassword || !confirmPassword) return
+                  if (newPassword !== confirmPassword) return
+                  if (newPassword.length < 6) return
+                  handleChangePassword()
+                }}
+              >
+                {/* Hidden username helps password managers associate creds */}
+                <input
+                  type="text"
+                  name="username"
+                  value={user?.username || ''}
+                  autoComplete="username"
+                  readOnly
+                  hidden
+                />
                 <div className="relative">
                   <Input
                     type={showCurrentPassword ? 'text' : 'password'}
@@ -2852,6 +2953,8 @@ export default function Settings() {
                     placeholder="Current password"
                     className="h-11 pr-10"
                     maxLength={128}
+                    autoComplete="current-password"
+                    aria-label="Current password"
                   />
                   <button
                     type="button"
@@ -2870,6 +2973,8 @@ export default function Settings() {
                     placeholder="New password"
                     className="h-11 pr-10"
                     maxLength={128}
+                    autoComplete="new-password"
+                    aria-label="New password"
                   />
                   <button
                     type="button"
@@ -2887,6 +2992,8 @@ export default function Settings() {
                   placeholder="Confirm new password"
                   className="h-11"
                   maxLength={128}
+                  autoComplete="new-password"
+                  aria-label="Confirm new password"
                 />
                 {newPassword && confirmPassword && newPassword !== confirmPassword && (
                   <p className="text-xs text-destructive flex items-center gap-1" role="alert">
@@ -2899,14 +3006,14 @@ export default function Settings() {
                   </p>
                 )}
                 <Button
-                  onClick={handleChangePassword}
+                  type="submit"
                   disabled={changingPassword || !currentPassword || !newPassword || !confirmPassword || newPassword !== confirmPassword || newPassword.length < 6}
                   className="gap-2"
                 >
                   {changingPassword ? <Loader2 className="w-4 h-4 animate-spin" /> : <Key className="w-4 h-4" />}
                   {changingPassword ? 'Changing...' : 'Change Password'}
                 </Button>
-              </div>
+              </form>
             </div>
           )}
 
@@ -2940,19 +3047,104 @@ export default function Settings() {
             <Server className="w-4 h-4 text-primary" />
             About
           </CardTitle>
+          <CardDescription>Panel version, runtime info, and helpful links.</CardDescription>
         </CardHeader>
-        <CardContent>
-          <p className="mb-3 text-muted-foreground">
-            A web-based management panel for Project Zomboid dedicated servers.
+        <CardContent className="space-y-5">
+          {/* Version row */}
+          <div className="rounded-xl border border-border/60 bg-muted/30 p-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <p className="text-xs uppercase tracking-wider text-muted-foreground mb-1">Installed version</p>
+                <p className="text-lg font-semibold tabular-nums">
+                  v{panelUpdateStatus?.currentVersion || '—'}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wider text-muted-foreground mb-1">Latest available</p>
+                <p className="text-lg font-semibold tabular-nums flex items-center gap-2">
+                  {panelUpdateStatus?.latestVersion ? (
+                    <>v{panelUpdateStatus.latestVersion}
+                      {panelUpdateStatus.updateAvailable && (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-warning/50 bg-warning/10 px-2 py-0.5 text-[10px] font-medium text-warning">
+                          Update available
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    <span className="text-muted-foreground text-base font-normal">Not checked yet</span>
+                  )}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Description */}
+          <p className="text-sm text-muted-foreground">
+            A web-based management panel for Project Zomboid dedicated servers. Includes RCON,
+            player management, mod update detection, scheduled restarts, world backups, Discord
+            integration, and the PanelBridge Lua mod for in-world actions.
           </p>
-          <p className="text-muted-foreground">
-            Features include RCON integration, player management, mod update detection, 
-            scheduled restarts, and more.
-          </p>
-          <div className="mt-6 pt-4 border-t flex items-center gap-4">
-            <span className="text-sm text-muted-foreground">
-              Built with React, Node.js, and Socket.IO
-            </span>
+
+          {/* Support */}
+          <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+            <div className="flex items-center gap-3 flex-1 min-w-0">
+              <div className="w-9 h-9 rounded-full bg-primary/15 flex items-center justify-center shrink-0">
+                <Heart className="w-4 h-4 text-primary" aria-hidden="true" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-medium">Enjoying the panel?</p>
+                <p className="text-xs text-muted-foreground">
+                  Support development to keep updates and new features coming.
+                </p>
+              </div>
+            </div>
+            <a
+              href="https://ko-fi.com/fpsacha"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#FF5E5B] px-4 py-2 text-sm font-medium text-white hover:bg-[#FF4541] transition-colors shrink-0 shadow-sm"
+              aria-label="Buy me a coffee on Ko-fi"
+            >
+              <Coffee className="w-3.5 h-3.5" aria-hidden="true" />
+              Buy me a coffee
+            </a>
+          </div>
+
+          {/* Links */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <a
+              href="https://github.com/fpsacha/zomboid-control-panel"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center gap-2 rounded-lg border border-border/60 bg-background/50 px-3 py-2 text-sm hover:bg-muted/50 transition-colors"
+            >
+              <ExternalLink className="w-3.5 h-3.5 text-muted-foreground" />
+              GitHub repository
+            </a>
+            <a
+              href="https://github.com/fpsacha/zomboid-control-panel/releases"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center gap-2 rounded-lg border border-border/60 bg-background/50 px-3 py-2 text-sm hover:bg-muted/50 transition-colors"
+            >
+              <ExternalLink className="w-3.5 h-3.5 text-muted-foreground" />
+              Releases &amp; changelog
+            </a>
+            <a
+              href="https://github.com/fpsacha/zomboid-control-panel/issues"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center gap-2 rounded-lg border border-border/60 bg-background/50 px-3 py-2 text-sm hover:bg-muted/50 transition-colors"
+            >
+              <ExternalLink className="w-3.5 h-3.5 text-muted-foreground" />
+              Report an issue
+            </a>
+          </div>
+
+          <div className="pt-4 border-t border-border/40 text-xs text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1">
+            <span>Built with React, Node.js, and Socket.IO</span>
+            <span aria-hidden="true">·</span>
+            <span>MIT licensed</span>
           </div>
         </CardContent>
       </Card>
@@ -2963,3 +3155,516 @@ export default function Settings() {
     </div>
   )
 }
+
+/**
+ * Workshop Collection Sync card.
+ *
+ * Lets the admin keep a personal Steam Workshop collection mirrored against
+ * the panel's tracked-mod list. Reading the collection is free (public Steam
+ * API). Writing requires the user's `sessionid` + `steamLoginSecure` cookies
+ * because Steam exposes no public OAuth for collection edits — same hack
+ * used by every PZ collection-sync tool out there.
+ *
+ * The cookie pair is treated as a secret: it's masked in API responses
+ * (server-side `SENSITIVE_KEYS`) and kept off-screen by default behind a
+ * show/hide toggle here.
+ */
+function WorkshopCollectionSyncCard({
+  settings,
+  updateSetting,
+}: {
+  settings: AppSettings
+  updateSetting: (key: keyof AppSettings, value: AppSettings[keyof AppSettings]) => void
+}) {
+  const { toast } = useToast()
+  const [diff, setDiff] = useState<Awaited<ReturnType<typeof modsApi.collectionDiff>> | null>(null)
+  const [diffError, setDiffError] = useState<string | null>(null)
+  const [diffLoading, setDiffLoading] = useState(false)
+  const [diffCheckedAt, setDiffCheckedAt] = useState<Date | null>(null)
+  const [syncing, setSyncing] = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [showCookies, setShowCookies] = useState(false)
+
+  // Trust the server's credential check over a brittle bullet-prefix sniff:
+  // the diff endpoint reports `hasCredentials` based on the actual stored
+  // values (post-mask). Until the first diff loads, fall back to a heuristic
+  // so the UI doesn't flicker "Not configured" on page load.
+  const credsConfigured = (() => {
+    if (diff && typeof diff.hasCredentials === 'boolean') return diff.hasCredentials
+    const a = settings.steamSessionId || ''
+    const b = settings.steamLoginSecure || ''
+    return (a.startsWith('•') || a.length >= 8) && (b.startsWith('•') || b.length >= 16)
+  })()
+
+  const collectionId = (settings.workshopCollectionId || '').trim()
+  const collectionIdValid = /^\d{1,15}$/.test(collectionId)
+  const autoSyncOn = !!settings.workshopCollectionAutoSync
+
+  // ── Paste helper for Steam cookies ──────────────────────────────────────
+  // `steamLoginSecure` is HttpOnly, so a bookmarklet on steamcommunity.com
+  // cannot read it (Steam set it that way on purpose). The least-painful
+  // workaround is: user opens DevTools → Network → right-clicks any
+  // request to steamcommunity.com → "Copy as cURL", and pastes the whole
+  // blob here. We extract the two cookie values from the `Cookie:` header.
+  const [pasteOpen, setPasteOpen] = useState(false)
+  const [pasteText, setPasteText] = useState('')
+  const [pasteError, setPasteError] = useState<string | null>(null)
+
+  // navigator.clipboard.readText() requires a secure context. The panel
+  // commonly runs over plain HTTP on LAN, where the API is undefined.
+  // Detect once at mount so we can hide the button instead of showing a
+  // confusing failure when the user clicks it.
+  const clipboardReadAvailable = typeof navigator !== 'undefined'
+    && !!navigator.clipboard
+    && typeof navigator.clipboard.readText === 'function'
+    && (window.isSecureContext || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+
+  const safeDecode = (v: string): string => {
+    // decodeURIComponent throws on stray `%` (e.g. paste contained a
+    // mid-rotation cookie). Fall back to the raw value rather than
+    // crashing the parse.
+    try { return decodeURIComponent(v) } catch { return v }
+  }
+
+  const parseCookieBlob = (raw: string): { sessionId?: string; loginSecure?: string; error?: string } => {
+    if (!raw || !raw.trim()) return { error: 'Nothing to parse' }
+    const text = raw.replace(/\r/g, '')
+    // Accept any of: full cURL command, raw `Cookie:` header line,
+    // a `sessionid=...; steamLoginSecure=...` snippet, or DevTools
+    // "Copy → Response Cookies" tab-separated values.
+    const sessionMatch = text.match(/(?:^|[;\s'"])sessionid\s*[=:\t]\s*([A-Za-z0-9_%-]+)/i)
+    const loginMatch = text.match(/(?:^|[;\s'"])steamLoginSecure\s*[=:\t]\s*([A-Za-z0-9_%|+/=.-]+)/i)
+    if (!sessionMatch && !loginMatch) {
+      return { error: 'No sessionid or steamLoginSecure found in pasted text' }
+    }
+    const result: { sessionId?: string; loginSecure?: string } = {}
+    if (sessionMatch) result.sessionId = safeDecode(sessionMatch[1])
+    if (loginMatch) result.loginSecure = safeDecode(loginMatch[1])
+    return result
+  }
+
+  const handlePasteApply = () => {
+    setPasteError(null)
+    const parsed = parseCookieBlob(pasteText)
+    if (parsed.error) {
+      setPasteError(parsed.error)
+      return
+    }
+    if (!parsed.sessionId && !parsed.loginSecure) {
+      setPasteError('Nothing usable found')
+      return
+    }
+    if (parsed.sessionId) updateSetting('steamSessionId', parsed.sessionId)
+    if (parsed.loginSecure) updateSetting('steamLoginSecure', parsed.loginSecure)
+    const both = parsed.sessionId && parsed.loginSecure
+    toast({
+      title: both ? 'Cookies extracted' : 'Partial extraction',
+      description: both
+        ? "Found sessionid + steamLoginSecure. Don't forget to save settings."
+        : `Only ${parsed.sessionId ? 'sessionid' : 'steamLoginSecure'} found — paste a request that includes both, or fill the other field manually.`,
+      variant: both ? 'default' : 'destructive',
+    })
+    setPasteText('')
+    setPasteOpen(false)
+  }
+
+  const handlePasteFromClipboard = async () => {
+    setPasteError(null)
+    if (!clipboardReadAvailable) {
+      setPasteOpen(true)
+      setPasteError('Clipboard read needs HTTPS or localhost. Use manual paste below.')
+      return
+    }
+    try {
+      const text = await navigator.clipboard.readText()
+      if (!text) {
+        setPasteOpen(true)
+        setPasteError('Clipboard is empty')
+        return
+      }
+      const parsed = parseCookieBlob(text)
+      if (parsed.sessionId && parsed.loginSecure) {
+        updateSetting('steamSessionId', parsed.sessionId)
+        updateSetting('steamLoginSecure', parsed.loginSecure)
+        toast({ title: 'Cookies extracted from clipboard', description: "Don't forget to save settings." })
+        setPasteText('')
+        setPasteOpen(false)
+        return
+      }
+      // Partial / no match: surface the textarea so the user can see what
+      // was pasted and either fix it or grab the missing piece manually.
+      setPasteText(text)
+      setPasteOpen(true)
+      setPasteError(parsed.error || 'Couldn\u2019t find both cookies in the clipboard. Paste a request that includes them.')
+    } catch (err: any) {
+      setPasteOpen(true)
+      setPasteError(err?.message || 'Could not read clipboard. Paste manually instead.')
+    }
+  }
+
+  const refreshDiffSeqRef = useRef(0)
+  const refreshDiff = useCallback(async () => {
+    if (!collectionIdValid) return
+    const seq = ++refreshDiffSeqRef.current
+    setDiffLoading(true)
+    setDiffError(null)
+    try {
+      const r = await modsApi.collectionDiff()
+      // A newer call started after us — drop this stale result.
+      if (seq !== refreshDiffSeqRef.current) return
+      setDiff(r)
+      setDiffCheckedAt(new Date())
+      if (!r.ok && r.error) setDiffError(r.error)
+    } catch (err: any) {
+      if (seq !== refreshDiffSeqRef.current) return
+      setDiffError(err?.message || 'Failed to read collection')
+    } finally {
+      if (seq === refreshDiffSeqRef.current) setDiffLoading(false)
+    }
+  }, [collectionIdValid])
+
+  // Auto-load the diff once when the card mounts with a valid collection ID.
+  // Cheap public API, gives the user immediate context without clicking.
+  useEffect(() => {
+    if (collectionIdValid && !diff && !diffLoading && !diffError) {
+      refreshDiff()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [collectionIdValid])
+
+  const handleSync = async () => {
+    if (syncing) return
+    setSyncing(true)
+    try {
+      const r = await modsApi.collectionSync()
+      if (r.success) {
+        toast({ title: 'Collection synced', description: r.message })
+      } else {
+        toast({ variant: 'destructive', title: 'Partial sync', description: r.message })
+      }
+      await refreshDiff()
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Sync failed', description: err?.message || 'Unknown error' })
+    } finally {
+      setSyncing(false)
+    }
+  }
+
+  const handleTest = async () => {
+    if (testing) return
+    setTesting(true)
+    try {
+      const r = await modsApi.collectionTest()
+      toast({ title: 'Connection OK', description: r.message })
+      await refreshDiff()
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Test failed', description: err?.message || 'Could not reach collection' })
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  const inSync = diff && diff.ok && diff.toAdd.length === 0 && diff.toRemove.length === 0
+  const driftCount = diff && diff.ok ? diff.toAdd.length + diff.toRemove.length : 0
+
+  return (
+    <Card id="settings-workshop-collection">
+      <CardHeader className="pb-4">
+        <CardTitle className="flex items-center gap-2">
+          <RefreshCw className="w-4 h-4 text-primary" />
+          Workshop Collection Sync
+        </CardTitle>
+        <CardDescription>
+          Mirror your tracked-mod list into a Steam Workshop collection so add/remove only happens in one place.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {/* Collection ID */}
+        <div className="space-y-2">
+          <Label htmlFor="ws-collection-id" className="text-base">Collection ID</Label>
+          <Input
+            id="ws-collection-id"
+            value={settings.workshopCollectionId}
+            onChange={(e) => updateSetting('workshopCollectionId', e.target.value.trim())}
+            placeholder="e.g. 3123456789"
+            className="h-11 max-w-md font-mono"
+            maxLength={20}
+          />
+          <p className="text-sm text-muted-foreground">
+            Open your collection on Steam and copy the numeric ID from the URL (the digits after <code>?id=</code>).
+            You must own the collection.
+          </p>
+        </div>
+
+        {/* Auto-sync toggle */}
+        <div
+          className={`flex items-start justify-between gap-4 rounded-lg border p-4 transition-colors ${
+            autoSyncOn && !credsConfigured ? 'border-warning/40 bg-warning/5' : ''
+          }`}
+        >
+          <div className="space-y-1">
+            <Label className="text-base">Auto-sync on add / remove</Label>
+            <p className="text-sm text-muted-foreground">
+              When you track or untrack a mod, the panel updates the collection in the background. Failures are logged but don't block your action.
+            </p>
+            {autoSyncOn && !credsConfigured && (
+              <p className="text-xs text-warning flex items-center gap-1 pt-1">
+                <AlertTriangle className="w-3 h-3" />
+                Auto-sync needs Steam session cookies below to actually push changes.
+              </p>
+            )}
+            {autoSyncOn && !collectionIdValid && (
+              <p className="text-xs text-warning flex items-center gap-1 pt-1">
+                <AlertTriangle className="w-3 h-3" />
+                Set a Collection ID first — nothing to sync to yet.
+              </p>
+            )}
+          </div>
+          <Switch
+            checked={autoSyncOn}
+            onCheckedChange={(v) => updateSetting('workshopCollectionAutoSync', v)}
+          />
+        </div>
+
+        {/* Steam session cookies */}
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Label className="text-base">Steam Session Cookies</Label>
+            {credsConfigured ? (
+              <span className="inline-flex items-center gap-1 rounded border border-success/40 bg-success/10 px-1.5 py-0.5 text-[11px] font-medium text-success">
+                <Check className="w-3 h-3" /> Configured
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 rounded border border-muted-foreground/30 bg-muted/40 px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+                Not configured
+              </span>
+            )}
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Required to <strong>write</strong> to the collection. Reading is free without these.
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2 max-w-3xl">
+            <div className="space-y-1">
+              <Label htmlFor="ws-sessionid" className="text-xs text-muted-foreground">sessionid</Label>
+              <Input
+                id="ws-sessionid"
+                type={showCookies ? 'text' : 'password'}
+                value={settings.steamSessionId}
+                onChange={(e) => updateSetting('steamSessionId', e.target.value.trim())}
+                placeholder="24-char hex from cookie"
+                className="h-10 font-mono"
+                maxLength={64}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="ws-loginsecure" className="text-xs text-muted-foreground">steamLoginSecure</Label>
+              <Input
+                id="ws-loginsecure"
+                type={showCookies ? 'text' : 'password'}
+                value={settings.steamLoginSecure}
+                onChange={(e) => updateSetting('steamLoginSecure', e.target.value.trim())}
+                placeholder="long token from cookie"
+                className="h-10 font-mono"
+                maxLength={512}
+              />
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowCookies((v) => !v)}
+            className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
+          >
+            {showCookies ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+            {showCookies ? 'Hide cookies' : 'Show cookies'}
+          </button>
+
+          {/* Paste helper — much faster than copying two cookies by hand */}
+          <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 mt-3 space-y-3">
+            <div className="flex items-start gap-3">
+              <Zap className="w-4 h-4 text-primary mt-0.5 shrink-0" />
+              <div className="flex-1 space-y-1">
+                <p className="font-medium text-sm">Quick setup: paste a Steam request</p>
+                <p className="text-xs text-muted-foreground">
+                  Steam marks <code>steamLoginSecure</code> as HttpOnly, so the cookies tab works
+                  but a one-click button can't read it. Easiest path: copy any logged-in
+                  Steam request and let us extract the cookies.
+                </p>
+              </div>
+            </div>
+
+            {!pasteOpen ? (
+              <div className="flex flex-wrap gap-2">
+                {clipboardReadAvailable && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="default"
+                    onClick={handlePasteFromClipboard}
+                  >
+                    <Cloud className="w-3.5 h-3.5 mr-1.5" />
+                    Paste from clipboard
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={clipboardReadAvailable ? 'outline' : 'default'}
+                  onClick={() => { setPasteOpen(true); setPasteError(null) }}
+                >
+                  {clipboardReadAvailable ? 'Paste manually…' : 'Paste cookies…'}
+                </Button>
+                <a
+                  href="https://steamcommunity.com/my/myworkshopfiles/?section=collections"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-xs text-primary hover:underline self-center"
+                >
+                  Open Steam collections <ExternalLink className="w-3 h-3" />
+                </a>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Textarea
+                  value={pasteText}
+                  onChange={(e) => { setPasteText(e.target.value); setPasteError(null) }}
+                  placeholder='Paste a "Copy as cURL" command, a Cookie header, or "sessionid=...; steamLoginSecure=..."'
+                  rows={4}
+                  className="font-mono text-xs"
+                />
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" size="sm" onClick={handlePasteApply} disabled={!pasteText.trim()}>
+                    <Check className="w-3.5 h-3.5 mr-1.5" />
+                    Extract cookies
+                  </Button>
+                  <Button type="button" size="sm" variant="ghost" onClick={() => { setPasteOpen(false); setPasteText(''); setPasteError(null) }}>
+                    Cancel
+                  </Button>
+                </div>
+                {pasteError && (
+                  <p className="text-xs text-destructive flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3" /> {pasteError}
+                  </p>
+                )}
+              </div>
+            )}
+
+            <details className="text-xs">
+              <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+                How to get a Steam request to copy
+              </summary>
+              <ol className="list-decimal list-inside mt-2 space-y-1 text-muted-foreground pl-1">
+                <li>Open <a href="https://steamcommunity.com/" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">steamcommunity.com</a> in your browser, logged in.</li>
+                <li>Press <kbd className="px-1 py-0.5 rounded border bg-muted text-[10px]">F12</kbd> → <strong>Network</strong> tab.</li>
+                <li>Reload the page so requests show up.</li>
+                <li>Right-click <em>any</em> request → <strong>Copy</strong> → <strong>Copy as cURL</strong>.</li>
+                <li>Come back here and click <strong>Paste from clipboard</strong>.</li>
+              </ol>
+              <p className="mt-2 text-muted-foreground">
+                Or, if you prefer the manual route: F12 → <strong>Application</strong> → <strong>Cookies</strong> →
+                <code className="mx-1">https://steamcommunity.com</code>, copy <code>sessionid</code> and <code>steamLoginSecure</code>
+                into the fields above directly.
+              </p>
+            </details>
+
+            <p className="text-[11px] text-warning/90 flex items-start gap-1 pt-1 border-t border-border/30">
+              <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
+              <span>
+                These cookies grant Steam login access — treat them like a password. Steam rotates the token every few weeks, so you'll need to re-paste when sync starts failing.
+              </span>
+            </p>
+          </div>
+        </div>
+
+        {/* Status / actions */}
+        <div className="space-y-2 pt-2 border-t border-border/40">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleTest}
+              disabled={!collectionIdValid || !credsConfigured || testing}
+              title={!credsConfigured ? 'Add Steam session cookies first' : 'Verify the collection is readable with these cookies'}
+            >
+              {testing ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />}
+              Test connection
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={refreshDiff}
+              disabled={!collectionIdValid || diffLoading}
+            >
+              {diffLoading ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5 mr-1.5" />}
+              Check drift
+            </Button>
+            <Button
+              variant={driftCount > 0 ? 'default' : 'outline'}
+              size="sm"
+              onClick={handleSync}
+              disabled={!collectionIdValid || !credsConfigured || syncing || !diff?.ok || driftCount === 0}
+              title={!credsConfigured ? 'Add Steam session cookies to write to the collection' : `Push ${driftCount} change${driftCount === 1 ? '' : 's'} to Steam`}
+            >
+              {syncing ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Cloud className="w-3.5 h-3.5 mr-1.5" />}
+              Sync now {driftCount > 0 && `(${driftCount})`}
+            </Button>
+
+            <div className="ml-auto text-xs text-muted-foreground">
+              {diffError ? (
+                <span className="text-destructive flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> {diffError}</span>
+              ) : !collectionIdValid ? (
+                <span>Enter a Collection ID to begin.</span>
+              ) : !diff ? (
+                <span>{diffLoading ? 'Reading collection…' : 'Click "Check drift" to compare.'}</span>
+              ) : !diff.ok ? (
+                <span>Could not read collection.</span>
+              ) : inSync ? (
+                <span className="text-success flex items-center gap-1"><Check className="w-3 h-3" /> In sync — {diff.inCollection.length} item{diff.inCollection.length === 1 ? '' : 's'}</span>
+              ) : (
+                <span className="text-warning flex items-center gap-1">
+                  <AlertTriangle className="w-3 h-3" />
+                  {diff.toAdd.length} to add, {diff.toRemove.length} to remove
+                </span>
+              )}
+            </div>
+          </div>
+          {diffCheckedAt && (
+            <p className="text-[11px] text-muted-foreground/70">
+              Last checked {diffCheckedAt.toLocaleTimeString()}
+              {diff?.title && <> · <a href={`https://steamcommunity.com/sharedfiles/filedetails/?id=${collectionId}`} target="_blank" rel="noreferrer" className="hover:text-foreground underline-offset-2 hover:underline">{diff.title}</a></>}
+              {' · '}<span>{diff?.trackedCount ?? 0} tracked locally</span>
+            </p>
+          )}
+        </div>
+
+        {/* Drift detail */}
+        {diff?.ok && (diff.toAdd.length > 0 || diff.toRemove.length > 0) && (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {diff.toAdd.length > 0 && (
+              <div className="rounded-md border border-success/30 bg-success/5 p-3">
+                <p className="text-xs font-medium text-success mb-1.5">+ Add to collection ({diff.toAdd.length})</p>
+                <div className="flex flex-wrap gap-1 text-[11px] font-mono">
+                  {diff.toAdd.slice(0, 30).map(id => (
+                    <a key={id} href={`https://steamcommunity.com/sharedfiles/filedetails/?id=${id}`} target="_blank" rel="noreferrer" className="text-success/80 hover:text-success underline-offset-2 hover:underline">{id}</a>
+                  ))}
+                  {diff.toAdd.length > 30 && <span className="text-muted-foreground">+{diff.toAdd.length - 30} more…</span>}
+                </div>
+              </div>
+            )}
+            {diff.toRemove.length > 0 && (
+              <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3">
+                <p className="text-xs font-medium text-destructive mb-1.5">− Remove from collection ({diff.toRemove.length})</p>
+                <div className="flex flex-wrap gap-1 text-[11px] font-mono">
+                  {diff.toRemove.slice(0, 30).map(id => (
+                    <a key={id} href={`https://steamcommunity.com/sharedfiles/filedetails/?id=${id}`} target="_blank" rel="noreferrer" className="text-destructive/80 hover:text-destructive underline-offset-2 hover:underline">{id}</a>
+                  ))}
+                  {diff.toRemove.length > 30 && <span className="text-muted-foreground">+{diff.toRemove.length - 30} more…</span>}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+

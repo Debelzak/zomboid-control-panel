@@ -1,6 +1,5 @@
 import { useEffect, useState, useRef, useCallback, useMemo, memo } from 'react'
-import { Terminal as TerminalIcon, Send, Trash2, WifiOff, Loader2, Megaphone, MessageCircle, FileText, RefreshCw, Pause, Play, Filter } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Terminal as TerminalIcon, Send, Trash2, WifiOff, Loader2, Megaphone, FileText, RefreshCw, Pause, Play, Filter, ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -52,10 +51,18 @@ function parseLogLine(line: string): ParsedLogLine {
   // Match: LOG/WARN/ERROR : Category  f:xxx...> Message
   const match = trimmed.match(/^(LOG|WARN|ERROR|DEBUG|INFO)\s*:\s*(\w+).*?>\s*(.+)$/i)
   if (match) {
+    let type = match[1].toUpperCase() as ParsedLogLine['type']
+    const message = match[3]
+    // Promote LOG → ERROR when the message body is a Java exception or stack trace.
+    // PZ logs every exception as `LOG : General ... > java.lang.NullPointerException ...`
+    // which makes them invisible against routine LOG spam.
+    if (type === 'LOG' && /^(java\.|kotlin\.|zombie\.|com\.|org\.|at\s+\S+\.|Exception in thread|Caused by:|\S+(Exception|Error)(:|\s|$))/i.test(message)) {
+      type = 'ERROR'
+    }
     return {
-      type: match[1].toUpperCase() as ParsedLogLine['type'],
+      type,
       category: match[2],
-      message: match[3],
+      message,
       raw: line
     }
   }
@@ -69,6 +76,10 @@ function parseLogLine(line: string): ParsedLogLine {
   }
   if (trimmed.startsWith('LOG')) {
     return { type: 'LOG', category: '', message: trimmed.replace(/^LOG\s*:?\s*/i, ''), raw: line }
+  }
+  // Bare Java stack-trace continuation lines ("\tat zombie.network...", "Caused by: ...")
+  if (/^(\s*at\s+\S+|Caused by:|\.{3}\s+\d+ more|Exception in thread)/.test(trimmed)) {
+    return { type: 'ERROR', category: '', message: trimmed, raw: line }
   }
   
   return { type: 'UNKNOWN', category: '', message: trimmed, raw: line }
@@ -94,13 +105,14 @@ const typeBadgeColors: Record<string, string> = {
   'UNKNOWN': 'border border-border/50 bg-muted/25 text-muted-foreground'
 }
 
-// Chat channels available in PZ
+// Channel tag prefixes for server broadcasts. "all" = no prefix.
+// All options become `servermsg` since RCON cannot route to real chat channels.
 const chatChannels = [
-  { value: 'say', label: 'Local (Say)', description: 'Nearby players only' },
-  { value: 'all', label: 'General', description: 'All players' },
-  { value: 'admin', label: 'Admin', description: 'Admin chat' },
-  { value: 'faction', label: 'Faction', description: 'Faction members' },
-  { value: 'safehouse', label: 'Safehouse', description: 'Safehouse members' },
+  { value: 'all',       label: 'All players',     description: 'No tag — plain broadcast' },
+  { value: 'admin',     label: '[ADMIN] tag',      description: 'Marks the message as admin' },
+  { value: 'say',       label: '[SAY] tag',        description: 'Cosmetic local-chat label' },
+  { value: 'faction',   label: '[FACTION] tag',    description: 'Cosmetic faction label' },
+  { value: 'safehouse', label: '[SAFEHOUSE] tag',  description: 'Cosmetic safehouse label' },
 ]
 
 // Memoized log line to avoid re-rendering unchanged lines
@@ -168,11 +180,13 @@ export default function Console() {
   const [rconConnected, setRconConnected] = useState<boolean | null>(null)
   const [testingConnection, setTestingConnection] = useState(false)
   const [announcement, setAnnouncement] = useState('')
-  const [channelMessage, setChannelMessage] = useState('')
-  const [selectedChannel, setSelectedChannel] = useState('say')
+  const [selectedChannel, setSelectedChannel] = useState('all')
   const [sendingAnnouncement, setSendingAnnouncement] = useState(false)
-  const [sendingChannelMessage, setSendingChannelMessage] = useState(false)
   const [historySearch, setHistorySearch] = useState('')
+  const [showBroadcast, setShowBroadcast] = useState(false)
+  const [showHistory, setShowHistory] = useState(false)
+  const [commandDraft, setCommandDraft] = useState('') // saves in-progress text while browsing history
+  const liveLogIdRef = useRef(0) // monotonic counter for stable liveLog keys
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
@@ -349,7 +363,8 @@ export default function Console() {
   useEffect(() => {
     if (socket) {
       const handleRconResponse = (data: RconResponse) => {
-        setLiveLog(prev => [...prev, data].slice(-100))
+        const entry = { ...data, _id: ++liveLogIdRef.current } as RconResponse & { _id: number }
+        setLiveLog(prev => [...prev, entry].slice(-100))
         // If we get a response, RCON is connected
         setRconConnected(true)
       }
@@ -390,8 +405,9 @@ export default function Console() {
           command,
           response: result.response || result.error || 'No response',
           success: result.success,
-          timestamp: new Date().toISOString()
-        }].slice(-100))
+          timestamp: new Date().toISOString(),
+          _id: ++liveLogIdRef.current,
+        } as RconResponse & { _id: number }].slice(-100))
       }
 
       // Add to command cache (limit to 100 entries)
@@ -421,8 +437,10 @@ export default function Console() {
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
       if (commandCache.length > 0) {
-        const newIndex = commandHistoryIndex < commandCache.length - 1 
-          ? commandHistoryIndex + 1 
+        // Stash the user's in-progress text the first time they leave the live input.
+        if (commandHistoryIndex === -1) setCommandDraft(command)
+        const newIndex = commandHistoryIndex < commandCache.length - 1
+          ? commandHistoryIndex + 1
           : commandHistoryIndex
         setCommandHistoryIndex(newIndex)
         setCommand(commandCache[commandCache.length - 1 - newIndex] || '')
@@ -434,8 +452,10 @@ export default function Console() {
         setCommandHistoryIndex(newIndex)
         setCommand(commandCache[commandCache.length - 1 - newIndex] || '')
       } else if (commandHistoryIndex === 0) {
+        // Restore the draft they had typed before browsing history.
         setCommandHistoryIndex(-1)
-        setCommand('')
+        setCommand(commandDraft)
+        setCommandDraft('')
       }
     }
   }
@@ -448,79 +468,44 @@ export default function Console() {
 
   const sendAnnouncement = async () => {
     if (!announcement.trim()) return
-    
+
     setSendingAnnouncement(true)
     try {
-      const result = await rconApi.execute(`servermsg "${announcement.replace(/"/g, '\\"')}"`)
-      
+      const cleaned = announcement.replace(/"/g, '\\"')
+      const cmd = selectedChannel === 'all'
+        ? `servermsg "${cleaned}"`
+        : `servermsg "[${selectedChannel.toUpperCase()}] ${cleaned}"`
+      const result = await rconApi.execute(cmd)
+
       setLiveLog(prev => [...prev, {
-        command: `servermsg "${announcement}"`,
-        response: result.response || result.error || 'Announcement sent',
+        command: cmd,
+        response: result.response || result.error || 'Broadcast sent',
         success: result.success,
-        timestamp: new Date().toISOString()
-      }].slice(-100))
-      
+        timestamp: new Date().toISOString(),
+        _id: ++liveLogIdRef.current,
+      } as RconResponse & { _id: number }].slice(-100))
+
       if (result.success) {
         toast({
-          title: 'Announcement Sent',
-          description: 'Your message was broadcast to all players',
+          title: 'Broadcast Sent',
+          description: selectedChannel === 'all'
+            ? 'Your message was broadcast to all players'
+            : `Sent with the [${selectedChannel.toUpperCase()}] tag`,
           variant: 'success' as const,
         })
         setAnnouncement('')
         setRconConnected(true)
       } else {
-        throw new Error(result.error || 'Failed to send announcement')
+        throw new Error(result.error || 'Failed to send broadcast')
       }
     } catch (error) {
       toast({
         title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to send announcement',
+        description: error instanceof Error ? error.message : 'Failed to send broadcast',
         variant: 'destructive',
       })
     } finally {
       setSendingAnnouncement(false)
-    }
-  }
-
-  const sendChannelMessage = async () => {
-    if (!channelMessage.trim()) return
-    
-    setSendingChannelMessage(true)
-    try {
-      // Use the appropriate command based on channel
-      // PZ uses: additem/say commands or direct chat commands
-      const chatCommand = selectedChannel === 'all' 
-        ? `servermsg "${channelMessage.replace(/"/g, '\\"')}"` 
-        : `servermsg "[${selectedChannel.toUpperCase()}] ${channelMessage.replace(/"/g, '\\"')}"`
-      
-      const result = await rconApi.execute(chatCommand)
-      
-      setLiveLog(prev => [...prev, {
-        command: chatCommand,
-        response: result.response || result.error || 'Message sent',
-        success: result.success,
-        timestamp: new Date().toISOString()
-      }].slice(-100))
-      
-      if (result.success) {
-        toast({
-          title: 'Message Sent',
-          description: `Message sent to ${chatChannels.find(c => c.value === selectedChannel)?.label || selectedChannel}`,
-          variant: 'success' as const,
-        })
-        setChannelMessage('')
-        setRconConnected(true)
-      } else {
-        throw new Error(result.error || 'Failed to send message')
-      }
-    } catch (error) {
-      toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to send message',
-        variant: 'destructive',
-      })
-    } finally {
-      setSendingChannelMessage(false)
     }
   }
 
@@ -620,7 +605,7 @@ export default function Console() {
 
           {/* Terminal pane */}
           {!serverLogExists ? (
-            <div className="flex h-[24rem] min-h-[300px] sm:h-[28rem] lg:h-[34rem] items-center justify-center rounded-lg border border-border/50 bg-muted/20 p-4">
+            <div className="flex h-[calc(100vh-340px)] min-h-[300px] items-center justify-center rounded-lg border border-border/50 bg-muted/20 p-4">
               <EmptyState type="serverOffline" title="Server console log not found" description="Make sure the server is running" compact />
             </div>
           ) : (
@@ -629,10 +614,25 @@ export default function Console() {
               role="log"
               aria-live="polite"
               aria-label="Server console output"
-              className="h-[24rem] min-h-[300px] sm:h-[28rem] lg:h-[34rem] overflow-auto rounded-lg border border-border/30 bg-black/40 p-3 font-mono text-xs terminal-output"
+              className="h-[calc(100vh-340px)] min-h-[300px] overflow-auto rounded-lg border border-border/30 bg-black/40 p-3 font-mono text-xs terminal-output"
             >
               {filteredLogLines.length === 0 ? (
-                <p className="text-muted-foreground p-2">{serverLogFiltered && serverLogLines.length > 0 ? 'All messages filtered out. Try disabling the filter.' : 'Console log is empty.'}</p>
+                <div className="p-2 text-muted-foreground">
+                  {serverLogFiltered && serverLogLines.length > 0 ? (
+                    <span>
+                      All {serverLogLines.length} lines were hidden by the filter.{' '}
+                      <button
+                        type="button"
+                        className="underline underline-offset-2 hover:text-primary"
+                        onClick={() => setServerLogFiltered(false)}
+                      >
+                        Show all messages
+                      </button>
+                    </span>
+                  ) : (
+                    'Console log is empty.'
+                  )}
+                </div>
               ) : (
                 filteredLogLines.map((line, index) => (
                   <ServerLogLine key={index} line={line} />
@@ -665,9 +665,9 @@ export default function Console() {
             ) : (
               <StatusIndicator state="offline" label="RCON disconnected" />
             )}
-            <Button 
-              variant="ghost" 
-              size="sm" 
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={testRconConnection}
               disabled={testingConnection}
             >
@@ -675,295 +675,270 @@ export default function Console() {
             </Button>
           </div>
 
-      {/* RCON Disconnected Warning */}
-      {rconConnected === false && (
-        <div className="flex items-center gap-3 rounded-lg border border-destructive/25 bg-destructive/8 p-4">
-          <WifiOff className="w-5 h-5 shrink-0 text-destructive" />
+          {/* RCON Disconnected Warning */}
+          {rconConnected === false && (
+            <div className="flex items-center gap-3 rounded-lg border border-destructive/25 bg-destructive/8 p-4">
+              <WifiOff className="w-5 h-5 shrink-0 text-destructive" />
+              <div>
+                <p className="font-medium text-destructive">RCON Not Connected</p>
+                <p className="text-sm text-muted-foreground">
+                  Start the server, then confirm the RCON host, port, and password in Panel Settings.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Console Output (primary surface) */}
           <div>
-            <p className="font-medium text-destructive">RCON Not Connected</p>
-            <p className="text-sm text-muted-foreground">
-              Start the server, then confirm the RCON host, port, and password in Panel Settings.
-            </p>
-          </div>
-        </div>
-      )}
+            <div className="flex items-center justify-between pb-2">
+              <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                <TerminalIcon className="w-4 h-4" />
+                Console Output
+              </div>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="sm" onClick={clearLog} disabled={liveLog.length === 0}>
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Clear
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Clear the visible output (does not delete history)</TooltipContent>
+              </Tooltip>
+            </div>
+            <div
+              ref={scrollRef}
+              role="log"
+              aria-live="polite"
+              aria-label="RCON command output"
+              className="h-[18rem] min-h-[220px] sm:h-[22rem] lg:h-[26rem] overflow-auto rounded-lg border border-border/30 bg-black/40 p-3 terminal-output"
+            >
+              {liveLog.length === 0 ? (
+                <EmptyState compact type="noMessages" title="No commands yet" description="Run an RCON command to see the response here." />
+              ) : (
+                liveLog.map((entry, idx) => (
+                  <div key={(entry as RconResponse & { _id?: number })._id ?? `${entry.timestamp}-${idx}`} className="mb-3 font-mono text-sm">
+                    <div className="flex items-center gap-2">
+                      <span className="text-primary">{'>'}</span>
+                      <span className="text-foreground/90">{entry.command}</span>
+                      <span className="text-muted-foreground text-xs ml-auto">
+                        {new Date(entry.timestamp).toLocaleTimeString()}
+                      </span>
+                    </div>
+                    <div className={cn('ml-4 text-xs', entry.success ? 'text-foreground/85' : 'text-destructive')}>
+                      {entry.response.split('\n').map((line, i) => (
+                        <div key={`line-${i}`}>{line || '\u00A0'}</div>
+                      ))}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
 
-      {/* Quick Commands */}
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs text-muted-foreground font-medium">Quick:</span>
-        {quickCommands.map((qc) => (
-          <Button
-            key={qc.command}
-            variant="outline"
-            size="sm"
-            className="h-7 text-xs"
-            onClick={() => {
-              setCommand(qc.command)
-              inputRef.current?.focus()
-            }}
-          >
-            {qc.label}
-          </Button>
-        ))}
-      </div>
-
-      {/* Messaging Section */}
-      <div className="grid gap-4 sm:gap-6 grid-cols-1 lg:grid-cols-2">
-        {/* Server Announcement */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2">
-              <Megaphone className="w-5 h-5" />
-              Server Announcement
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <p className="text-sm text-muted-foreground">
-              Send one message to everyone currently online.
-            </p>
-            
-            {/* Quick Broadcast Templates */}
-            <div className="flex flex-wrap gap-1.5">
-              {quickBroadcasts.map((qb) => (
+            {/* Quick Commands (close to the input where they'll be used) */}
+            <div className="flex flex-wrap items-center gap-1.5 mt-3">
+              <span className="text-xs text-muted-foreground font-medium mr-1">Quick:</span>
+              {quickCommands.map((qc) => (
                 <Button
-                  key={qb.label}
+                  key={qc.command}
                   variant="outline"
                   size="sm"
-                  className="text-xs h-7"
-                  onClick={() => setAnnouncement(qb.message)}
+                  className="h-7 text-xs"
+                  onClick={() => {
+                    setCommand(qc.command)
+                    inputRef.current?.focus()
+                  }}
                   disabled={rconConnected === false}
                 >
-                  {qb.label}
+                  {qc.label}
                 </Button>
               ))}
             </div>
-            
-            <Textarea
-              value={announcement}
-              onChange={(e) => setAnnouncement(e.target.value)}
-              placeholder="Write the announcement players should see..."
-              aria-label="Server announcement message"
-              className="min-h-[80px]"
-              maxLength={500}
-              disabled={sendingAnnouncement || rconConnected === false}
-            />
-            <Button 
-              onClick={sendAnnouncement} 
-              disabled={sendingAnnouncement || !announcement.trim() || rconConnected === false}
-              className="w-full"
-            >
-              {sendingAnnouncement ? (
-                <Loader2 className="w-4 h-4 animate-spin mr-2" />
-              ) : (
-                <Megaphone className="w-4 h-4 mr-2" />
-              )}
-              Send Announcement
-            </Button>
-          </CardContent>
-        </Card>
 
-        {/* Channel Message */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2">
-              <MessageCircle className="w-5 h-5" />
-              Channel Message
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <p className="text-sm text-muted-foreground">
-              Send one message to a specific chat channel through RCON.
-            </p>
-            <Select value={selectedChannel} onValueChange={setSelectedChannel}>
-              <SelectTrigger>
-                <SelectValue placeholder="Choose a channel" />
-              </SelectTrigger>
-              <SelectContent>
-                {chatChannels.map((channel) => (
-                  <SelectItem key={channel.value} value={channel.value}>
-                    <div className="flex flex-col">
-                      <span>{channel.label}</span>
-                      <span className="text-xs text-muted-foreground">{channel.description}</span>
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Input
-              value={channelMessage}
-              onChange={(e) => setChannelMessage(e.target.value)}
-              placeholder="Write the message for this channel..."
-              aria-label="Channel message"
-              disabled={sendingChannelMessage || rconConnected === false}
-              onKeyDown={(e: React.KeyboardEvent) => e.key === 'Enter' && sendChannelMessage()}
-            />
-            <Button 
-              onClick={sendChannelMessage} 
-              disabled={sendingChannelMessage || !channelMessage.trim() || rconConnected === false}
-              className="w-full"
-            >
-              {sendingChannelMessage ? (
-                <Loader2 className="w-4 h-4 animate-spin mr-2" />
-              ) : (
-                <Send className="w-4 h-4 mr-2" />
-              )}
-              Send to {chatChannels.find(c => c.value === selectedChannel)?.label || 'Channel'}
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Console */}
-      <div>
-        <div className="flex items-center justify-between pb-2">
-          <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-            <TerminalIcon className="w-4 h-4" />
-            Console Output
-          </div>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="destructive" size="sm" onClick={clearLog}>
-                <Trash2 className="w-4 h-4 mr-2" />
-                Clear
+            {/* Command Input */}
+            <div className="flex gap-2 mt-2">
+              <div className="flex-1 relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-primary" aria-hidden="true">{'>'}</span>
+                <Input
+                  ref={inputRef}
+                  value={command}
+                  onChange={(e) => setCommand(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Type an RCON command..."
+                  className="pl-8 font-mono"
+                  disabled={loading}
+                  maxLength={2000}
+                  aria-label="RCON command input"
+                />
+              </div>
+              <Button
+                onClick={executeCommand}
+                disabled={loading || !command.trim()}
+                aria-label="Execute command"
+              >
+                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
               </Button>
-            </TooltipTrigger>
-            <TooltipContent>Clear the command history display</TooltipContent>
-          </Tooltip>
-        </div>
-        <div 
-          ref={scrollRef}
-          role="log"
-          aria-live="polite"
-          aria-label="RCON command output"
-          className="h-[16rem] min-h-[200px] sm:h-[20rem] lg:h-[24rem] overflow-auto rounded-lg border border-border/30 bg-black/40 p-3 terminal-output"
-        >
-          {liveLog.length === 0 ? (
-            <EmptyState compact type="noMessages" title="No commands yet" description="Run an RCON command to see the response here." />
-          ) : (
-            liveLog.map((entry) => (
-              <div key={`${entry.timestamp}-${entry.command}`} className="mb-3 font-mono text-sm">
-                <div className="flex items-center gap-2">
-                  <span className="text-primary">{'>'}</span>
-                  <span className="text-foreground/90">{entry.command}</span>
-                  <span className="text-muted-foreground text-xs ml-auto">
-                    {new Date(entry.timestamp).toLocaleTimeString()}
-                  </span>
-                </div>
-                <div className={cn('ml-4 text-xs', entry.success ? 'text-foreground/85' : 'text-destructive')}>
-                  {entry.response.split('\n').map((line, i) => (
-                    <div key={`line-${i}`}>{line || '\u00A0'}</div>
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">
+              Press Enter to run. Use ↑ and ↓ to reuse earlier commands.
+            </p>
+          </div>
+
+          {/* Broadcast (collapsible) */}
+          <div className="rounded-lg border border-border/40">
+            <button
+              type="button"
+              onClick={() => setShowBroadcast(v => !v)}
+              aria-expanded={showBroadcast}
+              className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium hover:bg-muted/30 rounded-lg transition-colors"
+            >
+              <span className="flex items-center gap-2">
+                <Megaphone className="w-4 h-4" />
+                Broadcast Message
+                <span className="text-xs text-muted-foreground font-normal ml-1">
+                  Send a message to everyone online
+                </span>
+              </span>
+              <ChevronDown className={cn('w-4 h-4 transition-transform', showBroadcast && 'rotate-180')} />
+            </button>
+            {showBroadcast && (
+              <div className="border-t border-border/40 p-4 space-y-3">
+                {/* Quick templates */}
+                <div className="flex flex-wrap gap-1.5">
+                  {quickBroadcasts.map((qb) => (
+                    <Button
+                      key={qb.label}
+                      variant="outline"
+                      size="sm"
+                      className="text-xs h-7"
+                      onClick={() => setAnnouncement(qb.message)}
+                      disabled={rconConnected === false}
+                    >
+                      {qb.label}
+                    </Button>
                   ))}
                 </div>
-              </div>
-            ))
-          )}
-        </div>
 
-          {/* Quick Commands */}
-          <div className="flex flex-wrap gap-2 mt-4">
-             {['players', 'save', 'quit', 'broadcast', 'chopper', 'gunfire'].map(cmd => (
-               <Button
-                 key={cmd}
-                 variant="outline"
-                 size="sm"
-                 className="h-9 text-xs font-mono"
-                 onClick={() => {
-                    const newCommand = cmd === 'broadcast' ? 'servermsg "Message"' : cmd
-                    setCommand(newCommand)
-                    inputRef.current?.focus()
-                    // If broadcast, select the message part for easy editing
-                    if (cmd === 'broadcast') {
-                      setTimeout(() => inputRef.current?.setSelectionRange(11, 18), 10)
-                    }
-                 }}
-               >
-                 {cmd}
-               </Button>
-             ))}
-          </div>
+                {/* Channel tag selector */}
+                <div className="grid gap-2 sm:grid-cols-[180px_1fr] sm:items-start">
+                  <Select value={selectedChannel} onValueChange={setSelectedChannel}>
+                    <SelectTrigger aria-label="Channel tag">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {chatChannels.map((channel) => (
+                        <SelectItem key={channel.value} value={channel.value}>
+                          <div className="flex flex-col">
+                            <span>{channel.label}</span>
+                            <span className="text-xs text-muted-foreground">{channel.description}</span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Textarea
+                    value={announcement}
+                    onChange={(e) => setAnnouncement(e.target.value)}
+                    placeholder={selectedChannel === 'all'
+                      ? 'Write the message players should see…'
+                      : `Tagged [${selectedChannel.toUpperCase()}] — write the message…`}
+                    aria-label="Broadcast message"
+                    className="min-h-[80px]"
+                    maxLength={500}
+                    disabled={sendingAnnouncement || rconConnected === false}
+                  />
+                </div>
 
-          {/* Command Input */}
-          <div className="flex gap-2 mt-2">
-            <div className="flex-1 relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-primary" aria-hidden="true">{'>'}</span>
-              <Input
-                ref={inputRef}
-                value={command}
-                onChange={(e) => setCommand(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Type an RCON command..."
-                className="pl-8 font-mono"
-                disabled={loading}
-                maxLength={2000}
-                aria-label="RCON command input"
-              />
-            </div>
-            <Button 
-              onClick={executeCommand} 
-              disabled={loading || !command.trim()}
-              aria-label="Execute command"
-            >
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-            </Button>
-          </div>
-          <p className="text-xs text-muted-foreground mt-2">
-            Press Enter to run the command. Use ↑ and ↓ to reuse earlier commands.
-          </p>
-      </div>
-
-      {/* Command History */}
-      <div>
-        <div className="flex items-center justify-between pb-2">
-          <span className="text-sm font-medium text-foreground">Command History</span>
-          <div className="relative w-full sm:w-48">
-              <Filter className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                placeholder="Search command history..."
-                value={historySearch}
-                onChange={(e) => setHistorySearch(e.target.value)}
-                className="pl-8 h-8 text-sm"
-                aria-label="Search command history"
-              />
-            </div>
-          </div>
-          <ScrollArea className="h-[16rem] min-h-[200px] sm:h-[20rem] lg:h-[24rem] rounded-lg border border-border/30 bg-black/40">
-            {history.length === 0 ? (
-              <EmptyState compact type="noData" title="No command history" description="Commands you run will be logged here." />
-            ) : (
-              <div className="space-y-1 p-2">
-                {history
-                  .filter(entry => 
-                    !historySearch || 
-                    entry.command.toLowerCase().includes(historySearch.toLowerCase()) ||
-                    entry.response?.toLowerCase().includes(historySearch.toLowerCase())
-                  )
-                  .map((entry) => (
-                  <button
-                    key={entry.id}
-                    type="button"
-                    className="w-full text-left p-2.5 rounded-md hover:bg-muted/30 cursor-pointer transition-colors"
-                    onClick={() => {
-                      setCommand(entry.command)
-                      inputRef.current?.focus()
-                    }}
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs text-muted-foreground">
+                    Sends via <code className="text-foreground/80">servermsg</code>. Tags are cosmetic — RCON cannot route to real chat channels.
+                  </p>
+                  <Button
+                    onClick={sendAnnouncement}
+                    disabled={sendingAnnouncement || !announcement.trim() || rconConnected === false}
                   >
-                    <div className="flex items-center justify-between">
-                      <code className="text-sm font-mono text-primary truncate">{entry.command}</code>
-                      <span className="text-xs text-muted-foreground">
-                        {new Date(entry.executed_at).toLocaleString()}
-                      </span>
-                    </div>
-                    {entry.response && (
-                      <p className={cn('mt-1 truncate text-xs font-mono', entry.success ? 'text-muted-foreground' : 'text-destructive')}>
-                        {entry.response}
-                      </p>
+                    {sendingAnnouncement ? (
+                      <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                    ) : (
+                      <Send className="w-4 h-4 mr-2" />
                     )}
-                  </button>
-                ))}
+                    Send
+                  </Button>
+                </div>
               </div>
             )}
-          </ScrollArea>
-      </div>
+          </div>
+
+          {/* Command History (collapsible) */}
+          <div className="rounded-lg border border-border/40">
+            <button
+              type="button"
+              onClick={() => setShowHistory(v => !v)}
+              aria-expanded={showHistory}
+              className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium hover:bg-muted/30 rounded-lg transition-colors"
+            >
+              <span className="flex items-center gap-2">
+                <FileText className="w-4 h-4" />
+                Command History
+                {history.length > 0 && (
+                  <span className="text-xs text-muted-foreground font-normal ml-1">
+                    {history.length} entr{history.length === 1 ? 'y' : 'ies'}
+                  </span>
+                )}
+              </span>
+              <ChevronDown className={cn('w-4 h-4 transition-transform', showHistory && 'rotate-180')} />
+            </button>
+            {showHistory && (
+              <div className="border-t border-border/40 p-3 space-y-2">
+                <div className="relative">
+                  <Filter className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search command history..."
+                    value={historySearch}
+                    onChange={(e) => setHistorySearch(e.target.value)}
+                    className="pl-8 h-8 text-sm"
+                    aria-label="Search command history"
+                  />
+                </div>
+                <ScrollArea className="h-[16rem] min-h-[200px] sm:h-[20rem] rounded-lg border border-border/30 bg-black/40">
+                  {history.length === 0 ? (
+                    <EmptyState compact type="noData" title="No command history" description="Commands you run will be logged here." />
+                  ) : (
+                    <div className="space-y-1 p-2">
+                      {history
+                        .filter(entry =>
+                          !historySearch ||
+                          entry.command.toLowerCase().includes(historySearch.toLowerCase()) ||
+                          entry.response?.toLowerCase().includes(historySearch.toLowerCase())
+                        )
+                        .map((entry) => (
+                        <button
+                          key={entry.id}
+                          type="button"
+                          className="w-full text-left p-2.5 rounded-md hover:bg-muted/30 cursor-pointer transition-colors"
+                          onClick={() => {
+                            setCommand(entry.command)
+                            inputRef.current?.focus()
+                          }}
+                        >
+                          <div className="flex items-center justify-between">
+                            <code className="text-sm font-mono text-primary truncate">{entry.command}</code>
+                            <span className="text-xs text-muted-foreground">
+                              {new Date(entry.executed_at).toLocaleString()}
+                            </span>
+                          </div>
+                          {entry.response && (
+                            <p className={cn('mt-1 truncate text-xs font-mono', entry.success ? 'text-muted-foreground' : 'text-destructive')}>
+                              {entry.response}
+                            </p>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </ScrollArea>
+              </div>
+            )}
+          </div>
         </TabsContent>
       </Tabs>
     </div>
