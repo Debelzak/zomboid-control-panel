@@ -599,8 +599,18 @@ export default function Settings() {
         const newUrl = `${window.location.protocol}//${window.location.hostname}:${newPort}${window.location.pathname}${window.location.search}${window.location.hash}`
         window.location.href = newUrl
       }, 3000)
-    } catch {
+    } catch (err) {
       setRestarting(false)
+      // Apply-in-progress (409): another tab/client already triggered the
+      // apply. Show a tailored message instead of the generic restart-fail.
+      const apiErr = err as { code?: string; message?: string }
+      if (apiErr?.code === 'apply_in_progress') {
+        toast({
+          title: 'Update already in progress',
+          description: apiErr.message || 'An update apply is already running. Wait for the panel to reconnect.',
+        })
+        return
+      }
       toast({
         title: 'Restart Failed',
         description: 'Could not restart the panel. You may need to restart it manually.',

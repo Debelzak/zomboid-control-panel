@@ -40,6 +40,10 @@ export class PanelUpdateChecker {
     this.downloadProgress = 0;
     this.lastCheck = null;
     this.lastError = null;
+    // Set when a Windows apply helper has been spawned (or Linux apply has
+    // started). Prevents a second concurrent /api/panel/restart from
+    // spawning a second helper that would race for the staged file.
+    this.isApplying = false;
   }
 
   /**
@@ -68,6 +72,17 @@ export class PanelUpdateChecker {
       this.cleanupOldHelperArtifacts();
     } catch (err) {
       log.debug(`Helper artifact cleanup failed: ${err.message}`);
+    }
+
+    // Sweep orphan .partial.* files left over from downloads that were
+    // killed mid-stream (panel crashed, machine rebooted, etc). These are
+    // safe to delete: a real .partial belonging to an in-progress download
+    // would be inside our own process — we just started up, so nothing is
+    // in-progress yet.
+    try {
+      this.cleanupOrphanPartials();
+    } catch (err) {
+      log.debug(`Orphan partial cleanup failed: ${err.message}`);
     }
 
     // Initial check after 30 seconds
@@ -280,6 +295,11 @@ export class PanelUpdateChecker {
   async downloadUpdate() {
     if (this.isDownloading) {
       return { success: false, error: 'Download already in progress', code: 'already_downloading' };
+    }
+    if (this.isApplying) {
+      // Refuse to start a new download while a helper is mid-apply — that
+      // could overwrite the staged file the helper is about to rename.
+      return { success: false, error: 'An update apply is already in progress', code: 'apply_in_progress' };
     }
     if (!this.updateAvailable || !this.latestRelease) {
       return { success: false, error: 'No update available', code: 'no_update' };
@@ -531,6 +551,14 @@ export class PanelUpdateChecker {
     if (process.platform !== 'win32') {
       throw new Error('spawnWindowsApplyHelper is Windows-only');
     }
+    // Guard against a second restart-and-apply landing while the first
+    // helper is already running. Two helpers watching the same PID would
+    // both wait, both win the wait, then race to start the staged exe.
+    if (this.isApplying) {
+      const err = new Error('An update apply is already in progress');
+      err.code = 'apply_in_progress';
+      throw err;
+    }
     const staged = this.getStagedUpdate();
     if (!staged) {
       throw new Error('No staged update found');
@@ -568,7 +596,19 @@ export class PanelUpdateChecker {
     // timeout, netstat) — no PowerShell, no third-party tools. Paths must
     // not contain literal double-quotes; Windows file paths never can, so
     // that's safe. We strip any quotes defensively.
-    const safePath = (s) => String(s).replace(/"/g, '');
+    //
+    // Path encoding hardening:
+    //   - Strip stray `"` (paranoia; Windows paths can't legally contain it).
+    //   - Double `%` to `%%` so a literal `%` in a username/folder doesn't
+    //     trigger env-var expansion at parse time and silently truncate the
+    //     path. Real-world example: `C:\Users\foo%bar\Desktop\panel\` would
+    //     become `C:\Users\foo` without this.
+    //   - File is written as plain ASCII. Empirically cmd.exe does NOT honor
+    //     a UTF-8 BOM (it errors on `@echo off` if the BOM is present), so
+    //     non-ASCII paths are unsupported here. ASCII paths are by far the
+    //     common case; the failure mode for non-ASCII is a clean error in
+    //     `if not exist` rather than a silent mis-apply.
+    const safePath = (s) => String(s).replace(/"/g, '').replace(/%/g, '%%');
     const workDir = path.dirname(exePath);
     const cmd = [
       '@echo off',
@@ -582,7 +622,8 @@ export class PanelUpdateChecker {
       `set "SELF=${safePath(cmdPath)}"`,
       '',
       'rem === Helper is alive. Overwrite stable log so we know this ran. ===',
-      'call :stamp "Apply helper started (cmd mode, pid to watch: %PID_WATCH%)" NEW',
+      'rem === Avoid parens in messages -- cmd.exe IF/ELSE blocks can mis-parse them. ===',
+      'call :stamp "Apply helper started cmd mode pid to watch %PID_WATCH%" NEW',
       'call :stamp "exePath=%EXE_PATH%"',
       'call :stamp "stagedPath=%STAGED%"',
       'if not exist "%STAGED%" (',
@@ -590,10 +631,11 @@ export class PanelUpdateChecker {
       '  goto :end_fail',
       ')',
       '',
-      'rem === Wait up to 30s for panel process to exit. ===',
+      'rem === Wait up to 60s for panel process to exit. ===',
+      'rem === Use findstr (not find) -- find can block on stdin in edge cases. ===',,
       'set /a TRIES=0',
       ':waitloop',
-      'tasklist /FI "PID eq %PID_WATCH%" 2>nul | find "%PID_WATCH%" >nul',
+      'tasklist /NH /FI "PID eq %PID_WATCH%" 2>nul | findstr /C:"%PID_WATCH%" >nul',
       'if errorlevel 1 goto panel_gone',
       'set /a TRIES+=1',
       'if %TRIES% geq 60 goto panel_timeout',
@@ -601,7 +643,9 @@ export class PanelUpdateChecker {
       'goto waitloop',
       '',
       ':panel_timeout',
-      'call :stamp "WARNING: panel did not exit within 30s, continuing anyway"',
+      'call :stamp "WARNING panel did not exit within 60s, force-killing pid %PID_WATCH%"',
+      'taskkill /F /PID %PID_WATCH% >nul 2>&1',
+      'timeout /t 2 /nobreak >nul 2>&1',
       'goto after_wait',
       '',
       ':panel_gone',
@@ -615,7 +659,7 @@ export class PanelUpdateChecker {
       '    call :stamp "Relaunching previous .exe as fallback"',
       '    start "" /D "%WORK_DIR%" "%EXE_PATH%"',
       '  ) else (',
-      '    call :stamp "CRITICAL: previous .exe is also gone — user must add AV exclusion and restore from .bak-*"',
+      '    call :stamp "CRITICAL: previous .exe is also gone -- user must add AV exclusion and restore from .bak-*"',,
       '  )',
       '  goto :end_fail',
       ')',
@@ -624,7 +668,7 @@ export class PanelUpdateChecker {
       'call :stamp "Launching staged binary in place: %STAGED%"',
       'start "" /D "%WORK_DIR%" "%STAGED%"',
       'if errorlevel 1 (',
-      '  call :stamp "start command returned errorlevel %errorlevel% — staged launch may have failed"',
+      '  call :stamp "start command returned errorlevel %errorlevel% -- staged launch may have failed"',
       '  if exist "%EXE_PATH%" (',
       '    call :stamp "Falling back to previous .exe"',
       '    start "" /D "%WORK_DIR%" "%EXE_PATH%"',
@@ -632,15 +676,27 @@ export class PanelUpdateChecker {
       '  goto :end_fail',
       ')',
       '',
-      'rem === Give the new panel a moment to start. Reconciliation on next ===',
-      'rem === boot will confirm success/failure via version match. If the  ===',
-      'rem === staged panel crashes early, the user can run Start.bat and   ===',
-      'rem === it will launch the newest binary (may be the staged one or   ===',
-      'rem === may be the old .exe, depending on mtimes).                   ===',
-      'timeout /t 3 /nobreak >nul 2>&1',
-      'call :stamp "Update applied — staged version launched. Reconcile will confirm on next boot."',
+      'rem === Give the new panel a moment to start, then verify it ran. ===',
+      'rem === If start succeeded but the staged exe crashed on load, the   ===',
+      'rem === filename will not appear in tasklist a few seconds later.    ===',
+      'rem === In that case, fall back to launching the canonical .exe.     ===',
+      'rem === STAGED is .new or .new2; EXE_PATH is canonical -- always a   ===',
+      'rem === different filename, so no need to compare names.             ===',,
+      'for %%I in ("%STAGED%") do set "STAGED_NAME=%%~nxI"',
+      'timeout /t 4 /nobreak >nul 2>&1',
+      'tasklist /NH /FI "IMAGENAME eq %STAGED_NAME%" 2>nul | findstr /I /C:"%STAGED_NAME%" >nul',
+      'if errorlevel 1 goto staged_crashed',
+      'call :stamp "Update applied -- staged version is running. Reconcile will confirm on next boot."',
       'call :stamp "Apply helper done"',
       'goto :end_ok',
+      '',
+      ':staged_crashed',
+      'call :stamp "Staged binary did not appear in tasklist after 4s -- launch likely crashed"',,
+      'if exist "%EXE_PATH%" (',
+      '  call :stamp "Falling back to previous exe %EXE_PATH%"',
+      '  start "" /D "%WORK_DIR%" "%EXE_PATH%"',
+      ')',
+      'goto :end_fail',
       '',
       ':end_fail',
       'call :stamp "Apply helper exiting with failure"',
@@ -652,21 +708,33 @@ export class PanelUpdateChecker {
       'exit /b 0',
       '',
       'rem === Helpers ===',
+      'rem === Goto-based branching avoids the cmd.exe IF/ELSE parens parser ===',
+      'rem === bug that truncates messages containing ")".                   ===',,
       ':stamp',
       'rem %~1 = message, %~2 = "NEW" to overwrite stable log, else append',
       'for /f "tokens=1-3 delims=:.," %%a in ("%time%") do set "NOW=%date% %%a:%%b:%%c"',
-      'if /I "%~2"=="NEW" (',
-      '  echo [%NOW%] %~1> "%STABLE%"',
-      ') else (',
-      '  echo [%NOW%] %~1>> "%STABLE%"',
-      ')',
+      'if /I "%~2"=="NEW" goto :stamp_new',
+      'echo [%NOW%] %~1>> "%STABLE%"',
+      'goto :stamp_log',
+      ':stamp_new',
+      'echo [%NOW%] %~1> "%STABLE%"',
+      ':stamp_log',
       'echo [%NOW%] %~1>> "%LOG%"',
       'exit /b 0'
     ].join('\r\n');
 
+    // Write the helper as plain ASCII. cmd.exe interprets a UTF-8 BOM as
+    // part of the first command and breaks `@echo off`, so we cannot use it.
+    // Non-ASCII paths are not supported — if `set` ends up with a mojibake
+    // value the subsequent `if not exist` will fail clean rather than silently
+    // mis-applying.
     fs.writeFileSync(cmdPath, cmd, { encoding: 'ascii' });
 
     log.info(`Spawning update apply helper: ${cmdPath} (log: ${logPath})`);
+
+    // Mark applying BEFORE spawn so a concurrent restart sees the guard
+    // even before spawn() returns.
+    this.isApplying = true;
 
     // Spawn cmd.exe DIRECTLY (not via `start "" /B`) so the helper gets its
     // own process group + hidden console and is fully detached from the
@@ -1449,6 +1517,29 @@ export class PanelUpdateChecker {
       }
     } catch (err) {
       log.debug(`Could not prune logs dir: ${err.message}`);
+    }
+  }
+
+  /**
+   * Remove orphan .partial.<pid> files left behind by interrupted downloads.
+   * Called at start() — at that moment no download can be in progress, so
+   * everything matching the partial pattern is safe to delete.
+   */
+  cleanupOrphanPartials() {
+    if (typeof process.pkg === 'undefined') return;
+    const exeDir = path.dirname(this.getExeBasePath());
+    let entries;
+    try { entries = fs.readdirSync(exeDir); } catch { return; }
+    const partialPattern = /\.partial\.\d+$/;
+    for (const name of entries) {
+      if (!partialPattern.test(name)) continue;
+      const fp = path.join(exeDir, name);
+      try {
+        fs.unlinkSync(fp);
+        log.info(`Removed orphan download partial: ${name}`);
+      } catch (err) {
+        log.debug(`Could not remove orphan partial ${fp}: ${err.message}`);
+      }
     }
   }
 

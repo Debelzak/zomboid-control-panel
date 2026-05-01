@@ -785,6 +785,12 @@ app.post('/api/panel/restart', async (req, res) => {
       setTimeout(() => process.exit(0), 500);
       return;
     } catch (err) {
+      // 409 Conflict for the specific "already in progress" race so the UI
+      // can show a tailored message instead of a generic 500.
+      if (err.code === 'apply_in_progress') {
+        log.warn('Restart-and-apply request rejected: another apply is in progress');
+        return res.status(409).json({ error: 'An update apply is already in progress.', code: 'apply_in_progress' });
+      }
       log.error(`Could not spawn update apply helper: ${err.message}`);
       return res.status(500).json({ error: sanitizeError(err.message) });
     }
@@ -795,6 +801,13 @@ app.post('/api/panel/restart', async (req, res) => {
   // were launched from a .new/.new2 slot (that file gets renamed away).
   let linuxRespawnPath = null;
   if (isPackaged && !isWindows && staged) {
+    // Same race protection as Windows: don't let two restart calls both
+    // rename the staged file (second call would EEXIST or worse).
+    if (checker.isApplying) {
+      log.warn('Linux restart-and-apply request rejected: another apply is in progress');
+      return res.status(409).json({ error: 'An update apply is already in progress.', code: 'apply_in_progress' });
+    }
+    checker.isApplying = true;
     try {
       const fssync = await import('fs');
       const fsp = fssync.promises;
@@ -810,13 +823,52 @@ app.post('/api/panel/restart', async (req, res) => {
       const targetPath = (typeof checker.getExeBasePath === 'function')
         ? checker.getExeBasePath()
         : staged.exePath;
-      await fsp.rename(staged.stagedPath, targetPath);
+      // Try atomic rename first. If staged and target are on different
+      // filesystems (e.g. /opt vs /home with a tmpfs in between), rename
+      // throws EXDEV. Fall back to copy+unlink in that case.
+      try {
+        await fsp.rename(staged.stagedPath, targetPath);
+      } catch (renameErr) {
+        if (renameErr.code === 'EXDEV') {
+          log.warn(`Cross-device rename (EXDEV); falling back to copy+unlink for ${staged.stagedPath} → ${targetPath}`);
+          await fsp.copyFile(staged.stagedPath, targetPath);
+          try { await fsp.unlink(staged.stagedPath); } catch (unlinkErr) {
+            log.warn(`Could not remove staged source after copy: ${unlinkErr.message}`);
+          }
+        } else {
+          throw renameErr;
+        }
+      }
+      // chmod is best-effort, but if it fails we MUST verify the file is
+      // still executable — otherwise the respawn below will silently die
+      // with EACCES and leave the user with no panel.
       try { await fsp.chmod(targetPath, 0o755); } catch (chmodErr) {
         log.warn(`Could not chmod new binary: ${chmodErr.message}`);
+      }
+      try {
+        await fsp.access(targetPath, fssync.constants.X_OK);
+      } catch (accessErr) {
+        checker.isApplying = false;
+        log.error(`New binary at ${targetPath} is not executable: ${accessErr.message}`);
+        return res.status(500).json({ error: sanitizeError(`Applied update is not executable: ${accessErr.message}`) });
+      }
+      // Best-effort cleanup of the OTHER staging slot if it exists (e.g.,
+      // a previous .new2 left behind by a long-ago apply). Stale staging
+      // files would otherwise confuse getStagedUpdate() on next boot.
+      try {
+        const otherSlot = `${targetPath}.new2`;
+        if (fssync.existsSync(otherSlot) && otherSlot !== staged.stagedPath) {
+          await fsp.unlink(otherSlot);
+        }
+      } catch (cleanErr) {
+        log.debug(`Could not clean other staging slot: ${cleanErr.message}`);
       }
       linuxRespawnPath = targetPath;
       log.info(`Linux staged update applied to ${targetPath}; restarting`);
     } catch (err) {
+      // Release the apply guard so the user can retry after fixing whatever
+      // failed (e.g. permission, disk full).
+      checker.isApplying = false;
       log.error(`Failed to apply Linux staged update: ${err.message}`);
       return res.status(500).json({ error: sanitizeError(err.message) });
     }
