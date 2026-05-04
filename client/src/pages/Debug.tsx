@@ -1,4 +1,5 @@
 import { lazy, Suspense, useState, useEffect, useContext, useRef, useMemo, useCallback } from 'react'
+import { Link } from 'react-router-dom'
 import { 
   Bug, 
   RefreshCw, 
@@ -28,7 +29,16 @@ import {
   Database,
   Settings,
   Zap,
-  TrendingUp
+  TrendingUp,
+  Map as MapIcon,
+  Globe,
+  ExternalLink,
+  Users,
+  Car,
+  Home,
+  Package,
+  Volume2,
+  PlayCircle
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -58,7 +68,7 @@ import { SocketContext } from '@/contexts/SocketContext'
 import { PageHeader } from '@/components/PageHeader'
 import { EmptyState } from '@/components/EmptyState'
 import { cn, copyText } from '@/lib/utils'
-import { apiFetch } from '@/lib/api'
+import { apiFetch, panelBridgeApi } from '@/lib/api'
 
 interface LogEntry {
   id: string
@@ -147,6 +157,63 @@ interface CrashLog {
   modified: string
 }
 
+interface DiagCheck {
+  id: string
+  label: string
+  status: 'ok' | 'warn' | 'fail' | 'info' | 'skip'
+  severity: 'critical' | 'warning' | 'info'
+  message: string
+  hint?: string
+  category: string
+}
+
+interface DiagSummary { ok: number; warn: number; fail: number; info: number; skip: number }
+
+interface DiagnosticsResult {
+  timestamp: string
+  overall: 'ok' | 'warn' | 'fail'
+  summary: DiagSummary
+  categories: Record<string, { label: string; order: number }>
+  checks: DiagCheck[]
+  durationMs: number
+}
+
+interface TileProbe {
+  url: string
+  reachable: boolean
+  statusCode: number | null
+  latencyMs: number
+  error: string | null
+}
+
+interface WorldMapDiagnostics {
+  timestamp: string
+  overall: 'ok' | 'warn' | 'fail'
+  summary: DiagSummary
+  checks: DiagCheck[]
+  durationMs: number
+  tileSources: { b42: TileProbe | null; b41: TileProbe | null }
+  bridge: {
+    configured: boolean
+    isRunning: boolean
+    modConnected: boolean
+    statusAgeMs: number | null
+    bridgePath: string | null
+    consecutiveFailures: number
+  } | null
+  handlers: string[]
+  save: {
+    zomboidDataPath: string | null
+    savesDir: string | null
+    activeSaveName: string | null
+    activeSavePath: string | null
+    saveCount: number
+    build: 'b41' | 'b42' | 'unknown'
+  }
+  activeServer: { id: string; name: string; serverName: string } | null
+  proxy: { b42: string; b41: string }
+}
+
 type TimeFormat = 'relative' | 'time' | 'datetime'
 
 const DebugPerformanceCharts = lazy(() => import('@/components/DebugPerformanceCharts'))
@@ -181,8 +248,33 @@ export default function Debug() {
   const [searchQuery, setSearchQuery] = useState('')
   const [sourceFilter, setSourceFilter] = useState<string>('all')
   const [timeFormat, setTimeFormat] = useState<TimeFormat>('time')
-  const [activeTab, setActiveTab] = useState('activity')
+  const [activeTab, setActiveTab] = useState('diagnostics')
   const [expandedLogs, setExpandedLogs] = useState<Set<string>>(new Set())
+  const [diagnostics, setDiagnostics] = useState<DiagnosticsResult | null>(null)
+  const [refreshingDiagnostics, setRefreshingDiagnostics] = useState(false)
+  const [diagnosticsHideOk, setDiagnosticsHideOk] = useState(false)
+  const [worldMapDiag, setWorldMapDiag] = useState<WorldMapDiagnostics | null>(null)
+  const [refreshingWorldMap, setRefreshingWorldMap] = useState(false)
+  const [worldMapTilePreviewKey, setWorldMapTilePreviewKey] = useState(0)
+  const [worldMapHideOk, setWorldMapHideOk] = useState(false)
+  const [worldMapTileErrors, setWorldMapTileErrors] = useState<{ b42: boolean; b41: boolean }>({ b42: false, b41: false })
+  const [worldMapError, setWorldMapError] = useState<string | null>(null)
+  const [worldMapNowTick, setWorldMapNowTick] = useState(() => Date.now())
+  // Live probe + test-action state for the World Map tab.
+  type ProbeResult = {
+    ok: boolean
+    count: number | null
+    latencyMs: number
+    error?: string
+    sample?: unknown
+    at: number
+  }
+  const [probeResults, setProbeResults] = useState<Record<string, ProbeResult>>({})
+  const [probeLoading, setProbeLoading] = useState<string | null>(null)
+  const [actionLoading, setActionLoading] = useState<string | null>(null)
+  const [airdropPreset, setAirdropPreset] = useState<'food' | 'medical' | 'military' | 'building' | 'weapons' | 'tools'>('food')
+  const [armedAction, setArmedAction] = useState<string | null>(null)
+  const armTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const logsEndRef = useRef<HTMLDivElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
@@ -264,6 +356,191 @@ export default function Debug() {
       setRefreshingHealth(false)
     }
   }
+
+  // Fetch smart diagnostics
+  const fetchDiagnostics = useCallback(async () => {
+    setRefreshingDiagnostics(true)
+    try {
+      const res = await authFetch('/api/debug/diagnostics')
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+      if (data?.checks) setDiagnostics(data)
+    } catch (error) {
+      reportClientError('Failed to fetch diagnostics.', error)
+    } finally {
+      setRefreshingDiagnostics(false)
+    }
+  }, [authFetch])
+
+  // Fetch world-map specific diagnostics
+  const fetchWorldMapDiag = useCallback(async () => {
+    setRefreshingWorldMap(true)
+    setWorldMapTileErrors({ b42: false, b41: false })
+    setWorldMapTilePreviewKey(k => k + 1)
+    setWorldMapError(null)
+    try {
+      const res = await authFetch('/api/debug/worldmap')
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+      if (data?.checks) {
+        setWorldMapDiag(data)
+      } else {
+        setWorldMapError('Diagnostics endpoint returned an unexpected response.')
+      }
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Network error'
+      setWorldMapError(msg)
+      reportClientError('Failed to fetch World Map diagnostics.', error)
+    } finally {
+      setRefreshingWorldMap(false)
+    }
+  }, [authFetch])
+
+  // Live probes — call PanelBridge endpoints the World Map relies on and
+  // record latency/count/sample for the diagnostics UI.
+  const runProbe = useCallback(async (
+    id: string,
+    fn: () => Promise<unknown>,
+    extract: (r: unknown) => { count: number | null; sample?: unknown }
+  ) => {
+    setProbeLoading(id)
+    const t0 = Date.now()
+    try {
+      const r = await fn()
+      // Treat explicit success:false as a probe failure so the user sees
+      // the underlying error message rather than a misleading green badge.
+      const res = r as { success?: boolean; error?: string; message?: string }
+      if (res && res.success === false) {
+        const msg = res.error || res.message || 'Bridge returned success=false'
+        setProbeResults(prev => ({
+          ...prev,
+          [id]: { ok: false, count: null, latencyMs: Date.now() - t0, error: msg, at: Date.now() }
+        }))
+        return
+      }
+      const { count, sample } = extract(r)
+      setProbeResults(prev => ({
+        ...prev,
+        [id]: { ok: true, count, latencyMs: Date.now() - t0, sample, at: Date.now() }
+      }))
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Request failed'
+      setProbeResults(prev => ({
+        ...prev,
+        [id]: { ok: false, count: null, latencyMs: Date.now() - t0, error: msg, at: Date.now() }
+      }))
+    } finally {
+      setProbeLoading(null)
+    }
+  }, [])
+
+  const probePlayers = useCallback(() => runProbe('players',
+    () => panelBridgeApi.getServerInfo(),
+    (r: unknown) => {
+      const res = r as { success?: boolean; data?: { players?: unknown } }
+      const raw = res?.data?.players
+      const list = Array.isArray(raw) ? raw : raw && typeof raw === 'object' ? Object.values(raw as Record<string, unknown>) : []
+      return {
+        count: list.length,
+        sample: list.slice(0, 8).map((p: unknown) => {
+          const pp = p as { name?: string; username?: string; x?: number; y?: number; isAlive?: boolean; accessLevel?: string }
+          return { name: pp.name || pp.username, x: pp.x, y: pp.y, alive: pp.isAlive !== false, access: pp.accessLevel }
+        })
+      }
+    }
+  ), [runProbe])
+
+  const probeVehicles = useCallback(() => runProbe('vehicles',
+    () => panelBridgeApi.sendCommand('getVehiclesDetailed'),
+    (r: unknown) => {
+      const res = r as { success?: boolean; data?: unknown }
+      const data = res?.data as Record<string, unknown> | unknown[] | undefined
+      const list = Array.isArray(data) ? data : Array.isArray((data as Record<string, unknown>)?.vehicles) ? (data as { vehicles: unknown[] }).vehicles : []
+      return { count: list.length, sample: list.slice(0, 3) }
+    }
+  ), [runProbe])
+
+  const probeSafehouses = useCallback(() => runProbe('safehouses',
+    () => panelBridgeApi.sendCommand('getSafehouses'),
+    (r: unknown) => {
+      const res = r as { success?: boolean; data?: unknown }
+      const data = res?.data as Record<string, unknown> | unknown[] | undefined
+      const list = Array.isArray(data) ? data : Array.isArray((data as Record<string, unknown>)?.safehouses) ? (data as { safehouses: unknown[] }).safehouses : []
+      return { count: list.length, sample: list.slice(0, 3) }
+    }
+  ), [runProbe])
+
+  const probeGameTime = useCallback(() => runProbe('gameTime',
+    () => panelBridgeApi.getGameTime(),
+    (r: unknown) => {
+      const res = r as { success?: boolean; data?: { year?: number; month?: number; day?: number; hour?: number; minute?: number; worldAgeHours?: number } }
+      const d = res?.data
+      if (!d) return { count: null, sample: null }
+      return {
+        count: null,
+        sample: {
+          time: `Y${d.year} M${d.month} D${d.day} ${String(d.hour ?? 0).padStart(2, '0')}:${String(d.minute ?? 0).padStart(2, '0')}`,
+          worldAgeHours: d.worldAgeHours
+        }
+      }
+    }
+  ), [runProbe])
+
+  // Use the most recently probed player list to drive test actions.
+  // Prefer the first *alive* player so a stale "dead" record doesn't
+  // soak up the airdrop or lightning at coordinates the admin can't see.
+  const firstPlayerCoords = useMemo(() => {
+    const sample = probeResults['players']?.sample as Array<{ x?: number; y?: number; name?: string; alive?: boolean }> | undefined
+    if (!sample || !sample.length) return null
+    const p = sample.find(pp => pp.alive !== false && typeof pp.x === 'number' && typeof pp.y === 'number') || sample[0]
+    if (typeof p.x !== 'number' || typeof p.y !== 'number') return null
+    return { x: Math.round(p.x), y: Math.round(p.y), name: p.name, alive: p.alive !== false }
+  }, [probeResults])
+
+  // Run every probe sequentially so users get a single "refresh everything" button.
+  const probeAll = useCallback(async () => {
+    await probePlayers()
+    await probeVehicles()
+    await probeSafehouses()
+    await probeGameTime()
+  }, [probePlayers, probeVehicles, probeSafehouses, probeGameTime])
+
+  // Click-to-arm pattern for actions that are visible to all players
+  // (airdrop, lightning, gunshot). First click arms the button for 4s,
+  // second click within that window actually fires. Avoids accidental drops.
+  const armOrFire = useCallback((id: string, fire: () => void) => {
+    if (armedAction === id) {
+      if (armTimerRef.current) clearTimeout(armTimerRef.current)
+      armTimerRef.current = null
+      setArmedAction(null)
+      fire()
+      return
+    }
+    setArmedAction(id)
+    if (armTimerRef.current) clearTimeout(armTimerRef.current)
+    armTimerRef.current = setTimeout(() => {
+      setArmedAction(prev => (prev === id ? null : prev))
+      armTimerRef.current = null
+    }, 4000)
+  }, [armedAction])
+
+  // Cleanup arm timer on unmount.
+  useEffect(() => () => {
+    if (armTimerRef.current) clearTimeout(armTimerRef.current)
+  }, [])
+
+  const runAction = useCallback(async (id: string, fn: () => Promise<unknown>, successTitle: string, successDesc?: string) => {
+    setActionLoading(id)
+    try {
+      await fn()
+      toast({ title: successTitle, description: successDesc })
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Action failed'
+      toast({ title: 'Action failed', description: msg, variant: 'destructive' })
+    } finally {
+      setActionLoading(null)
+    }
+  }, [toast])
 
   // Fetch log files list
   const fetchLogFiles = async () => {
@@ -384,12 +661,14 @@ export default function Debug() {
     fetchLogFiles()
     fetchLogs()
     fetchCrashLogs()
+    fetchDiagnostics()
 
     // Refresh system info every 30 seconds
     const interval = setInterval(() => {
       if (document.visibilityState === 'hidden') return
       fetchSystemInfo()
       fetchHealthStatus()
+      fetchDiagnostics()
     }, 30000)
     return () => clearInterval(interval)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps -- intentional mount-only init
@@ -407,6 +686,47 @@ export default function Debug() {
 
     return () => clearInterval(interval)
   }, [activeTab, fetchActivity, activityPaused])
+
+  // World Map tab — fetch on entry, refresh every 30s while visible
+  useEffect(() => {
+    if (activeTab !== 'worldmap') return
+    fetchWorldMapDiag()
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'hidden') return
+      fetchWorldMapDiag()
+    }, 30000)
+    return () => clearInterval(interval)  }, [activeTab, fetchWorldMapDiag])
+
+  // Auto-probe live players once when tab opens so test actions have a target.
+  useEffect(() => {
+    if (activeTab !== 'worldmap') return
+    if (probeResults['players']) return
+    probePlayers()
+  }, [activeTab, probeResults, probePlayers])
+
+  // Keep the players probe fresh so the action target reflects reality.
+  // Light interval (20s) — vehicles/safehouses/time stay manual to avoid
+  // hammering the bridge.
+  useEffect(() => {
+    if (activeTab !== 'worldmap') return
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'hidden') return
+      if (probeLoading) return
+      probePlayers()
+    }, 20000)
+    return () => clearInterval(interval)
+  }, [activeTab, probePlayers, probeLoading])
+
+  // Live tick so heartbeat age and "checked Xs ago" stay accurate between fetches
+  useEffect(() => {
+    if (activeTab !== 'worldmap') return
+    setWorldMapNowTick(Date.now())
+    const id = setInterval(() => {
+      if (document.visibilityState === 'hidden') return
+      setWorldMapNowTick(Date.now())
+    }, 1000)
+    return () => clearInterval(id)
+  }, [activeTab])
 
   useEffect(() => {
     if (activeTab !== 'performance') {
@@ -847,6 +1167,30 @@ export default function Debug() {
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList>
+          <TabsTrigger value="diagnostics" className="gap-2">
+            <CheckCircle className="w-4 h-4" />
+            Diagnostics
+            {diagnostics && (diagnostics.summary.fail > 0 || diagnostics.summary.warn > 0) && (
+              <Badge
+                variant={diagnostics.summary.fail > 0 ? 'destructive' : 'outline'}
+                className="ml-1 h-5 px-1.5 text-[10px]"
+              >
+                {diagnostics.summary.fail + diagnostics.summary.warn}
+              </Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="worldmap" className="gap-2">
+            <MapIcon className="w-4 h-4" />
+            World Map
+            {worldMapDiag && (worldMapDiag.summary.fail > 0 || worldMapDiag.summary.warn > 0) && (
+              <Badge
+                variant={worldMapDiag.summary.fail > 0 ? 'destructive' : 'outline'}
+                className="ml-1 h-5 px-1.5 text-[10px]"
+              >
+                {worldMapDiag.summary.fail + worldMapDiag.summary.warn}
+              </Badge>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="activity" className="gap-2">
             <Zap className="w-4 h-4" />
             Activity
@@ -872,6 +1216,910 @@ export default function Debug() {
             System
           </TabsTrigger>
         </TabsList>
+
+        {/* Diagnostics Tab — Smart health checks with green/amber/red */}
+        <TabsContent value="diagnostics" className="space-y-4">
+          {(() => {
+            const overall = diagnostics?.overall
+            const summary = diagnostics?.summary
+            const overallTone =
+              overall === 'fail' ? 'bg-destructive/10 border-destructive/40' :
+              overall === 'warn' ? 'bg-warning/10 border-warning/40' :
+              overall === 'ok' ? 'bg-primary/10 border-primary/40' :
+              'bg-muted/30 border-border'
+            const overallLabel =
+              overall === 'fail' ? 'Issues need attention' :
+              overall === 'warn' ? 'Minor warnings' :
+              overall === 'ok' ? 'All systems operational' : 'Running checks…'
+            const OverallIcon =
+              overall === 'fail' ? AlertCircle :
+              overall === 'warn' ? AlertTriangle :
+              overall === 'ok' ? CheckCircle : Loader2
+
+            return (
+              <Card className={cn('border', overallTone)}>
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between flex-wrap gap-3">
+                    <div className="flex items-center gap-3">
+                      <OverallIcon className={cn(
+                        'w-7 h-7',
+                        overall === 'fail' && 'text-destructive',
+                        overall === 'warn' && 'text-warning',
+                        overall === 'ok' && 'text-primary',
+                        !overall && 'text-muted-foreground animate-spin'
+                      )} />
+                      <div>
+                        <CardTitle className="text-xl">{overallLabel}</CardTitle>
+                        <CardDescription>
+                          {diagnostics
+                            ? <>Last checked {formatTimestamp(new Date(diagnostics.timestamp))} · {diagnostics.durationMs}ms · auto-refreshes every 30s</>
+                            : 'Running smart checks across services, paths, storage, and updates…'}
+                        </CardDescription>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {summary && (
+                        <div className="flex items-center gap-1.5 text-xs">
+                          <Badge variant="outline" className="gap-1 border-primary/40 text-primary">
+                            <CheckCircle className="w-3 h-3" /> {summary.ok}
+                          </Badge>
+                          {summary.warn > 0 && (
+                            <Badge variant="outline" className="gap-1 border-warning/40 text-warning">
+                              <AlertTriangle className="w-3 h-3" /> {summary.warn}
+                            </Badge>
+                          )}
+                          {summary.fail > 0 && (
+                            <Badge variant="destructive" className="gap-1">
+                              <AlertCircle className="w-3 h-3" /> {summary.fail}
+                            </Badge>
+                          )}
+                          {summary.skip > 0 && (
+                            <Badge variant="outline" className="gap-1 text-muted-foreground">
+                              {summary.skip} skipped
+                            </Badge>
+                          )}
+                        </div>
+                      )}
+                      <div className="flex items-center gap-2 ml-2">
+                        <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+                          <Checkbox
+                            checked={diagnosticsHideOk}
+                            onCheckedChange={(v) => setDiagnosticsHideOk(!!v)}
+                          />
+                          Hide passing
+                        </label>
+                        <Button variant="outline" size="sm" onClick={fetchDiagnostics} disabled={refreshingDiagnostics}>
+                          <RefreshCw className={cn('w-4 h-4 mr-2', refreshingDiagnostics && 'animate-spin')} />
+                          Re-run
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </CardHeader>
+              </Card>
+            )
+          })()}
+
+          {!diagnostics && refreshingDiagnostics && (
+            <Card>
+              <CardContent className="py-12 flex items-center justify-center text-muted-foreground gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" /> Running diagnostics…
+              </CardContent>
+            </Card>
+          )}
+
+          {diagnostics && Object.entries(diagnostics.categories)
+            .sort(([, a], [, b]) => a.order - b.order)
+            .map(([catKey, catMeta]) => {
+              const items = diagnostics.checks
+                .filter(c => c.category === catKey)
+                .filter(c => !diagnosticsHideOk || c.status !== 'ok')
+              if (items.length === 0) return null
+
+              const catFails = items.filter(c => c.status === 'fail').length
+              const catWarns = items.filter(c => c.status === 'warn').length
+              const catTone = catFails > 0 ? 'destructive' : catWarns > 0 ? 'warning' : 'primary'
+
+              return (
+                <Card key={catKey}>
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <span className={cn(
+                          'inline-block w-2 h-2 rounded-full',
+                          catTone === 'destructive' && 'bg-destructive',
+                          catTone === 'warning' && 'bg-warning',
+                          catTone === 'primary' && 'bg-primary'
+                        )} />
+                        {catMeta.label}
+                      </CardTitle>
+                      <span className="text-xs text-muted-foreground">{items.length} check{items.length === 1 ? '' : 's'}</span>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="pt-0">
+                    <ul className="divide-y divide-border/40">
+                      {items.map(check => {
+                        const Icon =
+                          check.status === 'ok' ? CheckCircle :
+                          check.status === 'fail' ? AlertCircle :
+                          check.status === 'warn' ? AlertTriangle :
+                          check.status === 'info' ? Info :
+                          Pause
+                        const iconClass =
+                          check.status === 'ok' ? 'text-primary' :
+                          check.status === 'fail' ? 'text-destructive' :
+                          check.status === 'warn' ? 'text-warning' :
+                          check.status === 'info' ? 'text-primary/70' :
+                          'text-muted-foreground'
+                        return (
+                          <li key={check.id} className="py-2.5 flex items-start gap-3">
+                            <Icon className={cn('w-4 h-4 mt-0.5 shrink-0', iconClass)} />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-sm font-medium">{check.label}</span>
+                                {check.status === 'skip' && (
+                                  <Badge variant="outline" className="h-4 px-1 text-[10px] text-muted-foreground">skipped</Badge>
+                                )}
+                              </div>
+                              <p className="text-xs text-muted-foreground mt-0.5 break-words">{check.message}</p>
+                              {check.hint && (
+                                <p className="text-xs mt-1 text-foreground/70">
+                                  <span className="font-medium text-foreground/90">Fix:</span> {check.hint}
+                                </p>
+                              )}
+                            </div>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  </CardContent>
+                </Card>
+              )
+            })}
+
+          {diagnostics && diagnosticsHideOk && diagnostics.summary.fail === 0 && diagnostics.summary.warn === 0 && (
+            <Card>
+              <CardContent className="py-10">
+                <EmptyState
+                  icon={<CheckCircle className="w-14 h-14 text-primary/60" />}
+                  title="All checks pass"
+                  description="Nothing to show with passing checks hidden. Uncheck 'Hide passing' to see the full report."
+                />
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        {/* World Map Tab — dedicated diagnostics for the live map */}
+        <TabsContent value="worldmap" className="space-y-4">
+          {(() => {
+            const wm = worldMapDiag
+            const overall = wm?.overall
+            const overallTone =
+              overall === 'fail' ? 'bg-destructive/10 border-destructive/40' :
+              overall === 'warn' ? 'bg-warning/10 border-warning/40' :
+              overall === 'ok' ? 'bg-primary/10 border-primary/40' :
+              'bg-muted/30 border-border'
+            const overallLabel =
+              overall === 'fail' ? 'World Map degraded' :
+              overall === 'warn' ? 'World Map has warnings' :
+              overall === 'ok' ? 'World Map fully operational' : 'Running map checks…'
+            const OverallIcon =
+              overall === 'fail' ? AlertCircle :
+              overall === 'warn' ? AlertTriangle :
+              overall === 'ok' ? CheckCircle : Loader2
+            const fmtAge = (ms: number | null) => {
+              if (ms === null || ms === undefined) return '—'
+              if (ms < 1000) return 'just now'
+              if (ms < 60_000) return `${Math.round(ms / 1000)}s ago`
+              return `${Math.round(ms / 60_000)}m ago`
+            }
+            const lastRun = wm ? new Date(wm.timestamp) : null
+            const lastRunMs = lastRun ? lastRun.getTime() : null
+            // Compute live ages so values keep ticking between 30s fetches.
+            const sinceFetchMs = lastRunMs !== null ? Math.max(0, worldMapNowTick - lastRunMs) : 0
+            const liveHeartbeatAge = wm?.bridge?.statusAgeMs !== null && wm?.bridge?.statusAgeMs !== undefined
+              ? wm.bridge.statusAgeMs + sinceFetchMs
+              : null
+            // Most actionable items first so end users see what to fix.
+            const STATUS_ORDER: Record<DiagCheck['status'], number> = { fail: 0, warn: 1, info: 2, skip: 3, ok: 4 }
+            const sortedChecks = wm
+              ? [...wm.checks].sort((a, b) => (STATUS_ORDER[a.status] ?? 9) - (STATUS_ORDER[b.status] ?? 9))
+              : []
+            const visibleChecks = worldMapHideOk
+              ? sortedChecks.filter(c => c.status !== 'ok' && c.status !== 'skip')
+              : sortedChecks
+            const firstFix = sortedChecks.find(c => c.status === 'fail') || sortedChecks.find(c => c.status === 'warn') || null
+            const copyPath = async (label: string, value: string) => {
+              const ok = await copyText(value)
+              toast({
+                title: ok ? `${label} copied` : 'Copy failed',
+                description: ok ? value : 'Could not access the clipboard.',
+                variant: ok ? 'default' : 'destructive'
+              })
+            }
+            const CopyablePath = ({ label, value }: { label: string; value: string }) => (
+              <button
+                type="button"
+                onClick={() => copyPath(label, value)}
+                title={`Copy ${label.toLowerCase()}`}
+                className="group inline-flex items-center gap-1.5 max-w-full text-left"
+              >
+                <code className="font-mono text-[11px] break-all group-hover:text-primary transition-colors">{value}</code>
+                <Copy className="w-3 h-3 shrink-0 text-muted-foreground/60 group-hover:text-primary transition-colors" />
+              </button>
+            )
+            const copyReport = async () => {
+              if (!wm) return
+              const lines: string[] = []
+              lines.push(`World Map diagnostics — ${wm.timestamp}`)
+              lines.push(`Overall: ${wm.overall.toUpperCase()} (${wm.summary.fail} fail / ${wm.summary.warn} warn / ${wm.summary.ok} ok)`)
+              lines.push('')
+              lines.push('Tile sources:')
+              for (const k of ['b42', 'b41'] as const) {
+                const p = wm.tileSources?.[k]
+                lines.push(`  ${k.toUpperCase()}: ${p ? (p.reachable ? `OK (${p.latencyMs}ms HTTP ${p.statusCode})` : `FAIL (${p.error || 'HTTP ' + p.statusCode})`) : '—'}`)
+              }
+              if (wm.bridge) {
+                lines.push('')
+                lines.push('PanelBridge:')
+                lines.push(`  configured=${wm.bridge.configured} running=${wm.bridge.isRunning} mod=${wm.bridge.modConnected} heartbeatAge=${fmtAge(liveHeartbeatAge)}`)
+                if (wm.bridge.bridgePath) lines.push(`  path=${wm.bridge.bridgePath}`)
+              }
+              lines.push('')
+              lines.push(`Save: build=${wm.save.build} count=${wm.save.saveCount} active=${wm.save.activeSaveName || '—'}`)
+              if (wm.save.zomboidDataPath) lines.push(`  zomboidData=${wm.save.zomboidDataPath}`)
+              lines.push('')
+              lines.push('Checks:')
+              for (const c of sortedChecks) {
+                lines.push(`  [${c.status.toUpperCase()}] ${c.label} — ${c.message}${c.hint ? `  Fix: ${c.hint}` : ''}`)
+              }
+              const ok = await copyText(lines.join('\n'))
+              toast({
+                title: ok ? 'Report copied' : 'Copy failed',
+                description: ok ? 'Diagnostics report copied to clipboard.' : 'Could not access the clipboard.',
+                variant: ok ? 'default' : 'destructive'
+              })
+            }
+            return (
+              <>
+                {worldMapError && (
+                  <Card className="border-2 border-destructive/50 bg-destructive/5">
+                    <CardContent className="pt-6">
+                      <div className="flex items-start gap-3">
+                        <AlertCircle className="w-6 h-6 text-destructive shrink-0 mt-0.5" />
+                        <div className="min-w-0 flex-1">
+                          <h3 className="text-base font-semibold">Couldn't reach the diagnostics endpoint</h3>
+                          <p className="text-sm text-muted-foreground mt-1">
+                            {worldMapError} — check that the panel backend is running and your session is still authenticated.
+                          </p>
+                        </div>
+                        <Button variant="outline" size="sm" onClick={fetchWorldMapDiag} disabled={refreshingWorldMap}>
+                          <RefreshCw className={cn('w-4 h-4 mr-2', refreshingWorldMap && 'animate-spin')} />
+                          Retry
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+                {worldMapError && !wm ? null : (<>
+                <Card className={cn('border-2 transition-colors', overallTone)}>
+                  <CardContent className="pt-6">
+                    <div className="flex items-start justify-between gap-4 flex-wrap">
+                      <div className="flex items-start gap-3">
+                        <OverallIcon className={cn('w-8 h-8 shrink-0', overall === 'fail' ? 'text-destructive' : overall === 'warn' ? 'text-warning' : overall === 'ok' ? 'text-primary' : 'text-muted-foreground animate-spin')} />
+                        <div>
+                          <h3 className="text-lg font-semibold">{overallLabel}</h3>
+                          <p className="text-sm text-muted-foreground">
+                            Live tile sources, PanelBridge data feed, and active save layout.
+                          </p>
+                          {wm && (
+                            <div className="flex items-center gap-2 mt-2 flex-wrap text-xs">
+                              <Badge variant="outline" className="bg-primary/10 border-primary/30 text-primary">
+                                <CheckCircle className="w-3 h-3 mr-1" /> {wm.summary.ok} ok
+                              </Badge>
+                              {wm.summary.warn > 0 && (
+                                <Badge variant="outline" className="bg-warning/10 border-warning/30 text-warning">
+                                  <AlertTriangle className="w-3 h-3 mr-1" /> {wm.summary.warn} warn
+                                </Badge>
+                              )}
+                              {wm.summary.fail > 0 && (
+                                <Badge variant="destructive">
+                                  <AlertCircle className="w-3 h-3 mr-1" /> {wm.summary.fail} fail
+                                </Badge>
+                              )}
+                              {wm.summary.skip > 0 && (
+                                <Badge variant="outline" className="text-muted-foreground">
+                                  {wm.summary.skip} skipped
+                                </Badge>
+                              )}
+                              <span className="text-muted-foreground">
+                                · {wm.durationMs} ms
+                                {lastRun && ` · checked ${fmtAge(sinceFetchMs)}`}
+                              </span>
+                              {refreshingWorldMap && (
+                                <span className="inline-flex items-center gap-1 text-muted-foreground">
+                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                  Refreshing…
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Button variant="outline" size="sm" asChild>
+                          <Link to="/world-map">
+                            <ExternalLink className="w-4 h-4 mr-2" />
+                            Open World Map
+                          </Link>
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={copyReport} disabled={!wm}>
+                          <Copy className="w-4 h-4 mr-2" />
+                          Copy report
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={fetchWorldMapDiag} disabled={refreshingWorldMap}>
+                          <RefreshCw className={cn('w-4 h-4 mr-2', refreshingWorldMap && 'animate-spin')} />
+                          Re-run
+                        </Button>
+                      </div>
+                    </div>
+                    {firstFix && (
+                      <div className={cn(
+                        'mt-4 p-3 rounded-md border flex items-start gap-3',
+                        firstFix.status === 'fail' ? 'border-destructive/40 bg-destructive/5' : 'border-warning/40 bg-warning/5'
+                      )}>
+                        {firstFix.status === 'fail'
+                          ? <AlertCircle className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
+                          : <AlertTriangle className="w-5 h-5 text-warning shrink-0 mt-0.5" />}
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-semibold">
+                            {firstFix.status === 'fail' ? 'Action needed' : 'Heads up'}: {firstFix.label}
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-0.5">{firstFix.message}</div>
+                          {firstFix.hint && (
+                            <div className="text-xs mt-1.5">
+                              <span className="font-semibold text-primary">Fix:</span> {firstFix.hint}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* Tile sources */}
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <Globe className="w-4 h-4 text-primary" />
+                      Tile sources
+                    </CardTitle>
+                    <CardDescription>
+                      The /api/map proxy fetches tiles server-side from these CDNs.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {(['b42', 'b41'] as const).map(kind => {
+                      const probe = wm?.tileSources?.[kind]
+                      const label = kind === 'b42' ? 'B42 — b42map.com' : 'B41 — map.projectzomboid.com'
+                      return (
+                        <div key={kind} className="flex items-start justify-between gap-3 p-3 rounded-md border bg-card">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {probe ? (
+                                probe.reachable
+                                  ? <CheckCircle className="w-4 h-4 text-primary shrink-0" />
+                                  : <AlertCircle className={cn('w-4 h-4 shrink-0', kind === 'b42' ? 'text-destructive' : 'text-warning')} />
+                              ) : (
+                                <Loader2 className="w-4 h-4 text-muted-foreground animate-spin shrink-0" />
+                              )}
+                              <span className="font-medium text-sm">{label}</span>
+                              {probe?.reachable && (
+                                <Badge variant="outline" className="text-[10px]">{probe.latencyMs} ms</Badge>
+                              )}
+                              {probe && !probe.reachable && (
+                                <Badge variant="destructive" className="text-[10px]">
+                                  {probe.error || `HTTP ${probe.statusCode}`}
+                                </Badge>
+                              )}
+                            </div>
+                            {probe && (
+                              <div className="mt-1 flex items-center gap-2 flex-wrap">
+                                <CopyablePath label="Probe URL" value={probe.url} />
+                                <a
+                                  href={probe.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-primary transition-colors"
+                                  title="Open the upstream URL in a new tab to verify reachability from your browser"
+                                >
+                                  <ExternalLink className="w-3 h-3" />
+                                  Open
+                                </a>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+
+                    {/* Live tile preview through our proxy */}
+                    <div className="mt-3 pt-3 border-t">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-medium text-muted-foreground">Live tile via panel proxy</span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-2 text-xs"
+                          onClick={() => {
+                            setWorldMapTileErrors({ b42: false, b41: false })
+                            setWorldMapTilePreviewKey(k => k + 1)
+                          }}
+                        >
+                          <RefreshCw className="w-3 h-3 mr-1" /> Refresh
+                        </Button>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">B42 floor 0 / 0_0</div>
+                          <div className="aspect-square bg-muted/30 border rounded overflow-hidden flex items-center justify-center relative">
+                            {worldMapTileErrors.b42 ? (
+                              <div className="text-center p-2">
+                                <AlertCircle className="w-5 h-5 mx-auto text-destructive mb-1" />
+                                <div className="text-[10px] text-destructive font-medium">Tile failed to load</div>
+                                <div className="text-[9px] text-muted-foreground mt-0.5">Proxy or upstream unreachable</div>
+                              </div>
+                            ) : (
+                              <img
+                                key={`b42-${worldMapTilePreviewKey}`}
+                                src={`/api/map/tiles/0/0_0.jpg?floor=0&t=${worldMapTilePreviewKey}`}
+                                alt="B42 tile preview"
+                                className="w-full h-full object-cover"
+                                onError={() => setWorldMapTileErrors(prev => ({ ...prev, b42: true }))}
+                              />
+                            )}
+                          </div>
+                        </div>
+                        <div className="space-y-1">
+                          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">B41 / 0_0</div>
+                          <div className="aspect-square bg-muted/30 border rounded overflow-hidden flex items-center justify-center relative">
+                            {worldMapTileErrors.b41 ? (
+                              <div className="text-center p-2">
+                                <AlertCircle className="w-5 h-5 mx-auto text-warning mb-1" />
+                                <div className="text-[10px] text-warning font-medium">Tile failed to load</div>
+                                <div className="text-[9px] text-muted-foreground mt-0.5">Proxy or upstream unreachable</div>
+                              </div>
+                            ) : (
+                              <img
+                                key={`b41-${worldMapTilePreviewKey}`}
+                                src={`/api/map/b41tiles/0/0_0.jpg?t=${worldMapTilePreviewKey}`}
+                                alt="B41 tile preview"
+                                className="w-full h-full object-cover"
+                                onError={() => setWorldMapTileErrors(prev => ({ ...prev, b41: true }))}
+                              />
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Live data feed */}
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <Wifi className="w-4 h-4 text-primary" />
+                      Live data feed
+                    </CardTitle>
+                    <CardDescription>
+                      The map polls PanelBridge every 3s for player positions, vehicles and safehouses.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {wm?.bridge ? (
+                      <div className="grid grid-cols-2 gap-2 text-sm">
+                        <div className="p-2 rounded border bg-card">
+                          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Configured</div>
+                          <div className="font-medium">{wm.bridge.configured ? 'Yes' : 'No'}</div>
+                        </div>
+                        <div className="p-2 rounded border bg-card">
+                          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Service running</div>
+                          <div className="font-medium flex items-center gap-1">
+                            {wm.bridge.isRunning
+                              ? <><Wifi className="w-3 h-3 text-primary" /> Yes</>
+                              : <><WifiOff className="w-3 h-3 text-muted-foreground" /> No</>}
+                          </div>
+                        </div>
+                        <div className="p-2 rounded border bg-card">
+                          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Mod connected</div>
+                          <div className="font-medium">{wm.bridge.modConnected ? 'Yes' : 'No'}</div>
+                        </div>
+                        {(() => {
+                          const age = liveHeartbeatAge
+                          const stale = age !== null && age !== undefined && age > 30_000
+                          const slow = age !== null && age !== undefined && age > 10_000
+                          const tone = stale ? 'border-destructive/40 bg-destructive/5' : slow ? 'border-warning/40 bg-warning/5' : 'bg-card'
+                          const label = stale ? 'text-destructive' : slow ? 'text-warning' : 'text-muted-foreground'
+                          return (
+                            <div className={cn('p-2 rounded border', tone)}>
+                              <div className={cn('text-[10px] uppercase tracking-wide', label)}>Last heartbeat</div>
+                              <div className="font-medium">{fmtAge(age)}{stale && ' · stale'}</div>
+                            </div>
+                          )
+                        })()}
+                        {wm.bridge.consecutiveFailures > 0 && (
+                          <div className="col-span-2 p-2 rounded border border-warning/30 bg-warning/5">
+                            <div className="text-[10px] uppercase tracking-wide text-warning">Consecutive failures</div>
+                            <div className="font-medium">{wm.bridge.consecutiveFailures}</div>
+                          </div>
+                        )}
+                        {wm.bridge.bridgePath && (
+                          <div className="col-span-2 p-2 rounded border bg-card">
+                            <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-0.5">Bridge path</div>
+                            <CopyablePath label="Bridge path" value={wm.bridge.bridgePath} />
+                          </div>
+                        )}
+                        <div className="col-span-2 p-2 rounded border bg-card">
+                          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Required handlers</div>
+                          <div className="text-[11px] text-muted-foreground mb-1.5">
+                            The map calls these PanelBridge commands. If they're missing in the in-game mod, players, vehicles or airdrops won't appear.
+                          </div>
+                          <div className="flex gap-1 flex-wrap">
+                            {wm.handlers.map(h => (
+                              <Badge key={h} variant="outline" className="text-[10px] font-mono">{h}</Badge>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-sm text-muted-foreground">No bridge data — not configured.</div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* Live data probes — actively call the bridge endpoints the World Map uses */}
+                <Card>
+                  <CardHeader className="pb-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <CardTitle className="flex items-center gap-2 text-base">
+                          <PlayCircle className="w-4 h-4 text-primary" />
+                          Live data probes
+                        </CardTitle>
+                        <CardDescription>
+                          Run the same PanelBridge calls the World Map page makes. Useful for confirming the mod is responding before troubleshooting on the map itself.
+                        </CardDescription>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={probeAll}
+                        disabled={!!probeLoading}
+                        className="shrink-0"
+                      >
+                        {probeLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : <RefreshCw className="w-3.5 h-3.5 mr-1.5" />}
+                        Probe all
+                      </Button>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {([
+                      { id: 'players', label: 'Players online', Icon: Users, run: probePlayers, unit: 'player' },
+                      { id: 'vehicles', label: 'Vehicles', Icon: Car, run: probeVehicles, unit: 'vehicle' },
+                      { id: 'safehouses', label: 'Safehouses', Icon: Home, run: probeSafehouses, unit: 'safehouse' },
+                      { id: 'gameTime', label: 'Game time', Icon: Clock, run: probeGameTime, unit: '' },
+                    ] as const).map(({ id, label, Icon, run, unit }) => {
+                      const r = probeResults[id]
+                      const busy = probeLoading === id
+                      const ageMs = r ? worldMapNowTick - r.at : null
+                      const stale = ageMs !== null && ageMs > 60000
+                      return (
+                        <div key={id} className="flex items-center gap-3 p-2.5 rounded-md border bg-card">
+                          <Icon className="w-4 h-4 text-primary shrink-0" />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-sm font-medium">{label}</span>
+                              {r && r.ok && (
+                                <Badge variant="outline" className="text-[10px] bg-primary/10 border-primary/30 text-primary">
+                                  {id === 'gameTime'
+                                    ? (r.sample as { time?: string })?.time || 'OK'
+                                    : `${r.count ?? 0} ${unit}${(r.count ?? 0) === 1 ? '' : 's'}`}
+                                </Badge>
+                              )}
+                              {r && !r.ok && (
+                                <Badge variant="destructive" className="text-[10px] max-w-[18rem] truncate" title={r.error}>{r.error || 'Failed'}</Badge>
+                              )}
+                              {r && (
+                                <span className={cn('text-[10px]', stale ? 'text-warning' : 'text-muted-foreground')}>
+                                  {r.latencyMs} ms · {fmtAge(ageMs)}
+                                </span>
+                              )}
+                            </div>
+                            {id === 'players' && r?.ok && Array.isArray(r.sample) && r.sample.length > 0 && (
+                              <div className="text-[11px] text-muted-foreground mt-1 space-y-0.5">
+                                {(r.sample as Array<{ name?: string; x?: number; y?: number; alive?: boolean; access?: string }>).map((p, i) => (
+                                  <div key={i} className="font-mono">
+                                    {p.name || '?'} <span className="opacity-60">@ {p.x}, {p.y}</span>
+                                    {p.alive === false && <span className="text-destructive ml-1">· dead</span>}
+                                    {p.access && p.access !== 'None' && <span className="text-warning ml-1">· {p.access}</span>}
+                                  </div>
+                                ))}
+                                {r.count !== null && r.count > (r.sample as unknown[]).length && (
+                                  <div className="opacity-60">…and {r.count - (r.sample as unknown[]).length} more</div>
+                                )}
+                              </div>
+                            )}
+                            {id === 'players' && r?.ok && r.count === 0 && (
+                              <div className="text-[11px] text-muted-foreground mt-1 italic">No players online — test actions disabled until someone joins.</div>
+                            )}
+                          </div>
+                          <Button variant="outline" size="sm" onClick={run} disabled={busy} className="shrink-0">
+                            {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                            <span className="ml-1.5">Probe</span>
+                          </Button>
+                        </div>
+                      )
+                    })}
+                  </CardContent>
+                </Card>
+
+                {/* Test live actions — exercise the same actions World Map can trigger */}
+                {(() => {
+                  const bridgeReady = wm?.bridge?.modConnected === true
+                  const hasTarget = !!firstPlayerCoords
+                  const actionsDisabled = !bridgeReady || !hasTarget
+                  return (
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <Zap className="w-4 h-4 text-warning" />
+                      Test live actions
+                    </CardTitle>
+                    <CardDescription>
+                      These actions <span className="font-semibold text-warning">affect the live game world</span> and are visible to players. Click once to arm, click again within 4 seconds to fire.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {!bridgeReady && (
+                      <div className="p-2.5 rounded-md border border-destructive/40 bg-destructive/10 text-xs flex items-start gap-2">
+                        <WifiOff className="w-3.5 h-3.5 text-destructive shrink-0 mt-0.5" />
+                        <div>
+                          <div className="font-medium text-destructive">Bridge not connected</div>
+                          <div className="text-muted-foreground">The PanelBridge mod must be running in-game. Test actions are disabled.</div>
+                        </div>
+                      </div>
+                    )}
+                    <div className="p-2 rounded border bg-card text-xs">
+                      <span className="text-muted-foreground">Target:</span>{' '}
+                      {firstPlayerCoords ? (
+                        <>
+                          <span className="font-mono">{firstPlayerCoords.name}</span>{' '}
+                          <span className="text-muted-foreground">@ {firstPlayerCoords.x}, {firstPlayerCoords.y}</span>
+                          {!firstPlayerCoords.alive && <span className="text-destructive ml-1">· dead</span>}
+                        </>
+                      ) : probeResults['players']?.ok && probeResults['players']?.count === 0 ? (
+                        <span className="text-muted-foreground italic">No players online.</span>
+                      ) : (
+                        <span className="text-muted-foreground italic">No player probed yet — run the Players probe first.</span>
+                      )}
+                    </div>
+
+                    {/* Airdrop */}
+                    <div className="p-2.5 rounded-md border bg-card space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Package className="w-4 h-4 text-warning shrink-0" />
+                        <span className="text-sm font-medium">Drop airdrop at first player</span>
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Select value={airdropPreset} onValueChange={(v) => setAirdropPreset(v as typeof airdropPreset)}>
+                          <SelectTrigger className="h-8 w-32 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="food">Food</SelectItem>
+                            <SelectItem value="medical">Medical</SelectItem>
+                            <SelectItem value="military">Military</SelectItem>
+                            <SelectItem value="weapons">Weapons</SelectItem>
+                            <SelectItem value="building">Building</SelectItem>
+                            <SelectItem value="tools">Tools</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          variant={armedAction === 'airdrop' ? 'destructive' : 'outline'}
+                          size="sm"
+                          disabled={actionsDisabled || actionLoading === 'airdrop'}
+                          onClick={() => firstPlayerCoords && armOrFire('airdrop', () => runAction(
+                            'airdrop',
+                            () => panelBridgeApi.triggerAirdrop({ x: firstPlayerCoords.x, y: firstPlayerCoords.y, preset: airdropPreset, announce: true, attractZombies: true }),
+                            'Airdrop deployed',
+                            `${airdropPreset} package dropping at ${firstPlayerCoords.x}, ${firstPlayerCoords.y}.`
+                          ))}
+                        >
+                          {actionLoading === 'airdrop'
+                            ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
+                            : <Package className="w-3.5 h-3.5 mr-1.5" />}
+                          {armedAction === 'airdrop' ? 'Click again to confirm' : 'Drop now'}
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Test gunshot sound */}
+                    <div className="p-2.5 rounded-md border bg-card flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Volume2 className="w-4 h-4 text-warning shrink-0" />
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium">Gunshot near first player</div>
+                          <div className="text-[11px] text-muted-foreground">Plays a loud sound that attracts nearby zombies.</div>
+                        </div>
+                      </div>
+                      <Button
+                        variant={armedAction === 'gunshot' ? 'destructive' : 'outline'}
+                        size="sm"
+                        disabled={actionsDisabled || actionLoading === 'gunshot'}
+                        onClick={() => firstPlayerCoords && armOrFire('gunshot', () => runAction(
+                          'gunshot',
+                          () => panelBridgeApi.triggerGunshotBridge({ x: firstPlayerCoords.x, y: firstPlayerCoords.y }),
+                          'Gunshot triggered',
+                          `Played near ${firstPlayerCoords.name}.`
+                        ))}
+                      >
+                        {actionLoading === 'gunshot'
+                          ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
+                          : <Volume2 className="w-3.5 h-3.5 mr-1.5" />}
+                        {armedAction === 'gunshot' ? 'Click again to confirm' : 'Trigger'}
+                      </Button>
+                    </div>
+
+                    {/* Test lightning */}
+                    <div className="p-2.5 rounded-md border bg-card flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Zap className="w-4 h-4 text-warning shrink-0" />
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium">Lightning near first player</div>
+                          <div className="text-[11px] text-muted-foreground">Visible flash + thunder. Harmless.</div>
+                        </div>
+                      </div>
+                      <Button
+                        variant={armedAction === 'lightning' ? 'destructive' : 'outline'}
+                        size="sm"
+                        disabled={actionsDisabled || actionLoading === 'lightning'}
+                        onClick={() => firstPlayerCoords && armOrFire('lightning', () => runAction(
+                          'lightning',
+                          () => panelBridgeApi.triggerLightning(firstPlayerCoords.x, firstPlayerCoords.y, true, true, true),
+                          'Lightning triggered',
+                          `Strike at ${firstPlayerCoords.x}, ${firstPlayerCoords.y}.`
+                        ))}
+                      >
+                        {actionLoading === 'lightning'
+                          ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
+                          : <Zap className="w-3.5 h-3.5 mr-1.5" />}
+                        {armedAction === 'lightning' ? 'Click again to confirm' : 'Trigger'}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+                  )
+                })()}
+
+                {/* Active save / build */}
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <FolderOpen className="w-4 h-4 text-primary" />
+                      Active save & build
+                    </CardTitle>
+                    <CardDescription>
+                      Detects B41 vs B42 layout so the map picks the correct tile source and projection.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {wm?.save ? (
+                      <div className="space-y-2 text-sm">
+                        <div className="flex items-center gap-2">
+                          <span className="text-muted-foreground">Detected build:</span>
+                          <Badge
+                            variant={wm.save.build === 'unknown' ? 'outline' : 'default'}
+                            className={cn(wm.save.build === 'b42' && 'bg-primary/15 text-primary border-primary/30',
+                                         wm.save.build === 'b41' && 'bg-blue-500/15 text-blue-400 border-blue-500/30')}
+                          >
+                            {wm.save.build.toUpperCase()}
+                          </Badge>
+                          <span className="text-muted-foreground text-xs">· {wm.save.saveCount} save(s)</span>
+                        </div>
+                        {wm.save.activeSaveName && (
+                          <div className="text-xs">
+                            <span className="text-muted-foreground">Sample save:</span>{' '}
+                            <code className="font-mono">{wm.save.activeSaveName}</code>
+                          </div>
+                        )}
+                        {wm.save.zomboidDataPath && (
+                          <div className="text-xs">
+                            <span className="text-muted-foreground">Zomboid data:</span>{' '}
+                            <CopyablePath label="Zomboid data path" value={wm.save.zomboidDataPath} />
+                          </div>
+                        )}
+                        {wm.save.activeSavePath && (
+                          <div className="text-xs">
+                            <span className="text-muted-foreground">Save path:</span>{' '}
+                            <CopyablePath label="Save path" value={wm.save.activeSavePath} />
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="text-sm text-muted-foreground">No save data.</div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* Detailed checks */}
+                <Card>
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                      <CardTitle className="flex items-center gap-2 text-base">
+                        <CheckCircle className="w-4 h-4 text-primary" />
+                        Checks
+                      </CardTitle>
+                      {wm && wm.checks.length > 0 && (
+                        <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
+                          <Checkbox
+                            checked={worldMapHideOk}
+                            onCheckedChange={(v) => setWorldMapHideOk(v === true)}
+                          />
+                          Hide passing
+                        </label>
+                      )}
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    {!wm ? (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
+                        <Loader2 className="w-4 h-4 animate-spin" /> Running map checks…
+                      </div>
+                    ) : wm.checks.length === 0 ? (
+                      <div className="text-sm text-muted-foreground py-4">No checks ran.</div>
+                    ) : visibleChecks.length === 0 ? (
+                      <div className="flex items-center gap-2 text-sm text-primary py-4">
+                        <CheckCircle className="w-4 h-4" /> All checks pass.
+                      </div>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {visibleChecks.map(c => {
+                          const Icon =
+                            c.status === 'fail' ? AlertCircle :
+                            c.status === 'warn' ? AlertTriangle :
+                            c.status === 'ok' ? CheckCircle :
+                            c.status === 'skip' ? Info : Info
+                          const tone =
+                            c.status === 'fail' ? 'text-destructive' :
+                            c.status === 'warn' ? 'text-warning' :
+                            c.status === 'ok' ? 'text-primary' :
+                            'text-muted-foreground'
+                          return (
+                            <div key={c.id} className="flex items-start gap-2 p-2 rounded hover:bg-muted/30 transition-colors">
+                              <Icon className={cn('w-4 h-4 shrink-0 mt-0.5', tone)} />
+                              <div className="min-w-0 flex-1">
+                                <div className="text-sm font-medium">{c.label}</div>
+                                <div className="text-xs text-muted-foreground">{c.message}</div>
+                                {c.hint && (
+                                  <div className="text-xs mt-1 text-primary/80">
+                                    <span className="font-semibold">Fix:</span> {c.hint}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+                </>)}
+              </>
+            )
+          })()}
+        </TabsContent>
 
         {/* Activity Tab — Unified command/event timeline */}
         <TabsContent value="activity" className="space-y-4">

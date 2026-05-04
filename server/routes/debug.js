@@ -7,8 +7,9 @@ import archiver from 'archiver';
 import { createLogger } from '../utils/logger.js';
 const log = createLogger('API:Debug');
 import { getDataPaths, setDataPaths } from '../utils/paths.js';
-import { getPerformanceHistory, recordPerformanceSnapshot, getDatabaseStats, createDatabaseBackup, compactDatabase, getCommandHistory, getBridgeLogs, getPlayerLogs, getDb, getActiveServer } from '../database/init.js';
+import { getPerformanceHistory, recordPerformanceSnapshot, getDatabaseStats, createDatabaseBackup, compactDatabase, getCommandHistory, getBridgeLogs, getPlayerLogs, getDb, getActiveServer, getScheduledTasks, getTrackedMods, getAllSettings } from '../database/init.js';
 import { sanitizeError } from '../utils/sanitize.js';
+import panelBridgeService from '../services/panelBridge.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -464,7 +465,7 @@ router.get('/health', async (req, res) => {
     const rconService = req.app.get('rconService');
     const serverManager = req.app.get('serverManager');
     const modChecker = req.app.get('modChecker');
-    
+
     res.json({
       status: 'ok',
       timestamp: new Date().toISOString(),
@@ -485,15 +486,934 @@ router.get('/health', async (req, res) => {
       uptime: process.uptime()
     });
   } catch (error) {
-    res.status(500).json({ 
-      status: 'error', 
+    res.status(500).json({
+      status: 'error',
       error: sanitizeError(error.message),
       timestamp: new Date().toISOString()
     });
   }
 });
 
-// Get performance history for charts
+// ============================================
+// Smart Diagnostics
+// ============================================
+//
+// Runs ~25 health checks across services, paths, storage, and updates.
+// Each check returns:
+//   { id, label, status, message, hint?, category, severity }
+// status: 'ok' | 'warn' | 'fail' | 'info' | 'skip'
+// severity: 'critical' | 'warning' | 'info'
+//
+// The frontend renders this as a checklist with green/amber/red icons and
+// per-check fix hints.
+
+const DIAG_CATEGORIES = {
+  services: { label: 'Core Services', order: 1 },
+  bridge: { label: 'PanelBridge IPC', order: 2 },
+  server: { label: 'Active Server', order: 3 },
+  storage: { label: 'Storage & Database', order: 4 },
+  runtime: { label: 'Runtime & Memory', order: 5 },
+  updates: { label: 'Updates', order: 6 }
+};
+
+function diagOk(id, label, message, extras = {}) {
+  return { id, label, status: 'ok', message, severity: 'info', ...extras };
+}
+function diagFail(id, label, message, extras = {}) {
+  return { id, label, status: 'fail', message, severity: 'critical', ...extras };
+}
+function diagWarn(id, label, message, extras = {}) {
+  return { id, label, status: 'warn', message, severity: 'warning', ...extras };
+}
+function diagInfo(id, label, message, extras = {}) {
+  return { id, label, status: 'info', message, severity: 'info', ...extras };
+}
+function diagSkip(id, label, message, extras = {}) {
+  return { id, label, status: 'skip', message, severity: 'info', ...extras };
+}
+
+async function pathExistsAsync(p) {
+  if (!p) return false;
+  try { await fs.promises.access(p); return true; } catch { return false; }
+}
+
+async function pathWritableAsync(p) {
+  if (!p) return false;
+  try { await fs.promises.access(p, fs.constants.W_OK); return true; } catch { return false; }
+}
+
+// Wrap a promise with a timeout. Used to keep slow / unreachable mounts
+// (broken NFS, dead SMB share, suspended VM) from hanging the entire
+// diagnostics request. Returns `fallback` on timeout instead of throwing.
+function withTimeout(promise, ms, fallback) {
+  let timer;
+  const timeoutPromise = new Promise((resolve) => {
+    timer = setTimeout(() => resolve(fallback), ms);
+  });
+  return Promise.race([
+    Promise.resolve(promise).then(
+      (v) => { clearTimeout(timer); return v; },
+      () => { clearTimeout(timer); return fallback; }
+    ),
+    timeoutPromise
+  ]);
+}
+
+const FS_TIMEOUT_MS = 2000;
+const safePathExists = (p) => withTimeout(pathExistsAsync(p), FS_TIMEOUT_MS, false);
+const safePathWritable = (p) => withTimeout(pathWritableAsync(p), FS_TIMEOUT_MS, false);
+
+async function safeReaddir(p) {
+  try {
+    return await withTimeout(fs.promises.readdir(p), FS_TIMEOUT_MS, null);
+  } catch {
+    return null;
+  }
+}
+
+async function safeStat(p) {
+  try {
+    return await withTimeout(fs.promises.stat(p), FS_TIMEOUT_MS, null);
+  } catch {
+    return null;
+  }
+}
+
+async function getDiskFree(targetPath) {
+  try {
+    if (!targetPath) return null;
+    if (typeof fs.promises.statfs !== 'function') return null;
+    // statfs can hang on dead mounts on Linux — wrap with timeout.
+    const stats = await withTimeout(fs.promises.statfs(targetPath), FS_TIMEOUT_MS, null);
+    if (!stats) return null;
+    return {
+      free: stats.bavail * stats.bsize,
+      total: stats.blocks * stats.bsize
+    };
+  } catch {
+    return null;
+  }
+}
+
+// Run a single check function, catching any unexpected throw and converting
+// it into a 'fail' diag entry rather than aborting the whole report.
+// Each check function returns a diag object (or null to skip).
+// eslint-disable-next-line no-unused-vars
+async function runCheck(label, fn, ctx = {}) {
+  try {
+    const result = await fn();
+    return result;
+  } catch (e) {
+    return diagFail(`error.${label}`, label, `Check failed: ${e?.message || 'unknown error'}`, ctx);
+  }
+}
+
+function fmtMB(bytes) {
+  if (!Number.isFinite(bytes)) return '?';
+  return `${(bytes / 1024 / 1024).toFixed(0)} MB`;
+}
+function fmtGB(bytes) {
+  if (!Number.isFinite(bytes)) return '?';
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`;
+}
+function fmtAge(ms) {
+  if (!Number.isFinite(ms) || ms < 0) return 'unknown';
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s}s ago`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60);
+  if (h < 48) return `${h}h ago`;
+  return `${Math.round(h / 24)}d ago`;
+}
+
+router.get('/diagnostics', async (req, res) => {
+  const t0 = Date.now();
+  try {
+    const rconService = req.app.get('rconService');
+    const serverManager = req.app.get('serverManager');
+    const modChecker = req.app.get('modChecker');
+    const scheduler = req.app.get('scheduler');
+    const discordBot = req.app.get('discordBot');
+    const panelUpdateChecker = req.app.get('panelUpdateChecker');
+
+    const checks = [];
+    const paths = getDataPaths();
+
+    // checkServerRunning may probe the OS process list and can hang on a
+    // misbehaving system — keep it bounded.
+    const checkRunningPromise = serverManager?.checkServerRunning?.()
+      ? withTimeout(serverManager.checkServerRunning(), FS_TIMEOUT_MS, false)
+      : Promise.resolve(false);
+
+    const [
+      activeServer,
+      settings,
+      trackedMods,
+      scheduledTasks,
+      serverRunning,
+      dbStats
+    ] = await Promise.all([
+      withTimeout(getActiveServer().catch(() => null), FS_TIMEOUT_MS, null),
+      withTimeout(getAllSettings().catch(() => ({})), FS_TIMEOUT_MS, {}),
+      withTimeout(getTrackedMods().catch(() => []), FS_TIMEOUT_MS, []),
+      withTimeout(getScheduledTasks().catch(() => []), FS_TIMEOUT_MS, []),
+      Promise.resolve(checkRunningPromise).then(v => v || false).catch(() => false),
+      withTimeout(getDatabaseStats().catch(() => null), FS_TIMEOUT_MS, null)
+    ]);
+
+    // ─── Core Services ────────────────────────────────────────────────
+    try {
+      if (serverRunning) {
+      checks.push(diagOk('server.process', 'Server process running',
+        'Project Zomboid dedicated server is alive.',
+        { category: 'services' }));
+    } else {
+      checks.push(diagWarn('server.process', 'Server process',
+        'Server is stopped. Start it from the dashboard.',
+        { category: 'services', hint: 'Dashboard → Start Server' }));
+    }
+
+    if (rconService?.isConnected?.()) {
+      checks.push(diagOk('rcon.connected', 'RCON connected',
+        `Connected to ${rconService.host || '127.0.0.1'}:${rconService.port || 27015}.`,
+        { category: 'services' }));
+    } else if (!serverRunning) {
+      checks.push(diagSkip('rcon.connected', 'RCON',
+        'Server is offline — RCON will connect when it starts.',
+        { category: 'services' }));
+    } else {
+      checks.push(diagFail('rcon.connected', 'RCON disconnected',
+        'Server is running but RCON is not connected. Check RCON port and password.',
+        { category: 'services', hint: 'Settings → RCON · server.ini → RCONPassword' }));
+    }
+
+    if (modChecker?.isRunning) {
+      const interval = Math.round((modChecker.checkInterval || 0) / 60000);
+      checks.push(diagOk('modChecker', 'Mod update checker',
+        `Polling Steam Workshop every ${interval || '?'} min.`,
+        { category: 'services' }));
+    } else {
+      checks.push(diagWarn('modChecker', 'Mod update checker stopped',
+        "Workshop polling is not running — mod updates won't be detected.",
+        { category: 'services' }));
+    }
+
+    {
+      const enabledTasks = (scheduledTasks || []).filter(t => t.enabled).length;
+      if (scheduler) {
+        checks.push(diagOk('scheduler', 'Scheduler',
+          `${enabledTasks} enabled task${enabledTasks === 1 ? '' : 's'}.`,
+          { category: 'services' }));
+      } else {
+        checks.push(diagWarn('scheduler', 'Scheduler unavailable',
+          'Scheduler service did not initialize.',
+          { category: 'services' }));
+      }
+    }
+
+    if (discordBot?.token || settings?.discordBotToken) {
+      if (discordBot?.isRunning && discordBot?.client?.user) {
+        checks.push(diagOk('discord.bot', 'Discord bot connected',
+          `Logged in as ${discordBot.client.user.tag}.`,
+          { category: 'services' }));
+      } else {
+        checks.push(diagFail('discord.bot', 'Discord bot offline',
+          'Bot token configured but not connected. Token may be invalid.',
+          { category: 'services', hint: 'Settings → Discord' }));
+      }
+    } else {
+      checks.push(diagSkip('discord.bot', 'Discord bot',
+        'Not configured (optional).',
+        { category: 'services' }));
+    }
+    } catch (e) {
+      checks.push(diagWarn('services.error', 'Service checks errored',
+        `Some service checks could not run: ${e?.message || 'unknown'}`,
+        { category: 'services' }));
+    }
+
+    // ─── Active Server ────────────────────────────────────────────────
+    try {
+    if (!activeServer) {
+      checks.push(diagFail('server.active', 'No active server',
+        'Configure a server to enable most panel features.',
+        { category: 'server', hint: 'Servers → Add Server' }));
+    } else {
+      checks.push(diagOk('server.active', 'Active server',
+        `${activeServer.name || activeServer.serverName || 'Unnamed'}.`,
+        { category: 'server' }));
+
+      const installPath = activeServer.installPath || activeServer.serverPath;
+      if (!installPath) {
+        checks.push(diagFail('server.installPath', 'Install path missing',
+          'Active server has no installPath configured.',
+          { category: 'server', hint: 'Servers → Edit → Install Path' }));
+      } else if (await safePathExists(installPath)) {
+        checks.push(diagOk('server.installPath', 'Install path exists',
+          'Server installation directory is accessible.',
+          { category: 'server' }));
+      } else {
+        // Distinguish "not mounted / unreachable" (UNC, NFS) vs "plain missing".
+        const isUnc = /^\\\\/.test(installPath) || /^\/\//.test(installPath);
+        const isNetMount = isUnc || installPath.startsWith('/mnt/') || installPath.startsWith('/media/');
+        checks.push(diagFail('server.installPath', 'Install path not found',
+          isNetMount
+            ? 'Network share or mount not reachable. Check VPN, mount, or share availability.'
+            : 'Configured install path does not exist or is unreadable.',
+          { category: 'server', hint: isNetMount ? 'Verify the share is mounted and credentials are valid' : 'Check the path in Servers → Edit' }));
+      }
+
+      const zPath = activeServer.zomboidDataPath;
+      if (!zPath) {
+        checks.push(diagWarn('server.zomboidData', 'Zomboid data path not set',
+          'Set the Zomboid user data folder so saves and config can be located.',
+          { category: 'server', hint: 'Servers → Edit → Zomboid Data Path' }));
+      } else if (await safePathExists(zPath)) {
+        checks.push(diagOk('server.zomboidData', 'Zomboid data path exists',
+          'Saves and server config directory is accessible.',
+          { category: 'server' }));
+      } else {
+        checks.push(diagFail('server.zomboidData', 'Zomboid data path not found',
+          'Configured saves/config path does not exist.',
+          { category: 'server', hint: process.platform === 'linux' ? 'On Linux this is usually ~/Zomboid' : 'On Windows this is usually %USERPROFILE%/Zomboid' }));
+      }
+
+      if (installPath && await safePathExists(installPath)) {
+        const isWin = process.platform === 'win32';
+        const serverName = activeServer.serverName || '';
+        // Linux is case-sensitive — list each script variant explicitly.
+        const candidates = isWin
+          ? [
+              serverName ? `StartServer_${serverName}.bat` : null,
+              'StartServer64.bat',
+              'StartServer64_nosteam.bat',
+              'StartServer32.bat'
+            ]
+          : [
+              serverName ? `start-server_${serverName}.sh` : null,
+              'start-server.sh',
+              'start-server-nosteam.sh'
+            ];
+        let foundScript = null;
+        let scriptStat = null;
+        for (const name of candidates) {
+          if (!name) continue;
+          const p = path.join(installPath, name);
+          const st = await safeStat(p);
+          if (st && st.isFile()) { foundScript = name; scriptStat = st; break; }
+        }
+        if (foundScript) {
+          // On Linux, verify the executable bit. On Windows, mode bits are
+          // meaningless so we just confirm presence.
+          if (!isWin && scriptStat && (scriptStat.mode & 0o111) === 0) {
+            checks.push(diagWarn('server.startScript', 'Start script not executable',
+              `${foundScript} exists but has no executable bit. The panel cannot launch it.`,
+              { category: 'server', hint: `Run: chmod +x ${foundScript}` }));
+          } else {
+            checks.push(diagOk('server.startScript', 'Start script found',
+              `Using ${foundScript}.`,
+              { category: 'server' }));
+          }
+        } else {
+          checks.push(diagWarn('server.startScript', 'Start script not found',
+            `No ${isWin ? 'StartServer*.bat' : 'start-server*.sh'} in install path. Server can't be started from the panel.`,
+            { category: 'server' }));
+        }
+
+        // Java/JRE check — PZ ships its own JRE under jre64/.
+        const isLinux = process.platform === 'linux';
+        const jreCandidates = isWin
+          ? ['jre64/bin/java.exe', 'jre/bin/java.exe']
+          : ['jre64/bin/java', 'jre/bin/java'];
+        let foundJre = null;
+        for (const rel of jreCandidates) {
+          const p = path.join(installPath, ...rel.split('/'));
+          if (await safePathExists(p)) { foundJre = rel; break; }
+        }
+        if (foundJre) {
+          checks.push(diagOk('server.jre', 'Bundled JRE present',
+            `Found ${foundJre}.`,
+            { category: 'server' }));
+        } else {
+          checks.push(diagWarn('server.jre', 'Bundled JRE not found',
+            `Could not locate jre64/bin/${isWin ? 'java.exe' : 'java'} under the install path. Server may fail to start unless system Java is on PATH.`,
+            { category: 'server', hint: isLinux ? 'Most installs ship a JRE under jre64/. Re-run SteamCMD if missing.' : 'Re-run SteamCMD to restore the bundled JRE' }));
+        }
+      }
+
+      // server.ini lives under <zomboidDataPath>/Server/<serverName>.ini
+      if (zPath && activeServer.serverName) {
+        const iniPath = path.join(zPath, 'Server', `${activeServer.serverName}.ini`);
+        if (await safePathExists(iniPath)) {
+          checks.push(diagOk('server.ini', 'server.ini found',
+            `${activeServer.serverName}.ini is in place.`,
+            { category: 'server' }));
+        } else {
+          checks.push(diagWarn('server.ini', 'server.ini not found',
+            `${activeServer.serverName}.ini is not in <zomboidData>/Server/. The server will create defaults on first run.`,
+            { category: 'server' }));
+        }
+      }
+
+      if (!activeServer.rconPassword || activeServer.rconPassword.length === 0) {
+        checks.push(diagWarn('server.rconPassword', 'RCON password not set',
+          'No RCON password configured. RCON commands will fail.',
+          { category: 'server', hint: 'Servers → Edit → RCON Password (must match server.ini)' }));
+      } else {
+        checks.push(diagOk('server.rconPassword', 'RCON password configured',
+          'RCON password is set in panel config.',
+          { category: 'server' }));
+      }
+
+      if (zPath || installPath) {
+        // Cover both case variants (Linux is case-sensitive) and both
+        // mods/ + Workshop/ trees + the server install media path.
+        const bridgeCandidates = [];
+        if (zPath) {
+          for (const root of ['mods', 'Mods']) {
+            bridgeCandidates.push(path.join(zPath, root, 'PanelBridge', 'mod.info'));
+            bridgeCandidates.push(path.join(zPath, root, 'PanelBridge', 'media', 'lua', 'server', 'PanelBridge.lua'));
+          }
+          bridgeCandidates.push(path.join(zPath, 'Workshop', 'PanelBridge', 'mod.info'));
+          bridgeCandidates.push(path.join(zPath, 'workshop', 'PanelBridge', 'mod.info'));
+        }
+        if (installPath) {
+          bridgeCandidates.push(path.join(installPath, 'media', 'lua', 'server', 'PanelBridge.lua'));
+          bridgeCandidates.push(path.join(installPath, 'steamapps', 'workshop', 'content', '108600'));
+        }
+        let bridgeInstalled = false;
+        for (const p of bridgeCandidates) {
+          if (await safePathExists(p)) { bridgeInstalled = true; break; }
+        }
+        if (bridgeInstalled) {
+          checks.push(diagOk('server.bridgeMod', 'PanelBridge mod present',
+            'PanelBridge.lua is deployed on the server.',
+            { category: 'server' }));
+        } else {
+          checks.push(diagWarn('server.bridgeMod', 'PanelBridge mod not detected',
+            "Couldn't find PanelBridge.lua under the server. Advanced features (teleport, weather, character export) will be unavailable.",
+            { category: 'server', hint: "Copy pz-mod/PanelBridge into the server's media/lua/server folder" }));
+        }
+      }
+    }
+    } catch (e) {
+      checks.push(diagWarn('server.error', 'Server checks errored',
+        `Some active-server checks could not run: ${e?.message || 'unknown'}`,
+        { category: 'server' }));
+    }
+
+    // ─── PanelBridge IPC ──────────────────────────────────────────────
+    try {
+    {
+      const bridgeStatus = panelBridgeService?.getStatus?.() || null;
+      if (!bridgeStatus?.configured) {
+        checks.push(diagSkip('bridge.configured', 'PanelBridge bridge path',
+          'Bridge path not yet configured (server may be starting up).',
+          { category: 'bridge' }));
+      } else {
+        checks.push(diagOk('bridge.configured', 'Bridge path configured',
+          'Bridge IPC directory is set.',
+          { category: 'bridge' }));
+
+        const bridgePath = bridgeStatus.bridgePath;
+        if (await safePathWritable(bridgePath)) {
+          checks.push(diagOk('bridge.writable', 'Bridge directory writable',
+            'Panel can write commands.json for the mod.',
+            { category: 'bridge' }));
+        } else if (!await safePathExists(bridgePath)) {
+          checks.push(diagWarn('bridge.writable', 'Bridge directory missing',
+            'Bridge folder does not exist yet — it will be created when the mod first writes status.json.',
+            { category: 'bridge' }));
+        } else {
+          checks.push(diagFail('bridge.writable', 'Bridge directory not writable',
+            "Panel can't write to the bridge directory. Mod won't receive commands.",
+            { category: 'bridge', hint: process.platform === 'linux' ? 'Check ownership / chmod on the Zomboid Lua folder (often needs the panel user to own ~/Zomboid)' : 'Check filesystem permissions on the Lua write folder' }));
+        }
+
+        const status = bridgeStatus.modStatus;
+        const conn = bridgeStatus.connection;
+        if (status?.alive) {
+          checks.push(diagOk('bridge.heartbeat', 'Mod heartbeat fresh',
+            `Status from mod ${fmtAge(status.age || 0)}.`,
+            { category: 'bridge' }));
+        } else if (!serverRunning) {
+          checks.push(diagSkip('bridge.heartbeat', 'Mod heartbeat',
+            'Server is offline — heartbeat resumes when it starts.',
+            { category: 'bridge' }));
+        } else if (conn?.statusFile?.exists) {
+          checks.push(diagFail('bridge.heartbeat', 'Mod heartbeat stale',
+            `Last heartbeat ${fmtAge(conn.statusFile.age || 0)}. Mod may have crashed or be unloaded.`,
+            { category: 'bridge', hint: 'Check server console.txt for PanelBridge errors' }));
+        } else {
+          checks.push(diagFail('bridge.heartbeat', 'No mod heartbeat',
+            'status.json has never been written. Mod is not loaded on the server.',
+            { category: 'bridge', hint: "Verify PanelBridge is in the server's mod list and Workshop subscription" }));
+        }
+      }
+    }
+    } catch (e) {
+      checks.push(diagWarn('bridge.error', 'Bridge checks errored',
+        `Bridge IPC checks could not run: ${e?.message || 'unknown'}`,
+        { category: 'bridge' }));
+    }
+
+    // ─── Storage & Database ────────────────────────────────────────────
+    try {
+      const exists = await safePathExists(paths.dbPath);
+      if (!exists) {
+        checks.push(diagFail('db.exists', 'Database file missing',
+          'data/db.json does not exist. Panel cannot persist any settings.',
+          { category: 'storage' }));
+      } else if (!await safePathWritable(paths.dbPath)) {
+        checks.push(diagFail('db.writable', 'Database not writable',
+          'db.json exists but is read-only. Settings changes will fail.',
+          { category: 'storage', hint: process.platform === 'linux' ? 'Run: chmod u+w data/db.json (and check the data/ directory is owned by the panel user)' : 'Check file permissions on data/db.json' }));
+      } else {
+        checks.push(diagOk('db.writable', 'Database accessible',
+          `${dbStats?.collections?.length || '?'} collections, ${fmtMB(dbStats?.size || 0)}.`,
+          { category: 'storage' }));
+      }
+    } catch (e) {
+      checks.push(diagWarn('db.exists', 'Database check failed',
+        `Could not inspect db.json: ${e?.message || 'unknown error'}`,
+        { category: 'storage' }));
+    }
+
+    try {
+      const backupsDir = path.join(paths.dataDir, 'backups');
+      if (await safePathExists(backupsDir)) {
+        const files = await safeReaddir(backupsDir);
+        if (!files) {
+          checks.push(diagWarn('db.backup', 'Backup status unknown',
+            'Could not read the backup directory (timeout or permission denied).',
+            { category: 'storage' }));
+        } else {
+          const stats = await Promise.all(files
+            .filter(f => f.endsWith('.json'))
+            .map(async f => {
+              const st = await safeStat(path.join(backupsDir, f));
+              return st ? st.mtimeMs : 0;
+            }));
+          const newest = stats.length > 0 ? Math.max(...stats) : 0;
+          const age = newest ? Date.now() - newest : Infinity;
+          if (!newest) {
+            checks.push(diagWarn('db.backup', 'No database backups',
+              'No db.json backups found. Manual backup recommended before risky changes.',
+              { category: 'storage', hint: 'Debug → Database → Create Backup' }));
+          } else if (age < 24 * 3600_000) {
+            checks.push(diagOk('db.backup', 'Database backup recent',
+              `Newest backup ${fmtAge(age)}.`,
+              { category: 'storage' }));
+          } else {
+            checks.push(diagWarn('db.backup', 'Database backup old',
+              `Newest backup ${fmtAge(age)}. Consider creating a fresh one.`,
+              { category: 'storage', hint: 'Debug → Database → Create Backup' }));
+          }
+        }
+      } else {
+        checks.push(diagInfo('db.backup', 'Backup directory not yet created',
+          'Will be created on first backup.',
+          { category: 'storage' }));
+      }
+    } catch (e) {
+      checks.push(diagWarn('db.backup', 'Backup status unknown',
+        `Could not inspect backups: ${e?.message || 'unknown error'}`,
+        { category: 'storage' }));
+    }
+
+    try {
+      if (await safePathWritable(paths.logsDir)) {
+      checks.push(diagOk('logs.writable', 'Logs directory writable',
+        'Panel can write logs.',
+        { category: 'storage' }));
+    } else {
+      checks.push(diagFail('logs.writable', 'Logs directory not writable',
+        'Cannot write to logs folder — log capture and downloads will fail.',
+        { category: 'storage' }));
+    }
+
+    {
+      const disk = await getDiskFree(paths.dataDir);
+      if (!disk) {
+        checks.push(diagSkip('disk.free', 'Disk space',
+          'Free space check not supported on this platform.',
+          { category: 'storage' }));
+      } else if (disk.free < 500 * 1024 * 1024) {
+        checks.push(diagFail('disk.free', 'Disk almost full',
+          `Only ${fmtGB(disk.free)} free of ${fmtGB(disk.total)} on data drive.`,
+          { category: 'storage', hint: 'Free up disk space — saves and backups will fail' }));
+      } else if (disk.free < 5 * 1024 * 1024 * 1024) {
+        checks.push(diagWarn('disk.free', 'Low disk space',
+          `${fmtGB(disk.free)} free of ${fmtGB(disk.total)} on data drive.`,
+          { category: 'storage' }));
+      } else {
+        checks.push(diagOk('disk.free', 'Disk space healthy',
+          `${fmtGB(disk.free)} free of ${fmtGB(disk.total)}.`,
+          { category: 'storage' }));
+      }
+    }
+    } catch (e) {
+      checks.push(diagWarn('storage.error', 'Storage checks errored',
+        `Logs/disk checks could not run: ${e?.message || 'unknown'}`,
+        { category: 'storage' }));
+    }
+
+    // ─── Runtime ───────────────────────────────────────────────────────
+    try {
+    {
+      const mem = process.memoryUsage();
+      const heapPct = mem.heapTotal > 0 ? (mem.heapUsed / mem.heapTotal) * 100 : 0;
+      if (heapPct >= 90) {
+        checks.push(diagFail('runtime.heap', 'Heap usage critical',
+          `Heap at ${heapPct.toFixed(0)}% (${fmtMB(mem.heapUsed)} / ${fmtMB(mem.heapTotal)}). Restart recommended.`,
+          { category: 'runtime' }));
+      } else if (heapPct >= 75) {
+        checks.push(diagWarn('runtime.heap', 'Heap usage high',
+          `Heap at ${heapPct.toFixed(0)}% (${fmtMB(mem.heapUsed)} / ${fmtMB(mem.heapTotal)}).`,
+          { category: 'runtime' }));
+      } else {
+        checks.push(diagOk('runtime.heap', 'Heap usage healthy',
+          `${heapPct.toFixed(0)}% (${fmtMB(mem.heapUsed)} / ${fmtMB(mem.heapTotal)}).`,
+          { category: 'runtime' }));
+      }
+
+      const totalHostMem = os.totalmem();
+      const freeHostMem = os.freemem();
+      const usedPct = ((totalHostMem - freeHostMem) / totalHostMem) * 100;
+      if (freeHostMem < 256 * 1024 * 1024) {
+        checks.push(diagFail('runtime.hostMem', 'Host RAM exhausted',
+          `Only ${fmtMB(freeHostMem)} free of ${fmtGB(totalHostMem)}. Server may crash.`,
+          { category: 'runtime' }));
+      } else if (usedPct > 90) {
+        checks.push(diagWarn('runtime.hostMem', 'Host RAM pressure',
+          `${usedPct.toFixed(0)}% used (${fmtGB(totalHostMem - freeHostMem)} / ${fmtGB(totalHostMem)}).`,
+          { category: 'runtime' }));
+      } else {
+        checks.push(diagOk('runtime.hostMem', 'Host RAM healthy',
+          `${usedPct.toFixed(0)}% used of ${fmtGB(totalHostMem)}.`,
+          { category: 'runtime' }));
+      }
+
+      checks.push(diagInfo('runtime.uptime', 'Panel uptime',
+        `${fmtAge(process.uptime() * 1000).replace(' ago', '')}.`,
+        { category: 'runtime' }));
+    }
+    } catch (e) {
+      checks.push(diagWarn('runtime.error', 'Runtime checks errored',
+        `Memory/uptime checks could not run: ${e?.message || 'unknown'}`,
+        { category: 'runtime' }));
+    }
+
+    // ─── Updates ───────────────────────────────────────────────────────
+    try {
+    if (panelUpdateChecker?.updateAvailable) {
+      const latest = panelUpdateChecker.latestRelease?.tag_name || panelUpdateChecker.latestRelease?.name || 'newer version';
+      checks.push(diagInfo('update.panel', 'Panel update available',
+        `${latest} is newer than your installed v${panelUpdateChecker.currentVersion || '?'}.`,
+        { category: 'updates', hint: 'Settings → Updates' }));
+    } else if (panelUpdateChecker) {
+      checks.push(diagOk('update.panel', 'Panel up to date',
+        `Running v${panelUpdateChecker.currentVersion || '?'}.`,
+        { category: 'updates' }));
+    }
+
+    {
+      const outdated = (trackedMods || []).filter(m => m.updateAvailable).length;
+      if (outdated > 0) {
+        checks.push(diagInfo('update.mods', 'Mod updates available',
+          `${outdated} mod${outdated === 1 ? '' : 's'} have updates on Steam Workshop.`,
+          { category: 'updates', hint: 'Mods → Update Subscriptions' }));
+      } else if ((trackedMods || []).length > 0) {
+        checks.push(diagOk('update.mods', 'All mods current',
+          `${trackedMods.length} tracked, none flagged for update.`,
+          { category: 'updates' }));
+      }
+    }
+    } catch (e) {
+      checks.push(diagWarn('updates.error', 'Update checks errored',
+        `Update checks could not run: ${e?.message || 'unknown'}`,
+        { category: 'updates' }));
+    }
+
+    // ─── Aggregate ─────────────────────────────────────────────────────
+    const summary = { ok: 0, warn: 0, fail: 0, info: 0, skip: 0 };
+    for (const c of checks) summary[c.status] = (summary[c.status] || 0) + 1;
+    const overall = summary.fail > 0 ? 'fail' : summary.warn > 0 ? 'warn' : 'ok';
+
+    res.json({
+      timestamp: new Date().toISOString(),
+      overall,
+      summary,
+      categories: DIAG_CATEGORIES,
+      checks,
+      durationMs: Date.now() - t0
+    });
+  } catch (error) {
+    log.error(`Diagnostics failed: ${error.message}`);
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
+// ─── World Map Diagnostics ───────────────────────────────────────────
+// Dedicated checks for everything the World Map page depends on:
+// tile CDNs (b42map.com / map.projectzomboid.com), PanelBridge handlers
+// for live player/vehicle/safehouse data, save folder layout (B41 vs B42),
+// and the local /api/map proxy itself.
+const TILE_PROBE_TIMEOUT_MS = 5000;
+const WORLDMAP_HANDLERS = ['getServerInfo', 'getVehiclesDetailed', 'getSafehouses', 'triggerAirdrop'];
+
+async function probeTile(url) {
+  const t0 = Date.now();
+  try {
+    const ctrl = AbortSignal.timeout(TILE_PROBE_TIMEOUT_MS);
+    // HEAD avoids transferring the full image. Some CDNs reject HEAD —
+    // fall back to a ranged GET for the first byte.
+    let resp = await fetch(url, { method: 'HEAD', signal: ctrl }).catch(() => null);
+    if (!resp || !resp.ok) {
+      resp = await fetch(url, {
+        method: 'GET',
+        headers: { Range: 'bytes=0-0' },
+        signal: AbortSignal.timeout(TILE_PROBE_TIMEOUT_MS)
+      });
+    }
+    return {
+      url,
+      reachable: resp.ok || resp.status === 206,
+      statusCode: resp.status,
+      latencyMs: Date.now() - t0,
+      error: null
+    };
+  } catch (e) {
+    return {
+      url,
+      reachable: false,
+      statusCode: null,
+      latencyMs: Date.now() - t0,
+      error: e?.name === 'TimeoutError' ? 'timeout' : (e?.message || 'unknown')
+    };
+  }
+}
+
+async function detectSaveBuild(savePath) {
+  // B42 stores chunks as map/X/Y.bin, B41 stores them as map_X_Y.bin in the save root.
+  if (!await safePathExists(savePath)) return 'unknown';
+  const mapDir = path.join(savePath, 'map');
+  if (await safePathExists(mapDir)) {
+    const entries = await safeReaddir(mapDir);
+    if (entries && entries.some(e => /^\d+$/.test(e))) return 'b42';
+  }
+  const rootEntries = await safeReaddir(savePath);
+  if (rootEntries && rootEntries.some(e => /^map_\d+_\d+\.bin$/.test(e))) return 'b41';
+  return 'unknown';
+}
+
+router.get('/worldmap', async (req, res) => {
+  const t0 = Date.now();
+  const checks = [];
+
+  try {
+    // Gather context with the same hard timeout we use for /diagnostics.
+    const [activeServer] = await Promise.all([
+      withTimeout(getActiveServer().catch(() => null), FS_TIMEOUT_MS, null)
+    ]);
+
+    if (!activeServer) {
+      checks.push(diagWarn('worldmap.activeServer', 'No active server',
+        'No server is currently active in the panel. The map will load tiles but cannot show players, vehicles, or safehouses.',
+        { category: 'worldmap', hint: 'Servers → select one and click “Set active”.' }));
+    }
+
+    // ─── Tile sources ─────────────────────────────────────────────────
+    let b42Probe = null;
+    let b41Probe = null;
+    try {
+      [b42Probe, b41Probe] = await Promise.all([
+        probeTile('https://b42map.com/map_data/base/layer0_files/0/0_0.jpg'),
+        probeTile('https://map.projectzomboid.com/maps/SurvivalB417812L0/map_files/0/0_0.jpg')
+      ]);
+
+      if (b42Probe.reachable) {
+        checks.push(diagOk('worldmap.tiles.b42', 'B42 tile CDN reachable',
+          `b42map.com responded in ${b42Probe.latencyMs} ms (HTTP ${b42Probe.statusCode}).`,
+          { category: 'worldmap' }));
+      } else {
+        checks.push(diagFail('worldmap.tiles.b42', 'B42 tile CDN unreachable',
+          `Could not reach b42map.com (${b42Probe.error || `HTTP ${b42Probe.statusCode}`}). The B42 base map will not load.`,
+          { category: 'worldmap', hint: 'Check the panel host\'s outbound HTTPS access. The /api/map/tiles proxy fetches tiles server-side.' }));
+      }
+
+      if (b41Probe.reachable) {
+        checks.push(diagOk('worldmap.tiles.b41', 'B41 tile CDN reachable',
+          `map.projectzomboid.com responded in ${b41Probe.latencyMs} ms (HTTP ${b41Probe.statusCode}).`,
+          { category: 'worldmap' }));
+      } else {
+        checks.push(diagWarn('worldmap.tiles.b41', 'B41 tile CDN unreachable',
+          `Could not reach map.projectzomboid.com (${b41Probe.error || `HTTP ${b41Probe.statusCode}`}). B41 fallback tiles will not load.`,
+          { category: 'worldmap', hint: 'Only relevant if you run a B41 server. Outbound HTTPS to map.projectzomboid.com is required.' }));
+      }
+
+      // Node 18+ AbortSignal.timeout availability
+      if (typeof AbortSignal === 'undefined' || typeof AbortSignal.timeout !== 'function') {
+        checks.push(diagFail('worldmap.runtime', 'Tile proxy needs Node 18+',
+          'AbortSignal.timeout is unavailable on this runtime. Every tile fetch will throw and return 502.',
+          { category: 'worldmap', hint: 'Upgrade the panel host to Node 18+ (the bundled .exe already ships with this).' }));
+      }
+    } catch (e) {
+      checks.push(diagWarn('worldmap.tiles.error', 'Tile reachability probe failed',
+        `Tile probe could not complete: ${e?.message || 'unknown'}`,
+        { category: 'worldmap' }));
+    }
+
+    // ─── PanelBridge live data ────────────────────────────────────────
+    const bridgeStatus = panelBridgeService?.getStatus?.() || null;
+    const bridgeRunning = !!bridgeStatus?.isRunning;
+    const modConnected = !!bridgeStatus?.modStatus;
+    const statusAge = bridgeStatus?.statusFile?.age ?? null;
+
+    if (!bridgeStatus || !bridgeStatus.configured) {
+      checks.push(diagFail('worldmap.bridge.configured', 'PanelBridge not configured',
+        'The map gets live player positions, vehicles and safehouses from PanelBridge. Without it, the map will show only the static base tiles.',
+        { category: 'worldmap', hint: 'Configure the active server\'s Zomboid Data Path so the bridge folder can be located.' }));
+    } else if (!bridgeRunning) {
+      checks.push(diagWarn('worldmap.bridge.running', 'PanelBridge service not running',
+        'The bridge service is configured but not currently polling. Live map data will be empty.',
+        { category: 'worldmap' }));
+    } else if (!modConnected) {
+      checks.push(diagWarn('worldmap.bridge.mod', 'Mod not connected',
+        'PanelBridge is running but the in-game mod has not written status.json yet. Players, vehicles and safehouses will not appear.',
+        { category: 'worldmap', hint: 'Start the PZ server and confirm the PanelBridge mod is in the active mod list.' }));
+    } else if (statusAge !== null && statusAge > 15_000) {
+      checks.push(diagWarn('worldmap.bridge.heartbeat', 'Mod heartbeat stale',
+        `Last status.json update was ${Math.round(statusAge / 1000)}s ago. Live map data may be stale.`,
+        { category: 'worldmap' }));
+    } else {
+      checks.push(diagOk('worldmap.bridge', 'Live data feed healthy',
+        `PanelBridge running, mod connected${statusAge !== null ? `, last heartbeat ${Math.round(statusAge / 1000)}s ago` : ''}.`,
+        { category: 'worldmap' }));
+    }
+
+    // Verify expected handler list — surfaced in the dedicated UI card,
+    // no need to push an info check that inflates the summary count.
+
+    // ─── Server build + active save ───────────────────────────────────
+    let saveBuild = 'unknown';
+    let saveName = null;
+    let savePath = null;
+    let savesDir = null;
+    let saveCount = 0;
+
+    if (activeServer?.zomboidDataPath) {
+      // PZ saves live under <zomboidData>/Saves/<gameMode>/<saveName>
+      // We don't know which game mode, so just enumerate candidates.
+      const savesRoot = path.join(activeServer.zomboidDataPath, 'Saves');
+      if (await safePathExists(savesRoot)) {
+        try {
+          const modes = (await safeReaddir(savesRoot)) || [];
+          for (const mode of modes) {
+            const modeDir = path.join(savesRoot, mode);
+            const st = await safeStat(modeDir);
+            if (!st || !st.isDirectory()) continue;
+            const saves = (await safeReaddir(modeDir)) || [];
+            for (const s of saves) {
+              const sp = path.join(modeDir, s);
+              const sst = await safeStat(sp);
+              if (sst && sst.isDirectory()) {
+                saveCount++;
+                if (!savePath) {
+                  savePath = sp;
+                  saveName = s;
+                  savesDir = modeDir;
+                }
+              }
+            }
+          }
+        } catch {
+          // ignore enumeration errors
+        }
+      }
+
+      if (saveCount === 0) {
+        checks.push(diagInfo('worldmap.save.none', 'No save found yet',
+          'No save folder under <zomboidData>/Saves. The server hasn\'t generated a world yet — the map will still render but without chunk data.',
+          { category: 'worldmap' }));
+      } else {
+        if (savePath) {
+          saveBuild = await detectSaveBuild(savePath);
+        }
+        if (saveBuild === 'b42') {
+          checks.push(diagOk('worldmap.save.build', 'B42 save detected',
+            `${saveCount} save(s); using ${saveName} for build detection (map/X/Y.bin layout).`,
+            { category: 'worldmap' }));
+        } else if (saveBuild === 'b41') {
+          checks.push(diagOk('worldmap.save.build', 'B41 save detected',
+            `${saveCount} save(s); using ${saveName} (map_X_Y.bin layout). Map will switch to B41 tile source.`,
+            { category: 'worldmap' }));
+        } else {
+          checks.push(diagWarn('worldmap.save.build', 'Save build not detected',
+            `Found ${saveCount} save folder(s) but couldn\'t identify B41 vs B42 layout. Map will default to B42 origin and player coords may render off-screen on a B41 save.`,
+            { category: 'worldmap', hint: 'Start the server once to materialise chunk files.' }));
+        }
+      }
+    } else {
+      checks.push(diagWarn('worldmap.save.dataPath', 'No Zomboid data path set',
+        'Cannot locate save folders. Map auto-detection of B41/B42 will be skipped.',
+        { category: 'worldmap', hint: 'Servers → Edit → Zomboid Data Path' }));
+    }
+
+    // ─── Map proxy (local) ────────────────────────────────────────────
+    // The /api/map/tiles route is mounted unconditionally in index.js. Its
+    // upstream URLs are already surfaced in the response payload, so we
+    // skip pushing an info-only check here to keep the summary actionable.
+
+    // ─── Aggregate ────────────────────────────────────────────────────
+    const summary = { ok: 0, warn: 0, fail: 0, info: 0, skip: 0 };
+    for (const c of checks) summary[c.status] = (summary[c.status] || 0) + 1;
+    const overall = summary.fail > 0 ? 'fail' : summary.warn > 0 ? 'warn' : 'ok';
+
+    res.json({
+      timestamp: new Date().toISOString(),
+      overall,
+      summary,
+      checks,
+      durationMs: Date.now() - t0,
+      // Extra structured data the UI surfaces in dedicated panels.
+      tileSources: {
+        b42: b42Probe,
+        b41: b41Probe
+      },
+      bridge: bridgeStatus ? {
+        configured: bridgeStatus.configured,
+        isRunning: bridgeStatus.isRunning,
+        modConnected,
+        statusAgeMs: statusAge,
+        bridgePath: bridgeStatus.bridgePath,
+        consecutiveFailures: bridgeStatus.consecutiveFailures
+      } : null,
+      handlers: WORLDMAP_HANDLERS,
+      save: {
+        zomboidDataPath: activeServer?.zomboidDataPath || null,
+        savesDir,
+        activeSaveName: saveName,
+        activeSavePath: savePath,
+        saveCount,
+        build: saveBuild
+      },
+      activeServer: activeServer ? {
+        id: activeServer.id,
+        name: activeServer.name || activeServer.serverName,
+        serverName: activeServer.serverName
+      } : null,
+      proxy: {
+        b42: '/api/map/tiles/:level/:tile?floor=N',
+        b41: '/api/map/b41tiles/:level/:tile'
+      }
+    });
+  } catch (error) {
+    log.error(`World map diagnostics failed: ${error.message}`);
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
 router.get('/performance-history', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 60;

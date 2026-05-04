@@ -112,7 +112,10 @@ local PanelBridge = {
     initialized = false,
     
     -- Debug/Logging system
-    DEBUG_MODE = true, -- Verbose logging enabled
+    -- Default OFF: polled commands (getServerInfo every 3s, getVehiclesDetailed/getSafehouses
+    -- every 15s) would otherwise produce thousands of console.txt lines per hour. Use the
+    -- setDebugMode bridge command (or the Debug page) to enable verbose logging when needed.
+    DEBUG_MODE = false,
     debugLog = {},      -- Recent debug entries (ring buffer)
     MAX_DEBUG_ENTRIES = 200,
     MAX_PENDING_RESULTS = 500,
@@ -801,7 +804,9 @@ local function processSingleCommand(cmd)
     PanelBridge.stats.commandsProcessed = PanelBridge.stats.commandsProcessed + 1
 
     -- Frequent polling commands log at DEBUG to avoid spam
-    local quietCommands = { getServerInfo=true, ping=true, getWeather=true, getGameTime=true, getWorldStats=true, getUtilitiesStatus=true, getClimateFloats=true, getAllPlayerDetails=true }
+    -- These commands are polled by the panel on a fixed schedule (every few seconds) so we
+    -- log them at DEBUG only. INFO is reserved for one-shot admin actions.
+    local quietCommands = { getServerInfo=true, ping=true, getWeather=true, getGameTime=true, getWorldStats=true, getUtilitiesStatus=true, getClimateFloats=true, getAllPlayerDetails=true, getVehiclesDetailed=true, getSafehouses=true, getZombieCount=true, getSandboxOptions=true }
     if quietCommands[cmd.action] then
         PanelBridge.debug("Processing command: " .. tostring(cmd.action), { id = cmd.id })
     else
