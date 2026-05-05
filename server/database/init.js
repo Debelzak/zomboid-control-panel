@@ -53,6 +53,7 @@ const defaultData = {
   server_events: [],
   tracked_mods: [],
   ignored_mods: [],
+  ignored_mod_pairs: [],
   servers: [],
   player_notes: [],
   player_stats: [],
@@ -883,6 +884,64 @@ export async function isModIgnored(workshopId) {
   return db.data.ignored_mods.some(m =>
     m.workshop_id === workshopId && (m.server_id === serverId || !m.server_id)
   );
+}
+
+// ============================================
+// Ignored Mod Conflict Pairs (false-positive dismissals on the
+// Advanced tab's variant detector — e.g. a shared library + dependant
+// being mis-flagged as two variants of the same mod).
+// ============================================
+
+function _normalizePair(modIdA, modIdB) {
+  const a = String(modIdA || '').trim();
+  const b = String(modIdB || '').trim();
+  if (!a || !b || a === b) return null;
+  return a < b ? [a, b] : [b, a];
+}
+
+export async function getIgnoredModPairs() {
+  const db = await getDb();
+  if (!db.data.ignored_mod_pairs) db.data.ignored_mod_pairs = [];
+  const serverId = await getActiveServerId();
+  if (!serverId) return db.data.ignored_mod_pairs;
+  return db.data.ignored_mod_pairs.filter(p => p.server_id === serverId || !p.server_id);
+}
+
+export async function addIgnoredModPair(modIdA, modIdB, reason = null) {
+  const pair = _normalizePair(modIdA, modIdB);
+  if (!pair) return null;
+  const db = await getDb();
+  if (!db.data.ignored_mod_pairs) db.data.ignored_mod_pairs = [];
+  const serverId = await getActiveServerId();
+  const existing = db.data.ignored_mod_pairs.find(p =>
+    p.mod_a === pair[0] && p.mod_b === pair[1] && (p.server_id === serverId || !p.server_id)
+  );
+  if (existing) return existing;
+  const entry = {
+    mod_a: pair[0],
+    mod_b: pair[1],
+    reason: reason || null,
+    server_id: serverId,
+    ignored_at: new Date().toISOString()
+  };
+  db.data.ignored_mod_pairs.push(entry);
+  scheduleWrite();
+  return entry;
+}
+
+export async function removeIgnoredModPair(modIdA, modIdB) {
+  const pair = _normalizePair(modIdA, modIdB);
+  if (!pair) return false;
+  const db = await getDb();
+  if (!db.data.ignored_mod_pairs) db.data.ignored_mod_pairs = [];
+  const serverId = await getActiveServerId();
+  const before = db.data.ignored_mod_pairs.length;
+  db.data.ignored_mod_pairs = db.data.ignored_mod_pairs.filter(p =>
+    !(p.mod_a === pair[0] && p.mod_b === pair[1] && (p.server_id === serverId || !p.server_id))
+  );
+  const removed = before - db.data.ignored_mod_pairs.length;
+  if (removed > 0) scheduleWrite();
+  return removed > 0;
 }
 
 // ============================================

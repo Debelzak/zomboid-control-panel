@@ -276,6 +276,7 @@ export default function Debug() {
   const [armedAction, setArmedAction] = useState<string | null>(null)
   const armTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const logsEndRef = useRef<HTMLDivElement>(null)
+  const logsScrollAreaRef = useRef<HTMLDivElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
   const socket = useContext(SocketContext)
@@ -315,11 +316,16 @@ export default function Debug() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [searchQuery])
 
-  // Auto-scroll to bottom
+  // Auto-scroll to bottom — scoped to the inner ScrollArea viewport so it
+  // does NOT scroll the outer page (scrollIntoView walks ancestors and would
+  // yank the whole window down on every new log line).
   useEffect(() => {
-    if (autoScroll && !paused) {
-      logsEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-    }
+    if (!autoScroll || paused) return
+    const root = logsScrollAreaRef.current
+    if (!root) return
+    const viewport = root.querySelector<HTMLElement>('[data-radix-scroll-area-viewport]')
+    if (!viewport) return
+    viewport.scrollTop = viewport.scrollHeight
   }, [logs, autoScroll, paused])
 
   // Fetch system info
@@ -2578,7 +2584,7 @@ export default function Debug() {
               </div>
             </CardHeader>
             <CardContent>
-              <ScrollArea className="h-[300px] sm:h-[500px] rounded-lg border border-border/50 bg-muted/20">
+              <ScrollArea ref={logsScrollAreaRef} className="h-[300px] sm:h-[500px] rounded-lg border border-border/50 bg-muted/20">
                 <div className="font-mono text-sm p-4">
                   {filteredLogs.length === 0 ? (
                     logs.length === 0 

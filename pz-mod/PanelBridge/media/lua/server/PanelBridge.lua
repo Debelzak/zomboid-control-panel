@@ -100,7 +100,7 @@
 local json
 
 local PanelBridge = {
-    VERSION = "1.1.0",
+    VERSION = "1.1.1",
     PROTOCOL_VERSION = "queue-v1",
     CHECK_INTERVAL = 250, -- milliseconds (fast command polling)
     lastCheck = 0,
@@ -5544,27 +5544,48 @@ handlers.getVehiclesDetailed = function(args)
     end
 
     local out = {}
-    for i = 0, vehicles:size() - 1 do
-        local v = vehicles:get(i)
-        if v then
-            table.insert(out, {
-                id = v.getId and v:getId() or nil,
-                x = v.getX and v:getX() or nil,
-                y = v.getY and v:getY() or nil,
-                z = v.getZ and v:getZ() or nil,
-                scriptName = v.getScriptName and v:getScriptName() or nil,
-                type = v.getVehicleType and v:getVehicleType() or nil,
-                speedKmh = v.getCurrentSpeedKmHour and v:getCurrentSpeedKmHour() or 0,
-                batteryCharge = v.getBatteryCharge and v:getBatteryCharge() or nil,
-                fuelPct = v.getRemainingFuelPercentage and v:getRemainingFuelPercentage() or nil,
-                alarmed = v.isAlarmed and v:isAlarmed() or false,
-                sirening = v.getLightbarSirenMode and v:getLightbarSirenMode() > 0 or false,
-                trunkLocked = v.isTrunkLocked and v:isTrunkLocked() or false
-            })
+    local skipped = 0
+    local size = vehicles.size and vehicles:size() or 0
+    for i = 0, size - 1 do
+        -- Wrap each vehicle individually: a single broken modded vehicle
+        -- (e.g. Ki5 cars whose getters throw java.lang.RuntimeException)
+        -- must not bring down the whole detail query, otherwise the panel
+        -- loses visibility of every vehicle on the server.
+        local ok, entry = pcall(function()
+            local v = vehicles:get(i)
+            if not v then return nil end
+            -- Each getter is independently guarded so one broken accessor
+            -- (e.g. a missing battery part on a modded vehicle) doesn't
+            -- void the whole row.
+            local function safe(fn)
+                if not fn then return nil end
+                local sok, sv = pcall(fn)
+                if sok then return sv end
+                return nil
+            end
+            return {
+                id = safe(function() return v.getId and v:getId() end),
+                x = safe(function() return v.getX and v:getX() end),
+                y = safe(function() return v.getY and v:getY() end),
+                z = safe(function() return v.getZ and v:getZ() end),
+                scriptName = safe(function() return v.getScriptName and v:getScriptName() end),
+                type = safe(function() return v.getVehicleType and v:getVehicleType() end),
+                speedKmh = safe(function() return v.getCurrentSpeedKmHour and v:getCurrentSpeedKmHour() end) or 0,
+                batteryCharge = safe(function() return v.getBatteryCharge and v:getBatteryCharge() end),
+                fuelPct = safe(function() return v.getRemainingFuelPercentage and v:getRemainingFuelPercentage() end),
+                alarmed = safe(function() return v.isAlarmed and v:isAlarmed() end) == true,
+                sirening = safe(function() return v.getLightbarSirenMode and (v:getLightbarSirenMode() or 0) > 0 end) == true,
+                trunkLocked = safe(function() return v.isTrunkLocked and v:isTrunkLocked() end) == true
+            }
+        end)
+        if ok and entry then
+            table.insert(out, entry)
+        else
+            skipped = skipped + 1
         end
     end
 
-    return true, { vehicles = out, count = #out }
+    return true, { vehicles = out, count = #out, skipped = skipped }
 end
 
 handlers.vehicleRepair = function(args)

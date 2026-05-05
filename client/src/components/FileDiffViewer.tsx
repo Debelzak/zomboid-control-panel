@@ -81,6 +81,16 @@ function overlapKindLabel(kind: 'lua-symbols' | 'lua-shadow' | 'script-defs' | '
   }
 }
 
+function overlapKindShortLabel(kind: 'lua-symbols' | 'lua-shadow' | 'script-defs' | 'clothing-items' | 'translation-keys'): string {
+  switch (kind) {
+    case 'lua-symbols': return 'symbol'
+    case 'lua-shadow': return 'symbol'
+    case 'script-defs': return 'definition'
+    case 'clothing-items': return 'item'
+    case 'translation-keys': return 'key'
+  }
+}
+
 export const FileDiffViewer = memo(function FileDiffViewer({ file, modAId, modBId, modAName, modBName, severity, categoryLabel, winnerName, loserName, overlap }: FileDiffViewerProps) {
   const [expanded, setExpanded] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -154,7 +164,7 @@ export const FileDiffViewer = memo(function FileDiffViewer({ file, modAId, modBI
             }`}
             title={`${overlap.total} overlapping ${overlapKindLabel(overlap.kind)}:\n${overlap.items.slice(0, 25).join('\n')}${overlap.items.length > 25 ? `\n+${overlap.items.length - 25} more` : ''}`}
           >
-            {overlap.total} clash{overlap.total !== 1 ? 'es' : ''}
+            {overlap.total} {overlapKindShortLabel(overlap.kind)} clash{overlap.total !== 1 ? 'es' : ''}
           </span>
         )}
         {overlap && overlap.kind === 'lua-shadow' && (

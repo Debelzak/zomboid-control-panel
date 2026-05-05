@@ -2885,7 +2885,7 @@ export default function WorldMap() {
 
       {/* Custom Drop Dialog — drops one or more items at the right-clicked coords */}
       <Dialog open={!!dropDialog} onOpenChange={(open) => { if (!open) setDropDialog(null) }}>
-        <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Package className="w-5 h-5 text-warning" />

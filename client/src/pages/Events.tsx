@@ -1082,7 +1082,7 @@ export default function Events() {
   const hasValidTeleportCoords = teleportCoordX !== null && teleportCoordY !== null && teleportCoordZ !== null
 
   // Weather commands
-  const startRain = () => serverApi.startRain(rainIntensity)
+  const startRain = () => serverApi.startRain(rainIntensity / 100)
   const stopRain = () => serverApi.stopRain()
   const startStorm = () => serverApi.startStorm(stormDuration)
   const stopWeather = () => serverApi.stopWeather()

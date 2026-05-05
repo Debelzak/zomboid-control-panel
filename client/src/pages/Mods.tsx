@@ -38,6 +38,7 @@ import {
   PlusCircle,
   X,
   EyeOff,
+  Eye,
   ArrowRight,
 } from 'lucide-react'
 import { ConflictScanResult, ScanStreamModScanned, ScanStreamConflictFound } from '@/types'
@@ -184,6 +185,14 @@ export default function Mods() {
   const [showUpdatesOnly, setShowUpdatesOnly] = useState(false)
   const [selectedMods, setSelectedMods] = useState<Set<string>>(new Set())
 
+  // Disabled-mods reveal (mods downloaded into the Steam workshop folder but
+  // not present in the server INI's WorkshopItems= list). Off by default to
+  // keep the page focused on what's actually loaded by the server.
+  const [showDisabled, setShowDisabled] = useState(false)
+  const [disabledMods, setDisabledMods] = useState<Array<{ workshop_id: string; name: string }>>([])
+  const [disabledLoading, setDisabledLoading] = useState(false)
+  const [enablingId, setEnablingId] = useState<string | null>(null)
+
   // Ctrl+K = focus search
   usePageShortcut('k', () => { searchInputRef.current?.focus() }, { ctrl: true })
 
@@ -228,6 +237,8 @@ export default function Mods() {
   const [confirmBulkRemove, setConfirmBulkRemove] = useState(false)
   const [ignoredMods, setIgnoredMods] = useState<Array<{ workshop_id: string; name: string | null; ignored_at: string }>>([])
   const [ignoredModsOpen, setIgnoredModsOpen] = useState(false)
+  // Conflict pairs the user has explicitly dismissed as false positives.
+  const [ignoredPairs, setIgnoredPairs] = useState<Array<{ mod_a: string; mod_b: string; reason?: string | null }>>([])
   const [confirmRemoveWorkshop, setConfirmRemoveWorkshop] = useState<{ wsId: string; knownModIds: string[] } | null>(null) // wsId for config tab remove
   const [deduplicating, setDeduplicating] = useState(false)
   const [deduplicateResult, setDeduplicateResult] = useState<string | null>(null)
@@ -269,7 +280,9 @@ export default function Mods() {
   // Inner sub-tab within Conflicts: 'network' or 'dependencies'
   const [conflictSubTab, setConflictSubTab] = useState<'network' | 'dependencies'>('network')
   // Severity filter for pairs list: 'all' | 'high' | 'medium' | 'low'
-  const [pairSeverityFilter, setPairSeverityFilter] = useState<'all' | 'high' | 'medium' | 'low'>('all')
+  const [pairSeverityFilter, setPairSeverityFilter] = useState<'all' | 'real' | 'high' | 'medium' | 'low'>('real')
+  const [groupByWinner, setGroupByWinner] = useState<boolean>(true)
+  const [showAllTopMods, setShowAllTopMods] = useState<boolean>(false)
   // Graph filter state (used for pair filtering in the conflict list)
   const [graphFilterMod, setGraphFilterMod] = useState<string | null>(null)
 
@@ -440,7 +453,8 @@ export default function Mods() {
         modsApi.getTrackedMods(),
         modsApi.getStatus(),
         modsApi.getCurrentConfig(),
-        modsApi.getIgnoredMods()
+        modsApi.getIgnoredMods(),
+        modsApi.getIgnoredModPairs()
       ])
       
       // Extract successful results
@@ -467,6 +481,9 @@ export default function Mods() {
       if (results[3].status === 'fulfilled') {
         setIgnoredMods(Array.isArray(results[3].value) ? results[3].value : [])
       }
+      if (results[4].status === 'fulfilled') {
+        setIgnoredPairs(Array.isArray(results[4].value) ? results[4].value : [])
+      }
       
       // Check for failures and show persistent error
       const failures = results.filter(r => r.status === 'rejected')
@@ -487,6 +504,42 @@ export default function Mods() {
     // so this is a no-op for users who don't use the feature.
     fetchCollectionStatusRef.current?.().catch(() => {})
   }, [])
+
+  // Fetch mods that exist on disk but are NOT in the server INI.
+  // Lazy: only called when the user opens the "Show disabled" panel.
+  const fetchDisabled = useCallback(async () => {
+    setDisabledLoading(true)
+    try {
+      const result = await modsApi.listDiskOnly()
+      setDisabledMods(result.mods || [])
+    } catch (error) {
+      reportClientError('Failed to fetch disabled mods.', error)
+    } finally {
+      setDisabledLoading(false)
+    }
+  }, [])
+
+  const handleEnableDiskMod = useCallback(async (workshopId: string) => {
+    if (enablingId) return
+    setEnablingId(workshopId)
+    try {
+      const r = await modsApi.enableDiskMod(workshopId)
+      toast({
+        title: 'Mod enabled',
+        description: `Added to server INI (${r.modIdsAdded} mod ID${r.modIdsAdded === 1 ? '' : 's'}). Restart the server to load it.`,
+      })
+      // Refresh both lists so the row moves from disabled → tracked.
+      await Promise.allSettled([fetchData(), fetchDisabled()])
+    } catch (error) {
+      toast({
+        title: 'Enable failed',
+        description: error instanceof Error ? error.message : 'Failed to enable mod',
+        variant: 'destructive',
+      })
+    } finally {
+      setEnablingId(null)
+    }
+  }, [enablingId, toast, fetchData, fetchDisabled])
 
   // Fetch the workshop-collection diff. Cheap one-shot read; only updates the
   // header indicator. Errors are stored on state so the user can see why
@@ -745,6 +798,21 @@ export default function Mods() {
     }
   }, [deferredSearchQuery])
 
+  // If "Never Checked" is the only non-empty bucket (e.g. fresh server, first
+  // load before any update check has run), auto-expand it. Otherwise the user
+  // sees an empty-looking list with just a collapsed header — the mods ARE
+  // tracked, they just aren't visible.
+  useEffect(() => {
+    if (deferredSearchQuery) return
+    if (
+      groupedMods.neverChecked.length > 0 &&
+      groupedMods.updateAvailable.length === 0 &&
+      groupedMods.upToDate.length === 0
+    ) {
+      setNeverCheckedExpanded(true)
+    }
+  }, [groupedMods, deferredSearchQuery])
+
   const handleCheckUpdates = async () => {
     if (busyRef.current) return
     busyRef.current = true
@@ -989,7 +1057,7 @@ export default function Mods() {
       await modsApi.batchRemove([workshopId])
       toast({
         title: 'Mod Removed',
-        description: 'Removed from tracking and server config.',
+        description: 'Removed from server INI config.',
       })
       fetchData()
     } catch (error) {
@@ -1628,7 +1696,7 @@ export default function Mods() {
                 <Trash2 className="w-4 h-4" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Remove from tracking</TooltipContent>
+            <TooltipContent>Remove from server</TooltipContent>
           </Tooltip>
         </div>
       </div>
@@ -1726,7 +1794,20 @@ export default function Mods() {
 
   // ── Sibling conflicts: within a single workshop item, which mod IDs overlap
   //    with each other? These are typically alternatives (e.g. NUDE vs DOLL
-  //    texture variants) — usually only one should be enabled at a time. ──
+  //    texture variants) — usually only one should be enabled at a time.
+  //    Pairs the user has dismissed as false positives are excluded so the
+  //    Advanced tab doesn't keep nagging about library + dependant combos. ──
+  const ignoredPairKeys = useMemo(() => {
+    const s = new Set<string>()
+    for (const p of ignoredPairs) {
+      const a = p.mod_a, b = p.mod_b
+      s.add(a < b ? `${a}--${b}` : `${b}--${a}`)
+    }
+    return s
+  }, [ignoredPairs])
+  const isPairIgnored = useCallback((a: string, b: string) => {
+    return ignoredPairKeys.has(a < b ? `${a}--${b}` : `${b}--${a}`)
+  }, [ignoredPairKeys])
   const siblingConflictsMap = useMemo(() => {
     const result = new Map<string, Map<string, Set<string>>>()
     if (!conflicts?.pairs?.length) return result
@@ -1739,6 +1820,8 @@ export default function Mods() {
       const wsA = modToWs.get(pair.modA.modId)
       const wsB = modToWs.get(pair.modB.modId)
       if (!wsA || wsA !== wsB) continue
+      // User dismissed this pair as a false positive — skip.
+      if (isPairIgnored(pair.modA.modId, pair.modB.modId)) continue
       // Same-workshop conflict — record both directions
       let groupMap = result.get(wsA)
       if (!groupMap) { groupMap = new Map(); result.set(wsA, groupMap) }
@@ -1750,7 +1833,7 @@ export default function Mods() {
       groupMap.set(pair.modB.modId, setB)
     }
     return result
-  }, [conflicts?.pairs, activeModsData])
+  }, [conflicts?.pairs, activeModsData, isPairIgnored])
 
   const activeModsFiltered = useMemo(() => {
     const { groups } = activeModsData
@@ -1776,6 +1859,7 @@ export default function Mods() {
       : conflicts.pairs
     return {
       all: allPairs.length,
+      real: allPairs.filter(p => p.highCount > 0 || p.mediumCount > 0).length,
       high: allPairs.filter(p => p.highCount > 0).length,
       medium: allPairs.filter(p => p.mediumCount > 0).length,
       low: allPairs.filter(p => p.lowCount > 0).length,
@@ -1840,6 +1924,7 @@ export default function Mods() {
       : conflicts.pairs
     if (pairSeverityFilter !== 'all') {
       pairs = pairs.filter(p => {
+        if (pairSeverityFilter === 'real') return p.highCount > 0 || p.mediumCount > 0
         if (pairSeverityFilter === 'high') return p.highCount > 0
         if (pairSeverityFilter === 'medium') return p.mediumCount > 0
         if (pairSeverityFilter === 'low') return p.lowCount > 0
@@ -1868,6 +1953,61 @@ export default function Mods() {
     }
     return Array.from(modStats.values()).sort((a, b) => (b.high - a.high) || (b.medium - a.medium) || (b.pairs - a.pairs)).slice(0, 15)
   }, [conflicts?.pairs])
+
+  // Group pairs by their winning mod. A pair is grouped under whoever takes
+  // every overlapping file at runtime (mod A, mod B, or a third mod). Pairs
+  // with no clear winner (split / unknown) collapse into one "Mixed" bucket.
+  // This dramatically de-duplicates rows when one mod (e.g. TchernoLib) wins
+  // against many others.
+  const groupedPairs = useMemo(() => {
+    if (!filteredPairs.length) return [] as Array<{ key: string; name: string; modId: string | null; pairs: typeof filteredPairs }>
+    const groups = new Map<string, { key: string; name: string; modId: string | null; pairs: typeof filteredPairs }>()
+    for (const pair of filteredPairs) {
+      const aw = pair.aWins ?? 0, bw = pair.bWins ?? 0, tp = pair.thirdPartyWins ?? 0, uk = pair.unknownWins ?? 0
+      const aWinsAll = aw > 0 && bw === 0 && tp === 0 && uk === 0
+      const bWinsAll = bw > 0 && aw === 0 && tp === 0 && uk === 0
+      const tpWinsAll = tp > 0 && aw === 0 && bw === 0
+      let key: string, name: string, modId: string | null
+      if (aWinsAll) { key = pair.modA.modId; name = pair.modA.modName; modId = pair.modA.modId }
+      else if (bWinsAll) { key = pair.modB.modId; name = pair.modB.modName; modId = pair.modB.modId }
+      else if (tpWinsAll) {
+        const tpMod = pair.files.find(f => f.winner && f.winner.modId !== pair.modA.modId && f.winner.modId !== pair.modB.modId)?.winner
+        key = tpMod?.modId ?? '__third_party__'
+        name = tpMod?.modName ?? 'Other mod'
+        modId = tpMod?.modId ?? null
+      } else if (aw === 0 && bw === 0 && tp === 0 && uk === 0) {
+        // No overlap winner data — fall back to load order
+        const posA = loadOrderMap.get(pair.modA.modId)
+        const posB = loadOrderMap.get(pair.modB.modId)
+        if (posA != null && posB != null && posA !== posB) {
+          if (posA > posB) { key = pair.modA.modId; name = pair.modA.modName; modId = pair.modA.modId }
+          else { key = pair.modB.modId; name = pair.modB.modName; modId = pair.modB.modId }
+        } else {
+          key = '__split__'; name = 'Mixed / unresolved'; modId = null
+        }
+      } else {
+        key = '__split__'; name = 'Mixed / unresolved'; modId = null
+      }
+      if (!groups.has(key)) groups.set(key, { key, name, modId, pairs: [] })
+      groups.get(key)!.pairs.push(pair)
+    }
+    return [...groups.values()].sort((a, b) => {
+      const aSpecial = a.key.startsWith('__'), bSpecial = b.key.startsWith('__')
+      if (aSpecial !== bSpecial) return aSpecial ? 1 : -1
+      return b.pairs.length - a.pairs.length
+    })
+  }, [filteredPairs, loadOrderMap])
+
+  // After a scan completes, if the user is on the "Real" view but there are
+  // no high/medium conflicts, fall back to "Low" so they see something instead
+  // of an empty filter.
+  useEffect(() => {
+    if (!conflicts) return
+    if (pairSeverityFilter === 'real' && severityCounts.real === 0 && severityCounts.low > 0) {
+      setPairSeverityFilter('low')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conflicts])
 
   const scanConflicts = useCallback(async () => {
     // Close any previous SSE connection
@@ -2050,7 +2190,7 @@ export default function Mods() {
         {/* Header */}
         <PageHeader
           title="Mod Manager"
-          description="Track, update, and configure Steam Workshop mods"
+          description="Add, update, and configure Steam Workshop mods on your server"
           eyebrow="Workshop"
           tone="maintain"
           icon={<Package className="w-5 h-5" />}
@@ -2067,7 +2207,7 @@ export default function Mods() {
         <div className="flex items-center gap-4 rounded-lg border border-border/50 bg-card/60 px-3 py-2 flex-wrap">
           <div className="flex items-center gap-2">
             <Package className="w-3.5 h-3.5 text-muted-foreground" />
-            <span className="text-sm font-medium">{status?.totalModsTracked || 0} tracked</span>
+            <span className="text-sm font-medium">{status?.totalModsTracked || 0} on server</span>
           </div>
           <Separator orientation="vertical" className="h-4" />
           <Tooltip>
@@ -2196,11 +2336,11 @@ export default function Mods() {
             <TabsList className="grid w-full grid-cols-3 sm:w-auto">
               <TabsTrigger value="mods" className="w-full">
                 <Package className="w-4 h-4 mr-2" />
-                Tracked Mods
+                Server Mods
               </TabsTrigger>
               <TabsTrigger value="config" className="w-full">
                 <Settings2 className="w-4 h-4 mr-2" />
-                Server Config
+                Advanced
               </TabsTrigger>
               <TabsTrigger value="conflicts" className="w-full" onClick={() => { if (!conflicts && !conflictsLoading) scanConflicts() }}>
                 <Shield className="w-4 h-4 mr-2" />
@@ -2752,7 +2892,7 @@ export default function Mods() {
             </Dialog>
           </div>
 
-          {/* Tracked Mods Tab */}
+          {/* Server Mods Tab — auto-tracks every workshop ID in the server INI. */}
           <TabsContent value="mods" className="space-y-4">
             {/* Updates alert — slim, single-line. The status bar above already
                 shows the count; this strip exists so the "Restart to apply"
@@ -2802,6 +2942,31 @@ export default function Mods() {
                 {showUpdatesOnly ? <Check className="w-4 h-4 mr-2" /> : <Filter className="w-4 h-4 mr-2" />}
                 Updates Only
               </Button>
+
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant={showDisabled ? 'secondary' : 'outline'}
+                    size="sm"
+                    onClick={() => {
+                      const next = !showDisabled
+                      setShowDisabled(next)
+                      if (next) fetchDisabled()
+                    }}
+                    aria-pressed={showDisabled}
+                    className="w-full sm:w-auto"
+                  >
+                    {showDisabled ? <EyeOff className="w-4 h-4 mr-2" /> : <Eye className="w-4 h-4 mr-2" />}
+                    {showDisabled ? 'Hide disabled' : 'Show disabled'}
+                    {showDisabled && disabledMods.length > 0 && (
+                      <span className="ml-2 inline-flex items-center justify-center rounded-full bg-muted/40 px-1.5 text-[10px] font-medium tabular-nums">
+                        {disabledMods.length}
+                      </span>
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Mods downloaded to disk but not enabled in the server INI</TooltipContent>
+              </Tooltip>
 
               {/* Workshop collection sync indicator. Shown only when an admin
                   has wired up a collection ID. Clicking the chip refreshes
@@ -3061,6 +3226,94 @@ export default function Mods() {
               </CardContent>
             </Card>
 
+            {/* ─── Disabled mods ──────────────────────────────────────────
+                Mods downloaded into the Workshop content folder but not in
+                the server INI's WorkshopItems= list. Hidden by default; the
+                "Show disabled" toggle in the filter bar reveals this panel
+                and triggers a one-shot fetch. Each row offers a quick Enable
+                that adds it to the INI (and lifts any prior ignore-list
+                entry so auto-track picks it up). */}
+            {showDisabled && (
+              <div className="rounded-lg border border-dashed border-border/50 bg-card/40">
+                <div className="flex items-center justify-between px-4 py-2.5 border-b border-border/30">
+                  <div className="flex items-center gap-2 text-sm">
+                    <EyeOff className="w-3.5 h-3.5 text-muted-foreground" />
+                    <span className="font-medium text-muted-foreground">Disabled mods on disk</span>
+                    {!disabledLoading && (
+                      <span className="text-xs text-muted-foreground/70">
+                        — downloaded but not loaded by the server
+                      </span>
+                    )}
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    onClick={fetchDisabled}
+                    disabled={disabledLoading}
+                  >
+                    {disabledLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                    <span className="ml-1.5">Refresh</span>
+                  </Button>
+                </div>
+                {disabledLoading ? (
+                  <div className="px-4 py-6 text-center text-sm text-muted-foreground">
+                    <Loader2 className="w-4 h-4 animate-spin inline mr-2" />
+                    Scanning workshop folder…
+                  </div>
+                ) : disabledMods.length === 0 ? (
+                  <div className="px-4 py-6 text-center text-sm text-muted-foreground">
+                    No disabled mods. Everything in the workshop folder is enabled in the server INI.
+                  </div>
+                ) : (
+                  <div className="divide-y divide-border/30">
+                    {disabledMods.map((mod) => (
+                      <div key={mod.workshop_id} className="flex items-center justify-between gap-3 px-4 py-2 text-sm">
+                        <div className="flex items-center gap-2 min-w-0 opacity-70">
+                          <Package className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
+                          <span className="truncate">{mod.name}</span>
+                          <span className="text-xs text-muted-foreground/60 tabular-nums shrink-0">{mod.workshop_id}</span>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <a
+                                href={`https://steamcommunity.com/sharedfiles/filedetails/?id=${mod.workshop_id}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex"
+                              >
+                                <Button variant="ghost" size="iconDense" className="h-7 w-7 text-muted-foreground hover:text-primary">
+                                  <ExternalLink className="w-3.5 h-3.5" />
+                                </Button>
+                              </a>
+                            </TooltipTrigger>
+                            <TooltipContent>Open Workshop page</TooltipContent>
+                          </Tooltip>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 px-2.5 text-xs"
+                            onClick={() => handleEnableDiskMod(mod.workshop_id)}
+                            disabled={enablingId === mod.workshop_id || loading}
+                          >
+                            {enablingId === mod.workshop_id ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <>
+                                <Plus className="w-3.5 h-3.5 mr-1" />
+                                Enable
+                              </>
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Ignored Mods — collapsible section */}
             {ignoredMods.length > 0 && (
               <div className="rounded-lg border border-border/30 bg-card/50">
@@ -3181,6 +3434,36 @@ export default function Mods() {
                       if (savedTimeoutRef.current) clearTimeout(savedTimeoutRef.current)
                       savedTimeoutRef.current = setTimeout(() => setLastSavedMod(null), 2000)
                     } catch (e) { reportClientError('Failed to toggle mod', e); toast({ variant: 'destructive', title: 'Failed to toggle mod' }) } finally { busyRef.current = false }
+                  }
+
+                  // Mark a sibling-conflict pair as a false positive. Used when the
+                  // variant detector mis-flags a shared library + dependant
+                  // (e.g. DynamicTradingCommon vs DynamicTradingV2) as two
+                  // variants of the same mod.
+                  const dismissPair = async (a: string, b: string) => {
+                    try {
+                      await modsApi.addIgnoredModPair(a, b)
+                      setIgnoredPairs(prev => {
+                        const [x, y] = a < b ? [a, b] : [b, a]
+                        if (prev.some(p => p.mod_a === x && p.mod_b === y)) return prev
+                        return [...prev, { mod_a: x, mod_b: y, ignored_at: new Date().toISOString() } as any]
+                      })
+                      toast({ title: 'Conflict dismissed', description: `${a} ↔ ${b} marked as a false positive.` })
+                    } catch (e) {
+                      reportClientError('Failed to dismiss conflict', e)
+                      toast({ variant: 'destructive', title: 'Failed to dismiss conflict' })
+                    }
+                  }
+                  const restorePair = async (a: string, b: string) => {
+                    try {
+                      await modsApi.removeIgnoredModPair(a, b)
+                      setIgnoredPairs(prev => prev.filter(p => {
+                        const [x, y] = a < b ? [a, b] : [b, a]
+                        return !(p.mod_a === x && p.mod_b === y)
+                      }))
+                    } catch (e) {
+                      reportClientError('Failed to restore conflict', e)
+                    }
                   }
 
                   const toggleAllInGroup = async (g: WsGroup) => {
@@ -3312,8 +3595,12 @@ export default function Mods() {
                           single row instead of three orphaned ones. */}
                       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-[11px] tabular-nums text-muted-foreground">
-                            {enabledCount}<span className="opacity-50">/{totalModCount}</span> on
+                          <span
+                            className="text-[11px] tabular-nums text-muted-foreground"
+                            title={`${enabledCount} of ${totalModCount} mod IDs are currently enabled. "Mod IDs" are the internal names PZ loads — a single Workshop item can ship several IDs (variants, add-on packs, etc.).`}
+                          >
+                            <span className="text-foreground/80">{enabledCount}</span>
+                            <span className="opacity-50"> / {totalModCount} IDs enabled</span>
                           </span>
                           {multiIdCount > 0 && (
                             <button
@@ -3392,28 +3679,25 @@ export default function Mods() {
                                             </span>
                                           )}
                                         </div>
-                                        {mod0.enabled && groupRequires.length > 0 && (
+                                        {mod0.enabled && groupRequires.length > 0 && groupMissing.length > 0 && (
                                           <div className="flex flex-wrap items-center gap-1 mt-0.5">
-                                            <span className="text-[10px] text-muted-foreground/60">requires:</span>
-                                            {groupRequires.map(dep => {
-                                              const isMissing = groupMissing.includes(dep)
-                                              return (
-                                                <span key={dep} className={`text-[10px] px-1 rounded font-mono ${isMissing ? 'bg-destructive/15 text-destructive border border-destructive/30' : 'bg-success/10 text-success/80 border border-success/20'}`} title={isMissing ? `${dep} is not enabled — this mod may not work` : `${dep} is active`}>
-                                                  {dep}
-                                                </span>
-                                              )
-                                            })}
+                                            <span className="text-[10px] text-destructive/80">missing:</span>
+                                            {groupRequires.filter(dep => groupMissing.includes(dep)).map(dep => (
+                                              <span key={dep} className="text-[10px] px-1 rounded font-mono bg-destructive/15 text-destructive border border-destructive/30" title={`${dep} is not enabled — this mod may not work`}>
+                                                {dep}
+                                              </span>
+                                            ))}
                                           </div>
                                         )}
                                       </div>
-                                      <span className="text-[11px] text-muted-foreground/70 tabular-nums shrink-0 hidden sm:inline">{g.wsId}</span>
+                                      <span className="text-xs text-muted-foreground/60 tabular-nums shrink-0 hidden md:inline group-hover:text-muted-foreground/85 transition-colors" title={`Workshop ID: ${g.wsId}`}>#{g.wsId.slice(-5)}</span>
                                       <button
                                         onClick={() => setConfirmRemoveWorkshop({ wsId: g.wsId, knownModIds: g.mods.map(m => m.id) })}
-                                        className="opacity-0 group-hover:opacity-60 hover:!opacity-100 text-destructive/70 hover:text-destructive transition-opacity duration-150 p-0.5 rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-destructive/50 focus-visible:opacity-100"
+                                        className="text-destructive/80 hover:text-destructive hover:bg-destructive/15 rounded p-1.5 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-destructive/50"
                                         title={`Remove workshop item ${g.wsId} from INI`}
                                         aria-label={`Remove ${mod0.id}`}
                                       >
-                                        <X className="w-3 h-3" />
+                                        <X className="w-4 h-4" />
                                       </button>
                                     </div>
                                   )
@@ -3433,37 +3717,37 @@ export default function Mods() {
                                           const totalN = g.mods.length
                                           return (
                                             <span
-                                              className="text-[11px] tabular-nums shrink-0 text-muted-foreground/70"
+                                              className="text-xs tabular-nums shrink-0 text-muted-foreground/85"
                                               title={
                                                 totalN === 1
                                                   ? `${enabledN} of ${totalN} enabled`
                                                   : `${enabledN} of ${totalN} mod IDs enabled. Some workshop items ship multiple compatible IDs (e.g. add-on packs); others ship alternatives (e.g. Lite vs Full). Check the workshop page if unsure.`
                                               }
                                             >
-                                              {enabledN}/{totalN}
+                                              {enabledN} of {totalN}
                                             </span>
                                           )
                                         })()}
-                                        <span className="text-[11px] text-muted-foreground/70 tabular-nums shrink-0 hidden sm:inline">{g.wsId}</span>
+                                        <span className="text-xs text-muted-foreground/60 tabular-nums shrink-0 hidden md:inline group-hover:text-muted-foreground/85 transition-colors" title={`Workshop ID: ${g.wsId}`}>#{g.wsId.slice(-5)}</span>
                                       </button>
                                       <a
                                         href={`https://steamcommunity.com/sharedfiles/filedetails/?id=${g.wsId}`}
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className="opacity-0 group-hover:opacity-60 hover:!opacity-100 text-muted-foreground hover:text-foreground transition-opacity duration-150 p-0.5 rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/50 focus-visible:opacity-100 shrink-0"
+                                        className="text-muted-foreground hover:text-foreground hover:bg-muted/40 rounded p-1.5 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/50 shrink-0"
                                         title={`Open workshop page for ${getGroupLabel(g)} — check description to see which mod ID(s) you should enable`}
                                         aria-label={`Open workshop page for ${getGroupLabel(g)}`}
                                         onClick={(e) => e.stopPropagation()}
                                       >
-                                        <ExternalLink className="w-3 h-3" />
+                                        <ExternalLink className="w-4 h-4" />
                                       </a>
                                       <button
                                         onClick={() => setConfirmRemoveWorkshop({ wsId: g.wsId, knownModIds: g.mods.map(m => m.id) })}
-                                        className="opacity-0 group-hover:opacity-60 hover:!opacity-100 text-destructive/70 hover:text-destructive transition-opacity duration-150 p-0.5 rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-destructive/50 focus-visible:opacity-100 shrink-0"
+                                        className="text-destructive/80 hover:text-destructive hover:bg-destructive/15 rounded p-1.5 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-destructive/50 shrink-0"
                                         title={`Remove workshop item ${g.wsId} from INI`}
                                         aria-label={`Remove ${getGroupLabel(g)}`}
                                       >
-                                        <X className="w-3 h-3" />
+                                        <X className="w-4 h-4" />
                                       </button>
                                     </div>
                                     <div className="pl-8 pr-3 pb-1.5 space-y-1">
@@ -3556,6 +3840,12 @@ export default function Mods() {
                                             }
                                           }
                                         }
+                                        // Surface dismissed false-positive pairs that involve this group's
+                                        // mod IDs so the user can undo a "Not a conflict" mistake.
+                                        const groupModIds = new Set(g.mods.map(m => m.id))
+                                        const dismissedHere = ignoredPairs.filter(p =>
+                                          groupModIds.has(p.mod_a) && groupModIds.has(p.mod_b)
+                                        )
                                         if (scanClashingPairs.length > 0) {
                                           return (
                                             <div
@@ -3566,6 +3856,19 @@ export default function Mods() {
                                               <span className="text-destructive/90 font-medium min-w-0 break-words">
                                                 Two variants of this mod are enabled and share files. One will overwrite the other — disable one above.
                                               </span>
+                                              <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                  e.stopPropagation()
+                                                  for (const [a, b] of scanClashingPairs) dismissPair(a, b)
+                                                }}
+                                                title={scanClashingPairs.length === 1
+                                                  ? `Mark "${scanClashingPairs[0][0]} ↔ ${scanClashingPairs[0][1]}" as a false positive — useful when one ID is a shared library required by the other (e.g. a Common dependency).`
+                                                  : `Mark all ${scanClashingPairs.length} flagged pairs in this workshop item as false positives.`}
+                                                className="ml-auto inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium border border-border/50 bg-muted/30 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/50"
+                                              >
+                                                Not a conflict
+                                              </button>
                                             </div>
                                           )
                                         }
@@ -3594,22 +3897,43 @@ export default function Mods() {
                                             <div className="flex items-start sm:items-center gap-1 text-[11px] text-muted-foreground/70 flex-wrap">
                                               <Info aria-hidden="true" className="w-3 h-3 shrink-0 mt-px sm:mt-0" />
                                               <span className="min-w-0 break-words">{enabledIds.length} mod IDs enabled. If unsure whether they coexist, check the workshop page.</span>
+                                              {dismissedHere.length > 0 && (
+                                                <button
+                                                  type="button"
+                                                  onClick={(e) => { e.stopPropagation(); for (const p of dismissedHere) restorePair(p.mod_a, p.mod_b) }}
+                                                  title={`Restore ${dismissedHere.length} dismissed conflict pair${dismissedHere.length !== 1 ? 's' : ''} for this workshop item`}
+                                                  className="ml-auto text-[10px] underline-offset-2 hover:underline text-muted-foreground/60 hover:text-foreground"
+                                                >
+                                                  Restore {dismissedHere.length} dismissed
+                                                </button>
+                                              )}
+                                            </div>
+                                          )
+                                        }
+                                        if (dismissedHere.length > 0) {
+                                          return (
+                                            <div className="flex items-center gap-1 text-[10px] text-muted-foreground/50 flex-wrap">
+                                              <span className="min-w-0">{dismissedHere.length} dismissed conflict{dismissedHere.length !== 1 ? 's' : ''}</span>
+                                              <button
+                                                type="button"
+                                                onClick={(e) => { e.stopPropagation(); for (const p of dismissedHere) restorePair(p.mod_a, p.mod_b) }}
+                                                className="underline-offset-2 hover:underline hover:text-foreground"
+                                              >
+                                                restore
+                                              </button>
                                             </div>
                                           )
                                         }
                                         return null
                                       })()}
-                                      {g.someEnabled && groupRequires.length > 0 && (
+                                      {g.someEnabled && groupRequires.length > 0 && groupMissing.length > 0 && (
                                         <div className="flex flex-wrap items-center gap-1">
-                                          <span className="text-[10px] text-muted-foreground/60">requires:</span>
-                                          {groupRequires.map(dep => {
-                                            const isMissing = groupMissing.includes(dep)
-                                            return (
-                                              <span key={dep} className={`text-[10px] px-1 rounded font-mono ${isMissing ? 'bg-destructive/15 text-destructive border border-destructive/30' : 'bg-success/10 text-success/80 border border-success/20'}`} title={isMissing ? `${dep} is not enabled — this mod may not work` : `${dep} is active`}>
-                                                {dep}
-                                              </span>
-                                            )
-                                          })}
+                                          <span className="text-[10px] text-destructive/80">missing:</span>
+                                          {groupRequires.filter(dep => groupMissing.includes(dep)).map(dep => (
+                                            <span key={dep} className="text-[10px] px-1 rounded font-mono bg-destructive/15 text-destructive border border-destructive/30" title={`${dep} is not enabled — this mod may not work`}>
+                                              {dep}
+                                            </span>
+                                          ))}
                                         </div>
                                       )}
                                     </div>
@@ -3633,11 +3957,11 @@ export default function Mods() {
                                         if (updated?.modIds) setOrderedModIds(updated.modIds)
                                       } catch (e) { reportClientError('Failed to remove orphaned mod', e); toast({ variant: 'destructive', title: 'Failed to remove orphaned mod' }) } finally { busyRef.current = false }
                                     }}
-                                    className="opacity-0 group-hover:opacity-60 hover:!opacity-100 text-destructive/70 hover:text-destructive transition-opacity duration-150 p-0.5 rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-destructive/50 focus-visible:opacity-100"
+                                    className="text-destructive/80 hover:text-destructive hover:bg-destructive/15 rounded p-1.5 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-destructive/50"
                                     title={`Remove orphaned mod ID ${id}`}
                                     aria-label={`Remove ${id}`}
                                   >
-                                    <X className="w-3 h-3" />
+                                    <X className="w-4 h-4" />
                                   </button>
                                 </div>
                               ))}
@@ -3650,12 +3974,16 @@ export default function Mods() {
                         )}
                       </div>
 
-                      {/* Mods= raw line */}
-                      <div className="pt-2 border-t border-border/20">
-                        <div className="text-[11px] text-muted-foreground font-mono break-all leading-tight line-clamp-2" title={`Mods=${iniConfig.modIds?.join(';') || ''}`}>
+                      {/* Mods= raw line — collapsed by default */}
+                      <details className="pt-2 border-t border-border/20 group/raw">
+                        <summary className="text-[11px] text-muted-foreground/60 hover:text-foreground cursor-pointer select-none list-none flex items-center gap-1 transition-colors">
+                          <ChevronRight className="w-3 h-3 transition-transform group-open/raw:rotate-90" aria-hidden="true" />
+                          Show raw <span className="font-mono">Mods=</span> line
+                        </summary>
+                        <div className="text-[11px] text-muted-foreground font-mono break-all leading-tight mt-1.5" title={`Mods=${iniConfig.modIds?.join(';') || ''}`}>
                           Mods={iniConfig.modIds?.join(';') || ''}
                         </div>
-                      </div>
+                      </details>
 
                       {/* Workshop item remove confirmation */}
                       <AlertDialog open={!!confirmRemoveWorkshop} onOpenChange={(open) => { if (!open) setConfirmRemoveWorkshop(null) }}>
@@ -3847,7 +4175,7 @@ export default function Mods() {
                       <div className="text-center py-8 text-muted-foreground">
                         <Plus className="w-10 h-10 mx-auto mb-3 opacity-30" />
                         <p className="text-sm">No mods pending</p>
-                        <p className="text-xs">Use the Tracked Mods tab to find and add new workshop items, or click Sync to detect new downloads.</p>
+                        <p className="text-xs">Use the Server Mods tab to find and add new workshop items, or click Sync to detect new downloads.</p>
                       </div>
                     )}
                   </div>
@@ -4134,18 +4462,20 @@ export default function Mods() {
                     </CardTitle>
                     <CardDescription className="mt-1">
                       Checks if multiple mods modify the same files — when they do, only the last mod in your load order takes effect
-                      {lastScanTime && !conflictsLoading && (
-                        <span className="ml-2 tabular-nums opacity-50">
-                          Last scan: {new Date(lastScanTime).toLocaleString()}
-                        </span>
-                      )}
                     </CardDescription>
                   </div>
                   {conflicts && !conflictsLoading && (
-                    <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground" onClick={scanConflicts} disabled={conflictsLoading}>
-                      <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
-                      Rescan
-                    </Button>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {lastScanTime && (
+                        <span className="text-[11px] tabular-nums text-muted-foreground/70 hidden sm:inline">
+                          Last scan {new Date(lastScanTime).toLocaleTimeString()}
+                        </span>
+                      )}
+                      <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground" onClick={scanConflicts} disabled={conflictsLoading}>
+                        <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+                        Rescan
+                      </Button>
+                    </div>
                   )}
                 </div>
               </CardHeader>
@@ -4359,46 +4689,73 @@ export default function Mods() {
                       </div>
                     )}
 
-                    {/* ─── Verdict hero ─── */}
-                    {conflicts.modsScanned > 0 ? (
+                    {/* ─── Verdict hero ───
+                        Headline number must match the active severity tab so
+                        users don't see "6 conflicts found" while a tab labelled
+                        "Real 1" is selected. We derive `headlineCount` from the
+                        active filter and pick a label that fits. */}
+                    {(() => {
+                      const f = pairSeverityFilter
+                      const headlineCount = (
+                        f === 'all' ? severityCounts.all
+                        : f === 'real' ? severityCounts.real
+                        : f === 'high' ? severityCounts.high
+                        : f === 'medium' ? severityCounts.medium
+                        : severityCounts.low
+                      ) ?? 0
+                      const headlineLabel = f === 'all'
+                        ? `overlapping mod pair${headlineCount !== 1 ? 's' : ''}`
+                        : f === 'real' ? `real conflict${headlineCount !== 1 ? 's' : ''}`
+                        : f === 'high' ? `critical conflict${headlineCount !== 1 ? 's' : ''}`
+                        : f === 'medium' ? `medium conflict${headlineCount !== 1 ? 's' : ''}`
+                        : `low-severity overlap${headlineCount !== 1 ? 's' : ''}`
+                      const tone = headlineCount > 0 && (f === 'real' || f === 'high' || f === 'medium')
+                        ? 'warning'
+                        : headlineCount > 0
+                          ? 'muted'
+                          : 'success'
+                      const isWarn = tone === 'warning'
+                      const isSuccess = tone === 'success'
+                      return (
+                    conflicts.modsScanned > 0 ? (
                       <div
                         className={`relative rounded-lg border overflow-hidden ${
-                          conflicts.totalConflicts > 0
-                            ? 'border-warning/30 bg-warning/[0.04]'
-                            : 'border-success/30 bg-success/[0.04]'
+                          isWarn ? 'border-warning/30 bg-warning/[0.04]'
+                            : isSuccess ? 'border-success/30 bg-success/[0.04]'
+                            : 'border-border/40 bg-muted/[0.04]'
                         }`}
                         role="status"
                         aria-live="polite"
                       >
                         {/* Severity stripe — left edge accent */}
-                        <div className={`absolute inset-y-0 left-0 w-1 ${conflicts.totalConflicts > 0 ? 'bg-warning/60' : 'bg-success/60'}`} aria-hidden="true" />
+                        <div className={`absolute inset-y-0 left-0 w-1 ${isWarn ? 'bg-warning/60' : isSuccess ? 'bg-success/60' : 'bg-muted-foreground/40'}`} aria-hidden="true" />
 
                         <div className="flex items-stretch">
                           {/* Headline — big number + label */}
                           <div className="flex items-center gap-3.5 px-4 py-3 flex-1 min-w-0">
-                            {conflicts.totalConflicts > 0 ? (
+                            {isWarn ? (
                               <FileWarning className="w-5 h-5 text-warning shrink-0" aria-hidden="true" />
-                            ) : (
+                            ) : isSuccess ? (
                               <CheckCircle className="w-5 h-5 text-success shrink-0" aria-hidden="true" />
+                            ) : (
+                              <Info className="w-5 h-5 text-muted-foreground shrink-0" aria-hidden="true" />
                             )}
                             <div className="flex items-baseline gap-2 min-w-0">
                               <span
                                 className={`text-2xl font-semibold leading-none tabular-nums ${
-                                  conflicts.totalConflicts > 0 ? 'text-warning' : 'text-success'
+                                  isWarn ? 'text-warning' : isSuccess ? 'text-success' : 'text-foreground/80'
                                 }`}
                               >
-                                {conflicts.totalConflicts > 0 ? conflicts.totalConflicts : '0'}
+                                {headlineCount}
                               </span>
                               <div className="min-w-0">
                                 <p className="text-sm font-medium text-foreground/90 leading-tight">
-                                  {conflicts.totalConflicts > 0
-                                    ? `conflict${conflicts.totalConflicts !== 1 ? 's' : ''} found`
-                                    : 'No conflicts'}
+                                  {headlineCount > 0 ? headlineLabel : 'No conflicts in this view'}
                                 </p>
                                 <p className="text-[11px] text-muted-foreground leading-tight mt-0.5">
-                                  {conflicts.totalConflicts > 0 && conflicts.totalPairs > 0
-                                    ? `across ${conflicts.totalPairs} mod pair${conflicts.totalPairs !== 1 ? 's' : ''}`
-                                    : `${conflicts.modsScanned} mod${conflicts.modsScanned !== 1 ? 's' : ''} compared, no overlapping files`}
+                                  {f === 'all' || f === 'low'
+                                    ? `${severityCounts.real} real conflict${severityCounts.real !== 1 ? 's' : ''} · ${severityCounts.low} low-severity · ${conflicts.modsScanned} mod${conflicts.modsScanned !== 1 ? 's' : ''} scanned`
+                                    : `${severityCounts.all} total overlapping pair${severityCounts.all !== 1 ? 's' : ''} · ${conflicts.modsScanned} mod${conflicts.modsScanned !== 1 ? 's' : ''} scanned`}
                                 </p>
                               </div>
                             </div>
@@ -4453,9 +4810,9 @@ export default function Mods() {
                             {(conflicts.identicalSkipped ?? 0) > 0 && (
                               <Tooltip>
                                 <TooltipTrigger asChild>
-                                  <div className="text-center cursor-help">
-                                    <div className="tabular-nums font-semibold text-success/80 leading-none">{conflicts.identicalSkipped}</div>
-                                    <div className="text-muted-foreground mt-1 leading-none">identical</div>
+                                  <div className="text-center cursor-help opacity-70">
+                                    <div className="tabular-nums font-medium text-success/70 leading-none text-[11px]">{conflicts.identicalSkipped}</div>
+                                    <div className="text-muted-foreground/70 mt-1 leading-none text-[10px]">identical</div>
                                   </div>
                                 </TooltipTrigger>
                                 <TooltipContent side="bottom" className="text-xs max-w-xs">
@@ -4466,9 +4823,9 @@ export default function Mods() {
                             {((conflicts.additiveSkipped ?? 0) + (conflicts.pzAdditiveSkipped ?? 0)) > 0 && (
                               <Tooltip>
                                 <TooltipTrigger asChild>
-                                  <div className="text-center cursor-help">
-                                    <div className="tabular-nums font-semibold text-success/80 leading-none">{(conflicts.additiveSkipped ?? 0) + (conflicts.pzAdditiveSkipped ?? 0)}</div>
-                                    <div className="text-muted-foreground mt-1 leading-none">additive</div>
+                                  <div className="text-center cursor-help opacity-70">
+                                    <div className="tabular-nums font-medium text-success/70 leading-none text-[11px]">{(conflicts.additiveSkipped ?? 0) + (conflicts.pzAdditiveSkipped ?? 0)}</div>
+                                    <div className="text-muted-foreground/70 mt-1 leading-none text-[10px]">additive</div>
                                   </div>
                                 </TooltipTrigger>
                                 <TooltipContent side="bottom" className="text-xs space-y-0.5">
@@ -4505,7 +4862,9 @@ export default function Mods() {
                           No mods are configured. Add mods in Server Config first.
                         </p>
                       </div>
-                    )}
+                    )
+                    )
+                    })()}
 
                     {/* No conflicts — only when scanned and nothing found */}
                     {conflicts.modsScanned > 0 && conflicts.totalConflicts === 0 && dedupedDepCount === 0 && (
@@ -4574,11 +4933,26 @@ export default function Mods() {
                         {conflictSubTab === 'network' && (
                           <div className="space-y-3">
 
-                            {/* Top Conflicting Mods — ranked summary */}
-                            {topConflictingMods.length > 0 && (
+                            {/* Top Conflicting Mods — ranked summary.
+                                Filtered & re-counted by the active severity tab so the
+                                chips can never disagree with the list below. */}
+                            {topConflictingMods.length > 0 && (() => {
+                              const sevFiltered = topConflictingMods
+                                .map(m => {
+                                  if (pairSeverityFilter === 'high') return { ...m, medium: 0, low: 0 }
+                                  if (pairSeverityFilter === 'medium') return { ...m, high: 0, low: 0 }
+                                  if (pairSeverityFilter === 'low') return { ...m, high: 0, medium: 0 }
+                                  if (pairSeverityFilter === 'real') return { ...m, low: 0 }
+                                  return m
+                                })
+                                .filter(m => (m.high + m.medium + m.low) > 0)
+                              if (sevFiltered.length === 0) return null
+                              const visibleTopMods = showAllTopMods ? sevFiltered : sevFiltered.slice(0, 8)
+                              const hiddenTopCount = sevFiltered.length - visibleTopMods.length
+                              return (
                               <div className="overflow-hidden">
-                                <div className="flex flex-wrap gap-1.5">
-                                  {topConflictingMods.map((mod) => {
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  {visibleTopMods.map((mod) => {
                                     const isSelected = graphFilterMod === mod.modId
                                     const total = mod.high + mod.medium + mod.low
                                     return (
@@ -4601,9 +4975,18 @@ export default function Mods() {
                                       </button>
                                     )
                                   })}
+                                  {(hiddenTopCount > 0 || showAllTopMods) && (
+                                    <button
+                                      onClick={() => setShowAllTopMods(v => !v)}
+                                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-muted/20 transition-colors border border-dashed border-border/30"
+                                    >
+                                      {showAllTopMods ? 'Show less' : `+${hiddenTopCount} more`}
+                                    </button>
+                                  )}
                                 </div>
                               </div>
-                            )}
+                              )
+                            })()}
 
                             {/* Severity filter tabs + pairs header */}
                             {(conflicts.pairs?.length ?? 0) > 0 && (() => {
@@ -4614,10 +4997,11 @@ export default function Mods() {
                                   <div className="flex items-center justify-between gap-2 flex-wrap">
                                     <div className="flex items-center gap-1">
                                       {[
-                                        { key: 'all' as const, label: 'All', count: severityCounts.all, dot: null },
+                                        { key: 'real' as const, label: 'Real', count: severityCounts.real, dot: 'bg-warning', color: 'text-warning' },
                                         { key: 'high' as const, label: 'Critical', count: severityCounts.high, dot: 'bg-destructive', color: 'text-destructive' },
                                         { key: 'medium' as const, label: 'Medium', count: severityCounts.medium, dot: 'bg-warning', color: 'text-warning' },
                                         { key: 'low' as const, label: 'Low', count: severityCounts.low, dot: 'bg-primary/60', color: 'text-primary/70' },
+                                        { key: 'all' as const, label: 'All', count: severityCounts.all, dot: null },
                                       ].map(tab => (
                                         <button
                                           key={tab.key}
@@ -4627,6 +5011,7 @@ export default function Mods() {
                                               ? 'bg-accent text-accent-foreground'
                                               : 'text-muted-foreground hover:text-foreground hover:bg-muted/30'
                                           }`}
+                                          title={tab.key === 'real' ? 'Critical + Medium — pairs likely to actually misbehave' : tab.key === 'all' ? 'Every overlapping pair, including additive/cosmetic ones' : undefined}
                                         >
                                           {tab.dot && <span className={`w-1.5 h-1.5 rounded-full ${tab.dot}`} aria-hidden="true" />}
                                           {tab.label}
@@ -4635,6 +5020,19 @@ export default function Mods() {
                                       ))}
                                     </div>
                                     <div className="flex items-center gap-3">
+                                      <button
+                                        type="button"
+                                        onClick={() => setGroupByWinner(v => !v)}
+                                        className={`inline-flex items-center gap-1.5 px-2 py-1 rounded text-[11px] font-medium border transition-colors ${
+                                          groupByWinner
+                                            ? 'border-accent/40 bg-accent/10 text-accent-foreground'
+                                            : 'border-border/40 text-muted-foreground hover:text-foreground hover:bg-muted/20'
+                                        }`}
+                                        title="Collapse pairs under whichever mod wins them. Off = flat list."
+                                      >
+                                        <Layers className="w-3 h-3" aria-hidden="true" />
+                                        Group by winner
+                                      </button>
                                       {graphFilterMod && (
                                         <button
                                           className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
@@ -4656,8 +5054,25 @@ export default function Mods() {
                                   {/* Pairs list */}
                                   {filteredPairs.length > 0 ? (
                                     <div className="max-h-[min(calc(100vh-420px),70vh)] min-h-[200px] overflow-y-auto rounded-lg border border-border/20 pr-1">
-                                      <Accordion type="multiple" value={openPairs} onValueChange={setOpenPairs} className="space-y-1.5 p-1.5">
-                                        {filteredPairs.map((pair, pairIdx) => {
+                                      <div className="p-1.5 space-y-2">
+                                        {(groupByWinner
+                                          ? groupedPairs
+                                          : [{ key: '__flat__', name: '', modId: null, pairs: filteredPairs }]
+                                        ).map((__group) => (
+                                          <div key={__group.key}>
+                                            {groupByWinner && groupedPairs.length > 1 && (
+                                              <div className="px-2 pt-1 pb-1.5 flex items-baseline gap-2 text-[11px]">
+                                                <CheckCircle className="w-3 h-3 text-success/70 self-center shrink-0" aria-hidden="true" />
+                                                <span className={`font-semibold truncate ${__group.key.startsWith('__') ? 'text-muted-foreground' : 'text-foreground/85'}`} title={__group.name}>
+                                                  {__group.name || 'Pairs'}
+                                                </span>
+                                                <span className="text-muted-foreground/70 shrink-0">
+                                                  wins {__group.pairs.length} pair{__group.pairs.length !== 1 ? 's' : ''}
+                                                </span>
+                                              </div>
+                                            )}
+                                            <Accordion type="multiple" value={openPairs} onValueChange={setOpenPairs} className="space-y-1.5">
+                                              {__group.pairs.map((pair, pairIdx) => {
                                           const pairKey = `${pair.modA.modId}--${pair.modB.modId}`
                                           const totalFiles = pair.files.length
                                           const showAll = expandedFilePairs.has(pairKey)
@@ -4695,13 +5110,13 @@ export default function Mods() {
                                                     const modPill = (mod: typeof pair.modA, pos: number | undefined, isWinner: boolean, isLoser: boolean) => (
                                                       <div className={`flex flex-col min-w-0 max-w-[44%] flex-1 px-2 py-1 rounded transition-colors ${
                                                         isWinner ? 'bg-success/10 border border-success/25' : isLoser ? 'opacity-60' : ''
-                                                      }`}>
-                                                        <span className={`truncate text-sm font-medium leading-tight ${isLoser ? 'line-through decoration-muted-foreground/40' : 'text-foreground/90'}`} title={mod.modName}>
+                                                      }`} title={pos != null ? `${mod.modName} — load order #${pos}` : mod.modName}>
+                                                        <span className={`truncate text-sm font-medium leading-tight ${isLoser ? 'line-through decoration-muted-foreground/40' : 'text-foreground/90'}`}>
                                                           {mod.modName}
                                                         </span>
-                                                        {pos != null && (
-                                                          <span className={`text-[10px] leading-none mt-0.5 tabular-nums ${isWinner ? 'text-success/80' : 'text-muted-foreground/60'}`}>
-                                                            loads #{pos}{isWinner ? ' · last' : ''}
+                                                        {isWinner && (
+                                                          <span className="text-[10px] leading-none mt-0.5 text-success/80">
+                                                            loads later
                                                           </span>
                                                         )}
                                                       </div>
@@ -4760,15 +5175,29 @@ export default function Mods() {
                                                               </TooltipContent>
                                                             </Tooltip>
                                                           ) : aWinsAll || bWinsAll ? (
-                                                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium border border-success/30 bg-success/10 text-success">
-                                                              <CheckCircle className="w-3 h-3" aria-hidden="true" />
-                                                              clean
-                                                            </span>
+                                                            (pair.highCount > 0 || pair.mediumCount > 0) ? (
+                                                              <Tooltip>
+                                                                <TooltipTrigger asChild>
+                                                                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium border border-warning/30 bg-warning/10 text-warning cursor-help">
+                                                                    <FileWarning className="w-3 h-3" aria-hidden="true" />
+                                                                    decided
+                                                                  </span>
+                                                                </TooltipTrigger>
+                                                                <TooltipContent side="left" className="text-xs max-w-xs">
+                                                                  Load order picks a clear winner, but the conflict is real — the losing mod's changes won't take effect. Review the file{totalFiles !== 1 ? 's' : ''} below to confirm this is the outcome you want.
+                                                                </TooltipContent>
+                                                              </Tooltip>
+                                                            ) : (
+                                                              <span className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium border border-success/30 bg-success/10 text-success">
+                                                                <CheckCircle className="w-3 h-3" aria-hidden="true" />
+                                                                clean
+                                                              </span>
+                                                            )
                                                           ) : (aw > 0 || bw > 0 || tp > 0 || uk > 0) ? (
                                                             <Tooltip>
                                                               <TooltipTrigger asChild>
                                                                 <span className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium border border-warning/30 bg-warning/10 text-warning cursor-help tabular-nums">
-                                                                  split {aw}/{bw}{tp > 0 ? `+${tp}` : ''}{uk > 0 ? `?${uk}` : ''}
+                                                                  mixed {aw}/{bw}{tp > 0 ? `+${tp}` : ''}{uk > 0 ? `?${uk}` : ''}
                                                                 </span>
                                                               </TooltipTrigger>
                                                               <TooltipContent side="left" className="text-xs max-w-xs">
@@ -4843,7 +5272,10 @@ export default function Mods() {
                                             </AccordionItem>
                                           )
                                         })}
-                                      </Accordion>
+                                            </Accordion>
+                                          </div>
+                                        ))}
+                                      </div>
                                     </div>
                                   ) : (
                                     <div className="text-center py-4 text-xs text-muted-foreground">
@@ -5051,7 +5483,7 @@ export default function Mods() {
                                                   {adding ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
                                                 </Button>
                                               </TooltipTrigger>
-                                              <TooltipContent>Undo — remove from tracking and server config</TooltipContent>
+                                              <TooltipContent>Undo — remove from server</TooltipContent>
                                             </Tooltip>
                                           </>
                                         ) : errored ? (
@@ -5218,9 +5650,9 @@ export default function Mods() {
       <AlertDialog open={!!confirmRemoveMod} onOpenChange={(open) => { if (!open) setConfirmRemoveMod(null) }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Remove this mod?</AlertDialogTitle>
+            <AlertDialogTitle>Remove this mod from the server?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will untrack the mod, remove it from the server INI config, and add it to the ignore list so auto-sync won't re-add it. The workshop files on disk won't be deleted.
+              This removes the mod from the server INI config so it stops loading. The Workshop files stay on disk (so re-adding later is instant).
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -5239,9 +5671,9 @@ export default function Mods() {
       <AlertDialog open={confirmBulkRemove} onOpenChange={setConfirmBulkRemove}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Remove {selectedMods.size} mod{selectedMods.size !== 1 ? 's' : ''}?</AlertDialogTitle>
+            <AlertDialogTitle>Remove {selectedMods.size} mod{selectedMods.size !== 1 ? 's' : ''} from the server?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will untrack all selected mods, remove them from the server INI config, and add them to the ignore list so auto-sync won't re-add them. Workshop files on disk won't be deleted.
+              This removes the selected mods from the server INI config so they stop loading. Workshop files stay on disk (so re-adding later is instant).
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

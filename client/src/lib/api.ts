@@ -630,6 +630,23 @@ export const modsApi = {
   getIgnoredMods: () => apiGet('/mods/ignored'),
   unignoreMod: (workshopId: string) => apiDelete(`/mods/ignored/${workshopId}`),
   clearAllIgnoredMods: () => apiDelete('/mods/ignored'),
+
+  // Ignored mod-conflict pairs (false positives on the variant detector)
+  getIgnoredModPairs: () => apiGet('/mods/ignored-pairs') as Promise<Array<{
+    mod_a: string
+    mod_b: string
+    reason?: string | null
+    server_id?: string | null
+    ignored_at: string
+  }>>,
+  addIgnoredModPair: (modIdA: string, modIdB: string, reason?: string) =>
+    apiPost('/mods/ignored-pairs', { modIdA, modIdB, reason }),
+  removeIgnoredModPair: (modIdA: string, modIdB: string) =>
+    fetchWithRetry(`${API_BASE}/mods/ignored-pairs`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ modIdA, modIdB }),
+    }).then(handleResponse),
   checkUpdates: (options?: { signal?: AbortSignal }) => apiPost('/mods/check-updates', undefined, options),
   getServerMods: () => apiGet('/mods/server-mods'),
   syncFromServer: (options?: { signal?: AbortSignal }) => apiPost('/mods/sync-from-server', undefined, options),
@@ -663,6 +680,19 @@ export const modsApi = {
 
   // Batch remove multiple mods from tracking AND server .ini in one operation
   batchRemove: (workshopIds: string[]) => apiPost('/mods/batch-remove', { workshopIds }),
+
+  // List mods that exist on disk in the workshop folder but are NOT enabled in the server INI.
+  listDiskOnly: () => apiGet('/mods/disk-only') as Promise<{
+    mods: Array<{ workshop_id: string; name: string }>
+    reason?: string
+  }>,
+
+  // Enable a disk-only mod by appending its workshop ID to the INI WorkshopItems=.
+  enableDiskMod: (workshopId: string) => apiPost('/mods/enable-disk-mod', { workshopId }) as Promise<{
+    success: boolean
+    workshopId: string
+    modIdsAdded: number
+  }>,
   
   // Toggle a single mod ID on/off in the Mods= line
   toggleModId: (modId: string, enabled: boolean) => apiPost('/mods/toggle-mod-id', { modId, enabled }) as Promise<{

@@ -779,8 +779,18 @@ export class ModChecker extends EventEmitter {
         trackedMap.set(mod.workshop_id, mod);
       }
 
-      // Query Steam Web API for latest timestamps
-      const workshopIds = [...localTimestamps.keys()];
+      // Query Steam Web API for latest timestamps.
+      // Include tracked mods that aren't in the ACF (e.g. INI lists the ID
+      // but the file isn't downloaded yet, or the ACF entry is missing).
+      // Without this, those mods stay "Never checked" forever because the
+      // checked-set below is built from this same query list.
+      const queryIds = new Set(localTimestamps.keys());
+      for (const mod of trackedMods) {
+        if (mod.workshop_id && /^\d{1,15}$/.test(mod.workshop_id)) {
+          queryIds.add(mod.workshop_id);
+        }
+      }
+      const workshopIds = [...queryIds];
       const steamData = await this.fetchSteamTimestamps(workshopIds);
 
       // Cache steam data for getStatus() / getWorkshopInfo()
@@ -868,8 +878,10 @@ export class ModChecker extends EventEmitter {
           // Steam API succeeded — every queried id was definitively checked
           checkedIds = new Set(steamData.keys());
         } else {
-          // ACF-only fallback — every locally-installed mod was compared
-          checkedIds = new Set(localTimestamps.keys());
+          // ACF-only fallback — every locally-installed mod was compared.
+          // Also mark tracked-but-not-in-ACF mods as checked so the row
+          // doesn't stick on "Never checked" through ACF-only runs.
+          checkedIds = new Set([...localTimestamps.keys(), ...trackedMap.keys()]);
         }
         await markModsChecked(checkedIds, updatesById);
       } catch (markErr) {

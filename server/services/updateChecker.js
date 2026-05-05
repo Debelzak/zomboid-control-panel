@@ -82,12 +82,15 @@ export class UpdateChecker {
    * Get game version from server-console.txt first line (e.g. "version=42.13.0 ...")
    */
   async getGameVersion() {
+    // Hoisted so the catch block can reference it even if an earlier step
+    // (e.g. getActiveServer / getSetting) threw before assignment.
+    let consolePath = null;
     try {
       const activeServer = await getActiveServer();
       const dataPath = activeServer?.zomboidDataPath || await getSetting('zomboidDataPath');
       if (!dataPath) return null;
 
-      const consolePath = path.join(dataPath, 'server-console.txt');
+      consolePath = path.join(dataPath, 'server-console.txt');
       await fs.promises.access(consolePath);
 
       // Read only the first 512 bytes — version is on the first line
@@ -100,7 +103,7 @@ export class UpdateChecker {
       const match = firstLine.match(/version=(\d+\.\d+(?:\.\d+)?)/);
       return match ? match[1] : null;
     } catch (e) {
-      log.debug(`Failed to read PZ version from ${consolePath}: ${e.message}`);
+      log.debug(`Failed to read PZ version from ${consolePath || '(unset)'}: ${e.message}`);
       return null;
     }
   }

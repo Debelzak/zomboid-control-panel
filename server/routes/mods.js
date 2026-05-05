@@ -6,7 +6,7 @@ import os from 'os';
 import crypto from 'crypto';
 import { createLogger } from '../utils/logger.js';
 const log = createLogger('API:Mods');
-import { getTrackedMods, addTrackedMod, removeTrackedMod, clearModUpdates, getSetting, getActiveServer, getModPresets, createModPreset, updateModPreset, deleteModPreset, addIgnoredMod, getIgnoredMods, removeIgnoredMod, clearAllIgnoredMods, isModIgnored } from '../database/init.js';
+import { getTrackedMods, addTrackedMod, removeTrackedMod, clearModUpdates, getSetting, getActiveServer, getModPresets, createModPreset, updateModPreset, deleteModPreset, addIgnoredMod, getIgnoredMods, removeIgnoredMod, clearAllIgnoredMods, isModIgnored, getIgnoredModPairs, addIgnoredModPair, removeIgnoredModPair } from '../database/init.js';
 import { sanitizeError, sanitizeIniValue, sanitizeIniList } from '../utils/sanitize.js';
 import {
   getCollectionContents,
@@ -128,6 +128,46 @@ router.get('/status', async (req, res) => {
 // Get all tracked mods
 router.get('/tracked', async (req, res) => {
   try {
+    // ─── Auto-track from INI ────────────────────────────────────────────────
+    // Tracking is no longer a user-managed concept: any workshop ID present
+    // in the server's INI is automatically tracked so it gets polled for
+    // Workshop updates (which trigger the auto-restart). This keeps the
+    // mental model simple — "what's on the server is what gets tracked".
+    // We skip mods the user has explicitly removed (ignore list) so this
+    // doesn't fight the "Remove from server" action.
+    try {
+      const serverConfigPath = await getServerConfigPath();
+      const serverName = await getServerName();
+      if (serverConfigPath && serverName) {
+        const sanitizedServerName = path.basename(serverName);
+        if (sanitizedServerName === serverName && !serverName.includes('..')) {
+          const iniPath = path.join(serverConfigPath, `${sanitizedServerName}.ini`);
+          if (fs.existsSync(iniPath)) {
+            const content = readTextFile(iniPath);
+            const workshopMatch = content.match(/^WorkshopItems=(.*)$/m);
+            const workshopIds = workshopMatch?.[1]?.split(';').filter(Boolean) || [];
+            if (workshopIds.length > 0) {
+              const trackedNow = await getTrackedMods();
+              const trackedSet = new Set(trackedNow.map(m => m.workshop_id));
+              const modChecker = req.app.get('modChecker');
+              let added = 0;
+              for (const wsId of workshopIds) {
+                if (!/^\d{1,15}$/.test(wsId)) continue;
+                if (trackedSet.has(wsId)) continue;
+                if (await isModIgnored(wsId)) continue;
+                const nameFromDisk = modChecker?.resolveModNameFromDisk(wsId);
+                await addTrackedMod(wsId, nameFromDisk || `Workshop Mod ${wsId}`);
+                added++;
+              }
+              if (added > 0) log.info(`Auto-tracked ${added} mods from INI`);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      log.debug(`Auto-track from INI skipped: ${e.message}`);
+    }
+
     const mods = await getTrackedMods();
     
     // Enrich mods that still have generic "Workshop Mod" names with real names from disk
@@ -255,6 +295,58 @@ router.delete('/ignored', async (req, res) => {
     res.json({ success: true, message: `Cleared ${removed} ignored mod${removed !== 1 ? 's' : ''}`, removed });
   } catch (error) {
     log.error(`Failed to clear ignored mods: ${error.message}`);
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
+// ============================================
+// Ignored mod-conflict pairs (false positives on the variant detector)
+// ============================================
+
+const MOD_ID_RE = /^[A-Za-z0-9_.\-+ ()]{1,128}$/;
+
+router.get('/ignored-pairs', async (req, res) => {
+  try {
+    const pairs = await getIgnoredModPairs();
+    res.json(pairs);
+  } catch (error) {
+    log.error(`Failed to get ignored mod pairs: ${error.message}`);
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
+router.post('/ignored-pairs', async (req, res) => {
+  try {
+    const { modIdA, modIdB, reason } = req.body || {};
+    if (typeof modIdA !== 'string' || typeof modIdB !== 'string' ||
+        !MOD_ID_RE.test(modIdA) || !MOD_ID_RE.test(modIdB)) {
+      return res.status(400).json({ error: 'modIdA and modIdB are required and must be valid mod IDs' });
+    }
+    if (modIdA === modIdB) {
+      return res.status(400).json({ error: 'modIdA and modIdB must differ' });
+    }
+    const safeReason = typeof reason === 'string' ? reason.slice(0, 200) : null;
+    const entry = await addIgnoredModPair(modIdA, modIdB, safeReason);
+    if (!entry) return res.status(400).json({ error: 'Invalid pair' });
+    res.json({ success: true, pair: entry });
+  } catch (error) {
+    log.error(`Failed to add ignored mod pair: ${error.message}`);
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
+router.delete('/ignored-pairs', async (req, res) => {
+  try {
+    const { modIdA, modIdB } = req.body || {};
+    if (typeof modIdA !== 'string' || typeof modIdB !== 'string' ||
+        !MOD_ID_RE.test(modIdA) || !MOD_ID_RE.test(modIdB)) {
+      return res.status(400).json({ error: 'modIdA and modIdB are required' });
+    }
+    const removed = await removeIgnoredModPair(modIdA, modIdB);
+    if (!removed) return res.status(404).json({ error: 'Pair not found in ignore list' });
+    res.json({ success: true });
+  } catch (error) {
+    log.error(`Failed to remove ignored mod pair: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
@@ -4914,5 +5006,129 @@ function computeUnifiedDiff(linesA, linesB, contextLines = 3) {
 
   return hunks;
 }
+
+// ─── Disk-only mods ─────────────────────────────────────────────────────────
+// Returns workshop IDs that exist on disk (downloaded into the Steam workshop
+// content folder) but are NOT in the server's INI WorkshopItems= list.
+// These are "installed but disabled" mods — the user has the files, but the
+// server isn't loading them. The UI shows these as greyed-out rows behind a
+// "Show disabled" toggle, with a quick Enable action.
+router.get('/disk-only', async (req, res) => {
+  try {
+    const modChecker = req.app.get('modChecker');
+    if (!modChecker || !modChecker.workshopAcfPath) {
+      return res.json({ mods: [], reason: 'workshop folder not configured' });
+    }
+
+    // Read INI to know what's currently enabled.
+    const serverConfigPath = await getServerConfigPath();
+    const serverName = await getServerName();
+    const inIni = new Set();
+    if (serverConfigPath && serverName) {
+      const sanitized = path.basename(serverName);
+      if (sanitized === serverName && !serverName.includes('..')) {
+        const iniPath = path.join(serverConfigPath, `${sanitized}.ini`);
+        if (fs.existsSync(iniPath)) {
+          const content = readTextFile(iniPath);
+          const m = content.match(/^WorkshopItems=(.*)$/m);
+          for (const id of (m?.[1]?.split(';').filter(Boolean) || [])) inIni.add(id);
+        }
+      }
+    }
+
+    // Enumerate the steamapps/workshop/content/108600 folder for the active server.
+    const workshopDir = path.dirname(modChecker.workshopAcfPath);
+    const contentDir = path.join(workshopDir, 'content', '108600');
+    if (!fs.existsSync(contentDir)) {
+      return res.json({ mods: [], reason: 'no workshop content folder' });
+    }
+
+    let entries = [];
+    try {
+      entries = fs.readdirSync(contentDir, { withFileTypes: true });
+    } catch (e) {
+      log.warn(`disk-only: failed to read ${contentDir}: ${e.message}`);
+      return res.json({ mods: [], reason: 'cannot read workshop folder' });
+    }
+
+    const mods = [];
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const wsId = entry.name;
+      if (!/^\d{1,15}$/.test(wsId)) continue;
+      if (inIni.has(wsId)) continue; // already enabled in INI
+      const name = modChecker.resolveModNameFromDisk(wsId) || `Workshop Mod ${wsId}`;
+      mods.push({ workshop_id: wsId, name });
+    }
+
+    res.json({ mods });
+  } catch (error) {
+    log.error(`Failed to list disk-only mods: ${error.message}`);
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
+// Enable a disk-only mod: append its workshop ID to the INI WorkshopItems=
+// list (and best-effort the corresponding mod IDs to Mods=) so the server
+// loads it on next start. This is the inverse of the existing batch-remove.
+router.post('/enable-disk-mod', async (req, res) => {
+  try {
+    const { workshopId } = req.body || {};
+    const wsId = String(workshopId || '');
+    if (!/^\d{1,15}$/.test(wsId)) {
+      return res.status(400).json({ error: 'Invalid workshop ID' });
+    }
+
+    const serverConfigPath = await getServerConfigPath();
+    const serverName = await getServerName();
+    const serverPath = await getServerPath();
+    if (!serverConfigPath || !serverName) {
+      return res.status(400).json({ error: 'Server config path not set' });
+    }
+    const sanitized = path.basename(serverName);
+    if (sanitized !== serverName || serverName.includes('..')) {
+      return res.status(400).json({ error: 'Invalid server name' });
+    }
+    const iniPath = path.join(serverConfigPath, `${sanitized}.ini`);
+    if (!fs.existsSync(iniPath)) {
+      return res.status(404).json({ error: 'Server INI not found' });
+    }
+
+    // Resolve mod folder IDs (Mods= entries) from the workshop folder so the
+    // server can actually load it. A workshop item can ship multiple mods.
+    const modIdsToAdd = serverPath ? findAllModIdsFromWorkshop(wsId, serverPath) : [];
+
+    await withIniLock(iniPath, () => {
+      let content = readTextFile(iniPath);
+
+      // WorkshopItems
+      const wsMatch = content.match(/^WorkshopItems=(.*)$/m);
+      const wsList = wsMatch?.[1]?.split(';').filter(Boolean) || [];
+      if (!wsList.includes(wsId)) wsList.push(wsId);
+      const wsLine = `WorkshopItems=${sanitizeIniList(wsList)}`;
+      content = wsMatch ? content.replace(/^WorkshopItems=.*/m, wsLine) : (content.trimEnd() + `\n${wsLine}\n`);
+
+      // Mods
+      const modsMatch = content.match(/^Mods=(.*)$/m);
+      const modsList = modsMatch?.[1]?.split(';').filter(Boolean) || [];
+      for (const mid of modIdsToAdd) {
+        if (!modsList.includes(mid)) modsList.push(mid);
+      }
+      const modsLine = `Mods=${sanitizeIniList(modsList)}`;
+      content = modsMatch ? content.replace(/^Mods=.*/m, modsLine) : (content.trimEnd() + `\n${modsLine}\n`);
+
+      fs.writeFileSync(iniPath, content, 'utf-8');
+    });
+
+    // Lift any prior ignore-list entry so auto-track picks it up.
+    try { await removeIgnoredMod(wsId); } catch { /* best-effort */ }
+
+    log.info(`Enabled disk-only mod ${wsId} (added ${modIdsToAdd.length} mod IDs)`);
+    res.json({ success: true, workshopId: wsId, modIdsAdded: modIdsToAdd.length });
+  } catch (error) {
+    log.error(`Failed to enable disk-only mod: ${error.message}`);
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
 
 export default router;

@@ -37,6 +37,22 @@ interface ParsedLogLine {
   category: string
   message: string
   raw: string
+  /** Human-readable HH:mm:ss extracted from PZ's `t:<epoch_ms>` field, if present. */
+  time?: string
+}
+
+// Convert a PZ epoch-ms timestamp to local HH:mm:ss. PZ logs `t:1777482455659`
+// where the value is milliseconds since epoch. We render it as wall-clock time
+// in the viewer's locale so admins can correlate events without doing math.
+function formatLogTime(epochMs: number): string | undefined {
+  if (!Number.isFinite(epochMs) || epochMs < 1_000_000_000_000) return undefined
+  try {
+    const d = new Date(epochMs)
+    const hh = String(d.getHours()).padStart(2, '0')
+    const mm = String(d.getMinutes()).padStart(2, '0')
+    const ss = String(d.getSeconds()).padStart(2, '0')
+    return `${hh}:${mm}:${ss}`
+  } catch { return undefined }
 }
 
 function parseLogLine(line: string): ParsedLogLine {
@@ -48,11 +64,13 @@ function parseLogLine(line: string): ParsedLogLine {
     return { type: 'UNKNOWN', category: '', message: '', raw: line }
   }
   
-  // Match: LOG/WARN/ERROR : Category  f:xxx...> Message
-  const match = trimmed.match(/^(LOG|WARN|ERROR|DEBUG|INFO)\s*:\s*(\w+).*?>\s*(.+)$/i)
+  // Match: LOG/WARN/ERROR : Category  f:xxx, t:<epoch_ms>, st:xxx> Message
+  // The `t:` field is epoch-ms — capture it so we can show a readable time.
+  const match = trimmed.match(/^(LOG|WARN|ERROR|DEBUG|INFO)\s*:\s*(\w+)(?:[^>]*?\bt:(\d+))?[^>]*>\s*(.+)$/i)
   if (match) {
     let type = match[1].toUpperCase() as ParsedLogLine['type']
-    const message = match[3]
+    const tField = match[3]
+    const message = match[4]
     // Promote LOG → ERROR when the message body is a Java exception or stack trace.
     // PZ logs every exception as `LOG : General ... > java.lang.NullPointerException ...`
     // which makes them invisible against routine LOG spam.
@@ -63,7 +81,8 @@ function parseLogLine(line: string): ParsedLogLine {
       type,
       category: match[2],
       message,
-      raw: line
+      raw: line,
+      time: tField ? formatLogTime(Number(tField)) : undefined,
     }
   }
   
@@ -134,6 +153,11 @@ const ServerLogLine = memo(function ServerLogLine({ line }: { line: string }) {
       )}
     >
       <div className="flex items-baseline gap-1.5">
+        {parsed.time && (
+          <span className="shrink-0 text-muted-foreground/60 text-[11px] font-mono tabular-nums">
+            {parsed.time}
+          </span>
+        )}
         {parsed.type !== 'UNKNOWN' && (
           <span className={`px-1 rounded text-[10px] font-semibold uppercase tracking-wide shrink-0 ${typeBadgeColors[parsed.type]}`}>
             {parsed.type}
