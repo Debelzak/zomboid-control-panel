@@ -1062,8 +1062,12 @@ export class PanelUpdateChecker {
     try {
       const fd = fs.openSync(filePath, 'r');
       const header = Buffer.alloc(4);
-      const bytesRead = fs.readSync(fd, header, 0, 4, 0);
-      fs.closeSync(fd);
+      let bytesRead;
+      try {
+        bytesRead = fs.readSync(fd, header, 0, 4, 0);
+      } finally {
+        try { fs.closeSync(fd); } catch (_) { /* ignore */ }
+      }
       if (bytesRead < 2) return 'file is shorter than a file header';
 
       if (process.platform === 'win32') {

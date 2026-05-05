@@ -37,8 +37,11 @@ function isCronTooFrequent(expr) {
   }
 
   // Comma-separated minutes — reject if any two consecutive runs are <5 min apart.
-  // Previously only checked total count (>12), which let lists like "0,1,2" slip through.
-  if (hour === '*' && minute.includes(',')) {
+  // Within-hour gaps fire whenever the cron runs, regardless of the hour field
+  // (e.g. `0,1,2 0 * * *` still produces 1-minute gaps at midnight). Previously
+  // this branch was gated on `hour === '*'` which let hour-pinned bursts slip
+  // through the throttle.
+  if (minute.includes(',')) {
     const values = minute
       .split(',')
       .map(v => parseInt(v.trim(), 10))
@@ -47,8 +50,9 @@ function isCronTooFrequent(expr) {
     for (let i = 1; i < values.length; i++) {
       if (values[i] - values[i - 1] < 5) return true;
     }
-    // Also reject the wrap-around gap (last entry of hour N to first of hour N+1).
-    if (values.length >= 2) {
+    // Wrap-around (last of hour N → first of hour N+1) only matters when
+    // consecutive hours fire. Conservatively gate this on hour === '*'.
+    if (hour === '*' && values.length >= 2) {
       const wrap = (60 - values[values.length - 1]) + values[0];
       if (wrap < 5) return true;
     }

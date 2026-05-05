@@ -689,10 +689,29 @@ end
 
 function PanelBridge.sendResult(id, success, data, errorMsg)
     if #PanelBridge.pendingResults >= PanelBridge.MAX_PENDING_RESULTS then
+        local dropped = PanelBridge.pendingResults[1]
         table.remove(PanelBridge.pendingResults, 1)
         PanelBridge.warn("Pending result buffer full, dropping oldest result", {
-            max = PanelBridge.MAX_PENDING_RESULTS
+            max = PanelBridge.MAX_PENDING_RESULTS,
+            droppedSeq = dropped and dropped.seq or nil,
+            droppedId = dropped and dropped.id or nil
         })
+        -- Write a tombstone for the dropped seq so Node's sequential reader
+        -- doesn't block forever waiting for a result file that will never exist.
+        if dropped and dropped.seq then
+            local outFile = "outbox/res-" .. PanelBridge.formatSeq(dropped.seq) .. ".json"
+            PanelBridge.writeJSON(outFile, {
+                protocolVersion = PanelBridge.PROTOCOL_VERSION,
+                seq = dropped.seq,
+                result = {
+                    id = dropped.id,
+                    success = false,
+                    data = nil,
+                    error = "Result dropped: pending buffer overflow",
+                    timestamp = getTimestampMs(),
+                }
+            })
+        end
     end
 
     -- Buffer results in memory; they're flushed to disk once per tick in flushResults()
@@ -799,6 +818,26 @@ local function processSingleCommand(cmd)
         return false
     end
 
+    -- Honor Node-side timeout: if the command's expiresAt has already passed,
+    -- skip the side effect but still write a result so Node can clear bookkeeping.
+    -- Without this, a command that ran late (Lua paused / GC pause / heavy tick)
+    -- would still execute its action long after the HTTP caller saw a timeout.
+    if type(cmd.expiresAt) == "number" and cmd.expiresAt > 0 then
+        local nowMs = getTimestampMs()
+        if nowMs > cmd.expiresAt then
+            PanelBridge.processedIds[cmd.id] = true
+            PanelBridge.processedIdCount = PanelBridge.processedIdCount + 1
+            PanelBridge.stats.commandsFailed = PanelBridge.stats.commandsFailed + 1
+            PanelBridge.warn("Skipping expired command", {
+                action = tostring(cmd.action),
+                id = cmd.id,
+                ageMs = nowMs - cmd.expiresAt
+            })
+            PanelBridge.sendResult(cmd.id, false, nil, "Command expired before mod could process it")
+            return false
+        end
+    end
+
     PanelBridge.processedIds[cmd.id] = true
     PanelBridge.processedIdCount = PanelBridge.processedIdCount + 1
     PanelBridge.stats.commandsProcessed = PanelBridge.stats.commandsProcessed + 1
@@ -880,9 +919,16 @@ local function processQueuedCommands(budget)
         if raw == "" then
             shouldAdvance = true
         else
-            local queued = json.decode(raw)
+            -- pcall-protect json.decode so a malformed file can't throw and
+            -- leave the cursor unmoved (which would cause an infinite re-parse loop).
+            local decodeOk, decoded = pcall(json.decode, raw)
+            local queued = decodeOk and decoded or nil
             if not queued then
-                PanelBridge.warn("Skipping malformed queued command file", { file = fileName, seq = nextSeq })
+                PanelBridge.warn("Skipping malformed queued command file", {
+                    file = fileName,
+                    seq = nextSeq,
+                    parseError = (not decodeOk) and tostring(decoded) or "decode returned nil"
+                })
                 PanelBridge.clearFile(fileName)
                 shouldAdvance = true
             else
@@ -5732,77 +5778,6 @@ handlers.removeVehiclesInArea = function(args)
     end
 
     return true, { message = removed .. " vehicle(s) removed from area", removed = removed, vehicles = removedList, bounds = { minX = minX, minY = minY, maxX = maxX, maxY = maxY } }
-end
-
-handlers.vehicleProbeAPI = function(args)
-    local vehicle = findVehicleById(args.vehicleId)
-    if not vehicle then return false, nil, "Vehicle not found" end
-
-    local methods = {}
-    -- Check known method names
-    local names = {
-        "setRemainingFuelPercentage", "getRemainingFuelPercentage",
-        "setCurrentFuel", "getMaxFuel", "getCurrentFuel",
-        "setBatteryCharge", "getBatteryCharge",
-        "setFuel", "getFuel",
-        "getPartById", "getScript",
-        "permanentlyRemove", "removeFromWorld", "removeVehicle",
-        "repair", "updatePartStats",
-        "getPartCount",
-        -- Engine / hotwire methods
-        "setHotwired", "isHotwired", "setHotwiredBroken", "isHotwiredBroken",
-        "setKeysInIgnition", "isKeysInIgnition",
-        "setEngineRunning", "isEngineRunning",
-        "startEngine", "engineDoStarting",
-        "transmitEngine", "transmitVehicle", "updateFlags",
-        "getBattery", "getEngine",
-    }
-    for _, name in ipairs(names) do
-        methods[name] = vehicle[name] ~= nil
-    end
-
-    -- Probe parts
-    local parts = {}
-    local partNames = { "GasTank", "Battery", "Engine", "TireFL", "TireFR" }
-    for _, pname in ipairs(partNames) do
-        local ok2, part = pcall(function() return vehicle:getPartById(pname) end)
-        if ok2 and part then
-            local partMethods = {}
-            local pMethodNames = { "getCondition", "setCondition", "getInventoryItem", "getItemContainer", "setCustomWeight" }
-            for _, m in ipairs(pMethodNames) do
-                partMethods[m] = part[m] ~= nil
-            end
-            -- Check container
-            local containerInfo = nil
-            local ok3, container = pcall(function() return part:getItemContainer() end)
-            if ok3 and container then
-                local cMethods = { "setCustomWeight", "getCustomWeight", "getCapacity", "setCapacity" }
-                containerInfo = {}
-                for _, m in ipairs(cMethods) do
-                    containerInfo[m] = container[m] ~= nil
-                end
-            end
-            parts[pname] = { methods = partMethods, container = containerInfo }
-        else
-            parts[pname] = false
-        end
-    end
-
-    -- Script info
-    local scriptInfo = nil
-    local ok4, script = pcall(function() return vehicle:getScript() end)
-    if ok4 and script then
-        scriptInfo = {}
-        local sMethods = { "getTankCapacity", "getMass", "getEngineForce" }
-        for _, m in ipairs(sMethods) do
-            scriptInfo[m] = script[m] ~= nil
-        end
-        if script.getTankCapacity then
-            pcall(function() scriptInfo.tankCapacityValue = script:getTankCapacity() end)
-        end
-    end
-
-    return true, { vehicleMethods = methods, parts = parts, script = scriptInfo }
 end
 
 handlers.spawnVehicleAt = function(args)

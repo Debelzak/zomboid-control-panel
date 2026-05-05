@@ -2511,8 +2511,11 @@ router.get('/console-log', async (req, res) => {
       const fd = fs.openSync(consoleLogPath, 'r');
       const readStart = stats.size - MAX_READ_BYTES;
       const buffer = Buffer.alloc(MAX_READ_BYTES);
-      fs.readSync(fd, buffer, 0, MAX_READ_BYTES, readStart);
-      fs.closeSync(fd);
+      try {
+        fs.readSync(fd, buffer, 0, MAX_READ_BYTES, readStart);
+      } finally {
+        try { fs.closeSync(fd); } catch (_) { /* ignore */ }
+      }
       // Skip first partial line after seeking
       const raw = buffer.toString('utf-8');
       const firstNewline = raw.indexOf('\n');
@@ -2598,8 +2601,11 @@ router.get('/console-log/stream', async (req, res) => {
     const fd = fs.openSync(consoleLogPath, 'r');
     const newBytes = stats.size - lastSize;
     const buffer = Buffer.alloc(newBytes);
-    fs.readSync(fd, buffer, 0, newBytes, lastSize);
-    fs.closeSync(fd);
+    try {
+      fs.readSync(fd, buffer, 0, newBytes, lastSize);
+    } finally {
+      try { fs.closeSync(fd); } catch (_) { /* ignore */ }
+    }
     
     const newContent = buffer.toString('utf-8');
     const allNewLines = newContent.split('\n').filter(l => l.trim());

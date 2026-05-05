@@ -806,7 +806,7 @@ router.post('/delete-chunks', async (req, res) => {
             await fs.promises.unlink(mapFile);
             wasDeleted = true;
           } catch (e) {
-            if (e.code !== 'ENOENT') return { success: false, error: e.message, file: chunk.file };
+            if (e.code !== 'ENOENT') return { success: false, error: sanitizeError(e.message), file: chunk.file };
           }
         }
 
@@ -815,7 +815,7 @@ router.post('/delete-chunks', async (req, res) => {
         }
         return { success: true, wasDeleted };
       } catch (err) {
-        return { success: false, error: err.message, file: chunk.file };
+        return { success: false, error: sanitizeError(err.message), file: chunk.file };
       }
     }));
 

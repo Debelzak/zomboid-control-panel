@@ -895,11 +895,11 @@ router.get('/raw/:type', async (req, res) => {
     const filePath = path.join(configPath, fileMap[type]);
     
     if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ error: 'File not found', path: filePath });
+      return res.status(404).json({ error: 'File not found' });
     }
     
     const content = fs.readFileSync(filePath, 'utf-8');
-    res.json({ content, path: filePath, filename: fileMap[type] });
+    res.json({ content, filename: fileMap[type] });
   } catch (error) {
     log.error('Failed to read raw file:', error);
     res.status(500).json({ error: sanitizeError(error.message) });
@@ -1477,7 +1477,13 @@ router.get('/image-preview', async (req, res) => {
     
     res.setHeader('Content-Type', contentType);
     res.setHeader('Cache-Control', 'private, max-age=60');
-    fs.createReadStream(resolved).pipe(res);
+    const previewStream = fs.createReadStream(resolved);
+    previewStream.on('error', (err) => {
+      log.error(`Image preview stream error: ${err.message}`);
+      if (!res.headersSent) res.status(500).end();
+      else res.destroy();
+    });
+    previewStream.pipe(res);
   } catch (error) {
     log.error(`Failed to serve image preview: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });

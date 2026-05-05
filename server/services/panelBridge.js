@@ -685,10 +685,28 @@ class PanelBridge extends EventEmitter {
       try {
         const raw = fs.readFileSync(resultFile, 'utf-8');
         if (!raw.trim()) {
-          this.queueState.lastConsumedResultSeq = seq;
-          consumed++;
-          continue;
+          // Lua may have just opened the file for writing (truncates immediately
+          // with getFileWriter append=false) but not yet flushed content.
+          // Retry on the next poll instead of advancing past a real result.
+          // After ~10 polls (~1.5s) treat the file as genuinely empty/orphaned
+          // and advance with a warning so we don't stall forever.
+          if (!this._emptyReadCounter) this._emptyReadCounter = { seq: 0, count: 0 };
+          if (this._emptyReadCounter.seq !== seq) {
+            this._emptyReadCounter.seq = seq;
+            this._emptyReadCounter.count = 0;
+          }
+          this._emptyReadCounter.count++;
+          if (this._emptyReadCounter.count >= 10) {
+            log.warn(`Queue result seq ${seq} empty for ${this._emptyReadCounter.count} polls, advancing past it`);
+            this.queueState.lastConsumedResultSeq = seq;
+            this._emptyReadCounter.count = 0;
+            consumed++;
+            continue;
+          }
+          break;
         }
+        // Reset retry counter once we successfully read content
+        if (this._emptyReadCounter) this._emptyReadCounter.count = 0;
         parsed = JSON.parse(raw);
       } catch (error) {
         log.debug(`Queue result parse error for seq ${seq}: ${error.message}`);
@@ -789,6 +807,15 @@ class PanelBridge extends EventEmitter {
     const inboxDir = this.getInboxDir();
     if (!inboxDir || !fs.existsSync(inboxDir)) return;
 
+    // Sweep orphaned .tmp files from interrupted atomic writes regardless of cursor state.
+    try {
+      for (const fileName of fs.readdirSync(inboxDir)) {
+        if (fileName.endsWith('.tmp')) {
+          try { fs.unlinkSync(path.join(inboxDir, fileName)); } catch (_) { /* ignore */ }
+        }
+      }
+    } catch (_) { /* ignore */ }
+
     const cursorFile = this.getInboxCursorFile();
     let lastProcessedSeq = 0;
     if (cursorFile && fs.existsSync(cursorFile)) {
@@ -811,6 +838,11 @@ class PanelBridge extends EventEmitter {
     const files = fs.readdirSync(inboxDir);
     let deleted = 0;
     for (const fileName of files) {
+      // Sweep .tmp orphans from interrupted writes (atomic temp+rename pattern).
+      if (fileName.endsWith('.tmp')) {
+        try { fs.unlinkSync(path.join(inboxDir, fileName)); deleted++; } catch (_) { /* ignore */ }
+        continue;
+      }
       const seq = this.extractSeq(fileName, /^cmd-(\d+)\.json$/);
       if (seq !== null && seq <= deleteUpToSeq) {
         try {
@@ -830,6 +862,15 @@ class PanelBridge extends EventEmitter {
   cleanupOutboxFiles() {
     const outboxDir = this.getOutboxDir();
     if (!outboxDir || !fs.existsSync(outboxDir)) return;
+
+    // Sweep orphaned .tmp files first, regardless of cursor state.
+    try {
+      for (const fileName of fs.readdirSync(outboxDir)) {
+        if (fileName.endsWith('.tmp')) {
+          try { fs.unlinkSync(path.join(outboxDir, fileName)); } catch (_) { /* ignore */ }
+        }
+      }
+    } catch (_) { /* ignore */ }
 
     if (this.queueState.lastConsumedResultSeq <= this.queue.retainRecentFiles) {
       return;
@@ -1306,18 +1347,6 @@ class PanelBridge extends EventEmitter {
       throw new Error('Bridge not running');
     }
     return this.sendCommand('teleportPlayer', { username, x, y, z });
-  }
-
-  /**
-   * Convenience method: send server message (routed via sendToServerChat).
-   * No dedicated sendServerMessage Lua handler exists — this wraps sendToServerChat
-   * with isAlert=true so callers still get an announcement-style broadcast.
-   */
-  async sendServerMessage(message) {
-    if (!this.isRunning) {
-      throw new Error('Bridge not running');
-    }
-    return this.sendCommand('sendToServerChat', { message, isAlert: true });
   }
 
   /**

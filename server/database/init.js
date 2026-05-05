@@ -34,9 +34,11 @@ const dataDir = paths.dataDir;
 const dbPath = paths.dbPath;
 const backupDir = path.join(dataDir, 'backups');
 
-// Ensure directories exist
+// Ensure directories exist with restrictive perms (POSIX). Mode is ignored on Windows.
+// 0o700 — these dirs hold db.json (RCON password + JWT secret) and rotating backups.
 for (const dir of [dataDir, backupDir]) {
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  try { fs.chmodSync(dir, 0o700); } catch (_) { /* best-effort: Windows / network shares */ }
 }
 
 // ============================================
@@ -137,9 +139,13 @@ export async function flushWrites() {
     try {
       // Atomic write: write to temp file first, then rename
       // This prevents corruption on NFS/SMB mounts or if process is killed mid-write
+      // mode 0o600 — db.json contains plaintext RCON password & JWT secret.
+      // We chmod the tmp file BEFORE rename because writeFileSync's `mode` option
+      // is ignored when the file already exists (e.g. orphaned tmp from prior crash).
       const tmpPath = dbPath + '.tmp';
       const data = JSON.stringify(db.data, null, 2);
-      fs.writeFileSync(tmpPath, data, 'utf-8');
+      fs.writeFileSync(tmpPath, data, { encoding: 'utf-8', mode: 0o600 });
+      try { fs.chmodSync(tmpPath, 0o600); } catch (_) { /* best-effort: Windows */ }
       fs.renameSync(tmpPath, dbPath);
       _writeRetries = 0; // Reset on success
       log.debug(`DB flushed (${Math.round(data.length / 1024)}KB)`);
@@ -173,6 +179,8 @@ function createBackup(label = '') {
     const backupFile = path.join(backupDir, `db-${timestamp}${suffix}.json`);
 
     fs.copyFileSync(dbPath, backupFile);
+    // Backups contain the same secrets as db.json — tighten perms.
+    try { fs.chmodSync(backupFile, 0o600); } catch (_) { /* best-effort: Windows */ }
     pruneBackups();
     return backupFile;
   } catch (err) {
@@ -299,24 +307,45 @@ function compactData(data) {
 
 export async function getDb() {
   if (!db) {
-    // Create startup backup before touching anything
+    // Tighten permissions on existing files left behind by prior installs that
+    // wrote with the default umask (typically 0o644 on Linux). Idempotent.
     if (fs.existsSync(dbPath)) {
-      createBackup('startup');
+      try { fs.chmodSync(dbPath, 0o600); } catch (_) { /* best-effort: Windows */ }
     }
+    try {
+      for (const f of fs.readdirSync(backupDir)) {
+        if (f.startsWith('db-') && f.endsWith('.json')) {
+          try { fs.chmodSync(path.join(backupDir, f), 0o600); } catch (_) { /* ignore */ }
+        }
+      }
+    } catch (_) { /* backupDir may not be readable yet on first run */ }
 
     const adapter = new JSONFile(dbPath);
     db = new Low(adapter, defaultData);
 
+    let loadedCleanly = false;
     try {
       await db.read();
+      loadedCleanly = true;
     } catch (err) {
       log.error(`Failed to read database: ${err.message}`);
 
-      // Attempt recovery from backup
+      // Attempt recovery from backup. Do NOT snapshot the corrupt file first —
+      // that would poison the backup ring (pruneBackups keeps newest 5 and
+      // could evict the last known-good backup) AND make getLatestBackup
+      // return the corrupt copy.
       const backup = getLatestBackup();
       if (backup) {
         log.warn(`Attempting recovery from ${path.basename(backup)}...`);
         try {
+          // Preserve the corrupt file for forensics, OUTSIDE the rotation ring
+          // so pruneBackups never touches it.
+          try {
+            const corruptPath = path.join(backupDir, `corrupt-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
+            fs.copyFileSync(dbPath, corruptPath);
+            try { fs.chmodSync(corruptPath, 0o600); } catch (_) { /* best-effort */ }
+          } catch (_) { /* best-effort */ }
+
           fs.copyFileSync(backup, dbPath);
           await db.read();
           log.info('Database recovery successful!');
@@ -334,7 +363,18 @@ export async function getDb() {
     db.data = validateData(db.data);
     db.data = runMigrations(db.data);
     db.data = compactData(db.data);
-    await db.write();
+
+    // Use the atomic tmp+rename path instead of lowdb's non-atomic
+    // adapter.write(). A crash during the startup write would otherwise
+    // corrupt the file we just recovered/migrated.
+    _dirty = true;
+    await flushWrites();
+
+    // Snapshot only AFTER the DB loaded and wrote successfully. This prevents
+    // a corrupt file from being captured as a "good" backup at boot.
+    if (loadedCleanly && fs.existsSync(dbPath)) {
+      createBackup('startup');
+    }
 
     // Start periodic backups and register shutdown handlers
     startBackupSchedule();
