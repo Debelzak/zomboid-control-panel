@@ -1,11 +1,15 @@
 ---@diagnostic disable: undefined-global, deprecated
 --[[
     PanelBridge - Server-side mod for Zomboid Control Panel
-    Version: 1.1.0
-    
+    Version: 1.2.1
+
     This mod enables external control panel communication with the PZ server.
     Communication happens via JSON files in the server save folder.
-    
+
+    v1.2.1 Changes:
+    - Synced runtime VERSION constant with mod.info (was 1.1.1)
+    - No behavioural changes; bump triggers panel auto-update on existing servers
+
     v1.7.2 Changes:
     - Fixed teleportPlayer: use NetworkTeleport.teleport() for proper network-synced teleport
     - setPosition() only moves server-side coords; NetworkTeleport handles client sync
@@ -100,7 +104,7 @@
 local json
 
 local PanelBridge = {
-    VERSION = "1.1.1",
+    VERSION = "1.2.1",
     PROTOCOL_VERSION = "queue-v1",
     CHECK_INTERVAL = 250, -- milliseconds (fast command polling)
     lastCheck = 0,

@@ -927,12 +927,19 @@ export class ModChecker extends EventEmitter {
           try {
             log.info(`Triggering auto-restart callback for ${newUpdates.length} new update(s)`);
             await this.onUpdateCallback(newUpdates);
-            // Mark these updates as processed so we don't re-trigger
-            for (const m of newUpdates) {
-              const steamTs = m.latestTimestamp?.getTime?.() || 0;
-              if (steamTs) {
-                this.processedUpdates.set(m.workshopId, steamTs);
+            // Mark these updates as processed ONLY if a restart actually proceeded
+            // (handleModUpdate/triggerModRestart sets pendingRestart=true on success and
+            // false on early aborts like "RCON not connected"). Marking processed when
+            // the restart aborted would suppress retries on every subsequent poll.
+            if (this.pendingRestart) {
+              for (const m of newUpdates) {
+                const steamTs = m.latestTimestamp?.getTime?.() || 0;
+                if (steamTs) {
+                  this.processedUpdates.set(m.workshopId, steamTs);
+                }
               }
+            } else {
+              log.info('Restart did not proceed (likely aborted) — keeping updates eligible for retry on next cycle');
             }
           } catch (callbackError) {
             log.error(`Mod update callback failed: ${callbackError.message}`);
