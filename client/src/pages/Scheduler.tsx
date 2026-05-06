@@ -77,6 +77,18 @@ const commonCommands = [
   { label: 'Save World', value: 'save' },
   { label: 'Server Message', value: 'servermsg Server maintenance in progress' },
   { label: 'Check Mod Updates', value: 'checkModsNeedUpdate' },
+  // PanelBridge actions \u2014 routed through the Lua mod via `bridge:<action>`.
+  // JSON args after the action name are validated server-side.
+  { label: 'Trigger Blizzard (2h)', value: 'bridge:triggerBlizzard {"duration":2}' },
+  { label: 'Trigger Storm (1h)', value: 'bridge:triggerStorm {"duration":1}' },
+  { label: 'Trigger Tropical Storm (1h)', value: 'bridge:triggerTropicalStorm {"duration":1}' },
+  { label: 'Stop All Weather', value: 'bridge:stopWeather' },
+  { label: 'Start Rain', value: 'bridge:startRain {"intensity":0.7}' },
+  { label: 'Stop Rain', value: 'bridge:stopRain' },
+  { label: 'Restore Utilities', value: 'bridge:restoreUtilities' },
+  { label: 'Shut Off Utilities', value: 'bridge:shutOffUtilities' },
+  { label: 'Save World (PanelBridge)', value: 'bridge:saveWorld' },
+  { label: 'Broadcast (Server Chat)', value: 'bridge:sendToServerChat {"message":"Scheduled broadcast"}' },
 ]
 
 export default function Scheduler() {
@@ -137,9 +149,11 @@ export default function Scheduler() {
   }, [fetchData])
 
   // Poll server status so Manual Restart / Quick Broadcasts stay accurate.
+  // Skipped while the tab is hidden to avoid pointless work in background tabs.
   useEffect(() => {
     let cancelled = false
     const pull = async () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
       try {
         const s = await serverApi.getStatus()
         if (!cancelled) setServerRunning(!!s?.running)
@@ -563,6 +577,13 @@ export default function Scheduler() {
                   placeholder="Or enter custom command"
                   maxLength={2000}
                 />
+                {newTaskCommand.startsWith('bridge:') && (
+                  <p className="mt-1.5 text-xs text-muted-foreground">
+                    Format: <code className="text-foreground">bridge:&lt;action&gt; {'{json args}'}</code> — e.g.
+                    <code className="ml-1 text-foreground">bridge:triggerBlizzard {'{"durationHours":2}'}</code>.
+                    Args are optional. Only allow-listed actions run via the scheduler.
+                  </p>
+                )}
               </div>
             </div>
             <DialogFooter>
@@ -635,55 +656,80 @@ export default function Scheduler() {
           <CardTitle>Manual Restart</CardTitle>
           <CardDescription>
             {serverRunning
-              ? 'Restart with warning messages.'
+              ? 'Pick a countdown — players are warned and the server restarts when it ends.'
               : 'Server is offline — start it before issuing a restart.'}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Quick Restart Buttons */}
+          {/* Quick Restart Buttons — each triggers an immediate restart with that warning length */}
           <div className="flex flex-wrap gap-2">
-            <Button 
-              onClick={() => handleRestartWithWarning(15)} 
+            <Button
+              onClick={() => handleRestartWithWarning(15)}
               disabled={loading || !serverRunning}
               variant="outline"
               size="sm"
+              title="Restart in 15 minutes with countdown warnings"
             >
               <Clock className="w-4 h-4 mr-2" />
-              15 min
+              Restart in 15m
             </Button>
-            <Button 
-              onClick={() => handleRestartWithWarning(10)} 
+            <Button
+              onClick={() => handleRestartWithWarning(10)}
               disabled={loading || !serverRunning}
               variant="outline"
               size="sm"
+              title="Restart in 10 minutes with countdown warnings"
             >
               <Clock className="w-4 h-4 mr-2" />
-              10 min
+              Restart in 10m
             </Button>
-            <Button 
-              onClick={() => handleRestartWithWarning(5)} 
+            <Button
+              onClick={() => handleRestartWithWarning(5)}
               disabled={loading || !serverRunning}
               variant="outline"
               size="sm"
+              title="Restart in 5 minutes with countdown warnings"
             >
               <Clock className="w-4 h-4 mr-2" />
-              5 min
+              Restart in 5m
             </Button>
-            <Button 
-              onClick={() => handleRestartWithWarning(1)} 
-              disabled={loading || !serverRunning}
-              variant="destructive"
-              size="sm"
-            >
-              <Clock className="w-4 h-4 mr-2" />
-              1 min
-            </Button>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  disabled={loading || !serverRunning}
+                  variant="warning"
+                  size="sm"
+                  title="Restart in 1 minute — short warning, requires confirmation"
+                >
+                  <Clock className="w-4 h-4 mr-2" />
+                  Restart in 1m
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Restart server in 1 minute?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Players get a single 1-minute warning before the server goes down.
+                    Use longer countdowns if anyone is mid-fight or driving.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={() => handleRestartWithWarning(1)}
+                    className="bg-warning text-warning-foreground hover:bg-warning/90"
+                  >
+                    Restart in 1m
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </div>
-          
+
           {/* Custom Time */}
           <div className="flex items-end gap-4">
             <div className="flex-1 max-w-xs">
-              <Label>Custom Warning Time (minutes)</Label>
+              <Label>Custom countdown (minutes)</Label>
               <Input
                 type="number"
                 value={restartMinutes}
@@ -692,17 +738,42 @@ export default function Scheduler() {
                 max={30}
               />
             </div>
-            <Button 
-              onClick={handleRestartNow} 
-              disabled={loading || !serverRunning}
-              variant="warning"
-            >
-              <RotateCcw className="w-4 h-4 mr-2" />
-              Restart Now
-            </Button>
+            {restartMinutes < 5 ? (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button disabled={loading || !serverRunning} variant="warning">
+                    <RotateCcw className="w-4 h-4 mr-2" />
+                    Restart Now
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Restart in {restartMinutes} minute{restartMinutes === 1 ? '' : 's'}?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Short countdowns can catch players mid-action. Confirm if you really want to restart this fast.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={handleRestartNow} className="bg-warning text-warning-foreground hover:bg-warning/90">
+                      Restart in {restartMinutes}m
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            ) : (
+              <Button
+                onClick={handleRestartNow}
+                disabled={loading || !serverRunning}
+                variant="warning"
+              >
+                <RotateCcw className="w-4 h-4 mr-2" />
+                Restart Now
+              </Button>
+            )}
           </div>
           <p className="text-sm text-muted-foreground">
-            Players get countdown warnings at 15m, 10m, 5m, and 1m.
+            Players see countdown warnings at 15m, 10m, 5m, and 1m as the timer ticks down.
           </p>
         </CardContent>
       </Card>

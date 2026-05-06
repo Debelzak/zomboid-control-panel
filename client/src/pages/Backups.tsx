@@ -12,6 +12,7 @@ import {
   Settings,
   AlertTriangle,
   Check,
+  Upload,
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -40,7 +41,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { useToast } from '@/components/ui/use-toast'
 import { useSocket } from '@/contexts/SocketContext'
-import { backupApi, BackupStatus, BackupFile } from '@/lib/api'
+import { backupApi, serversApi, BackupStatus, BackupFile } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { PageHeader } from '@/components/PageHeader'
 import { EmptyState } from '@/components/EmptyState'
@@ -71,6 +72,15 @@ export default function Backups() {
   const [restoringBackup, setRestoringBackup] = useState<string | null>(null)
   const [deletingBackups, setDeletingBackups] = useState(false)
   const [backupProgress, setBackupProgress] = useState<BackupProgress | null>(null)
+  const [uploadingBackup, setUploadingBackup] = useState(false)
+  const [uploadPercent, setUploadPercent] = useState(0)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Active server context — backups don't apply to remote servers because
+  // the panel can't reach the remote filesystem. We fetch this on mount
+  // and refresh when the server-changed socket event fires (handled via
+  // socket effect below) so the banner / button-disable stays accurate.
+  const [activeServerRemote, setActiveServerRemote] = useState(false)
 
   // Selection state
   const [selectedBackups, setSelectedBackups] = useState<Set<string>>(new Set())
@@ -131,7 +141,14 @@ export default function Backups() {
   const refreshAll = useCallback(async () => {
     setLoading(true)
     try {
-      await Promise.all([fetchBackupStatus(), fetchBackups()])
+      await Promise.all([
+        fetchBackupStatus(),
+        fetchBackups(),
+        // Active server may change between visits to this page — always re-check.
+        serversApi.getActive()
+          .then(({ server }) => setActiveServerRemote(!!server?.isRemote))
+          .catch(() => setActiveServerRemote(false)),
+      ])
     } finally {
       setLoading(false)
     }
@@ -203,6 +220,54 @@ export default function Backups() {
       setBackupProgress({ phase: 'error', percent: 0, message: 'Backup failed' })
     } finally {
       setCreatingBackup(false)
+    }
+  }
+
+  // Upload an existing .zip from the user's machine into the backups folder.
+  // The file gets stored with an "uploaded-" prefix and shows up in the list
+  // alongside scheduled backups; the user then clicks Restore to apply it.
+  const handleUploadFile = async (file: File) => {
+    if (!file) return
+    if (activeServerRemote) {
+      toast({ title: 'Not available for remote servers', description: 'Backup uploads write to the local filesystem and aren’t supported for remote servers.', variant: 'destructive' })
+      return
+    }
+    if (!file.name.toLowerCase().endsWith('.zip')) {
+      toast({ title: 'Invalid file', description: 'Only .zip backup archives are accepted.', variant: 'destructive' })
+      return
+    }
+    // Hard cap matches the server-side express.raw limit (4 GB). Anything
+    // larger would upload for minutes and then 413 — fail fast instead.
+    const MAX_UPLOAD_BYTES = 4 * 1024 * 1024 * 1024
+    if (file.size > MAX_UPLOAD_BYTES) {
+      toast({ title: 'File too large', description: `Backup archives must be 4 GB or smaller. This file is ${(file.size / (1024 * 1024 * 1024)).toFixed(2)} GB.`, variant: 'destructive' })
+      return
+    }
+    if (file.size === 0) {
+      toast({ title: 'Empty file', description: 'The selected .zip is empty.', variant: 'destructive' })
+      return
+    }
+    setUploadingBackup(true)
+    setUploadPercent(0)
+    try {
+      const result = await backupApi.uploadBackup(file, setUploadPercent)
+      toast({
+        title: 'Backup Uploaded',
+        description: `Stored as ${result.name}. Use Restore to apply it.`,
+        variant: 'success' as const,
+      })
+      await fetchBackups()
+      await fetchBackupStatus()
+    } catch (error) {
+      toast({
+        title: 'Upload Failed',
+        description: error instanceof Error ? error.message : 'Failed to upload backup',
+        variant: 'destructive',
+      })
+    } finally {
+      setUploadingBackup(false)
+      setUploadPercent(0)
+      if (fileInputRef.current) fileInputRef.current.value = ''
     }
   }
 
@@ -386,6 +451,28 @@ export default function Backups() {
     return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   }
 
+  // Translate the small set of cron presets we expose into a human label.
+  // Falls back to the raw cron string for anything custom so the user
+  // still gets meaningful information without us shipping a full parser.
+  const describeSchedule = (cron: string | undefined): string => {
+    if (!cron) return 'No schedule'
+    const map: Record<string, string> = {
+      '*/15 * * * *': 'every 15 minutes',
+      '*/30 * * * *': 'every 30 minutes',
+      '0 * * * *': 'every hour',
+      '0 */2 * * *': 'every 2 hours',
+      '0 */4 * * *': 'every 4 hours',
+      '0 */6 * * *': 'every 6 hours',
+      '0 */8 * * *': 'every 8 hours',
+      '0 */12 * * *': 'every 12 hours',
+      '0 0 * * *': 'daily at midnight',
+      '0 6 * * *': 'daily at 6 AM',
+      '0 12 * * *': 'daily at noon',
+      '0 18 * * *': 'daily at 6 PM',
+    }
+    return map[cron] || cron
+  }
+
   const totalSize = useMemo(() => {
     return backups.reduce((sum, b) => sum + b.size, 0)
   }, [backups])
@@ -404,8 +491,9 @@ export default function Backups() {
           <div className="flex items-center gap-2">
             <Button
               onClick={handleCreateBackup}
-              disabled={creatingBackup || restoringBackup !== null || !backupStatus?.savesExists}
+              disabled={creatingBackup || restoringBackup !== null || !backupStatus?.savesExists || activeServerRemote}
               className="gap-2"
+              title={activeServerRemote ? 'Backups are not available for remote servers' : undefined}
             >
               {creatingBackup ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -413,6 +501,30 @@ export default function Backups() {
                 <Archive className="w-4 h-4" />
               )}
               {creatingBackup ? 'Creating...' : 'Create Backup'}
+            </Button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".zip,application/zip"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (file) handleUploadFile(file)
+              }}
+            />
+            <Button
+              variant="outline"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploadingBackup || restoringBackup !== null || activeServerRemote}
+              className="gap-2"
+              title={activeServerRemote ? 'Backups are not available for remote servers' : 'Upload an existing world_backup_*.zip from another machine'}
+            >
+              {uploadingBackup ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Upload className="w-4 h-4" />
+              )}
+              {uploadingBackup ? `Uploading ${uploadPercent}%` : 'Upload .zip'}
             </Button>
             <Button
               variant="outline"
@@ -446,6 +558,17 @@ export default function Backups() {
               <RefreshCw className="mr-2 h-4 w-4" />
               Retry
             </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {activeServerRemote && (
+        <Alert className="border-warning/40 bg-warning/10">
+          <AlertTriangle className="h-4 w-4 text-warning" />
+          <AlertTitle>Backups disabled for remote servers</AlertTitle>
+          <AlertDescription>
+            The active server is configured as remote, so the panel can&apos;t reach its filesystem.
+            Create, upload, and restore are unavailable until you switch to a local server.
           </AlertDescription>
         </Alert>
       )}
@@ -497,11 +620,15 @@ export default function Backups() {
           <CardContent className="pt-6">
             <div className="flex items-center gap-3">
               <Clock className={cn('w-5 h-5 shrink-0', backupStatus?.enabled ? 'text-primary' : 'text-muted-foreground')} />
-              <div className="flex-1">
+              <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium">
                   {backupStatus?.enabled ? 'Auto-backup On' : 'Auto-backup Off'}
                 </p>
-                <p className="text-xs text-muted-foreground">Scheduled backups</p>
+                <p className="text-xs text-muted-foreground truncate" title={backupStatus?.schedule || ''}>
+                  {backupStatus?.enabled
+                    ? `Runs ${describeSchedule(backupStatus?.schedule)} · keep ${backupStatus?.maxBackups ?? '?'}`
+                    : 'No scheduled backups'}
+                </p>
               </div>
               <Switch
                 checked={backupStatus?.enabled || false}

@@ -1277,6 +1277,23 @@ export default function Settings() {
     setSettings(prev => ({ ...prev, [key]: value }))
   }
 
+  // Lock-out guard: if the user disables "Allow Private/LAN Origins" while
+  // "Allow All" is also off and the explicit allow-list is empty, the panel
+  // will reject every browser request after the next CORS reload — including
+  // theirs. Confirm before letting that through.
+  const [pendingCorsLanDisable, setPendingCorsLanDisable] = useState(false)
+  const handleCorsLanToggle = (value: boolean) => {
+    if (
+      !value &&
+      !settings.corsAllowAll &&
+      !settings.corsAllowedOrigins.trim()
+    ) {
+      setPendingCorsLanDisable(true)
+      return
+    }
+    updateSetting('corsAllowPrivateNetworks', value)
+  }
+
   const selectedInstallServer = servers.find((server) => String(server.id) === selectedInstallServerId) || null
   const trimmedHttpsKeyPath = settings.httpsKeyPath.trim()
   const trimmedHttpsCertPath = settings.httpsCertPath.trim()
@@ -1505,7 +1522,7 @@ export default function Settings() {
               </div>
               <Switch
                 checked={settings.corsAllowPrivateNetworks}
-                onCheckedChange={(value) => updateSetting('corsAllowPrivateNetworks', value)}
+                onCheckedChange={handleCorsLanToggle}
                 aria-label="Allow private and LAN origins"
               />
             </div>
@@ -3162,6 +3179,39 @@ export default function Settings() {
 
         </div>
       </Tabs>
+
+      <AlertDialog open={pendingCorsLanDisable} onOpenChange={setPendingCorsLanDisable}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Lock yourself out of the panel?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Disabling <strong>Allow Private/LAN Origins</strong> with no explicit
+              origins listed and <strong>Allow All Origins</strong> off will block
+              every browser connection — including the one you&apos;re using right now —
+              after the next CORS reload.
+              <br /><br />
+              To recover, you would need to restart the panel with the
+              <code className="mx-1">CORS_ORIGINS</code> environment variable set
+              to a valid origin (e.g.{' '}
+              <code>CORS_ORIGINS=https://panel.example.com</code>).
+              <br /><br />
+              Add at least one origin in the box above first, then disable LAN access.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep LAN access on</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                updateSetting('corsAllowPrivateNetworks', false)
+                setPendingCorsLanDisable(false)
+              }}
+            >
+              Disable anyway
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

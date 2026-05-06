@@ -428,6 +428,7 @@ app.use('/api/server/force-stop', strictLimiter);
 app.use('/api/server/restart', strictLimiter);
 app.use('/api/backup/restore', strictLimiter);
 app.use('/api/backup/delete-older-than', strictLimiter);
+app.use('/api/backup/upload', strictLimiter);
 app.delete('/api/backup/:name', strictLimiter);
 app.use('/api/chunks/delete-chunks', strictLimiter);
 app.use('/api/chunks/delete-region', strictLimiter);

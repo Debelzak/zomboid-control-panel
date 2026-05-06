@@ -8,14 +8,20 @@ import {
   RefreshCw,
   Shield,
   MessageSquare,
+  Pencil,
+  Plus,
+  Trash2,
+  Check,
+  X,
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { PageHeader } from '@/components/PageHeader'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useToast } from '@/components/ui/use-toast'
-import { panelBridgeApi, playersApi } from '@/lib/api'
+import { panelBridgeApi, playersApi, configApi } from '@/lib/api'
 import { useSocket } from '@/contexts/SocketContext'
 import { EmptyState } from '@/components/EmptyState'
 import { cn } from '@/lib/utils'
@@ -33,11 +39,27 @@ interface Player {
   name: string
 }
 
+type ChatChannel = 'server' | 'admin' | 'general'
+
+const DEFAULT_PRESETS = [
+  'Server will restart in 5 minutes!',
+  'Welcome to the server!',
+  'Please read the rules at /rules',
+  'Server maintenance starting soon',
+  'Have fun and stay safe!',
+]
+
 export default function Chat() {
   const [message, setMessage] = useState('')
   const [players, setPlayers] = useState<Player[]>([])
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([])
   const [sending, setSending] = useState(false)
+  const [channel, setChannel] = useState<ChatChannel>('server')
+  const [presets, setPresets] = useState<string[]>(DEFAULT_PRESETS)
+  const [presetsEditing, setPresetsEditing] = useState(false)
+  const [editingIdx, setEditingIdx] = useState<number | null>(null)
+  const [editingDraft, setEditingDraft] = useState('')
+  const [newPresetDraft, setNewPresetDraft] = useState('')
 
   const chatEndRef = useRef<HTMLDivElement>(null)
   const scrollViewportRef = useRef<HTMLDivElement | null>(null)
@@ -134,15 +156,31 @@ export default function Chat() {
     sendingRef.current = true
     setSending(true)
     try {
-      // Uses RCON servermsg as primary (handled by backend)
-      const result = await panelBridgeApi.sendToServerChat(message, false)
+      // Dispatch on the selected channel:
+      //   server  → yellow broadcast banner (RCON servermsg)
+      //   admin   → red admin-only chat (visible only to admins in-game)
+      //   general → posts as a custom author into the public chat stream
+      let result: { success?: boolean; error?: string } | undefined
+      let localType: ChatMessage['type'] = 'server'
+      let localAuthor = 'Server'
+      if (channel === 'admin') {
+        result = await panelBridgeApi.sendToAdminChat(message)
+        localType = 'admin'
+        localAuthor = 'Admin'
+      } else if (channel === 'general') {
+        result = await panelBridgeApi.sendToGeneralChat(message, 'Admin')
+        localType = 'general'
+        localAuthor = 'Admin'
+      } else {
+        result = await panelBridgeApi.sendToServerChat(message, false)
+      }
 
       if (result?.success) {
         const sentAt = new Date()
         setChatHistory(prev => [...prev, {
           id: `local-${sentAt.getTime()}-${Math.random().toString(36).slice(2, 8)}`,
-          type: 'server',
-          author: 'Server',
+          type: localType,
+          author: localAuthor,
           message: message,
           timestamp: sentAt
         }].slice(-200))
@@ -151,8 +189,14 @@ export default function Chat() {
         stickToBottomRef.current = true
         setMessage('')
         toast({
-          title: 'Broadcast Sent',
-          description: 'Message delivered to all connected players.',
+          title:
+            channel === 'admin' ? 'Admin Message Sent'
+            : channel === 'general' ? 'Posted to Chat'
+            : 'Broadcast Sent',
+          description:
+            channel === 'admin' ? 'Visible only to admins in-game.'
+            : channel === 'general' ? 'Posted into the public chat stream.'
+            : 'Message delivered to all connected players.',
           variant: 'success' as const,
         })
       } else {
@@ -169,6 +213,63 @@ export default function Chat() {
       setSending(false)
     }
   }
+
+  // Load saved chat presets from app settings; fall back to defaults.
+  useEffect(() => {
+    let cancelled = false
+    configApi.getAppSettings()
+      .then((settings: any) => {
+        if (cancelled) return
+        const saved = settings?.chatPresets
+        if (Array.isArray(saved) && saved.every((p: unknown) => typeof p === 'string')) {
+          setPresets(saved.length > 0 ? saved : DEFAULT_PRESETS)
+        }
+      })
+      .catch(() => { /* fall back to defaults silently */ })
+    return () => { cancelled = true }
+  }, [])
+
+  const persistPresets = useCallback(async (next: string[]) => {
+    setPresets(next)
+    try {
+      await configApi.updateAppSettings({ chatPresets: next })
+    } catch (error) {
+      reportClientError('Failed to save chat presets.', error)
+      toast({
+        title: 'Could not save presets',
+        description: error instanceof Error ? error.message : 'Unknown error',
+        variant: 'destructive',
+      })
+    }
+  }, [toast])
+
+  const handleAddPreset = useCallback(() => {
+    const trimmed = newPresetDraft.trim()
+    if (!trimmed) return
+    if (trimmed.length > 500) return
+    persistPresets([...presets, trimmed])
+    setNewPresetDraft('')
+  }, [newPresetDraft, persistPresets, presets])
+
+  const handleSaveEdit = useCallback(() => {
+    if (editingIdx === null) return
+    const trimmed = editingDraft.trim()
+    if (!trimmed) return
+    const next = presets.slice()
+    next[editingIdx] = trimmed.slice(0, 500)
+    persistPresets(next)
+    setEditingIdx(null)
+    setEditingDraft('')
+  }, [editingDraft, editingIdx, persistPresets, presets])
+
+  const handleDeletePreset = useCallback((idx: number) => {
+    const next = presets.filter((_, i) => i !== idx)
+    persistPresets(next)
+    if (editingIdx === idx) {
+      setEditingIdx(null)
+      setEditingDraft('')
+    }
+  }, [editingIdx, persistPresets, presets])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -247,11 +348,42 @@ export default function Chat() {
 
               {/* Message Input */}
               <div className="p-4 border-t bg-muted/30">
-                <div className="flex gap-2">
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Select value={channel} onValueChange={(v) => setChannel(v as ChatChannel)} disabled={sending}>
+                    <SelectTrigger className="h-11 sm:w-44" aria-label="Chat channel">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="server">
+                        <span className="flex items-center gap-2">
+                          <Megaphone className="w-3.5 h-3.5 text-warning" />
+                          Server broadcast
+                        </span>
+                      </SelectItem>
+                      <SelectItem value="admin">
+                        <span className="flex items-center gap-2">
+                          <Shield className="w-3.5 h-3.5 text-destructive" />
+                          Admin chat
+                        </span>
+                      </SelectItem>
+                      <SelectItem value="general">
+                        <span className="flex items-center gap-2">
+                          <MessageSquare className="w-3.5 h-3.5 text-primary" />
+                          General chat
+                        </span>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
                   <Input
                     ref={messageInputRef}
-                    placeholder="Broadcast a message to all players... (Enter to send)"
-                    aria-label="Broadcast message"
+                    placeholder={
+                      channel === 'admin'
+                        ? 'Message visible only to admins in-game... (Enter to send)'
+                        : channel === 'general'
+                          ? 'Post as Admin into the public chat... (Enter to send)'
+                          : 'Broadcast a message to all players... (Enter to send)'
+                    }
+                    aria-label="Chat message"
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
                     onKeyDown={handleKeyDown}
@@ -270,9 +402,11 @@ export default function Chat() {
                 </div>
                 <div className="mt-1.5 flex items-center justify-between text-[11px] text-muted-foreground">
                   <span>
-                    {players.length === 0
-                      ? 'No players online — messages will only appear in the server log.'
-                      : `Broadcasting to ${players.length} ${players.length === 1 ? 'player' : 'players'}.`}
+                    {channel === 'admin'
+                      ? 'Admin chat — only players with admin access see this.'
+                      : players.length === 0
+                        ? 'No players online — messages will only appear in the server log.'
+                        : `Broadcasting to ${players.length} ${players.length === 1 ? 'player' : 'players'}.`}
                   </span>
                   <span className={cn('tabular-nums', message.length > 450 ? 'text-warning' : '')}>
                     {message.length}/500
@@ -312,33 +446,112 @@ export default function Chat() {
 
           {/* Quick Messages */}
           <Card>
-            <CardHeader className="pb-3">
+            <CardHeader className="pb-3 flex flex-row items-center justify-between space-y-0">
               <CardTitle className="flex items-center gap-2">
                 <Megaphone className="w-4 h-4 text-warning" />
                 Quick Messages
               </CardTitle>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                onClick={() => {
+                  setPresetsEditing((v) => !v)
+                  setEditingIdx(null)
+                  setEditingDraft('')
+                  setNewPresetDraft('')
+                }}
+                aria-label={presetsEditing ? 'Done editing presets' : 'Edit presets'}
+              >
+                {presetsEditing ? <Check className="w-3.5 h-3.5" /> : <Pencil className="w-3.5 h-3.5" />}
+                <span className="ml-1">{presetsEditing ? 'Done' : 'Edit'}</span>
+              </Button>
             </CardHeader>
             <CardContent className="space-y-2">
-              {[
-                'Server will restart in 5 minutes!',
-                'Welcome to the server!',
-                'Please read the rules at /rules',
-                'Server maintenance starting soon',
-                'Have fun and stay safe!'
-              ].map((quickMsg) => (
-                <Button
-                  key={quickMsg}
-                  variant="outline"
-                  size="sm"
-                  className="min-h-11 w-full justify-start whitespace-normal px-3 py-2 text-left"
-                  onClick={() => {
-                    setMessage(quickMsg)
-                    messageInputRef.current?.focus()
-                  }}
-                >
-                  {quickMsg}
-                </Button>
-              ))}
+              {presets.length === 0 && !presetsEditing && (
+                <p className="text-xs text-muted-foreground">No quick messages yet — click Edit to add some.</p>
+              )}
+              {presets.map((quickMsg, idx) => {
+                const isEditing = presetsEditing && editingIdx === idx
+                if (isEditing) {
+                  return (
+                    <div key={`edit-${idx}`} className="flex items-center gap-1">
+                      <Input
+                        value={editingDraft}
+                        onChange={(e) => setEditingDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') { e.preventDefault(); handleSaveEdit() }
+                          if (e.key === 'Escape') { setEditingIdx(null); setEditingDraft('') }
+                        }}
+                        maxLength={500}
+                        autoFocus
+                        className="h-9 flex-1 text-sm"
+                      />
+                      <Button variant="ghost" size="icon" className="h-9 w-9" onClick={handleSaveEdit} aria-label="Save">
+                        <Check className="w-4 h-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => { setEditingIdx(null); setEditingDraft('') }} aria-label="Cancel">
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  )
+                }
+                return (
+                  <div key={`preset-${idx}`} className="flex items-center gap-1">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="min-h-11 flex-1 justify-start whitespace-normal px-3 py-2 text-left"
+                      onClick={() => {
+                        if (presetsEditing) {
+                          setEditingIdx(idx)
+                          setEditingDraft(quickMsg)
+                        } else {
+                          setMessage(quickMsg)
+                          messageInputRef.current?.focus()
+                        }
+                      }}
+                    >
+                      {quickMsg}
+                    </Button>
+                    {presetsEditing && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9 text-destructive hover:text-destructive"
+                        onClick={() => handleDeletePreset(idx)}
+                        aria-label={`Delete preset ${idx + 1}`}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    )}
+                  </div>
+                )
+              })}
+              {presetsEditing && (
+                <div className="flex items-center gap-1 pt-2 border-t border-border/40">
+                  <Input
+                    placeholder="Add a new quick message..."
+                    value={newPresetDraft}
+                    onChange={(e) => setNewPresetDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') { e.preventDefault(); handleAddPreset() }
+                    }}
+                    maxLength={500}
+                    className="h-9 flex-1 text-sm"
+                  />
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-9 w-9"
+                    onClick={handleAddPreset}
+                    disabled={!newPresetDraft.trim()}
+                    aria-label="Add preset"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>

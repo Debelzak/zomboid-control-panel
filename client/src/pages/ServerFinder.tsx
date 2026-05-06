@@ -745,7 +745,7 @@ export default function ServerFinder() {
             <div className="text-sm text-muted-foreground">
               Showing {((currentPage - 1) * ITEMS_PER_PAGE) + 1} - {Math.min(currentPage * ITEMS_PER_PAGE, filteredServers.length)} of {filteredServers.length.toLocaleString()} servers
             </div>
-            <div className="flex items-center gap-2">
+            <nav aria-label="Server list pagination" className="flex items-center gap-2">
               <Button
                 variant="outline"
                 size="sm"
@@ -766,7 +766,7 @@ export default function ServerFinder() {
                 <ChevronLeft className="h-4 w-4" />
                 Prev
               </Button>
-              <div className="flex items-center gap-2 px-2">
+              <div className="flex items-center gap-2 px-2" aria-current="page">
                 <span className="text-sm font-medium">Page {currentPage} of {totalPages}</span>
               </div>
               <Button
@@ -789,7 +789,7 @@ export default function ServerFinder() {
                 Last
                 <ChevronsRight className="h-4 w-4" />
               </Button>
-            </div>
+            </nav>
           </div>
         )}
       </Card>

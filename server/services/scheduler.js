@@ -1,6 +1,7 @@
 import cron from 'node-cron';
 import { createLogger } from '../utils/logger.js';
 const log = createLogger('Scheduler');
+import panelBridge from './panelBridge.js';
 import { 
   getScheduledTasks, 
   updateTaskLastRun, 
@@ -9,6 +10,29 @@ import {
   getSetting,
   setSetting 
 } from '../database/init.js';
+
+// Built-in PanelBridge actions exposed to the scheduler via the
+// `bridge:<action>` command syntax. Optional JSON args follow the action,
+// e.g. `bridge:triggerBlizzard {"duration":2}`. Only the actions listed
+// here can be invoked from a scheduled task — keeps the surface small
+// and intentional rather than letting arbitrary handlers run on a cron.
+const SCHEDULABLE_BRIDGE_ACTIONS = new Set([
+  'triggerBlizzard',
+  'triggerTropicalStorm',
+  'triggerStorm',
+  'stopWeather',
+  'startRain',
+  'stopRain',
+  'setSnow',
+  'triggerLightning',
+  'triggerGunshot',
+  'triggerAlarmSound',
+  'restoreUtilities',
+  'shutOffUtilities',
+  'saveWorld',
+  'sendToServerChat',
+  'sendToAdminChat',
+]);
 
 export class Scheduler {
   constructor(rconService, serverManager) {
@@ -114,7 +138,7 @@ export class Scheduler {
 
   async executeTask(task) {
     const commandLower = task.command.toLowerCase();
-    
+
     // Handle special commands - skip logging for automated scheduled tasks
     if (commandLower === 'restart') {
       const result = await this.performRestart();
@@ -128,10 +152,48 @@ export class Scheduler {
       // Preserve original casing for the message text
       const message = task.command.substring(10);
       await this.rconService.serverMessage(message, { skipLog: true });
+    } else if (commandLower.startsWith('bridge:')) {
+      // PanelBridge action: `bridge:<action>` optionally followed by a JSON
+      // args object. Validates against the SCHEDULABLE_BRIDGE_ACTIONS allow
+      // list so we don't accidentally let admins schedule god-mode toggles.
+      await this.executeBridgeAction(task.command);
     } else {
       // Execute as raw RCON command - skip logging for scheduled tasks
       await this.rconService.execute(task.command, { skipLog: true });
     }
+  }
+
+  async executeBridgeAction(rawCommand) {
+    // Strip the `bridge:` prefix, then split off optional JSON args.
+    const body = rawCommand.slice('bridge:'.length).trim();
+    if (!body) throw new Error('bridge: action missing');
+
+    // First whitespace separates the action name from its args blob.
+    const firstSpace = body.indexOf(' ');
+    const action = (firstSpace === -1 ? body : body.slice(0, firstSpace)).trim();
+    const argsRaw = firstSpace === -1 ? '' : body.slice(firstSpace + 1).trim();
+
+    if (!SCHEDULABLE_BRIDGE_ACTIONS.has(action)) {
+      throw new Error(`bridge action '${action}' is not allowed in scheduled tasks`);
+    }
+
+    let args = {};
+    if (argsRaw) {
+      try {
+        args = JSON.parse(argsRaw);
+        if (typeof args !== 'object' || args === null || Array.isArray(args)) {
+          throw new Error('args must be a JSON object');
+        }
+      } catch (err) {
+        throw new Error(`invalid bridge args JSON: ${err.message}`);
+      }
+    }
+
+    const result = await panelBridge.sendCommand(action, args);
+    if (result && result.success === false) {
+      throw new Error(result.error || `bridge action ${action} failed`);
+    }
+    return result;
   }
 
   cancelTask(taskId) {

@@ -693,6 +693,12 @@ router.get('/diagnostics', async (req, res) => {
       checks.push(diagOk('modChecker', 'Mod update checker',
         `Polling Steam Workshop every ${interval || '?'} min.`,
         { category: 'services' }));
+    } else if (!modChecker?.workshopAcfPath) {
+      // No workshop folder yet — checker can't run until server is installed/configured.
+      // This is a normal "skipped" state, not a warning.
+      checks.push(diagSkip('modChecker', 'Mod update checker',
+        'Waiting for Steam Workshop folder — checker starts after the server install path is configured.',
+        { category: 'services', hint: 'Settings → Server Path' }));
     } else {
       checks.push(diagWarn('modChecker', 'Mod update checker stopped',
         "Workshop polling is not running — mod updates won't be detected.",

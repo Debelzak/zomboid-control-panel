@@ -583,19 +583,29 @@ export default function Console() {
                 size="sm"
                 onClick={() => setServerLogFiltered(!serverLogFiltered)}
                 aria-label={serverLogFiltered ? 'Show all messages (including noise)' : 'Filter out repetitive messages'}
+                title={serverLogFiltered
+                  ? `Hiding ${Math.max(0, serverLogLines.length - filteredLogLines.length)} repetitive line${(serverLogLines.length - filteredLogLines.length) === 1 ? '' : 's'} — click to show all`
+                  : 'Filter out repetitive messages (joins, idle ticks, etc.)'}
                 className={serverLogFiltered ? 'text-primary' : ''}
               >
                 <Filter className="w-4 h-4 mr-1" />
-                <span className="text-xs">{serverLogFiltered ? 'Filtered' : 'All'}</span>
+                <span className="text-xs">
+                  {serverLogFiltered
+                    ? (serverLogLines.length > filteredLogLines.length
+                        ? `Filtered (−${serverLogLines.length - filteredLogLines.length})`
+                        : 'Filtered')
+                    : 'All'}
+                </span>
               </Button>
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => setServerLogAutoScroll(!serverLogAutoScroll)}
                 aria-label={serverLogAutoScroll ? 'Disable auto-scroll' : 'Enable auto-scroll'}
-                className={serverLogAutoScroll ? 'text-primary' : ''}
+                title={serverLogAutoScroll ? 'Auto-scroll is ON — follows newest line' : 'Auto-scroll is OFF — click to follow newest line'}
+                className={serverLogAutoScroll ? 'text-primary' : 'text-muted-foreground'}
               >
-                <span className="text-xs">Auto-scroll</span>
+                <span className="text-xs">{serverLogAutoScroll ? 'Auto-scroll: on' : 'Auto-scroll: off'}</span>
               </Button>
               <Button
                 variant="ghost"

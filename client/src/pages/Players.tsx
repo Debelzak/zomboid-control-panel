@@ -290,6 +290,7 @@ export default function Players() {
   }
   interface PlayerStat {
     playerName: string
+    player_name?: string
     total_playtime_seconds: number
     session_count: number
     first_seen: string
@@ -317,6 +318,38 @@ export default function Players() {
     ),
     [players, playerSearchFilter]
   )
+
+  // "Roster" view: every player we've ever seen on this server, minus the
+  // ones currently online. Sorted by most recently seen first so familiar
+  // names sit at the top. Drives the Roster tab and lets admins moderate
+  // (note, ban-by-name) players who are not currently connected.
+  const [rosterTab, setRosterTab] = useState<'online' | 'roster' | 'banned'>('online')
+  const offlineRoster = useMemo(() => {
+    const onlineLower = new Set(players.map(p => p.name.toLowerCase()))
+    const stats = Object.values(playerStats) as PlayerStat[]
+    const filtered = stats.filter(s => {
+      const name = s.player_name || s.playerName
+      return name && !onlineLower.has(name.toLowerCase())
+    })
+    const search = playerSearchFilter.trim().toLowerCase()
+    const matched = search
+      ? filtered.filter(s => (s.player_name || s.playerName || '').toLowerCase().includes(search))
+      : filtered
+    return matched.sort((a, b) => {
+      const ta = a.last_seen ? new Date(a.last_seen).getTime() : 0
+      const tb = b.last_seen ? new Date(b.last_seen).getTime() : 0
+      return tb - ta
+    })
+  }, [players, playerStats, playerSearchFilter])
+
+  const filteredBans = useMemo(() => {
+    const search = playerSearchFilter.trim().toLowerCase()
+    if (!search) return bannedSteamIds
+    return bannedSteamIds.filter(b =>
+      b.steamId.toLowerCase().includes(search) ||
+      (b.reason || '').toLowerCase().includes(search)
+    )
+  }, [bannedSteamIds, playerSearchFilter])
 
   // Update peak players
   useEffect(() => {
@@ -369,7 +402,15 @@ export default function Players() {
       }
       const statsMap: Record<string, PlayerStat> = {}
       if (statsData.stats) {
-        statsData.stats.forEach((s: PlayerStat) => { statsMap[s.playerName] = s })
+        // The server stores stats with snake_case `player_name`. Older code
+        // here keyed off `playerName` which silently produced an empty map.
+        // Normalize so both shapes resolve to the same lookup key.
+        statsData.stats.forEach((s: PlayerStat) => {
+          const key = s.player_name || s.playerName
+          if (key) {
+            statsMap[key] = { ...s, playerName: key, player_name: key }
+          }
+        })
       }
       setPlayerNotes(notesMap)
       setPlayerStats(statsMap)
@@ -479,7 +520,7 @@ export default function Players() {
   }, [])
 
   useEffect(() => {
-    Promise.all([fetchPlayers(), fetchData(), fetchNotesAndStats()]).catch(err => {
+    Promise.all([fetchPlayers(), fetchData(), fetchNotesAndStats(), fetchBannedSteamIds()]).catch(err => {
       reportClientError('Failed to load initial player data.', err)
     })
     let isMounted = true
@@ -835,12 +876,43 @@ export default function Players() {
         {/* Player List */}
         <Card className="lg:col-span-1">
           <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Users className="w-5 h-5" />
-                Online Players
+            <div className="flex items-center justify-between gap-2">
+              <CardTitle className="text-lg flex items-center gap-2 min-w-0">
+                <Users className="w-5 h-5 shrink-0" />
+                <span className="truncate">
+                  {rosterTab === 'online' ? 'Online Players' : rosterTab === 'roster' ? 'Roster' : 'Banned'}
+                </span>
               </CardTitle>
-              <Badge variant="secondary">{players.length}</Badge>
+              <Badge variant="secondary">
+                {rosterTab === 'online' ? players.length : rosterTab === 'roster' ? offlineRoster.length : bannedSteamIds.length}
+              </Badge>
+            </div>
+            {/* Tab strip: lets admins flip between currently-online players,
+                everyone we've seen before (offline roster), and the SteamID
+                ban list. The search input below filters whichever tab is
+                active so one input drives all three views. */}
+            <div className="mt-3 inline-flex h-auto gap-1 rounded-lg border border-border/60 bg-muted/40 p-1">
+              <button
+                type="button"
+                onClick={() => setRosterTab('online')}
+                className={`px-3 py-1.5 text-xs rounded-md transition-colors ${rosterTab === 'online' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+              >
+                Online <span className="ml-1 text-muted-foreground">{players.length}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setRosterTab('roster')}
+                className={`px-3 py-1.5 text-xs rounded-md transition-colors ${rosterTab === 'roster' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+              >
+                Roster <span className="ml-1 text-muted-foreground">{offlineRoster.length}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => { setRosterTab('banned'); fetchBannedSteamIds() }}
+                className={`px-3 py-1.5 text-xs rounded-md transition-colors ${rosterTab === 'banned' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+              >
+                Banned <span className="ml-1 text-muted-foreground">{bannedSteamIds.length}</span>
+              </button>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -849,115 +921,239 @@ export default function Players() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
                 ref={searchInputRef}
-                placeholder="Search players..."
+                placeholder={
+                  rosterTab === 'online'
+                    ? 'Search players...'
+                    : rosterTab === 'roster'
+                      ? 'Search roster...'
+                      : 'Search bans...'
+                }
                 value={playerSearchFilter}
                 onChange={(e) => setPlayerSearchFilter(e.target.value)}
                 className="pl-9"
                 aria-label="Search players"
               />
             </div>
-            
+
             <ScrollArea className="h-[250px] sm:h-[320px]">
-              {initialLoading ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
-                </div>
-              ) : players.length === 0 ? (
-                <div className="flex flex-col items-center justify-center px-4 py-8 text-center">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-full border border-border/60 bg-muted/30">
-                    <Users className="h-6 w-6 text-muted-foreground/70" />
+              {rosterTab === 'online' && (
+                initialLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="w-6 h-6 animate-spin text-primary" />
                   </div>
-                  <p className="mt-3 text-sm font-medium">No players online</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Players appear here when they connect.
-                  </p>
-                  {bannedSteamIds.length > 0 && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="mt-4 text-xs text-muted-foreground"
-                      onClick={() => setUnbanSteamIdDialogOpen(true)}
-                    >
-                      <Ban className="mr-1.5 h-3.5 w-3.5" />
-                      Review {bannedSteamIds.length} banned {bannedSteamIds.length === 1 ? 'SteamID' : 'SteamIDs'}
-                    </Button>
-                  )}
-                </div>
-              ) : filteredPlayers.length === 0 ? (
-                <EmptyState type="noResults" title={`No matches for "${playerSearchFilter}"`} description="Try a different search term" compact />
-              ) : (
-                <div className="space-y-1">
-                  {filteredPlayers.map((player) => {
-                    const isSelected = selectedPlayer === player.name
-                    const powers = playerPowers[player.name]
-                    const hasPowers = powers && (powers.godMode || powers.invisible || powers.noclip)
-                    const note = playerNotes[player.name]
-                    const stat = playerStats[player.name]
-                    
-                    return (
-                      <button
-                        key={player.name}
-                        type="button"
-                        className={`group w-full text-left p-3 rounded-lg border cursor-pointer transition-[background-color,border-color,box-shadow] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 ${
-                          isSelected
-                            ? 'bg-primary/10 border-primary shadow-sm'
-                            : 'hover:bg-muted/50 border-transparent hover:border-border'
-                        }`}
-                        onClick={() => setSelectedPlayer(player.name)}
+                ) : players.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center px-4 py-8 text-center">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-full border border-border/60 bg-muted/30">
+                      <Users className="h-6 w-6 text-muted-foreground/70" />
+                    </div>
+                    <p className="mt-3 text-sm font-medium">No players online</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Players appear here when they connect.
+                    </p>
+                    {offlineRoster.length > 0 && (
+                      <Button variant="ghost" size="sm" className="mt-4 text-xs text-muted-foreground" onClick={() => setRosterTab('roster')}>
+                        <Users className="mr-1.5 h-3.5 w-3.5" />
+                        See {offlineRoster.length} previously seen {offlineRoster.length === 1 ? 'player' : 'players'}
+                      </Button>
+                    )}
+                    {bannedSteamIds.length > 0 && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="mt-1 text-xs text-muted-foreground"
+                        onClick={() => setRosterTab('banned')}
                       >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <div className="w-2 h-2 rounded-full bg-primary animate-pulse shrink-0" aria-hidden="true" />
-                            <span className="font-medium truncate">{player.name}</span>
-                            <span className="sr-only">Online</span>
-                            {note && note.tags && note.tags.length > 0 && (
-                              <div className="flex gap-1">
-                                {note.tags.slice(0, 2).map(tag => (
-                                  <Badge key={tag} variant="outline" className="text-xs px-1.5 py-0 h-4">
-                                    {tag}
-                                  </Badge>
-                                ))}
-                                {note.tags.length > 2 && (
-                                  <Badge variant="outline" className="text-xs px-1.5 py-0 h-4">
-                                    +{note.tags.length - 2}
-                                  </Badge>
-                                )}
-                              </div>
-                            )}
+                        <Ban className="mr-1.5 h-3.5 w-3.5" />
+                        Review {bannedSteamIds.length} banned {bannedSteamIds.length === 1 ? 'SteamID' : 'SteamIDs'}
+                      </Button>
+                    )}
+                  </div>
+                ) : filteredPlayers.length === 0 ? (
+                  <EmptyState type="noResults" title={`No matches for "${playerSearchFilter}"`} description="Try a different search term" compact />
+                ) : (
+                  <div className="space-y-1">
+                    {filteredPlayers.map((player) => {
+                      const isSelected = selectedPlayer === player.name
+                      const powers = playerPowers[player.name]
+                      const hasPowers = powers && (powers.godMode || powers.invisible || powers.noclip)
+                      const note = playerNotes[player.name]
+                      const stat = playerStats[player.name]
+                      
+                      return (
+                        <button
+                          key={player.name}
+                          type="button"
+                          className={`group w-full text-left p-3 rounded-lg border cursor-pointer transition-[background-color,border-color,box-shadow] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 ${
+                            isSelected
+                              ? 'bg-primary/10 border-primary shadow-sm'
+                              : 'hover:bg-muted/50 border-transparent hover:border-border'
+                          }`}
+                          onClick={() => setSelectedPlayer(player.name)}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <div className="w-2 h-2 rounded-full bg-primary motion-safe:animate-pulse shrink-0" aria-hidden="true" />
+                              <span className="font-medium truncate">{player.name}</span>
+                              <span className="sr-only">Online</span>
+                              {note && note.tags && note.tags.length > 0 && (
+                                <div className="flex gap-1">
+                                  {note.tags.slice(0, 2).map(tag => (
+                                    <Badge key={tag} variant="outline" className="text-xs px-1.5 py-0 h-4">
+                                      {tag}
+                                    </Badge>
+                                  ))}
+                                  {note.tags.length > 2 && (
+                                    <Badge variant="outline" className="text-xs px-1.5 py-0 h-4">
+                                      +{note.tags.length - 2}
+                                    </Badge>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1">
+                              {stat && (
+                                <span className="text-xs text-muted-foreground mr-1">
+                                  {formatPlaytime(stat.total_playtime_seconds)}
+                                </span>
+                              )}
+                              {note && <StickyNote className="w-3 h-3 text-muted-foreground" />}
+                              {hasPowers && (
+                                <div className="flex gap-0.5">
+                                  {powers.godMode && (
+                                    <Badge variant="secondary" className="px-1 py-0 text-xs">
+                                      <Ghost className="w-3 h-3" />
+                                    </Badge>
+                                  )}
+                                  {powers.invisible && (
+                                    <Badge variant="secondary" className="px-1 py-0 text-xs">
+                                      <Eye className="w-3 h-3" />
+                                    </Badge>
+                                  )}
+                                  {powers.noclip && (
+                                    <Badge variant="secondary" className="px-1 py-0 text-xs">
+                                      <Layers className="w-3 h-3" />
+                                    </Badge>
+                                  )}
+                                </div>
+                              )}
+                              <ChevronRight className={`w-4 h-4 text-muted-foreground transition-transform ${isSelected ? 'rotate-90' : ''}`} />
+                            </div>
                           </div>
-                          <div className="flex items-center gap-1">
-                            {stat && (
-                              <span className="text-xs text-muted-foreground mr-1">
+                        </button>
+                      )
+                    })}
+                  </div>
+                )
+              )}
+
+              {rosterTab === 'roster' && (
+                offlineRoster.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center px-4 py-8 text-center">
+                    <Users className="h-6 w-6 text-muted-foreground/70" />
+                    <p className="mt-3 text-sm font-medium">
+                      {playerSearchFilter ? 'No matches' : 'Roster is empty'}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {playerSearchFilter
+                        ? 'Try a different search term.'
+                        : 'Players you\u2019ve seen before will appear here once they disconnect.'}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    {offlineRoster.map((stat) => {
+                      const name = stat.player_name || stat.playerName || ''
+                      const isSelected = selectedPlayer === name
+                      const note = playerNotes[name]
+                      const lastSeen = stat.last_seen ? new Date(stat.last_seen) : null
+                      return (
+                        <button
+                          key={name}
+                          type="button"
+                          className={`w-full text-left p-3 rounded-lg border transition-[background-color,border-color,box-shadow] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 ${
+                            isSelected
+                              ? 'bg-primary/10 border-primary shadow-sm'
+                              : 'hover:bg-muted/50 border-transparent hover:border-border'
+                          }`}
+                          onClick={() => setSelectedPlayer(name)}
+                          title={`Last seen ${lastSeen ? lastSeen.toLocaleString() : 'unknown'}`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <div className="w-2 h-2 rounded-full bg-muted-foreground/40 shrink-0" aria-hidden="true" />
+                              <span className="font-medium truncate">{name}</span>
+                              {note && note.tags && note.tags.length > 0 && (
+                                <Badge variant="outline" className="text-xs px-1.5 py-0 h-4">
+                                  {note.tags[0]}
+                                </Badge>
+                              )}
+                            </div>
+                            <div className="flex flex-col items-end text-right">
+                              <span className="text-xs text-muted-foreground">
                                 {formatPlaytime(stat.total_playtime_seconds)}
                               </span>
-                            )}
-                            {note && <StickyNote className="w-3 h-3 text-muted-foreground" />}
-                            {hasPowers && (
-                              <div className="flex gap-0.5">
-                                {powers.godMode && (
-                                  <Badge variant="secondary" className="px-1 py-0 text-xs">
-                                    <Ghost className="w-3 h-3" />
-                                  </Badge>
-                                )}
-                                {powers.invisible && (
-                                  <Badge variant="secondary" className="px-1 py-0 text-xs">
-                                    <Eye className="w-3 h-3" />
-                                  </Badge>
-                                )}
-                                {powers.noclip && (
-                                  <Badge variant="secondary" className="px-1 py-0 text-xs">
-                                    <Layers className="w-3 h-3" />
-                                  </Badge>
-                                )}
-                              </div>
-                            )}
-                            <ChevronRight className={`w-4 h-4 text-muted-foreground transition-transform ${isSelected ? 'rotate-90' : ''}`} />
+                              {lastSeen && (
+                                <span className="text-[10px] text-muted-foreground/70">
+                                  {lastSeen.toLocaleDateString()}
+                                </span>
+                              )}
+                            </div>
                           </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )
+              )}
+
+              {rosterTab === 'banned' && (
+                filteredBans.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center px-4 py-8 text-center">
+                    <Ban className="h-6 w-6 text-muted-foreground/70" />
+                    <p className="mt-3 text-sm font-medium">
+                      {playerSearchFilter ? 'No matches' : 'No SteamID bans'}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {playerSearchFilter
+                        ? 'Try a different search term.'
+                        : 'Banned SteamIDs will appear here.'}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    {filteredBans.map((ban) => (
+                      <div
+                        key={ban.steamId}
+                        className="w-full p-3 rounded-lg border border-transparent hover:bg-muted/40 hover:border-border"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="font-mono text-sm truncate">{ban.steamId}</p>
+                            {(ban.reason || ban.banned_at) && (
+                              <p className="text-[11px] text-muted-foreground truncate" title={ban.reason || ''}>
+                                {ban.reason ? `\u201c${ban.reason}\u201d` : ''}
+                                {ban.reason && ban.banned_at ? ' \u00b7 ' : ''}
+                                {ban.banned_at ? new Date(ban.banned_at).toLocaleDateString() : ''}
+                              </p>
+                            )}
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="shrink-0"
+                            onClick={() => {
+                              setUnbanSteamId(ban.steamId)
+                              setUnbanSteamIdDialogOpen(true)
+                            }}
+                            title={`Unban ${ban.steamId}`}
+                          >
+                            Unban
+                          </Button>
                         </div>
-                      </button>
-                    )
-                  })}
-                </div>
+                      </div>
+                    ))}
+                  </div>
+                )
               )}
             </ScrollArea>
             

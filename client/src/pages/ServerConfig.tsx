@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef, memo } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef, useDeferredValue, memo } from 'react'
 import { copyText } from '@/lib/utils'
 import {
   Settings,
@@ -519,6 +519,9 @@ export default function ServerConfig() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  // Defer the search value so each keystroke doesn't re-filter the full schema
+  // synchronously — keeps the input snappy on slower machines.
+  const deferredSearchQuery = useDeferredValue(searchQuery)
   const [editorMode, setEditorMode] = useState<EditorMode>('structured')
   
   // File paths info
@@ -1113,26 +1116,26 @@ export default function ServerConfig() {
 
   // Filter settings by search
   const filteredIniSettings = useMemo(() => {
-    if (!searchQuery) return groupByCategory(INI_SCHEMA)
-    const lower = searchQuery.toLowerCase()
+    if (!deferredSearchQuery) return groupByCategory(INI_SCHEMA)
+    const lower = deferredSearchQuery.toLowerCase()
     const filtered = INI_SCHEMA.filter(s =>
       s.key.toLowerCase().includes(lower) ||
       s.label.toLowerCase().includes(lower) ||
       s.description.toLowerCase().includes(lower)
     )
     return groupByCategory(filtered)
-  }, [searchQuery])
+  }, [deferredSearchQuery])
 
   const filteredSandboxSettings = useMemo(() => {
-    if (!searchQuery) return groupByCategory(SANDBOX_SCHEMA)
-    const lower = searchQuery.toLowerCase()
+    if (!deferredSearchQuery) return groupByCategory(SANDBOX_SCHEMA)
+    const lower = deferredSearchQuery.toLowerCase()
     const filtered = SANDBOX_SCHEMA.filter(s =>
       s.key.toLowerCase().includes(lower) ||
       s.label.toLowerCase().includes(lower) ||
       s.description.toLowerCase().includes(lower)
     )
     return groupByCategory(filtered)
-  }, [searchQuery])
+  }, [deferredSearchQuery])
 
   // Find sandbox settings not covered by the schema (mod settings, etc.)
   const uncategorizedSandboxKeys = useMemo(() => {
@@ -1146,8 +1149,8 @@ export default function ServerConfig() {
       if (typeof sectionData !== 'object' || sectionData === null) continue
       for (const [key, value] of Object.entries(sectionData as Record<string, string | number | boolean>)) {
         if (!schemaKeys.has(`${sectionName}.${key}`)) {
-          const lower = searchQuery?.toLowerCase() || ''
-          if (!searchQuery || key.toLowerCase().includes(lower) || String(value).toLowerCase().includes(lower)) {
+          const lower = deferredSearchQuery?.toLowerCase() || ''
+          if (!deferredSearchQuery || key.toLowerCase().includes(lower) || String(value).toLowerCase().includes(lower)) {
             uncategorized.push({ section: sectionName, key, value })
           }
         }
@@ -1157,7 +1160,7 @@ export default function ServerConfig() {
       if (a.section !== b.section) return a.section.localeCompare(b.section)
       return a.key.localeCompare(b.key)
     })
-  }, [sandboxData, searchQuery])
+  }, [sandboxData, deferredSearchQuery])
 
   // Load backups
   const loadBackups = async () => {
@@ -1366,7 +1369,7 @@ export default function ServerConfig() {
 
   // Search results count
   const searchResultsCount = useMemo(() => {
-    if (!searchQuery) return 0
+    if (!deferredSearchQuery) return 0
     if (activeTab === 'ini') {
       return Object.values(filteredIniSettings).reduce((acc, settings) => acc + settings.length, 0)
     }
@@ -1374,7 +1377,7 @@ export default function ServerConfig() {
       return Object.values(filteredSandboxSettings).reduce((acc, settings) => acc + settings.length, 0)
     }
     return 0
-  }, [searchQuery, activeTab, filteredIniSettings, filteredSandboxSettings])
+  }, [deferredSearchQuery, activeTab, filteredIniSettings, filteredSandboxSettings])
 
   // Ctrl+S keyboard shortcut — use refs to avoid stale closure
   const handleSaveIniRef = useRef(handleSaveIni)
@@ -1438,7 +1441,7 @@ export default function ServerConfig() {
         actions={
           <div className="flex flex-wrap items-center gap-1.5">
             {(hasIniChanges || hasSandboxChanges) && (
-              <Badge variant="warning" className="animate-pulse">
+              <Badge variant="warning" className="motion-safe:animate-pulse">
                 <AlertTriangle className="mr-1 h-3 w-3" />
                 Unsaved Changes
               </Badge>
@@ -1529,7 +1532,7 @@ export default function ServerConfig() {
               </Badge>
             )}
             {hasIniChanges && activeTab !== 'ini' && (
-              <span className="h-2 w-2 rounded-full bg-warning animate-pulse" title="Unsaved changes" />
+              <span className="h-2 w-2 rounded-full bg-warning motion-safe:animate-pulse" title="Unsaved changes" />
             )}
             {!pathsInfo?.exists.ini && (
               <AlertCircle className="w-3 h-3 text-warning" />
@@ -1544,7 +1547,7 @@ export default function ServerConfig() {
               </Badge>
             )}
             {hasSandboxChanges && activeTab !== 'sandbox' && (
-              <span className="h-2 w-2 rounded-full bg-warning animate-pulse" title="Unsaved changes" />
+              <span className="h-2 w-2 rounded-full bg-warning motion-safe:animate-pulse" title="Unsaved changes" />
             )}
             {!pathsInfo?.exists.sandbox && (
               <AlertCircle className="w-3 h-3 text-warning" />

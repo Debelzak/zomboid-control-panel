@@ -26,7 +26,9 @@ import {
   ArrowRight,
   GitBranch,
   Cpu,
-  Network
+  Network,
+  Play,
+  Square,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
@@ -164,6 +166,7 @@ const defaultNewServer: NewServerForm = {
 
 export default function Servers() {
   const [servers, setServers] = useState<ServerInstance[]>([])
+  const [serverStatuses, setServerStatuses] = useState<Record<string, { running: boolean; pid: string | null }>>({})
   const [loading, setLoading] = useState(true)
   const [editingServer, setEditingServer] = useState<ServerInstance | null>(null)
   const [savingEdit, setSavingEdit] = useState(false)
@@ -225,9 +228,31 @@ export default function Servers() {
     }
   }, [toast])
 
+  // Per-server running status — scans host processes once and attributes
+  // matches to each configured server's install path. Refreshes on a slow
+  // 15s cadence (process detection is heavyweight) and on socket events.
+  // Skipped while the tab is hidden so background tabs don't keep firing
+  // a heavyweight host-process scan.
+  const fetchServerStatuses = useCallback(async () => {
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+    try {
+      const data = await serversApi.getStatus()
+      const next: Record<string, { running: boolean; pid: string | null }> = {}
+      for (const s of data.servers || []) {
+        next[String(s.id)] = { running: !!s.running, pid: s.pid }
+      }
+      setServerStatuses(next)
+    } catch (error) {
+      // Non-fatal: status is supplemental info, not the source of truth.
+      reportClientWarning('Failed to fetch per-server status.', error)
+    }
+  }, [])
+
   // Load steamcmd path and servers on mount
   useEffect(() => {
     fetchServers()
+    fetchServerStatuses()
+    const statusInterval = setInterval(fetchServerStatuses, 15000)
     // Load steamcmd path from settings
     configApi.getAppSettings().then(data => {
       if (data.settings?.steamcmdPath) {
@@ -243,7 +268,8 @@ export default function Servers() {
         setGameVersion(status.gameVersion)
       }
     }).catch(e => reportClientWarning('Failed to load update status.', e))
-  }, [fetchServers])
+    return () => clearInterval(statusInterval)
+  }, [fetchServers, fetchServerStatuses])
 
   // Listen for update status changes (clears banner after successful update)
   useEffect(() => {
@@ -508,6 +534,53 @@ export default function Servers() {
       setActivating(null)
     }
   }, [toast, fetchServers])
+
+  // Inline Start/Stop on server cards. The Node side `serverApi.start/stop`
+  // operate on the currently-active instance only, so for inactive servers
+  // we activate first, wait for the switch to land, then issue start. This
+  // mirrors what users would otherwise do manually from the dropdown.
+  const [serverActionPending, setServerActionPending] = useState<string | null>(null)
+  const handleInlineStart = useCallback(async (server: ServerInstance) => {
+    setServerActionPending(`start-${server.id}`)
+    try {
+      if (!server.isActive) {
+        await serversApi.activate(server.id)
+      }
+      await serverApi.start()
+      toast({ title: 'Server Starting', description: server.name || server.serverName })
+      fetchServers()
+      fetchServerStatuses()
+    } catch (error) {
+      toast({
+        title: 'Failed to start server',
+        description: error instanceof Error ? error.message : 'Unknown error',
+        variant: 'destructive',
+      })
+    } finally {
+      setServerActionPending(null)
+    }
+  }, [toast, fetchServers, fetchServerStatuses])
+
+  const handleInlineStop = useCallback(async (server: ServerInstance) => {
+    setServerActionPending(`stop-${server.id}`)
+    try {
+      if (!server.isActive) {
+        await serversApi.activate(server.id)
+      }
+      await serverApi.stop()
+      toast({ title: 'Server Stopping', description: server.name || server.serverName })
+      fetchServers()
+      fetchServerStatuses()
+    } catch (error) {
+      toast({
+        title: 'Failed to stop server',
+        description: error instanceof Error ? error.message : 'Unknown error',
+        variant: 'destructive',
+      })
+    } finally {
+      setServerActionPending(null)
+    }
+  }, [toast, fetchServers, fetchServerStatuses])
 
   const handleDeleteServer = async () => {
     if (!deleteServer) return
@@ -881,11 +954,29 @@ export default function Servers() {
                   <div className="space-y-1.5 min-w-0 flex-1">
                     <CardTitle className="flex items-center gap-2 flex-wrap min-w-0">
                       <span className="truncate">{server.name}</span>
-                      {server.isActive && (
+                      {server.isActive ? (
                         <Badge variant="default" className="text-xs">
                           <Star className="w-3 h-3 mr-1" /> Active
                         </Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-xs text-muted-foreground">
+                          Inactive
+                        </Badge>
                       )}
+                      {(() => {
+                        const status = serverStatuses[String(server.id)]
+                        if (!status) return null
+                        return status.running ? (
+                          <Badge variant="success" className="text-xs" title={status.pid ? `PID ${status.pid}` : 'Process detected'}>
+                            <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-current motion-safe:animate-pulse" />
+                            Running
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-xs text-muted-foreground" title="No matching PZ server process found on this host">
+                            Stopped
+                          </Badge>
+                        )
+                      })()}
                       {server.isRemote && (
                         <Badge variant="outline" className="text-xs">
                           <Globe className="w-3 h-3 mr-1" /> Remote
@@ -1033,7 +1124,43 @@ export default function Servers() {
                 )}
 
                 {/* Action Buttons */}
-                <div className="flex gap-2 pt-1">
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {(() => {
+                    const status = serverStatuses[String(server.id)]
+                    const isRunning = status?.running ?? false
+                    const startPending = serverActionPending === `start-${server.id}`
+                    const stopPending = serverActionPending === `stop-${server.id}`
+                    if (server.isRemote) return null
+                    return isRunning ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleInlineStop(server)}
+                        disabled={stopPending || serverActionPending !== null}
+                        title="Stop this server"
+                      >
+                        {stopPending ? (
+                          <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> Stopping...</>
+                        ) : (
+                          <><Square className="w-4 h-4 mr-1.5" /> Stop</>
+                        )}
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleInlineStart(server)}
+                        disabled={startPending || serverActionPending !== null}
+                        title={server.isActive ? 'Start this server' : 'Switch to this server and start it'}
+                      >
+                        {startPending ? (
+                          <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> Starting...</>
+                        ) : (
+                          <><Play className="w-4 h-4 mr-1.5" /> Start</>
+                        )}
+                      </Button>
+                    )
+                  })()}
                   {hasUpdate && (
                     <Button 
                       size="sm"

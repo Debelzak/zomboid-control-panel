@@ -2331,6 +2331,33 @@ export default function Mods() {
           </div>
         )}
 
+        {/* Stale-flag warning: backend reports N pending updates from live Workshop ACF
+            but the per-mod DB flags don't reflect them yet (e.g. last check was rejected,
+            or the ACF was rewritten by Steam after a sync). Surface it so it's not invisible
+            inside a collapsed group. */}
+        {!status?.pendingRestart
+          && (status?.updatesAvailable ?? 0) > 0
+          && groupedMods.updateAvailable.length === 0
+          && !checking && (
+          <div className="flex flex-col gap-3 rounded-lg border border-warning/40 bg-warning/10 p-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3 sm:items-center">
+              <AlertTriangle className="w-5 h-5 text-warning" />
+              <div>
+                <p className="font-medium text-warning">
+                  {status?.updatesAvailable} mod update{status?.updatesAvailable === 1 ? '' : 's'} reported by Steam — flags out of sync
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  The Workshop folder shows newer files than the panel has on record. Run a check to update the per-mod state.
+                </p>
+              </div>
+            </div>
+            <Button variant="warning" size="sm" onClick={handleCheckUpdates} disabled={loading || checking}>
+              <RefreshCw className={`w-4 h-4 mr-2 ${checking ? 'animate-spin' : ''}`} />
+              Check Now
+            </Button>
+          </div>
+        )}
+
         <Tabs defaultValue="mods" className="space-y-4">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <TabsList className="grid w-full grid-cols-3 sm:w-auto">

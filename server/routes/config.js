@@ -24,7 +24,9 @@ const VALID_SETTINGS_KEYS = [
   // Workshop collection sync — mirrors tracked mods into a Steam collection.
   // steamSessionId / steamLoginSecure are cookie pairs; treated as secrets.
   'workshopCollectionId', 'workshopCollectionAutoSync',
-  'steamSessionId', 'steamLoginSecure'
+  'steamSessionId', 'steamLoginSecure',
+  // Chat page Quick Messages presets — array of strings.
+  'chatPresets'
 ];
 
 const OPTION_NAME_REGEX = /^[a-zA-Z0-9_]{1,64}$/;
@@ -212,6 +214,19 @@ router.put('/app-settings', async (req, res) => {
 
       if (['corsAllowAll', 'corsAllowPrivateNetworks', 'corsDebug', 'panelBridgeAutoUpdate', 'autoExportOnLogin'].includes(key) && typeof value !== 'boolean') {
         return res.status(400).json({ error: `${key} must be true or false` });
+      }
+
+      if (key === 'chatPresets') {
+        // Array of short strings, max 50 entries, each <=500 chars.
+        if (!Array.isArray(value)) {
+          return res.status(400).json({ error: 'chatPresets must be an array' });
+        }
+        if (value.length > 50) {
+          return res.status(400).json({ error: 'chatPresets supports up to 50 entries' });
+        }
+        if (!value.every(v => typeof v === 'string' && v.length <= 500)) {
+          return res.status(400).json({ error: 'chatPresets entries must be strings up to 500 characters' });
+        }
       }
 
       validEntries.push([key, value]);

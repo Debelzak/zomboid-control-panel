@@ -130,7 +130,7 @@ const navSections: NavSection[] = [
     color: 'cyan',
     items: [
       { to: '/servers', icon: Layers, label: 'My Servers' },
-      { to: '/server-setup', icon: Download, label: 'Steam Installer' },
+      { to: '/server-setup', icon: Download, label: 'Server Setup' },
       { to: '/server-finder', icon: Search, label: 'Browse Public' },
     ]
   },
@@ -284,7 +284,9 @@ export default function Layout({ children }: LayoutProps) {
     return new Set(['active', 'world'])
   })
   const [updateInfo, setUpdateInfo] = useState<UpdateStatus | null>(null)
-  const [updateDismissed, setUpdateDismissed] = useState(() => sessionStorage.getItem('updateBannerDismissed') === 'true')
+  // Persist dismissal across reloads, but key it by build IDs so a NEW update
+  // re-shows the banner. Was sessionStorage which got cleared on browser restart.
+  const [updateDismissed, setUpdateDismissed] = useState(false)
   const [playerCount, setPlayerCount] = useState<number>(0)
   const [serverRunState, setServerRunState] = useState<'unknown' | 'running' | 'stopped' | 'transitioning'>('unknown')
   const [modUpdatesAvailable, setModUpdatesAvailable] = useState<number>(0)
@@ -508,8 +510,11 @@ export default function Layout({ children }: LayoutProps) {
     
     const handleUpdateAvailable = (data: UpdateStatus) => {
       setUpdateInfo(data)
-      setUpdateDismissed(false) // Show banner again when new update detected
-      sessionStorage.removeItem('updateBannerDismissed')
+      // Show banner again when a different update is detected
+      const dismissedKey = data?.installed && data?.latest
+        ? `updateBannerDismissed:${data.installed.buildId}->${data.latest.buildId}`
+        : null
+      setUpdateDismissed(!!dismissedKey && localStorage.getItem(dismissedKey) === 'true')
     }
     
     const handleUpdateCheck = (data: UpdateStatus) => {
@@ -977,6 +982,7 @@ export default function Layout({ children }: LayoutProps) {
                     onClick={() => setHelpOpen(true)}
                     className="text-muted-foreground/70 hover:text-foreground transition-colors"
                     aria-label="Keyboard shortcuts"
+                    title="Keyboard shortcuts (?)"
                   >
                     <kbd className="inline-flex items-center justify-center w-4 h-4 rounded border border-border/40 text-[10px] font-mono leading-none">?</kbd>
                   </button>
@@ -1046,7 +1052,10 @@ export default function Layout({ children }: LayoutProps) {
                     className="w-full sm:w-auto"
                     onClick={() => {
                       setUpdateDismissed(true)
-                      sessionStorage.setItem('updateBannerDismissed', 'true')
+                      const key = updateInfo && updateInfo.installed && updateInfo.latest
+                        ? `updateBannerDismissed:${updateInfo.installed.buildId}->${updateInfo.latest.buildId}`
+                        : null
+                      if (key) localStorage.setItem(key, 'true')
                     }}
                   >
                     Dismiss

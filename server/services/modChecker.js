@@ -352,6 +352,13 @@ export class ModChecker extends EventEmitter {
     }
   }
 
+  // Diagnostic helper used by /api/debug — true when polling is active.
+  // Without this getter the debug page always reported "Mod update checker stopped"
+  // because no field named isRunning existed on this class.
+  get isRunning() {
+    return !!this.intervalId;
+  }
+
   start() {
     // Check if we have the workshop ACF file
     if (!this.workshopAcfPath) {

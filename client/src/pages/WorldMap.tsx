@@ -55,6 +55,16 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { panelBridgeApi, updateApi, serversApi } from '@/lib/api'
 import { useToast } from '@/components/ui/use-toast'
 import { cn } from '@/lib/utils'
@@ -516,6 +526,8 @@ export default function WorldMap() {
     }
   })
   const [activeTemplateId, setActiveTemplateId] = useState<string | null>(null)
+  // Confirm-deletion dialog state for custom drop packages.
+  const [deleteTemplateId, setDeleteTemplateId] = useState<string | null>(null)
   const [templateNameInput, setTemplateNameInput] = useState('')
   const [savingTemplate, setSavingTemplate] = useState(false)
   const persistDropTemplates = useCallback((next: DropTemplate[]) => {
@@ -2958,14 +2970,7 @@ export default function WorldMap() {
                       size="sm"
                       className="h-8 px-2 text-destructive hover:text-destructive"
                       title="Delete this package"
-                      onClick={() => {
-                        const tpl = dropTemplates.find((t) => t.id === activeTemplateId)
-                        if (!tpl) return
-                        if (!window.confirm(`Delete package "${tpl.name}"?`)) return
-                        persistDropTemplates(dropTemplates.filter((t) => t.id !== activeTemplateId))
-                        setActiveTemplateId(null)
-                        toast({ title: 'Package deleted', description: tpl.name })
-                      }}
+                      onClick={() => setDeleteTemplateId(activeTemplateId)}
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </Button>
@@ -3208,6 +3213,42 @@ export default function WorldMap() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Confirm deletion of a saved drop package */}
+      <AlertDialog
+        open={!!deleteTemplateId}
+        onOpenChange={(open) => { if (!open) setDeleteTemplateId(null) }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete package?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {(() => {
+                const tpl = dropTemplates.find((t) => t.id === deleteTemplateId)
+                if (!tpl) return 'This package will be removed.'
+                return `“${tpl.name}” (${tpl.items.length} item${tpl.items.length === 1 ? '' : 's'}) will be removed from your saved packages. This cannot be undone.`
+              })()}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                const id = deleteTemplateId
+                if (!id) return
+                const tpl = dropTemplates.find((t) => t.id === id)
+                persistDropTemplates(dropTemplates.filter((t) => t.id !== id))
+                if (activeTemplateId === id) setActiveTemplateId(null)
+                setDeleteTemplateId(null)
+                if (tpl) toast({ title: 'Package deleted', description: tpl.name })
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

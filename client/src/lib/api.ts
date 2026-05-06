@@ -981,6 +981,11 @@ export interface ServerInstance {
 export const serversApi = {
   getAll: () => apiGet('/servers') as Promise<{ servers: ServerInstance[] }>,
   getActive: () => apiGet('/servers/active') as Promise<{ server: ServerInstance }>,
+  getStatus: () => apiGet('/servers/status') as Promise<{
+    servers: Array<{ id: string; name: string; running: boolean; pid: string | null; isActive: boolean }>
+    detectedProcesses: number
+    detectionError: string | null
+  }>,
   get: (id: string | number) => apiGet(`/servers/${id}`) as Promise<{ server: ServerInstance }>,
   create: (config: Partial<ServerInstance>) =>
     apiPost('/servers', config) as Promise<{ server: ServerInstance; message: string }>,
@@ -1618,6 +1623,42 @@ export const backupApi = {
 
   // Get download URL for a backup (use downloadBackup for authenticated downloads)
   getDownloadUrl: (name: string): string => `${API_BASE}/backup/download/${encodeURIComponent(name)}`,
+
+  // Upload a .zip from the user's machine into the backups folder.
+  // Streams the raw bytes to /backup/upload with the original filename
+  // sent as a header so it can be sanitized server-side. The stored file
+  // ends up prefixed with "uploaded-" and shows up in the regular list.
+  uploadBackup: async (
+    file: File,
+    onProgress?: (percent: number) => void,
+  ): Promise<{ success: boolean; name: string; size: number; message: string }> => {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      xhr.open('POST', `${API_BASE}/backup/upload`, true)
+      const token = getAuthToken()
+      if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+      xhr.setRequestHeader('Content-Type', 'application/zip')
+      xhr.setRequestHeader('X-Backup-Filename', file.name)
+      if (onProgress) {
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100))
+        }
+      }
+      xhr.onload = () => {
+        let payload: any = null
+        try { payload = JSON.parse(xhr.responseText) } catch { /* non-JSON */ }
+        if (xhr.status >= 200 && xhr.status < 300 && payload?.success) {
+          resolve(payload)
+        } else {
+          const message = payload?.error || `Upload failed (HTTP ${xhr.status})`
+          reject(new Error(message))
+        }
+      }
+      xhr.onerror = () => reject(new Error('Network error during upload'))
+      xhr.onabort = () => reject(new Error('Upload aborted'))
+      xhr.send(file)
+    })
+  },
 
   // Download a backup file with authentication
   downloadBackup: async (name: string): Promise<void> => {

@@ -18,12 +18,18 @@ interface DashboardPerformanceChartsProps {
 }
 
 /* Tiny inline sparkline — no axes, no tooltips, just the shape */
-function Spark({ data, dataKey, color, height = 40 }: { data: DashboardPerformancePoint[]; dataKey: string; color: string; height?: number }) {
+function Spark({ data, dataKey, color, height = 40, muted = false }: { data: DashboardPerformanceChartsProps['performanceHistory']; dataKey: string; color: string; height?: number; muted?: boolean }) {
   // Need at least 2 data points to draw a meaningful line; show a flat baseline otherwise.
-  if (data.length < 2) {
+  // Also show the flat baseline when the metric has been all-zero/null across the
+  // window — drawing a flat line at zero reads as "0 active" instead of "no data".
+  const hasSignal = !muted && data.some(d => {
+    const v = (d as unknown as Record<string, unknown>)[dataKey]
+    return typeof v === 'number' && v > 0
+  })
+  if (data.length < 2 || !hasSignal) {
     return (
       <div className="flex h-10 items-center" aria-hidden="true">
-        <div className="h-px w-full bg-border/50" />
+        <div className="h-px w-full bg-border/40" />
       </div>
     )
   }
@@ -107,7 +113,7 @@ function DashboardPerformanceCharts({ performanceHistory, serverRunning = true }
         value={playersValue}
         unit=""
         color={chartColors.players}
-        spark={<Spark data={performanceHistory} dataKey="playerCount" color={chartColors.players} />}
+        spark={<Spark data={performanceHistory} dataKey="playerCount" color={chartColors.players} muted={!serverRunning} />}
         muted={!serverRunning}
       />
       <StatRow
@@ -118,7 +124,7 @@ function DashboardPerformanceCharts({ performanceHistory, serverRunning = true }
         color={chartColors.pzMem}
         alert={pzAlert}
         muted={!serverRunning}
-        spark={<Spark data={performanceHistory} dataKey={latest.pzMemMB != null ? 'pzMemMB' : 'memoryMB'} color={chartColors.pzMem} />}
+        spark={<Spark data={performanceHistory} dataKey={latest.pzMemMB != null ? 'pzMemMB' : 'memoryMB'} color={chartColors.pzMem} muted={!serverRunning} />}
       />
       <StatRow
         icon={Cpu}
