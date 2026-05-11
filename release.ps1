@@ -381,6 +381,7 @@ if ($SkipGitHub) {
         ".github",
         "server",
         "pz-mod",
+        "Screenshots",
         "client\src",
         "client\public",
         "client\index.html",
