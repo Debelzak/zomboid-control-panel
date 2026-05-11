@@ -349,14 +349,6 @@ export const INI_SCHEMA: IniSetting[] = [
 
   // Players & Accounts
   {
-    key: 'AutoCreateUserInWhiteList',
-    label: 'Auto-Create Users',
-    description: 'Automatically add new users to whitelist when they join.',
-    type: 'boolean',
-    default: false,
-    category: 'players'
-  },
-  {
     key: 'MaxAccountsPerUser',
     label: 'Max Accounts Per User',
     description: 'Limit accounts per Steam user. 0 = unlimited.',
@@ -519,9 +511,9 @@ export const INI_SCHEMA: IniSetting[] = [
     category: 'safehouse'
   },
   {
-    key: 'DisableSafehouseWhenPlayerConnected',
+    key: 'DisableSafehouseWhenOwnerConnected',
     label: 'Disable When Owner Online',
-    description: 'Disable safehouse protection when owner is connected.',
+    description: 'Disable safehouse protection when the owner is connected. (Renamed from DisableSafehouseWhenPlayerConnected in the Dec 2025 MP patch.)',
     type: 'boolean',
     default: false,
     category: 'safehouse'
@@ -1186,9 +1178,9 @@ export const INI_SCHEMA: IniSetting[] = [
   {
     key: 'War',
     label: 'Enable Faction War',
-    description: 'Enable faction war system.',
+    description: 'Enable faction war system. (Disabled by default since the Dec 2025 MP patch.)',
     type: 'boolean',
-    default: true,
+    default: false,
     category: 'war'
   },
   {

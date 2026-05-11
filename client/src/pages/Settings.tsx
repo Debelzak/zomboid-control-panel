@@ -33,7 +33,8 @@ import {
   Palette,
   Check,
   Heart,
-  Coffee
+  Coffee,
+  MessageCircle
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { reportClientError } from '@/lib/client-errors'
@@ -3138,7 +3139,16 @@ export default function Settings() {
           </div>
 
           {/* Links */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+            <a
+              href="https://discord.gg/bq4SuyDDZb"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center gap-2 rounded-lg border border-[#5865F2]/40 bg-[#5865F2]/10 px-3 py-2 text-sm text-[#5865F2] hover:bg-[#5865F2]/20 transition-colors"
+            >
+              <MessageCircle className="w-3.5 h-3.5" />
+              Join Discord
+            </a>
             <a
               href="https://github.com/fpsacha/zomboid-control-panel"
               target="_blank"
