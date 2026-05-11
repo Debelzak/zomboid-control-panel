@@ -21,6 +21,13 @@ One place to manage your server instead of juggling five different tools.
    <img src="Screenshots/screenshot-console.png" width="49%" alt="Console" />
    <img src="Screenshots/screenshot-players.png" width="49%" alt="Players" />
 </p>
+<p align="center">
+   <img src="Screenshots/screenshot-worldmap.png" width="49%" alt="World Map" />
+   <img src="Screenshots/screenshot-config.png" width="49%" alt="Server Configuration" />
+</p>
+<p align="center">
+   <img src="Screenshots/screenshot-backups.png" width="49%" alt="Backups" />
+</p>
 
 No existing PZ server tool covered the full workflow. Most handled one or two parts. So I built the whole thing. [Background story →](https://www.youtube.com/watch?v=P2k0VFX1FUw)
 
