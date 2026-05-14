@@ -99,10 +99,22 @@ tar xzf ZomboidControlPanel-linux.tar.gz
 Works on Ubuntu 20.04+, Debian 10+, CentOS Stream 8+, Rocky 8+, or anything with glibc 2.28+.
 
 ### Docker
+
+The image runs **the panel only** — Project Zomboid itself still has to run somewhere (on the host, in another container, or on a separate machine). The panel reaches it via RCON and via shared filesystem (for PanelBridge).
+
+Pull the prebuilt image:
 ```bash
+mkdir -p ~/zomboid-panel && cd ~/zomboid-panel
+curl -O https://raw.githubusercontent.com/fpsacha/zomboid-control-panel/main/docker-compose.yml
+curl -O https://raw.githubusercontent.com/fpsacha/zomboid-control-panel/main/.env.example
+mv .env.example .env
 docker compose up -d
 ```
-Uses the bundled [`docker-compose.yml`](docker-compose.yml). Mounts `./data` (panel database), `./logs`, and your PZ server folder. Set `CORS_ORIGINS` and the panel `PORT` via environment if you need non-defaults.
+Then open `http://localhost:3001`.
+
+Before bringing it up for real, edit [`docker-compose.yml`](docker-compose.yml) and uncomment the volume mounts that point at your PZ install and `~/Zomboid` folder — the file has two annotated topology examples (PZ on the host vs. PZ on a remote machine). All env vars are documented in [`.env.example`](.env.example).
+
+Prebuilt images are published to GHCR: `ghcr.io/fpsacha/zomboid-panel:latest` and `:vX.Y.Z`. Prefer to build from source? Comment out `image:` in the compose file and uncomment the `build:` block.
 
 ---
 

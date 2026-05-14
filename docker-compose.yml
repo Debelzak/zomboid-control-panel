@@ -1,24 +1,47 @@
-# Zomboid Control Panel — Docker Compose
+# Zomboid Control Panel - Docker Compose
 #
-# Quick start:
-#   docker compose up -d
+# ============================================================================
+# WHAT THIS RUNS
+# ============================================================================
+# This compose file runs the *control panel only*. It does NOT include a
+# Project Zomboid dedicated server. PZ has to run somewhere the panel can reach.
 #
-# Custom UID (match your host user to avoid bind-mount permission issues):
-#   docker compose build --build-arg UID=$(id -u) --build-arg GID=$(id -g)
-#   Windows cmd.exe users: replace $(id -u) with your UID (typically 1000)
+# Two realistic topologies:
 #
-# Volume paths below are relative to this file.
-# On Linux, ensure the host directories exist and are writable by the UID above:
-#   mkdir -p ./data ./logs && chown $(id -u):$(id -g) ./data ./logs
+#   1) PZ server on the host, panel in Docker (most common)
+#      - PZ runs natively on the same Linux host (systemd, screen, tmux, etc.)
+#      - Panel container bind-mounts the PZ install + Zomboid user data
+#      - Panel talks to PZ via RCON over localhost (use host.docker.internal
+#        or the host's LAN IP)
 #
-# To give the panel access to the PZ server and Zomboid user data, bind-mount
-# the relevant host paths. Examples (uncomment and adjust):
-#   - /home/you/pz-server:/pz-server:ro        # PZ dedicated server install
-#   - /home/you/Zomboid:/zomboid                # Zomboid user data (saves, config, Lua)
-# Then set PZ_SERVER_PATH and PZ_SAVE_PATH in the environment section below.
+#   2) Remote PZ server, panel in Docker
+#      - PZ runs on a separate machine
+#      - Panel only talks to it over RCON (network)
+#      - PanelBridge file IPC won't work unless you share the Zomboid folder
+#        over the network (NFS/SMB) and bind-mount that share here
+#
+# ============================================================================
+# QUICK START
+# ============================================================================
+#   1. Edit the volumes / environment section below to match your host paths
+#   2. (Linux) Match container UID/GID to your host user:
+#        docker compose build --build-arg UID=$(id -u) --build-arg GID=$(id -g)
+#   3. Bring it up:
+#        docker compose up -d
+#   4. Open http://localhost:3001 and create the admin account
+#   5. In Settings, point the panel at /pz-server and /zomboid (the container
+#      paths from the volumes below), not your host paths
+#
+# All available env vars are documented in .env.example.
+# ============================================================================
 
 services:
   panel:
+    # Prebuilt image (published by .github/workflows/docker-publish.yml on tag push).
+    # If the pull fails (e.g. before the first tagged release, or on a private fork),
+    # `build:` below kicks in automatically and the locally built image is tagged with
+    # this same name so subsequent `up -d` calls don't try to pull again.
+    image: ghcr.io/fpsacha/zomboid-panel:latest
     build:
       context: .
       args:
@@ -28,16 +51,32 @@ services:
     restart: unless-stopped
     ports:
       - "3001:3001"
+    # On Linux, add `host.docker.internal` so the panel can reach PZ RCON on the host
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
-      - ./data:/app/data:z          # :z = SELinux shared label (required on CentOS/RHEL)
-      - ./logs:/app/logs:z          # :z = SELinux shared label (required on CentOS/RHEL)
-      # Uncomment and adjust: PanelBridge IPC requires access to the Zomboid user data folder
+      # Panel state (database, JWT secret, backups). KEEP THIS PERSISTENT.
+      - ./data:/app/data:z
+      - ./logs:/app/logs:z
+
+      # --- Topology 1: PZ server on the host ---
+      # Uncomment and adjust the host paths to where your PZ install lives.
+      # `:ro` is fine for the install folder; the Zomboid user data must be writable
+      # because PanelBridge writes commands/results JSON in there.
+      # - /opt/pzserver:/pz-server:ro
       # - /home/pzuser/Zomboid:/zomboid:z
-      # CentOS SELinux note: if relabel fails, run:
-      #   sudo chcon -Rt container_file_t ./data ./logs
+
+      # --- Topology 2: Remote PZ server over NFS/SMB ---
+      # Mount the remote share on the host first, then bind it in:
+      # - /mnt/pz-remote/install:/pz-server:ro
+      # - /mnt/pz-remote/Zomboid:/zomboid:z
+
     environment:
       - NODE_ENV=production
+      # Optional overrides (see .env.example for the full list):
       # - PORT=3001
       # - PZ_SERVER_PATH=/pz-server
       # - PZ_SAVE_PATH=/zomboid
       # - PZ_SERVER_BAT=start-server.sh
+      # - CORS_ORIGINS=https://panel.example.com
+      # - HTTPS=true

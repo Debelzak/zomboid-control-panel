@@ -12,7 +12,6 @@ logs/*.log
 Screenshots/
 server/tests/
 build.js
-bundle-server.js
 deploy*.ps1
 release.ps1
 *.bat

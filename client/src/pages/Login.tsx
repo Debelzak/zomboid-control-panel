@@ -102,11 +102,8 @@ export default function Login() {
     return (
       <AuthScreenLayout
         badge="Account Recovery"
-        title="Zomboid Control Panel"
-        description="Reset your admin password using the token from data/reset-token.txt on the server."
-        cardTitle="Reset Password"
-        cardDescription="Enter the token from the reset file and choose a new password."
-        footer="Create data/reset-token.txt with any 8+ character token, then enter it here."
+        title="Reset Access"
+        description="Use the token from data/reset-token.txt on the server to set a new admin password."
       >
         <form onSubmit={handleReset} className="space-y-4">
           {error && (
@@ -215,12 +212,8 @@ export default function Login() {
 
   return (
     <AuthScreenLayout
-      badge="Secure Access"
       title="Zomboid Control Panel"
-      description="Sign in with your panel admin account to manage this server."
-      cardTitle="Sign In"
-      cardDescription="Use the username and password for this control panel."
-      footer="Your sign-in is checked against the panel service running on this machine."
+      description="Sign in with your admin account to take the console."
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && (
@@ -281,13 +274,13 @@ export default function Login() {
           </div>
         </div>
 
-        <div className="flex items-center space-x-2 rounded-lg border border-border/60 bg-muted/15 px-3 py-2.5">
+        <div className="flex items-center gap-2 pt-1">
           <Checkbox
             id="rememberMe"
             checked={rememberMe}
             onCheckedChange={(checked) => setRememberMe(checked === true)}
           />
-          <Label htmlFor="rememberMe" className="cursor-pointer text-sm font-normal text-foreground/90">
+          <Label htmlFor="rememberMe" className="cursor-pointer text-sm font-normal text-muted-foreground">
             Keep me signed in on this browser
           </Label>
         </div>

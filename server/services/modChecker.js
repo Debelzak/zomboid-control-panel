@@ -673,6 +673,27 @@ export class ModChecker extends EventEmitter {
     }
   }
 
+  // Read the active server's INI WorkshopItems list as a Set of strings.
+  // Returns null if the config can't be loaded so callers can choose to
+  // fail open (don't filter) rather than fail closed (drop everything).
+  async getConfiguredWorkshopIds() {
+    if (!this.serverManager || typeof this.serverManager.getServerConfig !== 'function') {
+      return null;
+    }
+    try {
+      const config = await this.serverManager.getServerConfig();
+      if (!config || !config.WorkshopItems) return null;
+      const ids = String(config.WorkshopItems)
+        .split(';')
+        .map(s => s.trim())
+        .filter(Boolean);
+      return new Set(ids);
+    } catch (err) {
+      log.debug(`getConfiguredWorkshopIds failed: ${err.message}`);
+      return null;
+    }
+  }
+
   // Check for mod updates using local workshop ACF file
   // This compares timeupdated vs latest_timeupdated in Steam's cache
   // Query Steam Web API for latest workshop item timestamps
@@ -873,6 +894,34 @@ export class ModChecker extends EventEmitter {
       }
 
       this.lastCheck = new Date();
+
+      // Drop "phantom" updates for tracked mods that are no longer listed in
+      // the server's INI (WorkshopItems). They can't be applied — restarting
+      // won't pull a mod the server isn't subscribed to — so flagging them
+      // creates a permanent "Restart Pending" loop (see issue: removed-from-INI
+      // mod gets stuck in update-restart cycle and never resolves).
+      try {
+        const iniWorkshopIds = await this.getConfiguredWorkshopIds();
+        if (iniWorkshopIds && iniWorkshopIds.size > 0) {
+          const before = updatedMods.length;
+          const filtered = updatedMods.filter(m => iniWorkshopIds.has(String(m.workshopId)));
+          const skipped = before - filtered.length;
+          if (skipped > 0) {
+            const skippedNames = updatedMods
+              .filter(m => !iniWorkshopIds.has(String(m.workshopId)))
+              .map(m => `${m.name} (${m.workshopId})`)
+              .join(', ');
+            log.info(`Skipping ${skipped} phantom update(s) for mods not in server INI: ${skippedNames}`);
+          }
+          updatedMods.length = 0;
+          updatedMods.push(...filtered);
+        } else {
+          log.debug('Could not read server INI workshop IDs — not filtering phantom updates');
+        }
+      } catch (filterErr) {
+        log.warn(`Failed to filter updates against INI config: ${filterErr.message}`);
+      }
+
       this.modsNeedingUpdate = updatedMods;
 
       // Batch-mark every mod we successfully queried as "just checked".
@@ -1030,8 +1079,21 @@ export class ModChecker extends EventEmitter {
   async getStatus() {
     const trackedMods = await getTrackedMods() || [];
     const workshopInfo = await this.getWorkshopInfo();
-    const modsWithUpdates = Object.entries(workshopInfo).filter(([, info]) => info.needsUpdate).length;
-    
+    // Only count updates for mods that are actually listed in the server INI.
+    // Mods downloaded into the Workshop folder but absent from WorkshopItems=
+    // can't be applied by a restart, so reporting them here triggers the
+    // "flags out of sync" banner in the UI (see the phantom-update filter
+    // applied in checkForUpdates).
+    let iniWorkshopIds = null;
+    try {
+      iniWorkshopIds = await this.getConfiguredWorkshopIds();
+    } catch { /* fall through — leave null to skip filter */ }
+    const modsWithUpdates = Object.entries(workshopInfo).filter(([id, info]) => {
+      if (!info.needsUpdate) return false;
+      if (iniWorkshopIds && iniWorkshopIds.size > 0 && !iniWorkshopIds.has(String(id))) return false;
+      return true;
+    }).length;
+
     return {
       running: !!this.intervalId,
       lastCheck: this.lastCheck instanceof Date ? this.lastCheck.toISOString() : (this.lastCheck || null),
@@ -1068,6 +1130,11 @@ export class ModChecker extends EventEmitter {
       this.playerCheckInterval = null;
     }
     this.pendingRestart = false;
+    // Clear the dedup map so the same mod updates can re-trigger a restart
+    // on the next check cycle. Without this, cancelling marks every pending
+    // mod as "already processed" forever, so auto-restart silently stays
+    // dormant until Steam republishes a newer version of each mod.
+    this.processedUpdates.clear();
     // Also cancel any in-progress scheduler countdown
     this.scheduler?.cancelRestart();
     log.info('Pending restart cancelled');
