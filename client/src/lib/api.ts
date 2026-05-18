@@ -881,6 +881,8 @@ export const chunksApi = {
     force: boolean = false,
   ) => apiPost('/chunks/delete-region', { saveName, minX, maxX, minY, maxY, createBackup, invert, customPath, deleteVehicles, force }),
   browse: (browsePath?: string) => apiGet(`/chunks/browse${browsePath ? `?path=${encodeURIComponent(browsePath)}` : ''}`),
+  suggestedPaths: () => apiGet<{ candidates: Array<{ path: string; exists: boolean; hasSaves: boolean }>; platform: string }>('/chunks/suggested-paths'),
+  savePath: (p: string) => apiPost<{ ok: boolean; target: 'server' | 'setting'; serverId?: string; path: string }>('/chunks/save-path', { path: p }),
 }
 
 // Config API

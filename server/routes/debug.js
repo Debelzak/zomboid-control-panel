@@ -10,6 +10,7 @@ import { getDataPaths, setDataPaths } from '../utils/paths.js';
 import { getPerformanceHistory, recordPerformanceSnapshot, getDatabaseStats, createDatabaseBackup, compactDatabase, getCommandHistory, getBridgeLogs, getPlayerLogs, getDb, getActiveServer, getScheduledTasks, getTrackedMods, getAllSettings } from '../database/init.js';
 import { sanitizeError } from '../utils/sanitize.js';
 import panelBridgeService from '../services/panelBridge.js';
+import { getCandidateZomboidPaths, inspectZomboidPath } from '../utils/zomboidPaths.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -177,6 +178,443 @@ async function collectBundleFilesFromDir(dir, matcher, archivePrefix, entries, s
       archivePath: `${archivePrefix}/${entry.name}`
     });
   }
+}
+
+// ───────────────────────────────────────────────────────────────────────
+// Support-bundle diagnostic collectors — every helper below is best-effort
+// and must never throw, so the zip download keeps working even on bad data.
+// ───────────────────────────────────────────────────────────────────────
+
+const SECRET_FIELD_RE = /(password|secret|token|apikey|api_key|jwt|sessionid|loginsecure|cookie|webhook)/i;
+const ENV_VALUE_ALLOWLIST = [
+  'NODE_ENV', 'PORT', 'LOG_LEVEL', 'HTTPS', 'FORCE_HSTS',
+  'CORS_ORIGINS', 'CORS_ALLOW_PRIVATE_NETWORKS', 'CORS_ALLOW_ALL',
+  'TZ', 'LANG', 'LC_ALL', 'PUID', 'PGID', 'NODE_VERSION',
+  'PATH_PREFIX', 'TRUST_PROXY', 'PWD'
+];
+const ENV_PRESENCE_ONLY = [
+  'HOME', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA',
+  'JWT_SECRET', 'RCON_PASSWORD', 'DISCORD_TOKEN', 'STEAM_API_KEY',
+  'PANEL_PASSWORD', 'ADMIN_PASSWORD'
+];
+
+function maskValue(v) {
+  if (v == null) return v;
+  const s = String(v);
+  if (s.length <= 4) return '••••';
+  return '••••••••' + s.slice(-4);
+}
+
+/** Deep-clone with any field whose key looks secret-like masked. */
+function sanitizeForBundle(value, depth = 0) {
+  if (value == null || depth > 8) return value;
+  if (Array.isArray(value)) return value.map((v) => sanitizeForBundle(v, depth + 1));
+  if (typeof value !== 'object') return value;
+
+  const out = {};
+  for (const [k, v] of Object.entries(value)) {
+    if (SECRET_FIELD_RE.test(k) && typeof v === 'string' && v.length > 0) {
+      out[k] = maskValue(v);
+    } else if (k === 'discordWebhookUrl' && typeof v === 'string' && v.includes('/webhooks/')) {
+      out[k] = v.replace(/\/webhooks\/(\d+)\/[^/?#]+/i, '/webhooks/$1/••••');
+    } else {
+      out[k] = sanitizeForBundle(v, depth + 1);
+    }
+  }
+  return out;
+}
+
+async function readPanelVersion() {
+  const candidates = [
+    path.join(__dirname, '..', '..', 'package.json'),
+    path.join(process.cwd(), 'package.json'),
+    process.execPath ? path.join(path.dirname(process.execPath), 'package.json') : null
+  ].filter(Boolean);
+  for (const p of candidates) {
+    try {
+      const txt = await fs.promises.readFile(p, 'utf8');
+      const pkg = JSON.parse(txt);
+      if (pkg?.version) return pkg.version;
+    } catch { /* try next */ }
+  }
+  return 'unknown';
+}
+
+async function safeStatfs(target) {
+  if (!target || typeof fs.promises.statfs !== 'function') return null;
+  try {
+    const s = await fs.promises.statfs(target);
+    const totalBytes = Number(s.blocks) * Number(s.bsize);
+    const freeBytes = Number(s.bavail) * Number(s.bsize);
+    return {
+      totalBytes,
+      freeBytes,
+      totalGB: +(totalBytes / 1024 ** 3).toFixed(2),
+      freeGB: +(freeBytes / 1024 ** 3).toFixed(2),
+      percentFree: totalBytes > 0 ? +((freeBytes / totalBytes) * 100).toFixed(1) : null
+    };
+  } catch (e) {
+    return { error: e.message };
+  }
+}
+
+async function buildSystemInfo(activeServer) {
+  const version = await readPanelVersion();
+  const isPkg = typeof process.pkg !== 'undefined';
+  const paths = getDataPaths();
+  const cpus = os.cpus();
+
+  return {
+    panel: {
+      version,
+      isPkg,
+      execPath: process.execPath,
+      cwd: process.cwd(),
+      argv: process.argv.slice(1).map((a) => (a.length > 200 ? a.slice(0, 200) + '…' : a)),
+      uptimeSeconds: Math.round(process.uptime()),
+      pid: process.pid,
+      memoryUsage: process.memoryUsage()
+    },
+    runtime: {
+      nodeVersion: process.version,
+      v8Version: process.versions.v8,
+      openssl: process.versions.openssl
+    },
+    os: {
+      platform: process.platform,
+      arch: process.arch,
+      release: os.release(),
+      type: os.type(),
+      hostname: os.hostname().replace(/[^a-zA-Z0-9._-]/g, '?'),
+      uptimeSeconds: Math.round(os.uptime()),
+      totalMemBytes: os.totalmem(),
+      freeMemBytes: os.freemem(),
+      totalMemGB: +(os.totalmem() / 1024 ** 3).toFixed(2),
+      freeMemGB: +(os.freemem() / 1024 ** 3).toFixed(2),
+      loadavg: os.loadavg(),
+      cpu: cpus[0]?.model || 'unknown',
+      cpuCount: cpus.length,
+      tmpdir: os.tmpdir(),
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
+    },
+    disk: {
+      panelDataDir: await safeStatfs(paths.dataDir),
+      zomboidDataDir: await safeStatfs(activeServer?.zomboidDataPath || null),
+      installDir: await safeStatfs(activeServer?.installPath || null)
+    }
+  };
+}
+
+async function buildEnvironmentReport() {
+  const lines = [
+    '# Environment variables (allow-listed)',
+    '# Only values for explicitly safe vars are shown.',
+    '# Other entries report PRESENCE ONLY (no value).',
+    ''
+  ];
+  for (const key of ENV_VALUE_ALLOWLIST) {
+    if (process.env[key] !== undefined) {
+      lines.push(`${key}=${process.env[key]}`);
+    }
+  }
+  lines.push('');
+  lines.push('# Presence-only (value redacted)');
+  for (const key of ENV_PRESENCE_ONLY) {
+    lines.push(`${key}=${process.env[key] !== undefined ? '<set>' : '<unset>'}`);
+  }
+  lines.push('');
+  lines.push('# All other env var NAMES present (no values)');
+  const known = new Set([...ENV_VALUE_ALLOWLIST, ...ENV_PRESENCE_ONLY]);
+  const others = Object.keys(process.env).filter((k) => !known.has(k)).sort();
+  for (const k of others) {
+    lines.push(`${k}=<redacted>`);
+  }
+  return lines.join('\n') + '\n';
+}
+
+async function buildPanelConfig(activeServer) {
+  let settings = {};
+  let servers = [];
+  let scheduledTasks = [];
+  let trackedMods = [];
+  try { settings = await getAllSettings(); } catch (e) { settings = { _error: e.message }; }
+  try {
+    const db = await getDb();
+    servers = db?.data?.servers || [];
+  } catch (e) { servers = [{ _error: e.message }]; }
+  try { scheduledTasks = await getScheduledTasks(); } catch (e) { scheduledTasks = [{ _error: e.message }]; }
+  try { trackedMods = await getTrackedMods(); } catch (e) { trackedMods = [{ _error: e.message }]; }
+
+  return {
+    activeServerId: activeServer?.id || null,
+    activeServerName: activeServer?.name || activeServer?.serverName || null,
+    settings: sanitizeForBundle(settings),
+    servers: sanitizeForBundle(servers),
+    scheduledTasks: sanitizeForBundle(scheduledTasks),
+    trackedMods: sanitizeForBundle(trackedMods)
+  };
+}
+
+async function listDir(target, { recurseInto = [], maxEntries = 200 } = {}) {
+  if (!target) return null;
+  try {
+    const stat = await fs.promises.stat(target);
+    if (!stat.isDirectory()) return { path: target, error: 'not a directory' };
+  } catch (e) {
+    return { path: target, error: e.message };
+  }
+  try {
+    const items = await fs.promises.readdir(target, { withFileTypes: true });
+    const out = [];
+    for (const it of items.slice(0, maxEntries)) {
+      try {
+        const full = path.join(target, it.name);
+        const s = await fs.promises.stat(full);
+        const entry = {
+          name: it.name,
+          type: it.isDirectory() ? 'dir' : it.isFile() ? 'file' : 'other',
+          size: s.size,
+          modified: s.mtime.toISOString()
+        };
+        if (it.isDirectory() && recurseInto.includes(it.name)) {
+          entry.children = await listDir(full, { maxEntries: 100 });
+        }
+        out.push(entry);
+      } catch {
+        out.push({ name: it.name, error: 'stat failed' });
+      }
+    }
+    return {
+      path: target,
+      truncatedAt: items.length > maxEntries ? maxEntries : null,
+      totalEntries: items.length,
+      entries: out
+    };
+  } catch (e) {
+    return { path: target, error: e.message };
+  }
+}
+
+async function buildZomboidPaths(activeServer) {
+  const configured = activeServer?.zomboidDataPath || null;
+  const inspection = configured ? inspectZomboidPath(configured) : null;
+  let candidates = [];
+  try { candidates = getCandidateZomboidPaths(); } catch (e) { candidates = [{ _error: e.message }]; }
+
+  const root = configured;
+  return {
+    configuredPath: configured,
+    installPath: activeServer?.installPath || null,
+    inspection,
+    candidates,
+    listings: {
+      root: await listDir(root),
+      saves: root ? await listDir(path.join(root, 'Saves'), { recurseInto: ['Multiplayer'] }) : null,
+      server: root ? await listDir(path.join(root, 'Server')) : null,
+      logs: root ? await listDir(path.join(root, 'Logs')) : null,
+      mods: root ? await listDir(path.join(root, 'mods')) : null,
+      workshop: root ? await listDir(path.join(root, 'Workshop')) : null,
+      panelBridge: root ? await listDir(path.join(root, 'panelbridge'), { recurseInto: ['default'] }) : null,
+      install: activeServer?.installPath ? await listDir(activeServer.installPath) : null,
+      installLogs: activeServer?.installPath ? await listDir(path.join(activeServer.installPath, 'logs')) : null
+    }
+  };
+}
+
+function sanitizeCommandHistoryEntry(entry) {
+  if (!entry) return entry;
+  const cloned = { ...entry };
+  if (typeof cloned.command === 'string') {
+    // Mask anything that looks like an auth/password literal in raw RCON strings
+    cloned.command = cloned.command.replace(/(password\s*[:=]\s*)\S+/gi, '$1••••');
+  }
+  return cloned;
+}
+
+async function buildRecentEvents() {
+  let serverEvents = [];
+  let commandHistory = [];
+  let playerLogs = [];
+  let scheduleHistory = [];
+  let bridgeLogs = [];
+
+  try {
+    const db = await getDb();
+    serverEvents = (db?.data?.server_events || []).slice(0, 50);
+    scheduleHistory = (db?.data?.schedule_history || []).slice(0, 50);
+  } catch (e) {
+    serverEvents = [{ _error: e.message }];
+  }
+  try {
+    commandHistory = (await getCommandHistory(100)).map(sanitizeCommandHistoryEntry);
+  } catch (e) {
+    commandHistory = [{ _error: e.message }];
+  }
+  try { playerLogs = await getPlayerLogs(null, 100); } catch (e) { playerLogs = [{ _error: e.message }]; }
+  try { bridgeLogs = await getBridgeLogs(100); } catch (e) { bridgeLogs = [{ _error: e.message }]; }
+
+  return {
+    serverEvents: sanitizeForBundle(serverEvents),
+    commandHistory: sanitizeForBundle(commandHistory),
+    playerLogs: sanitizeForBundle(playerLogs),
+    scheduleHistory: sanitizeForBundle(scheduleHistory),
+    bridgeLogs: sanitizeForBundle(bridgeLogs)
+  };
+}
+
+async function buildPerformanceHistory() {
+  try {
+    return await getPerformanceHistory(180); // up to 3h at 1-min samples
+  } catch (e) {
+    return { _error: e.message };
+  }
+}
+
+async function buildDbStats() {
+  try {
+    const stats = await getDatabaseStats();
+    return sanitizeForBundle(stats);
+  } catch (e) {
+    return { _error: e.message };
+  }
+}
+
+function buildBridgeStatus() {
+  try {
+    const status = panelBridgeService?.getStatus?.() || null;
+    if (!status) return { available: false };
+
+    const enriched = { ...status };
+    // Add mtimes of the IPC files for forensics
+    if (status.bridgePath) {
+      const probe = ['commands.json', 'results.json', 'status.json'];
+      enriched.ipcFiles = {};
+      for (const name of probe) {
+        const fp = path.join(status.bridgePath, name);
+        try {
+          if (fs.existsSync(fp)) {
+            const s = fs.statSync(fp);
+            enriched.ipcFiles[name] = {
+              exists: true,
+              size: s.size,
+              modified: s.mtime.toISOString(),
+              ageSeconds: Math.round((Date.now() - s.mtimeMs) / 1000)
+            };
+          } else {
+            enriched.ipcFiles[name] = { exists: false };
+          }
+        } catch (e) {
+          enriched.ipcFiles[name] = { error: e.message };
+        }
+      }
+    }
+    return sanitizeForBundle(enriched);
+  } catch (e) {
+    return { _error: e.message };
+  }
+}
+
+async function buildProcessSnapshot() {
+  return {
+    title: process.title,
+    versions: process.versions,
+    features: process.features,
+    resourceUsage: typeof process.resourceUsage === 'function' ? process.resourceUsage() : null,
+    activeRequests: typeof process._getActiveRequests === 'function' ? process._getActiveRequests().length : null,
+    activeHandles: typeof process._getActiveHandles === 'function' ? process._getActiveHandles().length : null
+  };
+}
+
+async function buildNetworkInterfaces() {
+  try {
+    const ifaces = os.networkInterfaces();
+    // Strip MAC + scopeid so we don't ship hardware identifiers
+    const sanitized = {};
+    for (const [name, addrs] of Object.entries(ifaces || {})) {
+      sanitized[name] = (addrs || []).map((a) => ({
+        address: a.address,
+        family: a.family,
+        internal: a.internal,
+        cidr: a.cidr
+      }));
+    }
+    return sanitized;
+  } catch (e) {
+    return { _error: e.message };
+  }
+}
+
+function buildBundleReadme() {
+  return [
+    '# Project Zomboid Control Panel — Support Bundle',
+    '',
+    '## Where to look first',
+    '',
+    '1. `support-bundle-info.txt` — high-level summary, paths used.',
+    '2. `system-info.json` — panel version, OS, RAM, disk free.',
+    '3. `panel-config.json` — sanitized settings + servers list (passwords/tokens masked).',
+    '4. `zomboid-paths.json` — what the panel thinks the data/install paths are, all probed candidates, and dir listings of `Saves/`, `Saves/Multiplayer/`, `Server/`, `Logs/`, etc.',
+    '5. `bridge-status.json` — PanelBridge connection, IPC file ages.',
+    '6. `recent-events.json` — last server starts/stops, RCON commands, player join/leave, scheduled task runs.',
+    '7. `db-stats.json` — record counts per collection.',
+    '8. `performance-history.json` — recent CPU/RAM samples.',
+    '9. `environment.txt` — relevant env vars (secrets show as `<set>`/`<unset>` only).',
+    '10. `network-interfaces.json` — local IPs (no MACs).',
+    '11. `process.json` — process flags, versions, active handle counts.',
+    '',
+    '## Then the raw logs',
+    '',
+    '- `admin-panel/` — `combined.log`, `error.log` from the panel itself.',
+    '  Grep for `ERROR`, `rejection`, `ECONN`, `EACCES`, `Failed to`.',
+    '- `zomboid-server/` — `server-console.txt` and runtime logs from PZ.',
+    '  Grep for `ERROR`, `Exception`, `Object tried to call nil`, `Stack trace`.',
+    '- `zomboid-install/` — connection/workshop/system logs from the install side.',
+    '- `crash-logs/` — Java/JVM crash dumps (`hs_err_pid*.log`) and matching error logs.',
+    '',
+    '## What is NOT in this bundle',
+    '',
+    '- Plaintext RCON / Discord / Steam credentials (masked).',
+    '- Full environment variable values (only allow-listed keys show values).',
+    '- MAC addresses (network interfaces list IPs only).',
+    '- The LowDB file itself (`db.json`) — only sanitized excerpts.',
+    '',
+    'Generated by ZomboidControlPanel — see https://github.com/fpsacha/zomboid-control-panel',
+    ''
+  ].join('\n');
+}
+
+async function buildBundleDiagnostics(activeServer) {
+  // Run all collectors in parallel — each one is wrapped so a single failure
+  // doesn't kill the whole bundle.
+  const wrap = async (name, fn) => {
+    try {
+      return [name, await fn()];
+    } catch (e) {
+      return [name, { _error: e?.message || String(e) }];
+    }
+  };
+
+  const results = await Promise.all([
+    wrap('system-info.json', () => buildSystemInfo(activeServer)),
+    wrap('panel-config.json', () => buildPanelConfig(activeServer)),
+    wrap('zomboid-paths.json', () => buildZomboidPaths(activeServer)),
+    wrap('recent-events.json', () => buildRecentEvents()),
+    wrap('performance-history.json', () => buildPerformanceHistory()),
+    wrap('db-stats.json', () => buildDbStats()),
+    wrap('bridge-status.json', async () => buildBridgeStatus()),
+    wrap('process.json', () => buildProcessSnapshot()),
+    wrap('network-interfaces.json', () => buildNetworkInterfaces()),
+    wrap('in-memory-log-buffer.json', async () => ({ total: logBuffer.length, entries: logBuffer.slice(-MAX_BUFFER_SIZE) }))
+  ]);
+
+  const files = [
+    { name: 'README.md', content: buildBundleReadme() },
+    { name: 'environment.txt', content: await buildEnvironmentReport().catch((e) => `# error: ${e.message}\n`) }
+  ];
+  for (const [name, value] of results) {
+    files.push({ name, content: JSON.stringify(value, null, 2) });
+  }
+  return files;
 }
 
 async function getSupportBundleEntries() {
@@ -367,6 +805,21 @@ router.get('/logs/download-zip', async (req, res) => {
 
     for (const entry of entries) {
       archive.file(entry.filePath, { name: entry.archivePath });
+    }
+
+    // ── Diagnostic JSON files (best-effort; collectors never throw) ──
+    try {
+      const diagnostics = await buildBundleDiagnostics(activeServer);
+      for (const f of diagnostics) {
+        archive.append(f.content, { name: f.name });
+      }
+      log.info(`Support bundle: appended ${diagnostics.length} diagnostic files + ${entries.length} log files`);
+    } catch (diagErr) {
+      log.warn(`Support bundle diagnostics failed: ${diagErr.message}`);
+      archive.append(
+        `Diagnostic collection failed: ${diagErr.message}\nStack:\n${diagErr.stack || '(no stack)'}\n`,
+        { name: 'diagnostics-error.txt' }
+      );
     }
 
     archive.finalize();

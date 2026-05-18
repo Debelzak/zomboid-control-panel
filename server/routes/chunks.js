@@ -3,9 +3,18 @@ import fs from 'fs';
 import path from 'path';
 import { createLogger } from '../utils/logger.js';
 const log = createLogger('API:Chunks');
-import { getSetting, getActiveServer } from '../database/init.js';
+import { getSetting, setSetting, getActiveServer, updateServer } from '../database/init.js';
 import { sanitizeError } from '../utils/sanitize.js';
 import { deleteVehiclesInBoxes } from '../utils/vehiclesDb.js';
+import {
+  normalizeUserPath,
+  getCandidateZomboidPaths,
+  invalidateCandidatePathsCache,
+  inspectZomboidPath,
+} from '../utils/zomboidPaths.js';
+
+// Re-export for tests / other modules that still pull these from chunks.js.
+export { normalizeUserPath, getCandidateZomboidPaths };
 
 const router = express.Router();
 
@@ -142,12 +151,12 @@ async function getZomboidDataPath() {
   // First try active server (multi-server support)
   const activeServer = await getActiveServer();
   if (activeServer?.zomboidDataPath) {
-    return activeServer.zomboidDataPath;
+    return normalizeUserPath(activeServer.zomboidDataPath);
   }
   
   // Fallback to legacy settings
   const legacyPath = await getSetting('zomboidDataPath');
-  return legacyPath || null;
+  return normalizeUserPath(legacyPath) || null;
 }
 
 function resolveSavesPath(zomboidDataPath) {
@@ -168,24 +177,71 @@ function resolveSavesPath(zomboidDataPath) {
 
 function resolveCustomOrDefaultDataPath(customPath) {
   if (!customPath) return null;
-  const normalized = path.resolve(customPath);
+  const cleaned = normalizeUserPath(customPath);
+  if (!cleaned) return null;
+  const normalized = path.resolve(cleaned);
   if (!fs.existsSync(normalized)) {
-    const error = new Error('Custom path does not exist');
+    const error = new Error(
+      `Custom path does not exist: ${normalized}. ` +
+      `Check for typos and verify the panel has read access to this folder.`
+    );
     error.statusCode = 400;
+    error.details = { reason: 'not-found', tried: normalized };
     throw error;
   }
-  // Validate the path looks like a Zomboid data directory to prevent arbitrary filesystem access.
-  // Must contain a Saves or Server subdirectory, or itself be inside a Zomboid-related path.
-  const lower = normalized.toLowerCase().replace(/\\/g, '/');
-  const hasSavesDir = fs.existsSync(path.join(normalized, 'Saves'));
-  const isInsideSavesDir = lower.includes('/saves');
-  const hasZomboidMarker = lower.includes('zomboid') || lower.includes('projectzomboid');
-  if (!hasSavesDir && !isInsideSavesDir && !hasZomboidMarker) {
-    const error = new Error('Path does not appear to be a Zomboid data directory');
-    error.statusCode = 403;
+  try {
+    if (!fs.statSync(normalized).isDirectory()) {
+      const error = new Error(`Custom path is not a directory: ${normalized}`);
+      error.statusCode = 400;
+      error.details = { reason: 'not-a-directory', tried: normalized };
+      throw error;
+    }
+  } catch (e) {
+    if (e.statusCode) throw e;
+    const error = new Error(`Could not read custom path (${e.code || 'error'}): ${normalized}`);
+    error.statusCode = 400;
+    error.details = { reason: 'stat-failed', tried: normalized, errorCode: e.code };
     throw error;
   }
-  return normalized;
+
+  const verdict = inspectZomboidPath(normalized);
+  if (verdict.ok) return normalized;
+
+  // Structured rejection — caller surfaces these in the debug payload so the
+  // frontend can render targeted remediation (parent suggestion, "this is the
+  // server install", etc.) instead of just a generic "doesn't look like…".
+  if (verdict.reason === 'install-folder') {
+    log.warn(`[ChunkCleaner] Rejected custom path (server install folder): ${normalized}`);
+    const error = new Error(
+      'This folder looks like a Project Zomboid server install (it contains ' +
+      'ProjectZomboid64.exe / .json or similar). ' +
+      'Point at the user data folder instead — usually ' +
+      (process.platform === 'win32' ? 'C:\\Users\\<you>\\Zomboid' : '~/Zomboid') +
+      ' — not the server folder.'
+    );
+    error.statusCode = 400;
+    error.details = { reason: 'install-folder', tried: normalized, checks: verdict.checks };
+    throw error;
+  }
+
+  // No Zomboid markers anywhere. If they pointed at .../Saves or
+  // .../Multiplayer (common copy-paste mistake), suggest the parent.
+  log.warn(`[ChunkCleaner] Rejected custom path (no Zomboid markers found): ${normalized}`);
+  let msg = 'Path does not appear to be a Zomboid data directory. ' +
+            'Point at your Zomboid data folder (the one containing Saves/), ' +
+            'a Saves/Multiplayer folder, or an individual save directory.';
+  if (verdict.parentSuggestion) {
+    msg += ` Did you mean ${verdict.parentSuggestion}?`;
+  }
+  const error = new Error(msg);
+  error.statusCode = 403;
+  error.details = {
+    reason: 'no-zomboid-markers',
+    tried: normalized,
+    checks: verdict.checks,
+    parentSuggestion: verdict.parentSuggestion || null,
+  };
+  throw error;
 }
 
 // Get list of available saves
@@ -195,6 +251,9 @@ router.get('/saves', async (req, res) => {
     const customPath = req.query.customPath ? String(req.query.customPath) : null;
     
     let zomboidDataPath;
+    // Tracks whether we silently selected a candidate path when none was
+    // configured — surfaced to the UI so the user can confirm/persist it.
+    let autoPickedFrom = null;
     if (customPath) {
       // Validate custom path exists and is a directory
       const normalized = resolveCustomOrDefaultDataPath(customPath);
@@ -205,11 +264,39 @@ router.get('/saves', async (req, res) => {
     }
     
     if (!zomboidDataPath) {
-      return res.status(400).json({ error: 'Zomboid data path not set. Configure a server first.' });
+      // No path configured — before bouncing to an error, try to auto-pick
+      // a candidate that has saves on disk. This is the common case for a
+      // fresh install where the panel was started before any server was
+      // configured. Pick only if exactly one candidate has saves to avoid
+      // silently choosing the wrong one when multiple installs exist.
+      const candidates = getCandidateZomboidPaths();
+      const withSaves = candidates.filter(c => c.hasSaves);
+      if (withSaves.length === 1) {
+        zomboidDataPath = withSaves[0].path;
+        autoPickedFrom = zomboidDataPath;
+        log.info(`[ChunkCleaner] Auto-picked Zomboid data path: ${zomboidDataPath}`);
+      } else {
+        return res.status(400).json({
+          error:
+            'Zomboid data path not set. ' +
+            'Configure a server in Settings → Servers, or use the Custom path field below to point at your Zomboid folder.',
+          debug: {
+            zomboidDataPath: null,
+            savesPath: null,
+            exists: false,
+            usedCustomPath: false,
+            hint: withSaves.length > 1
+              ? `Found ${withSaves.length} candidate folders with saves — pick one below.`
+              : 'No Zomboid data folder is configured for this panel.',
+            suggestedPaths: candidates,
+          },
+        });
+      }
     }
     
     // Try the standard path first, then check if the path IS a Saves/Multiplayer dir directly
     let savesPath = resolveSavesPath(zomboidDataPath);
+    const attempted = [savesPath];
     
     if (!fs.existsSync(savesPath)) {
       // Maybe the user pointed directly to Saves/Multiplayer
@@ -220,22 +307,63 @@ router.get('/saves', async (req, res) => {
         log.info(`[ChunkCleaner] Path points directly to Saves/Multiplayer`);
       } else if (basename === 'Saves') {
         savesPath = path.join(zomboidDataPath, 'Multiplayer');
+        attempted.push(savesPath);
         log.info(`[ChunkCleaner] Path points directly to Saves dir`);
       } else {
         log.warn(`[ChunkCleaner] Saves path not found: ${savesPath}`);
         log.info(`[ChunkCleaner] zomboidDataPath: ${zomboidDataPath}`);
-        return res.json({ saves: [] });
+        return res.json({
+          saves: [],
+          debug: {
+            zomboidDataPath,
+            savesPath,
+            exists: false,
+            usedCustomPath: Boolean(customPath),
+            attempted,
+            hint:
+              `Looked for ${path.join('Saves', 'Multiplayer')} inside the data folder but didn't find it. ` +
+              `Has this server ever been started, or is the data path pointing at the wrong place?`,
+            suggestedPaths: customPath ? [] : getCandidateZomboidPaths(),
+          },
+        });
       }
     }
     
     if (!fs.existsSync(savesPath)) {
       log.warn(`[ChunkCleaner] Resolved saves path does not exist: ${savesPath}`);
-      return res.json({ saves: [] });
+      return res.json({
+        saves: [],
+        debug: {
+          zomboidDataPath,
+          savesPath,
+          exists: false,
+          usedCustomPath: Boolean(customPath),
+          attempted,
+          hint: `The resolved saves folder doesn't exist on disk. Start the server once to create it, or pick a different data path.`,
+          suggestedPaths: customPath ? [] : getCandidateZomboidPaths(),
+        },
+      });
     }
     
     log.info(`[ChunkCleaner] Listing saves from: ${savesPath}`);
     
-    const entries = await fs.promises.readdir(savesPath, { withFileTypes: true });
+    let entries;
+    try {
+      entries = await fs.promises.readdir(savesPath, { withFileTypes: true });
+    } catch (e) {
+      log.warn(`[ChunkCleaner] Failed to read saves dir ${savesPath}: ${e.message}`);
+      const code = e.code || 'EREAD';
+      const hint = code === 'EACCES' || code === 'EPERM'
+        ? `Panel does not have permission to read this folder. On Linux, check that the panel runs as the same user that owns the Zomboid folder (or fix permissions with chown/chmod).`
+        : `Could not read the saves folder (${code}).`;
+      return res.status(403).json({
+        error: hint,
+        debug: {
+          zomboidDataPath, savesPath, exists: true, usedCustomPath: Boolean(customPath),
+          attempted, hint, errorCode: code,
+        },
+      });
+    }
     const directories = entries.filter(d => d.isDirectory());
     
     log.info(`[ChunkCleaner] Found ${directories.length} save directories: ${directories.map(d => d.name).join(', ')}`);
@@ -275,10 +403,91 @@ router.get('/saves', async (req, res) => {
         };
       }));
     
-    res.json({ saves });
+    res.json({
+      saves,
+      debug: {
+        zomboidDataPath,
+        savesPath,
+        exists: true,
+        usedCustomPath: Boolean(customPath),
+        autoPicked: autoPickedFrom,
+        hint: saves.length === 0
+          ? `Saves folder exists but contains no save directories. Start the server once, or pick a different folder.`
+          : null,
+        suggestedPaths: saves.length === 0 && !customPath ? getCandidateZomboidPaths() : [],
+      },
+    });
   } catch (error) {
     log.error(`Failed to get saves: ${error.message}`);
-    res.status(error.statusCode || 500).json({ error: sanitizeError(error.message) });
+    // Forward structured rejection details (reason, checks, parentSuggestion)
+    // so the frontend empty-state panel can render targeted remediation.
+    const payload = { error: sanitizeError(error.message) };
+    if (error.details) {
+      payload.debug = {
+        zomboidDataPath: null,
+        savesPath: null,
+        exists: false,
+        usedCustomPath: true,
+        hint: error.message,
+        rejection: error.details,
+        suggestedPaths: getCandidateZomboidPaths(),
+      };
+    }
+    res.status(error.statusCode || 500).json(payload);
+  }
+});
+
+// List common Zomboid path candidates so the UI can present clickable
+// suggestions when the panel can't find a data folder on its own.
+router.get('/suggested-paths', async (req, res) => {
+  try {
+    // Allow the UI to bust the 30s cache after the user creates/moves a
+    // folder (?refresh=1) so suggestions update without a panel restart.
+    if (req?.query?.refresh) invalidateCandidatePathsCache();
+    res.json({ candidates: getCandidateZomboidPaths(), platform: process.platform });
+  } catch (error) {
+    log.error(`Failed to enumerate suggested paths: ${error.message}`);
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
+// Persist a custom path as the panel's configured Zomboid data folder.
+// Writes to the active server's `zomboidDataPath` when one exists, otherwise
+// to the legacy flat setting. The path is validated with the same rules as
+// the /saves customPath query parameter so users can't smuggle in arbitrary
+// directories via this endpoint.
+router.post('/save-path', async (req, res) => {
+  try {
+    const { path: rawPath } = req.body || {};
+    if (!rawPath || typeof rawPath !== 'string') {
+      return res.status(400).json({ error: 'Missing path.' });
+    }
+    let validated;
+    try {
+      validated = resolveCustomOrDefaultDataPath(rawPath);
+    } catch (e) {
+      // Surface validation details so the UI can render the same empty-state
+      // remediation it gets from /saves.
+      const payload = { error: sanitizeError(e.message) };
+      if (e.details) payload.rejection = e.details;
+      return res.status(e.statusCode || 400).json(payload);
+    }
+    if (!validated) {
+      return res.status(400).json({ error: 'Path is empty after normalization.' });
+    }
+
+    const activeServer = await getActiveServer();
+    if (activeServer?.id) {
+      await updateServer(activeServer.id, { zomboidDataPath: validated });
+      log.info(`[ChunkCleaner] Saved zomboidDataPath to active server "${activeServer.name}": ${validated}`);
+      return res.json({ ok: true, target: 'server', serverId: activeServer.id, path: validated });
+    }
+    await setSetting('zomboidDataPath', validated);
+    log.info(`[ChunkCleaner] Saved zomboidDataPath to legacy settings: ${validated}`);
+    res.json({ ok: true, target: 'setting', path: validated });
+  } catch (error) {
+    log.error(`Failed to save zomboid data path: ${error.message}`);
+    res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
 

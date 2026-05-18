@@ -18,6 +18,9 @@ import {
   FolderOpen,
   Car,
   Home,
+  CheckCircle2,
+  XCircle,
+  HelpCircle,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { PageHeader } from '@/components/PageHeader'
@@ -207,7 +210,26 @@ export default function ChunkCleaner() {
   // Custom path override for manual folder navigation
   const [customPath, setCustomPath] = useState<string>('')
   const [customPathInput, setCustomPathInput] = useState<string>('')
-  const [debugInfo, setDebugInfo] = useState<{ zomboidDataPath?: string; savesPath?: string; exists?: boolean } | null>(null)
+  const [debugInfo, setDebugInfo] = useState<{
+    zomboidDataPath?: string | null
+    savesPath?: string | null
+    exists?: boolean
+    usedCustomPath?: boolean
+    autoPicked?: string | null
+    hint?: string | null
+    attempted?: string[]
+    suggestedPaths?: Array<{ path: string; exists: boolean; hasSaves: boolean }>
+    errorCode?: string
+    rejection?: {
+      reason?: 'not-found' | 'not-a-directory' | 'stat-failed' | 'install-folder' | 'no-zomboid-markers'
+      tried?: string
+      parentSuggestion?: string | null
+      checks?: Record<string, boolean>
+    }
+  } | null>(null)
+  // Last loadSaves error message (kept so we can surface remediation hints in
+  // the empty state instead of relying purely on transient toasts).
+  const [loadError, setLoadError] = useState<string | null>(null)
   
   // Canvas refs  
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -328,18 +350,40 @@ export default function ChunkCleaner() {
   // ─── Data loading ───
   const fetchSaves = useCallback(async (pathOverride?: string) => {
     setLoadingSaves(true)
+    setLoadError(null)
     try {
       const pathToUse = pathOverride ?? (customPath || undefined)
       const result = await chunksApi.getSaves(pathToUse)
       setSaves(result.saves || [])
-      if (result.debug) setDebugInfo(result.debug)
+      // Backend now always returns a `debug` block; preserve it for the
+      // empty state so users can see exactly what was tried.
+      setDebugInfo(result.debug ?? null)
+      if (result.debug?.hint && (!result.saves || result.saves.length === 0)) {
+        setLoadError(result.debug.hint)
+      }
       return result.saves || []
     } catch (error) {
+      // Server attaches the full payload (including the diagnostic `debug`
+      // block) to ApiError.data — surface that to the empty-state panel so
+      // the user gets the same hints/suggestions as the success path.
+      const apiErr = error instanceof ApiError ? error : null
+      const payload = (apiErr?.data ?? null) as { debug?: NonNullable<typeof debugInfo> } | null
+      const message = (error instanceof Error && error.message) || 'Failed to load save folders.'
+      setLoadError(message)
+      if (payload?.debug) setDebugInfo(payload.debug)
       toast({
         title: 'Could Not Load Saves',
-        description: error instanceof Error ? error.message : 'Failed to load save folders.',
+        description: message,
         variant: 'destructive',
       })
+      // If the server didn't ship debug info on this error, fetch suggested
+      // paths anyway so the user has something actionable to click.
+      if (!payload?.debug) {
+        try {
+          const suggested = await chunksApi.suggestedPaths()
+          setDebugInfo((prev) => prev ?? { suggestedPaths: suggested?.candidates ?? [], hint: message })
+        } catch { /* best-effort */ }
+      }
       return []
     } finally {
       setLoadingSaves(false)
@@ -378,6 +422,45 @@ export default function ChunkCleaner() {
     setDebugInfo(null)
     await fetchSaves('')
   }, [fetchSaves])
+
+  // One-click "try this path" handler for the empty-state suggestions panel.
+  // Pre-fills the custom path input and triggers a fetch in one motion so the
+  // user doesn't have to copy/paste from the suggestion list.
+  const useSuggestedPath = useCallback(async (suggested: string) => {
+    setCustomPathInput(suggested)
+    setCustomPath(suggested)
+    setSelectedSave('')
+    setShowCustomPath(true)
+    await fetchSaves(suggested)
+  }, [fetchSaves])
+
+  // Persist the currently-loaded custom (or auto-picked) path as the panel's
+  // configured Zomboid data folder so the user doesn't have to re-enter it
+  // every session. Writes to the active server when one exists, otherwise to
+  // legacy settings — the backend decides.
+  const [savingPath, setSavingPath] = useState(false)
+  const persistCurrentPath = useCallback(async (pathToSave: string) => {
+    if (!pathToSave) return
+    setSavingPath(true)
+    try {
+      const result = await chunksApi.savePath(pathToSave)
+      toast({
+        title: 'Path Saved',
+        description: result.target === 'server'
+          ? 'Saved to the active server config — the panel will use this path next time.'
+          : 'Saved to panel settings.',
+      })
+      // Clear customPath since the panel now uses it as the default.
+      setCustomPath('')
+      setCustomPathInput('')
+      await fetchSaves('')
+    } catch (error) {
+      const message = (error instanceof Error && error.message) || 'Failed to save path.'
+      toast({ title: 'Could Not Save Path', description: message, variant: 'destructive' })
+    } finally {
+      setSavingPath(false)
+    }
+  }, [fetchSaves, toast])
 
   const loadChunks = useCallback(async () => {
     if (!selectedSave) return
@@ -1521,16 +1604,34 @@ export default function ChunkCleaner() {
                     <SelectValue placeholder={loadingSaves ? 'Loading saves...' : 'Choose a save...'} />
                   </SelectTrigger>
                   <SelectContent>
-                    {saves.map(save => (
-                      <SelectItem key={save.name} value={save.name}>
-                        <div className="flex items-center justify-between w-full">
-                          <span>{save.name}</span>
-                          <Badge variant="secondary" className="ml-2 text-xs">
-                            {save.sizeFormatted}
-                          </Badge>
-                        </div>
-                      </SelectItem>
-                    ))}
+                    {saves.map(save => {
+                      let modifiedLabel = ''
+                      if (save.modified) {
+                        try {
+                          const d = new Date(save.modified)
+                          const ageDays = (Date.now() - d.getTime()) / 86_400_000
+                          if (ageDays < 1) modifiedLabel = 'today'
+                          else if (ageDays < 2) modifiedLabel = 'yesterday'
+                          else if (ageDays < 30) modifiedLabel = `${Math.floor(ageDays)}d ago`
+                          else modifiedLabel = d.toLocaleDateString()
+                        } catch { /* leave empty */ }
+                      }
+                      return (
+                        <SelectItem key={save.name} value={save.name}>
+                          <div className="flex items-center justify-between gap-2 w-full">
+                            <div className="flex flex-col min-w-0">
+                              <span className="truncate">{save.name}</span>
+                              {modifiedLabel && (
+                                <span className="text-[10px] text-muted-foreground">{modifiedLabel}</span>
+                              )}
+                            </div>
+                            <Badge variant="secondary" className="ml-2 text-xs shrink-0">
+                              {save.sizeFormatted}
+                            </Badge>
+                          </div>
+                        </SelectItem>
+                      )
+                    })}
                   </SelectContent>
                 </Select>
                 
@@ -1558,7 +1659,7 @@ export default function ChunkCleaner() {
                       <Input
                         value={customPathInput}
                         onChange={(e) => setCustomPathInput(e.target.value)}
-                        placeholder="e.g. /home/user/Zomboid"
+                        placeholder="~/Zomboid  or  C:\Users\…\Zomboid"
                         aria-label="Custom server path"
                         className="text-xs h-7"
                         onKeyDown={(e) => {
@@ -1577,20 +1678,56 @@ export default function ChunkCleaner() {
                         Load
                       </Button>
                     </div>
+                    <p className="text-[10px] text-muted-foreground/80 leading-snug">
+                      Point at your Zomboid data folder, a <span className="font-mono">Saves/Multiplayer</span> folder,
+                      or a single save directory. <span className="font-mono">~</span> and environment vars
+                      (<span className="font-mono">%USERPROFILE%</span>, <span className="font-mono">$HOME</span>) are expanded.
+                    </p>
                     {customPath && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="w-full h-6 text-[10px] text-muted-foreground"
-                        onClick={() => void resetToDefaultPath()}
-                        disabled={loadingSaves}
-                      >
-                        Reset to default path
-                      </Button>
+                      <div className="flex gap-1.5">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="flex-1 h-6 text-[10px]"
+                          onClick={() => void persistCurrentPath(customPath)}
+                          disabled={savingPath || loadingSaves}
+                          title="Make this the panel's default Zomboid data folder so you don't have to re-enter it."
+                        >
+                          <Save className="w-3 h-3 mr-1" />
+                          {savingPath ? 'Saving...' : 'Save as default'}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="flex-1 h-6 text-[10px] text-muted-foreground"
+                          onClick={() => void resetToDefaultPath()}
+                          disabled={loadingSaves}
+                        >
+                          Reset
+                        </Button>
+                      </div>
                     )}
                     <div className="rounded border border-border/40 bg-muted/20 px-2 py-1.5 text-[10px] text-muted-foreground break-all">
                       {activePathLabel}
                     </div>
+                    {debugInfo?.autoPicked && !customPath && (
+                      <div className="rounded border border-primary/30 bg-primary/5 px-2 py-1.5 text-[10px] space-y-1">
+                        <div className="flex items-start gap-1.5">
+                          <CheckCircle2 className="w-3 h-3 text-primary shrink-0 mt-0.5" />
+                          <span>Auto-detected this folder. Save it as the default?</span>
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full h-6 text-[10px]"
+                          onClick={() => void persistCurrentPath(debugInfo.autoPicked!)}
+                          disabled={savingPath}
+                        >
+                          <Save className="w-3 h-3 mr-1" />
+                          {savingPath ? 'Saving...' : 'Save as default'}
+                        </Button>
+                      </div>
+                    )}
                   </CollapsibleContent>
                 </Collapsible>
               </CardContent>
@@ -1772,15 +1909,173 @@ export default function ChunkCleaner() {
             <Card className="flex flex-col h-[24rem] min-h-[320px] sm:h-[30rem] lg:h-[36rem]">
               <CardContent className="flex-1 p-2 min-h-0">
                 {!selectedSave ? (
-                  <div className="h-full flex items-center justify-center text-muted-foreground">
-                    <div className="text-center max-w-xs">
-                      <FileBox className="w-10 h-10 mx-auto mb-3 opacity-40" />
-                      <p className="font-medium text-foreground text-sm">Select a save</p>
-                      <p className="text-xs mt-1.5 opacity-70">
-                        {hasSaves ? 'Choose a save from the panel to review chunk data.' : 'No saves found — set a custom data path.'}
-                      </p>
+                  hasSaves ? (
+                    <div className="h-full flex items-center justify-center text-muted-foreground">
+                      <div className="text-center max-w-xs">
+                        <FileBox className="w-10 h-10 mx-auto mb-3 opacity-40" />
+                        <p className="font-medium text-foreground text-sm">Select a save</p>
+                        <p className="text-xs mt-1.5 opacity-70">
+                          Choose a save from the panel to review chunk data.
+                        </p>
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    /* No saves found — show what was tried, why, and offer one-click fixes. */
+                    <div className="h-full overflow-y-auto p-4 sm:p-6">
+                      <div className="max-w-xl mx-auto space-y-4">
+                        <div className="text-center">
+                          <FileBox className="w-10 h-10 mx-auto mb-2 opacity-40" />
+                          <p className="font-medium text-foreground text-sm">No saves found</p>
+                          <p className="text-xs mt-1 text-muted-foreground">
+                            The panel couldn&rsquo;t list any saves with the current data path.
+                          </p>
+                        </div>
+
+                        {/* What we tried */}
+                        <div className="rounded-md border border-border/60 bg-muted/20 px-3 py-2.5 space-y-1.5">
+                          <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                            <Info className="w-3 h-3" /> What the panel tried
+                          </div>
+                          <div className="text-[11px] space-y-1">
+                            <div className="flex gap-2">
+                              <span className="text-muted-foreground shrink-0 w-20">Data folder</span>
+                              <span className="font-mono break-all">{debugInfo?.zomboidDataPath ?? '— (not configured)'}</span>
+                            </div>
+                            {debugInfo?.savesPath && (
+                              <div className="flex gap-2">
+                                <span className="text-muted-foreground shrink-0 w-20">Saves folder</span>
+                                <span className="font-mono break-all">{debugInfo.savesPath}</span>
+                                {debugInfo.exists ? (
+                                  <CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0 mt-0.5" />
+                                ) : (
+                                  <XCircle className="w-3 h-3 text-destructive shrink-0 mt-0.5" />
+                                )}
+                              </div>
+                            )}
+                            {debugInfo?.attempted && debugInfo.attempted.length > 1 && (
+                              <div className="flex gap-2">
+                                <span className="text-muted-foreground shrink-0 w-20">Also checked</span>
+                                <span className="font-mono break-all opacity-75">{debugInfo.attempted.slice(1).join(', ')}</span>
+                              </div>
+                            )}
+                          </div>
+                          {(debugInfo?.hint || loadError) && (
+                            <p className="text-[11px] text-warning/90 pt-1 flex gap-1.5">
+                              <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />
+                              <span>{debugInfo?.hint || loadError}</span>
+                            </p>
+                          )}
+                          {/* Structured rejection diagnostics — show why the validator turned the path down. */}
+                          {debugInfo?.rejection && (
+                            <div className="pt-1 space-y-1">
+                              {debugInfo.rejection.tried && (
+                                <div className="text-[10px] text-muted-foreground">
+                                  Tried: <span className="font-mono break-all">{debugInfo.rejection.tried}</span>
+                                </div>
+                              )}
+                              {debugInfo.rejection.reason === 'install-folder' && (
+                                <p className="text-[10px] text-destructive/90">
+                                  Looks like a server install folder — point at the user data folder instead.
+                                </p>
+                              )}
+                              {debugInfo.rejection.parentSuggestion && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 text-[10px]"
+                                  onClick={() => void useSuggestedPath(debugInfo.rejection!.parentSuggestion!)}
+                                >
+                                  <FolderOpen className="w-3 h-3 mr-1" />
+                                  Try parent: <span className="font-mono ml-1 truncate max-w-[180px]">{debugInfo.rejection.parentSuggestion}</span>
+                                </Button>
+                              )}
+                              {debugInfo.rejection.checks && debugInfo.rejection.reason === 'no-zomboid-markers' && (
+                                <details className="text-[10px] text-muted-foreground">
+                                  <summary className="cursor-pointer hover:text-foreground/80">Why was this rejected?</summary>
+                                  <ul className="pl-3 pt-1 space-y-0.5">
+                                    {Object.entries(debugInfo.rejection.checks).map(([k, v]) => (
+                                      <li key={k} className="flex gap-1.5 items-center">
+                                        {v
+                                          ? <CheckCircle2 className="w-2.5 h-2.5 text-emerald-500" />
+                                          : <XCircle className="w-2.5 h-2.5 text-destructive/60" />}
+                                        <span className="font-mono">{k}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </details>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Suggested paths */}
+                        {debugInfo?.suggestedPaths && debugInfo.suggestedPaths.length > 0 && (
+                          <div className="rounded-md border border-border/60 bg-muted/10 px-3 py-2.5 space-y-2">
+                            <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                              <FolderOpen className="w-3 h-3" /> Try a common location
+                            </div>
+                            <ul className="space-y-1">
+                              {debugInfo.suggestedPaths.map((s) => (
+                                <li key={s.path} className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => void useSuggestedPath(s.path)}
+                                    disabled={!s.exists || loadingSaves}
+                                    className="flex-1 text-left text-[11px] font-mono px-2 py-1 rounded border border-border/40 bg-background hover:bg-accent/30 disabled:opacity-40 disabled:cursor-not-allowed transition-colors break-all"
+                                    title={s.exists ? (s.hasSaves ? 'Has saves — click to load' : 'Folder exists — click to try') : 'Folder does not exist on this host'}
+                                  >
+                                    {s.path}
+                                  </button>
+                                  {s.hasSaves ? (
+                                    <Badge variant="secondary" className="text-[9px] h-4 px-1.5 shrink-0">has saves</Badge>
+                                  ) : s.exists ? (
+                                    <Badge variant="outline" className="text-[9px] h-4 px-1.5 shrink-0 opacity-70">exists</Badge>
+                                  ) : (
+                                    <span className="text-[9px] text-muted-foreground/60 shrink-0">missing</span>
+                                  )}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                        {/* How to find it yourself */}
+                        <div className="rounded-md border border-border/60 bg-muted/10 px-3 py-2.5 space-y-1.5">
+                          <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                            <HelpCircle className="w-3 h-3" /> How to find your data folder
+                          </div>
+                          <ul className="text-[11px] text-muted-foreground space-y-1 list-disc list-inside">
+                            <li>Windows: <span className="font-mono text-foreground/80">C:\Users\&lt;you&gt;\Zomboid</span></li>
+                            <li>Linux: <span className="font-mono text-foreground/80">~/Zomboid</span> (or wherever the server runs from)</li>
+                            <li>It must contain a <span className="font-mono text-foreground/80">Saves/Multiplayer/</span> subfolder once the server has been started at least once.</li>
+                            <li>You can also point directly at a single save folder (e.g. <span className="font-mono text-foreground/80">.../Saves/Multiplayer/MyServer</span>).</li>
+                          </ul>
+                        </div>
+
+                        <div className="flex gap-2 justify-center pt-1">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 text-xs"
+                            onClick={() => { setShowCustomPath(true) }}
+                          >
+                            <FolderOpen className="w-3.5 h-3.5 mr-1.5" />
+                            Set custom path
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 text-xs"
+                            onClick={() => void fetchSaves()}
+                            disabled={loadingSaves}
+                          >
+                            <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${loadingSaves ? 'animate-spin' : ''}`} />
+                            Try again
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  )
                 ) : loading ? (
                   <div className="h-full flex items-center justify-center">
                     <div className="text-center text-muted-foreground">
