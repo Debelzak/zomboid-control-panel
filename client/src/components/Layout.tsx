@@ -313,10 +313,13 @@ export default function Layout({ children }: LayoutProps) {
   // Track server run state for status dot on Active Server card
   useEffect(() => {
     let cancelled = false
-    const apply = (data: { isRunning?: boolean; isStarting?: boolean; isStopping?: boolean } | null) => {
+    const apply = (data: { running?: boolean; isRunning?: boolean; isStarting?: boolean; isStopping?: boolean } | null) => {
       if (cancelled || !data) return
       if (data.isStarting || data.isStopping) setServerRunState('transitioning')
-      else setServerRunState(data.isRunning ? 'running' : 'stopped')
+      else {
+        const running = typeof data.running === 'boolean' ? data.running : data.isRunning
+        if (typeof running === 'boolean') setServerRunState(running ? 'running' : 'stopped')
+      }
     }
     serverApi.getStatus().then(apply).catch(() => { /* ignore — keep 'unknown' */ })
     return () => { cancelled = true }
@@ -324,10 +327,13 @@ export default function Layout({ children }: LayoutProps) {
 
   useEffect(() => {
     if (!socket) return
-    const onStatus = (data: { isRunning?: boolean; isStarting?: boolean; isStopping?: boolean } | undefined) => {
+    const onStatus = (data: { running?: boolean; isRunning?: boolean; isStarting?: boolean; isStopping?: boolean } | undefined) => {
       if (!data) return
       if (data.isStarting || data.isStopping) setServerRunState('transitioning')
-      else if (typeof data.isRunning === 'boolean') setServerRunState(data.isRunning ? 'running' : 'stopped')
+      else {
+        const running = typeof data.running === 'boolean' ? data.running : data.isRunning
+        if (typeof running === 'boolean') setServerRunState(running ? 'running' : 'stopped')
+      }
     }
     socket.on('server:status', onStatus)
     return () => { socket.off('server:status', onStatus) }
