@@ -104,6 +104,12 @@ let _writePromise = null;
 let _dirty = false;
 let _writeRetries = 0;
 const MAX_WRITE_RETRIES = 5;
+// Exponential backoff between failed flushes: 1s, 2s, 4s, 8s, 16s (capped).
+const WRITE_BACKOFF_BASE_MS = 1000;
+const WRITE_BACKOFF_MAX_MS = 16_000;
+// Circuit breaker: once tripped, refuse to schedule further writes for a cooldown.
+let _writeCircuitOpenUntil = 0;
+const CIRCUIT_OPEN_MS = 60_000;
 let _backupTimer = null;
 let _shutdownRegistered = false;
 
@@ -114,13 +120,21 @@ let _shutdownRegistered = false;
 function scheduleWrite() {
   _dirty = true;
 
+  // Circuit breaker: if recent writes have been failing hard, defer.
+  if (Date.now() < _writeCircuitOpenUntil) return;
+
   // If there's already a pending timer, let it handle the write
   if (_writeTimer) return;
+
+  // Apply exponential backoff if we're currently retrying after failures.
+  const delay = _writeRetries > 0
+    ? Math.min(WRITE_BACKOFF_BASE_MS * Math.pow(2, _writeRetries - 1), WRITE_BACKOFF_MAX_MS)
+    : WRITE_DEBOUNCE_MS;
 
   _writeTimer = setTimeout(async () => {
     _writeTimer = null;
     await flushWrites();
-  }, WRITE_DEBOUNCE_MS);
+  }, delay);
 }
 
 /**
@@ -153,12 +167,22 @@ export async function flushWrites() {
     } catch (err) {
       _writeRetries++;
       if (_writeRetries >= MAX_WRITE_RETRIES) {
-        log.error(`DB write failed ${_writeRetries} times, giving up: ${err.message}`);
-        // Stay dirty but stop retrying — next explicit scheduleWrite will reset the counter
+        log.error(`DB write failed ${_writeRetries} times, opening circuit breaker for ${CIRCUIT_OPEN_MS / 1000}s: ${err.message}`);
+        // Open the circuit — stop scheduling writes for a cooldown so we don't pin the event loop.
+        _writeCircuitOpenUntil = Date.now() + CIRCUIT_OPEN_MS;
         _writeRetries = 0;
+        _dirty = true; // Keep dirty; next scheduleWrite after cooldown will retry.
       } else {
         log.error(`Write error (attempt ${_writeRetries}/${MAX_WRITE_RETRIES}): ${err.message}`);
-        _dirty = true; // Re-mark dirty so next scheduleWrite retries
+        _dirty = true; // Re-mark dirty so next scheduleWrite retries (with backoff)
+        // Proactively schedule a retry so we don't depend on external scheduleWrite calls.
+        if (!_writeTimer) {
+          const delay = Math.min(WRITE_BACKOFF_BASE_MS * Math.pow(2, _writeRetries - 1), WRITE_BACKOFF_MAX_MS);
+          _writeTimer = setTimeout(async () => {
+            _writeTimer = null;
+            await flushWrites();
+          }, delay);
+        }
       }
     }
   })();
@@ -738,11 +762,24 @@ export async function addTrackedMod(workshopId, name = null) {
     last_updated: null,
     last_checked: null,
     update_available: 0,
+    preview_url: null,
     created_at: new Date().toISOString()
   };
   db.data.tracked_mods.push(mod);
   scheduleWrite();
   return mod;
+}
+
+export async function setModPreviewUrl(workshopId, previewUrl) {
+  const db = await getDb();
+  const serverId = await getActiveServerId();
+  const mod = db.data.tracked_mods.find(m =>
+    m.workshop_id === workshopId && (m.server_id === serverId || !m.server_id)
+  );
+  if (mod && mod.preview_url !== previewUrl) {
+    mod.preview_url = previewUrl || null;
+    scheduleWrite();
+  }
 }
 
 export async function updateModTimestamp(workshopId, lastUpdated) {

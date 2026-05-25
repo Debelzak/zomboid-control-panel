@@ -23,11 +23,23 @@ const ACCESS_TOKEN_EXPIRY = '24h';
 const REFRESH_TOKEN_EXPIRY = '30d';
 const REFRESH_TOKEN_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000;
 const MAX_REFRESH_SESSIONS = 5;
+const MAX_FAILED_LOGINS = 10;
+const LOCKOUT_DURATION_MS = 15 * 60 * 1000;
 
 class AuthService {
   constructor() {
     this.jwtSecret = null;
     this.initialized = false;
+    // Serializes setup/createUser to prevent a race where two concurrent
+    // /api/auth/setup requests both pass the needsSetup() check.
+    this._writeMutex = Promise.resolve();
+  }
+
+  // Run a critical section serialized against other mutex holders.
+  _withMutex(fn) {
+    const run = this._writeMutex.then(fn, fn);
+    this._writeMutex = run.then(() => {}, () => {});
+    return run;
   }
 
   ensureUserAuthState(user) {
@@ -159,52 +171,54 @@ class AuthService {
    * Create a new user account (admin)
    */
   async createUser(username, password) {
-    if (!username || !password) {
-      throw new Error('Username and password are required');
-    }
+    return this._withMutex(async () => {
+      if (!username || !password) {
+        throw new Error('Username and password are required');
+      }
 
-    if (username.length < 3 || username.length > 32) {
-      throw new Error('Username must be 3-32 characters');
-    }
+      if (username.length < 3 || username.length > 32) {
+        throw new Error('Username must be 3-32 characters');
+      }
 
-    if (!/^[a-zA-Z0-9_-]+$/.test(username)) {
-      throw new Error('Username can only contain letters, numbers, underscores and hyphens');
-    }
+      if (!/^[a-zA-Z0-9_-]+$/.test(username)) {
+        throw new Error('Username can only contain letters, numbers, underscores and hyphens');
+      }
 
-    if (password.length < 6) {
-      throw new Error('Password must be at least 6 characters');
-    }
+      if (password.length < 6) {
+        throw new Error('Password must be at least 6 characters');
+      }
 
-    if (password.length > 128) {
-      throw new Error('Password must be 128 characters or fewer');
-    }
+      if (password.length > 128) {
+        throw new Error('Password must be 128 characters or fewer');
+      }
 
-    const db = await getDb();
-    if (!db.data.users) {
-      db.data.users = [];
-    }
+      const db = await getDb();
+      if (!db.data.users) {
+        db.data.users = [];
+      }
 
-    // Check for duplicate username
-    const existing = db.data.users.find(u => u.username.toLowerCase() === username.toLowerCase());
-    if (existing) {
-      throw new Error('Username already exists');
-    }
+      // Check for duplicate username
+      const existing = db.data.users.find(u => u.username.toLowerCase() === username.toLowerCase());
+      if (existing) {
+        throw new Error('Username already exists');
+      }
 
-    const hashedPassword = await bcrypt.hash(password, BCRYPT_ROUNDS);
-    const user = {
-      id: crypto.randomUUID(),
-      username,
-      password: hashedPassword,
-      role: 'admin',
-      createdAt: new Date().toISOString(),
-      lastLogin: null,
-    };
+      const hashedPassword = await bcrypt.hash(password, BCRYPT_ROUNDS);
+      const user = {
+        id: crypto.randomUUID(),
+        username,
+        password: hashedPassword,
+        role: 'admin',
+        createdAt: new Date().toISOString(),
+        lastLogin: null,
+      };
 
-    db.data.users.push(user);
-    await db.write();
+      db.data.users.push(user);
+      await db.write();
 
-    log.info(`User created: ${username}`);
-    return { id: user.id, username: user.username, role: user.role };
+      log.info(`User created: ${username}`);
+      return { id: user.id, username: user.username, role: user.role };
+    });
   }
 
   /**
@@ -224,10 +238,30 @@ class AuthService {
       throw new Error('Invalid username or password');
     }
 
-    const valid = await bcrypt.compare(password, user.password);
-    if (!valid) {
+    // Account lockout: reject early if the account is currently locked.
+    // Generic error message keeps username enumeration impossible; the lockout
+    // does leak timing (~1ms vs ~250ms) but the attacker already knows their
+    // attempts are failing, so the practical info gain is zero.
+    const lockedUntil = user.lockedUntil ? Date.parse(user.lockedUntil) : 0;
+    if (lockedUntil && lockedUntil > Date.now()) {
       throw new Error('Invalid username or password');
     }
+
+    const valid = await bcrypt.compare(password, user.password);
+    if (!valid) {
+      user.failedLoginCount = (user.failedLoginCount || 0) + 1;
+      if (user.failedLoginCount >= MAX_FAILED_LOGINS) {
+        user.lockedUntil = new Date(Date.now() + LOCKOUT_DURATION_MS).toISOString();
+        user.failedLoginCount = 0;
+        log.warn(`Account locked due to repeated failed logins: ${user.username}`);
+      }
+      try { await db.write(); } catch {}
+      throw new Error('Invalid username or password');
+    }
+
+    // Successful auth — clear lockout state.
+    user.failedLoginCount = 0;
+    user.lockedUntil = null;
 
     this.ensureUserAuthState(user);
 
@@ -389,8 +423,9 @@ class AuthService {
     }
 
     try {
-      const payload = jwt.verify(refreshToken, this.jwtSecret);
-      if (payload.type !== 'refresh' || !payload.sessionId) {
+      // Decode without verifying so we can still revoke an expired-but-known session.
+      const payload = jwt.decode(refreshToken);
+      if (!payload || typeof payload !== 'object' || payload.type !== 'refresh' || !payload.sessionId) {
         return false;
       }
 
@@ -468,6 +503,12 @@ class AuthService {
         // must bypass — the proxy itself only forwards to those two hardcoded
         // public domains, so there's no SSRF surface to protect.
         if (req.path.startsWith('/api/map/tiles/') || req.path.startsWith('/api/map/b41tiles/')) {
+          return next();
+        }
+
+        // Allow mod thumbnail proxy (also loaded via <img> tags). Only proxies
+        // Steam Workshop preview URLs already stored in our DB — no arbitrary SSRF.
+        if (req.path.startsWith('/api/mods/thumbnail/')) {
           return next();
         }
 

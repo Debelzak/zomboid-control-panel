@@ -547,9 +547,13 @@ export default function ServerSetup() {
   if (setupMode === 'select') {
     return (
       <div className="max-w-4xl mx-auto space-y-8">
-        <div className="text-center space-y-2">
+        <div className="text-center space-y-3">
+          <span className="inline-flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.22em] text-muted-foreground">
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary" aria-hidden="true" />
+            New Server
+          </span>
           <h1 className="text-3xl font-bold">Server Setup</h1>
-          <p className="text-muted-foreground text-lg">Choose how you want to set up your Project Zomboid server.</p>
+          <p className="text-muted-foreground text-base">Choose how you want to bring a Project Zomboid server online.</p>
         </div>
 
         <div className="grid gap-6 md:grid-cols-2">
@@ -565,37 +569,40 @@ export default function ServerSetup() {
             role="button"
             tabIndex={0}
             aria-describedby="full-setup-description"
-            className="group relative overflow-hidden cursor-pointer border-border/70 bg-card transition-[border-color,box-shadow,background-color] hover:border-primary/40 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            className="group relative overflow-hidden cursor-pointer border-primary/35 bg-gradient-to-br from-primary/[0.06] via-card to-card ring-1 ring-primary/15 transition-[border-color,box-shadow,transform] hover:border-primary/55 hover:ring-primary/25 hover:shadow-lg hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             onClick={activate}
             onKeyDown={(event) => handleCardKeyDown(event, activate)}
           >
-            <div className="absolute inset-0 bg-primary/10 opacity-0 group-hover:opacity-100 transition-opacity" />
-            <CardHeader className="pb-4">
-              <div className="w-14 h-14 rounded-2xl border border-primary/20 bg-primary/15 flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
-                <Download className="w-7 h-7 text-primary" />
+            <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-primary via-primary/80 to-primary/40" aria-hidden="true" />
+            <div className="absolute right-3 top-3">
+              <Badge variant="secondary" className="text-[10px] font-medium uppercase tracking-wide">Recommended</Badge>
+            </div>
+            <CardHeader className="pb-3">
+              <div className="grid place-items-center w-11 h-11 rounded-md border border-primary/30 bg-primary/[0.08] text-primary mb-3 transition-colors group-hover:bg-primary/15">
+                <Download className="w-5 h-5" />
               </div>
-              <CardTitle className="text-xl">Fresh Install</CardTitle>
-              <CardDescription id="full-setup-description">
+              <CardTitle className="text-lg">Fresh Install</CardTitle>
+              <CardDescription id="full-setup-description" className="text-xs">
                 Download and configure a new dedicated server from scratch
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2 text-sm">
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <CheckCircle className="w-4 h-4 text-primary" />
-                  <span>Downloads server files via SteamCMD (~3GB)</span>
-                </div>
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <CheckCircle className="w-4 h-4 text-primary" />
+            <CardContent className="space-y-3 pb-5">
+              <ul className="space-y-1.5 text-[13px]">
+                <li className="flex items-start gap-2 text-muted-foreground">
+                  <CheckCircle className="w-3.5 h-3.5 mt-0.5 text-primary shrink-0" />
+                  <span>Downloads server files via SteamCMD <span className="text-foreground/60">(~3 GB)</span></span>
+                </li>
+                <li className="flex items-start gap-2 text-muted-foreground">
+                  <CheckCircle className="w-3.5 h-3.5 mt-0.5 text-primary shrink-0" />
                   <span>Choose game version branch</span>
-                </div>
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <CheckCircle className="w-4 h-4 text-primary" />
-                  <span>Create default config and startup settings automatically</span>
-                </div>
-              </div>
-              <div className="pt-2">
-                <Badge variant="secondary" className="text-xs">Recommended for first-time setup</Badge>
+                </li>
+                <li className="flex items-start gap-2 text-muted-foreground">
+                  <CheckCircle className="w-3.5 h-3.5 mt-0.5 text-primary shrink-0" />
+                  <span>Generates config and startup files automatically</span>
+                </li>
+              </ul>
+              <div className="flex items-center gap-1.5 pt-1 text-[11px] font-medium uppercase tracking-wide text-primary/90">
+                Begin install <ArrowRight className="w-3 h-3 transition-transform group-hover:translate-x-0.5" />
               </div>
             </CardContent>
           </Card>
@@ -614,37 +621,36 @@ export default function ServerSetup() {
             role="button"
             tabIndex={0}
             aria-describedby="quick-setup-description"
-            className="group relative overflow-hidden cursor-pointer border-border/70 bg-card transition-[border-color,box-shadow,background-color] hover:border-primary/30 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            className="group relative overflow-hidden cursor-pointer border-border/60 bg-card transition-[border-color,box-shadow,transform] hover:border-primary/40 hover:shadow-md hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             onClick={activate}
             onKeyDown={(event) => handleCardKeyDown(event, activate)}
           >
-            <div className="absolute inset-0 bg-primary/10 opacity-0 group-hover:opacity-100 transition-opacity" />
-            <CardHeader className="pb-4">
-              <div className="w-14 h-14 rounded-2xl border border-primary/18 bg-primary/15 flex items-center justify-center mb-4 group-hover:bg-primary/22 transition-colors">
-                <Plus className="w-7 h-7 text-primary" />
+            <CardHeader className="pb-3">
+              <div className="grid place-items-center w-11 h-11 rounded-md border border-border/55 bg-muted/40 text-muted-foreground mb-3 transition-colors group-hover:border-primary/30 group-hover:bg-primary/[0.06] group-hover:text-primary">
+                <Plus className="w-5 h-5" />
               </div>
-              <CardTitle className="text-xl">Use Existing Files</CardTitle>
-              <CardDescription id="quick-setup-description">
-                Register and configure a server using files you already downloaded
+              <CardTitle className="text-lg">Use Existing Files</CardTitle>
+              <CardDescription id="quick-setup-description" className="text-xs">
+                Register a server using files you already downloaded
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2 text-sm">
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <CheckCircle className="w-4 h-4 text-primary" />
+            <CardContent className="space-y-3 pb-5">
+              <ul className="space-y-1.5 text-[13px]">
+                <li className="flex items-start gap-2 text-muted-foreground">
+                  <CheckCircle className="w-3.5 h-3.5 mt-0.5 text-muted-foreground/70 shrink-0" />
                   <span>No download required</span>
-                </div>
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <CheckCircle className="w-4 h-4 text-primary" />
-                  <span>Point to existing PZ server folder</span>
-                </div>
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <CheckCircle className="w-4 h-4 text-primary" />
+                </li>
+                <li className="flex items-start gap-2 text-muted-foreground">
+                  <CheckCircle className="w-3.5 h-3.5 mt-0.5 text-muted-foreground/70 shrink-0" />
+                  <span>Point to an existing PZ server folder</span>
+                </li>
+                <li className="flex items-start gap-2 text-muted-foreground">
+                  <CheckCircle className="w-3.5 h-3.5 mt-0.5 text-muted-foreground/70 shrink-0" />
                   <span>Fast 3-step setup</span>
-                </div>
-              </div>
-              <div className="pt-2">
-                <Badge variant="outline" className="text-xs">Already have server files?</Badge>
+                </li>
+              </ul>
+              <div className="flex items-center gap-1.5 pt-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground transition-colors group-hover:text-primary/90">
+                Register server <ArrowRight className="w-3 h-3 transition-transform group-hover:translate-x-0.5" />
               </div>
             </CardContent>
           </Card>
@@ -690,7 +696,7 @@ export default function ServerSetup() {
 
     return (
       <div className="flex items-center justify-center mb-8">
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-0">
           {steps.map((step, index) => {
             const Icon = step.icon
             const isActive = currentStep === step.id
@@ -704,11 +710,11 @@ export default function ServerSetup() {
                   disabled={!isClickable}
                   aria-current={isActive ? 'step' : undefined}
                   className={cn(
-                    "flex items-center gap-2 px-3 py-2 sm:px-4 sm:py-2.5 rounded-full transition-colors",
-                    isActive && "bg-primary text-primary-foreground shadow-md",
-                    !isActive && isComplete && "bg-primary/16 text-primary",
-                    !isActive && !isComplete && "bg-muted text-muted-foreground",
-                    isClickable && !isActive && "hover:bg-muted/80 cursor-pointer"
+                    "flex items-center gap-2 px-3 py-2 sm:px-3.5 sm:py-2 rounded-full border transition-colors",
+                    isActive && "border-primary bg-primary text-primary-foreground shadow-sm",
+                    !isActive && isComplete && "border-primary/40 bg-primary/[0.08] text-primary",
+                    !isActive && !isComplete && "border-border/50 bg-muted/30 text-muted-foreground",
+                    isClickable && !isActive && "hover:border-primary/40 hover:bg-muted/60 cursor-pointer"
                   )}
                 >
                   {isComplete ? (
@@ -716,13 +722,16 @@ export default function ServerSetup() {
                   ) : (
                     <Icon className="w-4 h-4" />
                   )}
-                  <span className="text-sm font-medium hidden sm:inline">{step.label}</span>
+                  <span className="text-[11px] font-medium uppercase tracking-wide hidden sm:inline">{step.label}</span>
                 </button>
                 {index < steps.length - 1 && (
-                  <ArrowRight className={cn(
-                    "w-4 h-4 mx-1 sm:mx-2",
-                    isComplete ? "text-primary" : "text-muted-foreground/50"
-                  )} />
+                  <span
+                    className={cn(
+                      "w-6 sm:w-10 h-px mx-1",
+                      isComplete ? "bg-primary/50" : "bg-border/60"
+                    )}
+                    aria-hidden="true"
+                  />
                 )}
               </div>
             )

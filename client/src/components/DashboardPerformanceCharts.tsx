@@ -1,9 +1,10 @@
 import { memo } from 'react'
-import { Users, Cpu, HardDrive, Gamepad2 } from 'lucide-react'
 import { AreaChart, Area, ResponsiveContainer } from 'recharts'
+import { cn } from '@/lib/utils'
 
 export interface DashboardPerformancePoint {
   time: string
+  timestamp?: string
   playerCount: number
   memoryMB: number
   pzMemMB?: number
@@ -17,70 +18,161 @@ interface DashboardPerformanceChartsProps {
   serverRunning?: boolean
 }
 
-/* Tiny inline sparkline — no axes, no tooltips, just the shape */
-function Spark({ data, dataKey, color, height = 40, muted = false }: { data: DashboardPerformanceChartsProps['performanceHistory']; dataKey: string; color: string; height?: number; muted?: boolean }) {
-  // Need at least 2 data points to draw a meaningful line; show a flat baseline otherwise.
-  // Also show the flat baseline when the metric has been all-zero/null across the
-  // window — drawing a flat line at zero reads as "0 active" instead of "no data".
-  const hasSignal = !muted && data.some(d => {
-    const v = (d as unknown as Record<string, unknown>)[dataKey]
-    return typeof v === 'number' && v > 0
-  })
-  if (data.length < 2 || !hasSignal) {
+interface Metric {
+  key: string
+  label: string
+  value: string | number
+  unit?: string
+  dataKey: string
+  color: string
+  alert?: boolean
+}
+
+/**
+ * Inline trace — full-width area chart drawn into the metric strip's track.
+ * Returns a flat baseline rule when there's no signal, so empty rows still
+ * read as a deliberate "no movement" rather than a broken chart.
+ */
+function InlineTrace({
+  data,
+  dataKey,
+  color,
+}: {
+  data: DashboardPerformanceChartsProps['performanceHistory']
+  dataKey: string
+  color: string
+}) {
+  const hasSignal =
+    data.length >= 2 &&
+    data.some((d) => {
+      const v = (d as unknown as Record<string, unknown>)[dataKey]
+      return typeof v === 'number' && v > 0
+    })
+  if (!hasSignal) {
     return (
-      <div className="flex h-10 items-center" aria-hidden="true">
+      <div className="flex h-full items-center" aria-hidden="true">
         <div className="h-px w-full bg-border/40" />
       </div>
     )
   }
   return (
-    <ResponsiveContainer width="100%" height={height}>
-      <AreaChart data={data} margin={{ top: 2, right: 0, bottom: 0, left: 0 }}>
+    <ResponsiveContainer width="100%" height="100%">
+      <AreaChart data={data} margin={{ top: 2, right: 0, bottom: 2, left: 0 }}>
         <defs>
-          <linearGradient id={`grad-${dataKey}`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={color} stopOpacity={0.25} />
+          <linearGradient id={`trace-${dataKey}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity={0.42} />
             <stop offset="100%" stopColor={color} stopOpacity={0} />
           </linearGradient>
         </defs>
-        <Area type="monotone" dataKey={dataKey} stroke={color} strokeWidth={1.5} fill={`url(#grad-${dataKey})`} dot={false} isAnimationActive={false} />
+        <Area
+          type="monotone"
+          dataKey={dataKey}
+          stroke={color}
+          strokeWidth={1.5}
+          fill={`url(#trace-${dataKey})`}
+          dot={false}
+          isAnimationActive={false}
+        />
       </AreaChart>
     </ResponsiveContainer>
   )
 }
 
-/* Stat row: icon + label + current value + sparkline */
-function StatRow({ icon: Icon, label, value, unit, spark, color, alert, muted }: {
-  icon: React.ElementType
-  label: string
-  value: string | number
-  unit: string
-  spark: React.ReactNode
-  color: string
-  alert?: boolean
-  muted?: boolean
+/**
+ * One honest metric row: label on the left, live trace fills the middle, big readout right.
+ * Severity-tinted background when alerting.
+ */
+function MetricStrip({
+  metric,
+  data,
+  isFirst,
+}: {
+  metric: Metric
+  data: DashboardPerformanceChartsProps['performanceHistory']
+  isFirst: boolean
 }) {
   return (
-    <div className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
-      {/* Icon */}
-      <div className="shrink-0 rounded-md p-1.5" style={{ background: `color-mix(in oklch, ${color}, transparent 88%)`, opacity: muted ? 0.5 : 1 }}>
-        <Icon className="h-3.5 w-3.5" style={{ color }} />
+    <div
+      className={cn(
+        'relative grid items-center gap-4 px-4 py-3 grid-cols-[8rem_minmax(0,1fr)_7rem] transition-colors',
+        !isFirst && 'border-t border-border/30',
+        metric.alert && 'bg-destructive/[0.05]'
+      )}
+    >
+      <span
+        className={cn(
+          'font-mono text-[11px] uppercase tracking-[0.12em] truncate',
+          metric.alert ? 'text-destructive/85' : 'text-foreground/65'
+        )}
+      >
+        {metric.label}
+      </span>
+      <div className="h-8 min-w-0">
+        <InlineTrace data={data} dataKey={metric.dataKey} color={metric.alert ? 'hsl(var(--destructive))' : metric.color} />
       </div>
-      {/* Label + value */}
-      <div className="shrink-0 min-w-[90px]">
-        <p className="text-[11px] leading-none text-muted-foreground">{label}</p>
-        <p className={`mt-0.5 text-lg font-semibold tabular-nums leading-tight ${alert ? 'text-destructive' : muted ? 'text-muted-foreground/60' : 'text-foreground'}`}>
-          {value}<span className="ml-0.5 text-xs font-normal text-muted-foreground">{unit}</span>
-        </p>
-      </div>
-      {/* Sparkline */}
-      <div className="flex-1 min-w-0" style={{ opacity: muted ? 0.4 : 1 }}>
-        {spark}
+      <div className="flex items-baseline gap-1 justify-self-end">
+        <span
+          className={cn(
+            'font-display text-2xl leading-none tracking-[0.01em] tabular-nums',
+            metric.alert ? 'text-destructive' : 'text-foreground'
+          )}
+        >
+          {metric.value}
+        </span>
+        {metric.unit && (
+          <span className="font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground">
+            {metric.unit}
+          </span>
+        )}
       </div>
     </div>
   )
 }
 
-function DashboardPerformanceCharts({ performanceHistory, serverRunning = true }: DashboardPerformanceChartsProps) {
+/**
+ * Shared time-axis row anchored under the trace column. Reads first/last
+ * sample timestamps and renders four monospaced ticks: oldest, two thirds,
+ * one third, now. Same grid template as MetricStrip so ticks land on the
+ * exact start/end of every trace above.
+ */
+function TimeAxis({ data }: { data: DashboardPerformanceChartsProps['performanceHistory'] }) {
+  if (data.length < 2) return null
+  const firstTs = data[0].timestamp
+  const lastTs = data[data.length - 1].timestamp
+  let spanMin: number
+  if (firstTs && lastTs) {
+    const a = new Date(firstTs).getTime()
+    const b = new Date(lastTs).getTime()
+    if (!Number.isFinite(a) || !Number.isFinite(b) || b <= a) return null
+    spanMin = (b - a) / 60000
+  } else {
+    // Fallback: assume ~1 sample per minute.
+    spanMin = data.length - 1
+  }
+  const fmt = (fraction: number) => {
+    if (fraction === 1) return 'now'
+    const ago = spanMin * (1 - fraction)
+    if (ago < 1) return `−${Math.max(1, Math.round(ago * 60))}s`
+    return `−${Math.round(ago)}m`
+  }
+  return (
+    <div className="grid grid-cols-[8rem_minmax(0,1fr)_7rem] gap-4 border-t border-border/30 px-4 py-1.5">
+      <span aria-hidden="true" />
+      <div className="flex justify-between font-mono text-[10px] tabular-nums text-muted-foreground/55">
+        <span>{fmt(0)}</span>
+        <span>{fmt(0.33)}</span>
+        <span>{fmt(0.67)}</span>
+        <span className="text-muted-foreground/75">{fmt(1)}</span>
+      </div>
+      <span aria-hidden="true" />
+    </div>
+  )
+}
+
+function DashboardPerformanceCharts({
+  performanceHistory,
+  serverRunning = true,
+}: DashboardPerformanceChartsProps) {
   const latest = performanceHistory[performanceHistory.length - 1]
   if (!latest) return null
 
@@ -88,60 +180,63 @@ function DashboardPerformanceCharts({ performanceHistory, serverRunning = true }
   const cpu = latest.cpuPercent ?? 0
   const hostUsed = latest.hostMemUsedGB
   const hostTotal = latest.hostMemTotalGB
-  const hostLabel = hostUsed != null && hostTotal != null ? `${hostUsed}/${hostTotal}` : '—'
-  const pzAlert = serverRunning && pzMem > 7600
 
-  const chartColors = {
-    players: 'hsl(var(--chart-1))',
-    pzMem: pzAlert ? 'hsl(var(--destructive))' : 'hsl(var(--chart-2))',
-    cpu: 'hsl(var(--chart-3))',
-    host: 'hsl(var(--chart-4))',
+  const pzAlert = serverRunning && pzMem > 7600
+  const cpuAlert = cpu >= 90
+  const hostRamAlert = hostUsed != null && hostTotal != null && hostUsed / hostTotal > 0.9
+
+  const metrics: Metric[] = []
+
+  // Server-side metrics only when the server is actually running — no stale ghosts.
+  if (serverRunning) {
+    metrics.push({
+      key: 'pzMem',
+      label: 'PZ memory',
+      value: pzMem > 1024 ? (pzMem / 1024).toFixed(1) : pzMem,
+      unit: pzMem > 1024 ? 'GB' : 'MB',
+      dataKey: latest.pzMemMB != null ? 'pzMemMB' : 'memoryMB',
+      color: 'hsl(var(--chart-2))',
+      alert: pzAlert,
+    })
+    metrics.push({
+      key: 'players',
+      label: 'Players',
+      value: latest.playerCount,
+      unit: latest.playerCount === 1 ? 'online' : 'online',
+      dataKey: 'playerCount',
+      color: 'hsl(var(--chart-1))',
+    })
   }
 
-  // When the server is offline, the latest snapshot's PZ-server values are stale
-  // (the metrics service stops reporting once the process is gone).
-  // Show em-dash placeholders instead of the misleading last-known number.
-  const pzValue = serverRunning ? (pzMem > 1024 ? (pzMem / 1024).toFixed(1) : pzMem) : '—'
-  const pzUnit = serverRunning ? (pzMem > 1024 ? ' GB' : ' MB') : ''
-  const playersValue = serverRunning ? latest.playerCount : '—'
+  // Host metrics are always meaningful.
+  metrics.push({
+    key: 'cpu',
+    label: 'Host CPU',
+    value: cpu,
+    unit: '%',
+    dataKey: 'cpuPercent',
+    color: 'hsl(var(--chart-3))',
+    alert: cpuAlert,
+  })
+
+  if (hostUsed != null && hostTotal != null) {
+    metrics.push({
+      key: 'hostMem',
+      label: 'Host memory',
+      value: `${hostUsed.toFixed(1)} / ${hostTotal}`,
+      unit: 'GB',
+      dataKey: 'hostMemUsedGB',
+      color: 'hsl(var(--chart-4))',
+      alert: hostRamAlert,
+    })
+  }
 
   return (
-    <div className="rounded-xl border border-border/60 bg-card/50 px-5 py-4 divide-y divide-border/40">
-      <StatRow
-        icon={Users}
-        label="Players"
-        value={playersValue}
-        unit=""
-        color={chartColors.players}
-        spark={<Spark data={performanceHistory} dataKey="playerCount" color={chartColors.players} muted={!serverRunning} />}
-        muted={!serverRunning}
-      />
-      <StatRow
-        icon={Gamepad2}
-        label="PZ Server RAM"
-        value={pzValue}
-        unit={pzUnit}
-        color={chartColors.pzMem}
-        alert={pzAlert}
-        muted={!serverRunning}
-        spark={<Spark data={performanceHistory} dataKey={latest.pzMemMB != null ? 'pzMemMB' : 'memoryMB'} color={chartColors.pzMem} muted={!serverRunning} />}
-      />
-      <StatRow
-        icon={Cpu}
-        label="Host CPU"
-        value={cpu}
-        unit="%"
-        color={chartColors.cpu}
-        spark={<Spark data={performanceHistory} dataKey="cpuPercent" color={chartColors.cpu} />}
-      />
-      <StatRow
-        icon={HardDrive}
-        label="Host RAM"
-        value={hostLabel}
-        unit={hostTotal != null ? ' GB' : ''}
-        color={chartColors.host}
-        spark={<Spark data={performanceHistory} dataKey="hostMemUsedGB" color={chartColors.host} />}
-      />
+    <div>
+      {metrics.map((m, i) => (
+        <MetricStrip key={m.key} metric={m} data={performanceHistory} isFirst={i === 0} />
+      ))}
+      <TimeAxis data={performanceHistory} />
     </div>
   )
 }

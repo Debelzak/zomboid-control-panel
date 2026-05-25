@@ -1,10 +1,17 @@
 ---@diagnostic disable: undefined-global, deprecated
 --[[
     PanelBridge - Server-side mod for Zomboid Control Panel
-    Version: 1.2.1
+    Version: 1.2.2
 
     This mod enables external control panel communication with the PZ server.
     Communication happens via JSON files in the server save folder.
+
+    v1.2.2 Changes:
+    - Fixed JSON encoder: empty Lua tables now serialize as [] (array) instead of {} (object).
+      The previous behaviour crashed panel consumers that did .map/.filter on
+      collection fields like safehouses/factions/vehicles when the server was empty.
+    - Hardened JSON decoder: malformed objects with non-string keys are skipped
+      instead of crashing the command-poll loop.
 
     v1.2.1 Changes:
     - Synced runtime VERSION constant with mod.info (was 1.1.1)
@@ -104,7 +111,7 @@
 local json
 
 local PanelBridge = {
-    VERSION = "1.2.1",
+    VERSION = "1.2.2",
     PROTOCOL_VERSION = "queue-v1",
     CHECK_INTERVAL = 250, -- milliseconds (fast command polling)
     lastCheck = 0,
@@ -344,7 +351,15 @@ local function kind_of(obj)
     for _ in pairs(obj) do
         if obj[i] ~= nil then i = i + 1 else return 'table' end
     end
-    if i == 1 then return 'table' else return 'array' end
+    -- Empty Lua tables are ambiguous (array vs object). The panel's JS
+    -- consumers overwhelmingly expect collection fields like
+    -- safehouses/factions/vehicles/players/options to be arrays, and an
+    -- empty object ({}) crashes any downstream `.map`/`.filter`/`.length`
+    -- call. Default empty -> array ([]) so an empty server still produces
+    -- a JSON-safe response. Object-typed empty values are exceedingly rare
+    -- in our handlers (they always carry at least one keyed field like
+    -- `message` or `count`).
+    return 'array'
 end
 
 local function escape_str(s)
@@ -453,7 +468,12 @@ function json.decode(str)
                 skip_whitespace()
                 if str:sub(pos, pos) == ':' then pos = pos + 1 end
                 local value = parse_value()
-                obj[key] = value
+                -- Defensive: only assign if key is a string (JSON keys must be strings).
+                -- A malformed JSON object with non-string keys would otherwise crash
+                -- the polling loop, even inside the surrounding pcall.
+                if type(key) == 'string' then
+                    obj[key] = value
+                end
                 skip_whitespace()
                 c = str:sub(pos, pos)
                 if c == '}' then

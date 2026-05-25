@@ -1734,24 +1734,63 @@ export default function ChunkCleaner() {
             </Card>
 
             {/* Stats — inline when available */}
-            {stats && (
-              <Card>
-                <CardContent className="px-4 py-3 space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground flex items-center gap-1.5">
-                      <Database className="w-3 h-3" /> Size
-                    </span>
-                    <span className="text-xs font-medium">{stats.totalSizeFormatted}</span>
-                  </div>
-                  {Object.entries(stats.folders || {}).map(([folder, info]) => (
-                    <div key={folder} className="flex justify-between text-[10px] text-muted-foreground">
-                      <span>{folder}</span>
-                      <span>{info.fileCount} ({info.sizeFormatted})</span>
+            {stats && (() => {
+              const folderEntries = Object.entries(stats.folders || {})
+              const folderTotal = folderEntries.reduce((sum, [, info]) => sum + (info.size || 0), 0)
+              // Up to 5 tonal swatches so adjacent folders read as distinct segments.
+              const swatchClasses = [
+                'bg-primary/70',
+                'bg-primary/45',
+                'bg-warning/65',
+                'bg-warning/40',
+                'bg-muted-foreground/40',
+              ]
+              return (
+                <Card>
+                  <CardContent className="px-4 py-3 space-y-2.5">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
+                        <Database className="w-3 h-3" /> World footprint
+                      </span>
+                      <span className="text-sm font-semibold tabular-nums text-foreground">
+                        {stats.totalSizeFormatted}
+                      </span>
                     </div>
-                  ))}
-                </CardContent>
-              </Card>
-            )}
+                    {folderEntries.length > 0 && folderTotal > 0 && (
+                      <>
+                        <div className="flex h-1.5 w-full overflow-hidden rounded-full border border-border/40 bg-muted/30" aria-hidden="true">
+                          {folderEntries.map(([folder, info], i) => {
+                            const pct = (info.size / folderTotal) * 100
+                            if (pct < 0.5) return null
+                            return (
+                              <div
+                                key={folder}
+                                className={swatchClasses[i % swatchClasses.length]}
+                                style={{ width: `${pct}%` }}
+                                title={`${folder} — ${info.sizeFormatted}`}
+                              />
+                            )
+                          })}
+                        </div>
+                        <div className="space-y-1">
+                          {folderEntries.map(([folder, info], i) => (
+                            <div key={folder} className="flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
+                              <span className="flex items-center gap-1.5 min-w-0">
+                                <span className={`shrink-0 w-1.5 h-1.5 rounded-sm ${swatchClasses[i % swatchClasses.length]}`} aria-hidden="true" />
+                                <span className="truncate text-foreground/85">{folder}</span>
+                              </span>
+                              <span className="shrink-0 tabular-nums">
+                                {info.fileCount} · {info.sizeFormatted}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </CardContent>
+                </Card>
+              )
+            })()}
 
             {/* Tools */}
             <Card>
@@ -1870,10 +1909,24 @@ export default function ChunkCleaner() {
                 <Separator />
                 
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <Label className="text-xs text-muted-foreground">Selection</Label>
-                    <span className="text-[10px] font-medium tabular-nums text-foreground/80">
-                      {selectedChunks.size > 0 ? `${selectedChunks.size} • ${formatSize(selectedSize)}` : '0'}
+                  <div
+                    className={`flex items-center justify-between gap-2 rounded-md border px-2 py-1.5 transition-colors ${
+                      selectedChunks.size > 0
+                        ? 'border-destructive/40 bg-destructive/[0.06]'
+                        : 'border-border/50 bg-muted/20'
+                    }`}
+                  >
+                    <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
+                      <span
+                        className={`inline-block w-1.5 h-1.5 rounded-full ${
+                          selectedChunks.size > 0 ? 'bg-destructive' : 'bg-muted-foreground/40'
+                        }`}
+                        aria-hidden="true"
+                      />
+                      Selection
+                    </span>
+                    <span className={`text-[11px] font-semibold tabular-nums ${selectedChunks.size > 0 ? 'text-destructive' : 'text-muted-foreground/70'}`}>
+                      {selectedChunks.size > 0 ? `${selectedChunks.size} · ${formatSize(selectedSize)}` : 'None'}
                     </span>
                   </div>
                   <div className="flex gap-1.5">

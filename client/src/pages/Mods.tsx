@@ -1595,7 +1595,7 @@ export default function Mods() {
     return (
       <div
         key={mod.id}
-        className={`group/modrow perf-list-row flex items-center gap-3 px-3 py-2 hover:bg-accent/50 transition-colors ${
+        className={`group/modrow perf-list-row flex items-center gap-3 px-3 py-2.5 hover:bg-accent/50 motion-safe:transition-colors ${
           isSelected ? 'bg-accent/30' : ''
         }`}
       >
@@ -1607,9 +1607,32 @@ export default function Mods() {
           />
         </div>
 
+        {/* Leading status tile — gives each row a visual anchor and carries
+            the per-mod state colour (update / unchecked / up-to-date). */}
+        <div
+          className={`shrink-0 relative grid place-items-center w-20 h-20 rounded-md border overflow-hidden ${
+            mod.update_available
+              ? 'border-warning/40 bg-warning/10 text-warning'
+              : !mod.last_checked
+                ? 'border-border/50 bg-muted/30 text-muted-foreground'
+                : 'border-primary/25 bg-primary/[0.06] text-primary/85'
+          }`}
+          aria-hidden="true"
+        >
+          <Package className="w-8 h-8" />
+          <img
+            src={`/api/mods/thumbnail/${mod.workshop_id}`}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            className="absolute inset-0 w-full h-full object-cover"
+            onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
+          />
+        </div>
+
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 min-w-0">
-            <span className={`truncate ${mod.update_available ? 'font-semibold text-foreground' : 'font-medium'}`}>
+            <span className={`truncate text-sm ${mod.update_available ? 'font-semibold text-foreground' : 'font-medium text-foreground/95'}`}>
               {mod.name || `Mod ${mod.workshop_id}`}
             </span>
             {/* "Not in Config" first — it's a loadability problem, more critical
@@ -1621,7 +1644,8 @@ export default function Mods() {
               </Badge>
             )}
             {mod.update_available ? (
-              <Badge variant="warning" className="text-[10px] h-5 shrink-0 update-badge-pulse">
+              <Badge variant="warning" className="text-[10px] h-5 shrink-0 update-badge-pulse gap-1">
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-warning animate-pulse" aria-hidden="true" />
                 Update
               </Badge>
             ) : null}
@@ -1738,7 +1762,7 @@ export default function Mods() {
   const modListVirtualizer = useVirtualizer({
     count: flatModItems.length,
     getScrollElement: () => modListRef.current,
-    estimateSize: (i) => flatModItems[i].type === 'mod' ? 58 : flatModItems[i].type === 'hint' ? 48 : 40,
+    estimateSize: (i) => flatModItems[i].type === 'mod' ? 96 : flatModItems[i].type === 'hint' ? 48 : 40,
     overscan: 10,
   })
 
@@ -2360,17 +2384,17 @@ export default function Mods() {
 
         <Tabs defaultValue="mods" className="space-y-4">
           <div className="flex items-center justify-between flex-wrap gap-2">
-            <TabsList className="grid w-full grid-cols-3 sm:w-auto">
-              <TabsTrigger value="mods" className="w-full">
-                <Package className="w-4 h-4 mr-2" />
+            <TabsList className="inline-flex h-auto gap-1 rounded-md border border-border/55 bg-muted/30 p-1">
+              <TabsTrigger value="mods" className="gap-2 px-3 py-1.5 text-sm font-medium">
+                <Package className="w-4 h-4" />
                 Server Mods
               </TabsTrigger>
-              <TabsTrigger value="config" className="w-full">
-                <Settings2 className="w-4 h-4 mr-2" />
+              <TabsTrigger value="config" className="gap-2 px-3 py-1.5 text-sm font-medium">
+                <Settings2 className="w-4 h-4" />
                 Advanced
               </TabsTrigger>
-              <TabsTrigger value="conflicts" className="w-full" onClick={() => { if (!conflicts && !conflictsLoading) scanConflicts() }}>
-                <Shield className="w-4 h-4 mr-2" />
+              <TabsTrigger value="conflicts" className="gap-2 px-3 py-1.5 text-sm font-medium" onClick={() => { if (!conflicts && !conflictsLoading) scanConflicts() }}>
+                <Shield className="w-4 h-4" />
                 Conflicts
               </TabsTrigger>
             </TabsList>
@@ -3182,12 +3206,15 @@ export default function Mods() {
                             }}
                           >
                             {item.type === 'header' && item.group === 'update' && (
-                              <div className="flex items-center gap-2 bg-warning/10 px-4 py-2 border-b border-border/40">
-                                <AlertTriangle className="w-4 h-4 text-warning" />
+                              <div className="flex items-center gap-2.5 bg-warning/10 px-4 py-2.5 border-b border-warning/25">
+                                <span className="relative inline-flex shrink-0" aria-hidden="true">
+                                  <span className="absolute inset-0 rounded-full bg-warning/40 animate-ping" />
+                                  <span className="relative w-2 h-2 rounded-full bg-warning" />
+                                </span>
                                 <span className="text-sm font-semibold text-warning">
                                   Updates Available
                                 </span>
-                                <span className="font-mono text-[11px] tabular-nums text-warning/80">
+                                <span className="inline-flex h-5 items-center rounded-full bg-warning/20 px-2 font-mono text-[11px] tabular-nums text-warning">
                                   {item.count}
                                 </span>
                               </div>

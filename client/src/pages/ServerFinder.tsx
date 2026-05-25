@@ -376,54 +376,63 @@ export default function ServerFinder() {
       )}
 
       {/* Stats */}
-      <div className="grid gap-4 md:grid-cols-4 stagger-in">
-        <Card className="border-border/70 bg-card shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Servers</CardTitle>
-            <Server className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{servers.length.toLocaleString()}</div>
-            <p className="text-xs text-muted-foreground">
-              {source === 'steam_api' ? 'via Steam API' : 'via Master Server'}
-              {cached && ' (cached)'}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="border-border/70 bg-card shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active Servers</CardTitle>
-            <Globe className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.activeServers.toLocaleString()}</div>
-            <p className="text-xs text-muted-foreground">with players online</p>
-          </CardContent>
-        </Card>
-
-        <Card className="border-border/70 bg-card shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Players</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.totalPlayers.toLocaleString()}</div>
-            <p className="text-xs text-muted-foreground">playing right now</p>
-          </CardContent>
-        </Card>
-
-        <Card className="border-border/70 bg-card shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Showing</CardTitle>
-            <Filter className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{filteredServers.length.toLocaleString()}</div>
-            <p className="text-xs text-muted-foreground">matching filters</p>
-          </CardContent>
-        </Card>
-      </div>
+      {(() => {
+        const isFiltered = filteredServers.length !== servers.length
+        const tiles = [
+          {
+            icon: Server,
+            label: 'Total Servers',
+            value: servers.length.toLocaleString(),
+            sub: `${source === 'steam_api' ? 'via Steam API' : 'via Master Server'}${cached ? ' \u00b7 cached' : ''}`,
+            tone: 'muted' as const,
+          },
+          {
+            icon: Globe,
+            label: 'Active Servers',
+            value: stats.activeServers.toLocaleString(),
+            sub: 'with players online',
+            tone: 'primary' as const,
+          },
+          {
+            icon: Users,
+            label: 'Total Players',
+            value: stats.totalPlayers.toLocaleString(),
+            sub: 'playing right now',
+            tone: 'primary' as const,
+          },
+          {
+            icon: Filter,
+            label: 'Showing',
+            value: filteredServers.length.toLocaleString(),
+            sub: isFiltered ? `of ${servers.length.toLocaleString()} \u00b7 filtered` : 'matching filters',
+            tone: isFiltered ? ('warning' as const) : ('muted' as const),
+          },
+        ]
+        const toneClass = (tone: 'primary' | 'warning' | 'muted') =>
+          tone === 'primary'
+            ? 'border-primary/30 bg-primary/[0.06] text-primary'
+            : tone === 'warning'
+            ? 'border-warning/40 bg-warning/10 text-warning'
+            : 'border-border/55 bg-muted/30 text-muted-foreground'
+        return (
+          <div className="grid gap-3 md:grid-cols-4 stagger-in">
+            {tiles.map(({ icon: Icon, label, value, sub, tone }) => (
+              <Card key={label}>
+                <CardContent className="flex items-center gap-3 p-4">
+                  <div className={`grid place-items-center w-10 h-10 rounded-md border shrink-0 ${toneClass(tone)}`} aria-hidden="true">
+                    <Icon className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+                    <p className="text-xl font-semibold leading-tight tabular-nums">{value}</p>
+                    {sub && <p className="text-[11px] text-muted-foreground/80 truncate">{sub}</p>}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )
+      })()}
 
       {/* Search and Filters */}
       <Card className="border-border/70 bg-card/92 shadow-sm">
@@ -613,12 +622,24 @@ export default function ServerFinder() {
                   const serverKey = `${server.ip}:${server.port}`
                   const ping = serverPings[serverKey]
                   const isPinging = pingingServers.has(serverKey)
+                  const isFull = server.players >= server.maxPlayers && server.maxPlayers > 0
+                  const hasPlayers = server.players > 0 && !isFull
+                  const statusTone = isFull
+                    ? 'border-destructive/40 bg-destructive/[0.08] text-destructive'
+                    : hasPlayers
+                    ? 'border-primary/30 bg-primary/[0.07] text-primary'
+                    : 'border-border/50 bg-muted/40 text-muted-foreground'
 
                   return (
                     <div
                       key={`${serverKey}-${index}`}
-                      className="flex items-center gap-4 p-4 rounded-lg border border-border/70 bg-card/70 hover:bg-accent/24 transition-colors"
+                      className="flex items-center gap-3 p-3 rounded-lg border border-border/60 bg-card/70 hover:border-primary/30 hover:bg-accent/20 transition-colors"
                     >
+                      {/* Leading status tile */}
+                      <div className={`grid place-items-center w-9 h-9 rounded-md border shrink-0 ${statusTone}`} aria-hidden="true">
+                        <Server className="h-4 w-4" />
+                      </div>
+
                       {/* Server Info */}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">

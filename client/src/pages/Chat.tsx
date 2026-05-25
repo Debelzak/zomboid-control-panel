@@ -14,7 +14,6 @@ import {
   Check,
   X,
 } from 'lucide-react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { PageHeader } from '@/components/PageHeader'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -279,15 +278,15 @@ export default function Chat() {
   }
 
   const getMessageStyle = (type: string) => {
-    if (type === 'server') return 'ml-4 rounded-xl border px-3 py-3 border-warning/20 bg-warning/10'
-    if (type === 'admin') return 'ml-4 rounded-xl border px-3 py-3 border-destructive/20 bg-destructive/10'
-    return 'ml-4 rounded-xl border px-3 py-3 border-border/60 bg-muted/30'
+    if (type === 'server') return 'border-l-2 border-amber-400/70 bg-amber-400/5 pl-3 pr-3 py-2'
+    if (type === 'admin')  return 'border-l-2 border-destructive/70 bg-destructive/5 pl-3 pr-3 py-2'
+    return 'border-l-2 border-primary/55 bg-muted/15 pl-3 pr-3 py-2'
   }
 
   const getMessageMeta = (msg: ChatMessage) => {
-    if (msg.type === 'server') return { icon: <Megaphone className="w-3 h-3 text-warning" />, label: msg.author || 'Server', labelClass: 'text-warning' }
-    if (msg.type === 'admin') return { icon: <Shield className="w-3 h-3 text-destructive" />, label: msg.author || 'Admin', labelClass: 'text-destructive' }
-    return { icon: <MessageSquare className="w-3 h-3 text-primary" />, label: msg.author || 'Player', labelClass: 'text-primary' }
+    if (msg.type === 'server') return { icon: <Megaphone className="w-3 h-3" />, label: msg.author || 'Server', labelClass: 'text-amber-400', dotClass: 'bg-amber-400/80' }
+    if (msg.type === 'admin')  return { icon: <Shield className="w-3 h-3" />,    label: msg.author || 'Admin',  labelClass: 'text-destructive', dotClass: 'bg-destructive/80' }
+    return { icon: <MessageSquare className="w-3 h-3" />, label: msg.author || 'Player', labelClass: 'text-primary', dotClass: 'bg-primary/80' }
   }
 
   return (
@@ -304,21 +303,34 @@ export default function Chat() {
         }
       />
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Chat Window */}
         <div className="lg:col-span-2">
-          <Card className="h-[calc(100vh-260px)] min-h-[420px] flex flex-col">
-            <CardHeader className="pb-3 border-b shrink-0">
-              <CardTitle className="flex items-center gap-2">
-                <MessagesSquare className="w-4 h-4 text-primary" />
-                Server Chat
-              </CardTitle>
-              <CardDescription>Live chat feed from the server. Your broadcasts appear to all players in-game.</CardDescription>
-            </CardHeader>
-            <CardContent className="flex-1 flex flex-col p-0 min-h-0">
+          <div className="relative h-[calc(100vh-260px)] min-h-[420px] flex flex-col rounded-md border border-border/55 bg-card/85 backdrop-blur-md shadow-lg overflow-hidden">
+            {/* corner brackets */}
+            <div aria-hidden className="absolute top-1 left-1 w-2.5 h-2.5 border-l-2 border-t-2 border-primary/45 pointer-events-none z-10" />
+            <div aria-hidden className="absolute top-1 right-1 w-2.5 h-2.5 border-r-2 border-t-2 border-primary/45 pointer-events-none z-10" />
+            <div aria-hidden className="absolute bottom-1 left-1 w-2.5 h-2.5 border-l-2 border-b-2 border-primary/45 pointer-events-none z-10" />
+            <div aria-hidden className="absolute bottom-1 right-1 w-2.5 h-2.5 border-r-2 border-b-2 border-primary/45 pointer-events-none z-10" />
+
+            {/* header strip */}
+            <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-border/50 bg-muted/30 font-mono text-[9px] uppercase tracking-[0.24em] select-none shrink-0">
+              <span className="flex items-center gap-1.5 text-primary/70">
+                <MessagesSquare className="w-3 h-3" />
+                <span>chat stream</span>
+                <span className="text-muted-foreground/40 normal-case tracking-normal">·</span>
+                <span className="text-muted-foreground/80 normal-case tracking-normal tabular-nums">{chatHistory.length} {chatHistory.length === 1 ? 'msg' : 'msgs'}</span>
+              </span>
+              <span className="flex items-center gap-1.5 text-muted-foreground/60">
+                <span className={cn('w-1.5 h-1.5 rounded-full', socket?.connected ? 'bg-emerald-400 animate-pulse' : 'bg-muted-foreground/40')} />
+                <span>{socket?.connected ? 'LIVE' : 'OFFLINE'}</span>
+              </span>
+            </div>
+
+            <div className="flex-1 flex flex-col p-0 min-h-0">
               {/* Messages Area */}
-              <ScrollArea className="flex-1 px-4" role="log" aria-live="polite" aria-label="Chat messages">
-                <div className="py-4 space-y-3">
+              <ScrollArea className="flex-1 px-3" role="log" aria-live="polite" aria-label="Chat messages">
+                <div className="py-3 space-y-2">
                   {chatHistory.length === 0 ? (
                     <EmptyState type="noMessages" title="No chat messages yet" description="Player messages and your broadcasts will appear here in real time." compact />
                   ) : (
@@ -326,18 +338,19 @@ export default function Chat() {
                       const meta = getMessageMeta(msg)
                       return (
                         <div key={msg.id} className={getMessageStyle(msg.type)}>
-                          <div className="flex items-center justify-between mb-1">
-                            <div className="flex items-center gap-2">
-                              {meta.icon}
-                              <span className={cn('text-xs font-medium', meta.labelClass)}>
+                          <div className="flex items-center justify-between mb-0.5">
+                            <div className="flex items-center gap-1.5">
+                              <span className={cn('w-1.5 h-1.5 rounded-full shrink-0', meta.dotClass)} />
+                              <span className={cn('font-mono text-[10px] uppercase tracking-[0.18em] flex items-center gap-1', meta.labelClass)}>
+                                {meta.icon}
                                 {meta.label}
                               </span>
                             </div>
-                            <time dateTime={msg.timestamp.toISOString()} className="text-xs text-muted-foreground">
+                            <time dateTime={msg.timestamp.toISOString()} className="font-mono text-[10px] tabular-nums text-muted-foreground/60">
                               {msg.timestamp.toLocaleTimeString()}
                             </time>
                           </div>
-                          <p className="text-sm [overflow-wrap:anywhere]">{msg.message}</p>
+                          <p className="text-sm text-foreground/90 [overflow-wrap:anywhere]">{msg.message}</p>
                         </div>
                       )
                     })
@@ -347,16 +360,16 @@ export default function Chat() {
               </ScrollArea>
 
               {/* Message Input */}
-              <div className="p-4 border-t bg-muted/30">
+              <div className="p-3 border-t border-border/50 bg-muted/20">
                 <div className="flex flex-col gap-2 sm:flex-row">
                   <Select value={channel} onValueChange={(v) => setChannel(v as ChatChannel)} disabled={sending}>
-                    <SelectTrigger className="h-11 sm:w-44" aria-label="Chat channel">
+                    <SelectTrigger className="h-10 sm:w-52 font-mono text-[11px] uppercase tracking-[0.16em] bg-card/70 border-border/55" aria-label="Chat channel">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="server">
                         <span className="flex items-center gap-2">
-                          <Megaphone className="w-3.5 h-3.5 text-warning" />
+                          <Megaphone className="w-3.5 h-3.5 text-amber-400" />
                           Server broadcast
                         </span>
                       </SelectItem>
@@ -378,10 +391,10 @@ export default function Chat() {
                     ref={messageInputRef}
                     placeholder={
                       channel === 'admin'
-                        ? 'Message visible only to admins in-game... (Enter to send)'
+                        ? 'admins only — press enter to send…'
                         : channel === 'general'
-                          ? 'Post as Admin into the public chat... (Enter to send)'
-                          : 'Broadcast a message to all players... (Enter to send)'
+                          ? 'post as Admin — press enter to send…'
+                          : 'broadcast to all players — press enter to send…'
                     }
                     aria-label="Chat message"
                     value={message}
@@ -389,72 +402,77 @@ export default function Chat() {
                     onKeyDown={handleKeyDown}
                     disabled={sending}
                     maxLength={500}
-                    className="h-11 flex-1"
+                    className="h-10 flex-1 bg-card/70 border-border/55 focus-visible:border-primary/60"
                   />
                   <Button
                     onClick={sendMessage}
                     disabled={sending || !message.trim()}
-                    className="h-11 min-w-20 sm:min-w-28 gap-2"
+                    className="h-10 min-w-20 sm:min-w-24 gap-1.5 font-mono text-[11px] uppercase tracking-[0.18em]"
                   >
-                    {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                    Send
+                    {sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <><Send className="w-3.5 h-3.5" />send</>}
                   </Button>
                 </div>
-                <div className="mt-1.5 flex items-center justify-between text-[11px] text-muted-foreground">
+                <div className="mt-1.5 flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground/65">
                   <span>
                     {channel === 'admin'
-                      ? 'Admin chat — only players with admin access see this.'
+                      ? 'admins only — hidden from regular players'
                       : players.length === 0
-                        ? 'No players online — messages will only appear in the server log.'
-                        : `Broadcasting to ${players.length} ${players.length === 1 ? 'player' : 'players'}.`}
+                        ? 'no players online — server log only'
+                        : `broadcasting to ${players.length} ${players.length === 1 ? 'player' : 'players'}`}
                   </span>
-                  <span className={cn('tabular-nums', message.length > 450 ? 'text-warning' : '')}>
+                  <span className={cn('tabular-nums', message.length > 450 ? 'text-amber-400' : '')}>
                     {message.length}/500
                   </span>
                 </div>
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         </div>
 
         {/* Sidebar */}
-        <div className="space-y-6">
+        <div className="space-y-4">
           {/* Online Players */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2">
-                <Users className="w-4 h-4 text-primary" />
-                Online Players
-              </CardTitle>
-              <CardDescription>{players.length === 1 ? '1 player' : `${players.length} players`}</CardDescription>
-            </CardHeader>
-            <CardContent>
+          <div className="relative rounded-md border border-border/55 bg-card/85 backdrop-blur-md shadow-md overflow-hidden">
+            <div aria-hidden className="absolute top-1 left-1 w-2 h-2 border-l-2 border-t-2 border-primary/40 pointer-events-none" />
+            <div aria-hidden className="absolute top-1 right-1 w-2 h-2 border-r-2 border-t-2 border-primary/40 pointer-events-none" />
+            <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-border/50 bg-muted/30 font-mono text-[9px] uppercase tracking-[0.24em] select-none">
+              <span className="flex items-center gap-1.5 text-primary/70">
+                <Users className="w-3 h-3" />
+                <span>players</span>
+              </span>
+              <span className="text-muted-foreground/70 tabular-nums normal-case tracking-normal">{players.length} online</span>
+            </div>
+            <div className="p-2">
               {players.length === 0 ? (
-                <EmptyState type="noPlayers" compact title="No players online" description="No players are online right now." />
+                <div className="px-2 py-3 font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground/60 italic">
+                  no players connected
+                </div>
               ) : (
-                <div className="space-y-2">
+                <div className="space-y-1">
                   {players.map((player) => (
-                    <div key={player.name} className="flex items-center gap-2 p-2 rounded-lg bg-muted/50 min-w-0">
-                      <div className="w-2 h-2 rounded-full bg-primary" aria-hidden="true" />
-                      <span className="text-sm font-medium truncate">{player.name}</span>
+                    <div key={player.name} className="flex items-center gap-2 px-2 py-1.5 rounded-sm border-l-2 border-transparent hover:border-primary/50 hover:bg-muted/40 transition-colors min-w-0">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0 animate-pulse" aria-hidden="true" />
+                      <span className="text-xs font-medium text-foreground/90 truncate">{player.name}</span>
                     </div>
                   ))}
                 </div>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </div>
 
           {/* Quick Messages */}
-          <Card>
-            <CardHeader className="pb-3 flex flex-row items-center justify-between space-y-0">
-              <CardTitle className="flex items-center gap-2">
-                <Megaphone className="w-4 h-4 text-warning" />
-                Quick Messages
-              </CardTitle>
+          <div className="relative rounded-md border border-border/55 bg-card/85 backdrop-blur-md shadow-md overflow-hidden">
+            <div aria-hidden className="absolute top-1 left-1 w-2 h-2 border-l-2 border-t-2 border-amber-400/40 pointer-events-none" />
+            <div aria-hidden className="absolute top-1 right-1 w-2 h-2 border-r-2 border-t-2 border-amber-400/40 pointer-events-none" />
+            <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-border/50 bg-muted/30 font-mono text-[9px] uppercase tracking-[0.24em] select-none">
+              <span className="flex items-center gap-1.5 text-amber-400/80">
+                <Megaphone className="w-3 h-3" />
+                <span>quick broadcasts</span>
+              </span>
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-7 px-2 text-xs"
+                className="h-6 px-1.5 -my-1 font-mono text-[10px] uppercase tracking-[0.16em]"
                 onClick={() => {
                   setPresetsEditing((v) => !v)
                   setEditingIdx(null)
@@ -463,13 +481,12 @@ export default function Chat() {
                 }}
                 aria-label={presetsEditing ? 'Done editing presets' : 'Edit presets'}
               >
-                {presetsEditing ? <Check className="w-3.5 h-3.5" /> : <Pencil className="w-3.5 h-3.5" />}
-                <span className="ml-1">{presetsEditing ? 'Done' : 'Edit'}</span>
+                {presetsEditing ? <><Check className="w-3 h-3 mr-1" />done</> : <><Pencil className="w-3 h-3 mr-1" />edit</>}
               </Button>
-            </CardHeader>
-            <CardContent className="space-y-2">
+            </div>
+            <div className="p-2 space-y-1.5">
               {presets.length === 0 && !presetsEditing && (
-                <p className="text-xs text-muted-foreground">No quick messages yet — click Edit to add some.</p>
+                <p className="px-2 py-2 font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground/60">// no presets — click edit to add</p>
               )}
               {presets.map((quickMsg, idx) => {
                 const isEditing = presetsEditing && editingIdx === idx
@@ -498,10 +515,9 @@ export default function Chat() {
                 }
                 return (
                   <div key={`preset-${idx}`} className="flex items-center gap-1">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="min-h-11 flex-1 justify-start whitespace-normal px-3 py-2 text-left"
+                    <button
+                      type="button"
+                      className="group flex-1 min-h-9 px-2 py-1.5 text-left rounded-sm border-l-2 border-transparent bg-muted/15 hover:border-amber-400/60 hover:bg-muted/40 focus-visible:border-amber-400/60 focus-visible:outline-none transition-colors text-xs text-foreground/85 whitespace-normal"
                       onClick={() => {
                         if (presetsEditing) {
                           setEditingIdx(idx)
@@ -513,7 +529,7 @@ export default function Chat() {
                       }}
                     >
                       {quickMsg}
-                    </Button>
+                    </button>
                     {presetsEditing && (
                       <Button
                         variant="ghost"
@@ -529,16 +545,16 @@ export default function Chat() {
                 )
               })}
               {presetsEditing && (
-                <div className="flex items-center gap-1 pt-2 border-t border-border/40">
+                <div className="flex items-center gap-1 pt-2 mt-1 border-t border-border/40">
                   <Input
-                    placeholder="Add a new quick message..."
+                    placeholder="add a new quick message…"
                     value={newPresetDraft}
                     onChange={(e) => setNewPresetDraft(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') { e.preventDefault(); handleAddPreset() }
                     }}
                     maxLength={500}
-                    className="h-9 flex-1 text-sm"
+                    className="h-9 flex-1 text-sm bg-card/70 border-border/55"
                   />
                   <Button
                     variant="outline"
@@ -552,8 +568,8 @@ export default function Chat() {
                   </Button>
                 </div>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         </div>
       </div>
     </div>

@@ -704,9 +704,16 @@ export class ModChecker extends EventEmitter {
 
     // Steam API accepts batches — process in chunks of 100
     const BATCH = 100;
+    // Backoff between batches if Steam rate-limits us. Reset on success.
+    let backoffMs = 0;
+    const MAX_BACKOFF_MS = 60_000;
     for (let i = 0; i < workshopIds.length; i += BATCH) {
       const batch = workshopIds.slice(i, i + BATCH);
       let timeout;
+      if (backoffMs > 0) {
+        log.warn(`Steam API backoff: sleeping ${backoffMs}ms before next batch`);
+        await new Promise(r => setTimeout(r, backoffMs));
+      }
       try {
         const params = new URLSearchParams();
         params.set('itemcount', String(batch.length));
@@ -724,8 +731,20 @@ export class ModChecker extends EventEmitter {
 
         if (!res.ok) {
           log.warn(`Steam API returned ${res.status} for batch ${i / BATCH + 1}`);
+          // Honor Retry-After on 429/503; otherwise exponential backoff up to MAX_BACKOFF_MS.
+          if (res.status === 429 || res.status === 503) {
+            const retryAfter = parseInt(res.headers.get('retry-after') || '', 10);
+            if (Number.isFinite(retryAfter) && retryAfter > 0) {
+              backoffMs = Math.min(retryAfter * 1000, MAX_BACKOFF_MS);
+            } else {
+              backoffMs = Math.min(Math.max(backoffMs * 2, 2000), MAX_BACKOFF_MS);
+            }
+          }
           continue;
         }
+
+        // Successful response — reset backoff.
+        backoffMs = 0;
 
         const data = await res.json();
         const items = data?.response?.publishedfiledetails || [];
@@ -735,7 +754,8 @@ export class ModChecker extends EventEmitter {
               time_updated: item.time_updated || 0,
               title: item.title || null,
               file_type: item.file_type ?? 0,
-              creator_app_id: item.creator_app_id || 0
+              creator_app_id: item.creator_app_id || 0,
+              preview_url: typeof item.preview_url === 'string' ? item.preview_url : null,
             });
           }
         }
@@ -824,6 +844,19 @@ export class ModChecker extends EventEmitter {
       // Cache steam data for getStatus() / getWorkshopInfo()
       if (steamData.size > 0) {
         this.lastSteamTimestamps = steamData;
+
+        // Persist preview_url on tracked mods (lazy import to avoid cycles).
+        try {
+          const { setModPreviewUrl } = await import('../database/init.js');
+          for (const mod of trackedMods) {
+            const steam = steamData.get(mod.workshop_id);
+            if (steam && steam.preview_url && mod.preview_url !== steam.preview_url) {
+              await setModPreviewUrl(mod.workshop_id, steam.preview_url);
+            }
+          }
+        } catch (err) {
+          log.debug(`Failed to persist mod preview URLs: ${err.message}`);
+        }
       }
 
       if (steamData.size === 0) {

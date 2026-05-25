@@ -204,7 +204,7 @@ export default function Servers() {
   const [updateInfo, setUpdateInfo] = useState<UpdateStatus | null>(null)
   const [gameVersion, setGameVersion] = useState<string | null>(null)
   const [availableBranches, setAvailableBranches] = useState<Array<{name: string, description: string, buildId?: string | null}>>([
-    { name: 'stable', description: 'Stable release' },
+    { name: 'public', description: 'Public (Stable)' },
     { name: 'unstable', description: 'Unstable beta' }
   ])
   const [loadingBranches, setLoadingBranches] = useState(false)
@@ -299,7 +299,40 @@ export default function Servers() {
       try {
         const data = await serverApi.getBranches(steamcmdPath)
         if (data.branches && Array.isArray(data.branches)) {
-          setAvailableBranches(data.branches)
+          setAvailableBranches(() => {
+            const fetched = data.branches as Array<{ name: string; description: string; buildId?: string | null }>
+            // SteamCMD's anonymous branch listing usually only returns `public`.
+            // Make sure the installed branch, the server's branch, and the currently
+            // selected branch all remain pickable so we never silently drop the user's choice.
+            const extras: typeof fetched = []
+            const have = new Set(fetched.map(b => b.name))
+            const normalize = (v: string | undefined | null) => (v || '').trim().toLowerCase()
+            const candidates = [
+              normalize(updateInfo?.installed?.branch),
+              normalize(steamOperation?.server.branch),
+              normalize(steamOperation?.branch),
+            ].filter(Boolean) as string[]
+            for (const name of candidates) {
+              if (!have.has(name)) {
+                extras.push({ name, description: 'Beta branch (manual)' })
+                have.add(name)
+              }
+            }
+            return [...fetched, ...extras]
+          })
+          // Only reconcile the selected branch if it's truly unknown and not the
+          // installed/server branch. Never override what the server is actually running.
+          setSteamOperation((prev) => {
+            if (!prev) return prev
+            const names = new Set(data.branches.map((b: { name: string }) => b.name))
+            const installed = (updateInfo?.installed?.branch || '').trim().toLowerCase()
+            const serverBranch = (prev.server.branch || '').trim().toLowerCase()
+            if (prev.branch === installed) return prev
+            if (prev.branch === serverBranch) return prev
+            if (names.has(prev.branch)) return prev
+            const fallback = installed || serverBranch || (names.has('public') ? 'public' : data.branches[0]?.name)
+            return fallback ? { ...prev, branch: fallback } : prev
+          })
         }
       } catch (error) {
         reportClientError('Failed to fetch branches.', error)
@@ -715,7 +748,15 @@ export default function Servers() {
   
   // Open steam operation dialog
   const openSteamOperation = async (server: ServerInstance, type: 'update' | 'verify') => {
-    setSteamOperation({ server, type, branch: server.branch || 'stable' })
+    // Prefer the branch that's actually installed on disk (from steamcmd appmanifest),
+    // then fall back to the server's stored branch, then to Steam's default 'public'.
+    // Steam's stable branch is named 'public'; map legacy 'stable' to it so it matches the fetched list.
+    const normalize = (v: string | undefined | null) => (v || '').trim().toLowerCase()
+    const installed = normalize(updateInfo?.installed?.branch)
+    const stored = normalize(server.branch)
+    const pick = installed || stored
+    const initialBranch = !pick || pick === 'stable' ? 'public' : pick
+    setSteamOperation({ server, type, branch: initialBranch })
     setSteamLogs([])
     setSteamRunning(false)
     setSteamCompleted(null)
@@ -939,14 +980,18 @@ export default function Servers() {
             return (
             <Card 
               key={server.id} 
-              className={`relative overflow-hidden ${server.isActive ? 'border-primary ring-1 ring-primary/20' : ''} ${hasUpdate ? 'border-warning/50' : ''}`}
+              className={`relative overflow-hidden transition-colors ${
+                server.isActive
+                  ? 'border-primary/60 ring-1 ring-primary/25 bg-gradient-to-br from-primary/[0.04] via-card to-card'
+                  : 'hover:border-primary/30'
+              } ${hasUpdate ? 'border-warning/60' : ''}`}
             >
-              {/* Active indicator bar */}
+              {/* Active indicator bar — thicker gradient stripe when active */}
               {server.isActive && (
-                <div className="absolute top-0 left-0 right-0 h-0.5 bg-primary" />
+                <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-primary via-primary/80 to-primary/40" aria-hidden="true" />
               )}
               {hasUpdate && !server.isActive && (
-                <div className="absolute top-0 left-0 right-0 h-0.5 bg-warning" />
+                <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-warning via-warning/80 to-warning/40" aria-hidden="true" />
               )}
 
               <CardHeader className="pb-3">
@@ -1033,23 +1078,23 @@ export default function Servers() {
               
               <CardContent className="space-y-4">
                 {/* Paths Section */}
-                {!server.isRemote && (
-                  <div className="space-y-2">
+                {!server.isRemote && (server.installPath || server.zomboidDataPath) && (
+                  <div className="rounded-md border border-border/40 bg-muted/15 divide-y divide-border/30">
                     {server.installPath && (
-                      <div className="flex items-start gap-2 text-sm">
+                      <div className="flex items-start gap-2.5 px-3 py-2">
                         <HardDrive className="w-3.5 h-3.5 mt-0.5 text-muted-foreground shrink-0" />
-                        <div className="min-w-0">
-                          <span className="text-muted-foreground text-xs">Install Path</span>
-                          <p className="font-mono text-xs truncate" title={server.installPath}>{server.installPath}</p>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Install Path</p>
+                          <p className="font-mono text-xs text-foreground/85 truncate mt-0.5" title={server.installPath}>{server.installPath}</p>
                         </div>
                       </div>
                     )}
                     {server.zomboidDataPath && (
-                      <div className="flex items-start gap-2 text-sm">
+                      <div className="flex items-start gap-2.5 px-3 py-2">
                         <Database className="w-3.5 h-3.5 mt-0.5 text-muted-foreground shrink-0" />
-                        <div className="min-w-0">
-                          <span className="text-muted-foreground text-xs">Data Path</span>
-                          <p className="font-mono text-xs truncate" title={server.zomboidDataPath}>{server.zomboidDataPath}</p>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Data Path</p>
+                          <p className="font-mono text-xs text-foreground/85 truncate mt-0.5" title={server.zomboidDataPath}>{server.zomboidDataPath}</p>
                         </div>
                       </div>
                     )}
@@ -1057,28 +1102,34 @@ export default function Servers() {
                 )}
 
                 {/* Network & Config Grid */}
-                <div className={`grid ${server.isRemote ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1 sm:grid-cols-3'} gap-3`}>
-                  <div className="p-2 rounded-md bg-muted/50">
-                    <div className="flex items-center gap-1.5 text-muted-foreground mb-1">
-                      <Network className="w-3 h-3" />
-                      <span className="text-xs">RCON</span>
+                <div className={`grid ${server.isRemote ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1 sm:grid-cols-3'} gap-2`}>
+                  <div className="flex items-center gap-2.5 rounded-md border border-border/50 bg-muted/20 px-2.5 py-2">
+                    <div className="grid place-items-center w-7 h-7 rounded-md border border-primary/25 bg-primary/[0.06] text-primary shrink-0" aria-hidden="true">
+                      <Network className="w-3.5 h-3.5" />
                     </div>
-                    <p className="font-mono text-xs font-medium">{server.rconHost}:{server.rconPort}</p>
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">RCON</p>
+                      <p className="font-mono text-xs text-foreground/90 truncate tabular-nums">{server.rconHost}:{server.rconPort}</p>
+                    </div>
                   </div>
-                  <div className="p-2 rounded-md bg-muted/50">
-                    <div className="flex items-center gap-1.5 text-muted-foreground mb-1">
-                      <Globe className="w-3 h-3" />
-                      <span className="text-xs">Game Port</span>
+                  <div className="flex items-center gap-2.5 rounded-md border border-border/50 bg-muted/20 px-2.5 py-2">
+                    <div className="grid place-items-center w-7 h-7 rounded-md border border-primary/25 bg-primary/[0.06] text-primary shrink-0" aria-hidden="true">
+                      <Globe className="w-3.5 h-3.5" />
                     </div>
-                    <p className="font-mono text-xs font-medium">{server.serverPort}</p>
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Game Port</p>
+                      <p className="font-mono text-xs text-foreground/90 tabular-nums">{server.serverPort}</p>
+                    </div>
                   </div>
                   {!server.isRemote && (
-                    <div className="p-2 rounded-md bg-muted/50">
-                      <div className="flex items-center gap-1.5 text-muted-foreground mb-1">
-                        <Cpu className="w-3 h-3" />
-                        <span className="text-xs">Memory</span>
+                    <div className="flex items-center gap-2.5 rounded-md border border-border/50 bg-muted/20 px-2.5 py-2">
+                      <div className="grid place-items-center w-7 h-7 rounded-md border border-border/55 bg-muted/40 text-muted-foreground shrink-0" aria-hidden="true">
+                        <Cpu className="w-3.5 h-3.5" />
                       </div>
-                      <p className="font-mono text-xs font-medium">{server.minMemory}–{server.maxMemory} GB</p>
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Memory</p>
+                        <p className="font-mono text-xs text-foreground/90 tabular-nums">{server.minMemory}–{server.maxMemory} GB</p>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1902,12 +1953,29 @@ export default function Servers() {
             <div className="space-y-2">
               <Label>Steam Branch {loadingBranches && <Loader2 className="inline-block w-3 h-3 ml-1 animate-spin" />}</Label>
               <Select 
-                value={steamOperation?.branch || 'stable'} 
+                value={steamOperation?.branch || 'public'} 
                 onValueChange={(value) => steamOperation && setSteamOperation({ ...steamOperation, branch: value })}
                 disabled={steamRunning || loadingBranches}
               >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder={loadingBranches ? "Loading branches..." : "Select branch"} />
+                <SelectTrigger className="w-full text-foreground">
+                  {(() => {
+                    const current = availableBranches.find(b => b.name === steamOperation?.branch)
+                    if (loadingBranches) return <span className="text-muted-foreground">Loading branches...</span>
+                    if (!current) return <span className="text-muted-foreground">Select branch</span>
+                    return (
+                      <span className="flex items-center gap-2">
+                        <span className="capitalize">{current.name === 'public' ? 'Public (Stable)' : current.name}</span>
+                        {(() => {
+                          const sb = (steamOperation?.server.branch || '').trim().toLowerCase()
+                          const ib = (updateInfo?.installed?.branch || '').trim().toLowerCase()
+                          const isCurrent = current.name === ib || current.name === sb
+                          return isCurrent ? (
+                            <span className="rounded border border-border/60 px-1 py-px font-mono text-[10px] uppercase tracking-wider text-muted-foreground">current</span>
+                          ) : null
+                        })()}
+                      </span>
+                    )
+                  })()}
                 </SelectTrigger>
                 <SelectContent>
                   {availableBranches.map((b) => (

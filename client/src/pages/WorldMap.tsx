@@ -2173,91 +2173,121 @@ export default function WorldMap() {
         }
       />
 
-      <div ref={mapWrapperRef} className="relative rounded-xl border border-border/60 overflow-hidden bg-background">
-        {/* Zoom controls */}
-        <div className="absolute top-3 left-3 z-10 flex flex-col gap-1.5">
-          <button
-            onClick={zoomIn}
-            aria-label="Zoom in"
-            className="w-10 h-10 rounded-lg bg-background/80 backdrop-blur border border-border/60 flex items-center justify-center hover:bg-muted transition-colors"
-            title="Zoom in"
-          >
-            <ZoomIn className="w-4 h-4" />
-          </button>
-          <button
-            onClick={zoomOut}
-            aria-label="Zoom out"
-            className="w-10 h-10 rounded-lg bg-background/80 backdrop-blur border border-border/60 flex items-center justify-center hover:bg-muted transition-colors"
-            title="Zoom out"
-          >
-            <ZoomOut className="w-4 h-4" />
-          </button>
-          <button
-            onClick={fitToPlayers}
-            aria-label="Fit to players"
-            className="w-10 h-10 rounded-lg bg-background/80 backdrop-blur border border-border/60 flex items-center justify-center hover:bg-muted transition-colors"
-            title="Fit to players"
-          >
-            <Maximize2 className="w-4 h-4" />
-          </button>
-          <div className="w-full h-px bg-border/30 my-0.5" />
+      <div ref={mapWrapperRef} className="relative rounded-md border border-border/60 overflow-hidden bg-background shadow-[inset_0_0_0_1px_rgba(0,0,0,0.35)]">
+        {/* Corner brackets — tactical control-room frame */}
+        <span aria-hidden className="pointer-events-none absolute top-0 left-0 z-30 h-3 w-3 border-l-2 border-t-2 border-primary/50" />
+        <span aria-hidden className="pointer-events-none absolute top-0 right-0 z-30 h-3 w-3 border-r-2 border-t-2 border-primary/50" />
+        <span aria-hidden className="pointer-events-none absolute bottom-0 left-0 z-30 h-3 w-3 border-l-2 border-b-2 border-primary/50" />
+        <span aria-hidden className="pointer-events-none absolute bottom-0 right-0 z-30 h-3 w-3 border-r-2 border-b-2 border-primary/50" />
+
+        {/* Control rail — top-left */}
+        <div className="absolute top-3 left-3 z-10 w-12 rounded-md border border-border/55 bg-card/85 backdrop-blur-md shadow-lg overflow-hidden">
+          <div className="flex items-center justify-center gap-1 px-1.5 py-1 border-b border-border/40 bg-muted/40 font-mono text-[9px] uppercase tracking-[0.24em] text-primary/70">
+            <span className="text-primary/60">//</span>
+            <span>ctrl</span>
+          </div>
+          <div className="flex flex-col gap-px p-1">
+            <button
+              onClick={zoomIn}
+              aria-label="Zoom in"
+              className="group h-9 w-9 rounded-sm border border-transparent hover:border-border/50 hover:bg-muted/60 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60"
+              title="Zoom in"
+            >
+              <ZoomIn className="w-4 h-4" />
+            </button>
+            <button
+              onClick={zoomOut}
+              aria-label="Zoom out"
+              className="group h-9 w-9 rounded-sm border border-transparent hover:border-border/50 hover:bg-muted/60 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60"
+              title="Zoom out"
+            >
+              <ZoomOut className="w-4 h-4" />
+            </button>
+            <button
+              onClick={fitToPlayers}
+              aria-label="Fit to players"
+              className="group h-9 w-9 rounded-sm border border-transparent hover:border-border/50 hover:bg-muted/60 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60"
+              title="Fit to players"
+            >
+              <Maximize2 className="w-4 h-4" />
+            </button>
+          </div>
+
           {/* Floor selector — B42 only (B41 has no multi-level tiles) */}
           {mapCfg.label === 'B42' && (
-            <div className="flex flex-col items-center gap-0.5">
-              <button
-                onClick={() => changeFloor(floor + 1)}
-                disabled={floor >= 29}
-                aria-label="Floor up"
-                className="w-10 h-6 rounded-t-lg bg-background/80 backdrop-blur border border-border/60 flex items-center justify-center hover:bg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                title="Floor up"
-              >
-                <ChevronUp className="w-3.5 h-3.5" />
-              </button>
-              <button
-                onClick={() => changeFloor(0)}
-                aria-label={`Current floor: ${floorLabel(floor)}`}
-                className={cn(
-                  'w-10 h-7 backdrop-blur border flex items-center justify-center transition-colors text-[10px] font-semibold tabular-nums',
-                  floor !== 0 ? 'bg-accent/15 border-accent/40 text-accent' : 'bg-background/80 border-border/60 text-muted-foreground hover:bg-muted'
-                )}
-                title={`${floorLabel(floor)} — click to reset to ground`}
-              >
-                {floor === 0 ? <Layers className="w-3.5 h-3.5" /> : (floor > 0 ? `+${floor}` : floor)}
-              </button>
-              <button
-                onClick={() => changeFloor(floor - 1)}
-                disabled={floor <= -17}
-                aria-label="Floor down"
-                className="w-10 h-6 rounded-b-lg bg-background/80 backdrop-blur border border-border/60 flex items-center justify-center hover:bg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                title="Floor down"
-              >
-                <ChevronDown className="w-3.5 h-3.5" />
-              </button>
-            </div>
+            <>
+              <div className="flex items-center justify-center gap-1 px-1.5 py-1 border-y border-border/40 bg-muted/30 font-mono text-[9px] uppercase tracking-[0.24em] text-muted-foreground/70">
+                <span>floor</span>
+              </div>
+              <div className="flex flex-col items-center p-1 gap-px">
+                <button
+                  onClick={() => changeFloor(floor + 1)}
+                  disabled={floor >= 29}
+                  aria-label="Floor up"
+                  className="h-6 w-9 rounded-sm border border-transparent hover:border-border/50 hover:bg-muted/60 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:border-transparent"
+                  title="Floor up"
+                >
+                  <ChevronUp className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={() => changeFloor(0)}
+                  aria-label={`Current floor: ${floorLabel(floor)}`}
+                  className={cn(
+                    'h-7 w-9 rounded-sm border flex items-center justify-center transition-colors text-[10px] font-mono font-semibold tabular-nums focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60',
+                    floor !== 0
+                      ? 'bg-accent/20 border-accent/40 text-accent shadow-[inset_0_0_0_1px_rgba(0,0,0,0.2)]'
+                      : 'bg-muted/30 border-border/40 text-muted-foreground hover:bg-muted/60 hover:text-foreground'
+                  )}
+                  title={`${floorLabel(floor)} — click to reset to ground`}
+                >
+                  {floor === 0 ? <Layers className="w-3.5 h-3.5" /> : (floor > 0 ? `+${floor}` : floor)}
+                </button>
+                <button
+                  onClick={() => changeFloor(floor - 1)}
+                  disabled={floor <= -17}
+                  aria-label="Floor down"
+                  className="h-6 w-9 rounded-sm border border-transparent hover:border-border/50 hover:bg-muted/60 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:border-transparent"
+                  title="Floor down"
+                >
+                  <ChevronDown className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </>
           )}
-          <div className="w-full h-px bg-border/30 my-0.5" />
-          <button
-            onClick={() => setShowVehicles((v) => !v)}
-            aria-label={showVehicles ? 'Hide vehicles' : 'Show vehicles'}
-            className={cn(
-              'w-10 h-10 rounded-lg backdrop-blur border flex items-center justify-center transition-colors',
-              showVehicles ? 'bg-info/15 border-info/40 text-info' : 'bg-background/80 border-border/60 text-muted-foreground hover:bg-muted'
-            )}
-            title={`${showVehicles ? 'Hide' : 'Show'} vehicles (${vehicles.length}) — only vehicles near players are visible`}
-          >
-            <Car className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => setShowSafehouses((v) => !v)}
-            aria-label={showSafehouses ? 'Hide safehouses' : 'Show safehouses'}
-            className={cn(
-              'w-10 h-10 rounded-lg backdrop-blur border flex items-center justify-center transition-colors',
-              showSafehouses ? 'bg-success/15 border-success/40 text-success' : 'bg-background/80 border-border/60 text-muted-foreground hover:bg-muted'
-            )}
-            title={`${showSafehouses ? 'Hide' : 'Show'} safehouses (${safehouses.length})`}
-          >
-            <Home className="w-4 h-4" />
-          </button>
+
+          <div className="flex items-center justify-center gap-1 px-1.5 py-1 border-y border-border/40 bg-muted/30 font-mono text-[9px] uppercase tracking-[0.24em] text-muted-foreground/70">
+            <span>layers</span>
+          </div>
+          <div className="flex flex-col gap-px p-1">
+            <button
+              onClick={() => setShowVehicles((v) => !v)}
+              aria-label={showVehicles ? `Hide vehicles (${vehicles.length} loaded)` : `Show vehicles (${vehicles.length} loaded)`}
+              aria-pressed={showVehicles}
+              className={cn(
+                'h-9 w-9 rounded-sm border flex items-center justify-center transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60',
+                showVehicles
+                  ? 'bg-info/20 border-info/40 text-info'
+                  : 'border-transparent text-muted-foreground hover:border-border/50 hover:bg-muted/60 hover:text-foreground'
+              )}
+              title={`${showVehicles ? 'Hide' : 'Show'} vehicles (${vehicles.length}) — only vehicles near players are visible`}
+            >
+              <Car className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setShowSafehouses((v) => !v)}
+              aria-label={showSafehouses ? `Hide safehouses (${safehouses.length} loaded)` : `Show safehouses (${safehouses.length} loaded)`}
+              aria-pressed={showSafehouses}
+              className={cn(
+                'h-9 w-9 rounded-sm border flex items-center justify-center transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60',
+                showSafehouses
+                  ? 'bg-success/20 border-success/40 text-success'
+                  : 'border-transparent text-muted-foreground hover:border-border/50 hover:bg-muted/60 hover:text-foreground'
+              )}
+              title={`${showSafehouses ? 'Hide' : 'Show'} safehouses (${safehouses.length})`}
+            >
+              <Home className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Tile-load failure banner — appears when many tiles fail (network
@@ -2265,26 +2295,40 @@ export default function WorldMap() {
             or upstream tile server down). Without this the user just sees an
             indefinite empty map. See issue #6. */}
         {tileLoadFailing && (
-          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 max-w-md">
-            <div className="rounded-lg border border-warning/50 bg-warning/15 backdrop-blur px-3 py-2 text-xs text-warning-foreground flex items-start gap-2 shadow-lg">
-              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-warning" />
-              <div className="leading-snug">
-                <div className="font-semibold">Map tiles aren't loading</div>
-                <div className="text-muted-foreground">
-                  The panel can't reach <span className="font-mono">{mapCfg.label === 'B41' ? 'map.projectzomboid.com' : 'b42map.com'}</span>.
-                  Check the server's outbound HTTPS access and try Refresh.
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 max-w-md w-[min(28rem,calc(100%-7rem))]" role="alert">
+            <div className="rounded-md border border-warning/60 bg-warning/15 backdrop-blur-md shadow-lg overflow-hidden">
+              <div className="flex items-center justify-between gap-2 px-3 py-1 border-b border-warning/30 bg-warning/20 font-mono text-[10px] uppercase tracking-[0.24em] text-warning">
+                <span className="flex items-center gap-1.5">
+                  <AlertTriangle className="w-3 h-3" />
+                  <span>signal.lost</span>
+                </span>
+                <span className="text-warning/70">tiles offline</span>
+              </div>
+              <div className="px-3 py-2 text-xs leading-snug">
+                <div className="font-semibold text-foreground">Map tiles aren't loading</div>
+                <div className="text-muted-foreground mt-0.5">
+                  Panel can't reach <span className="font-mono text-warning/90">{mapCfg.label === 'B41' ? 'map.projectzomboid.com' : 'b42map.com'}</span>.
+                  Check outbound HTTPS access and try Refresh.
                 </div>
               </div>
             </div>
           </div>
         )}
 
-        {/* Player list panel */}
-        <div className="absolute top-3 right-3 z-10 w-52">
-          <div className="rounded-lg bg-background/85 backdrop-blur border border-border/60 overflow-hidden">
-            <div className="px-3 py-2 border-b border-border/40 flex items-center gap-2 text-xs font-semibold text-muted-foreground">
-              <Users className="w-3.5 h-3.5" />
-              {players.length} Online
+        {/* Roster panel — top-right */}
+        <div className="absolute top-3 right-3 z-10 w-56">
+          <div className="rounded-md border border-border/55 bg-card/85 backdrop-blur-md shadow-lg overflow-hidden">
+            <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 border-b border-border/40 bg-muted/40 font-mono text-[10px] uppercase tracking-[0.22em] text-primary/70">
+              <span className="flex items-center gap-1.5">
+                <span className="text-primary/60">//</span>
+                <span>roster</span>
+                <span className="text-muted-foreground/50">·</span>
+                <span className={cn('flex items-center gap-1', bridgeConnected ? 'text-emerald-400/90' : 'text-muted-foreground/60')}>
+                  <span className={cn('h-1.5 w-1.5 rounded-full', bridgeConnected ? 'bg-emerald-400 animate-pulse' : 'bg-muted-foreground/40')} />
+                  {bridgeConnected ? 'live' : 'offline'}
+                </span>
+              </span>
+              <span className="text-foreground tabular-nums font-semibold">{players.length}</span>
             </div>
             {players.length > 0 ? (
               <div className="max-h-60 overflow-y-auto">
@@ -2292,20 +2336,21 @@ export default function WorldMap() {
                   <button
                     key={p.username}
                     onClick={() => panToPlayer(p)}
+                    aria-label={`Pan to ${p.displayName || p.username}${p.health !== undefined ? `, health ${Math.round(p.health)}%` : ''}`}
                     className={cn(
-                      'w-full px-3 py-1.5 flex items-center gap-2 text-left text-xs hover:bg-muted/60 transition-colors',
-                      selectedPlayer?.username === p.username && 'bg-muted/40'
+                      'w-full px-2.5 py-1.5 flex items-center gap-2 text-left text-xs transition-colors border-l-2 border-transparent hover:bg-muted/50',
+                      selectedPlayer?.username === p.username && 'bg-muted/50 border-primary/60'
                     )}
                   >
                     <span
-                      className="w-2 h-2 rounded-full flex-none"
+                      className="w-2 h-2 rounded-full flex-none ring-1 ring-black/30"
                       style={{ backgroundColor: getPlayerColor(p, 0.9) }}
                     />
                     <span className="truncate flex-1">{p.displayName || p.username}</span>
                     {p.health !== undefined && (
                       <span className={cn(
-                        'text-[10px] tabular-nums',
-                        p.health > 50 ? 'text-success' : p.health > 25 ? 'text-warning' : 'text-destructive'
+                        'text-[10px] font-mono tabular-nums',
+                        p.health > 50 ? 'text-emerald-400' : p.health > 25 ? 'text-amber-400' : 'text-destructive'
                       )}>
                         {Math.round(p.health)}%
                       </span>
@@ -2314,69 +2359,90 @@ export default function WorldMap() {
                 ))}
               </div>
             ) : (
-              <div className="px-3 py-3 text-xs text-muted-foreground text-center">
-                {loading ? 'Loading...' : bridgeConnected ? 'No players online' : 'Bridge not connected'}
+              <div className="px-3 py-3 flex items-center gap-2 text-[11px] font-mono text-muted-foreground/70">
+                <span className={cn('h-1.5 w-1.5 rounded-full', bridgeConnected ? 'bg-muted-foreground/40' : 'bg-destructive/70')} />
+                <span>
+                  {loading ? 'loading…' : bridgeConnected ? 'no players online' : 'bridge offline'}
+                </span>
               </div>
             )}
           </div>
         </div>
 
-        {/* Coordinate display */}
+        {/* HUD coordinate bar — bottom-left */}
         <div className="absolute bottom-3 left-3 z-10">
-          <div className="rounded-lg bg-background/80 backdrop-blur border border-border/60 px-3 py-1.5 text-[11px] font-mono text-muted-foreground tabular-nums">
-            {cursorWorldPos ? (
-              <span>
-                <Crosshair className="w-3 h-3 inline mr-1 opacity-50" />
-                {cursorWorldPos.x}, {cursorWorldPos.y}
-              </span>
-            ) : (
-              <span className="opacity-50">Hover to see coordinates</span>
-            )}
-            {floor !== 0 && (
-              <>
-                <span className="mx-2 opacity-30">|</span>
-                <span className="text-accent">{floorLabel(floor)}</span>
-              </>
-            )}
-            <span className="mx-2 opacity-30">|</span>
-            <span className="opacity-50">{(scale / 0.001 * 100).toFixed(0)}%</span>
+          <div className="flex items-stretch rounded-md border border-border/55 bg-card/85 backdrop-blur-md shadow-lg font-mono text-[11px] tabular-nums overflow-hidden">
+            <div className="flex items-center gap-1.5 px-2.5 py-1.5 border-r border-border/40">
+              <Crosshair className={cn('w-3 h-3', cursorWorldPos ? 'text-primary/80' : 'text-muted-foreground/40')} />
+              {cursorWorldPos ? (
+                <span className="text-foreground">
+                  <span className="text-muted-foreground/60">x</span>{cursorWorldPos.x.toString().padStart(5, ' ')}<span className="mx-1 text-muted-foreground/40">·</span><span className="text-muted-foreground/60">y</span>{cursorWorldPos.y.toString().padStart(5, ' ')}
+                </span>
+              ) : (
+                <span className="text-muted-foreground/50">hover for coords</span>
+              )}
+            </div>
+            <div className="flex items-center gap-1 px-2.5 py-1.5 border-r border-border/40">
+              <span className="text-muted-foreground/50 text-[9px] uppercase tracking-[0.22em]">z</span>
+              <span className={cn(floor !== 0 ? 'text-accent' : 'text-muted-foreground/70')}>{floorLabel(floor)}</span>
+            </div>
+            <div className="flex items-center gap-1 px-2.5 py-1.5">
+              <span className="text-muted-foreground/50 text-[9px] uppercase tracking-[0.22em]">zm</span>
+              <span className="text-muted-foreground/80">{(scale / 0.001 * 100).toFixed(0)}%</span>
+            </div>
           </div>
         </div>
 
-        {/* Selected player detail card */}
+        {/* Dossier — bottom-right (selected player) */}
         {selectedPlayer && (
-          <div className="absolute bottom-3 right-3 z-10 w-56">
-            <div className="rounded-lg bg-background/90 backdrop-blur border border-border/60 overflow-hidden">
-              <div className="px-3 py-2 border-b border-border/40 flex items-center justify-between">
+          <div className="absolute bottom-3 right-3 z-10 w-60">
+            <div className="relative rounded-md border border-border/55 bg-card/90 backdrop-blur-md shadow-lg overflow-hidden">
+              <span aria-hidden className="pointer-events-none absolute top-0 left-0 h-2 w-2 border-l-2 border-t-2 border-primary/50" />
+              <span aria-hidden className="pointer-events-none absolute top-0 right-0 h-2 w-2 border-r-2 border-t-2 border-primary/50" />
+              <span aria-hidden className="pointer-events-none absolute bottom-0 left-0 h-2 w-2 border-l-2 border-b-2 border-primary/50" />
+              <span aria-hidden className="pointer-events-none absolute bottom-0 right-0 h-2 w-2 border-r-2 border-b-2 border-primary/50" />
+              <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 border-b border-border/40 bg-muted/40 font-mono text-[10px] uppercase tracking-[0.22em] text-primary/70">
+                <span className="flex items-center gap-1.5">
+                  <span className="text-primary/60">//</span>
+                  <span>dossier</span>
+                  <span className="text-muted-foreground/50">·</span>
+                  <span className="text-emerald-400/90">target.acquired</span>
+                </span>
+                <button
+                  onClick={() => setSelectedPlayer(null)}
+                  className="p-0.5 -m-0.5 rounded text-muted-foreground/70 hover:text-foreground hover:bg-muted/60 transition-colors"
+                  aria-label="Close dossier"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+              <div className="px-3 pt-2.5 pb-2 border-b border-border/30">
                 <div className="flex items-center gap-2">
                   <span
-                    className="w-2.5 h-2.5 rounded-full"
+                    className="w-2.5 h-2.5 rounded-full ring-1 ring-black/30 flex-none"
                     style={{ backgroundColor: getPlayerColor(selectedPlayer, 0.9) }}
                   />
                   <span className="text-sm font-semibold truncate">
                     {selectedPlayer.displayName || selectedPlayer.username}
                   </span>
                 </div>
-                <button onClick={() => setSelectedPlayer(null)} className="text-muted-foreground hover:text-foreground" aria-label="Close player panel">
-                  <X className="w-3.5 h-3.5" />
-                </button>
               </div>
               <div className="px-3 py-2 text-xs space-y-1.5">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Position</span>
+                <div className="flex justify-between items-baseline">
+                  <span className="font-mono text-[9px] uppercase tracking-[0.22em] text-muted-foreground/70">pos</span>
                   <span className="font-mono tabular-nums">{Math.round(selectedPlayer.x)}, {Math.round(selectedPlayer.y)}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Floor</span>
+                <div className="flex justify-between items-baseline">
+                  <span className="font-mono text-[9px] uppercase tracking-[0.22em] text-muted-foreground/70">floor</span>
                   <span className="font-mono tabular-nums">{selectedPlayer.z}</span>
                 </div>
                 {selectedPlayer.health !== undefined && (
                   <div className="flex justify-between items-center">
-                    <span className="text-muted-foreground">Health</span>
+                    <span className="font-mono text-[9px] uppercase tracking-[0.22em] text-muted-foreground/70">hp</span>
                     <div className="flex items-center gap-1.5">
-                      <div className="w-16 h-1.5 rounded-full bg-muted overflow-hidden">
+                      <div className="w-16 h-1.5 rounded-sm bg-muted/60 overflow-hidden ring-1 ring-black/20">
                         <div
-                          className="h-full rounded-full transition-all"
+                          className="h-full transition-all"
                           style={{
                             width: `${Math.max(0, Math.min(100, selectedPlayer.health))}%`,
                             backgroundColor:
@@ -2391,19 +2457,22 @@ export default function WorldMap() {
                   </div>
                 )}
                 {selectedPlayer.accessLevel && selectedPlayer.accessLevel !== 'none' && selectedPlayer.accessLevel !== 'user' && selectedPlayer.accessLevel !== '' && (
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Role</span>
-                    <span className="text-warning capitalize">{selectedPlayer.accessLevel}</span>
+                  <div className="flex justify-between items-baseline">
+                    <span className="font-mono text-[9px] uppercase tracking-[0.22em] text-muted-foreground/70">role</span>
+                    <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-amber-400">{selectedPlayer.accessLevel}</span>
                   </div>
                 )}
                 {selectedPlayer.isInfected && (
-                  <div className="flex items-center gap-1 text-destructive">
-                    <Skull className="w-3 h-3" />
-                    <span>Infected</span>
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-[9px] uppercase tracking-[0.22em] text-muted-foreground/70">status</span>
+                    <span className="flex items-center gap-1 text-destructive font-mono text-[10px] uppercase tracking-[0.18em]">
+                      <Skull className="w-3 h-3" />
+                      <span>infected</span>
+                    </span>
                   </div>
                 )}
               </div>
-              <div className="px-3 py-2 border-t border-border/40 flex gap-1.5">
+              <div className="px-2 py-1.5 border-t border-border/40 bg-muted/20 flex gap-1">
                 <Button
                   size="sm" variant="ghost" className="h-7 text-xs gap-1 flex-1"
                   disabled={actionLoading !== null}
@@ -2447,7 +2516,7 @@ export default function WorldMap() {
             }}
             role="menu"
             aria-label="Map actions"
-            className="absolute z-20 min-w-[200px] sm:min-w-[240px] max-h-[min(420px,80vh)] overflow-y-auto rounded-lg bg-background/95 backdrop-blur-md border border-border/60 shadow-xl ring-1 ring-black/10 p-1"
+            className="absolute z-20 min-w-[220px] sm:min-w-[260px] rounded-md bg-card/95 backdrop-blur-md border border-border/55 shadow-[0_20px_50px_-12px_rgba(0,0,0,0.6)] ring-1 ring-primary/10 overflow-hidden"
             style={{
               left: contextMenu.screenX,
               top: contextMenu.screenY,
@@ -2473,13 +2542,15 @@ export default function WorldMap() {
               }
             }}
           >
-            {/* Context header — coordinates + quick actions on the spot */}
-            <div className="flex items-center justify-between gap-1 px-2 py-1.5 text-[11px] font-mono text-muted-foreground/70 border-b border-border/30 tabular-nums select-none bg-muted/20">
+            {/* Context header — coordinates + quick copy */}
+            <div className="flex items-center justify-between gap-1 px-2 py-1.5 text-[10px] font-mono uppercase tracking-[0.2em] text-primary/70 border-b border-border/40 select-none bg-muted/30">
               <span className="flex items-center gap-1.5">
-                <Crosshair className="w-3 h-3 text-muted-foreground/50" />
-                <span>{Math.round(contextMenu.worldX)}, {Math.round(contextMenu.worldY)}</span>
-                <span className="text-muted-foreground/40">·</span>
-                <span className="text-muted-foreground/50">{floorLabel(floor)}</span>
+                <span className="text-primary/60">//</span>
+                <span>actions</span>
+                <span className="text-muted-foreground/40 normal-case tracking-normal">·</span>
+                <span className="text-foreground tabular-nums normal-case tracking-normal">{Math.round(contextMenu.worldX)}, {Math.round(contextMenu.worldY)}</span>
+                <span className="text-muted-foreground/40 normal-case tracking-normal">·</span>
+                <span className="text-muted-foreground/60 normal-case tracking-normal">{floorLabel(floor)}</span>
               </span>
               <button
                 type="button"
@@ -2497,12 +2568,23 @@ export default function WorldMap() {
 
             {contextMenu.player && (
               <>
-                <div className="px-2 py-1.5 text-xs text-muted-foreground border-b border-border/20 truncate select-none">
-                  Player: <strong className="text-foreground">{contextMenu.player.username}</strong>
+                <div className="px-2.5 pt-2 pb-1.5 border-b border-border/30 select-none">
+                  <div className="flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-[0.24em] text-primary/60 mb-1">
+                    <span>›</span>
+                    <span>target</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="w-2 h-2 rounded-full ring-1 ring-black/30 flex-none"
+                      style={{ backgroundColor: getPlayerColor(contextMenu.player, 0.9) }}
+                    />
+                    <strong className="text-foreground text-xs truncate">{contextMenu.player.username}</strong>
+                  </div>
                 </div>
                 <ContextMenuItem
-                  icon={<Heart className="w-3.5 h-3.5" />}
+                  icon={<Heart className="w-3.5 h-3.5 text-emerald-400" />}
                   label="Heal player"
+                  tone="success"
                   onClick={() => {
                     panelBridgeApi.sendCommand('healPlayer', { username: contextMenu.player!.username })
                       .then(() => { toast({ title: 'Healed', description: `${contextMenu.player!.username} healed` }); fetchPlayerPositions() })
@@ -2515,44 +2597,49 @@ export default function WorldMap() {
 
             {contextMenu.vehicle && (
               <>
-                <div className="px-2 py-2 border-b border-border/20 select-none">
+                <div className="px-2.5 pt-2 pb-2 border-b border-border/30 select-none">
+                  <div className="flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-[0.24em] text-info/70 mb-1.5">
+                    <span>›</span>
+                    <Car className="w-2.5 h-2.5" />
+                    <span>vehicle</span>
+                  </div>
                   <div className="flex items-center gap-1.5 text-xs">
-                    <Car className="w-3.5 h-3.5 text-info flex-none" />
                     <strong className="text-foreground truncate">{contextMenu.vehicle.type || contextMenu.vehicle.scriptName?.split('.').pop() || 'Vehicle'}</strong>
                   </div>
                   <div className="mt-1.5 space-y-1">
                     {contextMenu.vehicle.fuelPct != null && (
-                      <div className="flex items-center gap-2">
-                        <Fuel className="w-3 h-3 text-muted-foreground/60 flex-none" />
-                        <div className="flex-1 h-1.5 rounded-full bg-muted/60 overflow-hidden">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-muted-foreground/70 w-9">fuel</span>
+                        <div className="flex-1 h-1.5 rounded-sm bg-muted/60 overflow-hidden ring-1 ring-black/20">
                           <div
-                            className={cn("h-full rounded-full transition-all", contextMenu.vehicle.fuelPct > 30 ? "bg-info/80" : contextMenu.vehicle.fuelPct > 10 ? "bg-warning/80" : "bg-destructive/80")}
+                            className={cn("h-full transition-all", contextMenu.vehicle.fuelPct > 30 ? "bg-info/80" : contextMenu.vehicle.fuelPct > 10 ? "bg-amber-400/80" : "bg-destructive/80")}
                             style={{ width: `${Math.round(contextMenu.vehicle.fuelPct)}%` }}
                           />
                         </div>
-                        <span className="text-[10px] tabular-nums text-muted-foreground/70 w-7 text-right">{Math.round(contextMenu.vehicle.fuelPct)}%</span>
+                        <span className="font-mono text-[10px] tabular-nums text-muted-foreground/80 w-8 text-right">{Math.round(contextMenu.vehicle.fuelPct)}%</span>
                       </div>
                     )}
                     {contextMenu.vehicle.batteryCharge != null && (
-                      <div className="flex items-center gap-2">
-                        <Battery className="w-3 h-3 text-muted-foreground/60 flex-none" />
-                        <div className="flex-1 h-1.5 rounded-full bg-muted/60 overflow-hidden">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-muted-foreground/70 w-9">batt</span>
+                        <div className="flex-1 h-1.5 rounded-sm bg-muted/60 overflow-hidden ring-1 ring-black/20">
                           <div
-                            className={cn("h-full rounded-full transition-all", contextMenu.vehicle.batteryCharge > 30 ? "bg-info/80" : contextMenu.vehicle.batteryCharge > 10 ? "bg-warning/80" : "bg-destructive/80")}
+                            className={cn("h-full transition-all", contextMenu.vehicle.batteryCharge > 30 ? "bg-info/80" : contextMenu.vehicle.batteryCharge > 10 ? "bg-amber-400/80" : "bg-destructive/80")}
                             style={{ width: `${Math.round(contextMenu.vehicle.batteryCharge)}%` }}
                           />
                         </div>
-                        <span className="text-[10px] tabular-nums text-muted-foreground/70 w-7 text-right">{Math.round(contextMenu.vehicle.batteryCharge)}%</span>
+                        <span className="font-mono text-[10px] tabular-nums text-muted-foreground/80 w-8 text-right">{Math.round(contextMenu.vehicle.batteryCharge)}%</span>
                       </div>
                     )}
                     {contextMenu.vehicle.fuelPct == null && contextMenu.vehicle.batteryCharge == null && (
-                      <div className="text-[10px] text-muted-foreground/50 italic">No telemetry</div>
+                      <div className="font-mono text-[10px] text-muted-foreground/50 italic">no telemetry</div>
                     )}
                   </div>
                 </div>
                 <ContextMenuItem
-                  icon={<Wrench className="w-3.5 h-3.5" />}
+                  icon={<Wrench className="w-3.5 h-3.5 text-info" />}
                   label="Repair vehicle"
+                  tone="info"
                   loading={actionLoading === 'vehicle-repair'}
                   onClick={() => {
                     setActionLoading('vehicle-repair')
@@ -2570,8 +2657,9 @@ export default function WorldMap() {
                   }}
                 />
                 <ContextMenuItem
-                  icon={<Fuel className="w-3.5 h-3.5" />}
+                  icon={<Fuel className="w-3.5 h-3.5 text-info" />}
                   label="Fill fuel"
+                  tone="info"
                   loading={actionLoading === 'vehicle-fuel'}
                   onClick={() => {
                     setActionLoading('vehicle-fuel')
@@ -2589,8 +2677,9 @@ export default function WorldMap() {
                   }}
                 />
                 <ContextMenuItem
-                  icon={<Battery className="w-3.5 h-3.5" />}
+                  icon={<Battery className="w-3.5 h-3.5 text-info" />}
                   label="Charge battery"
+                  tone="info"
                   loading={actionLoading === 'vehicle-battery'}
                   onClick={() => {
                     setActionLoading('vehicle-battery')
@@ -2610,6 +2699,7 @@ export default function WorldMap() {
                 <ContextMenuItem
                   icon={<Trash2 className="w-3.5 h-3.5 text-destructive" />}
                   label="Remove vehicle"
+                  tone="danger"
                   loading={actionLoading === 'vehicle-remove'}
                   onClick={() => {
                     setActionLoading('vehicle-remove')
@@ -2627,8 +2717,9 @@ export default function WorldMap() {
                   }}
                 />
                 <ContextMenuItem
-                  icon={<Zap className="w-3.5 h-3.5 text-warning" />}
+                  icon={<Zap className="w-3.5 h-3.5 text-amber-400" />}
                   label="Hotwire & start engine"
+                  tone="warning"
                   loading={actionLoading === 'vehicle-hotwire'}
                   onClick={() => {
                     setActionLoading('vehicle-hotwire')
@@ -2649,16 +2740,13 @@ export default function WorldMap() {
 
             {/* ── Teleport players to this spot ── */}
             {playersRef.current.length > 0 && (
-              <div className="border-t border-border/30 pt-0.5">
-                <div className="px-2 pt-1.5 pb-0.5 text-[10px] uppercase tracking-wider text-muted-foreground/60 font-semibold select-none flex items-center gap-1.5">
-                  <Locate className="w-3 h-3" />
-                  Teleport to this spot
-                </div>
+              <div className="border-t border-border/30">
+                <ContextMenuSection label="teleport" icon={<Locate className="w-2.5 h-2.5" />} tone="primary" />
                 {playersRef.current.slice(0, 6).map((pl) => {
                   const pColor = pl.isInfected
                     ? 'text-destructive'
                     : pl.accessLevel && pl.accessLevel !== '' && pl.accessLevel !== 'none' && pl.accessLevel !== 'user'
-                      ? 'text-warning'
+                      ? 'text-amber-400'
                       : 'text-info'
                   return (
                     <ContextMenuItem
@@ -2666,6 +2754,7 @@ export default function WorldMap() {
                       icon={<Users className={cn('w-3.5 h-3.5', pColor)} />}
                       label={pl.displayName || pl.username}
                       description={`${Math.round(pl.x)}, ${Math.round(pl.y)} → ${Math.round(contextMenu.worldX)}, ${Math.round(contextMenu.worldY)}`}
+                      tone="primary"
                       loading={actionLoading === 'teleport'}
                       disabled={!bridgeConnected}
                       onClick={() => {
@@ -2676,7 +2765,7 @@ export default function WorldMap() {
                   )
                 })}
                 {playersRef.current.length > 6 && (
-                  <div className="px-2 py-1 text-[10px] text-muted-foreground/40 italic select-none">
+                  <div className="px-2.5 py-1 font-mono text-[10px] text-muted-foreground/50 italic select-none">
                     +{playersRef.current.length - 6} more online
                   </div>
                 )}
@@ -2684,27 +2773,26 @@ export default function WorldMap() {
             )}
 
             {/* ── World effects section ── */}
-            <div className="border-t border-border/30 pt-0.5">
-              <div className="px-2 pt-1.5 pb-0.5 text-[10px] uppercase tracking-wider text-muted-foreground/60 font-semibold select-none flex items-center gap-1.5">
-                <Zap className="w-3 h-3" />
-                Effects at this spot
-              </div>
+            <div className="border-t border-border/30">
+              <ContextMenuSection label="effects" icon={<Zap className="w-2.5 h-2.5" />} tone="info" />
               <ContextMenuItem
                 icon={<CloudLightning className="w-3.5 h-3.5 text-info" />}
                 label="Lightning strike"
                 description="Single bolt + thunder"
+                tone="info"
                 loading={actionLoading === 'lightning'}
                 onClick={() => triggerLightningAt(contextMenu.worldX, contextMenu.worldY)}
               />
               <ContextMenuItem
-                icon={<Volume2 className="w-3.5 h-3.5 text-warning" />}
+                icon={<Volume2 className="w-3.5 h-3.5 text-amber-400" />}
                 label="Create noise"
                 description="Pull zombies this way"
+                tone="warning"
                 loading={actionLoading === 'noise'}
                 onClick={() => createNoiseAt(contextMenu.worldX, contextMenu.worldY)}
               />
               <ContextMenuItem
-                icon={<Car className="w-3.5 h-3.5" />}
+                icon={<Car className="w-3.5 h-3.5 text-muted-foreground" />}
                 label="Spawn vehicle here"
                 description="Pick a vehicle to spawn"
                 disabled={!bridgeConnected}
@@ -2717,15 +2805,13 @@ export default function WorldMap() {
             </div>
 
             {/* ── Drops section ── */}
-            <div className="border-t border-border/30 pt-0.5">
-              <div className="px-2 pt-1.5 pb-0.5 text-[10px] uppercase tracking-wider text-warning/80 font-semibold select-none flex items-center gap-1.5">
-                <Package className="w-3 h-3" />
-                Drop items
-              </div>
+            <div className="border-t border-border/30">
+              <ContextMenuSection label="drops" icon={<Package className="w-2.5 h-2.5" />} tone="warning" />
               <ContextMenuItem
-                icon={<Package className="w-3.5 h-3.5 text-warning" />}
+                icon={<Package className="w-3.5 h-3.5 text-amber-400" />}
                 label="Custom drop…"
                 description="Build a package — items, quantities, templates"
+                tone="warning"
                 disabled={!bridgeConnected}
                 onClick={() => {
                   setDropDialog({ x: Math.round(contextMenu.worldX), y: Math.round(contextMenu.worldY), z: floor })
@@ -2746,9 +2832,10 @@ export default function WorldMap() {
               />
               {lastDrop && (
                 <ContextMenuItem
-                  icon={<RefreshCw className="w-3.5 h-3.5 text-warning/80" />}
+                  icon={<RefreshCw className="w-3.5 h-3.5 text-amber-400/80" />}
                   label="Repeat last drop"
                   description={lastDrop.label}
+                  tone="warning"
                   loading={actionLoading === 'drop'}
                   disabled={!bridgeConnected}
                   onClick={() => {
@@ -2767,16 +2854,14 @@ export default function WorldMap() {
               )}
               {dropTemplates.length > 0 && (
                 <>
-                  <div className="px-2 pt-1 pb-0.5 text-[10px] uppercase tracking-wider text-muted-foreground/50 font-semibold select-none flex items-center gap-1.5">
-                    <Save className="w-3 h-3" />
-                    Saved packages
-                  </div>
+                  <ContextMenuSection label="saved packages" icon={<Save className="w-2.5 h-2.5" />} tone="muted" />
                   {dropTemplates.slice(0, 8).map((tpl) => (
                     <ContextMenuItem
                       key={tpl.id}
-                      icon={<Package className="w-3.5 h-3.5 text-warning/70" />}
+                      icon={<Package className="w-3.5 h-3.5 text-amber-400/70" />}
                       label={tpl.name}
                       description={`${tpl.items.length} items`}
+                      tone="warning"
                       loading={actionLoading === 'drop'}
                       disabled={!bridgeConnected}
                       onClick={() => {
@@ -2795,24 +2880,23 @@ export default function WorldMap() {
                   ))}
                 </>
               )}
-              <div className="px-2 pt-1 pb-0.5 text-[10px] uppercase tracking-wider text-muted-foreground/50 font-semibold select-none">
-                Preset crates
-              </div>
+              <ContextMenuSection label="preset crates" icon={<Package className="w-2.5 h-2.5" />} tone="muted" />
               {AIRDROP_PRESETS.map((preset) => (
                 <ContextMenuItem
                   key={preset.id}
-                  icon={<preset.icon className="w-3.5 h-3.5" />}
+                  icon={<preset.icon className="w-3.5 h-3.5 text-amber-400/80" />}
                   label={preset.label}
                   description={preset.desc}
+                  tone="warning"
                   loading={actionLoading === 'airdrop'}
                   disabled={!bridgeConnected}
                   onClick={() => callAirdrop(contextMenu.worldX, contextMenu.worldY, preset.id)}
                 />
               ))}
               {!bridgeConnected && (
-                <div className="px-2 py-1 text-[10px] text-muted-foreground/50 italic flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-destructive/60 flex-none" />
-                  Bridge offline — drops unavailable
+                <div className="mt-1 mx-2 mb-1.5 px-2 py-1.5 rounded-sm border border-destructive/30 bg-destructive/10 flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.2em] text-destructive/85">
+                  <span className="w-1.5 h-1.5 rounded-full bg-destructive animate-pulse" />
+                  <span>bridge offline — drops unavailable</span>
                 </div>
               )}
             </div>
@@ -3254,25 +3338,72 @@ export default function WorldMap() {
 }
 
 // ─── Helpers ──────────────────────────────────────────────
-function ContextMenuItem({ icon, label, onClick, loading, description, disabled }: {
-  icon: React.ReactNode; label: string; onClick: () => void; loading?: boolean; description?: string; disabled?: boolean
+type ContextMenuTone = 'default' | 'primary' | 'warning' | 'danger' | 'info' | 'success'
+
+function ContextMenuItem({ icon, label, onClick, loading, description, disabled, tone = 'default' }: {
+  icon: React.ReactNode
+  label: string
+  onClick: () => void
+  loading?: boolean
+  description?: string
+  disabled?: boolean
+  tone?: ContextMenuTone
 }) {
+  const toneAccent: Record<ContextMenuTone, string> = {
+    default: 'group-hover:border-l-primary/60 group-focus-visible:border-l-primary/60',
+    primary: 'group-hover:border-l-primary/70 group-focus-visible:border-l-primary/70',
+    warning: 'group-hover:border-l-amber-400/80 group-focus-visible:border-l-amber-400/80',
+    danger: 'group-hover:border-l-destructive/80 group-focus-visible:border-l-destructive/80',
+    info: 'group-hover:border-l-info/80 group-focus-visible:border-l-info/80',
+    success: 'group-hover:border-l-emerald-400/80 group-focus-visible:border-l-emerald-400/80',
+  }
   return (
     <button
       role="menuitem"
       onClick={onClick}
       disabled={loading || disabled}
       title={description}
-      className="w-full px-2 py-1.5 text-xs flex items-center gap-2.5 rounded-md hover:bg-muted/60 active:bg-muted/80 transition-colors duration-100 disabled:opacity-40 disabled:cursor-not-allowed focus-visible:bg-muted/60 focus-visible:outline-none"
+      className="group relative w-full pr-2 py-1.5 text-xs flex items-stretch gap-2.5 transition-colors duration-100 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent hover:bg-muted/45 focus-visible:bg-muted/45 focus-visible:outline-none"
     >
-      {loading
-        ? <Loader2 className="w-3.5 h-3.5 animate-spin flex-none" />
-        : <span className="flex-none w-4 flex items-center justify-center">{icon}</span>}
-      <span className="flex flex-col min-w-0 text-left">
-        <span className="truncate">{label}</span>
+      <span
+        aria-hidden
+        className={cn(
+          'w-[2px] -my-px shrink-0 border-l-2 border-transparent transition-colors',
+          toneAccent[tone]
+        )}
+      />
+      <span className="flex-none w-4 flex items-center justify-center pl-1">
+        {loading
+          ? <Loader2 className="w-3.5 h-3.5 animate-spin text-primary/70" />
+          : icon}
+      </span>
+      <span className="flex flex-col min-w-0 text-left flex-1">
+        <span className="truncate text-foreground">{label}</span>
         {description && <span className="text-[10px] text-muted-foreground/60 truncate leading-tight">{description}</span>}
       </span>
     </button>
+  )
+}
+
+function ContextMenuSection({ label, icon, tone = 'muted' }: {
+  label: string
+  icon?: React.ReactNode
+  tone?: 'muted' | 'primary' | 'warning' | 'info' | 'success' | 'danger'
+}) {
+  const toneColor: Record<NonNullable<typeof tone>, string> = {
+    muted: 'text-muted-foreground/70',
+    primary: 'text-primary/75',
+    warning: 'text-amber-400/85',
+    info: 'text-info/80',
+    success: 'text-emerald-400/85',
+    danger: 'text-destructive/85',
+  }
+  return (
+    <div className="flex items-center gap-1.5 px-2.5 pt-2 pb-1 font-mono text-[9px] uppercase tracking-[0.24em] select-none">
+      {icon && <span className={cn('flex items-center justify-center', toneColor[tone])}>{icon}</span>}
+      <span className={toneColor[tone]}>{label}</span>
+      <span className="flex-1 h-px bg-border/40" />
+    </div>
   )
 }
 

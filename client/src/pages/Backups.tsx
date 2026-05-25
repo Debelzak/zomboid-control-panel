@@ -577,65 +577,72 @@ export default function Backups() {
       {backups.length > 0 && (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 stagger-in">
         <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <Archive className="w-5 h-5 text-primary shrink-0" />
-              <div>
-                <p className="text-2xl font-bold">{backups.length}</p>
-                <p className="text-sm text-muted-foreground">Total Backups</p>
-              </div>
+          <CardContent className="flex items-center gap-3 p-4">
+            <div className="grid place-items-center w-10 h-10 rounded-md border border-primary/30 bg-primary/[0.06] text-primary shrink-0" aria-hidden="true">
+              <Archive className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Total Backups</p>
+              <p className="text-xl font-semibold leading-tight mt-0.5 text-foreground">{backups.length}</p>
             </div>
           </CardContent>
         </Card>
 
         <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <HardDrive className="w-5 h-5 text-muted-foreground shrink-0" />
-              <div>
-                <p className="text-2xl font-bold">{formatBytes(totalSize)}</p>
-                <p className="text-sm text-muted-foreground">Total Size</p>
-              </div>
+          <CardContent className="flex items-center gap-3 p-4">
+            <div className="grid place-items-center w-10 h-10 rounded-md border border-border/55 bg-muted/30 text-muted-foreground shrink-0" aria-hidden="true">
+              <HardDrive className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Total Size</p>
+              <p className="text-xl font-semibold leading-tight mt-0.5 text-foreground tabular-nums">{formatBytes(totalSize)}</p>
             </div>
           </CardContent>
         </Card>
 
         <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <Clock className="w-5 h-5 text-primary shrink-0" />
-              <div>
-                <p className="text-sm font-medium truncate">
-                  {backupStatus?.lastBackup
-                    ? formatDate(backupStatus.lastBackup.created)
-                    : 'Never'}
-                </p>
-                <p className="text-sm text-muted-foreground">Last Backup</p>
-              </div>
+          <CardContent className="flex items-center gap-3 p-4">
+            <div className="grid place-items-center w-10 h-10 rounded-md border border-primary/30 bg-primary/[0.06] text-primary shrink-0" aria-hidden="true">
+              <Clock className="w-4 h-4" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Last Backup</p>
+              <p className="text-sm font-semibold leading-tight mt-0.5 text-foreground truncate">
+                {backupStatus?.lastBackup ? formatDate(backupStatus.lastBackup.created) : 'Never'}
+              </p>
             </div>
           </CardContent>
         </Card>
 
         <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <Clock className={cn('w-5 h-5 shrink-0', backupStatus?.enabled ? 'text-primary' : 'text-muted-foreground')} />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium">
-                  {backupStatus?.enabled ? 'Auto-backup On' : 'Auto-backup Off'}
-                </p>
-                <p className="text-xs text-muted-foreground truncate" title={backupStatus?.schedule || ''}>
-                  {backupStatus?.enabled
-                    ? `Runs ${describeSchedule(backupStatus?.schedule)} · keep ${backupStatus?.maxBackups ?? '?'}`
-                    : 'No scheduled backups'}
-                </p>
-              </div>
-              <Switch
-                checked={backupStatus?.enabled || false}
-                onCheckedChange={toggleBackupEnabled}
-                aria-label="Toggle scheduled backups"
-              />
+          <CardContent className="flex items-center gap-3 p-4">
+            <div
+              className={cn(
+                'grid place-items-center w-10 h-10 rounded-md border shrink-0',
+                backupStatus?.enabled
+                  ? 'border-primary/30 bg-primary/[0.06] text-primary'
+                  : 'border-border/55 bg-muted/30 text-muted-foreground'
+              )}
+              aria-hidden="true"
+            >
+              <Clock className="w-4 h-4" />
             </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Auto-Backup</p>
+              <p className={cn('text-sm font-semibold leading-tight mt-0.5 truncate', backupStatus?.enabled ? 'text-foreground' : 'text-muted-foreground')}>
+                {backupStatus?.enabled ? 'On' : 'Off'}
+              </p>
+              <p className="text-[11px] text-muted-foreground/80 truncate" title={backupStatus?.schedule || ''}>
+                {backupStatus?.enabled
+                  ? `Runs ${describeSchedule(backupStatus?.schedule)} · keep ${backupStatus?.maxBackups ?? '?'}`
+                  : 'No scheduled backups'}
+              </p>
+            </div>
+            <Switch
+              checked={backupStatus?.enabled || false}
+              onCheckedChange={toggleBackupEnabled}
+              aria-label="Toggle scheduled backups"
+            />
           </CardContent>
         </Card>
       </div>
@@ -806,32 +813,42 @@ export default function Backups() {
           ) : (
             <div className="space-y-2">
               {/* Select All Header */}
-              <div className="flex items-center gap-3 p-3 bg-muted/30 rounded-lg">
+              <div className="flex items-center gap-3 px-3 py-2.5 border border-border/50 bg-muted/20 rounded-lg">
                 <Checkbox
                   checked={allSelected}
                   onCheckedChange={toggleSelectAll}
                   id="select-all"
                 />
                 <Label htmlFor="select-all" className="text-sm font-medium cursor-pointer flex-1">
-                  {allSelected ? 'Clear backup selection' : 'Select all backups'} ({backups.length})
+                  {selectedBackups.size === 0
+                    ? `Select all · ${backups.length} backup${backups.length === 1 ? '' : 's'}`
+                    : allSelected
+                      ? `All ${backups.length} selected · click to clear`
+                      : `${selectedBackups.size} of ${backups.length} selected`}
                 </Label>
+                {selectedBackups.size > 0 && (
+                  <span className="inline-flex h-5 items-center rounded-full bg-primary/15 px-2 font-mono text-[11px] tabular-nums text-primary">
+                    {selectedBackups.size}
+                  </span>
+                )}
               </div>
 
               {/* Backup List */}
               <ScrollArea className="h-[300px] sm:h-[400px]">
                 <div className="space-y-2 pr-4">
-                  {backups.map((backup) => {
+                  {backups.map((backup, idx) => {
                     const isSelected = selectedBackups.has(backup.name)
                     const isRestoring = restoringBackup === backup.name
+                    const isLatest = idx === 0
 
                     return (
                       <div
                         key={backup.name}
                         className={cn(
-                          'flex items-center gap-3 p-4 rounded-lg border transition-colors',
+                          'group/backup flex items-center gap-3 p-3 rounded-lg border transition-colors',
                           isSelected
-                            ? 'border-primary/25 bg-primary/8'
-                            : 'bg-muted/30 border-transparent hover:bg-muted/50'
+                            ? 'border-primary/40 bg-primary/[0.08]'
+                            : 'bg-muted/20 border-border/40 hover:border-primary/30 hover:bg-muted/40'
                         )}
                       >
                         <Checkbox
@@ -841,17 +858,34 @@ export default function Backups() {
                           aria-label={`Select backup ${backup.name}`}
                         />
 
+                        {/* Leading archive tile — latest backup glows primary, others sit muted */}
+                        <div
+                          className={cn(
+                            'grid place-items-center w-9 h-9 rounded-md border shrink-0',
+                            isLatest
+                              ? 'border-primary/40 bg-primary/[0.08] text-primary'
+                              : 'border-border/55 bg-muted/30 text-muted-foreground'
+                          )}
+                          aria-hidden="true"
+                        >
+                          <Archive className="w-4 h-4" />
+                        </div>
+
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <Archive className="w-4 h-4 text-primary flex-shrink-0" />
-                            <p className="font-medium truncate">{backup.name}</p>
+                          <div className="flex items-center gap-2 min-w-0">
+                            <p className="font-medium text-sm text-foreground truncate">{backup.name}</p>
+                            {isLatest && (
+                              <span className="shrink-0 inline-flex h-5 items-center rounded-full bg-primary/15 px-2 text-[10px] font-medium uppercase tracking-wide text-primary">
+                                Latest
+                              </span>
+                            )}
                           </div>
-                          <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
-                            <span className="flex items-center gap-1">
+                          <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
+                            <span className="inline-flex items-center gap-1 tabular-nums">
                               <HardDrive className="w-3 h-3" />
                               {formatBytes(backup.size)}
                             </span>
-                            <span className="flex items-center gap-1">
+                            <span className="inline-flex items-center gap-1">
                               <Clock className="w-3 h-3" />
                               {formatDate(backup.created)}
                             </span>

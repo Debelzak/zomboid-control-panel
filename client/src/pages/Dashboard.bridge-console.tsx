@@ -4,9 +4,10 @@ import { usePageShortcut } from '../hooks/useKeyboardShortcuts'
 import {
   Play, Square, RotateCcw, Save, Server, Wifi, Loader2, AlertTriangle, RefreshCw, AlertCircle,
   LogIn, LogOut, Activity, Archive, Skull, Sword, ShieldAlert, Copy, Gamepad2, Globe, FolderOpen,
-  X, MoreHorizontal, Zap, Trash2, Download, Sparkles, CalendarClock,
+  X, MoreHorizontal, Zap, Trash2, Download, Sparkles, CalendarClock, Package, CheckCircle2,
   ChevronRight,
 } from 'lucide-react'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { useToast } from '@/components/ui/use-toast'
 import {
@@ -98,14 +99,37 @@ function eventStyle(action: string) {
 }
 
 /**
- * Connection LED row.
+ * Section heading — a single labeled rule line. Replaces card-wrapping for
+ * the main stage sections so the page reads as one composed surface.
+ */
+function SectionHeading({
+  label, meta, children,
+}: { label: string; meta?: React.ReactNode; children?: React.ReactNode }) {
+  return (
+    <header className="flex items-center gap-3 pb-3">
+      <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.22em] text-foreground/55">
+        {label}
+      </span>
+      <span className="h-px flex-1 bg-border/40" aria-hidden="true" />
+      {meta && (
+        <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground/55">
+          {meta}
+        </span>
+      )}
+      {children}
+    </header>
+  )
+}
+
+/**
+ * Connection LED row used inside the right rail.
  */
 function ConnLine({
   label, state, value, hint,
 }: { label: string; state: 'on' | 'off' | 'wait'; value?: string; hint?: string }) {
   const dot =
-    state === 'on'   ? 'bg-success'
-  : state === 'wait' ? 'bg-warning'
+    state === 'on'   ? 'bg-success shadow-[0_0_6px_hsl(var(--success)/0.7)]'
+  : state === 'wait' ? 'bg-warning shadow-[0_0_6px_hsl(var(--warning)/0.7)] animate-pulse'
                      : 'bg-destructive/55'
   return (
     <div className="flex items-center gap-2.5 py-1.5">
@@ -249,7 +273,6 @@ export default function Dashboard() {
       if (data.history) {
         setPerformanceHistory(data.history.map((h) => ({
           time: new Date(h.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-          timestamp: h.timestamp,
           playerCount: h.playerCount || 0,
           memoryMB: Math.round((h.memoryUsed || 0) / (1024 * 1024)),
           pzMemMB: h.pzMemUsed ? Math.round(h.pzMemUsed / (1024 * 1024)) : undefined,
@@ -464,185 +487,228 @@ export default function Dashboard() {
   const stateLabel = online
     ? 'Online'
     : status?.configured ? 'Offline' : 'Not configured'
-  void stateLabel
+  const stateHelper = online
+    ? 'Session active · accepting connections'
+    : status?.configured
+      ? 'Host unreachable · awaiting start command'
+      : 'Open Server Setup to configure'
 
   /* ====================================================================== */
   /*  RENDER                                                                  */
   /* ====================================================================== */
   return (
     <div className="page-transition pb-12">
-      {/* ─── TOP STATUS BAR (slim, flat, no wash) ───────────────────────── */}
-      <header
+      {/* ─── COMMAND BAR ───────────────────────────────────────────────── */}
+      <section
         aria-label="Server status"
-        className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-border/60 bg-card/40 px-3 py-2"
+        className={cn(
+          'relative overflow-hidden rounded-2xl border bg-card/60 transition-colors',
+          online ? 'border-success/30' : status?.configured ? 'border-destructive/35' : 'border-warning/40'
+        )}
       >
-        <div className="flex min-w-0 items-center gap-2.5">
-          <span
-            className={cn(
-              'h-2 w-2 rounded-full shrink-0',
-              online ? 'bg-success' : status?.configured ? 'bg-destructive' : 'bg-warning'
-            )}
-            aria-hidden="true"
-          />
-          <span
-            role="status"
-            aria-live="polite"
-            className={cn(
-              'font-mono text-[11px] font-semibold uppercase tracking-[0.18em]',
-              online ? 'text-success' : status?.configured ? 'text-destructive' : 'text-warning'
-            )}
-          >
-            {stateLabel}
-          </span>
-          <span className="h-3.5 w-px bg-border/60" aria-hidden="true" />
-          <h1 className="min-w-0 truncate text-sm font-semibold text-foreground" title={activeServer?.serverName ?? 'No active server'}>
-            {activeServer?.serverName ?? 'No active server'}
-          </h1>
-          {online && status && status.uptime > 0 && (
-            <span className="font-mono text-[11px] tabular-nums text-muted-foreground/80">
-              up {formatUptime(status.uptime)}
-            </span>
+        {/* severity wash */}
+        <div
+          aria-hidden="true"
+          className={cn(
+            'pointer-events-none absolute inset-0',
+            online
+              ? 'bg-[radial-gradient(circle_at_8%_-30%,hsl(var(--success)/0.14),transparent_55%)]'
+              : status?.configured
+                ? 'bg-[radial-gradient(circle_at_8%_-30%,hsl(var(--destructive)/0.18),transparent_55%)]'
+                : 'bg-[radial-gradient(circle_at_8%_-30%,hsl(var(--warning)/0.16),transparent_55%)]'
           )}
-          {activeServer?.isRemote && (
-            <span className="rounded-sm bg-muted/50 px-1.5 py-0.5 text-xs font-medium text-muted-foreground">remote</span>
-          )}
-        </div>
+        />
 
-        {/* address pills — middle, compact */}
-        <div className="flex flex-wrap items-center gap-1">
-          {status?.publicIp && (
-            <button
-              onClick={() => copyToClipboard(`${status.publicIp}${status.port ? `:${status.port}` : ''}`, 'Public address')}
-              className="group inline-flex items-center gap-1.5 rounded px-1.5 py-0.5 text-muted-foreground transition-colors hover:bg-muted/40 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
-              aria-label={`Copy public address: ${status.publicIp}${status.port ? `:${status.port}` : ''}`}
-            >
-              <span className="text-xs font-medium text-muted-foreground/55">pub</span>
-              <span className="font-mono text-[11px] tabular-nums">{status.publicIp}{status.port ? `:${status.port}` : ''}</span>
-              <Copy className="h-3 w-3 opacity-0 transition-opacity group-hover:opacity-60" />
-            </button>
-          )}
-          {status?.localIp && (
-            <button
-              onClick={() => copyToClipboard(`${status.localIp}${status.port ? `:${status.port}` : ''}`, 'Local address')}
-              className="group inline-flex items-center gap-1.5 rounded px-1.5 py-0.5 text-muted-foreground transition-colors hover:bg-muted/40 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
-              aria-label={`Copy local address: ${status.localIp}${status.port ? `:${status.port}` : ''}`}
-            >
-              <span className="text-xs font-medium text-muted-foreground/55">lan</span>
-              <span className="font-mono text-[11px] tabular-nums">{status.localIp}{status.port ? `:${status.port}` : ''}</span>
-            </button>
-          )}
-          {status?.publicIp && status?.port && (
-            <a
-              href={`steam://connect/${status.publicIp}:${status.port}`}
-              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-muted-foreground transition-colors hover:bg-muted/40 hover:text-primary"
-              title="Connect with Steam"
-            >
-              <Gamepad2 className="h-3 w-3" />
-              <span className="text-[11px]">steam</span>
-            </a>
-          )}
-        </div>
+        {/* identity + state + primary controls */}
+        <div className="relative grid grid-cols-1 gap-6 px-5 py-5 sm:px-7 sm:py-6 lg:grid-cols-[1fr_auto] lg:items-center">
+          <div className="min-w-0">
+            <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground/70">
+              {activeServer?.isRemote ? 'Remote bridge' : 'Local instance'} · last seen {lastUpdated ? lastUpdated.toLocaleTimeString() : '—'}
+            </p>
+            <div className="mt-2 flex flex-wrap items-baseline gap-x-5 gap-y-2">
+              {/* big state */}
+              <div className="flex items-center gap-3">
+                <span
+                  className={cn(
+                    'h-3 w-3 rounded-full shrink-0',
+                    online
+                      ? 'bg-success shadow-[0_0_10px_hsl(var(--success)/0.8)] animate-pulse'
+                      : status?.configured ? 'bg-destructive shadow-[0_0_10px_hsl(var(--destructive)/0.5)]' : 'bg-warning'
+                  )}
+                  aria-hidden="true"
+                />
+                <span
+                  role="status"
+                  aria-live="polite"
+                  className={cn(
+                    'font-display text-3xl uppercase leading-none tracking-[0.04em] sm:text-4xl',
+                    online ? 'text-success' : status?.configured ? 'text-destructive' : 'text-warning'
+                  )}
+                >
+                  {stateLabel}
+                </span>
+              </div>
 
-        {/* primary controls — slim, right-aligned */}
-        <div className="ml-auto flex items-center gap-1">
-          <Button
-            onClick={() => handleAction('Start server', serverApi.start)}
-            disabled={online || loading !== null || activeServer?.isRemote}
-            variant={online ? 'outline' : 'success'}
-            size="sm"
-            className="h-8 gap-1.5 px-2.5 text-xs"
-            title={activeServer?.isRemote ? 'Not available for remote (RCON-only) servers' : undefined}
-          >
-            {loading === 'Start server' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
-            Start
-          </Button>
-          <Button
-            onClick={() => setConfirmAction({
-              title: 'Stop server',
-              description: 'Are you sure you want to stop the server? All connected players will be disconnected.',
-              action: serverApi.stop,
-              variant: 'destructive',
-            })}
-            disabled={!online || loading !== null}
-            variant="outline"
-            size="sm"
-            className="h-8 gap-1.5 px-2.5 text-xs hover:border-destructive/40 hover:text-destructive"
-          >
-            {loading === 'Stop server' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Square className="h-3.5 w-3.5" />}
-            Stop
-          </Button>
-          <Button
-            onClick={() => setConfirmAction({
-              title: 'Restart server',
-              description: 'This will send a 5-minute warning to all players, then restart the server.',
-              action: () => serverApi.restart(5),
-              variant: 'warning',
-            })}
-            disabled={!online || loading !== null || activeServer?.isRemote}
-            variant="outline"
-            size="sm"
-            className="h-8 gap-1.5 px-2.5 text-xs hover:border-warning/40 hover:text-warning"
-            title={activeServer?.isRemote ? 'Not available for remote (RCON-only) servers' : undefined}
-          >
-            <RotateCcw className="h-3.5 w-3.5" /> Restart
-          </Button>
-          <Button
-            onClick={() => handleAction('Save world', serverApi.save)}
-            disabled={!online || loading !== null}
-            variant="outline"
-            size="sm"
-            className="h-8 gap-1.5 px-2.5 text-xs"
-          >
-            <Save className="h-3.5 w-3.5" /> Save
-          </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="icon" className="h-8 w-8" aria-label="More server actions">
-                <MoreHorizontal className="h-3.5 w-3.5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem
-                onClick={() => handleAction('Create backup', () => backupApi.createBackup({ includeDb: true }).then(() => fetchMaintenance()))}
-                disabled={loading !== null || activeServer?.isRemote}
-              >
-                <Archive className="mr-2 h-4 w-4" /> Create backup
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={fetchStatus}>
-                <RefreshCw className="mr-2 h-4 w-4" /> Refresh status
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link to="/settings" className="flex items-center"><Server className="mr-2 h-4 w-4" /> Bridge settings</Link>
-              </DropdownMenuItem>
-              {!status?.rcon?.connected && (
-                <DropdownMenuItem onClick={handleConnect} disabled={loading !== null}>
-                  <Wifi className="mr-2 h-4 w-4" /> Connect RCON
-                </DropdownMenuItem>
+              {/* server name */}
+              <h1 className="min-w-0 truncate text-xl font-semibold leading-tight text-foreground sm:text-2xl">
+                {activeServer?.serverName ?? 'No active server'}
+              </h1>
+
+              {online && status && status.uptime > 0 && (
+                <span className="font-mono text-xs uppercase tracking-[0.16em] tabular-nums text-muted-foreground">
+                  up {formatUptime(status.uptime)}
+                </span>
               )}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onClick={() => setConfirmAction({
-                  title: 'Restart server now',
-                  description: `This will immediately restart the server without warning.${players.length > 0 ? ` ${players.length} player(s) will be disconnected!` : ''}`,
-                  action: () => serverApi.restart(0),
-                  variant: 'destructive',
-                })}
-                disabled={!online || loading !== null || activeServer?.isRemote}
-                className="text-destructive focus:text-destructive"
-              >
-                <Zap className="mr-2 h-4 w-4" /> Restart now
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => { setWipePreview(null); setWipeDialog(true) }}
-                disabled={online || loading !== null || activeServer?.isRemote}
-                className="text-destructive focus:text-destructive"
-              >
-                <Trash2 className="mr-2 h-4 w-4" /> Wipe server
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+            </div>
+            <p className="mt-2 text-sm text-muted-foreground">{stateHelper}</p>
+          </div>
+
+          {/* primary controls */}
+          <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+            <Button
+              onClick={() => handleAction('Start server', serverApi.start)}
+              disabled={online || loading !== null || activeServer?.isRemote}
+              variant="success"
+              size={online ? 'default' : 'lg'}
+              className={cn('gap-2', !online && 'shadow-[0_0_20px_hsl(var(--success)/0.25)] font-semibold')}
+              title={activeServer?.isRemote ? 'Not available for remote (RCON-only) servers' : undefined}
+            >
+              {loading === 'Start server' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+              {online ? 'Start' : 'Start server'}
+            </Button>
+            <Button
+              onClick={() => setConfirmAction({
+                title: 'Stop server',
+                description: 'Are you sure you want to stop the server? All connected players will be disconnected.',
+                action: serverApi.stop,
+                variant: 'destructive',
+              })}
+              disabled={!online || loading !== null}
+              variant="destructive"
+              className="gap-2"
+            >
+              {loading === 'Stop server' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Square className="h-4 w-4" />}
+              Stop
+            </Button>
+            <Button
+              onClick={() => setConfirmAction({
+                title: 'Restart server',
+                description: 'This will send a 5-minute warning to all players, then restart the server.',
+                action: () => serverApi.restart(5),
+                variant: 'warning',
+              })}
+              disabled={!online || loading !== null || activeServer?.isRemote}
+              variant="warning"
+              className="gap-2"
+              title={activeServer?.isRemote ? 'Not available for remote (RCON-only) servers' : undefined}
+            >
+              <RotateCcw className="h-4 w-4" /> Restart
+            </Button>
+            <Button
+              onClick={() => handleAction('Save world', serverApi.save)}
+              disabled={!online || loading !== null}
+              variant="outline"
+              className="gap-2"
+            >
+              <Save className="h-4 w-4" /> Save
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="icon" className="h-10 w-10" aria-label="More server actions">
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onClick={() => handleAction('Create backup', () => backupApi.createBackup({ includeDb: true }).then(() => fetchMaintenance()))}
+                  disabled={loading !== null || activeServer?.isRemote}
+                >
+                  <Archive className="mr-2 h-4 w-4" /> Create backup
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link to="/settings" className="flex items-center"><Server className="mr-2 h-4 w-4" /> Bridge settings</Link>
+                </DropdownMenuItem>
+                {!status?.rcon?.connected && (
+                  <DropdownMenuItem onClick={handleConnect} disabled={loading !== null}>
+                    <Wifi className="mr-2 h-4 w-4" /> Connect RCON
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => setConfirmAction({
+                    title: 'Restart server now',
+                    description: `This will immediately restart the server without warning.${players.length > 0 ? ` ${players.length} player(s) will be disconnected!` : ''}`,
+                    action: () => serverApi.restart(0),
+                    variant: 'destructive',
+                  })}
+                  disabled={!online || loading !== null || activeServer?.isRemote}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <Zap className="mr-2 h-4 w-4" /> Restart now
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => { setWipePreview(null); setWipeDialog(true) }}
+                  disabled={online || loading !== null || activeServer?.isRemote}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <Trash2 className="mr-2 h-4 w-4" /> Wipe server
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
-      </header>
+
+        {/* address strip */}
+        {(status?.publicIp || status?.localIp || panelInfo) && (
+          <div className="relative border-t border-border/40 bg-background/35 px-3 py-2 sm:px-5">
+            <div className="flex flex-wrap items-center gap-1">
+              {status?.publicIp && (
+                <button
+                  onClick={() => copyToClipboard(`${status.publicIp}${status.port ? `:${status.port}` : ''}`, 'Public address')}
+                  className="group flex min-h-9 items-center gap-2 rounded-md px-2 py-1 font-mono text-xs text-muted-foreground transition-colors hover:bg-muted/40 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
+                  aria-label={`Copy public address: ${status.publicIp}${status.port ? `:${status.port}` : ''}`}
+                >
+                  <span className="rounded-sm bg-primary/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-primary">pub</span>
+                  <span className="tabular-nums">{status.publicIp}{status.port ? `:${status.port}` : ''}</span>
+                  <Copy className="h-3 w-3 opacity-0 transition-opacity group-hover:opacity-60" />
+                </button>
+              )}
+              {status?.localIp && (
+                <button
+                  onClick={() => copyToClipboard(`${status.localIp}${status.port ? `:${status.port}` : ''}`, 'Local address')}
+                  className="group flex min-h-9 items-center gap-2 rounded-md px-2 py-1 font-mono text-xs text-muted-foreground transition-colors hover:bg-muted/40 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
+                  aria-label={`Copy local address: ${status.localIp}${status.port ? `:${status.port}` : ''}`}
+                >
+                  <span className="rounded-sm bg-info/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-info">lan</span>
+                  <span className="tabular-nums">{status.localIp}{status.port ? `:${status.port}` : ''}</span>
+                  <Copy className="h-3 w-3 opacity-0 transition-opacity group-hover:opacity-60" />
+                </button>
+              )}
+              {status?.publicIp && status?.port && (
+                <a
+                  href={`steam://connect/${status.publicIp}:${status.port}`}
+                  className="flex min-h-9 items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted/40 hover:text-primary"
+                  title="Connect with Steam"
+                >
+                  <Gamepad2 className="h-3.5 w-3.5" />
+                  <span className="font-medium">Steam connect</span>
+                </a>
+              )}
+              {panelInfo && (
+                <button
+                  onClick={() => copyToClipboard(panelInfo.url, 'Panel address')}
+                  className="group ml-auto flex min-h-9 items-center gap-2 rounded-md px-2 py-1 font-mono text-xs text-muted-foreground transition-colors hover:bg-muted/40 hover:text-primary"
+                  aria-label={`Copy panel address: ${panelInfo.url}`}
+                >
+                  <Globe className="h-3.5 w-3.5" />
+                  <span>{panelInfo.url}</span>
+                  <Copy className="h-3 w-3 opacity-0 transition-opacity group-hover:opacity-60" />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </section>
 
       {/* ─── Panel update banner ─────────────────────────────────────────── */}
       {(() => {
@@ -654,297 +720,180 @@ export default function Dashboard() {
         const lastFailed = panelUpdate.lastApplyResult?.status === 'failed'
           && (!latest || panelUpdate.lastApplyResult.pendingVersion === latest)
         const ctaLabel = isStaged ? 'Apply update' : 'View update'
-        void lastFailed
+        const title = isStaged
+          ? `Panel update ready to apply${latest ? ` — v${latest}` : ''}`
+          : `Panel update available${latest ? ` — v${latest}` : ''}`
+        const body = lastFailed
+          ? 'Last apply attempt failed. Open Settings for diagnostics and the apply log.'
+          : isStaged
+            ? `v${latest ?? '?'} is downloaded. Restart the panel from Settings to apply it.`
+            : `You're on v${panelUpdate.currentVersion}. Head to Settings to download and apply the update.`
         const dismiss = () => {
           if (!latest) return
           try { sessionStorage.setItem('panel-update-banner-dismissed', latest) } catch {}
           setPanelUpdateDismissedVersion(latest)
         }
-        const accent = lastFailed ? 'destructive' : 'primary'
         return (
-          <div
-            role="status"
-            className={cn(
-              'mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border py-2 pl-3 pr-2',
-              lastFailed
-                ? 'border-destructive/35 bg-destructive/[0.05] shadow-[inset_2px_0_0_hsl(var(--destructive))]'
-                : 'border-primary/35 bg-primary/[0.04] shadow-[inset_2px_0_0_hsl(var(--primary))]',
-            )}
-          >
-            <Sparkles className={cn('h-3.5 w-3.5 shrink-0', `text-${accent}`)} />
-            <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-3 gap-y-0.5">
-              <span className={cn('font-mono text-[10px] font-semibold uppercase tracking-[0.18em]', `text-${accent}`)}>
-                {lastFailed ? 'Apply failed' : isStaged ? 'Update staged' : 'Panel update'}
-              </span>
-              <span className="min-w-0 text-xs text-muted-foreground">
-                {lastFailed
-                  ? 'Last apply attempt failed — see Settings for diagnostics.'
-                  : isStaged
-                    ? 'Downloaded and ready. Restart the panel to apply.'
-                    : 'A new panel version is available.'}
-              </span>
-              {latest && (
-                <span className="font-mono text-[11px] tabular-nums text-foreground/85">
-                  v{panelUpdate.currentVersion} <span className="text-muted-foreground/60">→</span> v{latest}
-                </span>
-              )}
-            </div>
-            <div className="ml-auto flex items-center gap-1">
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-7 w-7 px-0 text-muted-foreground hover:text-foreground"
-                aria-label="Dismiss update notification"
-                onClick={dismiss}
-                disabled={!latest}
-                title="Dismiss until next version"
-              >
-                <X className="h-3.5 w-3.5" />
-              </Button>
-              <Link to="/settings?tab=panel">
-                <Button
-                  size="sm"
-                  variant={lastFailed ? 'destructive' : 'default'}
-                  className="h-7 gap-1.5 px-2.5 text-xs font-semibold"
-                >
-                  <Download className="h-3 w-3" /> {ctaLabel}
+          <Alert className={cn('mt-5', lastFailed ? 'border-destructive/40 bg-destructive/10' : 'border-primary/40 bg-primary/10')}>
+            <Sparkles className={cn('h-4 w-4', lastFailed ? 'text-destructive' : 'text-primary')} />
+            <AlertTitle className={cn('break-words', lastFailed ? 'text-destructive' : 'text-primary')}>{title}</AlertTitle>
+            <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <span className="min-w-0 break-words text-sm">{body}</span>
+              <div className="flex items-center gap-2 self-start sm:self-auto">
+                <Link to="/settings?tab=panel">
+                  <Button size="sm" variant={lastFailed ? 'destructive' : 'default'}>
+                    <Download className="mr-2 h-4 w-4" /> {ctaLabel}
+                  </Button>
+                </Link>
+                <Button size="icon" variant="ghost" aria-label="Dismiss update notification" onClick={dismiss} disabled={!latest} title="Dismiss until next version">
+                  <X className="h-4 w-4" />
                 </Button>
-              </Link>
-            </div>
-          </div>
+              </div>
+            </AlertDescription>
+          </Alert>
         )
       })()}
 
       {/* ─── Error banner ────────────────────────────────────────────────── */}
       {fetchError && (
-        <div
-          role="alert"
-          className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border border-destructive/40 bg-destructive/[0.05] py-2 pl-3 pr-2 shadow-[inset_2px_0_0_hsl(var(--destructive))]"
-        >
-          <AlertCircle className="h-3.5 w-3.5 shrink-0 text-destructive" />
-          <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-3 gap-y-0.5">
-            <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-destructive">
-              Connection error
-            </span>
-            <span className="min-w-0 truncate text-xs text-muted-foreground" title={fetchError}>
-              {fetchError}. Some features may be unavailable.
-            </span>
-          </div>
-          <Button variant="outline" size="sm" onClick={fetchStatus} className="ml-auto h-7 gap-1.5 px-2.5 text-xs">
-            <RefreshCw className="h-3 w-3" /> Retry
-          </Button>
-        </div>
+        <Alert variant="destructive" className="mt-5">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Connection error</AlertTitle>
+          <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <span className="min-w-0 break-words">{fetchError}. Some features may be unavailable.</span>
+            <Button variant="outline" size="sm" onClick={fetchStatus} className="self-start sm:self-auto">
+              <RefreshCw className="mr-2 h-4 w-4" /> Retry
+            </Button>
+          </AlertDescription>
+        </Alert>
       )}
 
       {/* ─── Not configured ──────────────────────────────────────────────── */}
       {status && !status.configured && (
-        <Link
-          to="/server-setup"
-          className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border border-warning/40 bg-warning/[0.04] py-2 pl-3 pr-2 shadow-[inset_2px_0_0_hsl(var(--warning))] transition-colors hover:bg-warning/[0.08] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
-        >
-          <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-warning" />
-          <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-3 gap-y-0.5">
-            <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-warning">
-              Not configured
-            </span>
-            <span className="text-xs text-muted-foreground">
-              Open Server Setup to add or configure a server.
-            </span>
-          </div>
-          <span className="ml-auto text-xs font-medium text-warning/85">open setup →</span>
+        <Link to="/server-setup" className="mt-5 block">
+          <Alert className="cursor-pointer border-warning/40 bg-warning/10 transition-colors hover:bg-warning/15">
+            <AlertTriangle className="h-4 w-4 text-warning" />
+            <AlertTitle className="text-warning">Server not configured</AlertTitle>
+            <AlertDescription>Open Server Setup to add or configure a server.</AlertDescription>
+          </Alert>
         </Link>
       )}
 
       {/* ─── Quick-start onboarding ──────────────────────────────────────── */}
       {!hasServer && showQuickStart && (
-        <section className="relative mt-3 overflow-hidden rounded-lg border border-primary/30 bg-card/50 px-4 py-4">
+        <section className="relative mt-5 overflow-hidden rounded-2xl border border-primary/25 bg-card/60 px-6 py-6">
           <button
             onClick={dismissQuickStart}
             aria-label="Dismiss quick start guide"
-            className="absolute right-3 top-3 grid h-7 w-7 place-items-center rounded text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
+            className="absolute right-4 top-4 grid h-9 w-9 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
           >
-            <X className="h-3.5 w-3.5" />
+            <X className="h-4 w-4" />
           </button>
-          <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-primary/85">First server</p>
-          <h2 className="mt-1 text-lg font-semibold leading-tight text-foreground">
-            Get one server up, RCON working, then layer on the rest.
-          </h2>
-          <ol className="mt-4 grid gap-2 list-none p-0 md:grid-cols-3">
+          <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-primary/80">First server</p>
+          <h2 className="mt-1.5 text-2xl font-semibold leading-tight text-foreground">Get one server up, RCON working, then layer on the rest.</h2>
+          <ol className="mt-5 grid gap-3 list-none p-0 md:grid-cols-3">
             {[
               ['1', 'Bring in a server', 'Add an existing install, connect remote RCON, or create a new server.'],
               ['2', 'Verify connectivity', 'Confirm paths, RCON credentials, and active server.'],
               ['3', 'Reach live control',  'When status, players, and chat update, live control is ready.'],
             ].map(([n, title, body]) => (
-              <li key={n} className="rounded-md border border-border/50 bg-background/40 p-3">
+              <li key={n} className="rounded-lg border border-border/50 bg-background/40 p-4">
                 <p className="text-sm font-semibold text-foreground">
-                  <span className="mr-1.5 inline-flex h-4 w-4 items-center justify-center rounded text-[10px] font-bold bg-primary/15 text-primary" aria-hidden="true">{n}</span>
+                  <span className="mr-2 inline-flex h-5 w-5 items-center justify-center rounded text-xs font-bold bg-primary/15 text-primary" aria-hidden="true">{n}</span>
                   {title}
                 </p>
-                <p className="mt-1 pl-[1.4rem] text-xs leading-5 text-muted-foreground">{body}</p>
+                <p className="mt-1.5 pl-7 text-sm leading-6 text-muted-foreground">{body}</p>
               </li>
             ))}
           </ol>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Link to="/server-setup" className={cn(buttonVariants({ variant: 'default', size: 'sm' }), 'h-8 gap-1.5 text-xs')}>
-              <Server className="h-3.5 w-3.5" /> Install new server
-            </Link>
-            <Link to="/servers" className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'h-8 gap-1.5 text-xs')}>
-              <FolderOpen className="h-3.5 w-3.5" /> Add existing server
-            </Link>
-            <Link to="/servers" className={cn(buttonVariants({ variant: 'secondary', size: 'sm' }), 'h-8 gap-1.5 text-xs')}>
-              <Globe className="h-3.5 w-3.5" /> Add remote server
-            </Link>
+          <div className="mt-5 flex flex-wrap gap-3">
+            <Link to="/server-setup"  className={cn(buttonVariants({ variant: 'default' }))}><Server className="mr-2 h-4 w-4" />Install new server</Link>
+            <Link to="/servers" className={cn(buttonVariants({ variant: 'outline' }))}><FolderOpen className="mr-2 h-4 w-4" />Add existing server</Link>
+            <Link to="/servers" className={cn(buttonVariants({ variant: 'secondary' }))}><Globe className="mr-2 h-4 w-4" />Add remote server</Link>
           </div>
         </section>
       )}
 
-      {/* ─── COCKPIT GRID ───────────────────────────────────────────────── */}
-      <div className="mt-3 grid gap-3 lg:grid-cols-[15rem_minmax(0,1fr)_19rem] lg:items-start">
-
-        {/* ════ LEFT RAIL ════ */}
-        <div className="grid gap-3 content-start">
-
-          {/* PLAYERS */}
-          <section className="rounded-lg border border-border/55 bg-card/40">
-            <header className="flex items-center justify-between border-b border-border/30 px-3 py-1.5">
-              <h3 className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/60">Players</h3>
-              <span className="font-mono text-[10px] tabular-nums text-muted-foreground/70">{players.length}</span>
-            </header>
-            {players.length === 0 ? (
-              <p className="px-3 py-3 text-xs text-muted-foreground/75">
-                {online ? 'No one in the world.' : status?.configured ? 'Server offline.' : 'Not configured.'}
-              </p>
-            ) : (
-              <ul className="divide-y divide-border/20">
-                {players.slice(0, 9).map(p => (
-                  <li key={p.name} className="flex items-center gap-2 px-3 py-1.5">
-                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-success" aria-hidden="true" />
-                    <span className="min-w-0 truncate text-xs font-medium text-foreground" title={p.name} dir="auto">{p.name}</span>
-                  </li>
-                ))}
-                {players.length > 9 && (
-                  <li className="px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground/65">
-                    +{players.length - 9} more
-                  </li>
-                )}
-              </ul>
-            )}
-            <Link
-              to="/players"
-              className="flex items-center justify-between border-t border-border/30 px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/30 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
-            >
-              view all <ChevronRight className="h-3 w-3" />
-            </Link>
-          </section>
-
-          {/* CONNECTIONS */}
-          <section className="rounded-lg border border-border/55 bg-card/40">
-            <header className="border-b border-border/30 px-3 py-1.5">
-              <h3 className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/60">Connections</h3>
-            </header>
-            <div className="px-3 py-1">
-              <ConnLine
-                label="RCON"
-                state={status?.rcon?.connected ? 'on' : 'off'}
-                value={status?.rcon ? `${status.rcon.host}:${status.rcon.port}` : undefined}
-              />
-              <ConnLine
-                label="Bridge"
-                state={bridgeStatus?.modConnected ? 'on' : bridgeStatus?.isRunning ? 'wait' : 'off'}
-                value={
-                  bridgeStatus?.modConnected && bridgeStatus.modStatus?.version
-                    ? `v${bridgeStatus.modStatus.version.replace(/^v/, '')}`
-                    : bridgeStatus?.isRunning ? 'pending' : 'offline'
+      {/* ─── MAIN STAGE + SIDE RAIL ──────────────────────────────────────── */}
+      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
+        {/* ───────── main column ───────── */}
+        <main className="min-w-0 space-y-9">
+          {/* Performance */}
+          <section>
+            <SectionHeading
+              label="Performance"
+              meta={performanceHistory.length > 0 ? 'last 5 min' : online ? 'sampling' : 'standby'}
+            />
+            {performanceHistory.length > 0 ? (
+              <Suspense
+                fallback={
+                  <div className="space-y-3 rounded-xl border border-border/60 bg-card/40 px-4 py-4">
+                    {[0, 1, 2, 3].map(i => (
+                      <div key={i} className="flex items-center gap-3 py-2">
+                        <div className="h-3 w-20 rounded bg-muted/40" />
+                        <div className="h-6 flex-1 animate-pulse rounded bg-muted/30" />
+                        <div className="h-5 w-12 rounded bg-muted/40" />
+                      </div>
+                    ))}
+                  </div>
                 }
-              />
-              {panelInfo && (
-                <ConnLine label="Panel" state="on" value={panelInfo.url.replace(/^https?:\/\//, '')} />
-              )}
-            </div>
-            {!status?.rcon?.connected && status?.configured && (
-              <div className="border-t border-border/30 p-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-7 w-full gap-1.5 text-xs"
-                  onClick={handleConnect}
-                  disabled={loading !== null}
-                >
-                  {loading === 'Connect RCON' ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wifi className="h-3 w-3" />}
-                  Connect RCON
-                </Button>
-              </div>
+              >
+                {showPerformanceCharts ? (
+                  <DashboardPerformanceCharts performanceHistory={performanceHistory} serverRunning={online} />
+                ) : null}
+              </Suspense>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                {online
+                  ? 'Telemetry will appear here within the next sample cycle.'
+                  : 'Start the server to begin tracking CPU, RAM, and player metrics.'}
+              </p>
             )}
           </section>
 
-          {/* SHORTCUTS */}
-          <section className="rounded-lg border border-border/55 bg-card/40">
-            <header className="border-b border-border/30 px-3 py-1.5">
-              <h3 className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/60">Shortcuts</h3>
-            </header>
-            <div className="grid grid-cols-2 gap-px bg-border/30">
-              {[
-                { to: '/players',       icon: Activity,  label: 'Players' },
-                { to: '/console',       icon: Wifi,      label: 'Console' },
-                { to: '/mods',          icon: Gamepad2,  label: 'Mods' },
-                { to: '/scheduler',     icon: CalendarClock, label: 'Schedule' },
-                { to: '/backups',       icon: Archive,   label: 'Backups' },
-                { to: '/server-config', icon: Server,    label: 'Config' },
-              ].map(({ to, icon: Icon, label }) => (
-                <Link
-                  key={to}
-                  to={to}
-                  className="group flex items-center gap-1.5 bg-card/40 px-2.5 py-2 text-xs text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
-                >
-                  <Icon className="h-3 w-3 opacity-70 transition-opacity group-hover:opacity-100" />
-                  <span className="truncate">{label}</span>
-                </Link>
-              ))}
-            </div>
-          </section>
-        </div>
-
-        {/* ════ CENTER ════ */}
-        <div className="grid gap-3 content-start min-w-0">
-
-          {/* LIVE ACTIVITY */}
-          <section className="rounded-lg border border-border/55 bg-card/40 lg:min-h-[26rem] flex flex-col">
-            <header className="flex items-center justify-between border-b border-border/30 px-3 py-1.5">
-              <h3 className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/60">Live activity</h3>
-              <span className="flex items-center gap-1.5">
-                <span
-                  className={cn(
-                    'h-1.5 w-1.5 rounded-full',
-                    online ? 'bg-success' : 'bg-muted-foreground/40'
-                  )}
-                  aria-hidden="true"
-                />
-                <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground/70">
+          {/* Live activity */}
+          <section>
+            <SectionHeading
+              label="Live activity"
+              meta={
+                <span className="flex items-center gap-1.5">
+                  <span
+                    className={cn(
+                      'h-1.5 w-1.5 rounded-full',
+                      online ? 'bg-success animate-pulse shadow-[0_0_6px_hsl(var(--success)/0.7)]' : 'bg-muted-foreground/40'
+                    )}
+                    aria-hidden="true"
+                  />
                   {playerActivity.length > 0 ? `${playerActivity.length} events` : online ? 'idle' : 'offline'}
                 </span>
-              </span>
-            </header>
+              }
+            >
+              <Link
+                to="/players"
+                className="ml-2 inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 rounded px-1"
+              >
+                view all <ChevronRight className="h-3 w-3" />
+              </Link>
+            </SectionHeading>
             {playerActivity.length === 0 ? (
-              <div className="flex-1 grid place-items-center px-6 py-10">
-                <p className="text-center text-sm text-muted-foreground/80">
-                  {online
-                    ? 'Player join, leave, death, and moderation events will appear here in real time.'
-                    : status?.configured
-                      ? 'Start the server to begin tracking player activity.'
-                      : 'Configure a server to start tracking activity.'}
-                </p>
-              </div>
+              <p className="text-sm text-muted-foreground">
+                {online
+                  ? 'Player join, leave, death, and moderation events will appear here in real time.'
+                  : 'Start the server to begin tracking player activity.'}
+              </p>
             ) : (
-              <ol className="flex-1 divide-y divide-border/20 overflow-y-auto">
+              <ol className="rounded-xl border border-border/50 bg-card/30 divide-y divide-border/30">
                 {playerActivity.map(a => {
                   const s = eventStyle(a.action)
                   return (
-                    <li key={a.id} className="group flex items-center gap-2.5 px-3 py-1.5 transition-colors hover:bg-muted/20">
-                      <time className="w-14 shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground/65">
+                    <li key={a.id} className="group flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-muted/20">
+                      <time className="w-16 shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground/65">
                         {new Date(a.logged_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                       </time>
-                      <span className={cn('shrink-0', s.tone)} aria-hidden="true">{s.icon}</span>
-                      <span className="min-w-0 flex-1 truncate text-xs font-medium" dir="auto" title={a.player_name}>
+                      <span className={cn('flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-background/60', s.tone)} aria-hidden="true">
+                        {s.icon}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-sm font-medium" dir="auto" title={a.player_name}>
                         {a.player_name}
                       </span>
                       <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground/75">
@@ -957,173 +906,251 @@ export default function Dashboard() {
             )}
           </section>
 
-          {/* TELEMETRY */}
-          <section className="rounded-lg border border-border/55 bg-card/40">
-            <header className="flex items-center justify-between border-b border-border/30 px-3 py-1.5">
-              <h3 className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/60">Telemetry</h3>
-              <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground/70">
-                {(() => {
-                  if (performanceHistory.length === 0) return online ? 'sampling' : 'standby'
-                  return `last ${performanceHistory.length} min`
-                })()}
-              </span>
-            </header>
-            {performanceHistory.length > 0 ? (
-              <Suspense
-                fallback={
-                  <div className="space-y-2 p-3">
-                    {[0, 1, 2, 3].map(i => (
-                      <div key={i} className="flex items-center gap-2 py-1">
-                        <div className="h-2.5 w-16 rounded bg-muted/40" />
-                        <div className="h-5 flex-1 animate-pulse rounded bg-muted/30" />
-                        <div className="h-4 w-10 rounded bg-muted/40" />
-                      </div>
-                    ))}
-                  </div>
-                }
-              >
-                {showPerformanceCharts ? (
-                  <DashboardPerformanceCharts performanceHistory={performanceHistory} serverRunning={online} />
-                ) : null}
-              </Suspense>
-            ) : (
-              <p className="px-3 py-3 text-xs text-muted-foreground/80">
-                {online
-                  ? 'Telemetry will appear within the next sample cycle.'
-                  : 'Start the server to track CPU, RAM, and player metrics.'}
-              </p>
-            )}
-          </section>
-        </div>
-
-        {/* ════ RIGHT RAIL ════ */}
-        <div className="grid gap-3 content-start">
-
-          {/* READINESS */}
+          {/* Readiness */}
           {maintenance.schedulerLoaded && (
-            <section className="rounded-lg border border-border/55 bg-card/40">
-              <header className="border-b border-border/30 px-3 py-1.5">
-                <h3 className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/60">Readiness</h3>
-              </header>
-              <dl className="divide-y divide-border/20 text-xs">
-                <div className="flex items-center justify-between px-3 py-2">
-                  <dt className="text-muted-foreground">Last backup</dt>
-                  <dd className="font-mono tabular-nums text-foreground/90">
-                    {maintenance.lastBackup ? formatAge(maintenance.lastBackup.created) : '—'}
-                  </dd>
-                </div>
-                <div className="flex items-center justify-between px-3 py-2">
-                  <dt className="text-muted-foreground">Backups stored</dt>
-                  <dd className="font-mono tabular-nums text-foreground/90">{maintenance.backupCount}</dd>
-                </div>
-                <div className="flex items-center justify-between px-3 py-2">
-                  <dt className="text-muted-foreground">Mods tracked</dt>
-                  <dd className="font-mono tabular-nums text-foreground/90">{maintenance.modsTracked}</dd>
-                </div>
-                <div className="flex items-center justify-between px-3 py-2">
-                  <dt className="text-muted-foreground">Mod updates</dt>
-                  <dd className={cn('font-mono tabular-nums', modsPending ? 'font-semibold text-warning' : 'text-foreground/90')}>
-                    {maintenance.modUpdatesAvailable}{modsPending ? ' pending' : ''}
-                  </dd>
-                </div>
-                <div className="flex items-center justify-between px-3 py-2">
-                  <dt className="text-muted-foreground">Active tasks</dt>
-                  <dd className="font-mono tabular-nums text-foreground/90">{maintenance.scheduledTasksCount}</dd>
-                </div>
-              </dl>
-              {modsPending && (
-                <div className="border-t border-border/30 p-2">
-                  <Link
-                    to="/mods"
-                    className={cn(buttonVariants({ size: 'sm', variant: 'warning' }), 'h-7 w-full gap-1.5 text-xs font-semibold')}
-                  >
-                    <Download className="h-3 w-3" />
-                    Review {maintenance.modUpdatesAvailable} update{maintenance.modUpdatesAvailable === 1 ? '' : 's'}
-                  </Link>
-                </div>
-              )}
-              {!maintenance.lastBackup && (
-                <div className="border-t border-border/30 p-2">
+            <section>
+              <SectionHeading label="Readiness" meta="backups · mods · schedule" />
+              <div className={cn(
+                'grid grid-cols-1 gap-3',
+                modsPending ? 'md:grid-cols-[1fr_1.6fr_1fr]' : 'md:grid-cols-3',
+              )}>
+                {/* Backup */}
+                <article className="relative overflow-hidden rounded-xl border border-border/55 bg-card/40 p-4">
+                  <div className="mb-3 flex items-center justify-between">
+                    <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground/65">Backup</p>
+                    <Archive className="h-3.5 w-3.5 text-muted-foreground/55" />
+                  </div>
+                  {maintenance.lastBackup ? (
+                    <>
+                      <p className="text-2xl font-semibold leading-none text-foreground tabular-nums">
+                        {formatAge(maintenance.lastBackup.created)}
+                      </p>
+                      <p className="mt-1.5 font-mono text-[11px] tabular-nums text-muted-foreground">
+                        {(maintenance.lastBackup.size / (1024 * 1024)).toFixed(0)} MB · {maintenance.backupCount} archived
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No backups yet.</p>
+                  )}
                   <Button
                     size="sm"
                     variant="outline"
-                    className="h-7 w-full gap-1.5 text-xs"
+                    className="mt-3 w-full gap-1.5 text-xs"
                     disabled={loading !== null || activeServer?.isRemote}
                     onClick={() => handleAction('Create backup', () => backupApi.createBackup({ includeDb: true }).then(() => fetchMaintenance()))}
                   >
-                    {loading === 'Create backup' ? <Loader2 className="h-3 w-3 animate-spin" /> : <Archive className="h-3 w-3" />}
-                    Create first backup
+                    {loading === 'Create backup' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Archive className="h-3.5 w-3.5" />}
+                    {maintenance.lastBackup ? 'Back up now' : 'Create first backup'}
                   </Button>
-                </div>
-              )}
-            </section>
-          )}
+                </article>
 
-          {/* MAINTENANCE */}
-          {!activeServer?.isRemote && (
-            <section className="rounded-lg border border-border/55 bg-card/40">
-              <header className="border-b border-border/30 px-3 py-1.5">
-                <h3 className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/60">Maintenance</h3>
-              </header>
-              <div className="space-y-1.5 p-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-7 w-full justify-start gap-2 text-xs"
-                  onClick={fetchStatus}
-                  disabled={loading !== null}
+                {/* Mods — focal when updates pending */}
+                <article
+                  className={cn(
+                    'relative overflow-hidden rounded-xl border p-4 transition-colors',
+                    modsPending
+                      ? 'border-warning/45 bg-warning/[0.05] shadow-[inset_0_0_24px_hsl(var(--warning)/0.08)]'
+                      : 'border-border/55 bg-card/40',
+                  )}
                 >
-                  <RefreshCw className={cn('h-3 w-3', loading ? 'animate-spin' : '')} />
-                  Refresh status
-                  <span className="ml-auto font-mono text-[10px] text-muted-foreground/65">
-                    {lastUpdated ? lastUpdated.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) : '—'}
-                  </span>
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-7 w-full justify-start gap-2 text-xs"
-                  disabled={loading !== null || activeServer?.isRemote}
-                  onClick={() => handleAction('Create backup', () => backupApi.createBackup({ includeDb: true }).then(() => fetchMaintenance()))}
-                >
-                  {loading === 'Create backup' ? <Loader2 className="h-3 w-3 animate-spin" /> : <Archive className="h-3 w-3" />}
-                  Create backup
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-7 w-full justify-start gap-2 text-xs text-destructive hover:text-destructive"
-                  disabled={online || loading !== null || activeServer?.isRemote}
-                  onClick={() => { setWipePreview(null); setWipeDialog(true) }}
-                  title={online ? 'Stop the server before wiping' : 'Delete map / players / world state'}
-                >
-                  <Trash2 className="h-3 w-3" />
-                  Wipe server
-                </Button>
-                <label className="mt-1 flex cursor-pointer items-center gap-2 border-t border-border/30 px-1 pt-2">
-                  <Checkbox
-                    id="autoStartServer"
-                    checked={autoStartServer}
-                    onCheckedChange={(checked) => handleAutoStartChange(checked === true)}
-                  />
-                  <Label htmlFor="autoStartServer" className="cursor-pointer text-[11px] text-muted-foreground">
-                    Auto-start on launch
-                  </Label>
-                </label>
+                  {modsPending && (
+                    <div
+                      aria-hidden="true"
+                      className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_85%_-20%,hsl(var(--warning)/0.18),transparent_60%)]"
+                    />
+                  )}
+                  <div className="relative mb-3 flex items-center justify-between">
+                    <p className={cn(
+                      'font-mono text-[10px] uppercase tracking-[0.2em]',
+                      modsPending ? 'text-warning' : 'text-muted-foreground/65',
+                    )}>
+                      Workshop mods
+                    </p>
+                    <Package className={cn('h-3.5 w-3.5', modsPending ? 'text-warning' : 'text-muted-foreground/55')} />
+                  </div>
+                  {modsPending ? (
+                    <div className="relative">
+                      <p className="font-display text-4xl leading-none text-warning tabular-nums">
+                        {maintenance.modUpdatesAvailable}
+                        <span className="ml-2 text-base font-normal uppercase tracking-[0.08em] text-warning/75">pending</span>
+                      </p>
+                      <p className="mt-1.5 text-xs text-muted-foreground">
+                        {maintenance.modUpdatesAvailable === 1 ? 'Mod has' : 'Mods have'} a new version on Steam Workshop. Restart the server to apply.
+                      </p>
+                      <Link
+                        to="/mods"
+                        className={cn(buttonVariants({ size: 'sm', variant: 'warning' }), 'mt-3 w-full gap-1.5 text-xs font-semibold')}
+                      >
+                        <Download className="h-3.5 w-3.5" /> Review updates
+                      </Link>
+                    </div>
+                  ) : (
+                    <div className="relative">
+                      <p className="flex items-center gap-2 text-2xl font-semibold leading-none text-success">
+                        <CheckCircle2 className="h-5 w-5" /> Up to date
+                      </p>
+                      <p className="mt-1.5 font-mono text-[11px] tabular-nums text-muted-foreground">
+                        {maintenance.modsTracked} {maintenance.modsTracked === 1 ? 'mod' : 'mods'} tracked · steam workshop
+                      </p>
+                      <Link
+                        to="/mods"
+                        className={cn(buttonVariants({ size: 'sm', variant: 'outline' }), 'mt-3 w-full gap-1.5 text-xs')}
+                      >
+                        <Package className="h-3.5 w-3.5" /> Manage mods
+                      </Link>
+                    </div>
+                  )}
+                </article>
+
+                {/* Scheduler */}
+                <article className="relative overflow-hidden rounded-xl border border-border/55 bg-card/40 p-4">
+                  <div className="mb-3 flex items-center justify-between">
+                    <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground/65">Scheduler</p>
+                    <CalendarClock className="h-3.5 w-3.5 text-muted-foreground/55" />
+                  </div>
+                  <p className="text-2xl font-semibold leading-none text-foreground tabular-nums">
+                    {maintenance.scheduledTasksCount}
+                    <span className="ml-2 text-xs font-normal text-muted-foreground">active</span>
+                  </p>
+                  <p className="mt-1.5 text-xs text-muted-foreground">
+                    {maintenance.scheduledTasksCount === 0
+                      ? 'Set up automatic restarts, backups, and announcements.'
+                      : 'Restarts, backups, and announcements running on schedule.'}
+                  </p>
+                  <Link
+                    to="/scheduler"
+                    className={cn(buttonVariants({ size: 'sm', variant: 'outline' }), 'mt-3 w-full gap-1.5 text-xs')}
+                  >
+                    <CalendarClock className="h-3.5 w-3.5" />
+                    {maintenance.scheduledTasksCount === 0 ? 'Add task' : 'View schedule'}
+                  </Link>
+                </article>
               </div>
             </section>
           )}
+        </main>
 
-          {bridgeStatus && !bridgeStatus.configured && (
-            <section className="rounded-lg border border-warning/35 bg-warning/[0.04] p-3">
-              <p className="text-xs font-medium text-warning/85">Bridge offline</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Advanced world controls require PanelBridge.{' '}
-                <Link to="/settings" className="text-primary hover:underline">Configure bridge</Link>.
-              </p>
+        {/* ───────── side rail ───────── */}
+        <aside className="space-y-6 lg:sticky lg:top-6 lg:self-start">
+          {/* Connections */}
+          <section className="rounded-xl border border-border/55 bg-card/40 p-4">
+            <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.22em] text-foreground/55">Connections</p>
+            <ConnLine
+              label="RCON"
+              state={status?.rcon?.connected ? 'on' : 'off'}
+              value={status?.rcon ? `${status.rcon.host}:${status.rcon.port}` : undefined}
+            />
+            <ConnLine
+              label="Bridge"
+              state={bridgeStatus?.modConnected ? 'on' : bridgeStatus?.isRunning ? 'wait' : 'off'}
+              value={
+                bridgeStatus?.modConnected && bridgeStatus.modStatus?.version
+                  ? `v${bridgeStatus.modStatus.version.replace(/^v/, '')}`
+                  : bridgeStatus?.isRunning ? 'pending' : 'offline'
+              }
+            />
+            <Link
+              to="/players"
+              className="block -mx-2 rounded px-2 transition-colors hover:bg-muted/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
+              aria-label={`${players.length} players online — open Players page`}
+            >
+              <ConnLine
+                label="Players"
+                state={players.length > 0 ? 'on' : 'off'}
+                value={`${players.length} online`}
+              />
+            </Link>
+            {!status?.rcon?.connected && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="mt-2 w-full gap-1.5 text-xs"
+                onClick={handleConnect}
+                disabled={loading !== null}
+              >
+                {loading === 'Connect RCON' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wifi className="h-3.5 w-3.5" />}
+                Connect RCON
+              </Button>
+            )}
+          </section>
+
+          {/* Utilities */}
+          {!activeServer?.isRemote && (
+            <section className="rounded-xl border border-border/55 bg-card/40 p-4 space-y-3">
+              <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-foreground/55">Utilities</p>
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full justify-start gap-2 text-xs"
+                onClick={fetchStatus}
+                disabled={loading !== null}
+              >
+                <RefreshCw className={cn('h-3.5 w-3.5', loading ? 'animate-spin' : '')} />
+                Refresh status
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full justify-start gap-2 text-xs"
+                disabled={loading !== null || activeServer?.isRemote}
+                onClick={() => handleAction('Create backup', () => backupApi.createBackup({ includeDb: true }).then(() => fetchMaintenance()))}
+              >
+                {loading === 'Create backup' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Archive className="h-3.5 w-3.5" />}
+                Create backup
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full justify-start gap-2 text-xs text-destructive hover:text-destructive"
+                disabled={online || loading !== null || activeServer?.isRemote}
+                onClick={() => { setWipePreview(null); setWipeDialog(true) }}
+                title={online ? 'Stop the server before wiping' : 'Delete map / players / world state'}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Wipe server
+              </Button>
+              <label className="flex cursor-pointer items-center gap-2.5 pt-2 border-t border-border/30">
+                <Checkbox
+                  id="autoStartServer"
+                  checked={autoStartServer}
+                  onCheckedChange={(checked) => handleAutoStartChange(checked === true)}
+                />
+                <Label htmlFor="autoStartServer" className="cursor-pointer text-xs text-muted-foreground">
+                  Auto-start on panel launch
+                </Label>
+              </label>
             </section>
           )}
-        </div>
+
+          {/* Shortcuts */}
+          <section className="rounded-xl border border-border/55 bg-card/40 p-4">
+            <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.22em] text-foreground/55">Shortcuts</p>
+            <div className="grid grid-cols-2 gap-1.5">
+              {[
+                { to: '/server-config', icon: Server,    label: 'Config' },
+                { to: '/mods',          icon: Gamepad2,  label: 'Mods' },
+                { to: '/backups',       icon: Archive,   label: 'Backups' },
+                { to: '/settings',      icon: Wifi,      label: 'Settings' },
+              ].map(({ to, icon: Icon, label }) => (
+                <Link
+                  key={to}
+                  to={to}
+                  className="group flex items-center gap-2 rounded-md border border-border/40 bg-background/30 px-2.5 py-2 text-xs text-muted-foreground transition-colors hover:border-primary/45 hover:bg-primary/5 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
+                >
+                  <Icon className="h-3.5 w-3.5 opacity-70 transition-opacity group-hover:opacity-100" />
+                  <span className="truncate font-medium">{label}</span>
+                </Link>
+              ))}
+            </div>
+            {bridgeStatus && !bridgeStatus.configured && (
+              <p className="mt-3 border-t border-border/30 pt-3 text-xs text-muted-foreground">
+                Advanced world controls require PanelBridge.{' '}
+                <Link to="/settings" className="text-primary hover:underline">Configure bridge</Link>
+                {' '}when needed.
+              </p>
+            )}
+          </section>
+        </aside>
       </div>
 
       {/* ─── Confirm dialog ──────────────────────────────────────────────── */}

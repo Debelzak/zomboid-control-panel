@@ -42,7 +42,6 @@ import {
   X,
   Info
 } from 'lucide-react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -57,13 +56,92 @@ import { useToast } from '@/components/ui/use-toast'
 import { rconApi, serverApi, playersApi, panelBridgeApi } from '@/lib/api'
 import { Link } from 'react-router-dom'
 import { PageHeader } from '@/components/PageHeader'
-import { BridgeStatusBadge } from '@/components/BridgeStatusBadge'
 import { cn } from '@/lib/utils'
 import { getUserErrorMessage } from '@/lib/errorMessage'
 
 interface Player {
   name: string
   online: boolean
+}
+
+type PanelTone = 'primary' | 'warning' | 'destructive' | 'info' | 'success'
+
+function toneBorder(tone: PanelTone): string {
+  switch (tone) {
+    case 'warning': return 'border-amber-400/55'
+    case 'destructive': return 'border-destructive/55'
+    case 'info': return 'border-info/55'
+    case 'success': return 'border-emerald-400/55'
+    default: return 'border-primary/55'
+  }
+}
+
+function toneText(tone: PanelTone): string {
+  switch (tone) {
+    case 'warning': return 'text-amber-400/85'
+    case 'destructive': return 'text-destructive/85'
+    case 'info': return 'text-info/85'
+    case 'success': return 'text-emerald-400/85'
+    default: return 'text-primary/75'
+  }
+}
+
+function TacticalPanel({
+  children,
+  tone = 'primary',
+  className,
+}: {
+  children: React.ReactNode
+  tone?: PanelTone
+  className?: string
+}) {
+  const corner = toneBorder(tone)
+  return (
+    <div className={cn(
+      'relative rounded-md border border-border/55 bg-card/85 backdrop-blur-md shadow-lg overflow-hidden h-full flex flex-col',
+      className
+    )}>
+      <div aria-hidden className={cn('absolute top-1 left-1 w-2.5 h-2.5 border-l-2 border-t-2 pointer-events-none z-10', corner)} />
+      <div aria-hidden className={cn('absolute top-1 right-1 w-2.5 h-2.5 border-r-2 border-t-2 pointer-events-none z-10', corner)} />
+      <div aria-hidden className={cn('absolute bottom-1 left-1 w-2.5 h-2.5 border-l-2 border-b-2 pointer-events-none z-10', corner)} />
+      <div aria-hidden className={cn('absolute bottom-1 right-1 w-2.5 h-2.5 border-r-2 border-b-2 pointer-events-none z-10', corner)} />
+      {children}
+    </div>
+  )
+}
+
+function SectionHeader({
+  label,
+  sublabel,
+  icon: Icon,
+  action,
+  tone = 'primary',
+}: {
+  label: string
+  sublabel?: string
+  icon?: React.ComponentType<{ className?: string }>
+  action?: React.ReactNode
+  tone?: PanelTone
+}) {
+  const isBridgeOffline = sublabel?.startsWith('bridge offline')
+  return (
+    <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border/50 bg-muted/25 select-none">
+      <span className={cn('flex items-center gap-1.5 text-xs font-semibold tracking-normal min-w-0', toneText(tone))}>
+        {Icon && <Icon className="w-3 h-3 shrink-0" />}
+        <span className="truncate">{label}</span>
+        {sublabel && (
+          <>
+            <span className="text-muted-foreground/40">·</span>
+            <span className={cn(
+              'truncate normal-case tracking-[0.12em]',
+              isBridgeOffline ? 'text-amber-400/70' : 'text-muted-foreground/65'
+            )}>{sublabel}</span>
+          </>
+        )}
+      </span>
+      {action && <div className="flex items-center gap-1.5 shrink-0">{action}</div>}
+    </div>
+  )
 }
 
 function getEventSuccessCopy(action: string) {
@@ -479,7 +557,8 @@ function BridgeResultDisplay({ result, loading, onInlineAction, players }: Bridg
 
   // Vehicle list
   if (operation === 'getVehiclesDetailed') {
-    const vehicles = (data as { vehicles?: unknown[] })?.vehicles ?? []
+    const rawVehicles = Array.isArray(data) ? data : (data as { vehicles?: unknown })?.vehicles
+    const vehicles = (Array.isArray(rawVehicles) ? rawVehicles : []) as unknown[]
     if (vehicles.length === 0) {
       return (
         <ResultCard title="No Vehicles Found" icon={<Car className="h-4 w-4" />} timestamp={timestamp}>
@@ -565,7 +644,8 @@ function BridgeResultDisplay({ result, loading, onInlineAction, players }: Bridg
 
   // Safehouse list
   if (operation === 'getSafehouses') {
-    const safehouses = (data as { safehouses?: unknown[] })?.safehouses ?? []
+    const rawSafehouses = Array.isArray(data) ? data : (data as { safehouses?: unknown })?.safehouses
+    const safehouses = (Array.isArray(rawSafehouses) ? rawSafehouses : []) as unknown[]
     if (safehouses.length === 0) {
       return (
         <ResultCard title="No Safehouses Found" icon={<ShieldCheck className="h-4 w-4" />} timestamp={timestamp}>
@@ -620,7 +700,8 @@ function BridgeResultDisplay({ result, loading, onInlineAction, players }: Bridg
 
   // Faction list
   if (operation === 'getFactions') {
-    const factions = (data as { factions?: unknown[] })?.factions ?? []
+    const rawFactions = Array.isArray(data) ? data : (data as { factions?: unknown })?.factions
+    const factions = (Array.isArray(rawFactions) ? rawFactions : []) as unknown[]
     if (factions.length === 0) {
       return (
         <ResultCard title="No Factions Found" icon={<Users className="h-4 w-4" />} timestamp={timestamp}>
@@ -816,9 +897,9 @@ export default function Events() {
   
   const { toast } = useToast()
 
-  type EventSectionKey = 'weather' | 'environment' | 'sound' | 'world' | 'bridgeOps'
+  type EventSectionKey = 'atmosphere' | 'world' | 'signal' | 'dispatch' | 'console'
 
-  const [activeIntent, setActiveIntent] = useState<EventSectionKey>('weather')
+  const [activeIntent, setActiveIntent] = useState<EventSectionKey>('atmosphere')
 
   const fetchPlayers = useCallback(async () => {
     try {
@@ -832,6 +913,14 @@ export default function Events() {
   }, [])
 
   const mountedRef = useRef(true)
+  // Suppress climate-slider overwrites from the 10s bridge poll while the
+  // user is actively dragging or has just released a slider. Updated by
+  // onValueChange on each climate Slider; cleared on apply/reset so the
+  // next poll picks up authoritative game state.
+  const climateDirtyUntilRef = useRef(0)
+  const markClimateDirty = useCallback(() => {
+    climateDirtyUntilRef.current = Date.now() + 2500
+  }, [])
 
   const checkBridgeStatus = useCallback(async () => {
     try {
@@ -850,14 +939,17 @@ export default function Events() {
         if (!mountedRef.current) return
 
         if (floatsRes.status === 'fulfilled' && floatsRes.value.success && floatsRes.value.data?.floats) {
-          const floats = floatsRes.value.data.floats
-          const findFloat = (id: number) => floats.find((f: { id: number; value: number }) => f.id === id)?.value
-          setFogIntensity(Math.round((findFloat(5) ?? 0) * 100))
-          setWindIntensity(Math.round((findFloat(6) ?? 0) * 100))
-          setTemperature(Math.round(findFloat(4) ?? 20))
-          setCloudIntensity(Math.round((findFloat(8) ?? 0) * 100))
-          setHumidity(Math.round((findFloat(12) ?? 0.5) * 100))
-          setPrecipitationIntensity(Math.round((findFloat(3) ?? 0) * 100))
+          // Don't clobber sliders the user is currently dragging.
+          if (Date.now() >= climateDirtyUntilRef.current) {
+            const floats = floatsRes.value.data.floats
+            const findFloat = (id: number) => floats.find((f: { id: number; value: number }) => f.id === id)?.value
+            setFogIntensity(Math.round((findFloat(5) ?? 0) * 100))
+            setWindIntensity(Math.round((findFloat(6) ?? 0) * 100))
+            setTemperature(Math.round(findFloat(4) ?? 20))
+            setCloudIntensity(Math.round((findFloat(8) ?? 0) * 100))
+            setHumidity(Math.round((findFloat(12) ?? 0.5) * 100))
+            setPrecipitationIntensity(Math.round((findFloat(3) ?? 0) * 100))
+          }
         }
 
         if (timeRes.status === 'fulfilled' && timeRes.value.success && timeRes.value.data) {
@@ -922,7 +1014,10 @@ export default function Events() {
 
         if (safehouseResult.status === 'fulfilled') {
           const safehousePayload = (safehouseResult.value as { data?: unknown })?.data ?? safehouseResult.value
-          const safehouses = (safehousePayload as { safehouses?: Array<{ id?: unknown; title?: unknown }> })?.safehouses ?? []
+          const rawSafehouses = Array.isArray(safehousePayload)
+            ? safehousePayload
+            : (safehousePayload as { safehouses?: unknown })?.safehouses
+          const safehouses = (Array.isArray(rawSafehouses) ? rawSafehouses : []) as Array<{ id?: unknown; title?: unknown }>
           const safehouseOptions = safehouses
             .map((safehouse) => {
               const id = safehouse.id != null ? String(safehouse.id).trim() : ''
@@ -942,7 +1037,10 @@ export default function Events() {
 
         if (factionResult.status === 'fulfilled') {
           const factionPayload = (factionResult.value as { data?: unknown })?.data ?? factionResult.value
-          const factions = (factionPayload as { factions?: Array<{ name?: unknown; owner?: unknown }> })?.factions ?? []
+          const rawFactions = Array.isArray(factionPayload)
+            ? factionPayload
+            : (factionPayload as { factions?: unknown })?.factions
+          const factions = (Array.isArray(rawFactions) ? rawFactions : []) as Array<{ name?: unknown; owner?: unknown }>
           const factionOptions = factions
             .map((faction) => {
               const name = faction.name != null ? String(faction.name).trim() : ''
@@ -960,7 +1058,10 @@ export default function Events() {
 
         if (vehicleResult.status === 'fulfilled') {
           const vehiclePayload = (vehicleResult.value as { data?: unknown })?.data ?? vehicleResult.value
-          const vehicles = (vehiclePayload as { vehicles?: Array<{ id?: unknown; scriptName?: unknown; x?: unknown; y?: unknown }> })?.vehicles ?? []
+          const rawVehicles = Array.isArray(vehiclePayload)
+            ? vehiclePayload
+            : (vehiclePayload as { vehicles?: unknown })?.vehicles
+          const vehicles = (Array.isArray(rawVehicles) ? rawVehicles : []) as Array<{ id?: unknown; scriptName?: unknown; x?: unknown; y?: unknown }>
           const vehicleOptions = vehicles
             .map((vehicle) => {
               const id = vehicle.id != null ? String(vehicle.id).trim() : ''
@@ -1095,6 +1196,16 @@ export default function Events() {
   const triggerThunder = (username?: string) => serverApi.triggerThunder(username)
   // Alarm triggers at admin's in-game position (admin must be online)
   const triggerAlarm = () => serverApi.alarm()
+
+  // PZ RCON `lightning` / `thunder` require a username and silently no-op without one.
+  // If the user has "all online" selected, pick a random connected player instead
+  // of sending an empty command.
+  const pickStrikeTarget = (): string => {
+    const explicit = getTargetPlayer()
+    if (explicit) return explicit
+    if (players.length === 0) throw new Error('No players online')
+    return players[Math.floor(Math.random() * players.length)].name
+  }
   
   // Zombie commands — use PanelBridge (CreateSwarm) for proper distance control
   const createHorde = (count: number, username?: string) => {
@@ -1112,7 +1223,8 @@ export default function Events() {
   const removeZombies = () => panelBridgeApi.clearAllZombies()
   
   // Time commands
-  const setGameTimeSpeed = () => executeCommand(`setTimeSpeed ${timeSpeed}`)
+  // PZ has no `setTimeSpeed` RCON command — route through the bridge.
+  const setGameTimeSpeed = () => panelBridgeApi.sendCommand('setTimeSpeed', { multiplier: timeSpeed })
   
   // Teleport commands
   // teleportto only works if admin is in-game and teleports themselves
@@ -1359,74 +1471,95 @@ export default function Events() {
   }
 
   return (
-    <div className="space-y-6 page-transition">
+    <div className="space-y-4 page-transition">
       <PageHeader
-        title="Events"
-        description="Trigger weather, sounds, zombies, and world actions on your live server"
-        eyebrow="World Control"
+        title="Event Console"
+        description="Weather, time, sounds, player actions, and bridge tools"
+        eyebrow="world control"
         tone="world"
         icon={<Zap className="w-5 h-5 text-primary" />}
         actions={
-          <div className="flex items-center gap-2">
-            <BridgeStatusBadge connected={bridgeConnected} />
-            <Button variant="command" onClick={fetchPlayers} className="gap-2">
-              <RefreshCw className="w-4 h-4" />
-              Refresh Players
-            </Button>
-          </div>
+          <Button variant="command" onClick={fetchPlayers} className="gap-2 h-9 text-xs font-medium">
+            <RefreshCw className="w-3.5 h-3.5" />
+            refresh players
+          </Button>
         }
       />
 
-      {/* Single top-level bridge warning — shown once, not per-card */}
-      {!bridgeConnected && (
-        <Alert className="border-warning/40 bg-warning/10">
-          <AlertTriangle className="h-4 w-4 text-warning" />
-          <AlertTitle className="text-warning">Panel Bridge Required</AlertTitle>
-          <AlertDescription className="space-y-2">
-            <p>Advanced weather, climate, time, infrastructure, and precision sound controls require <strong className="text-foreground">PanelBridge.lua</strong>. Basic RCON actions still work.</p>
-            <Link to="/settings" className="inline-flex text-sm text-primary underline hover:text-foreground">Open Bridge Setup</Link>
-          </AlertDescription>
-        </Alert>
-      )}
-
-      {/* Target Selection */}
-      <Card>
-        <CardHeader className="pb-3">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <Target className="w-4 h-4 text-primary" />
-                Event Target
-              </CardTitle>
-              <CardDescription className="mt-0.5">Choose a target player or target all. Pick an action below.</CardDescription>
+      {/* TOP STATUS STRIP — bridge link + target picker */}
+      <TacticalPanel tone={bridgeConnected ? 'primary' : 'warning'} className="overflow-visible">
+        <div className="px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          {/* Bridge status */}
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.18em] text-primary/85 whitespace-nowrap">
+              <Zap className={cn('w-3.5 h-3.5', bridgeConnected ? 'text-primary' : 'text-amber-400')} />
+              <span>bridge</span>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <Switch
-                checked={targetAll}
-                onCheckedChange={setTargetAll}
-                id="target-all"
-              />
-              <Label htmlFor="target-all" className="flex items-center gap-2 whitespace-nowrap">
-                <Users className="w-4 h-4" />
-                Use Global/Random Target
-              </Label>
+            <div className={cn(
+              'flex items-center gap-2 px-2.5 py-1 rounded-md border',
+              bridgeConnected
+                ? 'border-emerald-400/30 bg-emerald-400/10'
+                : 'border-amber-400/30 bg-amber-400/10'
+            )}>
+              <span className={cn(
+                'w-2 h-2 rounded-full shadow-[0_0_8px_currentColor]',
+                bridgeConnected ? 'bg-emerald-400 text-emerald-400 animate-pulse' : 'bg-amber-400 text-amber-400'
+              )} />
+              <span className={cn(
+                'text-sm font-semibold tracking-wide',
+                bridgeConnected ? 'text-emerald-300' : 'text-amber-300'
+              )}>
+                {bridgeConnected ? 'online' : 'offline'}
+              </span>
             </div>
+            {!bridgeConnected && (
+              <Link to="/settings" className="hidden sm:inline-flex text-sm font-medium text-primary hover:text-primary/80 underline-offset-2 hover:underline">
+                configure →
+              </Link>
+            )}
           </div>
-        </CardHeader>
-        {!targetAll && (
-        <CardContent className="pt-0 space-y-2">
-            <div className="space-y-2">
-              <Label htmlFor="event-target-player" className="flex items-center gap-2">
-                <User className="w-4 h-4" />
-                Select Player
-              </Label>
+
+          {/* Target picker */}
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-primary/85 whitespace-nowrap">
+              target
+            </span>
+            <div className="inline-flex rounded-md border border-border/70 bg-background/60 p-0.5 shadow-sm">
+              <button
+                type="button"
+                onClick={() => setTargetAll(true)}
+                className={cn(
+                  'px-3 py-1.5 text-sm font-medium rounded-sm transition-colors',
+                  targetAll
+                    ? 'bg-primary/20 text-primary shadow-inner'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-background/40'
+                )}
+                aria-pressed={targetAll}
+              >
+                all online
+              </button>
+              <button
+                type="button"
+                onClick={() => setTargetAll(false)}
+                className={cn(
+                  'px-3 py-1.5 text-sm font-medium rounded-sm transition-colors',
+                  !targetAll
+                    ? 'bg-primary/20 text-primary shadow-inner'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-background/40'
+                )}
+                aria-pressed={!targetAll}
+              >
+                specific
+              </button>
+            </div>
+            {!targetAll && (
               <Select value={selectedPlayer} onValueChange={setSelectedPlayer}>
-                <SelectTrigger id="event-target-player" aria-label="Select player target" className="w-full max-w-xs">
-                  <SelectValue placeholder="Select an online player" />
+                <SelectTrigger id="event-target-player" aria-label="Select player target" className="h-9 w-[210px] font-mono text-xs">
+                  <SelectValue placeholder="select player…" />
                 </SelectTrigger>
                 <SelectContent>
                   {players.length === 0 ? (
-                    <div className="px-2 py-1.5 text-sm text-muted-foreground">No players online</div>
+                    <div className="px-2 py-1.5 font-mono text-[11px] text-muted-foreground">no players online</div>
                   ) : (
                     players.map((player) => (
                       <SelectItem key={player.name} value={player.name}>
@@ -1436,423 +1569,240 @@ export default function Events() {
                   )}
                 </SelectContent>
               </Select>
-              {players.length === 0 && (
-                <p className="text-sm text-muted-foreground">
-                  No players are currently online. Some events require an online player to target.
-                </p>
-              )}
+            )}
+            <div className={cn(
+              'flex items-center gap-1.5 px-2.5 py-1 rounded-md border whitespace-nowrap',
+              players.length > 0
+                ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300'
+                : 'border-border/60 bg-muted/30 text-muted-foreground'
+            )}>
+              <Users className="w-3.5 h-3.5" />
+              <span className="text-sm font-bold tabular-nums">{players.length}</span>
+              <span className="text-xs font-medium uppercase tracking-wider opacity-80">connected</span>
             </div>
-        </CardContent>
-        )}
-      </Card>
+          </div>
+        </div>
+      </TacticalPanel>
 
       {/* Tab Navigation */}
       <Tabs value={activeIntent} onValueChange={(v) => setActiveIntent(v as EventSectionKey)}>
-        <TabsList className="flex h-auto flex-wrap gap-1 bg-muted/40 p-1 rounded-xl w-full">
-          <TabsTrigger value="weather" className="flex items-center gap-1.5 px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-sm">
-            <CloudRain className="w-3.5 h-3.5 shrink-0" />Weather
-          </TabsTrigger>
-          <TabsTrigger value="environment" className="flex items-center gap-1.5 px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-sm">
-            <Clock className="w-3.5 h-3.5 shrink-0" />Time
-          </TabsTrigger>
-          <TabsTrigger value="sound" className="flex items-center gap-1.5 px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-sm">
-            <Volume2 className="w-3.5 h-3.5 shrink-0" />Sound
-          </TabsTrigger>
-          <TabsTrigger value="world" className="flex items-center gap-1.5 px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-sm">
-            <Skull className="w-3.5 h-3.5 shrink-0" />Combat & World
-          </TabsTrigger>
-          <TabsTrigger value="bridgeOps" className="flex items-center gap-1.5 px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-sm">
-            <Crosshair className="w-3.5 h-3.5 shrink-0" />Admin Ops
-          </TabsTrigger>
+        <TabsList className="flex h-auto flex-wrap gap-1 bg-muted/30 border border-border/50 p-1 rounded-md w-full">
+          {([
+            { value: 'atmosphere', label: 'weather', icon: CloudRain },
+            { value: 'world', label: 'world', icon: Clock },
+            { value: 'signal', label: 'sounds', icon: Volume2 },
+            { value: 'dispatch', label: 'players', icon: Skull },
+            { value: 'console', label: 'bridge', icon: Crosshair },
+          ] as const).map((t) => (
+            <TabsTrigger
+              key={t.value}
+              value={t.value}
+              className="flex-1 min-w-[110px] flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium data-[state=active]:bg-primary/15 data-[state=active]:text-primary data-[state=active]:shadow-none"
+            >
+              <t.icon className="w-3 h-3 shrink-0" />
+              {t.label}
+            </TabsTrigger>
+          ))}
         </TabsList>
 
-        {/* ── Weather Tab ── */}
-        <TabsContent value="weather" className="mt-5">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Weather Controls */}
-        <Card>
-          <CardHeader className="pb-4">
-            <CardTitle className="flex items-center gap-2">
-              <Cloud className="w-4 h-4 text-primary" />
-              Weather Controls
-            </CardTitle>
-            <CardDescription>Rain, storms, and clear sky controls.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {/* Rain */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <Label>Rain Intensity: {rainIntensity}%</Label>
-              </div>
-              <Slider
-                aria-label="Rain intensity"
-                value={[rainIntensity]}
-                onValueChange={([val]) => setRainIntensity(val)}
-                min={1}
-                max={100}
-                step={1}
-              />
-              <div className="grid grid-cols-2 gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => handleAction('Start rain', startRain)}
-                  disabled={loading !== null}
-                  className="h-11 gap-2"
-                >
-                  {loading === 'Start rain' ? <Loader2 className="w-4 h-4 animate-spin" /> : <CloudRain className="w-4 h-4" />}
-                  Start Rain
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => handleAction('Stop rain', stopRain)}
-                  disabled={loading !== null}
-                  className="h-11 gap-2"
-                >
-                  {loading === 'Stop rain' ? <Loader2 className="w-4 h-4 animate-spin" /> : <CloudOff className="w-4 h-4" />}
-                  Stop Rain
-                </Button>
-              </div>
-            </div>
-
-            {/* Storm */}
-            <div className="space-y-3 pt-3 border-t">
-              <div className="flex items-center justify-between">
-                <Label>Storm Duration: {stormDuration} game hour{stormDuration !== 1 ? 's' : ''}</Label>
-              </div>
-              <Slider
-                aria-label="Storm duration"
-                value={[stormDuration]}
-                onValueChange={([val]) => setStormDuration(val)}
-                min={1}
-                max={24}
-                step={1}
-              />
-              <div className="grid grid-cols-2 gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => handleAction('Start storm', startStorm)}
-                  disabled={loading !== null}
-                  className="h-11 gap-2"
-                >
-                  {loading === 'Start storm' ? <Loader2 className="w-4 h-4 animate-spin" /> : <CloudLightning className="w-4 h-4" />}
-                  Start Storm
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => handleAction('Stop weather', stopWeather)}
-                  disabled={loading !== null}
-                  className="h-11 gap-2"
-                >
-                  {loading === 'Stop weather' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Cloud className="w-4 h-4" />}
-                  Clear Weather
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Advanced Weather Controls (via Panel Bridge) */}
-        {bridgeConnected ? (
-        <Card>
-          <CardHeader className="pb-4">
-            <CardTitle className="flex items-center gap-2">
-              <Snowflake className="w-4 h-4 text-primary" />
-              Advanced Weather
-            </CardTitle>
-            <CardDescription>Blizzards, tropical storms, and snow toggles. Requires Bridge.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-                {/* Blizzard */}
+        {/* ── ATMOSPHERE TAB ── */}
+        <TabsContent value="atmosphere" className="mt-4 space-y-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* Rain + Storm (RCON) */}
+            <TacticalPanel>
+              <SectionHeader label="rain & storms" sublabel="rcon · always available" icon={CloudRain} />
+              <div className="p-4 space-y-6">
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <Label className="flex items-center gap-2">
-                      <Snowflake className="w-4 h-4 text-primary" />
-                      Blizzard Duration: {blizzardDuration} hour{blizzardDuration !== 1 ? 's' : ''}
+                    <Label className="text-xs font-medium text-foreground/85 flex items-center gap-1.5">
+                      <CloudRain className="w-3.5 h-3.5 text-info" />
+                      rain
                     </Label>
+                    <span className="font-mono text-[11px] tabular-nums text-info">{rainIntensity}%</span>
                   </div>
-                  <Slider
-                    aria-label="Blizzard duration"
-                    value={[blizzardDuration]}
-                    onValueChange={([val]) => setBlizzardDuration(val)}
-                    min={1}
-                    max={24}
-                    step={1}
-                  />
-                  <Button
-                    variant="outline"
-                    onClick={() => handleBridgeAction('Blizzard', () => panelBridgeApi.triggerBlizzard(blizzardDuration))}
-                    disabled={bridgeLoading !== null}
-                    className="w-full h-11 gap-2"
-                  >
-                    {bridgeLoading === 'Blizzard' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Snowflake className="w-4 h-4" />}
-                    Trigger Blizzard
-                  </Button>
-                </div>
-
-                {/* Tropical Storm */}
-                <div className="space-y-3 pt-3 border-t">
-                  <div className="flex items-center justify-between">
-                    <Label className="flex items-center gap-2">
-                      <Wind className="w-4 h-4 text-primary" />
-                      Tropical Storm Duration: {tropicalDuration} hour{tropicalDuration !== 1 ? 's' : ''}
-                    </Label>
-                  </div>
-                  <Slider
-                    aria-label="Tropical storm duration"
-                    value={[tropicalDuration]}
-                    onValueChange={([val]) => setTropicalDuration(val)}
-                    min={1}
-                    max={24}
-                    step={1}
-                  />
-                  <Button
-                    variant="outline"
-                    onClick={() => handleBridgeAction('Tropical Storm', () => panelBridgeApi.triggerTropicalStorm(tropicalDuration))}
-                    disabled={bridgeLoading !== null}
-                    className="w-full h-11 gap-2"
-                  >
-                    {bridgeLoading === 'Tropical Storm' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wind className="w-4 h-4" />}
-                    Trigger Tropical Storm
-                  </Button>
-                </div>
-
-                {/* Quick Actions */}
-                <div className="space-y-3 pt-3 border-t">
-                  <p className="text-sm font-medium flex items-center gap-2">
-                      <Thermometer className="w-4 h-4 text-primary" />
-                    Quick Weather Toggles
-                  </p>
+                  <Slider aria-label="Rain intensity" value={[rainIntensity]} onValueChange={([val]) => setRainIntensity(val)} min={1} max={100} step={1} />
                   <div className="grid grid-cols-2 gap-2">
-                    <Button
-                      variant="outline"
-                      onClick={() => handleBridgeAction('Enable Snow', () => panelBridgeApi.setSnow(true))}
-                      disabled={bridgeLoading !== null}
-                      className="h-11 gap-2"
-                    >
-                      {bridgeLoading === 'Enable Snow' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Snowflake className="w-4 h-4" />}
-                      Enable Snow
+                    <Button variant="outline" onClick={() => handleAction('Start rain', startRain)} disabled={loading !== null} className="h-9 gap-2 text-xs font-medium">
+                      {loading === 'Start rain' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CloudRain className="w-3.5 h-3.5" />}
+                      start rain
                     </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => handleBridgeAction('Disable Snow', () => panelBridgeApi.setSnow(false))}
-                      disabled={bridgeLoading !== null}
-                      className="h-11 gap-2"
-                    >
-                      {bridgeLoading === 'Disable Snow' ? <Loader2 className="w-4 h-4 animate-spin" /> : <CloudRain className="w-4 h-4" />}
-                      Disable Snow
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => handleBridgeAction('Stop All Weather', () => panelBridgeApi.stopWeather())}
-                      disabled={bridgeLoading !== null}
-                      className="h-11 gap-2 col-span-2 hover:bg-primary/10 hover:text-primary hover:border-primary/30"
-                    >
-                      {bridgeLoading === 'Stop All Weather' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Cloud className="w-4 h-4" />}
-                      Stop All Weather
+                    <Button variant="outline" onClick={() => handleAction('Stop rain', stopRain)} disabled={loading !== null} className="h-9 gap-2 text-xs font-medium">
+                      {loading === 'Stop rain' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CloudOff className="w-3.5 h-3.5" />}
+                      stop rain
                     </Button>
                   </div>
                 </div>
-          </CardContent>
-        </Card>
-        ) : (
-          <Card className="border-dashed border-border/60 bg-card/30">
-            <CardContent className="flex flex-col items-center justify-center py-10 text-center">
-              <Snowflake className="w-6 h-6 text-muted-foreground/50 mb-2" />
-              <p className="text-sm font-medium text-muted-foreground">Advanced Weather</p>
-              <p className="text-xs text-muted-foreground/70 mt-1 max-w-xs">Blizzards, tropical storms, and snow toggles need PanelBridge.lua running on the server.</p>
-              <Link to="/settings" className="mt-3 inline-flex text-xs text-primary underline hover:text-foreground">Open Bridge Setup</Link>
-            </CardContent>
-          </Card>
-        )}
 
-        {/* Climate Controls (v1.1.0) - spans full width */}
-        {bridgeConnected && (
-        <Card className="lg:col-span-2">
-          <CardHeader className="pb-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="flex items-center gap-2">
-                  <Gauge className="w-4 h-4 text-primary" />
-                  Climate Controls
-                </CardTitle>
-                <CardDescription>Set fog, wind, temperature, clouds, and more across the whole map.</CardDescription>
+                <div className="space-y-3 pt-4 border-t border-border/40">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-medium text-foreground/85 flex items-center gap-1.5">
+                      <CloudLightning className="w-3.5 h-3.5 text-amber-400" />
+                      storm
+                    </Label>
+                    <span className="font-mono text-[11px] tabular-nums text-amber-400">{stormDuration}h</span>
+                  </div>
+                  <Slider aria-label="Storm duration" value={[stormDuration]} onValueChange={([val]) => setStormDuration(val)} min={1} max={24} step={1} />
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button variant="outline" onClick={() => handleAction('Start storm', startStorm)} disabled={loading !== null} className="h-9 gap-2 text-xs font-medium">
+                      {loading === 'Start storm' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CloudLightning className="w-3.5 h-3.5" />}
+                      start storm
+                    </Button>
+                    <Button variant="outline" onClick={() => handleAction('Stop weather', stopWeather)} disabled={loading !== null} className="h-9 gap-2 text-xs font-medium">
+                      {loading === 'Stop weather' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Cloud className="w-3.5 h-3.5" />}
+                      clear weather
+                    </Button>
+                  </div>
+                </div>
               </div>
-              {bridgeConnected && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleBridgeAction('Reset Climate', () => panelBridgeApi.resetClimateOverrides())}
-                  disabled={bridgeLoading !== null}
-                  className="gap-1"
-                >
+            </TacticalPanel>
+
+            {/* Severe weather (Bridge) */}
+            <TacticalPanel tone={bridgeConnected ? 'primary' : 'warning'} className={!bridgeConnected ? 'opacity-60' : ''}>
+              <SectionHeader
+                label="severe weather"
+                sublabel={bridgeConnected ? 'bridge · advanced' : 'bridge offline'}
+                icon={Snowflake}
+                tone={bridgeConnected ? 'primary' : 'warning'}
+              />
+              <div className="p-4 space-y-6">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-medium text-foreground/85 flex items-center gap-1.5">
+                      <Snowflake className="w-3.5 h-3.5 text-info" />
+                      blizzard
+                    </Label>
+                    <span className="font-mono text-[11px] tabular-nums text-info">{blizzardDuration}h</span>
+                  </div>
+                  <Slider aria-label="Blizzard duration" value={[blizzardDuration]} onValueChange={([val]) => setBlizzardDuration(val)} min={1} max={24} step={1} disabled={!bridgeConnected} />
+                  <Button variant="outline" onClick={() => handleBridgeAction('Blizzard', () => panelBridgeApi.triggerBlizzard(blizzardDuration))} disabled={bridgeLoading !== null || !bridgeConnected} className="w-full h-9 gap-2 text-xs font-medium">
+                    {bridgeLoading === 'Blizzard' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Snowflake className="w-3.5 h-3.5" />}
+                    trigger blizzard
+                  </Button>
+                </div>
+
+                <div className="space-y-3 pt-4 border-t border-border/40">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-medium text-foreground/85 flex items-center gap-1.5">
+                      <Wind className="w-3.5 h-3.5 text-amber-400" />
+                      tropical storm
+                    </Label>
+                    <span className="font-mono text-[11px] tabular-nums text-amber-400">{tropicalDuration}h</span>
+                  </div>
+                  <Slider aria-label="Tropical storm duration" value={[tropicalDuration]} onValueChange={([val]) => setTropicalDuration(val)} min={1} max={24} step={1} disabled={!bridgeConnected} />
+                  <Button variant="outline" onClick={() => handleBridgeAction('Tropical Storm', () => panelBridgeApi.triggerTropicalStorm(tropicalDuration))} disabled={bridgeLoading !== null || !bridgeConnected} className="w-full h-9 gap-2 text-xs font-medium">
+                    {bridgeLoading === 'Tropical Storm' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wind className="w-3.5 h-3.5" />}
+                    trigger tropical storm
+                  </Button>
+                </div>
+
+                <div className="space-y-3 pt-4 border-t border-border/40">
+                  <Label className="text-xs font-medium text-foreground/85 flex items-center gap-1.5">
+                    <Snowflake className="w-3.5 h-3.5 text-info" />
+                    snow toggle
+                  </Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button variant="outline" onClick={() => handleBridgeAction('Enable Snow', () => panelBridgeApi.setSnow(true))} disabled={bridgeLoading !== null || !bridgeConnected} className="h-9 gap-2 text-xs font-medium">
+                      {bridgeLoading === 'Enable Snow' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Snowflake className="w-3.5 h-3.5" />}
+                      enable snow
+                    </Button>
+                    <Button variant="outline" onClick={() => handleBridgeAction('Disable Snow', () => panelBridgeApi.setSnow(false))} disabled={bridgeLoading !== null || !bridgeConnected} className="h-9 gap-2 text-xs font-medium">
+                      {bridgeLoading === 'Disable Snow' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CloudRain className="w-3.5 h-3.5" />}
+                      disable snow
+                    </Button>
+                  </div>
+                  <Button variant="outline" onClick={() => handleBridgeAction('Stop All Weather', () => panelBridgeApi.stopWeather())} disabled={bridgeLoading !== null || !bridgeConnected} className="w-full h-9 gap-2 text-xs font-medium text-destructive/85 hover:text-destructive hover:border-destructive/40">
+                    {bridgeLoading === 'Stop All Weather' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Cloud className="w-3.5 h-3.5" />}
+                    stop all weather
+                  </Button>
+                </div>
+              </div>
+            </TacticalPanel>
+          </div>
+
+          {/* Climate trim — full width */}
+          <TacticalPanel tone={bridgeConnected ? 'primary' : 'warning'} className={!bridgeConnected ? 'opacity-60' : ''}>
+            <SectionHeader
+              label="climate trim"
+              sublabel={bridgeConnected ? 'bridge · admin override' : 'bridge offline'}
+              icon={Gauge}
+              tone={bridgeConnected ? 'primary' : 'warning'}
+              action={bridgeConnected ? (
+                <Button variant="ghost" size="sm" onClick={() => handleBridgeAction('Reset Climate', async () => { const r = await panelBridgeApi.resetClimateOverrides(); climateDirtyUntilRef.current = 0; return r })} disabled={bridgeLoading !== null} className="h-6 px-2 gap-1 text-xs font-medium">
                   <RotateCcw className="w-3 h-3" />
-                  Reset
+                  reset
                 </Button>
-              )}
-            </div>
-          </CardHeader>
-          <CardContent className={!bridgeConnected ? 'pointer-events-none' : ''}>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {/* Fog */}
-                <div className="space-y-3">
+              ) : undefined}
+            />
+            <div className="p-4 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-4">
+                <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label className="flex items-center gap-2">
-                      <Eye className="w-4 h-4 text-primary" />
-                      Fog: {fogIntensity}%
+                    <Label className="text-xs font-medium text-foreground/85 flex items-center gap-1.5">
+                      <Eye className="w-3.5 h-3.5 text-primary/80" />
+                      fog
                     </Label>
+                    <span className="font-mono text-[11px] tabular-nums text-primary">{fogIntensity}%</span>
                   </div>
-                  <Slider
-                    aria-label="Fog intensity"
-                    value={[fogIntensity]}
-                    onValueChange={([val]) => setFogIntensity(val)}
-                    min={0}
-                    max={100}
-                    step={5}
-                  />
-                  <Button
-                    variant="outline"
-                    onClick={() => handleBridgeAction('Set Fog', () => panelBridgeApi.setClimateFloat(5, fogIntensity / 100))}
-                    disabled={bridgeLoading !== null}
-                    className="h-11 w-full gap-2"
-                  >
-                    Apply Fog
-                  </Button>
+                  <Slider aria-label="Fog intensity" value={[fogIntensity]} onValueChange={([val]) => { markClimateDirty(); setFogIntensity(val) }} min={0} max={100} step={5} disabled={!bridgeConnected} />
                 </div>
 
-                {/* Wind */}
-                <div className="space-y-3">
+                <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label className="flex items-center gap-2">
-                      <Wind className="w-4 h-4 text-primary" />
-                      Wind: {windIntensity}%
+                    <Label className="text-xs font-medium text-foreground/85 flex items-center gap-1.5">
+                      <Wind className="w-3.5 h-3.5 text-primary/80" />
+                      wind
                     </Label>
+                    <span className="font-mono text-[11px] tabular-nums text-primary">{windIntensity}%</span>
                   </div>
-                  <Slider
-                    aria-label="Wind intensity"
-                    value={[windIntensity]}
-                    onValueChange={([val]) => setWindIntensity(val)}
-                    min={0}
-                    max={100}
-                    step={5}
-                  />
-                  <Button
-                    variant="outline"
-                    onClick={() => handleBridgeAction('Set Wind', () => panelBridgeApi.setClimateFloat(6, windIntensity / 100))}
-                    disabled={bridgeLoading !== null}
-                    className="h-11 w-full gap-2"
-                  >
-                    Apply Wind
-                  </Button>
+                  <Slider aria-label="Wind intensity" value={[windIntensity]} onValueChange={([val]) => { markClimateDirty(); setWindIntensity(val) }} min={0} max={100} step={5} disabled={!bridgeConnected} />
                 </div>
 
-                {/* Temperature */}
-                <div className="space-y-3">
+                <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label className="flex items-center gap-2">
-                      <Thermometer className="w-4 h-4 text-primary" />
-                      Temperature: {temperature}°C
+                    <Label className="text-xs font-medium text-foreground/85 flex items-center gap-1.5">
+                      <Thermometer className="w-3.5 h-3.5 text-primary/80" />
+                      temperature
                     </Label>
+                    <span className="font-mono text-[11px] tabular-nums text-primary">{temperature}°C</span>
                   </div>
-                  <Slider
-                    aria-label="Temperature"
-                    value={[temperature]}
-                    onValueChange={([val]) => setTemperature(val)}
-                    min={-30}
-                    max={45}
-                    step={1}
-                  />
-                  <Button
-                    variant="outline"
-                    onClick={() => handleBridgeAction('Set Temperature', () => panelBridgeApi.setClimateFloat(4, temperature))}
-                    disabled={bridgeLoading !== null}
-                    className="h-11 w-full gap-2"
-                  >
-                    Apply Temperature
-                  </Button>
+                  <Slider aria-label="Temperature" value={[temperature]} onValueChange={([val]) => { markClimateDirty(); setTemperature(val) }} min={-30} max={45} step={1} disabled={!bridgeConnected} />
                 </div>
 
-                {/* Clouds */}
-                <div className="space-y-3">
+                <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label className="flex items-center gap-2">
-                      <Cloud className="w-4 h-4 text-primary" />
-                      Clouds: {cloudIntensity}%
+                    <Label className="text-xs font-medium text-foreground/85 flex items-center gap-1.5">
+                      <Cloud className="w-3.5 h-3.5 text-primary/80" />
+                      clouds
                     </Label>
+                    <span className="font-mono text-[11px] tabular-nums text-primary">{cloudIntensity}%</span>
                   </div>
-                  <Slider
-                    aria-label="Cloud intensity"
-                    value={[cloudIntensity]}
-                    onValueChange={([val]) => setCloudIntensity(val)}
-                    min={0}
-                    max={100}
-                    step={5}
-                  />
-                  <Button
-                    variant="outline"
-                    onClick={() => handleBridgeAction('Set Clouds', () => panelBridgeApi.setClimateFloat(8, cloudIntensity / 100))}
-                    disabled={bridgeLoading !== null}
-                    className="h-11 w-full gap-2"
-                  >
-                    Apply Clouds
-                  </Button>
+                  <Slider aria-label="Cloud intensity" value={[cloudIntensity]} onValueChange={([val]) => { markClimateDirty(); setCloudIntensity(val) }} min={0} max={100} step={5} disabled={!bridgeConnected} />
                 </div>
 
-                {/* Humidity */}
-                <div className="space-y-3">
+                <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label className="flex items-center gap-2">
-                      <Droplets className="w-4 h-4 text-primary" />
-                      Humidity: {humidity}%
+                    <Label className="text-xs font-medium text-foreground/85 flex items-center gap-1.5">
+                      <Droplets className="w-3.5 h-3.5 text-primary/80" />
+                      humidity
                     </Label>
+                    <span className="font-mono text-[11px] tabular-nums text-primary">{humidity}%</span>
                   </div>
-                  <Slider
-                    aria-label="Humidity"
-                    value={[humidity]}
-                    onValueChange={([val]) => setHumidity(val)}
-                    min={0}
-                    max={100}
-                    step={5}
-                  />
-                  <Button
-                    variant="outline"
-                    onClick={() => handleBridgeAction('Set Humidity', () => panelBridgeApi.setClimateFloat(12, humidity / 100))}
-                    disabled={bridgeLoading !== null}
-                    className="h-11 w-full gap-2"
-                  >
-                    Apply Humidity
-                  </Button>
+                  <Slider aria-label="Humidity" value={[humidity]} onValueChange={([val]) => { markClimateDirty(); setHumidity(val) }} min={0} max={100} step={5} disabled={!bridgeConnected} />
                 </div>
 
-                {/* Precipitation */}
-                <div className="space-y-3">
+                <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label className="flex items-center gap-2">
-                      <CloudRain className="w-4 h-4 text-primary" />
-                      Precipitation: {precipitationIntensity}%
+                    <Label className="text-xs font-medium text-foreground/85 flex items-center gap-1.5">
+                      <CloudRain className="w-3.5 h-3.5 text-primary/80" />
+                      precipitation
                     </Label>
+                    <span className="font-mono text-[11px] tabular-nums text-primary">{precipitationIntensity}%</span>
                   </div>
-                  <Slider
-                    aria-label="Precipitation intensity"
-                    value={[precipitationIntensity]}
-                    onValueChange={([val]) => setPrecipitationIntensity(val)}
-                    min={0}
-                    max={100}
-                    step={5}
-                  />
-                  <Button
-                    variant="outline"
-                    onClick={() => handleBridgeAction('Set Precipitation', () => panelBridgeApi.setClimateFloat(3, precipitationIntensity / 100))}
-                    disabled={bridgeLoading !== null}
-                    className="h-11 w-full gap-2"
-                  >
-                    Apply Precipitation
-                  </Button>
+                  <Slider aria-label="Precipitation intensity" value={[precipitationIntensity]} onValueChange={([val]) => { markClimateDirty(); setPrecipitationIntensity(val) }} min={0} max={100} step={5} disabled={!bridgeConnected} />
                 </div>
               </div>
-            
-            {/* Apply All Climate + Rain & Lightning Quick Actions */}
-            {bridgeConnected && (
-              <div className="mt-6 space-y-4">
+
+              <div className="flex flex-wrap gap-2 pt-3 border-t border-border/40">
                 <Button
                   onClick={() => handleBridgeAction('Apply All Climate', async () => {
                     await Promise.all([
@@ -1863,147 +1813,69 @@ export default function Events() {
                       panelBridgeApi.setClimateFloat(12, humidity / 100),
                       panelBridgeApi.setClimateFloat(3, precipitationIntensity / 100),
                     ])
+                    // Allow the next poll to re-sync from authoritative game state.
+                    climateDirtyUntilRef.current = 0
                   })}
-                  disabled={bridgeLoading !== null}
-                  className="w-full h-11 gap-2"
+                  disabled={bridgeLoading !== null || !bridgeConnected}
+                  className="h-9 gap-2 text-xs font-medium"
                 >
-                  {bridgeLoading === 'Apply All Climate' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Gauge className="w-4 h-4" />}
-                  Apply All Climate Values
+                  {bridgeLoading === 'Apply All Climate' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Gauge className="w-3.5 h-3.5" />}
+                  apply all
                 </Button>
-                <div className="pt-4 border-t">
-                <p className="text-sm font-medium flex items-center gap-2 mb-3">
-                  <Zap className="w-4 h-4 text-primary" />
-                  Rain & Lightning
-                </p>
-                <p className="text-xs text-muted-foreground mb-3">
-                  Rain buttons use Panel Bridge. Lightning and thunder buttons use RCON and follow target rules.
-                </p>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                  <Button
-                    variant="outline"
-                    onClick={() => handleBridgeAction('Start Rain', () => panelBridgeApi.startRain(1.0))}
-                    disabled={bridgeLoading !== null}
-                    className="h-11 gap-2"
-                  >
-                    <CloudRain className="w-4 h-4" />
-                    Start Rain
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => handleBridgeAction('Stop Rain', () => panelBridgeApi.stopRain())}
-                    disabled={bridgeLoading !== null}
-                    className="h-11 gap-2"
-                  >
-                    <CloudOff className="w-4 h-4" />
-                    Stop Rain
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => handleAction('Lightning', () => triggerLightning(getTargetPlayer()))}
-                    disabled={loading !== null}
-                    className="h-11 gap-2"
-                  >
-                    {loading === 'Lightning' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
-                    Lightning Strike
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => handleAction('Thunder', () => triggerThunder(getTargetPlayer()))}
-                    disabled={loading !== null}
-                    className="h-11 gap-2"
-                  >
-                    {loading === 'Thunder' ? <Loader2 className="w-4 h-4 animate-spin" /> : <CloudLightning className="w-4 h-4" />}
-                    Thunder Only
-                  </Button>
-                </div>
-                </div>
+                <Button
+                  variant="outline"
+                  onClick={() => handleBridgeAction('Start Rain', () => panelBridgeApi.startRain(Math.max(0.05, precipitationIntensity / 100)))}
+                  disabled={bridgeLoading !== null || !bridgeConnected}
+                  title="Starts rain using the precipitation slider intensity (minimum 5%)"
+                  className="h-9 gap-2 text-xs font-medium"
+                >
+                  <CloudRain className="w-3.5 h-3.5" /> rain · {Math.max(5, precipitationIntensity)}%
+                </Button>
+                <Button variant="outline" onClick={() => handleBridgeAction('Stop Rain', () => panelBridgeApi.stopRain())} disabled={bridgeLoading !== null || !bridgeConnected} className="h-9 gap-2 text-xs font-medium">
+                  <CloudOff className="w-3.5 h-3.5" /> stop rain
+                </Button>
               </div>
-            )}
-          </CardContent>
-        </Card>
-        )}
             </div>
+          </TacticalPanel>
         </TabsContent>
 
-        {/* ── Time & Environment Tab ── */}
-        <TabsContent value="environment" className="mt-5">
-            {bridgeConnected ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-
-        {/* Game Time Control (v1.1.0) */}
-        <Card>
-          <CardHeader className="pb-4">
-            <CardTitle className="flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-primary" />
-              Game Time
-            </CardTitle>
-            <CardDescription>Set the in-game clock, day, and month for all players.</CardDescription>
-          </CardHeader>
-          <CardContent>
-              <div className="space-y-4">
-                {/* Hour */}
+        {/* ── WORLD TAB (game time + time speed + utilities) ── */}
+        <TabsContent value="world" className="mt-4 space-y-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <TacticalPanel tone={bridgeConnected ? 'primary' : 'warning'} className={!bridgeConnected ? 'opacity-60' : ''}>
+              <SectionHeader label="game clock" sublabel="world time" icon={Calendar} tone={bridgeConnected ? 'primary' : 'warning'} />
+              <div className="p-4 space-y-4">
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label className="flex items-center gap-2">
-                      {gameHour >= 6 && gameHour < 20 ? (
-                        <Sun className="w-4 h-4 text-primary" />
-                      ) : (
-                        <Moon className="w-4 h-4 text-primary" />
-                      )}
-                      Hour: {gameHour}:00
+                    <Label className="text-xs font-medium text-foreground/85 flex items-center gap-1.5">
+                      {gameHour >= 6 && gameHour < 20 ? <Sun className="w-3.5 h-3.5 text-amber-400" /> : <Moon className="w-3.5 h-3.5 text-info" />}
+                      hour
                     </Label>
+                    <span className="font-mono text-[11px] tabular-nums text-primary">{String(gameHour).padStart(2, '0')}:00</span>
                   </div>
-                  <Slider
-                    aria-label="Game hour"
-                    value={[gameHour]}
-                    onValueChange={([val]) => setGameHour(val)}
-                    min={0}
-                    max={23}
-                    step={1}
-                  />
+                  <Slider aria-label="Game hour" value={[gameHour]} onValueChange={([val]) => setGameHour(val)} min={0} max={23} step={1} disabled={!bridgeConnected} />
                 </div>
 
-                {/* Quick time buttons */}
-                <div className="flex gap-2 flex-wrap">
-                  <Button variant={gameHour === 6 ? 'secondary' : 'outline'} size="sm" onClick={() => setGameHour(6)} className="h-10 gap-1.5">
-                    <Sunrise className="w-3.5 h-3.5" /> Dawn
-                  </Button>
-                  <Button variant={gameHour === 12 ? 'secondary' : 'outline'} size="sm" onClick={() => setGameHour(12)} className="h-10 gap-1.5">
-                    <Sun className="w-3.5 h-3.5" /> Noon
-                  </Button>
-                  <Button variant={gameHour === 18 ? 'secondary' : 'outline'} size="sm" onClick={() => setGameHour(18)} className="h-10 gap-1.5">
-                    <Sunset className="w-3.5 h-3.5" /> Dusk
-                  </Button>
-                  <Button variant={gameHour === 0 ? 'secondary' : 'outline'} size="sm" onClick={() => setGameHour(0)} className="h-10 gap-1.5">
-                    <Moon className="w-3.5 h-3.5" /> Midnight
-                  </Button>
+                <div className="grid grid-cols-4 gap-1.5">
+                  <Button variant={gameHour === 6 ? 'secondary' : 'outline'} size="sm" onClick={() => setGameHour(6)} disabled={!bridgeConnected} className="h-8 gap-1 text-xs font-medium"><Sunrise className="w-3 h-3" /> dawn</Button>
+                  <Button variant={gameHour === 12 ? 'secondary' : 'outline'} size="sm" onClick={() => setGameHour(12)} disabled={!bridgeConnected} className="h-8 gap-1 text-xs font-medium"><Sun className="w-3 h-3" /> noon</Button>
+                  <Button variant={gameHour === 18 ? 'secondary' : 'outline'} size="sm" onClick={() => setGameHour(18)} disabled={!bridgeConnected} className="h-8 gap-1 text-xs font-medium"><Sunset className="w-3 h-3" /> dusk</Button>
+                  <Button variant={gameHour === 0 ? 'secondary' : 'outline'} size="sm" onClick={() => setGameHour(0)} disabled={!bridgeConnected} className="h-8 gap-1 text-xs font-medium"><Moon className="w-3 h-3" /> midnight</Button>
                 </div>
 
-                {/* Date controls */}
                 <div className="grid grid-cols-2 gap-3 pt-2">
                   <div className="space-y-1">
-                    <Label htmlFor="game-day" className="text-xs">Day</Label>
-                    <Input
-                      id="game-day"
-                      aria-label="Game day"
-                      type="number"
-                      min={1}
-                      max={31}
-                      value={gameDay}
-                      onChange={(e) => {
-                        const parsed = parseInt(e.target.value, 10)
-                        if (Number.isNaN(parsed)) {
-                          setGameDay(1)
-                          return
-                        }
-                        setGameDay(Math.min(31, Math.max(1, parsed)))
-                      }}
-                    />
+                    <Label htmlFor="game-day" className="text-xs font-medium text-muted-foreground">day</Label>
+                    <Input id="game-day" aria-label="Game day" type="number" min={1} max={31} value={gameDay} disabled={!bridgeConnected} onChange={(e) => {
+                      const parsed = parseInt(e.target.value, 10)
+                      if (Number.isNaN(parsed)) { setGameDay(1); return }
+                      setGameDay(Math.min(31, Math.max(1, parsed)))
+                    }} className="h-9 font-mono text-[12px] tabular-nums" />
                   </div>
                   <div className="space-y-1">
-                    <Label htmlFor="game-month" className="text-xs">Month</Label>
-                    <Select value={String(gameMonth)} onValueChange={(v) => setGameMonth(parseInt(v))}>
-                      <SelectTrigger id="game-month" aria-label="Game month">
+                    <Label htmlFor="game-month" className="text-xs font-medium text-muted-foreground">month</Label>
+                    <Select value={String(gameMonth)} onValueChange={(v) => setGameMonth(parseInt(v))} disabled={!bridgeConnected}>
+                      <SelectTrigger id="game-month" aria-label="Game month" className="h-9 font-mono text-[12px]">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -2024,792 +1896,433 @@ export default function Events() {
                   </div>
                 </div>
 
-                <Button
-                  variant="outline"
-                  onClick={() => handleBridgeAction('Set Time', () => panelBridgeApi.setGameTime({ hour: gameHour, day: gameDay, month: gameMonth }))}
-                  disabled={bridgeLoading !== null}
-                  className="w-full h-11 gap-2"
-                >
-                  {bridgeLoading === 'Set Time' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Clock className="w-4 h-4" />}
-                  Apply Time & Date
-                </Button>
-                <p className="text-xs text-muted-foreground">
-                  This updates world time for all players immediately.
-                </p>
-              </div>
-          </CardContent>
-        </Card>
-
-        {/* Infrastructure (Power/Water) Control */}
-        <Card>
-          <CardHeader className="pb-4">
-            <CardTitle className="flex items-center gap-2">
-              <Zap className="w-4 h-4 text-primary" />
-              Infrastructure
-            </CardTitle>
-            <CardDescription>Toggle power and water for the whole world. Applies instantly to every player.</CardDescription>
-          </CardHeader>
-          <CardContent>
-              <div className="space-y-4">
-                {/* B42 multiplayer notice — compact inline warning */}
-                <div className="flex items-start gap-2 rounded-md border border-amber-500/25 bg-amber-500/5 px-2.5 py-1.5 text-xs text-amber-200/90">
-                  <AlertTriangle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-amber-400" />
-                  <span>Not working in B42 multiplayer — sandbox changes don't propagate to connected clients.</span>
-                </div>
-
-                {/* Current status — compact row */}
-                <div className="flex items-center gap-4 rounded-md border border-border/50 bg-muted/20 px-3 py-2 text-sm">
-                  <div className="flex items-center gap-1.5">
-                    <Zap className={`w-4 h-4 ${utilitiesStatus?.powerOn ? 'text-primary' : 'text-muted-foreground'}`} />
-                    <span className="text-muted-foreground">Power</span>
-                    <span className={`font-mono text-xs ${utilitiesStatus === null ? 'text-muted-foreground' : utilitiesStatus.powerOn ? 'text-primary' : 'text-destructive'}`}>
-                      {utilitiesStatus === null ? '…' : utilitiesStatus.powerOn ? 'ON' : 'OFF'}
-                    </span>
-                  </div>
-                  <div className="w-px h-4 bg-border" />
-                  <div className="flex items-center gap-1.5">
-                    <Droplets className={`w-4 h-4 ${utilitiesStatus?.waterOn ? 'text-primary' : 'text-muted-foreground'}`} />
-                    <span className="text-muted-foreground">Water</span>
-                    <span className={`font-mono text-xs ${utilitiesStatus === null ? 'text-muted-foreground' : utilitiesStatus.waterOn ? 'text-primary' : 'text-destructive'}`}>
-                      {utilitiesStatus === null ? '…' : utilitiesStatus.waterOn ? 'ON' : 'OFF'}
-                    </span>
-                  </div>
-                </div>
-
-                {/* 2×2 action matrix: rows = utility, cols = action */}
-                <div className="grid grid-cols-[auto_1fr_1fr] gap-2 items-center">
-                  <span className="text-[10px] uppercase tracking-wide text-muted-foreground text-center px-1"></span>
-                  <span className="text-[10px] uppercase tracking-wide text-muted-foreground text-center">Restore</span>
-                  <span className="text-[10px] uppercase tracking-wide text-muted-foreground text-center">Cut</span>
-
-                  <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground pr-2">
-                    <Zap className="w-3.5 h-3.5" /> Power
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={!bridgeConnected || loading !== null}
-                    onClick={() => handleAction('Restore Power', async () => {
-                      await panelBridgeApi.restoreUtilities(true, false)
-                      await checkBridgeStatus()
-                    })}
-                    className="h-9"
-                  >
-                    Restore
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={!bridgeConnected || loading !== null}
-                    onClick={() => handleAction('Shut Off Power', async () => {
-                      await panelBridgeApi.shutOffUtilities(true, false)
-                      await checkBridgeStatus()
-                    })}
-                    className="h-9 text-destructive hover:text-destructive"
-                  >
-                    Cut
-                  </Button>
-
-                  <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground pr-2">
-                    <Droplets className="w-3.5 h-3.5" /> Water
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={!bridgeConnected || loading !== null}
-                    onClick={() => handleAction('Restore Water', async () => {
-                      await panelBridgeApi.restoreUtilities(false, true)
-                      await checkBridgeStatus()
-                    })}
-                    className="h-9"
-                  >
-                    Restore
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={!bridgeConnected || loading !== null}
-                    onClick={() => handleAction('Shut Off Water', async () => {
-                      await panelBridgeApi.shutOffUtilities(false, true)
-                      await checkBridgeStatus()
-                    })}
-                    className="h-9 text-destructive hover:text-destructive"
-                  >
-                    Cut
-                  </Button>
-                </div>
-
-                {/* Both-at-once shortcuts */}
-                <div className="grid grid-cols-2 gap-2 pt-1 border-t border-border/40">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    disabled={!bridgeConnected || loading !== null}
-                    onClick={() => handleAction('Restore Utilities', async () => {
-                      await panelBridgeApi.restoreUtilities(true, true)
-                      await checkBridgeStatus()
-                    })}
-                    className="h-9 gap-2 text-xs"
-                  >
-                    <Zap className="w-3.5 h-3.5" />
-                    Restore both
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    disabled={!bridgeConnected || loading !== null}
-                    onClick={() => handleAction('Shut Off Utilities', async () => {
-                      await panelBridgeApi.shutOffUtilities(true, true)
-                      await checkBridgeStatus()
-                    })}
-                    className="h-9 gap-2 text-xs text-destructive hover:text-destructive"
-                  >
-                    <CloudOff className="w-3.5 h-3.5" />
-                    Cut both
-                  </Button>
-                </div>
-              </div>
-          </CardContent>
-        </Card>
-            </div>
-            ) : (
-              <div className="rounded-xl border border-dashed border-border/60 bg-card/30 p-8 text-center">
-                <Calendar className="w-8 h-8 text-muted-foreground/40 mx-auto mb-3" />
-                <p className="text-sm font-medium text-muted-foreground">Time & Infrastructure Controls</p>
-                <p className="text-xs text-muted-foreground/70 mt-1">Game time, power, and water controls require PanelBridge</p>
-              </div>
-            )}
-        </TabsContent>
-
-        {/* ── Sound Tab ── */}
-        <TabsContent value="sound" className="mt-5">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-
-        {/* Sound Events */}
-        <Card>
-          <CardHeader className="pb-4">
-            <CardTitle className="flex items-center gap-2">
-              <Volume2 className="w-4 h-4 text-primary" />
-              Sound Events
-            </CardTitle>
-            <CardDescription>Attract zombies with gunshots, alarms, and custom noise.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Helicopter and gunshot use a random online player. Lightning and thunder follow your target selection above.
-            </p>
-            <div className="grid grid-cols-3 gap-3">
-              <Button
-                variant="outline"
-                onClick={() => handleAction('Helicopter', triggerChopper)}
-                disabled={loading !== null}
-                className="h-11 gap-2"
-              >
-                {loading === 'Helicopter' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Crosshair className="w-4 h-4" />}
-                Helicopter
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => handleAction('Gunshot', triggerGunshot)}
-                disabled={loading !== null}
-                className="h-11 gap-2"
-              >
-                {loading === 'Gunshot' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Volume2 className="w-4 h-4" />}
-                Gunshot
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => handleAction('Lightning', () => triggerLightning(getTargetPlayer()))}
-                disabled={loading !== null}
-                className="h-11 gap-2"
-              >
-                {loading === 'Lightning' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
-                Lightning
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => handleAction('Thunder', () => triggerThunder(getTargetPlayer()))}
-                disabled={loading !== null}
-                className="h-11 gap-2"
-              >
-                {loading === 'Thunder' ? <Loader2 className="w-4 h-4 animate-spin" /> : <CloudLightning className="w-4 h-4" />}
-                Thunder
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => handleAction('Alarm', triggerAlarm)}
-                disabled={loading !== null}
-                className="h-11 gap-2 col-span-2"
-                title="Requires admin to be in-game - triggers at admin's location"
-              >
-                {loading === 'Alarm' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Bell className="w-4 h-4" />}
-                Building Alarm
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Advanced Sound Controls (Panel Bridge v1.2.0) */}
-        {bridgeConnected ? (
-        <Card>
-          <CardHeader className="pb-4">
-            <CardTitle className="flex items-center gap-2">
-              <Megaphone className="w-4 h-4 text-primary" />
-              Advanced Sound Controls
-            </CardTitle>
-            <CardDescription>Place sounds at a player or at exact map coordinates. Requires Bridge.</CardDescription>
-          </CardHeader>
-          <CardContent>
-              <div className="space-y-6">
-                {/* Sound Parameters */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label className="flex items-center gap-2">
-                      <Target className="w-4 h-4 text-primary" />
-                      Radius: {soundRadius}m
-                    </Label>
-                    <Slider
-                      aria-label="Sound radius"
-                      value={[soundRadius]}
-                      onValueChange={([val]) => setSoundRadius(val)}
-                      min={10}
-                      max={300}
-                      step={10}
-                    />
-                    <p className="text-xs text-muted-foreground">How far zombies can hear the sound</p>
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="flex items-center gap-2">
-                      <Volume2 className="w-4 h-4 text-primary" />
-                      Volume: {soundVolume}
-                    </Label>
-                    <Slider
-                      aria-label="Sound volume"
-                      value={[soundVolume]}
-                      onValueChange={([val]) => setSoundVolume(val)}
-                      min={10}
-                      max={300}
-                      step={10}
-                    />
-                    <p className="text-xs text-muted-foreground">Intensity of the noise</p>
-                  </div>
-                </div>
-
-                {/* Quick Sound Triggers (at player location) */}
-                <div className="space-y-3 pt-3 border-t">
-                  <p className="text-sm font-medium flex items-center gap-2">
-                    <User className="w-4 h-4" />
-                    Sound at Player Location
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {targetAll 
-                      ? 'Select a specific player above before using these controls'
-                      : `Sounds will play at ${selectedPlayer || 'the selected player'}'s location`
-                    }
-                  </p>
-                  <div className="grid grid-cols-3 gap-2">
-                    <Button
-                      variant="outline"
-                      onClick={() => handleBridgeAction('Gunshot Sound', () => 
-                        panelBridgeApi.triggerGunshotBridge({ username: selectedPlayer || undefined })
-                      )}
-                      disabled={bridgeLoading !== null || (targetAll || !selectedPlayer)}
-                      title={targetAll ? 'Select a specific player target first' : !selectedPlayer ? 'Select a player first' : undefined}
-                      className="h-11 gap-2"
-                    >
-                      {bridgeLoading === 'Gunshot Sound' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Volume2 className="w-4 h-4" />}
-                      Gunshot
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => handleBridgeAction('Alarm Sound', () => 
-                        panelBridgeApi.triggerAlarmBridge({ username: selectedPlayer || undefined })
-                      )}
-                      disabled={bridgeLoading !== null || (targetAll || !selectedPlayer)}
-                      title={targetAll ? 'Select a specific player target first' : !selectedPlayer ? 'Select a player first' : undefined}
-                      className="h-11 gap-2"
-                    >
-                      {bridgeLoading === 'Alarm Sound' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Bell className="w-4 h-4" />}
-                      Alarm
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => handleBridgeAction('Custom Noise', () => 
-                        panelBridgeApi.createNoise({ username: selectedPlayer, radius: soundRadius, volume: soundVolume })
-                      )}
-                      disabled={bridgeLoading !== null || (targetAll || !selectedPlayer)}
-                      title={targetAll ? 'Select a specific player target first' : !selectedPlayer ? 'Select a player first' : undefined}
-                      className="h-11 gap-2"
-                    >
-                      {bridgeLoading === 'Custom Noise' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Megaphone className="w-4 h-4" />}
-                      Custom Noise
-                    </Button>
-                  </div>
-                </div>
-
-                {/* Sound at Coordinates */}
-                <div className="space-y-3 pt-3 border-t">
-                  <p className="text-sm font-medium flex items-center gap-2">
-                    <MapPin className="w-4 h-4" />
-                    Sound at World Coordinates
-                  </p>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                        <Label htmlFor="sound-world-x" className="text-xs">World X</Label>
-                      <Input
-                          id="sound-world-x"
-                          aria-label="Sound world X coordinate"
-                        type="number"
-                        placeholder="e.g. 10500"
-                        value={soundX}
-                        onChange={(e) => setSoundX(e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-1">
-                        <Label htmlFor="sound-world-y" className="text-xs">World Y</Label>
-                      <Input
-                          id="sound-world-y"
-                          aria-label="Sound world Y coordinate"
-                        type="number"
-                        placeholder="e.g. 9800"
-                        value={soundY}
-                        onChange={(e) => setSoundY(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Enter valid numeric coordinates (examples: 10500 and 9800).
-                  </p>
-                  <div className="grid grid-cols-3 gap-2">
-                    <Button
-                      variant="outline"
-                      onClick={() => handleBridgeAction('Gunshot at Coords', () => 
-                          panelBridgeApi.triggerGunshotBridge({ x: soundCoordX as number, y: soundCoordY as number })
-                      )}
-                        disabled={bridgeLoading !== null || !hasValidSoundCoords}
-                      className="h-11 gap-2"
-                    >
-                      {bridgeLoading === 'Gunshot at Coords' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Volume2 className="w-4 h-4" />}
-                      Gunshot
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => handleBridgeAction('Alarm at Coords', () => 
-                          panelBridgeApi.triggerAlarmBridge({ x: soundCoordX as number, y: soundCoordY as number })
-                      )}
-                        disabled={bridgeLoading !== null || !hasValidSoundCoords}
-                      className="h-11 gap-2"
-                    >
-                      {bridgeLoading === 'Alarm at Coords' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Bell className="w-4 h-4" />}
-                      Alarm
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => handleBridgeAction('Noise at Coords', () => 
-                          panelBridgeApi.createNoise({ x: soundCoordX as number, y: soundCoordY as number, radius: soundRadius, volume: soundVolume })
-                      )}
-                        disabled={bridgeLoading !== null || !hasValidSoundCoords}
-                      className="h-11 gap-2"
-                    >
-                      {bridgeLoading === 'Noise at Coords' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Megaphone className="w-4 h-4" />}
-                      Custom Noise
-                    </Button>
-                  </div>
-                </div>
-              </div>
-          </CardContent>
-        </Card>
-        ) : (
-          <Card className="border-dashed border-border/60 bg-card/30">
-            <CardContent className="flex flex-col items-center justify-center py-10 text-center">
-              <Megaphone className="w-6 h-6 text-muted-foreground/50 mb-2" />
-              <p className="text-sm font-medium text-muted-foreground">Advanced Sound Controls</p>
-              <p className="text-xs text-muted-foreground/70 mt-1">Coordinate-based sounds require PanelBridge</p>
-            </CardContent>
-          </Card>
-        )}
-            </div>
-        </TabsContent>
-
-        {/* ── Combat & World Tab ── */}
-        <TabsContent value="world" className="mt-5">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-
-        {/* Zombie Events */}
-        <Card>
-          <CardHeader className="pb-4">
-            <CardTitle className="flex items-center gap-2">
-              <Skull className="w-4 h-4 text-primary" />
-              Zombie Events
-            </CardTitle>
-            <CardDescription>Spawn, clear, or redirect zombies in currently loaded areas.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {/* Horde */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <Label>Horde Size: {hordeCount} zombies</Label>
-              </div>
-              <Slider
-                aria-label="Horde size"
-                value={[hordeCount]}
-                onValueChange={([val]) => setHordeCount(val)}
-                min={10}
-                max={500}
-                step={10}
-              />
-              <Button
-                variant="outline"
-                onClick={() => handleAction('Create horde', () => createHorde(hordeCount, getTargetPlayer()))}
-                disabled={loading !== null || (!targetAll && !selectedPlayer)}
-                className="w-full h-11 gap-2"
-              >
-                {loading === 'Create horde' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Skull className="w-4 h-4" />}
-                Spawn Horde Near {targetAll ? 'Random Player' : selectedPlayer || 'Selected Player'}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => handleAction('Create horde (behind)', () => createHorde2(hordeCount, getTargetPlayer()))}
-                disabled={loading !== null || (!targetAll && !selectedPlayer)}
-                className="w-full h-11 gap-2"
-              >
-                {loading === 'Create horde (behind)' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Skull className="w-4 h-4" />}
-                Spawn Horde Behind {targetAll ? 'Random Player' : selectedPlayer || 'Selected Player'}
-              </Button>
-              <Button
-                variant="destructive"
-                onClick={() => handleAction('Remove all zombies', removeZombies)}
-                disabled={loading !== null}
-                className="w-full h-11 gap-2"
-              >
-                {loading === 'Remove all zombies' ? <Loader2 className="w-4 h-4 animate-spin" /> : <AlertTriangle className="w-4 h-4" />}
-                Clear Loaded Zombies
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Time Speed Control */}
-        <Card>
-          <CardHeader className="pb-4">
-            <CardTitle className="flex items-center gap-2">
-              <Clock className="w-4 h-4 text-primary" />
-              Time Speed
-            </CardTitle>
-            <CardDescription>Speed up or slow down the in-game clock. Auto-resets to 1x on server restart.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <Label>Time Speed: {timeSpeed}x</Label>
-              </div>
-              <Slider
-                aria-label="Time speed"
-                value={[timeSpeed]}
-                onValueChange={([val]) => setTimeSpeed(val)}
-                min={1}
-                max={100}
-                step={1}
-              />
-              <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  onClick={() => setTimeSpeed(1)}
-                  variant={timeSpeed === 1 ? 'secondary' : 'outline'}
-                  className="h-11"
-                >
-                  1x
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={() => setTimeSpeed(5)}
-                  variant={timeSpeed === 5 ? 'secondary' : 'outline'}
-                  className="h-11"
-                >
-                  5x
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={() => setTimeSpeed(10)}
-                  variant={timeSpeed === 10 ? 'secondary' : 'outline'}
-                  className="h-11"
-                >
-                  10x
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={() => setTimeSpeed(24)}
-                  variant={timeSpeed === 24 ? 'secondary' : 'outline'}
-                  className="h-11"
-                >
-                  24x
+                <Button variant="outline" onClick={() => handleBridgeAction('Set Time', () => panelBridgeApi.setGameTime({ hour: gameHour, day: gameDay, month: gameMonth }))} disabled={bridgeLoading !== null || !bridgeConnected} className="w-full h-9 gap-2 text-xs font-medium">
+                  {bridgeLoading === 'Set Time' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Clock className="w-3.5 h-3.5" />}
+                  apply time & date
                 </Button>
               </div>
-              <Button
-                variant="outline"
-                onClick={() => handleAction('Set time speed', setGameTimeSpeed)}
-                disabled={loading !== null}
-                className="w-full h-11 gap-2"
-              >
-                {loading === 'Set time speed' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Clock className="w-4 h-4" />}
-                Apply Time Speed
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+            </TacticalPanel>
 
-        {/* Teleport */}
-        <Card className="lg:col-span-2">
-          <CardHeader className="pb-4">
-            <CardTitle className="flex items-center gap-2">
-              <MapPin className="w-4 h-4 text-primary" />
-              Teleport
-            </CardTitle>
-            <CardDescription>Move players to coordinates or to another player.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Teleport to Player */}
-              <div className="space-y-4">
-                <p className="text-sm font-medium flex items-center gap-2">
-                  <Users className="w-4 h-4" />
-                  Teleport Player to Player
+            <TacticalPanel tone={bridgeConnected ? 'primary' : 'warning'} className={!bridgeConnected ? 'opacity-60' : ''}>
+              <SectionHeader label="time speed" sublabel="bridge · resets on restart" icon={Clock} tone={bridgeConnected ? 'primary' : 'warning'} />
+              <div className="p-4 flex flex-col gap-4">
+                <p className="text-xs text-muted-foreground/75 leading-relaxed">
+                  Accelerate the in-game clock. Useful for testing weather, day/night cycles, or fast-forwarding events. Resets to 1× when the server restarts.
                 </p>
                 <div className="space-y-2">
-                  <Label htmlFor="teleport-player-select">Player to move</Label>
-                  <Select value={selectedPlayer} onValueChange={setSelectedPlayer}>
-                    <SelectTrigger id="teleport-player-select" aria-label="Player to move">
-                      <SelectValue placeholder="Select player..." />
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-medium text-foreground/85">multiplier</Label>
+                    <span className="font-mono text-[11px] tabular-nums text-primary">{timeSpeed}x</span>
+                  </div>
+                  <Slider aria-label="Time speed" value={[timeSpeed]} onValueChange={([val]) => setTimeSpeed(val)} min={1} max={100} step={1} />
+                </div>
+                <div className="grid grid-cols-4 gap-1.5">
+                  <Button size="sm" onClick={() => setTimeSpeed(1)} variant={timeSpeed === 1 ? 'secondary' : 'outline'} className="h-8 text-xs font-medium tabular-nums">1×</Button>
+                  <Button size="sm" onClick={() => setTimeSpeed(5)} variant={timeSpeed === 5 ? 'secondary' : 'outline'} className="h-8 text-xs font-medium tabular-nums">5×</Button>
+                  <Button size="sm" onClick={() => setTimeSpeed(10)} variant={timeSpeed === 10 ? 'secondary' : 'outline'} className="h-8 text-xs font-medium tabular-nums">10×</Button>
+                  <Button size="sm" onClick={() => setTimeSpeed(24)} variant={timeSpeed === 24 ? 'secondary' : 'outline'} className="h-8 text-xs font-medium tabular-nums">24×</Button>
+                </div>
+                <Button variant="outline" onClick={() => handleAction('Set time speed', setGameTimeSpeed)} disabled={loading !== null || !bridgeConnected} className="w-full h-9 gap-2 text-xs font-medium">
+                  {loading === 'Set time speed' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Clock className="w-3.5 h-3.5" />}
+                  apply speed
+                </Button>
+              </div>
+            </TacticalPanel>
+          </div>
+
+          {/* Utilities (power/water) */}
+          <TacticalPanel tone={bridgeConnected ? 'primary' : 'warning'} className={!bridgeConnected ? 'opacity-60' : ''}>
+            <SectionHeader
+              label="utilities"
+              sublabel="power & water grid"
+              icon={Zap}
+              tone={bridgeConnected ? 'primary' : 'warning'}
+              action={bridgeConnected ? (
+                <Button variant="ghost" size="sm" onClick={() => checkBridgeStatus()} className="h-6 px-2 gap-1 text-xs font-medium">
+                  <RefreshCw className="w-3 h-3" /> refresh
+                </Button>
+              ) : undefined}
+            />
+            <div className="p-4 space-y-4">
+              <div className="flex items-start gap-2 rounded border border-amber-400/25 bg-amber-400/[0.05] px-2.5 py-1.5 text-[11px] font-medium uppercase tracking-wide text-amber-400/85">
+                <AlertTriangle className="w-3 h-3 mt-px shrink-0" />
+                <span>b42 multiplayer · sandbox changes do not propagate to connected clients yet</span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="rounded-md border border-border/50 bg-muted/15 p-3 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-1.5 text-xs font-medium text-foreground/85">
+                      <Zap className="w-3.5 h-3.5 text-amber-400" /> power
+                    </span>
+                    <span className={cn(
+                      'flex items-center gap-1.5 text-xs font-medium',
+                      utilitiesStatus === null ? 'text-muted-foreground' : utilitiesStatus.powerOn ? 'text-emerald-400' : 'text-destructive'
+                    )}>
+                      <span className={cn(
+                        'w-1.5 h-1.5 rounded-full',
+                        utilitiesStatus === null ? 'bg-muted-foreground/40'
+                          : utilitiesStatus.powerOn ? 'bg-emerald-400 animate-pulse' : 'bg-destructive'
+                      )} />
+                      {utilitiesStatus === null ? '…' : utilitiesStatus.powerOn ? 'online' : 'offline'}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <Button variant="outline" size="sm" disabled={!bridgeConnected || loading !== null} onClick={() => handleAction('Restore Power', async () => { await panelBridgeApi.restoreUtilities(true, false); await checkBridgeStatus() })} className="h-8 text-xs font-medium text-emerald-400/90 hover:text-emerald-400 hover:border-emerald-400/40">
+                      restore
+                    </Button>
+                    <Button variant="outline" size="sm" disabled={!bridgeConnected || loading !== null} onClick={() => handleAction('Shut Off Power', async () => { await panelBridgeApi.shutOffUtilities(true, false); await checkBridgeStatus() })} className="h-8 text-xs font-medium text-destructive/90 hover:text-destructive hover:border-destructive/40">
+                      shut off
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="rounded-md border border-border/50 bg-muted/15 p-3 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-1.5 text-xs font-medium text-foreground/85">
+                      <Droplets className="w-3.5 h-3.5 text-info" /> water
+                    </span>
+                    <span className={cn(
+                      'flex items-center gap-1.5 text-xs font-medium',
+                      utilitiesStatus === null ? 'text-muted-foreground' : utilitiesStatus.waterOn ? 'text-emerald-400' : 'text-destructive'
+                    )}>
+                      <span className={cn(
+                        'w-1.5 h-1.5 rounded-full',
+                        utilitiesStatus === null ? 'bg-muted-foreground/40'
+                          : utilitiesStatus.waterOn ? 'bg-emerald-400 animate-pulse' : 'bg-destructive'
+                      )} />
+                      {utilitiesStatus === null ? '…' : utilitiesStatus.waterOn ? 'online' : 'offline'}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <Button variant="outline" size="sm" disabled={!bridgeConnected || loading !== null} onClick={() => handleAction('Restore Water', async () => { await panelBridgeApi.restoreUtilities(false, true); await checkBridgeStatus() })} className="h-8 text-xs font-medium text-emerald-400/90 hover:text-emerald-400 hover:border-emerald-400/40">
+                      restore
+                    </Button>
+                    <Button variant="outline" size="sm" disabled={!bridgeConnected || loading !== null} onClick={() => handleAction('Shut Off Water', async () => { await panelBridgeApi.shutOffUtilities(false, true); await checkBridgeStatus() })} className="h-8 text-xs font-medium text-destructive/90 hover:text-destructive hover:border-destructive/40">
+                      shut off
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </TacticalPanel>
+        </TabsContent>
+
+        {/* ── SIGNAL TAB (sound triggers) ── */}
+        <TabsContent value="signal" className="mt-4 space-y-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <TacticalPanel tone="warning">
+              <SectionHeader label="quick sounds" sublabel="rcon · attracts zombies" icon={Volume2} tone="warning" />
+              <div className="p-4 space-y-3">
+                <p className="font-mono text-[11px] text-muted-foreground/75 leading-relaxed">
+                  helicopter & gunshot pick a random online player · lightning & thunder strike the selected player (or random if “all online”) · alarm needs an admin in-game
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button variant="outline" onClick={() => handleAction('Helicopter', triggerChopper)} disabled={loading !== null || players.length === 0} title={players.length === 0 ? 'No players online' : undefined} className="h-9 gap-2 text-xs font-medium">
+                    {loading === 'Helicopter' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Crosshair className="w-3.5 h-3.5" />}
+                    helicopter
+                  </Button>
+                  <Button variant="outline" onClick={() => handleAction('Gunshot', triggerGunshot)} disabled={loading !== null || players.length === 0} title={players.length === 0 ? 'No players online' : undefined} className="h-9 gap-2 text-xs font-medium">
+                    {loading === 'Gunshot' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Volume2 className="w-3.5 h-3.5" />}
+                    gunshot
+                  </Button>
+                  <Button variant="outline" onClick={() => handleAction('Lightning', () => triggerLightning(pickStrikeTarget()))} disabled={loading !== null || players.length === 0} title={players.length === 0 ? 'No players online' : 'Strikes the selected player, or a random one if “all online” is active'} className="h-9 gap-2 text-xs font-medium text-amber-400/90 hover:text-amber-400 hover:border-amber-400/40">
+                    {loading === 'Lightning' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
+                    lightning
+                  </Button>
+                  <Button variant="outline" onClick={() => handleAction('Thunder', () => triggerThunder(pickStrikeTarget()))} disabled={loading !== null || players.length === 0} title={players.length === 0 ? 'No players online' : 'Thunders over the selected player, or a random one if “all online” is active'} className="h-9 gap-2 text-xs font-medium">
+                    {loading === 'Thunder' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CloudLightning className="w-3.5 h-3.5" />}
+                    thunder
+                  </Button>
+                  <Button variant="outline" onClick={() => handleAction('Alarm', triggerAlarm)} disabled={loading !== null} title="Requires admin character in-game — triggers at admin location" className="h-9 gap-2 text-xs font-medium col-span-2">
+                    {loading === 'Alarm' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Bell className="w-3.5 h-3.5" />}
+                    building alarm · admin in-game
+                  </Button>
+                </div>
+              </div>
+            </TacticalPanel>
+
+            <TacticalPanel tone={bridgeConnected ? 'primary' : 'warning'} className={!bridgeConnected ? 'opacity-60' : ''}>
+              <SectionHeader
+                label="targeted sounds"
+                sublabel={bridgeConnected ? 'bridge · custom noise' : 'bridge offline'}
+                icon={Megaphone}
+                tone={bridgeConnected ? 'primary' : 'warning'}
+              />
+              <div className="p-4 space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs font-medium text-foreground/85 flex items-center gap-1.5">
+                        <Target className="w-3.5 h-3.5 text-primary/80" /> radius
+                      </Label>
+                      <span className="font-mono text-[11px] tabular-nums text-primary">{soundRadius}m</span>
+                    </div>
+                    <Slider aria-label="Sound radius" value={[soundRadius]} onValueChange={([val]) => setSoundRadius(val)} min={10} max={300} step={10} disabled={!bridgeConnected} />
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs font-medium text-foreground/85 flex items-center gap-1.5">
+                        <Volume2 className="w-3.5 h-3.5 text-primary/80" /> volume
+                      </Label>
+                      <span className="font-mono text-[11px] tabular-nums text-primary">{soundVolume}</span>
+                    </div>
+                    <Slider aria-label="Sound volume" value={[soundVolume]} onValueChange={([val]) => setSoundVolume(val)} min={10} max={300} step={10} disabled={!bridgeConnected} />
+                  </div>
+                </div>
+
+                <div className="space-y-2 pt-3 border-t border-border/40">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-foreground/85 flex items-center gap-1.5">
+                      <User className="w-3 h-3" /> at target location
+                    </span>
+                    <span className="text-xs font-medium text-muted-foreground/70">
+                      {targetAll || !selectedPlayer ? 'pick a specific player' : selectedPlayer}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <Button variant="outline" onClick={() => handleBridgeAction('Gunshot Sound', () => panelBridgeApi.triggerGunshotBridge({ username: selectedPlayer || undefined }))} disabled={bridgeLoading !== null || !bridgeConnected || targetAll || !selectedPlayer} className="h-9 gap-2 text-xs font-medium">
+                      {bridgeLoading === 'Gunshot Sound' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Volume2 className="w-3.5 h-3.5" />}
+                      gunshot
+                    </Button>
+                    <Button variant="outline" onClick={() => handleBridgeAction('Alarm Sound', () => panelBridgeApi.triggerAlarmBridge({ username: selectedPlayer || undefined }))} disabled={bridgeLoading !== null || !bridgeConnected || targetAll || !selectedPlayer} className="h-9 gap-2 text-xs font-medium">
+                      {bridgeLoading === 'Alarm Sound' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Bell className="w-3.5 h-3.5" />}
+                      alarm
+                    </Button>
+                    <Button variant="outline" onClick={() => handleBridgeAction('Custom Noise', () => panelBridgeApi.createNoise({ username: selectedPlayer, radius: soundRadius, volume: soundVolume }))} disabled={bridgeLoading !== null || !bridgeConnected || targetAll || !selectedPlayer} className="h-9 gap-2 text-xs font-medium">
+                      {bridgeLoading === 'Custom Noise' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Megaphone className="w-3.5 h-3.5" />}
+                      noise
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="space-y-2 pt-3 border-t border-border/40">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-foreground/85 flex items-center gap-1.5">
+                      <MapPin className="w-3 h-3" /> at world coords
+                    </span>
+                    <span className="text-xs font-medium text-muted-foreground/70">
+                      kentucky · 0 – 15000
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <Label htmlFor="sound-world-x" className="text-xs font-medium text-muted-foreground">x</Label>
+                      <Input id="sound-world-x" aria-label="Sound world X coordinate" type="number" placeholder="10500" value={soundX} onChange={(e) => setSoundX(e.target.value)} disabled={!bridgeConnected} className="h-9 font-mono text-[12px] tabular-nums" />
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="sound-world-y" className="text-xs font-medium text-muted-foreground">y</Label>
+                      <Input id="sound-world-y" aria-label="Sound world Y coordinate" type="number" placeholder="9800" value={soundY} onChange={(e) => setSoundY(e.target.value)} disabled={!bridgeConnected} className="h-9 font-mono text-[12px] tabular-nums" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <Button variant="outline" onClick={() => handleBridgeAction('Gunshot at Coords', () => panelBridgeApi.triggerGunshotBridge({ x: soundCoordX as number, y: soundCoordY as number }))} disabled={bridgeLoading !== null || !bridgeConnected || !hasValidSoundCoords} className="h-9 gap-2 text-xs font-medium">
+                      {bridgeLoading === 'Gunshot at Coords' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Volume2 className="w-3.5 h-3.5" />}
+                      gunshot
+                    </Button>
+                    <Button variant="outline" onClick={() => handleBridgeAction('Alarm at Coords', () => panelBridgeApi.triggerAlarmBridge({ x: soundCoordX as number, y: soundCoordY as number }))} disabled={bridgeLoading !== null || !bridgeConnected || !hasValidSoundCoords} className="h-9 gap-2 text-xs font-medium">
+                      {bridgeLoading === 'Alarm at Coords' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Bell className="w-3.5 h-3.5" />}
+                      alarm
+                    </Button>
+                    <Button variant="outline" onClick={() => handleBridgeAction('Noise at Coords', () => panelBridgeApi.createNoise({ x: soundCoordX as number, y: soundCoordY as number, radius: soundRadius, volume: soundVolume }))} disabled={bridgeLoading !== null || !bridgeConnected || !hasValidSoundCoords} className="h-9 gap-2 text-xs font-medium">
+                      {bridgeLoading === 'Noise at Coords' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Megaphone className="w-3.5 h-3.5" />}
+                      noise
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </TacticalPanel>
+          </div>
+        </TabsContent>
+
+        {/* ── DISPATCH TAB (horde + vehicles + teleport + announcement) ── */}
+        <TabsContent value="dispatch" className="mt-4 space-y-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <TacticalPanel tone={bridgeConnected ? 'destructive' : 'warning'} className={!bridgeConnected ? 'opacity-60' : ''}>
+              <SectionHeader label="spawn horde" sublabel={bridgeConnected ? 'bridge · loaded cells only' : 'bridge offline'} icon={Skull} tone={bridgeConnected ? 'destructive' : 'warning'} />
+              <div className="p-4 space-y-3">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-medium text-foreground/85 flex items-center gap-1.5">
+                      <Skull className="w-3.5 h-3.5 text-destructive" /> count
+                    </Label>
+                    <span className="font-mono text-[11px] tabular-nums text-destructive">{hordeCount}</span>
+                  </div>
+                  <Slider aria-label="Horde size" value={[hordeCount]} onValueChange={([val]) => setHordeCount(val)} min={10} max={500} step={10} />
+                </div>
+                <Button variant="outline" onClick={() => handleAction('Create horde', () => createHorde(hordeCount, pickStrikeTarget()))} disabled={loading !== null || !bridgeConnected || players.length === 0 || (!targetAll && !selectedPlayer)} title={players.length === 0 ? 'No players online' : !bridgeConnected ? 'Bridge offline' : undefined} className="w-full h-9 gap-2 text-xs font-medium">
+                  {loading === 'Create horde' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Skull className="w-3.5 h-3.5" />}
+                  spawn near {targetAll ? 'random' : selectedPlayer || 'target'}
+                </Button>
+                <Button variant="outline" onClick={() => handleAction('Create horde (behind)', () => createHorde2(hordeCount, pickStrikeTarget()))} disabled={loading !== null || !bridgeConnected || players.length === 0 || (!targetAll && !selectedPlayer)} title={players.length === 0 ? 'No players online' : !bridgeConnected ? 'Bridge offline' : undefined} className="w-full h-9 gap-2 text-xs font-medium">
+                  {loading === 'Create horde (behind)' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Skull className="w-3.5 h-3.5" />}
+                  spawn behind {targetAll ? 'random' : selectedPlayer || 'target'}
+                </Button>
+                <Button variant="outline" onClick={() => handleAction('Remove all zombies', removeZombies)} disabled={loading !== null || !bridgeConnected} title={!bridgeConnected ? 'Bridge offline' : undefined} className="w-full h-9 gap-2 text-xs font-medium text-destructive/95 hover:text-destructive hover:border-destructive/50 hover:bg-destructive/10">
+                  {loading === 'Remove all zombies' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <AlertTriangle className="w-3.5 h-3.5" />}
+                  clear loaded zombies
+                </Button>
+              </div>
+            </TacticalPanel>
+
+            <TacticalPanel tone="info">
+              <SectionHeader label="spawn vehicle" sublabel="rcon · near player" icon={Car} tone="info" />
+              <div className="p-4 space-y-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="vehicle-type-select" className="text-xs font-medium text-muted-foreground">vehicle</Label>
+                  <Select value={selectedVehicle} onValueChange={setSelectedVehicle}>
+                    <SelectTrigger id="vehicle-type-select" aria-label="Vehicle type" className="h-9 font-mono text-[12px]">
+                      <SelectValue placeholder="select vehicle…" />
                     </SelectTrigger>
                     <SelectContent>
-                      {players.length === 0 ? (
-                        <div className="px-2 py-1.5 text-sm text-muted-foreground">No players online</div>
-                      ) : (
-                        players.map((player) => (
-                          <SelectItem key={player.name} value={player.name}>
-                            {player.name}
-                          </SelectItem>
-                        ))
-                      )}
+                      {vehicles.map((vehicle) => (
+                        <SelectItem key={vehicle.id} value={vehicle.id}>{vehicle.name}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium text-muted-foreground">spawn for</Label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {players.length === 0 ? (
+                      <p className="font-mono text-[11px] text-muted-foreground/70 italic">no players online</p>
+                    ) : players.map((player) => (
+                      <Button key={player.name} variant="outline" size="sm" onClick={() => handleAction('Spawn vehicle', () => spawnVehicle(selectedVehicle, player.name))} disabled={loading !== null || !selectedVehicle} title={!selectedVehicle ? 'Select a vehicle first' : undefined} className="h-8 gap-1.5 text-xs font-medium">
+                        <Car className="w-3 h-3" /> {player.name}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </TacticalPanel>
+          </div>
 
-                <div className="space-y-2">
-                  <Label id="teleport-target-player-label">Move to player</Label>
-                  <div className="flex flex-wrap gap-2">
+          <TacticalPanel tone="info">
+            <SectionHeader label="teleport" sublabel="rcon · move players in world space" icon={MapPin} tone="info" />
+            <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-3">
+                <div className="text-xs font-medium text-foreground/85 flex items-center gap-1.5">
+                  <Users className="w-3 h-3 text-info" /> player → player
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="teleport-player-select" className="text-xs font-medium text-muted-foreground">player to move</Label>
+                  <Select value={selectedPlayer} onValueChange={setSelectedPlayer}>
+                    <SelectTrigger id="teleport-player-select" aria-label="Player to move" className="h-9 font-mono text-[12px]">
+                      <SelectValue placeholder="select player…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {players.length === 0 ? (
+                        <div className="px-2 py-1.5 font-mono text-[11px] text-muted-foreground">no players online</div>
+                      ) : players.map((player) => (
+                        <SelectItem key={player.name} value={player.name}>{player.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label id="teleport-target-player-label" className="text-xs font-medium text-muted-foreground">move to</Label>
+                  <div className="flex flex-wrap gap-1.5">
                     {players.filter(p => p.name !== selectedPlayer).map((player) => (
-                      <Button
-                        key={player.name}
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleAction('Teleport', () => teleportPlayerToPlayer(selectedPlayer, player.name))}
-                        disabled={loading !== null || !selectedPlayer}
-                        className="h-10"
-                      >
+                      <Button key={player.name} variant="outline" size="sm" onClick={() => handleAction('Teleport', () => teleportPlayerToPlayer(selectedPlayer, player.name))} disabled={loading !== null || !selectedPlayer} className="h-8 text-xs font-medium">
                         {player.name}
                       </Button>
                     ))}
                     {players.length <= 1 && (
-                      <p className="text-sm text-muted-foreground">Need at least 2 players online</p>
+                      <p className="font-mono text-[11px] text-muted-foreground/70 italic">need 2+ players online</p>
                     )}
                   </div>
                 </div>
               </div>
 
-              {/* Teleport to Coordinates */}
-              <div className="space-y-4">
-                <p className="text-sm font-medium flex items-center gap-2">
-                  <Navigation className="w-4 h-4" />
-                  Teleport to Coordinates
-                </p>
+              <div className="space-y-3">
+                <div className="text-xs font-medium text-foreground/85 flex items-center gap-1.5">
+                  <Navigation className="w-3 h-3 text-info" /> to coordinates
+                </div>
                 <div className="grid grid-cols-3 gap-2">
                   <div className="space-y-1">
-                    <Label htmlFor="teleport-x" className="text-xs">X</Label>
-                    <Input
-                      id="teleport-x"
-                      aria-label="Teleport X coordinate"
-                      type="number"
-                      placeholder="10000"
-                      value={teleportX}
-                      onChange={(e) => setTeleportX(e.target.value)}
-                    />
+                    <Label htmlFor="teleport-x" className="text-xs font-medium text-muted-foreground">x</Label>
+                    <Input id="teleport-x" aria-label="Teleport X coordinate" type="number" placeholder="10000" value={teleportX} onChange={(e) => setTeleportX(e.target.value)} className="h-9 font-mono text-[12px] tabular-nums" />
                   </div>
                   <div className="space-y-1">
-                    <Label htmlFor="teleport-y" className="text-xs">Y</Label>
-                    <Input
-                      id="teleport-y"
-                      aria-label="Teleport Y coordinate"
-                      type="number"
-                      placeholder="11000"
-                      value={teleportY}
-                      onChange={(e) => setTeleportY(e.target.value)}
-                    />
+                    <Label htmlFor="teleport-y" className="text-xs font-medium text-muted-foreground">y</Label>
+                    <Input id="teleport-y" aria-label="Teleport Y coordinate" type="number" placeholder="11000" value={teleportY} onChange={(e) => setTeleportY(e.target.value)} className="h-9 font-mono text-[12px] tabular-nums" />
                   </div>
                   <div className="space-y-1">
-                    <Label htmlFor="teleport-z" className="text-xs">Z (Level)</Label>
-                    <Input
-                      id="teleport-z"
-                      aria-label="Teleport Z level"
-                      type="number"
-                      placeholder="0"
-                      value={teleportZ}
-                      onChange={(e) => setTeleportZ(e.target.value)}
-                    />
+                    <Label htmlFor="teleport-z" className="text-xs font-medium text-muted-foreground">z</Label>
+                    <Input id="teleport-z" aria-label="Teleport Z level" type="number" placeholder="0" value={teleportZ} onChange={(e) => setTeleportZ(e.target.value)} className="h-9 font-mono text-[12px] tabular-nums" />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
-                  <Button
-                    variant="outline"
-                    onClick={() => handleAction('Teleport self', () => teleportToCoords(teleportCoordX as number, teleportCoordY as number, teleportCoordZ as number))}
-                    disabled={loading !== null || !hasValidTeleportCoords}
-                    className="h-11 gap-2"
-                    title="Teleport yourself (admin must be in-game)"
-                  >
-                    {loading === 'Teleport self' ? <Loader2 className="w-4 h-4 animate-spin" /> : <MapPin className="w-4 h-4" />}
-                    Teleport Self
+                  <Button variant="outline" onClick={() => handleAction('Teleport self', () => teleportToCoords(teleportCoordX as number, teleportCoordY as number, teleportCoordZ as number))} disabled={loading !== null || !hasValidTeleportCoords} title="Teleport yourself (admin must be in-game)" className="h-9 gap-2 text-xs font-medium">
+                    {loading === 'Teleport self' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <MapPin className="w-3.5 h-3.5" />}
+                    teleport self
                   </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => handleAction('Teleport player', () => teleportToCoords(teleportCoordX as number, teleportCoordY as number, teleportCoordZ as number, getTargetPlayer()))}
-                    disabled={loading !== null || !hasValidTeleportCoords || targetAll || !selectedPlayer}
-                    className="h-11 gap-2"
-                    title="Teleport selected player to coordinates"
-                  >
-                    {loading === 'Teleport player' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Navigation className="w-4 h-4" />}
-                    Teleport {selectedPlayer || 'Player'}
+                  <Button variant="outline" onClick={() => handleAction('Teleport player', () => teleportToCoords(teleportCoordX as number, teleportCoordY as number, teleportCoordZ as number, getTargetPlayer()))} disabled={loading !== null || !hasValidTeleportCoords || targetAll || !selectedPlayer} title="Teleport selected player to coordinates" className="h-9 gap-2 text-xs font-medium">
+                    {loading === 'Teleport player' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Navigation className="w-3.5 h-3.5" />}
+                    teleport {selectedPlayer || 'target'}
                   </Button>
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  Common locations: Muldraugh (10500, 9700), West Point (11800, 6900), Riverside (6500, 5300)
+                <p className="font-mono text-[11px] text-muted-foreground/65 leading-relaxed">
+                  muldraugh 10500,9700 · west point 11800,6900 · riverside 6500,5300
                 </p>
               </div>
             </div>
-          </CardContent>
-        </Card>
+          </TacticalPanel>
 
-        {/* Vehicle Spawning */}
-        <Card>
-          <CardHeader className="pb-4">
-            <CardTitle className="flex items-center gap-2">
-              <Car className="w-4 h-4 text-primary" />
-              Vehicle Spawn
-            </CardTitle>
-            <CardDescription>Spawn a vehicle near a player.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="vehicle-type-select">Vehicle Type</Label>
-              <Select value={selectedVehicle} onValueChange={setSelectedVehicle}>
-                <SelectTrigger id="vehicle-type-select" aria-label="Vehicle type">
-                  <SelectValue placeholder="Select vehicle..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {vehicles.map((vehicle) => (
-                    <SelectItem key={vehicle.id} value={vehicle.id}>
-                      {vehicle.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            
-            <div className="space-y-2">
-              <Label>Spawn for Player</Label>
-              <div className="flex flex-wrap gap-2">
-                {players.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No players online</p>
-                ) : (
-                  players.map((player) => (
-                    <Button
-                      key={player.name}
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleAction('Spawn vehicle', () => spawnVehicle(selectedVehicle, player.name))}
-                      disabled={loading !== null}
-                      className="h-10 gap-1.5"
-                    >
-                      <Car className="w-4 h-4" />
-                      {player.name}
-                    </Button>
-                  ))
-                )}
+          <TacticalPanel tone="warning">
+            <SectionHeader label="broadcast" sublabel="rcon · server-wide message" icon={Megaphone} tone="warning" />
+            <div className="p-4 space-y-3">
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="announcement-message" className="text-xs font-medium text-muted-foreground">message</Label>
+                  <span className={cn(
+                    'font-mono text-[10px] tabular-nums',
+                    announcement.length > 450 ? 'text-amber-400' : 'text-muted-foreground/65'
+                  )}>
+                    {announcement.length}/500
+                  </span>
+                </div>
+                <Input id="announcement-message" aria-label="Server announcement message" placeholder="enter announcement…" value={announcement} onChange={(e) => setAnnouncement(e.target.value)} maxLength={500} className="h-9" />
               </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Server Announcement */}
-        <Card>
-          <CardHeader className="pb-4">
-            <CardTitle className="flex items-center gap-2">
-              <Megaphone className="w-4 h-4 text-primary" />
-              Server Announcement
-            </CardTitle>
-            <CardDescription>Send a message to every online player.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="announcement-message">Message</Label>
-              <Input
-                id="announcement-message"
-                aria-label="Server announcement message"
-                placeholder="Enter your announcement..."
-                value={announcement}
-                onChange={(e) => setAnnouncement(e.target.value)}
-                maxLength={500}
-              />
-            </div>
-            <Button
-              variant="outline"
-              onClick={() => handleAction('Send announcement', sendAnnouncement)}
-              disabled={loading !== null || !announcement.trim()}
-              className="w-full h-11 gap-2"
-            >
-              {loading === 'Send announcement' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Megaphone className="w-4 h-4" />}
-              Broadcast Message
-            </Button>
-            <div className="flex flex-wrap gap-2">
-              <Button variant="ghost" size="sm" onClick={() => setAnnouncement('WARNING: Event incoming!')} className="h-10 gap-2">
-                <AlertTriangle className="h-4 w-4 text-warning" /> Event Warning
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => setAnnouncement('Check your inventory for a surprise!')} className="h-10 gap-2">
-                <Bell className="h-4 w-4 text-primary" /> Loot Notice
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => setAnnouncement('Run! The horde is coming!')} className="h-10 gap-2">
-                <Navigation className="h-4 w-4 text-primary" /> Horde Alert
+              <div className="flex flex-wrap gap-1.5">
+                <Button variant="ghost" size="sm" onClick={() => setAnnouncement('WARNING: Event incoming!')} className="h-8 gap-1.5 text-xs font-medium">
+                  <AlertTriangle className="h-3 w-3 text-amber-400" /> event warning
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setAnnouncement('Check your inventory for a surprise!')} className="h-8 gap-1.5 text-xs font-medium">
+                  <Bell className="h-3 w-3 text-primary" /> loot notice
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setAnnouncement('Run! The horde is coming!')} className="h-8 gap-1.5 text-xs font-medium">
+                  <Navigation className="h-3 w-3 text-destructive" /> horde alert
+                </Button>
+              </div>
+              <Button variant="outline" onClick={() => handleAction('Send announcement', sendAnnouncement)} disabled={loading !== null || !announcement.trim()} className="w-full h-9 gap-2 text-xs font-medium">
+                {loading === 'Send announcement' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Megaphone className="w-3.5 h-3.5" />}
+                broadcast message
               </Button>
             </div>
-          </CardContent>
-        </Card>
-            </div>
+          </TacticalPanel>
         </TabsContent>
 
-        {/* ── Bridge Operations Tab ── */}
-        <TabsContent value="bridgeOps" className="mt-5">
-            <div>
-              <Card className={!bridgeConnected ? 'border-dashed border-border/60 bg-card/30' : ''}>
-                <CardHeader className="pb-4">
-                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                      <div className="space-y-2">
-                        <CardTitle className="flex items-center gap-2">
-                          <Zap className="w-4 h-4 text-primary" />
-                          Bridge Operations Console
-                        </CardTitle>
-                        <CardDescription>
-                          Run safehouses, vehicles, moderation, and other Bridge commands directly.
-                        </CardDescription>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge variant={bridgeConnected ? 'success' : 'warning'}>
-                          {bridgeConnected ? 'Bridge Online' : 'Bridge Offline'}
-                        </Badge>
-                        {bridgeActiveGroup && <Badge variant="secondary">{bridgeActiveGroup.label}</Badge>}
-                        <Badge variant="outline">{Object.keys(bridgeOperationTemplates).length} operations</Badge>
-                      </div>
-                    </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
+        {/* ── CONSOLE TAB (admin ops bridge) ── */}
+        <TabsContent value="console" className="mt-4">
+          <TacticalPanel tone={bridgeConnected ? 'primary' : 'warning'} className={!bridgeConnected ? 'opacity-95' : ''}>
+            <SectionHeader
+              label="bridge tools"
+              sublabel={bridgeConnected ? `bridge · ${Object.keys(bridgeOperationTemplates).length} operations` : 'bridge offline · privileged'}
+              icon={Zap}
+              tone={bridgeConnected ? 'primary' : 'warning'}
+              action={
+                <>
+                  {bridgeActiveGroup && (
+                    <span className="font-mono text-[10px] tracking-[0.14em] text-primary/75">{bridgeActiveGroup.label}</span>
+                  )}
+                  <span className="text-xs font-medium text-muted-foreground/70">
+                    {bridgeLastRunAt ? `last · ${bridgeLastRunAt}` : 'never run'}
+                  </span>
+                </>
+              }
+            />
+            <div className="p-4 space-y-4">
                     <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,1.35fr)]">
                       <div className="space-y-4">
                         <div className="rounded-lg border border-border/70 bg-muted/25 p-4">
@@ -3194,9 +2707,8 @@ export default function Events() {
                       players={players}
                     />
                   )}
-                </CardContent>
-              </Card>
             </div>
+          </TacticalPanel>
         </TabsContent>
       </Tabs>
     </div>

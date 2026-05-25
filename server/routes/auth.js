@@ -16,14 +16,25 @@ import { getDataPaths } from '../utils/paths.js';
 const log = createLogger('Auth');
 const router = Router();
 
+// Latched Secure flag: once we've seen HTTPS (env or runtime), always issue Secure cookies
+// to prevent downgrade attacks where a subsequent HTTP request re-sets the cookie insecurely.
+const forceSecureCookies = process.env.HTTPS === 'true' || process.env.FORCE_HSTS === 'true';
+let secureCookieLatch = forceSecureCookies;
+
 function getRefreshCookieOptions(req, includeMaxAge = true) {
+  const requestIsSecure = req.secure || req.headers['x-forwarded-proto'] === 'https';
+  if (requestIsSecure) secureCookieLatch = true;
   return {
     httpOnly: true,
-    secure: req.secure || req.headers['x-forwarded-proto'] === 'https',
+    secure: secureCookieLatch,
     sameSite: 'strict',
     path: '/api/auth',
     ...(includeMaxAge ? { maxAge: 30 * 24 * 60 * 60 * 1000 } : {}),
   };
+}
+
+function isNonEmptyString(value) {
+  return typeof value === 'string' && value.length > 0;
 }
 
 async function getAuthenticatedUser(req) {
@@ -80,11 +91,14 @@ router.post('/setup', setupLimiter, async (req, res) => {
       return res.status(400).json({ error: 'Setup already completed. Use login instead.' });
     }
 
-    const { username, password, rememberMe = true } = req.body;
+    const { username, password, rememberMe = false } = req.body || {};
+    if (!isNonEmptyString(username) || !isNonEmptyString(password)) {
+      return res.status(400).json({ error: 'Username and password are required' });
+    }
     const user = await authService.createUser(username, password);
 
     // Auto-login after setup — generate tokens
-    const result = await authService.login(username, password, rememberMe);
+    const result = await authService.login(username, password, rememberMe === true);
 
     // Set refresh token as httpOnly cookie
     if (result.refreshToken) {
@@ -109,8 +123,11 @@ router.post('/setup', setupLimiter, async (req, res) => {
  */
 router.post('/login', loginLimiter, async (req, res) => {
   try {
-    const { username, password, rememberMe = true } = req.body;
-    const result = await authService.login(username, password, rememberMe);
+    const { username, password, rememberMe = false } = req.body || {};
+    if (!isNonEmptyString(username) || !isNonEmptyString(password)) {
+      return res.status(400).json({ error: 'Username and password are required' });
+    }
+    const result = await authService.login(username, password, rememberMe === true);
 
     // Set refresh token as httpOnly cookie for auto-login
     if (result.refreshToken) {
@@ -203,7 +220,10 @@ router.post('/change-password', async (req, res) => {
       return res.status(401).json({ error: 'Not authenticated' });
     }
 
-    const { currentPassword, newPassword } = req.body;
+    const { currentPassword, newPassword } = req.body || {};
+    if (!isNonEmptyString(currentPassword) || !isNonEmptyString(newPassword)) {
+      return res.status(400).json({ error: 'Current and new password are required' });
+    }
     await authService.changePassword(user.userId, currentPassword, newPassword);
     res.clearCookie('refreshToken', getRefreshCookieOptions(req, false));
 
@@ -231,7 +251,13 @@ router.get('/reset-status', async (req, res) => {
   try {
     const { dataDir } = getDataPaths();
     const tokenPath = path.join(dataDir, 'reset-token.txt');
-    const available = fs.existsSync(tokenPath);
+    if (!fs.existsSync(tokenPath)) {
+      return res.json({ resetAvailable: false });
+    }
+    // Token files expire after 24h to avoid forgotten files sitting on disk indefinitely.
+    const stat = fs.statSync(tokenPath);
+    const ageMs = Date.now() - stat.mtimeMs;
+    const available = ageMs < 24 * 60 * 60 * 1000;
     res.json({ resetAvailable: available });
   } catch (error) {
     res.json({ resetAvailable: false });
@@ -272,16 +298,25 @@ router.post('/reset-password', resetLimiter, async (req, res) => {
       return res.status(403).json({ error: 'Reset token file is invalid (too large). Max 1KB.' });
     }
 
+    // Token files older than 24h are rejected to prevent stale reset files from being abused.
+    const ageMs = Date.now() - stat.mtimeMs;
+    if (ageMs > 24 * 60 * 60 * 1000) {
+      log.warn('Password reset attempted with expired token file (>24h old)');
+      try { fs.unlinkSync(tokenPath); } catch {}
+      return res.status(403).json({ error: 'Reset token file is older than 24 hours. Recreate it on the server.' });
+    }
+
     const storedToken = fs.readFileSync(tokenPath, 'utf-8').trim();
     if (!storedToken || storedToken.length < 8) {
       log.warn('Password reset attempted with invalid token file (too short)');
       return res.status(403).json({ error: 'Reset token file is invalid. It must contain at least 8 characters.' });
     }
 
-    // Constant-time comparison to prevent timing attacks
-    const tokenBuf = Buffer.from(token.trim());
-    const storedBuf = Buffer.from(storedToken);
-    if (tokenBuf.length !== storedBuf.length || !crypto.timingSafeEqual(tokenBuf, storedBuf)) {
+    // Hash both sides to a constant-length digest before timing-safe comparison.
+    // This avoids leaking the token's length via the length-mismatch short-circuit.
+    const candidateDigest = crypto.createHash('sha256').update(token.trim(), 'utf8').digest();
+    const storedDigest = crypto.createHash('sha256').update(storedToken, 'utf8').digest();
+    if (!crypto.timingSafeEqual(candidateDigest, storedDigest)) {
       log.warn('Password reset attempted with incorrect token');
       return res.status(403).json({ error: 'Invalid reset token' });
     }

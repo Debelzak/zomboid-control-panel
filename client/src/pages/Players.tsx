@@ -26,7 +26,6 @@ import {
   Search,
   TrendingUp,
   Clock,
-  Zap,
   ChevronRight,
   MoreHorizontal,
   StickyNote,
@@ -37,7 +36,7 @@ import {
   Trash2,
   Heart,
 } from 'lucide-react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -130,52 +129,113 @@ function SummaryCard({
   icon,
   label,
   value,
+  tone = 'default',
+  caption,
 }: {
   icon: React.ReactNode
   label: string
   value: string | number
+  tone?: 'default' | 'success' | 'warning' | 'danger'
+  caption?: string
 }) {
+  const toneMap = {
+    default: {
+      iconWrap: 'border-border/60 bg-muted/40 text-muted-foreground',
+      accent: 'bg-border/60',
+      value: 'text-foreground',
+    },
+    success: {
+      iconWrap: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400',
+      accent: 'bg-emerald-500/60',
+      value: 'text-foreground',
+    },
+    warning: {
+      iconWrap: 'border-amber-500/30 bg-amber-500/10 text-amber-400',
+      accent: 'bg-amber-500/60',
+      value: 'text-foreground',
+    },
+    danger: {
+      iconWrap: 'border-destructive/30 bg-destructive/10 text-destructive',
+      accent: 'bg-destructive/60',
+      value: 'text-foreground',
+    },
+  }
+  const t = toneMap[tone]
   return (
-    <Card className="border-border/60 bg-card/80 shadow-sm">
-      <CardContent className="flex items-center gap-3 p-4">
-        <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-primary/20 bg-primary/10 text-primary">
-          {icon}
+    <div className="group relative flex flex-1 items-center gap-3 overflow-hidden rounded-md border border-border/55 bg-card/70 px-4 py-3 shadow-sm">
+      <span aria-hidden="true" className={`absolute inset-y-0 left-0 w-[2px] ${t.accent}`} />
+      <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-sm border ${t.iconWrap}`}>
+        {icon}
+      </div>
+      <div className="min-w-0">
+        <div className="flex items-baseline gap-1.5">
+          <p className={`text-xl font-semibold tabular-nums leading-none tracking-tight ${t.value}`}>{value}</p>
+          {caption ? (
+            <span className="text-xs font-medium text-muted-foreground/70">{caption}</span>
+          ) : null}
         </div>
-        <div className="min-w-0">
-          <p className="text-2xl font-semibold tracking-tight">{value}</p>
-          <p className="text-xs text-muted-foreground">{label}</p>
-        </div>
-      </CardContent>
-    </Card>
+        <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground/75">{label}</p>
+      </div>
+    </div>
   )
 }
 
 function ActionTile({
   icon,
   label,
+  description,
   disabled,
   emphasis = 'default',
   compact = false,
 }: {
   icon: React.ReactNode
   label: string
+  description?: string
   disabled?: boolean
-  emphasis?: 'default' | 'danger'
+  emphasis?: 'default' | 'primary' | 'warning' | 'danger'
   compact?: boolean
 }) {
+  const emphasisMap = {
+    default: {
+      base: 'border-border/60 bg-card/50 hover:bg-accent/30 hover:border-border',
+      iconWrap: 'border-border/60 bg-muted/40 text-muted-foreground group-hover:text-foreground',
+      label: 'text-foreground/90',
+    },
+    primary: {
+      base: 'border-primary/30 bg-primary/[0.04] hover:bg-primary/10 hover:border-primary/50',
+      iconWrap: 'border-primary/30 bg-primary/10 text-primary',
+      label: 'text-foreground',
+    },
+    warning: {
+      base: 'border-amber-500/30 bg-amber-500/[0.04] hover:bg-amber-500/10 hover:border-amber-500/50',
+      iconWrap: 'border-amber-500/30 bg-amber-500/10 text-amber-400',
+      label: 'text-foreground',
+    },
+    danger: {
+      base: 'border-destructive/35 bg-destructive/[0.04] hover:bg-destructive/10 hover:border-destructive/55',
+      iconWrap: 'border-destructive/30 bg-destructive/10 text-destructive',
+      label: 'text-destructive',
+    },
+  }
+  const e = emphasisMap[emphasis]
   return (
     <div
-      className={[
-        'flex w-full flex-col items-center justify-center rounded-xl border text-center transition-colors',
-        compact ? 'min-h-16 gap-1 px-2 py-2' : 'min-h-20 gap-2 px-3 py-3',
-        emphasis === 'danger'
-          ? 'border-destructive/30 text-destructive hover:bg-destructive/5'
-          : 'border-border/60 hover:bg-accent/40',
+      className={cn(
+        'group flex w-full items-center gap-3 rounded-md border text-left transition-colors',
+        compact ? 'px-2.5 py-2' : 'px-3 py-2.5',
+        e.base,
         disabled ? 'opacity-50' : '',
-      ].join(' ')}
+      )}
     >
-      {icon}
-      <span className={compact ? 'text-[11px] font-medium leading-tight' : 'text-xs font-medium leading-tight'}>{label}</span>
+      <div className={cn('flex shrink-0 items-center justify-center rounded-sm border', compact ? 'h-7 w-7' : 'h-8 w-8', e.iconWrap)}>
+        {icon}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className={cn('font-medium leading-tight', compact ? 'text-[12px]' : 'text-sm', e.label)}>{label}</p>
+        {description && !compact ? (
+          <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{description}</p>
+        ) : null}
+      </div>
     </div>
   )
 }
@@ -848,25 +908,44 @@ export default function Players() {
         </Alert>
       )}
 
-      {/* Stats summary */}
-      <div className="flex flex-wrap items-center gap-4 stagger-in">
-        <SummaryCard icon={<Users className="h-5 w-5" />} label="Online Now" value={players.length} />
-        <SummaryCard icon={<TrendingUp className="h-5 w-5" />} label="Peak Today" value={peakPlayers} />
+      {/* Stats summary — tactical signal strip */}
+      <div className="flex flex-col gap-2 stagger-in sm:flex-row sm:flex-wrap">
+        <SummaryCard
+          icon={<Users className="h-4 w-4" />}
+          label="Online"
+          value={players.length}
+          tone={players.length > 0 ? 'success' : 'default'}
+          caption={players.length === 1 ? 'player' : 'players'}
+        />
+        <SummaryCard
+          icon={<TrendingUp className="h-4 w-4" />}
+          label="Peak Today"
+          value={peakPlayers}
+          tone="default"
+        />
+        <SummaryCard
+          icon={<Users className="h-4 w-4" />}
+          label="Roster"
+          value={offlineRoster.length}
+          caption="seen"
+        />
         {bannedSteamIds.length > 0 && (
           <button
             type="button"
             onClick={() => setUnbanSteamIdDialogOpen(true)}
-            className="rounded-lg border border-border/60 bg-card/80 shadow-sm transition-colors hover:border-destructive/40 hover:bg-destructive/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
+            className="group relative flex flex-1 items-center gap-3 overflow-hidden rounded-md border border-border/55 bg-card/70 px-4 py-3 text-left shadow-sm transition-colors hover:border-destructive/45 hover:bg-destructive/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
             aria-label={`View ${bannedSteamIds.length} banned SteamIDs`}
           >
-            <div className="flex items-center gap-3 p-4">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-destructive/30 bg-destructive/10 text-destructive">
-                <Ban className="h-5 w-5" />
+            <span aria-hidden="true" className="absolute inset-y-0 left-0 w-[2px] bg-destructive/60" />
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm border border-destructive/30 bg-destructive/10 text-destructive">
+              <Ban className="h-4 w-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-baseline gap-1.5">
+                <p className="text-xl font-semibold tabular-nums leading-none tracking-tight">{bannedSteamIds.length}</p>
+                <span className="text-xs font-medium text-muted-foreground/70">manage</span>
               </div>
-              <div className="min-w-0 text-left">
-                <p className="text-2xl font-semibold tracking-tight">{bannedSteamIds.length}</p>
-                <p className="text-xs text-muted-foreground">Banned SteamIDs</p>
-              </div>
+              <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.22em] text-destructive/80">Banned SteamIDs</p>
             </div>
           </button>
         )}
@@ -874,44 +953,61 @@ export default function Players() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Player List */}
-        <Card className="lg:col-span-1">
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between gap-2">
-              <CardTitle className="text-lg flex items-center gap-2 min-w-0">
-                <Users className="w-5 h-5 shrink-0" />
-                <span className="truncate">
-                  {rosterTab === 'online' ? 'Online Players' : rosterTab === 'roster' ? 'Roster' : 'Banned'}
-                </span>
-              </CardTitle>
-              <Badge variant="secondary">
-                {rosterTab === 'online' ? players.length : rosterTab === 'roster' ? offlineRoster.length : bannedSteamIds.length}
-              </Badge>
+        <Card className="lg:col-span-1 overflow-hidden border-border/55 bg-card/70">
+          <div className="flex items-center justify-between border-b border-border/40 bg-muted/20 px-4 py-2">
+            <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.28em] text-muted-foreground">
+              <span className="text-primary/80">//</span>
+              <span>roster</span>
+              <span className="text-muted-foreground/50">·</span>
+              <span>
+                {rosterTab === 'online' ? 'live' : rosterTab === 'roster' ? 'history' : 'bans'}
+              </span>
             </div>
-            {/* Tab strip: lets admins flip between currently-online players,
-                everyone we've seen before (offline roster), and the SteamID
-                ban list. The search input below filters whichever tab is
-                active so one input drives all three views. */}
-            <div className="mt-3 inline-flex h-auto gap-1 rounded-lg border border-border/60 bg-muted/40 p-1">
+            <span className="font-mono text-[11px] tabular-nums text-foreground/80">
+              {rosterTab === 'online' ? players.length : rosterTab === 'roster' ? offlineRoster.length : bannedSteamIds.length}
+            </span>
+          </div>
+          <CardHeader className="space-y-3 pb-3 pt-4">
+            {/* Tab strip: online / roster / banned */}
+            <div className="grid grid-cols-3 gap-1 rounded-md border border-border/55 bg-muted/30 p-1">
               <button
                 type="button"
                 onClick={() => setRosterTab('online')}
-                className={`px-3 py-1.5 text-xs rounded-md transition-colors ${rosterTab === 'online' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                className={cn(
+                  'flex items-center justify-center gap-1.5 rounded-sm px-2 py-1.5 text-xs font-medium transition-colors',
+                  rosterTab === 'online'
+                    ? 'bg-background text-foreground shadow-sm ring-1 ring-border/60'
+                    : 'text-muted-foreground hover:text-foreground'
+                )}
               >
-                Online <span className="ml-1 text-muted-foreground">{players.length}</span>
+                <span>Online</span>
+                <span className="tabular-nums text-foreground/70">{players.length}</span>
               </button>
               <button
                 type="button"
                 onClick={() => setRosterTab('roster')}
-                className={`px-3 py-1.5 text-xs rounded-md transition-colors ${rosterTab === 'roster' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                className={cn(
+                  'flex items-center justify-center gap-1.5 rounded-sm px-2 py-1.5 text-xs font-medium transition-colors',
+                  rosterTab === 'roster'
+                    ? 'bg-background text-foreground shadow-sm ring-1 ring-border/60'
+                    : 'text-muted-foreground hover:text-foreground'
+                )}
               >
-                Roster <span className="ml-1 text-muted-foreground">{offlineRoster.length}</span>
+                <span>Roster</span>
+                <span className="tabular-nums text-foreground/70">{offlineRoster.length}</span>
               </button>
               <button
                 type="button"
                 onClick={() => { setRosterTab('banned'); fetchBannedSteamIds() }}
-                className={`px-3 py-1.5 text-xs rounded-md transition-colors ${rosterTab === 'banned' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                className={cn(
+                  'flex items-center justify-center gap-1.5 rounded-sm px-2 py-1.5 text-xs font-medium transition-colors',
+                  rosterTab === 'banned'
+                    ? 'bg-background text-foreground shadow-sm ring-1 ring-border/60'
+                    : 'text-muted-foreground hover:text-foreground'
+                )}
               >
-                Banned <span className="ml-1 text-muted-foreground">{bannedSteamIds.length}</span>
+                <span>Banned</span>
+                <span className="tabular-nums text-foreground/70">{bannedSteamIds.length}</span>
               </button>
             </div>
           </CardHeader>
@@ -1157,144 +1253,223 @@ export default function Players() {
               )}
             </ScrollArea>
             
-            {/* Manual entry */}
-            <div className="pt-3 border-t space-y-2">
-              <Label className="text-xs text-muted-foreground">Or enter username manually:</Label>
+            {/* Manual entry — for offline or unlisted usernames */}
+            <div className="space-y-1.5 border-t border-border/40 pt-3">
+              <Label className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground/80">
+                <span className="text-primary/70">›</span> Manual target
+              </Label>
               <Input
-                placeholder="Username"
+                placeholder="Enter username…"
                 value={selectedPlayer}
                 onChange={(e) => setSelectedPlayer(e.target.value)}
+                className="h-9 font-mono text-sm"
               />
             </div>
           </CardContent>
         </Card>
 
         {/* Player Actions */}
-        <Card className="lg:col-span-2">
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="flex items-center gap-2">
-                  {selectedPlayer ? (
-                    <>
-                      <div className="w-2 h-2 rounded-full bg-primary" aria-hidden="true" />
-                      {selectedPlayer}
-                    </>
-                  ) : (
-                    'Player Actions'
-                  )}
-                </CardTitle>
-                <CardDescription>
-                  {selectedPlayer ? 'Manage this player' : 'Select a player to manage'}
-                </CardDescription>
-              </div>
-              
-              {/* Quick Actions */}
-              {selectedPlayer && (
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setKickDialogOpen(true)}
-                    className="gap-1"
-                    title="Kick"
-                    aria-label="Kick player"
-                  >
-                    <UserX className="w-4 h-4" />
-                    <span className="hidden sm:inline">Kick</span>
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled
-                    className="gap-1 opacity-50 cursor-not-allowed"
-                    title="Teleport is currently not working in B42 multiplayer"
-                    aria-label="Teleport player (currently unavailable)"
-                  >
-                    <MapPin className="w-4 h-4" />
-                    <span className="hidden sm:inline">Teleport</span>
-                  </Button>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="outline" size="sm" aria-label="More player actions">
-                        <MoreHorizontal className="w-4 h-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => handleGodMode(!selectedPlayerPowers?.godMode)} disabled={loading}>
-                        <Ghost className="w-4 h-4 mr-2" />
-                        {selectedPlayerPowers?.godMode ? 'Disable' : 'Enable'} God Mode
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleInvisible(!selectedPlayerPowers?.invisible)} disabled={loading}>
-                        <Eye className="w-4 h-4 mr-2" />
-                        {selectedPlayerPowers?.invisible ? 'Disable' : 'Enable'} Invisible
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleNoclip(!selectedPlayerPowers?.noclip)} disabled={loading}>
-                        <Layers className="w-4 h-4 mr-2" />
-                        {selectedPlayerPowers?.noclip ? 'Disable' : 'Enable'} Noclip
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem 
-                        onClick={() => handleAction('Add to whitelist', () => playersApi.addToWhitelist(selectedPlayer))}
-                        disabled={loading}
-                      >
-                        <UserPlus className="w-4 h-4 mr-2" />
-                        Add to Whitelist
-                      </DropdownMenuItem>
-                      <DropdownMenuItem 
-                        onClick={() => handleAction('Remove from whitelist', () => playersApi.removeFromWhitelist(selectedPlayer))}
-                        disabled={loading}
-                      >
-                        <UserMinus className="w-4 h-4 mr-2" />
-                        Remove from Whitelist
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        onClick={() => setImportExportOpen(true)}
-                        disabled={!bridgeConnected}
-                      >
-                        <Download className="w-4 h-4 mr-2" />
-                        Import/Export Character
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem 
-                        onClick={() => setBanDialogOpen(true)}
-                        className="text-destructive focus:text-destructive"
-                      >
-                        <Ban className="w-4 h-4 mr-2" />
-                        Ban Player
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-              )}
+        <Card className="lg:col-span-2 overflow-hidden border-border/55 bg-card/70">
+          {/* Header strip */}
+          <div className="flex items-center justify-between border-b border-border/40 bg-muted/20 px-4 py-2">
+            <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.28em] text-muted-foreground">
+              <span className="text-primary/80">//</span>
+              <span>dossier</span>
+              <span className="text-muted-foreground/50">·</span>
+              <span className={selectedPlayer ? 'text-foreground/85' : 'text-amber-400/85'}>
+                {selectedPlayer ? 'target.acquired' : 'standby'}
+              </span>
             </div>
-            
-            {/* Power Status Bar */}
-            {selectedPlayer && selectedPlayerPowers && (selectedPlayerPowers.godMode || selectedPlayerPowers.invisible || selectedPlayerPowers.noclip) && (
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                <Zap className="w-4 h-4 text-primary" />
-                <span className="text-sm text-muted-foreground">Active powers:</span>
-                {selectedPlayerPowers.godMode && (
-                  <Badge variant="secondary" className="text-xs">God Mode</Badge>
-                )}
-                {selectedPlayerPowers.invisible && (
-                  <Badge variant="secondary" className="text-xs">Invisible</Badge>
-                )}
-                {selectedPlayerPowers.noclip && (
-                  <Badge variant="secondary" className="text-xs">Noclip</Badge>
-                )}
+            {selectedPlayer && (
+              <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground/70">
+                {(() => {
+                  const online = players.some(p => p.name === selectedPlayer)
+                  return online ? 'online' : 'offline'
+                })()}
+              </span>
+            )}
+          </div>
+          <CardHeader className="space-y-3 pb-3 pt-4">
+            {selectedPlayer ? (
+              <>
+                {/* Dossier hero: identity + key stats */}
+                {(() => {
+                  const isOnline = players.some(p => p.name === selectedPlayer)
+                  const note = playerNotes[selectedPlayer]
+                  const stat = playerStats[selectedPlayer]
+                  return (
+                    <div className="relative overflow-hidden rounded-md border border-border/50 bg-gradient-to-br from-muted/30 via-card to-card p-4">
+                      {/* Corner ticks */}
+                      <span aria-hidden="true" className="pointer-events-none absolute -left-px -top-px h-3 w-3 border-l-2 border-t-2 border-primary/40" />
+                      <span aria-hidden="true" className="pointer-events-none absolute -right-px -top-px h-3 w-3 border-r-2 border-t-2 border-primary/40" />
+                      <span aria-hidden="true" className="pointer-events-none absolute -left-px -bottom-px h-3 w-3 border-b-2 border-l-2 border-primary/40" />
+                      <span aria-hidden="true" className="pointer-events-none absolute -right-px -bottom-px h-3 w-3 border-b-2 border-r-2 border-primary/40" />
+                      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span
+                              aria-hidden="true"
+                              className={cn(
+                                'h-2 w-2 rounded-full',
+                                isOnline ? 'bg-emerald-400 motion-safe:animate-pulse shadow-[0_0_8px_hsl(var(--primary)/0.65)]' : 'bg-muted-foreground/40'
+                              )}
+                            />
+                            <h2 className="truncate text-xl font-semibold tracking-tight">{selectedPlayer}</h2>
+                            <span className="text-xs font-medium text-muted-foreground/80">
+                              {isOnline ? 'connected' : 'last seen'}
+                            </span>
+                          </div>
+                          {/* Inline stats */}
+                          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[11px] text-muted-foreground/85">
+                            {stat ? (
+                              <>
+                                <span className="flex items-center gap-1.5">
+                                  <Clock className="h-3 w-3 text-primary/70" />
+                                  <span className="tabular-nums text-foreground/85">{formatPlaytime(stat.total_playtime_seconds)}</span>
+                                  <span className="text-muted-foreground/70">played</span>
+                                </span>
+                                <span className="flex items-center gap-1.5">
+                                  <TrendingUp className="h-3 w-3 text-primary/70" />
+                                  <span className="tabular-nums text-foreground/85">{stat.session_count}</span>
+                                  <span className="text-muted-foreground/70">sessions</span>
+                                </span>
+                                {stat.last_seen && (
+                                  <span className="text-muted-foreground/70">
+                                    last: <span className="text-foreground/80">{new Date(stat.last_seen).toLocaleDateString()}</span>
+                                  </span>
+                                )}
+                              </>
+                            ) : (
+                              <span className="text-muted-foreground/60">No history recorded yet</span>
+                            )}
+                          </div>
+                          {/* Tags + powers row */}
+                          {((note?.tags && note.tags.length > 0) || (selectedPlayerPowers && (selectedPlayerPowers.godMode || selectedPlayerPowers.invisible || selectedPlayerPowers.noclip))) && (
+                            <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                              {selectedPlayerPowers?.godMode && (
+                                <Badge variant="outline" className="gap-1 border-primary/40 bg-primary/10 px-1.5 py-0 text-[10px] font-mono uppercase tracking-wider text-primary">
+                                  <Ghost className="h-3 w-3" /> God
+                                </Badge>
+                              )}
+                              {selectedPlayerPowers?.invisible && (
+                                <Badge variant="outline" className="gap-1 border-primary/40 bg-primary/10 px-1.5 py-0 text-[10px] font-mono uppercase tracking-wider text-primary">
+                                  <Eye className="h-3 w-3" /> Invisible
+                                </Badge>
+                              )}
+                              {selectedPlayerPowers?.noclip && (
+                                <Badge variant="outline" className="gap-1 border-primary/40 bg-primary/10 px-1.5 py-0 text-[10px] font-mono uppercase tracking-wider text-primary">
+                                  <Layers className="h-3 w-3" /> Noclip
+                                </Badge>
+                              )}
+                              {note?.tags?.map(tag => (
+                                <Badge key={tag} variant="secondary" className="px-1.5 py-0 text-[10px] font-mono uppercase tracking-wider">
+                                  {tag}
+                                </Badge>
+                              ))}
+                              {note?.note && (
+                                <Badge variant="outline" className="gap-1 px-1.5 py-0 text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+                                  <StickyNote className="h-3 w-3" /> Note
+                                </Badge>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Quick danger actions */}
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setKickDialogOpen(true)}
+                            className="h-8 gap-1.5 border-amber-500/40 text-xs font-medium text-amber-300 hover:border-amber-500/60 hover:bg-amber-500/10 hover:text-amber-200"
+                            title="Kick player"
+                          >
+                            <UserX className="h-3.5 w-3.5" />
+                            <span className="hidden sm:inline">Kick</span>
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setBanDialogOpen(true)}
+                            className="h-8 gap-1.5 border-destructive/45 text-xs font-medium text-destructive hover:border-destructive/65 hover:bg-destructive/10"
+                            title="Ban player"
+                          >
+                            <Ban className="h-3.5 w-3.5" />
+                            <span className="hidden sm:inline">Ban</span>
+                          </Button>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="outline" size="sm" className="h-8 w-8 p-0" aria-label="More player actions">
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => handleGodMode(!selectedPlayerPowers?.godMode)} disabled={loading}>
+                                <Ghost className="w-4 h-4 mr-2" />
+                                {selectedPlayerPowers?.godMode ? 'Disable' : 'Enable'} God Mode
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleInvisible(!selectedPlayerPowers?.invisible)} disabled={loading}>
+                                <Eye className="w-4 h-4 mr-2" />
+                                {selectedPlayerPowers?.invisible ? 'Disable' : 'Enable'} Invisible
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleNoclip(!selectedPlayerPowers?.noclip)} disabled={loading}>
+                                <Layers className="w-4 h-4 mr-2" />
+                                {selectedPlayerPowers?.noclip ? 'Disable' : 'Enable'} Noclip
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                onClick={() => handleAction('Add to whitelist', () => playersApi.addToWhitelist(selectedPlayer))}
+                                disabled={loading}
+                              >
+                                <UserPlus className="w-4 h-4 mr-2" />
+                                Add to Whitelist
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => handleAction('Remove from whitelist', () => playersApi.removeFromWhitelist(selectedPlayer))}
+                                disabled={loading}
+                              >
+                                <UserMinus className="w-4 h-4 mr-2" />
+                                Remove from Whitelist
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                onClick={() => setImportExportOpen(true)}
+                                disabled={!bridgeConnected}
+                              >
+                                <Download className="w-4 h-4 mr-2" />
+                                Import/Export Character
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })()}
+              </>
+            ) : (
+              <div className="relative overflow-hidden rounded-md border border-dashed border-border/50 bg-muted/10 px-6 py-10 text-center">
+                <span aria-hidden="true" className="pointer-events-none absolute -left-px -top-px h-3 w-3 border-l-2 border-t-2 border-border/60" />
+                <span aria-hidden="true" className="pointer-events-none absolute -right-px -top-px h-3 w-3 border-r-2 border-t-2 border-border/60" />
+                <span aria-hidden="true" className="pointer-events-none absolute -left-px -bottom-px h-3 w-3 border-b-2 border-l-2 border-border/60" />
+                <span aria-hidden="true" className="pointer-events-none absolute -right-px -bottom-px h-3 w-3 border-b-2 border-r-2 border-border/60" />
+                <p className="font-mono text-[10px] uppercase tracking-[0.32em] text-muted-foreground/70">
+                  no target selected
+                </p>
+                <p className="mx-auto mt-3 max-w-xs text-sm text-muted-foreground">
+                  Pick a player from the roster to view their dossier, or type a username under <span className="font-mono text-foreground/80">› Manual target</span>.
+                </p>
               </div>
             )}
           </CardHeader>
           <CardContent>
             <Tabs defaultValue="moderation">
               <div className="overflow-x-auto pb-1">
-                <TabsList className="inline-flex h-auto min-w-max gap-1 rounded-lg border border-border/60 bg-muted/40 p-1">
-                  <TabsTrigger value="moderation" className="min-h-9 shrink-0 text-xs px-3">Moderation</TabsTrigger>
-                  <TabsTrigger value="spawn" className="min-h-9 shrink-0 text-xs px-3">Spawn</TabsTrigger>
-                  <TabsTrigger value="powers" className="min-h-9 shrink-0 text-xs px-3">Powers</TabsTrigger>
-                  <TabsTrigger value="notes" className="min-h-9 shrink-0 text-xs px-3" onClick={() => fetchActivityLogs()}>Notes & Log</TabsTrigger>
+                <TabsList className="inline-flex h-auto min-w-max gap-1 rounded-md border border-border/55 bg-muted/30 p-1">
+                  <TabsTrigger value="moderation" className="min-h-8 shrink-0 px-3 text-xs font-medium">Moderation</TabsTrigger>
+                  <TabsTrigger value="spawn" className="min-h-8 shrink-0 px-3 text-xs font-medium">Spawn</TabsTrigger>
+                  <TabsTrigger value="powers" className="min-h-8 shrink-0 px-3 text-xs font-medium">Powers</TabsTrigger>
+                  <TabsTrigger value="notes" className="min-h-8 shrink-0 px-3 text-xs font-medium" onClick={() => fetchActivityLogs()}>Notes &amp; Log</TabsTrigger>
                 </TabsList>
               </div>
 
@@ -1302,12 +1477,12 @@ export default function Players() {
               <TabsContent value="moderation" className="space-y-4 mt-4">
                 {/* Primary actions — visible when a player is selected */}
                 {selectedPlayer ? (
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
                   {/* Kick */}
                   <Dialog open={kickDialogOpen} onOpenChange={setKickDialogOpen}>
                     <DialogTrigger asChild>
                       <button type="button" disabled={!selectedPlayer} className="block h-auto w-full p-0 text-left">
-                        <ActionTile icon={<UserX className="w-5 h-5" />} label="Kick" disabled={!selectedPlayer} />
+                        <ActionTile icon={<UserX className="w-4 h-4" />} label="Kick" description="Boot player with reason" disabled={!selectedPlayer} emphasis="warning" />
                       </button>
                     </DialogTrigger>
                     <DialogContent>
@@ -1341,7 +1516,7 @@ export default function Players() {
                   <Dialog open={banDialogOpen} onOpenChange={setBanDialogOpen}>
                     <DialogTrigger asChild>
                       <button type="button" disabled={!selectedPlayer} className="block h-auto w-full p-0 text-left">
-                        <ActionTile icon={<Ban className="w-5 h-5" />} label="Ban" disabled={!selectedPlayer} emphasis="danger" />
+                        <ActionTile icon={<Ban className="w-4 h-4" />} label="Ban" description="Permanent · two-step" disabled={!selectedPlayer} emphasis="danger" />
                       </button>
                     </DialogTrigger>
                     <DialogContent>
@@ -1412,7 +1587,7 @@ export default function Players() {
                   <Dialog>
                     <DialogTrigger asChild>
                       <button type="button" disabled={!selectedPlayer} className="block h-auto w-full p-0 text-left">
-                        <ActionTile icon={<Shield className="w-5 h-5" />} label="Access Level" disabled={!selectedPlayer} />
+                        <ActionTile icon={<Shield className="w-4 h-4" />} label="Access Level" description="Admin · Mod · User" disabled={!selectedPlayer} emphasis="primary" />
                       </button>
                     </DialogTrigger>
                     <DialogContent>
@@ -1445,14 +1620,15 @@ export default function Players() {
                     </DialogContent>
                   </Dialog>
 
-                  {/* Teleport — requires PanelBridge; syncs via teleportTo + setNetworkTeleportEnabled */}
+                  {/* Teleport — requires PanelBridge; syncs via teleportTo + setNetworkTeleportEnabled.
+                      Note: known unreliable in B42 multiplayer; we still surface the dialog so admins can try. */}
                   <Dialog open={teleportDialogOpen} onOpenChange={(open) => {
                     setTeleportDialogOpen(open)
                     if (open && !teleportTarget) setTeleportTarget(selectedPlayer)
                   }}>
                     <DialogTrigger asChild>
                       <button type="button" className="block h-auto w-full p-0 text-left">
-                        <ActionTile icon={<MapPin className="w-5 h-5" />} label="Teleport" />
+                        <ActionTile icon={<MapPin className="w-4 h-4" />} label="Teleport" description="B42 MP · may not sync" />
                       </button>
                     </DialogTrigger>
                     <DialogContent className="max-w-md">
@@ -1546,20 +1722,20 @@ export default function Players() {
                     </DialogContent>
                   </Dialog>
                 </div>
-                ) : (
-                <div className="rounded-lg border border-dashed border-border/50 px-4 py-6 text-center">
-                  <p className="text-sm text-muted-foreground">Pick a player from the list, or type a username below</p>
-                </div>
-                )}
+                ) : null}
 
                 {/* Secondary actions — less frequent operations */}
                 <div className="pt-4 mt-2 border-t border-border/30">
-                  <p className="text-xs font-medium text-muted-foreground mb-2">Standalone Actions</p>
+                  <div className="mb-2 flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.28em] text-muted-foreground/80">
+                    <span className="text-primary/70">//</span>
+                    <span>standalone ops</span>
+                    <span className="h-px flex-1 bg-border/40" aria-hidden="true" />
+                  </div>
                   <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                   {/* Voice Ban */}
                   <Dialog open={voiceBanDialogOpen} onOpenChange={setVoiceBanDialogOpen}>
                     <DialogTrigger asChild>
-                      <button type="button" className="block h-auto w-full p-0 text-left">
+                      <button type="button" title="Mute or unmute a player from in-game voice chat. They stay connected, but can't talk in proximity voice." className="block h-auto w-full p-0 text-left">
                         <ActionTile icon={<MicOff className="w-4 h-4" />} label="Voice Ban" compact />
                       </button>
                     </DialogTrigger>
@@ -1612,7 +1788,7 @@ export default function Players() {
                   {/* SteamID Ban */}
                   <Dialog open={steamIdBanDialogOpen} onOpenChange={setSteamIdBanDialogOpen}>
                     <DialogTrigger asChild>
-                      <button type="button" className="block h-auto w-full p-0 text-left">
+                      <button type="button" title="Ban a player by their Steam ID, even when they're offline. Works without needing them to be connected." className="block h-auto w-full p-0 text-left">
                         <ActionTile icon={<Ban className="w-4 h-4" />} label="SteamID Ban" emphasis="danger" compact />
                       </button>
                     </DialogTrigger>
@@ -1663,7 +1839,7 @@ export default function Players() {
                   {/* Add User */}
                   <Dialog open={addUserDialogOpen} onOpenChange={setAddUserDialogOpen}>
                     <DialogTrigger asChild>
-                      <button type="button" className="block h-auto w-full p-0 text-left">
+                      <button type="button" title="Create a new account on the server (username + password). Mostly used for whitelist-only servers." className="block h-auto w-full p-0 text-left">
                         <ActionTile icon={<UserPlus className="w-4 h-4" />} label="Add User" compact />
                       </button>
                     </DialogTrigger>
@@ -1713,7 +1889,7 @@ export default function Players() {
                   {/* Unban */}
                   <Dialog open={unbanDialogOpen} onOpenChange={setUnbanDialogOpen}>
                     <DialogTrigger asChild>
-                      <button type="button" className="block h-auto w-full p-0 text-left">
+                      <button type="button" title="Lift a ban by username so the player can rejoin." className="block h-auto w-full p-0 text-left">
                         <ActionTile icon={<UserPlus className="w-4 h-4" />} label="Unban" compact />
                       </button>
                     </DialogTrigger>
@@ -1745,7 +1921,7 @@ export default function Players() {
                     else setUnbanSteamId('')
                   }}>
                     <DialogTrigger asChild>
-                      <button type="button" className="block h-auto w-full p-0 text-left">
+                      <button type="button" title="Lift a SteamID ban. Pick from the list of banned IDs or paste one manually." className="block h-auto w-full p-0 text-left">
                         <ActionTile icon={<UserPlus className="w-4 h-4" />} label="Unban SteamID" compact />
                       </button>
                     </DialogTrigger>

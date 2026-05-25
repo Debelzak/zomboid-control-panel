@@ -11,7 +11,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { rconApi, configApi, serverApi } from '@/lib/api'
 import { useSocket } from '@/contexts/SocketContext'
 import { EmptyState } from '@/components/EmptyState'
-import { StatusIndicator } from '@/components/StatusIndicator'
 import { PageHeader } from '@/components/PageHeader'
 import { cn } from '@/lib/utils'
 import { usePageShortcut } from '@/hooks/useKeyboardShortcuts'
@@ -544,39 +543,45 @@ export default function Console() {
         icon={<TerminalIcon className="w-5 h-5" />}
       />
       <Tabs value={consoleTab} onValueChange={setConsoleTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="server-log" className="flex items-center gap-2">
-            <FileText className="w-4 h-4" />
-            Server Console
+        <TabsList className="grid w-full grid-cols-2 bg-muted/30 border border-border/50 rounded-md p-0.5">
+          <TabsTrigger
+            value="server-log"
+            className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.2em] data-[state=active]:bg-primary/15 data-[state=active]:text-primary data-[state=active]:shadow-none rounded-sm"
+          >
+            <FileText className="w-3.5 h-3.5" />
+            server log
           </TabsTrigger>
-          <TabsTrigger value="rcon" className="flex items-center gap-2">
-            <TerminalIcon className="w-4 h-4" />
-            RCON Console
+          <TabsTrigger
+            value="rcon"
+            className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.2em] data-[state=active]:bg-primary/15 data-[state=active]:text-primary data-[state=active]:shadow-none rounded-sm"
+          >
+            <TerminalIcon className="w-3.5 h-3.5" />
+            rcon console
           </TabsTrigger>
         </TabsList>
 
         {/* Server Console Log Tab */}
-        <TabsContent value="server-log" className="space-y-0">
-          {/* Toolbar */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 py-3">
-            <p className="text-xs text-muted-foreground font-mono truncate">
-              {serverLogPath ? serverLogPath : 'Loading...'}
-            </p>
+        <TabsContent value="server-log" className="space-y-3 mt-4">
+          {/* Tactical toolbar strip */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-3 py-2 rounded-md border border-border/50 bg-card/70 backdrop-blur-sm">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="font-mono text-[9px] uppercase tracking-[0.24em] text-primary/60 shrink-0">path</span>
+              <p className="text-xs text-foreground/80 font-mono truncate">
+                {serverLogPath ? serverLogPath : <span className="text-muted-foreground/50">loading…</span>}
+              </p>
+              {serverLogLoading && <Loader2 className="w-3 h-3 animate-spin text-primary/70 shrink-0" />}
+            </div>
             <div className="flex flex-wrap items-center gap-1">
-              {serverLogLoading && (
-                <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-              )}
               <Button
                 variant="ghost"
                 size="sm"
+                className="h-7 px-2 font-mono text-[10px] uppercase tracking-[0.16em]"
                 onClick={() => setServerLogPaused(!serverLogPaused)}
                 aria-label={serverLogPaused ? 'Resume auto-update' : 'Pause auto-update'}
               >
-                {serverLogPaused ? (
-                  <Play className="w-4 h-4" />
-                ) : (
-                  <Pause className="w-4 h-4" />
-                )}
+                {serverLogPaused
+                  ? <><Play className="w-3 h-3 mr-1" />resume</>
+                  : <><Pause className="w-3 h-3 mr-1" />pause</>}
               </Button>
               <Button
                 variant="ghost"
@@ -586,16 +591,14 @@ export default function Console() {
                 title={serverLogFiltered
                   ? `Hiding ${Math.max(0, serverLogLines.length - filteredLogLines.length)} repetitive line${(serverLogLines.length - filteredLogLines.length) === 1 ? '' : 's'} — click to show all`
                   : 'Filter out repetitive messages (joins, idle ticks, etc.)'}
-                className={serverLogFiltered ? 'text-primary' : ''}
+                className={cn('h-7 px-2 font-mono text-[10px] uppercase tracking-[0.16em]', serverLogFiltered && 'text-primary')}
               >
-                <Filter className="w-4 h-4 mr-1" />
-                <span className="text-xs">
-                  {serverLogFiltered
-                    ? (serverLogLines.length > filteredLogLines.length
-                        ? `Filtered (−${serverLogLines.length - filteredLogLines.length})`
-                        : 'Filtered')
-                    : 'All'}
-                </span>
+                <Filter className="w-3 h-3 mr-1" />
+                {serverLogFiltered
+                  ? (serverLogLines.length > filteredLogLines.length
+                      ? `filter −${serverLogLines.length - filteredLogLines.length}`
+                      : 'filter')
+                  : 'all'}
               </Button>
               <Button
                 variant="ghost"
@@ -603,23 +606,24 @@ export default function Console() {
                 onClick={() => setServerLogAutoScroll(!serverLogAutoScroll)}
                 aria-label={serverLogAutoScroll ? 'Disable auto-scroll' : 'Enable auto-scroll'}
                 title={serverLogAutoScroll ? 'Auto-scroll is ON — follows newest line' : 'Auto-scroll is OFF — click to follow newest line'}
-                className={serverLogAutoScroll ? 'text-primary' : 'text-muted-foreground'}
+                className={cn('h-7 px-2 font-mono text-[10px] uppercase tracking-[0.16em]', serverLogAutoScroll ? 'text-primary' : 'text-muted-foreground')}
               >
-                <span className="text-xs">{serverLogAutoScroll ? 'Auto-scroll: on' : 'Auto-scroll: off'}</span>
+                follow {serverLogAutoScroll ? 'on' : 'off'}
               </Button>
               <Button
                 variant="ghost"
                 size="sm"
+                className="h-7 w-7 p-0"
                 onClick={() => fetchServerLog(true)}
                 aria-label="Refresh log"
               >
-                <RefreshCw className="w-4 h-4" />
+                <RefreshCw className="w-3.5 h-3.5" />
               </Button>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="destructive" size="sm" onClick={clearServerLog}>
-                    <Trash2 className="w-4 h-4 mr-2" />
-                    Clear
+                  <Button variant="destructive" size="sm" className="h-7 px-2 font-mono text-[10px] uppercase tracking-[0.16em]" onClick={clearServerLog}>
+                    <Trash2 className="w-3 h-3 mr-1" />
+                    clear
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>Clear the log display (does not delete the server log file)</TooltipContent>
@@ -629,111 +633,164 @@ export default function Console() {
 
           {/* Error banner when log polling fails repeatedly */}
           {serverLogError && (
-            <div className="mb-2 flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-              <span className="flex-1">{serverLogError}</span>
-              <Button variant="ghost" size="sm" className="h-9 px-3 text-xs" onClick={() => fetchServerLog(true)}>
-                Retry
+            <div
+              role="alert"
+              className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 font-mono text-[11px] uppercase tracking-[0.18em] text-destructive"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-destructive animate-pulse" />
+              <span className="flex-1">// {serverLogError}</span>
+              <Button variant="ghost" size="sm" className="h-7 px-2 font-mono text-[10px] uppercase tracking-[0.16em]" onClick={() => fetchServerLog(true)}>
+                retry
               </Button>
             </div>
           )}
 
-          {/* Terminal pane */}
+          {/* Terminal pane — framed tactical viewer */}
           {!serverLogExists ? (
-            <div className="flex h-[calc(100vh-340px)] min-h-[300px] items-center justify-center rounded-lg border border-border/50 bg-muted/20 p-4">
+            <div className="flex h-[calc(100vh-360px)] min-h-[300px] items-center justify-center rounded-md border border-border/50 bg-muted/20 p-4">
               <EmptyState type="serverOffline" title="Server console log not found" description="Make sure the server is running" compact />
             </div>
           ) : (
-            <div
-              ref={serverLogRef}
-              role="log"
-              aria-live="polite"
-              aria-label="Server console output"
-              className="h-[calc(100vh-340px)] min-h-[300px] overflow-auto rounded-lg border border-border/30 bg-black/40 p-3 font-mono text-xs terminal-output"
-            >
-              {filteredLogLines.length === 0 ? (
-                <div className="p-2 text-muted-foreground">
-                  {serverLogFiltered && serverLogLines.length > 0 ? (
-                    <span>
-                      All {serverLogLines.length} lines were hidden by the filter.{' '}
-                      <button
-                        type="button"
-                        className="underline underline-offset-2 hover:text-primary"
-                        onClick={() => setServerLogFiltered(false)}
-                      >
-                        Show all messages
-                      </button>
-                    </span>
-                  ) : (
-                    'Console log is empty.'
-                  )}
-                </div>
-              ) : (
-                filteredLogLines.map((line, index) => (
-                  <ServerLogLine key={index} line={line} />
-                ))
-              )}
+            <div className="relative rounded-md border border-border/55 bg-card/85 overflow-hidden shadow-lg">
+              {/* corner brackets */}
+              <div aria-hidden className="absolute top-1 left-1 w-2.5 h-2.5 border-l-2 border-t-2 border-primary/45 pointer-events-none z-10" />
+              <div aria-hidden className="absolute top-1 right-1 w-2.5 h-2.5 border-r-2 border-t-2 border-primary/45 pointer-events-none z-10" />
+              <div aria-hidden className="absolute bottom-1 left-1 w-2.5 h-2.5 border-l-2 border-b-2 border-primary/45 pointer-events-none z-10" />
+              <div aria-hidden className="absolute bottom-1 right-1 w-2.5 h-2.5 border-r-2 border-b-2 border-primary/45 pointer-events-none z-10" />
+              {/* header strip */}
+              <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-border/50 bg-muted/30 font-mono text-[9px] uppercase tracking-[0.24em] select-none">
+                <span className="flex items-center gap-1.5 text-primary/65">
+                  <span>stream</span>
+                  <span className="text-muted-foreground/40 normal-case tracking-normal">·</span>
+                  <span className="text-muted-foreground/80 normal-case tracking-normal">{serverLogPaused ? 'paused' : 'live'}</span>
+                </span>
+                <span className="flex items-center gap-1.5 text-muted-foreground/60">
+                  <span className={cn('w-1.5 h-1.5 rounded-full', serverLogPaused ? 'bg-amber-400/70' : 'bg-emerald-400/80 animate-pulse')} />
+                  <span>{serverLogPaused ? 'paused' : 'streaming'}</span>
+                </span>
+              </div>
+              <div
+                ref={serverLogRef}
+                role="log"
+                aria-live="polite"
+                aria-label="Server console output"
+                className="h-[calc(100vh-400px)] min-h-[280px] overflow-auto bg-black/60 p-3 font-mono text-xs terminal-output"
+              >
+                {filteredLogLines.length === 0 ? (
+                  <div className="p-2 font-mono text-[11px] text-muted-foreground/70">
+                    {serverLogFiltered && serverLogLines.length > 0 ? (
+                      <span>
+                        {serverLogLines.length} lines hidden by filter ·{' '}
+                        <button
+                          type="button"
+                          className="underline underline-offset-2 text-primary/80 hover:text-primary"
+                          onClick={() => setServerLogFiltered(false)}
+                        >
+                          show all
+                        </button>
+                      </span>
+                    ) : (
+                      <span>no stream output</span>
+                    )}
+                  </div>
+                ) : (
+                  filteredLogLines.map((line, index) => (
+                    <ServerLogLine key={index} line={line} />
+                  ))
+                )}
+              </div>
+              {/* footer strip */}
+              <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-t border-border/50 bg-muted/20 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground/70 select-none">
+                <span className="tabular-nums">
+                  {serverLogFiltered
+                    ? <>shown <span className="text-foreground/80">{filteredLogLines.length}</span> · hidden <span className="text-muted-foreground/50">{serverLogLines.length - filteredLogLines.length}</span></>
+                    : <>loaded <span className="text-foreground/80">{serverLogLines.length}</span></>}
+                </span>
+                <span>{serverLogPaused ? 'updates suspended' : 'poll · 2s'}</span>
+              </div>
             </div>
           )}
-          <div className="flex items-center justify-between mt-2 text-xs text-muted-foreground">
-            <span>
-              {serverLogFiltered 
-                ? `${filteredLogLines.length} lines shown (${serverLogLines.length - filteredLogLines.length} filtered)` 
-                : `${serverLogLines.length} lines loaded`}
-            </span>
-            <span>{serverLogPaused ? 'Live updates paused' : 'Updates every 2 seconds'}</span>
-          </div>
         </TabsContent>
 
         {/* RCON Console Tab */}
-        <TabsContent value="rcon" className="space-y-4">
-          <div className="flex items-center justify-end gap-2">
-            {testingConnection ? (
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span className="text-sm">Checking connection...</span>
-              </div>
-            ) : rconConnected === null ? (
-              <StatusIndicator state="unknown" label="RCON status unknown" />
-            ) : rconConnected ? (
-              <StatusIndicator state="online" label="RCON connected" />
-            ) : (
-              <StatusIndicator state="offline" label="RCON disconnected" />
-            )}
+        <TabsContent value="rcon" className="space-y-3 mt-4">
+          <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-md border border-border/50 bg-card/70 backdrop-blur-sm">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="font-mono text-[9px] uppercase tracking-[0.24em] text-primary/60 shrink-0">link</span>
+              {testingConnection ? (
+                <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  checking…
+                </span>
+              ) : rconConnected === null ? (
+                <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                  <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/50" />
+                  unknown
+                </span>
+              ) : rconConnected ? (
+                <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-emerald-400">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  rcon online
+                </span>
+              ) : (
+                <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-destructive">
+                  <WifiOff className="w-3 h-3" />
+                  rcon offline
+                </span>
+              )}
+            </div>
             <Button
               variant="ghost"
               size="sm"
+              className="h-7 px-2 font-mono text-[10px] uppercase tracking-[0.16em]"
               onClick={testRconConnection}
               disabled={testingConnection}
             >
-              Check again
+              <RefreshCw className={cn('w-3 h-3 mr-1', testingConnection && 'animate-spin')} />
+              recheck
             </Button>
           </div>
 
           {/* RCON Disconnected Warning */}
           {rconConnected === false && (
-            <div className="flex items-center gap-3 rounded-lg border border-destructive/25 bg-destructive/8 p-4">
-              <WifiOff className="w-5 h-5 shrink-0 text-destructive" />
-              <div>
-                <p className="font-medium text-destructive">RCON Not Connected</p>
-                <p className="text-sm text-muted-foreground">
-                  Start the server, then confirm the RCON host, port, and password in Panel Settings.
+            <div
+              role="alert"
+              className="flex items-center gap-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2"
+            >
+              <WifiOff className="w-4 h-4 shrink-0 text-destructive" />
+              <div className="min-w-0">
+                <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-destructive">host unreachable</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Start the server, then confirm RCON host, port, and password in Panel Settings.
                 </p>
               </div>
             </div>
           )}
 
           {/* Console Output (primary surface) */}
-          <div>
-            <div className="flex items-center justify-between pb-2">
-              <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                <TerminalIcon className="w-4 h-4" />
-                Console Output
-              </div>
+          <div className="relative rounded-md border border-border/55 bg-card/85 overflow-hidden shadow-lg">
+            <div aria-hidden className="absolute top-1 left-1 w-2.5 h-2.5 border-l-2 border-t-2 border-primary/45 pointer-events-none z-10" />
+            <div aria-hidden className="absolute top-1 right-1 w-2.5 h-2.5 border-r-2 border-t-2 border-primary/45 pointer-events-none z-10" />
+            <div aria-hidden className="absolute bottom-1 left-1 w-2.5 h-2.5 border-l-2 border-b-2 border-primary/45 pointer-events-none z-10" />
+            <div aria-hidden className="absolute bottom-1 right-1 w-2.5 h-2.5 border-r-2 border-b-2 border-primary/45 pointer-events-none z-10" />
+            {/* header strip */}
+            <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-border/50 bg-muted/30 font-mono text-[9px] uppercase tracking-[0.24em] select-none">
+              <span className="flex items-center gap-1.5 text-primary/65">
+                <span>rcon output</span>
+                <span className="text-muted-foreground/40 normal-case tracking-normal">·</span>
+                <span className="text-muted-foreground/80 normal-case tracking-normal tabular-nums">{liveLog.length} entries</span>
+              </span>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="sm" onClick={clearLog} disabled={liveLog.length === 0}>
-                    <Trash2 className="w-4 h-4 mr-2" />
-                    Clear
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 -my-1 font-mono text-[10px] uppercase tracking-[0.16em]"
+                    onClick={clearLog}
+                    disabled={liveLog.length === 0}
+                  >
+                    <Trash2 className="w-3 h-3 mr-1" />
+                    clear
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>Clear the visible output (does not delete history)</TooltipContent>
@@ -744,7 +801,7 @@ export default function Console() {
               role="log"
               aria-live="polite"
               aria-label="RCON command output"
-              className="h-[18rem] min-h-[220px] sm:h-[22rem] lg:h-[26rem] overflow-auto rounded-lg border border-border/30 bg-black/40 p-3 terminal-output"
+              className="h-[18rem] min-h-[220px] sm:h-[22rem] lg:h-[26rem] overflow-auto bg-black/60 p-3 terminal-output"
             >
               {liveLog.length === 0 ? (
                 <EmptyState compact type="noMessages" title="No commands yet" description="Run an RCON command to see the response here." />
@@ -752,13 +809,13 @@ export default function Console() {
                 liveLog.map((entry, idx) => (
                   <div key={(entry as RconResponse & { _id?: number })._id ?? `${entry.timestamp}-${idx}`} className="mb-3 font-mono text-sm">
                     <div className="flex items-center gap-2">
-                      <span className="text-primary">{'>'}</span>
+                      <span className="text-primary">$</span>
                       <span className="text-foreground/90">{entry.command}</span>
-                      <span className="text-muted-foreground text-xs ml-auto">
+                      <span className="text-muted-foreground/60 text-[10px] ml-auto tabular-nums font-mono">
                         {new Date(entry.timestamp).toLocaleTimeString()}
                       </span>
                     </div>
-                    <div className={cn('ml-4 text-xs', entry.success ? 'text-foreground/85' : 'text-destructive')}>
+                    <div className={cn('ml-4 mt-0.5 text-xs border-l-2 pl-2', entry.success ? 'border-primary/30 text-foreground/85' : 'border-destructive/50 text-destructive')}>
                       {entry.response.split('\n').map((line, i) => (
                         <div key={`line-${i}`}>{line || '\u00A0'}</div>
                       ))}
@@ -767,72 +824,74 @@ export default function Console() {
                 ))
               )}
             </div>
-
-            {/* Quick Commands (close to the input where they'll be used) */}
-            <div className="flex flex-wrap items-center gap-1.5 mt-3">
-              <span className="text-xs text-muted-foreground font-medium mr-1">Quick:</span>
-              {quickCommands.map((qc) => (
-                <Button
-                  key={qc.command}
-                  variant="outline"
-                  size="sm"
-                  className="h-7 text-xs"
-                  onClick={() => {
-                    setCommand(qc.command)
-                    inputRef.current?.focus()
-                  }}
-                  disabled={rconConnected === false}
-                >
-                  {qc.label}
-                </Button>
-              ))}
-            </div>
-
-            {/* Command Input */}
-            <div className="flex gap-2 mt-2">
-              <div className="flex-1 relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-primary" aria-hidden="true">{'>'}</span>
-                <Input
-                  ref={inputRef}
-                  value={command}
-                  onChange={(e) => setCommand(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder="Type an RCON command..."
-                  className="pl-8 font-mono"
-                  disabled={loading}
-                  maxLength={2000}
-                  aria-label="RCON command input"
-                />
-              </div>
-              <Button
-                onClick={executeCommand}
-                disabled={loading || !command.trim()}
-                aria-label="Execute command"
-              >
-                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground mt-2">
-              Press Enter to run. Use ↑ and ↓ to reuse earlier commands.
-            </p>
           </div>
 
+          {/* Quick Commands */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="font-mono text-[9px] uppercase tracking-[0.24em] text-primary/60 mr-1">quick</span>
+            {quickCommands.map((qc) => (
+              <Button
+                key={qc.command}
+                variant="outline"
+                size="sm"
+                className="h-7 px-2 font-mono text-[10px] uppercase tracking-[0.16em] border-border/55 hover:border-primary/55"
+                onClick={() => {
+                  setCommand(qc.command)
+                  inputRef.current?.focus()
+                }}
+                disabled={rconConnected === false}
+              >
+                {qc.label}
+              </Button>
+            ))}
+          </div>
+
+          {/* Command Input */}
+          <div className="flex gap-2">
+            <div className="flex-1 relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 font-mono text-[11px] uppercase tracking-[0.18em] text-primary/70 pointer-events-none select-none" aria-hidden="true">
+                rcon $
+              </span>
+              <Input
+                ref={inputRef}
+                value={command}
+                onChange={(e) => setCommand(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="type a command…"
+                className="pl-[5.5rem] font-mono bg-card/70 border-border/55 focus-visible:border-primary/60"
+                disabled={loading}
+                maxLength={2000}
+                aria-label="RCON command input"
+              />
+            </div>
+            <Button
+              onClick={executeCommand}
+              disabled={loading || !command.trim()}
+              aria-label="Execute command"
+              className="font-mono text-[11px] uppercase tracking-[0.18em]"
+            >
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Send className="w-3.5 h-3.5 mr-1.5" />run</>}
+            </Button>
+          </div>
+          <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground/60">
+            // enter · run · ↑↓ history
+          </p>
+
           {/* Broadcast (collapsible) */}
-          <div className="rounded-lg border border-border/40">
+          <div className="rounded-md border border-border/55 bg-card/70 backdrop-blur-sm overflow-hidden">
             <button
               type="button"
               onClick={() => setShowBroadcast(v => !v)}
               aria-expanded={showBroadcast}
-              className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium hover:bg-muted/30 rounded-lg transition-colors"
+              className="flex w-full items-center justify-between gap-2 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.22em] hover:bg-muted/40 transition-colors"
             >
-              <span className="flex items-center gap-2">
-                <Megaphone className="w-4 h-4" />
-                Broadcast Message
-                <span className="text-xs text-muted-foreground font-normal ml-1">
-                  Send a message to everyone online
-                </span>
+              <span className="flex items-center gap-1.5 text-primary/70">
+                <Megaphone className="w-3 h-3" />
+                <span>broadcast</span>
+                <span className="text-muted-foreground/40 normal-case tracking-normal">·</span>
+                <span className="text-muted-foreground/70 normal-case tracking-normal">message all online</span>
               </span>
-              <ChevronDown className={cn('w-4 h-4 transition-transform', showBroadcast && 'rotate-180')} />
+              <ChevronDown className={cn('w-3.5 h-3.5 text-muted-foreground transition-transform', showBroadcast && 'rotate-180')} />
             </button>
             {showBroadcast && (
               <div className="border-t border-border/40 p-4 space-y-3">
@@ -903,23 +962,24 @@ export default function Console() {
           </div>
 
           {/* Command History (collapsible) */}
-          <div className="rounded-lg border border-border/40">
+          <div className="rounded-md border border-border/55 bg-card/70 backdrop-blur-sm overflow-hidden">
             <button
               type="button"
               onClick={() => setShowHistory(v => !v)}
               aria-expanded={showHistory}
-              className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium hover:bg-muted/30 rounded-lg transition-colors"
+              className="flex w-full items-center justify-between gap-2 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.22em] hover:bg-muted/40 transition-colors"
             >
-              <span className="flex items-center gap-2">
-                <FileText className="w-4 h-4" />
-                Command History
+              <span className="flex items-center gap-1.5 text-primary/70">
+                <FileText className="w-3 h-3" />
+                <span>history</span>
                 {history.length > 0 && (
-                  <span className="text-xs text-muted-foreground font-normal ml-1">
-                    {history.length} entr{history.length === 1 ? 'y' : 'ies'}
-                  </span>
+                  <>
+                    <span className="text-muted-foreground/40 normal-case tracking-normal">·</span>
+                    <span className="text-muted-foreground/70 normal-case tracking-normal tabular-nums">{history.length} {history.length === 1 ? 'entry' : 'entries'}</span>
+                  </>
                 )}
               </span>
-              <ChevronDown className={cn('w-4 h-4 transition-transform', showHistory && 'rotate-180')} />
+              <ChevronDown className={cn('w-3.5 h-3.5 text-muted-foreground transition-transform', showHistory && 'rotate-180')} />
             </button>
             {showHistory && (
               <div className="border-t border-border/40 p-3 space-y-2">

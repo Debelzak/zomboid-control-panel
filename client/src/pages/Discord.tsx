@@ -938,13 +938,23 @@ export default function Discord() {
         icon={<MessageSquare className="w-5 h-5" />}
         actions={
           <div className="flex items-center gap-2">
-            <Badge variant={status?.running ? 'default' : 'secondary'}>
+            <div
+              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide ${
+                status?.running
+                  ? 'border-primary/40 bg-primary/[0.08] text-primary'
+                  : 'border-border/55 bg-muted/40 text-muted-foreground'
+              }`}
+            >
               {status?.running ? (
-                <><CheckCircle2 className="w-3 h-3 mr-1" /> Running</>
+                <span className="relative inline-flex w-2 h-2" aria-hidden="true">
+                  <span className="absolute inset-0 rounded-full bg-primary/40 animate-ping motion-reduce:hidden" />
+                  <span className="relative w-2 h-2 rounded-full bg-primary" />
+                </span>
               ) : (
-                <><AlertCircle className="w-3 h-3 mr-1" /> Stopped</>
+                <span className="w-2 h-2 rounded-full border border-muted-foreground/50" aria-hidden="true" />
               )}
-            </Badge>
+              {status?.running ? 'Running' : 'Stopped'}
+            </div>
             <Button variant="outline" size="icon" onClick={loadData} aria-label="Refresh status" className="h-10 w-10">
               <RefreshCw className="w-4 h-4" />
             </Button>
@@ -957,7 +967,17 @@ export default function Discord() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Bot Status */}
-        <Card>
+        <Card className="relative overflow-hidden">
+          <div
+            className={`absolute top-0 left-0 right-0 h-[2px] ${
+              status?.running
+                ? 'bg-gradient-to-r from-primary via-primary/80 to-primary/30'
+                : status?.error
+                ? 'bg-gradient-to-r from-destructive via-destructive/80 to-destructive/30'
+                : 'bg-gradient-to-r from-muted-foreground/40 via-muted-foreground/20 to-transparent'
+            }`}
+            aria-hidden="true"
+          />
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Bot className="w-5 h-5" />
@@ -968,7 +988,13 @@ export default function Discord() {
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div className={`rounded-lg border px-4 py-3 ${status?.running ? 'border-primary/30 bg-primary/5' : 'border-border/60 bg-muted/40'}`}>
                 <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Runtime</p>
-                <p className={`mt-1 text-lg font-semibold ${status?.running ? 'text-primary' : ''}`}>
+                <p className={`mt-1 flex items-center gap-2 text-lg font-semibold ${status?.running ? 'text-primary' : ''}`}>
+                  {status?.running && (
+                    <span className="relative inline-flex w-2 h-2" aria-hidden="true">
+                      <span className="absolute inset-0 rounded-full bg-primary/40 animate-ping motion-reduce:hidden" />
+                      <span className="relative w-2 h-2 rounded-full bg-primary" />
+                    </span>
+                  )}
                   {status?.running ? 'Online' : 'Offline'}
                 </p>
               </div>
@@ -976,9 +1002,9 @@ export default function Discord() {
                 <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Bot User</p>
                 <p className="mt-1 truncate text-lg font-semibold">{status?.username || 'Waiting for login'}</p>
               </div>
-              <div className="min-w-0 rounded-lg border border-border/60 bg-muted/30 px-4 py-3">
+              <div className={`min-w-0 rounded-lg border px-4 py-3 ${config?.channelId ? 'border-border/60 bg-muted/30' : 'border-warning/30 bg-warning/[0.06]'}`}>
                 <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Channel</p>
-                <p className="mt-1 truncate text-lg font-semibold">{config?.channelId ? 'Linked' : 'Not set'}</p>
+                <p className={`mt-1 truncate text-lg font-semibold ${config?.channelId ? '' : 'text-warning'}`}>{config?.channelId ? 'Linked' : 'Not set'}</p>
               </div>
             </div>
             <p className="text-sm text-muted-foreground">Notifications, slash commands, and the chat bridge all depend on the bot staying connected to the configured channel.</p>

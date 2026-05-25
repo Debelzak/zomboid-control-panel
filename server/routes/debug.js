@@ -2,6 +2,7 @@ import express from 'express';
 import os from 'os';
 import fs from 'fs';
 import path from 'path';
+import { execFile } from 'child_process';
 import { fileURLToPath } from 'url';
 import archiver from 'archiver';
 import { createLogger } from '../utils/logger.js';
@@ -995,6 +996,292 @@ async function pathWritableAsync(p) {
   try { await fs.promises.access(p, fs.constants.W_OK); return true; } catch { return false; }
 }
 
+// Tail-read `server-console.txt` and look for failed Workshop downloads.
+// PZ's GameServerWorkshopItems.Install() crashes with a NullPointerException
+// the moment a subscribed mod cannot be installed (delisted, private, region
+// blocked, etc). We detect both the failure lines and whether the install
+// step actually crashed.
+//
+// Returns null if no log; otherwise { ids, results, crashed, logMtime }.
+async function scanWorkshopFailures(zPath) {
+  if (!zPath) return null;
+  const logPath = path.join(zPath, 'server-console.txt');
+  let stat;
+  try { stat = await fs.promises.stat(logPath); } catch { return null; }
+  if (!stat.isFile() || stat.size === 0) return null;
+
+  // Only the tail matters — the relevant lines come from the most recent
+  // server start. Cap at 256 KB to keep this cheap on huge log files.
+  const MAX_TAIL = 256 * 1024;
+  const start = Math.max(0, stat.size - MAX_TAIL);
+  const length = stat.size - start;
+  let text = '';
+  let fd;
+  try {
+    fd = await fs.promises.open(logPath, 'r');
+    const buf = Buffer.alloc(length);
+    await fd.read(buf, 0, length, start);
+    text = buf.toString('utf-8');
+  } catch {
+    return null;
+  } finally {
+    if (fd) { try { await fd.close(); } catch { /* ignore */ } }
+  }
+
+  // Pattern: `Workshop: onItemNotDownloaded itemID=<ID> result=<N>`
+  // result=9 is the common "item unavailable" / delisted case, but any
+  // non-zero result lands here — we surface them all.
+  const failedIds = [];
+  const resultByFailedId = {};
+  const re = /Workshop:\s+onItemNotDownloaded\s+itemID=(\d+)\s+result=(\d+)/g;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    if (!resultByFailedId[m[1]]) {
+      failedIds.push(m[1]);
+      resultByFailedId[m[1]] = parseInt(m[2], 10);
+    }
+  }
+
+  // Crash chain: `GameServerWorkshopItems.Install` appears in the stack
+  // when the install step actually aborted the server boot.
+  const crashed = /GameServerWorkshopItems\.Install/.test(text)
+    || /Workshop:\s+item state DownloadPending\s+->\s+Fail/.test(text);
+
+  return {
+    ids: failedIds,
+    results: resultByFailedId,
+    crashed,
+    logPath,
+    logMtime: stat.mtime,
+  };
+}
+
+// Generic crash scanner. Tail server-console.txt and report the most
+// recent fatal symptom (OOM, main-thread exception, FATAL log line).
+// Returns null when nothing notable is in the tail.
+async function scanRecentCrash(zPath) {
+  if (!zPath) return null;
+  const logPath = path.join(zPath, 'server-console.txt');
+  let stat;
+  try { stat = await fs.promises.stat(logPath); } catch { return null; }
+  if (!stat.isFile() || stat.size === 0) return null;
+
+  const MAX_TAIL = 256 * 1024;
+  const start = Math.max(0, stat.size - MAX_TAIL);
+  const length = stat.size - start;
+  let text = '';
+  let fd;
+  try {
+    fd = await fs.promises.open(logPath, 'r');
+    const buf = Buffer.alloc(length);
+    await fd.read(buf, 0, length, start);
+    text = buf.toString('utf-8');
+  } catch { return null; }
+  finally { if (fd) { try { await fd.close(); } catch { /* ignore */ } } }
+
+  // Search in priority order — OOM is more actionable than a generic
+  // "Exception in thread main". Each pattern keeps a short matched line
+  // so the UI can show the smoking-gun text without dumping the stack.
+  const patterns = [
+    { kind: 'oom', label: 'Out of memory', re: /java\.lang\.OutOfMemoryError[^\n]*/ },
+    { kind: 'workshop', label: 'Workshop install crash', re: /GameServerWorkshopItems\.Install[^\n]*/ },
+    { kind: 'mainException', label: 'Uncaught main-thread exception', re: /Exception in thread "main"[^\n]*/ },
+    { kind: 'fatal', label: 'FATAL log entry', re: /(?:^|\n)[^\n]*\bFATAL\b[^\n]*/ },
+  ];
+  for (const p of patterns) {
+    const m = text.match(p.re);
+    if (m) return { kind: p.kind, label: p.label, line: m[0].trim().slice(0, 240), logMtime: stat.mtime };
+  }
+  return null;
+}
+
+// Parse a PZ dedicated-server .ini. PZ uses `key=value` lines and
+// semicolon-separated lists for Mods / WorkshopItems / Map. Returns
+// null when the file can't be read.
+async function parseServerIni(iniPath) {
+  let text;
+  try { text = await fs.promises.readFile(iniPath, 'utf-8'); } catch { return null; }
+  const out = {};
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || line.startsWith('#') || line.startsWith(';')) continue;
+    const eq = line.indexOf('=');
+    if (eq <= 0) continue;
+    out[line.slice(0, eq).trim()] = line.slice(eq + 1);
+  }
+  const splitSemi = (v) => (v || '').split(';').map(s => s.trim()).filter(Boolean);
+  return {
+    raw: out,
+    Mods: splitSemi(out.Mods),
+    WorkshopItems: splitSemi(out.WorkshopItems),
+    Map: splitSemi(out.Map),
+    RCONPort: parseInt(out.RCONPort, 10) || null,
+    RCONPassword: out.RCONPassword || '',
+    DefaultPort: parseInt(out.DefaultPort, 10) || null,
+    PublicName: out.PublicName || ''
+  };
+}
+
+// Walk steamapps/workshop/content/108600/<id>/mods/<modName> and return
+// Map<workshopId, { mods: string[], maps: string[] }>. Skips items that
+// haven't finished downloading (no mod.info inside).
+async function scanWorkshopMods(installPath) {
+  const out = new Map();
+  if (!installPath) return out;
+  const root = path.join(installPath, 'steamapps', 'workshop', 'content', '108600');
+  const ids = await safeReaddir(root);
+  if (!ids) return out;
+  await Promise.all(ids.map(async (id) => {
+    if (!/^\d+$/.test(id)) return;
+    const modsRoot = path.join(root, id, 'mods');
+    const modNames = await safeReaddir(modsRoot);
+    if (!modNames) return;
+    const entry = { mods: [], maps: [] };
+    await Promise.all(modNames.map(async (name) => {
+      const mi = await safeStat(path.join(modsRoot, name, 'mod.info'));
+      if (mi && mi.isFile()) entry.mods.push(name);
+      const mapDir = path.join(modsRoot, name, 'media', 'maps');
+      const mapNames = await safeReaddir(mapDir);
+      if (mapNames) for (const m of mapNames) entry.maps.push(m);
+    }));
+    if (entry.mods.length || entry.maps.length) out.set(id, entry);
+  }));
+  return out;
+}
+
+// Local (non-Workshop) mods live under <zPath>/mods/<name>/mod.info.
+// Returns { mods: Set<string>, maps: Set<string> }.
+async function scanLocalMods(zPath) {
+  const mods = new Set();
+  const maps = new Set();
+  if (!zPath) return { mods, maps };
+  for (const dir of ['mods', 'Mods']) {
+    const root = path.join(zPath, dir);
+    const names = await safeReaddir(root);
+    if (!names) continue;
+    await Promise.all(names.map(async (name) => {
+      const mi = await safeStat(path.join(root, name, 'mod.info'));
+      if (mi && mi.isFile()) mods.add(name);
+      const mapDir = path.join(root, name, 'media', 'maps');
+      const mapNames = await safeReaddir(mapDir);
+      if (mapNames) for (const m of mapNames) maps.add(m);
+    }));
+  }
+  return { mods, maps };
+}
+
+// Recursively scan a save folder. Returns total bytes, .bin chunk count,
+// and any stale lock files (>1h old, which prevent boot). Bounded by
+// MAX_FILES to keep huge saves from making diagnostics hang.
+async function scanSaveStats(saveDir) {
+  if (!saveDir) return null;
+  const exists = await safePathExists(saveDir);
+  if (!exists) return null;
+  const MAX_FILES = 50000;
+  const staleAfterMs = 60 * 60 * 1000;
+  const now = Date.now();
+  let totalBytes = 0;
+  let chunks = 0;
+  let staleLocks = [];
+  let visited = 0;
+  let truncated = false;
+
+  const walk = async (dir) => {
+    if (visited >= MAX_FILES) { truncated = true; return; }
+    const names = await safeReaddir(dir);
+    if (!names) return;
+    for (const name of names) {
+      if (++visited > MAX_FILES) { truncated = true; return; }
+      const full = path.join(dir, name);
+      const st = await safeStat(full);
+      if (!st) continue;
+      if (st.isDirectory()) {
+        await walk(full);
+      } else if (st.isFile()) {
+        totalBytes += st.size;
+        if (name.endsWith('.bin')) chunks++;
+        if ((name.endsWith('.lock') || name === '.lock') && (now - st.mtimeMs) > staleAfterMs) {
+          staleLocks.push({ path: full, ageMs: now - st.mtimeMs });
+        }
+      }
+    }
+  };
+  await walk(saveDir);
+  return { totalBytes, chunks, staleLocks, truncated };
+}
+
+// Execute the bundled JRE with `-version`. PZ prints to stderr. Returns
+// { ok, version, error } with a hard timeout so we never block the
+// diagnostics request on a wedged Java.
+function probeJre(javaPath) {
+  return new Promise((resolve) => {
+    if (!javaPath) return resolve({ ok: false, error: 'no path' });
+    let done = false;
+    let child;
+    const finish = (result) => {
+      if (done) return;
+      done = true;
+      try { child?.kill?.('SIGKILL'); } catch { /* ignore */ }
+      resolve(result);
+    };
+    const timer = setTimeout(() => finish({ ok: false, error: 'timeout' }), 4000);
+    try {
+      child = execFile(javaPath, ['-version'], { timeout: 4000, windowsHide: true }, (err, stdout, stderr) => {
+        clearTimeout(timer);
+        const text = (stderr || stdout || '').toString();
+        const first = text.split(/\r?\n/).find(Boolean) || '';
+        if (err) {
+          return finish({
+            ok: false,
+            error: err.code === 'ENOENT' ? 'binary missing' : (err.message || 'exec failed'),
+            output: first || null
+          });
+        }
+        finish({ ok: true, version: first });
+      });
+    } catch (e) {
+      clearTimeout(timer);
+      finish({ ok: false, error: e?.message || 'exec failed' });
+    }
+  });
+}
+
+// Single HTTP probe to Steam Web API. Used for both reachability and
+// host-clock skew (we read the Date response header).
+async function probeSteamWorkshopApi() {
+  const t0 = Date.now();
+  try {
+    if (typeof fetch !== 'function' || typeof AbortSignal === 'undefined' || typeof AbortSignal.timeout !== 'function') {
+      return { reachable: false, error: 'fetch unavailable', latencyMs: 0 };
+    }
+    const ctrl = AbortSignal.timeout(5000);
+    const resp = await fetch('https://api.steampowered.com/ISteamWebAPIUtil/GetServerInfo/v0001/', {
+      method: 'GET',
+      signal: ctrl
+    });
+    const dateHeader = resp.headers.get('date');
+    let serverTime = null;
+    if (dateHeader) {
+      const parsed = Date.parse(dateHeader);
+      if (Number.isFinite(parsed)) serverTime = parsed;
+    }
+    return {
+      reachable: resp.ok,
+      statusCode: resp.status,
+      latencyMs: Date.now() - t0,
+      serverTime,
+      localTime: Date.now()
+    };
+  } catch (e) {
+    return {
+      reachable: false,
+      statusCode: null,
+      latencyMs: Date.now() - t0,
+      error: e?.name === 'TimeoutError' ? 'timeout' : (e?.message || 'unknown')
+    };
+  }
+}
+
 // Wrap a promise with a timeout. Used to keep slow / unreachable mounts
 // (broken NFS, dead SMB share, suspended VM) from hanging the entire
 // diagnostics request. Returns `fallback` on timeout instead of throwing.
@@ -1355,6 +1642,229 @@ router.get('/diagnostics', async (req, res) => {
             { category: 'server', hint: "Copy pz-mod/PanelBridge into the server's media/lua/server folder" }));
         }
       }
+
+      // Workshop install crash / failed-mod detector.
+      // PZ aborts on boot with a NullPointerException if any subscribed
+      // Workshop mod fails to download (delisted, private, region locked).
+      // We tail server-console.txt for the smoking-gun lines and flag the
+      // offending IDs so the user can remove them from the .ini.
+      let workshopCrashed = false;
+      if (zPath) {
+        const wf = await withTimeout(scanWorkshopFailures(zPath), FS_TIMEOUT_MS, null);
+        if (wf && wf.ids.length > 0) {
+          const shown = wf.ids.slice(0, 5).join(', ');
+          const idList = wf.ids.length > 5 ? `${shown}, +${wf.ids.length - 5} more` : shown;
+          const ageMin = Math.max(0, Math.round((Date.now() - wf.logMtime.getTime()) / 60000));
+          const ageLabel = ageMin < 60 ? `${ageMin}m ago` : ageMin < 1440 ? `${Math.round(ageMin / 60)}h ago` : `${Math.round(ageMin / 1440)}d ago`;
+          const plural = wf.ids.length > 1 ? 's' : '';
+          const meta = { failedIds: wf.ids, results: wf.results, crashed: wf.crashed, logMtime: wf.logMtime };
+          if (wf.crashed) {
+            workshopCrashed = true;
+            checks.push(diagFail('mods.workshopCrash', 'Workshop mod download failed — server boot aborted',
+              `${wf.ids.length} Workshop item${plural} could not be downloaded and the server crashed during install (last log update ${ageLabel}). Failing ID${plural}: ${idList}. The mod${plural} ${plural ? 'are' : 'is'} most likely delisted, made private, or region-restricted.`,
+              { category: 'server', hint: `Open Server Config and remove ${wf.ids.length > 1 ? 'these IDs' : 'this ID'} from both WorkshopItems= and Mods=, then restart.`, meta }));
+          } else {
+            checks.push(diagWarn('mods.workshopCrash', 'Workshop download warnings',
+              `${wf.ids.length} Workshop item${plural} recently failed to download but the server did not crash (last log update ${ageLabel}). ID${plural}: ${idList}.`,
+              { category: 'server', hint: 'Verify each ID is still public on the Steam Workshop, or remove it from the server config.', meta }));
+          }
+        }
+      }
+
+      // Generic recent-crash detector. Catches OOMs, main-thread exceptions,
+      // and FATAL log entries that aren't the Workshop install crash (which
+      // we already flagged above with richer detail).
+      if (zPath) {
+        const rc = await withTimeout(scanRecentCrash(zPath), FS_TIMEOUT_MS, null);
+        if (rc && !(workshopCrashed && rc.kind === 'workshop')) {
+          const ageMin = Math.max(0, Math.round((Date.now() - rc.logMtime.getTime()) / 60000));
+          const ageLabel = ageMin < 60 ? `${ageMin}m ago` : ageMin < 1440 ? `${Math.round(ageMin / 60)}h ago` : `${Math.round(ageMin / 1440)}d ago`;
+          const hint = rc.kind === 'oom'
+            ? 'Raise the server\'s Java heap (-Xmx in the start script) or reduce mod count.'
+            : 'Open the Logs page and read the stack trace around the timestamp.';
+          checks.push(diagFail('server.recentCrash', `Recent crash: ${rc.label}`,
+            `Found in server-console.txt (last update ${ageLabel}): ${rc.line}`,
+            { category: 'server', hint, meta: { kind: rc.kind, logMtime: rc.logMtime } }));
+        }
+      }
+
+      // INI-driven checks (mods/workshop consistency, map validity, drift,
+      // sandbox vars). Parsed once and reused.
+      const iniPathForActive = (zPath && activeServer.serverName)
+        ? path.join(zPath, 'Server', `${activeServer.serverName}.ini`)
+        : null;
+      const ini = iniPathForActive ? await withTimeout(parseServerIni(iniPathForActive), FS_TIMEOUT_MS, null) : null;
+
+      if (ini && installPath) {
+        // Resolve every Mods= entry to either a Workshop mod folder or a
+        // local mod folder. Anything unresolved means "this mod will not
+        // load" — silent and one of the most painful PZ-server gotchas.
+        const [wsScan, localScan] = await Promise.all([
+          withTimeout(scanWorkshopMods(installPath), FS_TIMEOUT_MS, new Map()),
+          withTimeout(scanLocalMods(zPath), FS_TIMEOUT_MS, { mods: new Set(), maps: new Set() })
+        ]);
+        const wsModNames = new Set();
+        const wsMapNames = new Set();
+        for (const v of wsScan.values()) {
+          for (const m of v.mods) wsModNames.add(m);
+          for (const m of v.maps) wsMapNames.add(m);
+        }
+
+        const unresolvedMods = ini.Mods.filter(m => !wsModNames.has(m) && !localScan.mods.has(m));
+        if (unresolvedMods.length === 0 && ini.Mods.length > 0) {
+          checks.push(diagOk('mods.resolved', 'Mods= entries all resolve',
+            `${ini.Mods.length} mod${ini.Mods.length === 1 ? '' : 's'} listed, all match an installed Workshop or local mod folder.`,
+            { category: 'server' }));
+        } else if (unresolvedMods.length > 0) {
+          const shown = unresolvedMods.slice(0, 5).join(', ');
+          const list = unresolvedMods.length > 5 ? `${shown}, +${unresolvedMods.length - 5} more` : shown;
+          checks.push(diagFail('mods.resolved', 'Mods= entries do not resolve',
+            `${unresolvedMods.length} of ${ini.Mods.length} Mods= entries don't match any installed mod folder: ${list}.`,
+            { category: 'server', hint: 'Usually a typo, missing WorkshopItems= ID, or the mod hasn\'t finished downloading. Fix in Server Config.', meta: { unresolvedMods } }));
+        }
+
+        // WorkshopItems= entries that don't appear in Mods= are subscribed
+        // but disabled — usually intentional, sometimes a bug. Warn quietly.
+        const modSet = new Set(ini.Mods);
+        const orphanWorkshop = [];
+        for (const [id, v] of wsScan.entries()) {
+          if (!ini.WorkshopItems.includes(id)) continue; // only check subscribed ones
+          const provides = [...v.mods, ...v.maps];
+          if (provides.length === 0) continue;
+          if (!provides.some(name => modSet.has(name))) orphanWorkshop.push(id);
+        }
+        if (orphanWorkshop.length > 0) {
+          const shown = orphanWorkshop.slice(0, 5).join(', ');
+          const list = orphanWorkshop.length > 5 ? `${shown}, +${orphanWorkshop.length - 5} more` : shown;
+          checks.push(diagWarn('mods.orphanWorkshop', 'Subscribed Workshop items not enabled',
+            `${orphanWorkshop.length} Workshop item${orphanWorkshop.length === 1 ? ' is' : 's are'} listed in WorkshopItems= but their mod name${orphanWorkshop.length === 1 ? ' is' : 's are'} not in Mods=. They will download but not load. ID${orphanWorkshop.length === 1 ? '' : 's'}: ${list}.`,
+            { category: 'server', hint: 'Add the mod folder name(s) to Mods=, or remove the ID from WorkshopItems= to save disk space.', meta: { orphanWorkshop } }));
+        }
+
+        // Duplicate Mods= / WorkshopItems= entries (cosmetic but confusing).
+        const dupMods = ini.Mods.filter((m, i, a) => a.indexOf(m) !== i);
+        const dupWs = ini.WorkshopItems.filter((m, i, a) => a.indexOf(m) !== i);
+        if (dupMods.length || dupWs.length) {
+          const parts = [];
+          if (dupMods.length) parts.push(`${dupMods.length} duplicate Mods= entr${dupMods.length === 1 ? 'y' : 'ies'}`);
+          if (dupWs.length) parts.push(`${dupWs.length} duplicate WorkshopItems= entr${dupWs.length === 1 ? 'y' : 'ies'}`);
+          checks.push(diagWarn('mods.duplicates', 'Duplicate mod entries',
+            `${parts.join(', ')} in the server config.`,
+            { category: 'server', hint: 'Tidy up Server Config — duplicates can confuse mod-load order.', meta: { dupMods: [...new Set(dupMods)], dupWs: [...new Set(dupWs)] } }));
+        }
+
+        // Map= validity. `Muldraugh, KY` is the built-in base map; everything
+        // else has to come from a mod's media/maps/ folder.
+        const BUILTIN_MAPS = new Set(['Muldraugh, KY']);
+        const mapNamesKnown = new Set([...BUILTIN_MAPS, ...wsMapNames, ...localScan.maps]);
+        const missingMaps = ini.Map.filter(m => !mapNamesKnown.has(m));
+        if (ini.Map.length > 0 && missingMaps.length === 0) {
+          checks.push(diagOk('mods.maps', 'Map= entries resolve',
+            `${ini.Map.length} map layer${ini.Map.length === 1 ? '' : 's'} configured.`,
+            { category: 'server' }));
+        } else if (missingMaps.length > 0) {
+          checks.push(diagFail('mods.maps', 'Map= entries do not resolve',
+            `${missingMaps.length} map name${missingMaps.length === 1 ? '' : 's'} in Map= cannot be found in any installed mod: ${missingMaps.join(', ')}.`,
+            { category: 'server', hint: 'Players will spawn into the void. Add the matching map mod or fix the spelling in Server Config.', meta: { missingMaps } }));
+        }
+      }
+
+      // Config drift — panel settings vs server.ini ground truth.
+      if (ini) {
+        const drift = [];
+        const panelRconPort = parseInt(activeServer.rconPort, 10);
+        if (Number.isFinite(panelRconPort) && ini.RCONPort && panelRconPort !== ini.RCONPort) {
+          drift.push(`RCON port: panel ${panelRconPort} vs ini ${ini.RCONPort}`);
+        }
+        if (activeServer.rconPassword && ini.RCONPassword && activeServer.rconPassword !== ini.RCONPassword) {
+          drift.push('RCON password differs from server.ini');
+        }
+        const panelGamePort = parseInt(activeServer.gamePort || activeServer.port, 10);
+        if (Number.isFinite(panelGamePort) && ini.DefaultPort && panelGamePort !== ini.DefaultPort) {
+          drift.push(`Game port: panel ${panelGamePort} vs ini DefaultPort ${ini.DefaultPort}`);
+        }
+        if (drift.length > 0) {
+          checks.push(diagFail('server.configDrift', 'Panel config differs from server.ini',
+            drift.join('; ') + '.',
+            { category: 'server', hint: 'Edit Servers → Edit to match server.ini, or update server.ini via Server Config.', meta: { drift } }));
+        } else {
+          checks.push(diagOk('server.configDrift', 'Panel config matches server.ini',
+            'RCON port, password, and game port agree with server.ini.',
+            { category: 'server' }));
+        }
+      }
+
+      // Sandbox vars file — admins edit this to set server-wide defaults.
+      // Server boots without it (uses built-in defaults), which silently
+      // ignores any tuning the user thought they applied.
+      if (zPath && activeServer.serverName) {
+        const sbxPath = path.join(zPath, 'Server', `${activeServer.serverName}_SandboxVars.lua`);
+        if (await safePathExists(sbxPath)) {
+          checks.push(diagOk('server.sandboxVars', 'SandboxVars present',
+            `${activeServer.serverName}_SandboxVars.lua is in place.`,
+            { category: 'server' }));
+        } else {
+          checks.push(diagWarn('server.sandboxVars', 'SandboxVars missing',
+            `${activeServer.serverName}_SandboxVars.lua not found. Server will boot with built-in defaults; any custom sandbox tuning will be ignored.`,
+            { category: 'server', hint: 'Open Server Config → Sandbox to generate one, or copy from another server.' }));
+        }
+      }
+
+      // Stale .lock files in the save folder — these block PZ from
+      // resuming a save and are a classic "server won't boot, no obvious
+      // error" symptom after a hard crash.
+      if (zPath && activeServer.serverName) {
+        const savesRoot = path.join(zPath, 'Saves');
+        const saveDirCandidates = [path.join(savesRoot, 'Multiplayer', activeServer.serverName)];
+        if (activeServer.savename && activeServer.savename !== activeServer.serverName) {
+          saveDirCandidates.push(path.join(savesRoot, 'Multiplayer', activeServer.savename));
+        }
+        let saveStats = null;
+        let saveDirUsed = null;
+        for (const sp of saveDirCandidates) {
+          const st = await safeStat(sp);
+          if (st && st.isDirectory()) {
+            saveStats = await withTimeout(scanSaveStats(sp), FS_TIMEOUT_MS * 4, null);
+            saveDirUsed = sp;
+            break;
+          }
+        }
+        if (saveStats && saveStats.staleLocks.length > 0) {
+          checks.push(diagFail('server.staleLocks', 'Stale lock files in save folder',
+            `${saveStats.staleLocks.length} .lock file${saveStats.staleLocks.length === 1 ? '' : 's'} older than 1 hour in ${saveDirUsed}. PZ will refuse to load the save until they are removed.`,
+            { category: 'server', hint: 'Stop the server, delete every *.lock file under the save folder, then restart.', meta: { staleLocks: saveStats.staleLocks.slice(0, 10) } }));
+        }
+        // Save-size info is emitted in the Storage section below — we
+        // stash the stats on the response context via a per-request var.
+        req._diagSaveStats = saveStats ? { ...saveStats, saveDirUsed } : null;
+      }
+
+      // Actually run the bundled JRE to make sure it's not a truncated
+      // SteamCMD install. The existing `server.jre` check only verifies
+      // the binary file is present.
+      if (installPath) {
+        const isWin = process.platform === 'win32';
+        const jreCandidates = isWin
+          ? ['jre64/bin/java.exe', 'jre/bin/java.exe']
+          : ['jre64/bin/java', 'jre/bin/java'];
+        let javaBin = null;
+        for (const rel of jreCandidates) {
+          const p = path.join(installPath, ...rel.split('/'));
+          if (await safePathExists(p)) { javaBin = p; break; }
+        }
+        if (javaBin) {
+          const probe = await withTimeout(probeJre(javaBin), 5000, { ok: false, error: 'timeout' });
+          if (probe.ok) {
+            checks.push(diagOk('server.jreWorks', 'Bundled JRE runs',
+              probe.version || 'java -version executed successfully.',
+              { category: 'server' }));
+          } else {
+            checks.push(diagFail('server.jreWorks', 'Bundled JRE failed to run',
+              `java -version did not succeed: ${probe.error || 'unknown'}.${probe.output ? ' Output: ' + probe.output : ''}`,
+              { category: 'server', hint: 'Re-run SteamCMD to reinstall the JRE, or ensure the bundled libraries are present alongside the binary.' }));
+          }
+        }
+      }
     }
     } catch (e) {
       checks.push(diagWarn('server.error', 'Server checks errored',
@@ -1512,6 +2022,30 @@ router.get('/diagnostics', async (req, res) => {
           { category: 'storage' }));
       }
     }
+
+    // Save folder size + chunk count. Computed in the active-server block
+    // and stashed on req for us so we don't walk the tree twice.
+    {
+      const ss = req._diagSaveStats;
+      if (ss) {
+        const sizeGb = ss.totalBytes / 1024 / 1024 / 1024;
+        const summary = `${fmtGB(ss.totalBytes)} across ${ss.chunks.toLocaleString()} chunk${ss.chunks === 1 ? '' : 's'}` + (ss.truncated ? ' (scan truncated)' : '');
+        const meta = { totalBytes: ss.totalBytes, chunks: ss.chunks, truncated: ss.truncated, saveDir: ss.saveDirUsed };
+        if (sizeGb > 30) {
+          checks.push(diagWarn('storage.saveSize', 'Save folder very large',
+            `${summary}. Backups, restores, and chunk cleanups will be slow.`,
+            { category: 'storage', hint: 'Run the Chunk Cleaner to trim unloaded cells, or archive old saves.', meta }));
+        } else if (sizeGb > 10) {
+          checks.push(diagInfo('storage.saveSize', 'Save folder large',
+            `${summary}.`,
+            { category: 'storage', meta }));
+        } else {
+          checks.push(diagOk('storage.saveSize', 'Save folder healthy',
+            `${summary}.`,
+            { category: 'storage', meta }));
+        }
+      }
+    }
     } catch (e) {
       checks.push(diagWarn('storage.error', 'Storage checks errored',
         `Logs/disk checks could not run: ${e?.message || 'unknown'}`,
@@ -1565,7 +2099,42 @@ router.get('/diagnostics', async (req, res) => {
     }
 
     // ─── Updates ───────────────────────────────────────────────────────
+    // Steam Workshop API probe is needed by both update.steamApi and the
+    // host-clock check (we read its Date response header). Compute once.
+    const steamProbe = await withTimeout(probeSteamWorkshopApi(), 6000, { reachable: false, error: 'timeout' });
     try {
+    if (steamProbe.reachable) {
+      checks.push(diagOk('update.steamApi', 'Steam Workshop API reachable',
+        `api.steampowered.com responded in ${steamProbe.latencyMs} ms (HTTP ${steamProbe.statusCode}).`,
+        { category: 'updates' }));
+    } else {
+      checks.push(diagWarn('update.steamApi', 'Steam Workshop API unreachable',
+        `Could not reach api.steampowered.com (${steamProbe.error || `HTTP ${steamProbe.statusCode}`}). Mod-update polling and the Workshop crash detector will both go blind.`,
+        { category: 'updates', hint: 'Check the panel host\'s outbound HTTPS access.' }));
+    }
+
+    // Host-clock skew vs Steam's server-side time. Cron-scheduled tasks
+    // depend on the local clock being correct; mod publish timestamps too.
+    if (steamProbe.serverTime) {
+      const skewMs = steamProbe.localTime - steamProbe.serverTime;
+      const absSkew = Math.abs(skewMs);
+      const direction = skewMs > 0 ? 'ahead' : 'behind';
+      const fmt = absSkew < 60000 ? `${Math.round(absSkew / 1000)}s` : `${Math.round(absSkew / 60000)}m`;
+      if (absSkew >= 5 * 60 * 1000) {
+        checks.push(diagFail('runtime.timeSkew', 'Host clock is wrong',
+          `Panel host clock is ${fmt} ${direction} of Steam time. Scheduled tasks will fire at the wrong wall-clock time and HTTPS handshakes may fail.`,
+          { category: 'runtime', hint: process.platform === 'linux' ? 'Run: sudo timedatectl set-ntp true' : 'Settings → Date & Time → Set time automatically', meta: { skewMs } }));
+      } else if (absSkew >= 30 * 1000) {
+        checks.push(diagWarn('runtime.timeSkew', 'Host clock slightly off',
+          `Panel host clock is ${fmt} ${direction} of Steam time.`,
+          { category: 'runtime', meta: { skewMs } }));
+      } else {
+        checks.push(diagOk('runtime.timeSkew', 'Host clock in sync',
+          `Within ${fmt} of Steam time.`,
+          { category: 'runtime', meta: { skewMs } }));
+      }
+    }
+
     if (panelUpdateChecker?.updateAvailable) {
       const latest = panelUpdateChecker.latestRelease?.tag_name || panelUpdateChecker.latestRelease?.name || 'newer version';
       checks.push(diagInfo('update.panel', 'Panel update available',
@@ -1887,13 +2456,19 @@ router.get('/performance-history', async (req, res) => {
 // Record current performance snapshot (called periodically)
 router.post('/performance-snapshot', async (req, res) => {
   try {
-    const { memoryUsed, memoryTotal, cpuUsage, playerCount, serverRunning } = req.body;
+    const { memoryUsed, memoryTotal, cpuUsage, playerCount, serverRunning } = req.body || {};
+    // Coerce + clamp each metric to a sane range. Unknown / missing values fall back to defaults.
+    const toNum = (v, fallback) => {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : fallback;
+    };
+    const clamp = (n, lo, hi) => Math.min(Math.max(n, lo), hi);
     await recordPerformanceSnapshot({
-      memoryUsed: memoryUsed || process.memoryUsage().heapUsed,
-      memoryTotal: memoryTotal || process.memoryUsage().heapTotal,
-      cpuUsage: cpuUsage || 0,
-      playerCount: playerCount || 0,
-      serverRunning: serverRunning ?? false
+      memoryUsed: clamp(toNum(memoryUsed, process.memoryUsage().heapUsed), 0, Number.MAX_SAFE_INTEGER),
+      memoryTotal: clamp(toNum(memoryTotal, process.memoryUsage().heapTotal), 0, Number.MAX_SAFE_INTEGER),
+      cpuUsage: clamp(toNum(cpuUsage, 0), 0, 100),
+      playerCount: clamp(Math.floor(toNum(playerCount, 0)), 0, 10_000),
+      serverRunning: typeof serverRunning === 'boolean' ? serverRunning : false,
     });
     res.json({ success: true });
   } catch (error) {

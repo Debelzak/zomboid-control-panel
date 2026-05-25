@@ -1688,11 +1688,15 @@ async function start() {
       }
     }
     
-    httpServer.listen(PORT, () => {
-      logSection('Ready');
-      const urls = [
-        { label: 'Local: ', url: `http://localhost:${PORT}` },
-      ];
+    // Retry logic for EADDRINUSE (nodemon restarts can overlap)
+    let listenRetries = 0;
+    const maxListenRetries = 5;
+    const listenWithRetry = () => {
+      httpServer.listen(PORT, () => {
+        logSection('Ready');
+        const urls = [
+          { label: 'Local: ', url: `http://localhost:${PORT}` },
+        ];
       if (httpsServer) {
         urls.push({ label: 'HTTPS: ', url: `https://localhost:${httpsPort}` });
       }
@@ -1774,6 +1778,24 @@ async function start() {
         }
       }
     });
+    };
+
+    httpServer.on('error', (err) => {
+      if (err.code === 'EADDRINUSE' && listenRetries < maxListenRetries) {
+        listenRetries++;
+        const delay = Math.min(1000 * listenRetries, 4000);
+        log.warn(`Port ${PORT} busy, retrying in ${delay}ms (attempt ${listenRetries}/${maxListenRetries})...`);
+        setTimeout(listenWithRetry, delay);
+      } else if (err.code === 'EADDRINUSE') {
+        log.error(`Port ${PORT} is still in use after ${maxListenRetries} retries. Kill the other process or change PORT.`);
+        process.exit(1);
+      } else {
+        log.error(`Server error: ${err.message}`);
+        process.exit(1);
+      }
+    });
+
+    listenWithRetry();
   } catch (error) {
     log.error('Failed to start server:', error);
     process.exit(1);

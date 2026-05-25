@@ -15,27 +15,38 @@ export interface IniSetting {
   fileExtensions?: string[]
 }
 
-export const INI_CATEGORIES = [
-  { id: 'general', label: 'General', icon: 'Settings' },
-  { id: 'network', label: 'Network & Ports', icon: 'Globe' },
-  { id: 'pvp', label: 'PvP & Safety', icon: 'Swords' },
-  { id: 'chat', label: 'Chat & Communication', icon: 'MessageSquare' },
-  { id: 'players', label: 'Players & Accounts', icon: 'Users' },
-  { id: 'safehouse', label: 'Safehouses', icon: 'Home' },
-  { id: 'loot', label: 'Loot & Items', icon: 'Package' },
-  { id: 'mods', label: 'Mods & Workshop', icon: 'Puzzle' },
-  { id: 'steam', label: 'Steam Integration', icon: 'Cloud' },
-  { id: 'voice', label: 'Voice Chat', icon: 'Mic' },
-  { id: 'discord', label: 'Discord', icon: 'MessageCircle' },
-  { id: 'rcon', label: 'RCON', icon: 'Terminal' },
-  { id: 'backups', label: 'Backups', icon: 'Archive' },
-  { id: 'vehicles', label: 'Vehicles', icon: 'Car' },
-  { id: 'anticheat', label: 'Anti-Cheat', icon: 'Shield' },
-  { id: 'moderation', label: 'Moderation', icon: 'Filter' },
-  { id: 'radio', label: 'Radio', icon: 'Radio' },
-  { id: 'war', label: 'Faction War', icon: 'Swords' },
-  { id: 'logging', label: 'Logging', icon: 'FileText' },
-  { id: 'advanced', label: 'Advanced', icon: 'Wrench' },
+// Super-groups for the rail. Order here drives render order.
+export const INI_CATEGORY_GROUPS = [
+  { id: 'identity', label: 'Identity' },
+  { id: 'connectivity', label: 'Connectivity' },
+  { id: 'players', label: 'Players' },
+  { id: 'gameplay', label: 'Gameplay' },
+  { id: 'ops', label: 'Ops' },
+] as const
+
+export type IniCategoryGroupId = typeof INI_CATEGORY_GROUPS[number]['id']
+
+export const INI_CATEGORIES: Array<{ id: string; label: string; icon: string; group: IniCategoryGroupId }> = [
+  { id: 'general', label: 'General', icon: 'Settings', group: 'identity' },
+  { id: 'network', label: 'Network & Ports', icon: 'Globe', group: 'connectivity' },
+  { id: 'steam', label: 'Steam Integration', icon: 'Cloud', group: 'connectivity' },
+  { id: 'discord', label: 'Discord', icon: 'MessageCircle', group: 'connectivity' },
+  { id: 'rcon', label: 'RCON', icon: 'Terminal', group: 'connectivity' },
+  { id: 'voice', label: 'Voice Chat', icon: 'Mic', group: 'connectivity' },
+  { id: 'players', label: 'Players & Accounts', icon: 'Users', group: 'players' },
+  { id: 'safehouse', label: 'Safehouses', icon: 'Home', group: 'players' },
+  { id: 'chat', label: 'Chat & Communication', icon: 'MessageSquare', group: 'players' },
+  { id: 'pvp', label: 'PvP & Safety', icon: 'Swords', group: 'players' },
+  { id: 'moderation', label: 'Moderation', icon: 'Filter', group: 'players' },
+  { id: 'anticheat', label: 'Anti-Cheat', icon: 'Shield', group: 'players' },
+  { id: 'loot', label: 'Loot & Items', icon: 'Package', group: 'gameplay' },
+  { id: 'vehicles', label: 'Vehicles', icon: 'Car', group: 'gameplay' },
+  { id: 'mods', label: 'Mods & Workshop', icon: 'Puzzle', group: 'gameplay' },
+  { id: 'radio', label: 'Radio', icon: 'Radio', group: 'gameplay' },
+  { id: 'war', label: 'Faction War', icon: 'Swords', group: 'gameplay' },
+  { id: 'backups', label: 'Backups', icon: 'Archive', group: 'ops' },
+  { id: 'logging', label: 'Logging', icon: 'FileText', group: 'ops' },
+  { id: 'advanced', label: 'Advanced', icon: 'Wrench', group: 'ops' },
 ]
 
 export const INI_SCHEMA: IniSetting[] = [
@@ -196,6 +207,16 @@ export const INI_SCHEMA: IniSetting[] = [
     description: 'Use TCP instead of UDP for map downloads.',
     type: 'boolean',
     default: false,
+    category: 'network'
+  },
+  {
+    key: 'MaxPacketsPerSecond',
+    label: 'Max Packets Per Second',
+    description: 'Cap on packets per second sent to a connected client. Higher values increase bandwidth use; lower values may cause stutter under load.',
+    type: 'number',
+    min: 50,
+    max: 2000,
+    default: 300,
     category: 'network'
   },
 
@@ -1619,22 +1640,32 @@ export interface SandboxSetting {
   section?: 'settings' | 'ZombieLore' | 'ZombieConfig' | 'MultiplierConfig' | 'Map' | 'Basement'
 }
 
-export const SANDBOX_CATEGORIES = [
-  { id: 'time', label: 'Time & Season', icon: 'Clock' },
-  { id: 'population', label: 'Population & Distribution', icon: 'Users' },
-  { id: 'loot', label: 'Loot & Resources', icon: 'Package' },
-  { id: 'lootRarity', label: 'Loot Rarity', icon: 'Gem' },
-  { id: 'environment', label: 'Environment & Weather', icon: 'Cloud' },
-  { id: 'survival', label: 'Survival & Health', icon: 'Heart' },
-  { id: 'combat', label: 'Combat & Firearms', icon: 'Crosshair' },
-  { id: 'vehicles', label: 'Vehicles', icon: 'Car' },
-  { id: 'animals', label: 'Animals & Farming', icon: 'Leaf' },
-  { id: 'world', label: 'World & Stories', icon: 'Map' },
-  { id: 'map', label: 'Map & Navigation', icon: 'Compass' },
-  { id: 'zombieLore', label: 'Zombie Behavior', icon: 'Skull' },
-  { id: 'zombiePopulation', label: 'Zombie Population', icon: 'TrendingUp' },
-  { id: 'xpMultipliers', label: 'XP Multipliers', icon: 'BarChart' },
-  { id: 'basement', label: 'Basements', icon: 'Layers' },
+export const SANDBOX_CATEGORY_GROUPS = [
+  { id: 'world', label: 'World' },
+  { id: 'zombies', label: 'Zombies' },
+  { id: 'survival', label: 'Survival' },
+  { id: 'resources', label: 'Resources' },
+  { id: 'advanced', label: 'Advanced' },
+] as const
+
+export type SandboxCategoryGroupId = typeof SANDBOX_CATEGORY_GROUPS[number]['id']
+
+export const SANDBOX_CATEGORIES: Array<{ id: string; label: string; icon: string; group: SandboxCategoryGroupId }> = [
+  { id: 'time', label: 'Time & Season', icon: 'Clock', group: 'world' },
+  { id: 'environment', label: 'Environment & Weather', icon: 'Cloud', group: 'world' },
+  { id: 'world', label: 'World & Stories', icon: 'Map', group: 'world' },
+  { id: 'map', label: 'Map & Navigation', icon: 'Compass', group: 'world' },
+  { id: 'zombieLore', label: 'Zombie Behavior', icon: 'Skull', group: 'zombies' },
+  { id: 'zombiePopulation', label: 'Zombie Population', icon: 'TrendingUp', group: 'zombies' },
+  { id: 'population', label: 'Population & Distribution', icon: 'Users', group: 'zombies' },
+  { id: 'survival', label: 'Survival & Health', icon: 'Heart', group: 'survival' },
+  { id: 'combat', label: 'Combat & Firearms', icon: 'Crosshair', group: 'survival' },
+  { id: 'loot', label: 'Loot & Resources', icon: 'Package', group: 'resources' },
+  { id: 'lootRarity', label: 'Loot Rarity', icon: 'Gem', group: 'resources' },
+  { id: 'vehicles', label: 'Vehicles', icon: 'Car', group: 'resources' },
+  { id: 'animals', label: 'Animals & Farming', icon: 'Leaf', group: 'resources' },
+  { id: 'xpMultipliers', label: 'XP Multipliers', icon: 'BarChart', group: 'advanced' },
+  { id: 'basement', label: 'Basements', icon: 'Layers', group: 'advanced' },
 ]
 
 export const SANDBOX_SCHEMA: SandboxSetting[] = [

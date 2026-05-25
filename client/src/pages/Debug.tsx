@@ -38,7 +38,9 @@ import {
   Home,
   Package,
   Volume2,
-  PlayCircle
+  PlayCircle,
+  Archive,
+  FileDown
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -258,6 +260,7 @@ export default function Debug() {
   const [worldMapTilePreviewKey, setWorldMapTilePreviewKey] = useState(0)
   const [worldMapHideOk, setWorldMapHideOk] = useState(false)
   const [worldMapTileErrors, setWorldMapTileErrors] = useState<{ b42: boolean; b41: boolean }>({ b42: false, b41: false })
+  const [worldMapTileMeta, setWorldMapTileMeta] = useState<{ b42: { w: number; h: number } | null; b41: { w: number; h: number } | null }>({ b42: null, b41: null })
   const [worldMapError, setWorldMapError] = useState<string | null>(null)
   const [worldMapNowTick, setWorldMapNowTick] = useState(() => Date.now())
   // Live probe + test-action state for the World Map tab.
@@ -382,6 +385,7 @@ export default function Debug() {
   const fetchWorldMapDiag = useCallback(async () => {
     setRefreshingWorldMap(true)
     setWorldMapTileErrors({ b42: false, b41: false })
+    setWorldMapTileMeta({ b42: null, b41: null })
     setWorldMapTilePreviewKey(k => k + 1)
     setWorldMapError(null)
     try {
@@ -1167,12 +1171,48 @@ export default function Debug() {
     <div className="space-y-6 page-transition">
       <PageHeader
         title="Debug & Logs"
-        description="View system information, service health, and application logs"
+        description="Live diagnostics, recent history, and environment details for this panel"
         icon={<Bug className="w-5 h-5 text-primary" />}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="command"
+              size="lg"
+              onClick={downloadLogArchive}
+              disabled={downloadingLogArchive}
+              className="gap-2"
+            >
+              {downloadingLogArchive ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Archive className="w-4 h-4" />
+              )}
+              {downloadingLogArchive ? 'Bundling…' : 'Support Bundle (.zip)'}
+            </Button>
+            <Button
+              variant="outline"
+              size="lg"
+              onClick={() => downloadLogs('txt', false)}
+              className="gap-2"
+            >
+              <FileDown className="w-4 h-4" />
+              Full Log (.txt)
+            </Button>
+          </div>
+        }
       />
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList>
+        {/*
+          Tab strip is organised into three operational zones, separated by
+          thin vertical dividers so the eight tabs read as three clusters
+          rather than a uniform row:
+            • Now      — what's the server doing right this second
+            • History  — what happened
+            • System   — what this panel itself is made of
+        */}
+        <TabsList className="flex h-auto flex-wrap items-center gap-1 rounded-lg border border-border/60 bg-gradient-to-b from-muted/50 to-muted/25 p-1.5 w-full shadow-inner">
+          {/* Zone: Now */}
           <TabsTrigger value="diagnostics" className="gap-2">
             <CheckCircle className="w-4 h-4" />
             Diagnostics
@@ -1197,6 +1237,15 @@ export default function Debug() {
               </Badge>
             )}
           </TabsTrigger>
+          <TabsTrigger value="performance" className="gap-2">
+            <TrendingUp className="w-4 h-4" />
+            Performance
+          </TabsTrigger>
+
+          {/* Zone divider: Now → History */}
+          <span aria-hidden className="mx-1 h-5 w-px self-center bg-border/60" />
+
+          {/* Zone: History */}
           <TabsTrigger value="activity" className="gap-2">
             <Zap className="w-4 h-4" />
             Activity
@@ -1208,18 +1257,27 @@ export default function Debug() {
           <TabsTrigger value="crashes" className="gap-2">
             <AlertCircle className="w-4 h-4" />
             Crashes
+            {crashLogs.length > 0 && (
+              <Badge
+                variant="outline"
+                className="ml-1 h-5 px-1.5 text-[10px]"
+              >
+                {crashLogs.length}
+              </Badge>
+            )}
           </TabsTrigger>
-          <TabsTrigger value="performance" className="gap-2">
-            <TrendingUp className="w-4 h-4" />
-            Performance
-          </TabsTrigger>
+
+          {/* Zone divider: History → System */}
+          <span aria-hidden className="mx-1 h-5 w-px self-center bg-border/60" />
+
+          {/* Zone: System (panel self-introspection) */}
           <TabsTrigger value="health" className="gap-2">
             <Activity className="w-4 h-4" />
             Health
           </TabsTrigger>
           <TabsTrigger value="system" className="gap-2">
             <Database className="w-4 h-4" />
-            System
+            Environment
           </TabsTrigger>
         </TabsList>
 
@@ -1660,54 +1718,82 @@ export default function Debug() {
                           className="h-6 px-2 text-xs"
                           onClick={() => {
                             setWorldMapTileErrors({ b42: false, b41: false })
+                            setWorldMapTileMeta({ b42: null, b41: null })
                             setWorldMapTilePreviewKey(k => k + 1)
                           }}
                         >
                           <RefreshCw className="w-3 h-3 mr-1" /> Refresh
                         </Button>
                       </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className="space-y-1">
-                          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">B42 floor 0 / 0_0</div>
-                          <div className="aspect-square bg-muted/30 border rounded overflow-hidden flex items-center justify-center relative">
-                            {worldMapTileErrors.b42 ? (
-                              <div className="text-center p-2">
-                                <AlertCircle className="w-5 h-5 mx-auto text-destructive mb-1" />
-                                <div className="text-[10px] text-destructive font-medium">Tile failed to load</div>
-                                <div className="text-[9px] text-muted-foreground mt-0.5">Proxy or upstream unreachable</div>
-                              </div>
-                            ) : (
-                              <img
-                                key={`b42-${worldMapTilePreviewKey}`}
-                                src={`/api/map/tiles/0/0_0.jpg?floor=0&t=${worldMapTilePreviewKey}`}
-                                alt="B42 tile preview"
-                                className="w-full h-full object-cover"
-                                onError={() => setWorldMapTileErrors(prev => ({ ...prev, b42: true }))}
-                              />
-                            )}
+                      {(() => {
+                        const tiles: Array<{
+                          key: 'b42' | 'b41'
+                          label: string
+                          src: string
+                          errTone: string
+                        }> = [
+                          { key: 'b42', label: 'B42 floor 0 / 0_0', src: `/api/map/tiles/0/0_0.jpg?floor=0&t=${worldMapTilePreviewKey}`, errTone: 'destructive' },
+                          { key: 'b41', label: 'B41 / 0_0',         src: `/api/map/b41tiles/0/0_0.jpg?t=${worldMapTilePreviewKey}`,      errTone: 'warning' },
+                        ]
+                        return (
+                          <div className="flex flex-wrap gap-3">
+                            {tiles.map(t => {
+                              const failed = worldMapTileErrors[t.key]
+                              const meta = worldMapTileMeta[t.key]
+                              const loaded = !failed && meta !== null
+                              return (
+                                <div key={t.key} className="flex items-center gap-3 rounded-lg border border-border/55 bg-muted/20 p-2.5">
+                                  <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded border border-border/60 bg-muted/40">
+                                    {failed ? (
+                                      <div className="flex h-full w-full flex-col items-center justify-center p-1 text-center">
+                                        <AlertCircle className={cn('w-4 h-4 mb-0.5', t.errTone === 'destructive' ? 'text-destructive' : 'text-warning')} />
+                                        <div className={cn('text-[9px] font-medium leading-tight', t.errTone === 'destructive' ? 'text-destructive' : 'text-warning')}>Failed</div>
+                                      </div>
+                                    ) : (
+                                      <img
+                                        key={`${t.key}-${worldMapTilePreviewKey}`}
+                                        src={t.src}
+                                        alt={`${t.label} preview`}
+                                        className="h-full w-full object-cover"
+                                        onLoad={(e) => {
+                                          const img = e.currentTarget
+                                          setWorldMapTileMeta(prev => ({ ...prev, [t.key]: { w: img.naturalWidth, h: img.naturalHeight } }))
+                                        }}
+                                        onError={() => setWorldMapTileErrors(prev => ({ ...prev, [t.key]: true }))}
+                                      />
+                                    )}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{t.label}</div>
+                                    <div className="mt-1">
+                                      {failed ? (
+                                        <span className={cn(
+                                          'inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium',
+                                          t.errTone === 'destructive' ? 'border-destructive/40 bg-destructive/10 text-destructive' : 'border-warning/40 bg-warning/10 text-warning',
+                                        )}>
+                                          <AlertCircle className="w-2.5 h-2.5" /> Tile failed
+                                        </span>
+                                      ) : loaded ? (
+                                        <span className="inline-flex items-center gap-1 rounded-full border border-primary/35 bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                                          <CheckCircle className="w-2.5 h-2.5" /> Loaded
+                                          <span className="font-mono tabular-nums text-primary/80">{meta!.w}×{meta!.h}</span>
+                                        </span>
+                                      ) : (
+                                        <span className="inline-flex items-center gap-1 rounded-full border border-border/55 bg-muted/40 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                                          <Loader2 className="w-2.5 h-2.5 animate-spin" /> Loading…
+                                        </span>
+                                      )}
+                                    </div>
+                                    <p className="mt-1 text-[10px] text-muted-foreground/70 leading-tight">
+                                      Tile <span className="font-mono">0_0</span> is the empty map corner — a solid color square here means the proxy works.
+                                    </p>
+                                  </div>
+                                </div>
+                              )
+                            })}
                           </div>
-                        </div>
-                        <div className="space-y-1">
-                          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">B41 / 0_0</div>
-                          <div className="aspect-square bg-muted/30 border rounded overflow-hidden flex items-center justify-center relative">
-                            {worldMapTileErrors.b41 ? (
-                              <div className="text-center p-2">
-                                <AlertCircle className="w-5 h-5 mx-auto text-warning mb-1" />
-                                <div className="text-[10px] text-warning font-medium">Tile failed to load</div>
-                                <div className="text-[9px] text-muted-foreground mt-0.5">Proxy or upstream unreachable</div>
-                              </div>
-                            ) : (
-                              <img
-                                key={`b41-${worldMapTilePreviewKey}`}
-                                src={`/api/map/b41tiles/0/0_0.jpg?t=${worldMapTilePreviewKey}`}
-                                alt="B41 tile preview"
-                                className="w-full h-full object-cover"
-                                onError={() => setWorldMapTileErrors(prev => ({ ...prev, b41: true }))}
-                              />
-                            )}
-                          </div>
-                        </div>
-                      </div>
+                        )
+                      })()}
                     </div>
                   </CardContent>
                 </Card>
@@ -2379,53 +2465,53 @@ export default function Debug() {
 
         {/* Logs Tab */}
         <TabsContent value="logs" className="space-y-4">
-          {/* Stats Bar */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
-            <Card className="cursor-pointer hover:bg-accent/50 transition-colors" onClick={() => setLevelFilter('all')} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setLevelFilter('all') } }} aria-label="Filter: show all logs">
-              <CardContent className="p-4 flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Total</p>
-                  <p className="text-2xl font-bold">{logStats.total}</p>
-                </div>
-                <Terminal className="w-8 h-8 text-muted-foreground" />
-              </CardContent>
-            </Card>
-            <Card className="cursor-pointer transition-colors hover:bg-destructive/8" onClick={() => setLevelFilter('error')} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setLevelFilter('error') } }} aria-label="Filter: show errors only">
-              <CardContent className="p-4 flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Errors</p>
-                  <p className="text-2xl font-bold text-destructive">{logStats.errors}</p>
-                </div>
-                <AlertCircle className="w-8 h-8 text-destructive" />
-              </CardContent>
-            </Card>
-            <Card className="cursor-pointer transition-colors hover:bg-warning/8" onClick={() => setLevelFilter('warn')} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setLevelFilter('warn') } }} aria-label="Filter: show warnings only">
-              <CardContent className="p-4 flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Warnings</p>
-                  <p className="text-2xl font-bold text-warning">{logStats.warnings}</p>
-                </div>
-                <AlertTriangle className="w-8 h-8 text-warning" />
-              </CardContent>
-            </Card>
-            <Card className="cursor-pointer transition-colors hover:bg-primary/8" onClick={() => setLevelFilter('info')} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setLevelFilter('info') } }} aria-label="Filter: show info only">
-              <CardContent className="p-4 flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Info</p>
-                  <p className="text-2xl font-bold text-primary">{logStats.info}</p>
-                </div>
-                <Info className="w-8 h-8 text-primary" />
-              </CardContent>
-            </Card>
-            <Card className="cursor-pointer hover:bg-accent/50 transition-colors" onClick={() => setLevelFilter('debug')} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setLevelFilter('debug') } }} aria-label="Filter: show debug only">
-              <CardContent className="p-4 flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Debug</p>
-                  <p className="text-2xl font-bold text-muted-foreground">{logStats.debug}</p>
-                </div>
-                <Bug className="w-8 h-8 text-muted-foreground" />
-              </CardContent>
-            </Card>
+          {/* Stats Bar — tactical filter chips */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+            {(() => {
+              const tiles = [
+                { key: 'all',   label: 'Total',    value: logStats.total,    tone: 'muted',       Icon: Terminal },
+                { key: 'error', label: 'Errors',   value: logStats.errors,   tone: 'destructive', Icon: AlertCircle },
+                { key: 'warn',  label: 'Warnings', value: logStats.warnings, tone: 'warning',     Icon: AlertTriangle },
+                { key: 'info',  label: 'Info',     value: logStats.info,     tone: 'primary',     Icon: Info },
+                { key: 'debug', label: 'Debug',    value: logStats.debug,    tone: 'muted',       Icon: Bug },
+              ] as const
+              const toneStyles: Record<string, { chip: string; value: string; ring: string; hover: string }> = {
+                primary:     { chip: 'border-primary/30 bg-primary/[0.06] text-primary',           value: 'text-primary',           ring: 'ring-primary/50',     hover: 'hover:border-primary/30' },
+                warning:     { chip: 'border-warning/40 bg-warning/10 text-warning',                 value: 'text-warning',           ring: 'ring-warning/50',     hover: 'hover:border-warning/30' },
+                destructive: { chip: 'border-destructive/40 bg-destructive/[0.08] text-destructive', value: 'text-destructive',       ring: 'ring-destructive/50', hover: 'hover:border-destructive/30' },
+                muted:       { chip: 'border-border/55 bg-muted/30 text-muted-foreground',           value: 'text-foreground',        ring: 'ring-foreground/30',  hover: 'hover:border-border' },
+              }
+              return tiles.map(t => {
+                const s = toneStyles[t.tone]
+                const isActive = levelFilter === t.key
+                return (
+                  <Card
+                    key={t.key}
+                    role="button"
+                    tabIndex={0}
+                    aria-pressed={isActive}
+                    aria-label={`Filter: ${t.label}`}
+                    onClick={() => setLevelFilter(t.key as typeof levelFilter)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setLevelFilter(t.key as typeof levelFilter) } }}
+                    className={cn(
+                      'cursor-pointer transition-all border-border/60',
+                      s.hover,
+                      isActive && `ring-1 ${s.ring}`,
+                    )}
+                  >
+                    <CardContent className="flex items-center gap-3 p-3.5">
+                      <div className={cn('grid h-10 w-10 shrink-0 place-items-center rounded-md border', s.chip)}>
+                        <t.Icon className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{t.label}</p>
+                        <p className={cn('text-xl font-semibold leading-tight tabular-nums', s.value)}>{t.value.toLocaleString()}</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )
+              })
+            })()}
           </div>
 
           {/* Logs Card */}
@@ -2649,48 +2735,83 @@ export default function Debug() {
 
           {/* Log Files */}
           {logFiles.length > 0 && (
-            <Card>
+            <Card className="relative overflow-hidden">
+              <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-primary via-primary/70 to-primary/20" aria-hidden="true" />
               <CardHeader className="pb-3">
                 <CardTitle className="text-lg flex items-center gap-2">
-                  <FileText className="w-5 h-5" />
+                  <FileText className="w-5 h-5 text-primary" />
                   Log Files on Disk
                 </CardTitle>
                 <CardDescription>Download panel logs individually, or grab one support bundle with panel logs, Zomboid server logs, and crash files.</CardDescription>
               </CardHeader>
-              <CardContent>
-                <div className="mb-3 flex justify-end">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={downloadLogArchive}
-                    disabled={downloadingLogArchive}
-                  >
-                    {downloadingLogArchive ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
-                    Download Support Bundle (.zip)
-                  </Button>
-                </div>
-                <div className="space-y-2">
-                  {logFiles.map(file => (
-                    <div key={file.name} className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
-                      <div className="flex items-center gap-3">
-                        <FileText className="w-4 h-4 text-muted-foreground" />
-                        <div>
-                          <p className="font-medium">{file.name}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {formatFileSize(file.size)} • Modified {new Date(file.modified).toLocaleString()}
-                          </p>
-                        </div>
+              <CardContent className="space-y-4">
+                {/* Support bundle hero */}
+                <div className="relative overflow-hidden rounded-lg border border-primary/35 bg-gradient-to-br from-primary/[0.09] via-primary/[0.04] to-transparent p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-start gap-3">
+                      <div className="grid h-11 w-11 shrink-0 place-items-center rounded-md border border-primary/35 bg-primary/10 text-primary">
+                        <Archive className="w-5 h-5" />
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => downloadLogFile(file.name)}
-                        aria-label={`Download ${file.name}`}
-                      >
-                          <Download className="w-4 h-4" />
-                      </Button>
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-primary">Recommended</p>
+                        <p className="mt-0.5 text-sm font-semibold text-foreground">One-click support bundle</p>
+                        <p className="text-xs text-muted-foreground">Panel logs · Zomboid server logs · crash dumps · diagnostics, all in a single .zip.</p>
+                      </div>
                     </div>
-                  ))}
+                    <Button
+                      variant="command"
+                      size="lg"
+                      onClick={downloadLogArchive}
+                      disabled={downloadingLogArchive}
+                      className="gap-2 self-start sm:self-auto"
+                    >
+                      {downloadingLogArchive ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Download className="w-4 h-4" />
+                      )}
+                      {downloadingLogArchive ? 'Bundling…' : 'Download .zip'}
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Individual files */}
+                <div>
+                  <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Individual files <span className="ml-1 font-mono tabular-nums normal-case tracking-normal text-muted-foreground/70">· {logFiles.length}</span>
+                  </p>
+                  <div className="space-y-1.5">
+                    {logFiles.map(file => (
+                      <div
+                        key={file.name}
+                        className="flex items-center justify-between gap-3 rounded-lg border border-border/55 bg-muted/30 p-3 transition-colors hover:border-primary/30 hover:bg-muted/50"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-border/55 bg-background/60 text-muted-foreground">
+                            <FileText className="w-4 h-4" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="truncate font-medium text-sm">{file.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              <span className="font-mono tabular-nums">{formatFileSize(file.size)}</span>
+                              <span className="mx-1.5 text-muted-foreground/50">·</span>
+                              {new Date(file.modified).toLocaleString()}
+                            </p>
+                          </div>
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => downloadLogFile(file.name)}
+                          aria-label={`Download ${file.name}`}
+                          className="gap-1.5 shrink-0"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">Download</span>
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </CardContent>
             </Card>

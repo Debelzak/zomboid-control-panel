@@ -184,10 +184,14 @@ router.post('/stop', async (req, res) => {
 // Test Discord connection
 router.post('/test', async (req, res) => {
   try {
-    const { token } = req.body;
+    const { token } = req.body || {};
     
-    if (!token) {
-      return res.status(400).json({ error: 'Token is required' });
+    if (typeof token !== 'string' || token.length === 0 || token.length > 200) {
+      return res.status(400).json({ error: 'Token must be a non-empty string (max 200 chars)' });
+    }
+    // Discord bot tokens are URL-safe base64-ish: letters/digits/_-./
+    if (!/^[A-Za-z0-9._-]+$/.test(token)) {
+      return res.status(400).json({ error: 'Invalid token format' });
     }
     
     // Try to validate token by making a test request

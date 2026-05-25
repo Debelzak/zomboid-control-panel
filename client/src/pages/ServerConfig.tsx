@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef, useDeferredValue, memo } from 'react'
-import { copyText } from '@/lib/utils'
+import { copyText, cn } from '@/lib/utils'
 import {
   Settings,
   FileText,
@@ -17,6 +17,8 @@ import {
   History,
   ChevronDown,
   ChevronRight,
+  ChevronsDownUp,
+  ChevronsUpDown,
   Plus,
   Trash2,
   ExternalLink,
@@ -58,7 +60,6 @@ import {
   Layers,
   type LucideIcon
 } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { reportClientError } from '@/lib/client-errors'
@@ -100,23 +101,38 @@ import { EmptyState } from '@/components/EmptyState'
 import {
   INI_SCHEMA,
   INI_CATEGORIES,
+  INI_CATEGORY_GROUPS,
   SANDBOX_SCHEMA,
   SANDBOX_CATEGORIES,
+  SANDBOX_CATEGORY_GROUPS,
   IniSetting,
   SandboxSetting,
   groupByCategory
 } from '@/lib/serverConfigSchema'
 
 type EditorMode = 'structured' | 'raw'
+type FilterMode = 'all' | 'modified' | 'nondefault'
 type SandboxScalar = string | number | boolean | null | undefined
 type SandboxRecord = Record<string, SandboxScalar>
 
-/** Merge schema defaults into parsed INI settings so schema-defined keys always exist */
+/** Merge schema defaults into parsed INI settings so schema-defined keys always exist.
+ *  Also warns to the console when a stored value doesn't parse for the schema type — helps
+ *  catch a corrupted INI without changing behaviour. */
 function mergeSchemaDefaults(parsed: Record<string, string>): Record<string, string> {
   const merged = { ...parsed }
   for (const setting of INI_SCHEMA) {
     if (!(setting.key in merged)) {
       merged[setting.key] = String(setting.default ?? '')
+      continue
+    }
+    const raw = merged[setting.key]
+    if (raw == null || raw === '') continue
+    if (setting.type === 'boolean' && raw !== 'true' && raw !== 'false') {
+      console.warn(`[ServerConfig] ${setting.key} expected boolean, got "${raw}"`)
+    } else if (setting.type === 'number' && Number.isNaN(Number(raw))) {
+      console.warn(`[ServerConfig] ${setting.key} expected number, got "${raw}"`)
+    } else if (setting.type === 'select' && setting.options && !setting.options.some(o => o.value === raw)) {
+      console.warn(`[ServerConfig] ${setting.key} expected one of [${setting.options.map(o => o.value).join('|')}], got "${raw}"`)
     }
   }
   return merged
@@ -514,6 +530,89 @@ function CategoryIcon({ name, isActive, className }: { name?: string; isActive?:
   return <Icon className={`${className ?? 'h-4 w-4'} ${isActive ? 'text-primary' : entry?.tone ?? 'text-muted-foreground/70'}`} />
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// Visual primitives — mirror the Events page so the whole control surface
+// reads with the same cadence: corner-bracketed panels with terse mono
+// section headers. The aesthetic is operational, not theatrical.
+// ──────────────────────────────────────────────────────────────────────────
+type PanelTone = 'primary' | 'warning' | 'destructive' | 'info' | 'success' | 'muted'
+
+function toneBorder(tone: PanelTone): string {
+  switch (tone) {
+    case 'warning': return 'border-amber-400/55'
+    case 'destructive': return 'border-destructive/55'
+    case 'info': return 'border-sky-400/55'
+    case 'success': return 'border-emerald-400/55'
+    case 'muted': return 'border-border/70'
+    default: return 'border-primary/55'
+  }
+}
+
+function toneText(tone: PanelTone): string {
+  switch (tone) {
+    case 'warning': return 'text-amber-400/85'
+    case 'destructive': return 'text-destructive/85'
+    case 'info': return 'text-sky-400/85'
+    case 'success': return 'text-emerald-400/85'
+    case 'muted': return 'text-muted-foreground/85'
+    default: return 'text-primary/75'
+  }
+}
+
+function TacticalPanel({
+  children,
+  tone = 'primary',
+  className,
+}: {
+  children: React.ReactNode
+  tone?: PanelTone
+  className?: string
+}) {
+  const corner = toneBorder(tone)
+  return (
+    <div className={cn(
+      'relative rounded-md border border-border/55 bg-card/85 backdrop-blur-md shadow-lg overflow-hidden',
+      className
+    )}>
+      <div aria-hidden className={cn('absolute top-1 left-1 w-2.5 h-2.5 border-l-2 border-t-2 pointer-events-none z-10', corner)} />
+      <div aria-hidden className={cn('absolute top-1 right-1 w-2.5 h-2.5 border-r-2 border-t-2 pointer-events-none z-10', corner)} />
+      <div aria-hidden className={cn('absolute bottom-1 left-1 w-2.5 h-2.5 border-l-2 border-b-2 pointer-events-none z-10', corner)} />
+      <div aria-hidden className={cn('absolute bottom-1 right-1 w-2.5 h-2.5 border-r-2 border-b-2 pointer-events-none z-10', corner)} />
+      {children}
+    </div>
+  )
+}
+
+function SectionHeader({
+  label,
+  sublabel,
+  icon: Icon,
+  action,
+  tone = 'primary',
+}: {
+  label: string
+  sublabel?: React.ReactNode
+  icon?: React.ComponentType<{ className?: string }>
+  action?: React.ReactNode
+  tone?: PanelTone
+}) {
+  return (
+    <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border/50 bg-muted/25 select-none">
+      <span className={cn('flex items-center gap-1.5 text-xs font-semibold tracking-normal min-w-0', toneText(tone))}>
+        {Icon && <Icon className="w-3 h-3 shrink-0" />}
+        <span className="truncate">{label}</span>
+        {sublabel && (
+          <>
+            <span className="text-muted-foreground/40">·</span>
+            <span className="truncate normal-case tracking-[0.12em] text-muted-foreground/65">{sublabel}</span>
+          </>
+        )}
+      </span>
+      {action && <div className="flex items-center gap-1.5 shrink-0">{action}</div>}
+    </div>
+  )
+}
+
 export default function ServerConfig() {
   const [activeTab, setActiveTab] = useState('ini')
   const [loading, setLoading] = useState(true)
@@ -523,6 +622,15 @@ export default function ServerConfig() {
   // synchronously — keeps the input snappy on slower machines.
   const deferredSearchQuery = useDeferredValue(searchQuery)
   const [editorMode, setEditorMode] = useState<EditorMode>('structured')
+  // Filter mode: 'all' = every schema setting, 'modified' = only dirty rows, 'nondefault' = anything not matching schema default
+  const [filterMode, setFilterMode] = useState<FilterMode>(() => {
+    try {
+      const stored = localStorage.getItem('serverconfig-filter-mode')
+      if (stored === 'modified' || stored === 'nondefault' || stored === 'all') return stored
+    } catch { /* ignore */ }
+    return 'all'
+  })
+  useEffect(() => { try { localStorage.setItem('serverconfig-filter-mode', filterMode) } catch { /* ignore */ } }, [filterMode])
   
   // File paths info
   const [pathsInfo, setPathsInfo] = useState<{
@@ -549,6 +657,41 @@ export default function ServerConfig() {
   })
   useEffect(() => { try { localStorage.setItem('serverconfig-ini-cat', activeIniCategory) } catch { /* ignore */ } }, [activeIniCategory])
   useEffect(() => { try { localStorage.setItem('serverconfig-sandbox-cat', activeSandboxCategory) } catch { /* ignore */ } }, [activeSandboxCategory])
+
+  // Collapsible rail groups — keyed as "ini:<groupId>" / "sandbox:<groupId>"
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>(() => {
+    try {
+      const stored = localStorage.getItem('serverconfig-collapsed-groups')
+      if (stored) return JSON.parse(stored) as Record<string, boolean>
+    } catch { /* ignore */ }
+    return {}
+  })
+  useEffect(() => {
+    try { localStorage.setItem('serverconfig-collapsed-groups', JSON.stringify(collapsedGroups)) } catch { /* ignore */ }
+  }, [collapsedGroups])
+  const toggleGroup = useCallback((key: string) => {
+    setCollapsedGroups(prev => ({ ...prev, [key]: !prev[key] }))
+  }, [])
+
+  // Bulk collapse/expand for a tab's rail (prefix "ini" or "sandbox").
+  const setAllGroupsCollapsed = useCallback((prefix: 'ini' | 'sandbox', collapsed: boolean) => {
+    const groups = prefix === 'ini' ? INI_CATEGORY_GROUPS : SANDBOX_CATEGORY_GROUPS
+    setCollapsedGroups(prev => {
+      const next = { ...prev }
+      for (const g of groups) {
+        next[`${prefix}:${g.id}`] = collapsed
+      }
+      return next
+    })
+  }, [])
+  const iniAllCollapsed = useMemo(
+    () => INI_CATEGORY_GROUPS.every(g => !!collapsedGroups[`ini:${g.id}`]),
+    [collapsedGroups]
+  )
+  const sandboxAllCollapsed = useMemo(
+    () => SANDBOX_CATEGORY_GROUPS.every(g => !!collapsedGroups[`sandbox:${g.id}`]),
+    [collapsedGroups]
+  )
   
   // Backups dialog
   const [showBackups, setShowBackups] = useState(false)
@@ -1114,28 +1257,95 @@ export default function ServerConfig() {
   }
 
 
-  // Filter settings by search
+  // Per-setting modified / non-default predicates (centralized so filter + badges use the same logic)
+  const isIniModified = useCallback((s: IniSetting) => {
+    const curr = iniSettings[s.key]
+    const orig = originalIniSettings[s.key]
+    return curr !== orig && orig !== undefined
+  }, [iniSettings, originalIniSettings])
+
+  const isIniNonDefault = useCallback((s: IniSetting) => {
+    const curr = iniSettings[s.key]
+    if (curr === undefined) return false
+    return String(curr) !== String(s.default ?? '')
+  }, [iniSettings])
+
+  const isSandboxModified = useCallback((s: SandboxSetting) => {
+    if (!sandboxData || !originalSandboxData) return false
+    const section = (s.section || 'settings') as keyof SandboxData
+    const curr = (sandboxData[section] as SandboxRecord)?.[s.key]
+    const orig = (originalSandboxData[section] as SandboxRecord)?.[s.key]
+    return JSON.stringify(curr) !== JSON.stringify(orig)
+  }, [sandboxData, originalSandboxData])
+
+  const isSandboxNonDefault = useCallback((s: SandboxSetting) => {
+    if (!sandboxData) return false
+    const section = (s.section || 'settings') as keyof SandboxData
+    const curr = (sandboxData[section] as SandboxRecord)?.[s.key]
+    if (curr === undefined || curr === null) return false
+    return String(curr) !== String(s.default ?? '')
+  }, [sandboxData])
+
+  // Filter settings by search + filter mode
   const filteredIniSettings = useMemo(() => {
-    if (!deferredSearchQuery) return groupByCategory(INI_SCHEMA)
     const lower = deferredSearchQuery.toLowerCase()
-    const filtered = INI_SCHEMA.filter(s =>
-      s.key.toLowerCase().includes(lower) ||
-      s.label.toLowerCase().includes(lower) ||
-      s.description.toLowerCase().includes(lower)
-    )
+    const filtered = INI_SCHEMA.filter(s => {
+      if (deferredSearchQuery && !(
+        s.key.toLowerCase().includes(lower) ||
+        s.label.toLowerCase().includes(lower) ||
+        s.description.toLowerCase().includes(lower)
+      )) return false
+      if (filterMode === 'modified' && !isIniModified(s)) return false
+      if (filterMode === 'nondefault' && !isIniNonDefault(s)) return false
+      return true
+    })
     return groupByCategory(filtered)
-  }, [deferredSearchQuery])
+  }, [deferredSearchQuery, filterMode, isIniModified, isIniNonDefault])
 
   const filteredSandboxSettings = useMemo(() => {
-    if (!deferredSearchQuery) return groupByCategory(SANDBOX_SCHEMA)
     const lower = deferredSearchQuery.toLowerCase()
-    const filtered = SANDBOX_SCHEMA.filter(s =>
-      s.key.toLowerCase().includes(lower) ||
-      s.label.toLowerCase().includes(lower) ||
-      s.description.toLowerCase().includes(lower)
-    )
+    const filtered = SANDBOX_SCHEMA.filter(s => {
+      if (deferredSearchQuery && !(
+        s.key.toLowerCase().includes(lower) ||
+        s.label.toLowerCase().includes(lower) ||
+        s.description.toLowerCase().includes(lower)
+      )) return false
+      if (filterMode === 'modified' && !isSandboxModified(s)) return false
+      if (filterMode === 'nondefault' && !isSandboxNonDefault(s)) return false
+      return true
+    })
     return groupByCategory(filtered)
-  }, [deferredSearchQuery])
+  }, [deferredSearchQuery, filterMode, isSandboxModified, isSandboxNonDefault])
+
+  // Modified-count per category for rail badges
+  const iniModifiedByCategory = useMemo(() => {
+    const out: Record<string, number> = {}
+    for (const s of INI_SCHEMA) if (isIniModified(s)) out[s.category] = (out[s.category] || 0) + 1
+    return out
+  }, [isIniModified])
+
+  const sandboxModifiedByCategory = useMemo(() => {
+    const out: Record<string, number> = {}
+    for (const s of SANDBOX_SCHEMA) if (isSandboxModified(s)) out[s.category] = (out[s.category] || 0) + 1
+    return out
+  }, [isSandboxModified])
+
+  // Unknown INI keys — keys present in the loaded file but not in the schema.
+  // Mirrors the sandbox `uncategorized` pattern so mod-injected / new-vanilla keys remain editable.
+  const uncategorizedIniKeys = useMemo(() => {
+    const schemaKeys = new Set(INI_SCHEMA.map(s => s.key))
+    const lower = deferredSearchQuery.toLowerCase()
+    const out: { key: string; value: string }[] = []
+    for (const [key, value] of Object.entries(iniSettings)) {
+      if (schemaKeys.has(key)) continue
+      if (deferredSearchQuery && !(
+        key.toLowerCase().includes(lower) ||
+        String(value).toLowerCase().includes(lower)
+      )) continue
+      out.push({ key, value })
+    }
+    return out.sort((a, b) => a.key.localeCompare(b.key))
+  }, [iniSettings, deferredSearchQuery])
 
   // Find sandbox settings not covered by the schema (mod settings, etc.)
   const uncategorizedSandboxKeys = useMemo(() => {
@@ -1407,8 +1617,24 @@ export default function ServerConfig() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+      <div className="space-y-4 page-transition">
+        <div className="rounded-lg border border-border/40 bg-card/40 px-4 py-3 sm:px-5 sm:py-4">
+          <div className="h-3 w-20 rounded bg-muted/50 animate-pulse mb-2" />
+          <div className="h-6 w-64 rounded bg-muted/60 animate-pulse mb-2" />
+          <div className="h-3 w-96 rounded bg-muted/40 animate-pulse" />
+        </div>
+        <div className="rounded-md border border-border/55 bg-card/85 h-12 animate-pulse" />
+        <div className="flex gap-1">
+          {[0,1,2,3,4].map(i => (
+            <div key={i} className="flex-1 h-9 rounded-md bg-muted/40 animate-pulse" />
+          ))}
+        </div>
+        <div className="rounded-md border border-border/55 bg-card/85 h-[400px] flex items-center justify-center">
+          <div className="flex items-center gap-3 text-muted-foreground text-xs font-medium">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            loading configuration…
+          </div>
+        </div>
       </div>
     )
   }
@@ -1420,7 +1646,7 @@ export default function ServerConfig() {
   const professionsCount = Object.keys(spawnPoints).length
 
   return (
-    <div className="space-y-5 page-transition pb-24">
+    <div className="space-y-4 page-transition pb-24">
       {loadError && (
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
@@ -1436,38 +1662,45 @@ export default function ServerConfig() {
 
       <PageHeader
         title="Server Configuration"
-        description="Fine-tune your server settings, sandbox variables, and spawn points"
+        description="Edit the live INI, sandbox, spawn, and mod settings for this server."
+        eyebrow="config"
+        tone="config"
         icon={<Settings className="h-5 w-5 text-primary" />}
         actions={
           <div className="flex flex-wrap items-center gap-1.5">
             {(hasIniChanges || hasSandboxChanges) && (
-              <Badge variant="warning" className="motion-safe:animate-pulse">
+              <Badge variant="warning" className="motion-safe:animate-pulse text-xs font-medium">
                 <AlertTriangle className="mr-1 h-3 w-3" />
-                Unsaved Changes
+                unsaved
               </Badge>
             )}
-            <Button variant="outline" size="sm" className="h-9 gap-1.5" onClick={loadTemplates}>
-              <Bookmark className="h-4 w-4" /> Templates
+            <Button variant="command" size="sm" className="h-9 gap-1.5 text-xs font-medium" onClick={loadTemplates}>
+              <Bookmark className="h-3.5 w-3.5" /> templates
             </Button>
-            <Button variant="outline" size="sm" className="h-9 gap-1.5" onClick={loadBackups}>
-              <History className="h-4 w-4" /> Backups
+            <Button variant="command" size="sm" className="h-9 gap-1.5 text-xs font-medium" onClick={loadBackups}>
+              <History className="h-3.5 w-3.5" /> backups
             </Button>
-            <Button variant="outline" size="sm" className="h-9 gap-1.5" onClick={loadData}>
-              <RefreshCw className="h-4 w-4" /> Refresh
+            <Button variant="command" size="sm" className="h-9 gap-1.5 text-xs font-medium" onClick={loadData}>
+              <RefreshCw className="h-3.5 w-3.5" /> refresh
             </Button>
           </div>
         }
       />
 
-      <Card className="border-border/60 border-l-2 border-l-primary/70 bg-card/80">
-        <CardContent className="p-3">
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-            {pathsInfo && (
-              <div className="flex min-w-0 items-center gap-2">
-                <span className="flex h-6 items-center gap-1.5 rounded border border-primary/30 bg-primary/10 px-2 font-mono text-[11px] font-semibold uppercase tracking-wider text-primary">
-                  <FolderOpen className="h-3 w-3" />
+      {/* ACTIVE SERVER STRIP */}
+      <TacticalPanel tone="primary">
+        <div className="px-3 py-2.5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.22em] text-primary/60 whitespace-nowrap">
+              <FolderOpen className="w-3 h-3" />
+              <span>active</span>
+            </div>
+            {pathsInfo ? (
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground/90">
                   {pathsInfo.serverName}
                 </span>
+                <span className="text-muted-foreground/40">·</span>
                 <span
                   className="min-w-0 truncate font-mono text-[11px] text-muted-foreground"
                   title={pathsInfo.configPath}
@@ -1476,37 +1709,39 @@ export default function ServerConfig() {
                   {pathsInfo.configPath}
                 </span>
               </div>
+            ) : (
+              <span className="font-mono text-[11px] text-muted-foreground/60">no server selected</span>
             )}
-            <div className="ml-auto flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] uppercase tracking-wider text-muted-foreground">
-              <StatChip
-                icon={<Settings className="h-3 w-3" />}
-                value={iniSettingsCount}
-                label="Server"
-                ok={pathsInfo?.exists.ini}
-              />
-              <span className="h-3 w-px bg-border/60" aria-hidden />
-              <StatChip
-                icon={<FileText className="h-3 w-3" />}
-                value={sandboxSettingsCount}
-                label="Sandbox"
-                ok={pathsInfo?.exists.sandbox}
-              />
-              <span className="h-3 w-px bg-border/60" aria-hidden />
-              <StatChip
-                icon={<MapPin className="h-3 w-3" />}
-                value={spawnPointsCount}
-                label={`Spawns · ${professionsCount} prof${professionsCount === 1 ? '' : 's'}`}
-              />
-              <span className="h-3 w-px bg-border/60" aria-hidden />
-              <StatChip
-                icon={<Map className="h-3 w-3" />}
-                value={spawnRegions.length}
-                label="Regions"
-              />
-            </div>
           </div>
-        </CardContent>
-      </Card>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] uppercase tracking-wider text-muted-foreground">
+            <StatChip
+              icon={<Settings className="h-3 w-3" />}
+              value={iniSettingsCount}
+              label="ini"
+              ok={pathsInfo?.exists.ini}
+            />
+            <span className="h-3 w-px bg-border/60" aria-hidden />
+            <StatChip
+              icon={<FileText className="h-3 w-3" />}
+              value={sandboxSettingsCount}
+              label="sandbox"
+              ok={pathsInfo?.exists.sandbox}
+            />
+            <span className="h-3 w-px bg-border/60" aria-hidden />
+            <StatChip
+              icon={<MapPin className="h-3 w-3" />}
+              value={spawnPointsCount}
+              label={`spawns · ${professionsCount} prof${professionsCount === 1 ? '' : 's'}`}
+            />
+            <span className="h-3 w-px bg-border/60" aria-hidden />
+            <StatChip
+              icon={<Map className="h-3 w-3" />}
+              value={spawnRegions.length}
+              label="regions"
+            />
+          </div>
+        </div>
+      </TacticalPanel>
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={(v) => {
@@ -1521,85 +1756,61 @@ export default function ServerConfig() {
           loadRawContent(typeMap[v] || 'ini')
         }
       }}>
-        <div className="overflow-x-auto pb-1">
-        <TabsList className="inline-flex h-auto min-w-max gap-1 rounded-xl border border-border/60 bg-muted/40 p-1">
-          <TabsTrigger value="ini" className="min-h-10 shrink-0 rounded-md px-3">
-            <Settings className="w-4 h-4" />
-            <span className="font-medium">Server Settings</span>
-            {changedIniCount > 0 && (
-              <Badge variant="warning" className="h-4 px-1.5 py-0 text-xs">
-                {changedIniCount}
-              </Badge>
-            )}
-            {hasIniChanges && activeTab !== 'ini' && (
-              <span className="h-2 w-2 rounded-full bg-warning motion-safe:animate-pulse" title="Unsaved changes" />
-            )}
-            {!pathsInfo?.exists.ini && (
-              <AlertCircle className="w-3 h-3 text-warning" />
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="sandbox" className="min-h-10 shrink-0 rounded-md px-3">
-            <FileText className="w-4 h-4" />
-            <span className="font-medium">Sandbox</span>
-            {changedSandboxCount > 0 && (
-              <Badge variant="warning" className="h-4 px-1.5 py-0 text-xs">
-                {changedSandboxCount}
-              </Badge>
-            )}
-            {hasSandboxChanges && activeTab !== 'sandbox' && (
-              <span className="h-2 w-2 rounded-full bg-warning motion-safe:animate-pulse" title="Unsaved changes" />
-            )}
-            {!pathsInfo?.exists.sandbox && (
-              <AlertCircle className="w-3 h-3 text-warning" />
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="spawnpoints" className="min-h-10 shrink-0 rounded-md px-3">
-            <MapPin className="w-4 h-4" />
-            <span className="font-medium">Spawn Points</span>
-          </TabsTrigger>
-          <TabsTrigger value="spawnregions" className="min-h-10 shrink-0 rounded-md px-3">
-            <Map className="w-4 h-4" />
-            <span className="font-medium">Spawn Regions</span>
-          </TabsTrigger>
-          <TabsTrigger value="modsettings" className="min-h-10 shrink-0 rounded-md px-3">
-            <Puzzle className="w-4 h-4" />
-            <span className="font-medium">Mod Settings</span>
-            {modifiedModSettingsCount > 0 && (
-              <Badge variant="warning" className="h-4 px-1.5 py-0 text-xs" title={`${modifiedModSettingsCount} option${modifiedModSettingsCount === 1 ? '' : 's'} differ from default`}>
-                {modifiedModSettingsCount}
-              </Badge>
-            )}
-          </TabsTrigger>
+        <TabsList className="flex h-auto flex-wrap gap-1 bg-muted/30 border border-border/50 p-1 rounded-md w-full">
+          {([
+            { value: 'ini', label: 'Server Settings', icon: Settings, dirty: hasIniChanges, count: changedIniCount, missing: !pathsInfo?.exists.ini },
+            { value: 'sandbox', label: 'Sandbox', icon: FileText, dirty: hasSandboxChanges, count: changedSandboxCount, missing: !pathsInfo?.exists.sandbox },
+            { value: 'spawnpoints', label: 'Spawn Points', icon: MapPin, dirty: false, count: 0, missing: false },
+            { value: 'spawnregions', label: 'Spawn Regions', icon: Map, dirty: false, count: 0, missing: false },
+            { value: 'modsettings', label: 'Mod Settings', icon: Puzzle, dirty: false, count: modifiedModSettingsCount, missing: false },
+          ] as const).map((t) => (
+            <TabsTrigger
+              key={t.value}
+              value={t.value}
+              className="flex-1 min-w-[120px] flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium data-[state=active]:bg-primary/15 data-[state=active]:text-primary data-[state=active]:shadow-none"
+            >
+              <t.icon className="w-4 h-4 shrink-0" />
+              {t.label}
+              {t.count > 0 && (
+                <Badge variant="warning" className="h-5 px-1.5 py-0 font-mono text-[10px] leading-none">
+                  {t.count}
+                </Badge>
+              )}
+              {t.dirty && activeTab !== t.value && (
+                <span className="h-1.5 w-1.5 rounded-full bg-warning motion-safe:animate-pulse" aria-label="unsaved changes" />
+              )}
+              {t.missing && (
+                <AlertCircle className="w-4 h-4 text-warning" aria-label="file missing" />
+              )}
+            </TabsTrigger>
+          ))}
         </TabsList>
-        </div>
 
         {/* INI Settings Tab */}
         <TabsContent value="ini" className="mt-4">
-          <Card className="border-border/60">
-            <CardHeader className="border-b border-border/50 py-3">
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                <span className="flex h-6 items-center gap-1.5 rounded border border-border/60 bg-muted/40 px-2 font-mono text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  <FileText className="h-3 w-3" /> INI
-                </span>
-                <CardDescription className="min-w-0 flex-1 truncate text-xs">
-                  Configure server behavior, network, and player settings
-                </CardDescription>
-                {hasIniChanges && (
-                  <Badge variant="warning" className="h-6">
-                    <AlertTriangle className="mr-1 h-3 w-3" />
-                    {changedIniCount} unsaved
-                  </Badge>
-                )}
-                <div className="flex items-center gap-2 sm:ml-auto">
+          <TacticalPanel tone={hasIniChanges ? 'warning' : 'primary'}>
+            <SectionHeader
+              label="ini"
+              sublabel="server behavior, network, players"
+              icon={FileText}
+              tone={hasIniChanges ? 'warning' : 'primary'}
+              action={
+                <div className="flex items-center gap-1.5">
+                  {hasIniChanges && (
+                    <Badge variant="warning" className="h-5 px-1.5 py-0 font-mono text-[10px]">
+                      <AlertTriangle className="mr-1 h-3 w-3" />
+                      {changedIniCount}
+                    </Badge>
+                  )}
                   <div className="flex items-center gap-0.5 rounded-md border border-border/60 bg-muted/30 p-0.5">
                     <Button
                       variant={editorMode === 'structured' ? 'secondary' : 'ghost'}
                       size="sm"
                       onClick={() => setEditorMode('structured')}
-                      className="h-8 gap-1.5 px-2 text-xs"
+                      className="h-7 gap-1.5 px-2 text-xs font-medium"
                       aria-pressed={editorMode === 'structured'}
                     >
-                      <FormInput className="h-3.5 w-3.5" /> Structured
+                      <FormInput className="h-3 w-3" /> form
                     </Button>
                     <Button
                       variant={editorMode === 'raw' ? 'secondary' : 'ghost'}
@@ -1608,17 +1819,17 @@ export default function ServerConfig() {
                         setEditorMode('raw')
                         loadRawContent('ini')
                       }}
-                      className="h-8 gap-1.5 px-2 text-xs"
+                      className="h-7 gap-1.5 px-2 text-xs font-medium"
                       aria-pressed={editorMode === 'raw'}
                     >
-                      <Code className="h-3.5 w-3.5" /> Raw
+                      <Code className="h-3 w-3" /> raw
                     </Button>
                   </div>
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Button variant="outline" size="icon" className="h-9 w-9" onClick={() => handleCreateBackup('ini')} aria-label="Download INI backup">
-                          <Download className="h-4 w-4" />
+                        <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => handleCreateBackup('ini')} aria-label="Download INI backup">
+                          <Download className="h-3.5 w-3.5" />
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent>Download INI backup</TooltipContent>
@@ -1628,22 +1839,43 @@ export default function ServerConfig() {
                     href="https://pzwiki.net/wiki/Server_settings"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex h-9 items-center gap-1 rounded border bg-muted/30 px-2 text-xs text-muted-foreground hover:text-primary"
+                    className="flex h-7 items-center gap-1 rounded border border-border/60 bg-muted/30 px-2 text-xs font-medium text-muted-foreground hover:border-primary/40 hover:text-primary"
                   >
-                    <ExternalLink className="h-3 w-3" /> PZ Wiki <span className="sr-only">(opens in new tab)</span>
+                    <ExternalLink className="h-3 w-3" /> wiki
                   </a>
-                  <Button onClick={handleSaveIni} disabled={saving} size="sm" className="h-9">
+                  <Button onClick={handleSaveIni} disabled={saving || !hasIniChanges} variant="command" size="sm" className="h-7 gap-1.5 text-xs font-medium">
                     {saving ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      <Loader2 className="h-3 w-3 animate-spin" />
                     ) : (
-                      <Save className="mr-2 h-4 w-4" />
+                      <Save className="h-3 w-3" />
                     )}
-                    Save &amp; Reload
+                    save &amp; reload
                   </Button>
                 </div>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-4">
+              }
+            />
+            <div className="p-4">
+              {iniSettings['DoLuaChecksum']?.toLowerCase() === 'true' && (
+                <Alert variant="destructive" className="mb-4">
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertTitle>Lua Checksum is enabled</AlertTitle>
+                  <AlertDescription>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <span className="min-w-0 flex-1">
+                        PanelBridge modifies server-side Lua files. With Lua Checksum enabled, clients will fail verification and cannot connect. Disable <strong>DoLuaChecksum</strong> in the Mods category to allow players to join.
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="command"
+                        className="h-7 shrink-0 gap-1.5 text-xs font-medium"
+                        onClick={() => updateIniValue('DoLuaChecksum', 'false')}
+                      >
+                        disable now
+                      </Button>
+                    </div>
+                  </AlertDescription>
+                </Alert>
+              )}
               {editorMode === 'raw' ? (
                 <div className="relative">
                   <TooltipProvider>
@@ -1674,45 +1906,54 @@ export default function ServerConfig() {
                 </div>
               ) : (
                 <div className="min-h-[400px]">
-                  {/* Scoped search — applies to all categories on this tab */}
-                  <div className="mb-3 flex flex-wrap items-center gap-2">
+                  {/* Scoped search + filter mode — applies to all categories on this tab */}
+                  <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2">
                     <div className="relative min-w-0 flex-1 sm:max-w-md">
                       <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                       <Input
                         placeholder="Search server settings…"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="h-9 bg-background/50 pl-9"
+                        className="h-8 bg-background/50 pl-9 pr-20"
                         aria-label="Search server settings"
                         maxLength={128}
                       />
                       {searchQuery && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2 p-0"
-                          onClick={() => setSearchQuery('')}
-                          aria-label="Clear search"
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
+                        <div className="pointer-events-none absolute right-1 top-1/2 flex -translate-y-1/2 items-center gap-1">
+                          <span className="text-[11px] tabular-nums text-muted-foreground">
+                            {searchResultsCount}
+                          </span>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="pointer-events-auto h-6 w-6 p-0"
+                            onClick={() => setSearchQuery('')}
+                            aria-label="Clear search"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
                       )}
                     </div>
-                    {searchQuery && (
-                      <Badge variant="secondary" className="h-6 text-xs">
-                        {searchResultsCount} result{searchResultsCount !== 1 ? 's' : ''}
-                      </Badge>
-                    )}
+                    <div className="ml-auto flex items-center gap-2">
+                      <div className="inline-flex items-center rounded-md border border-border/60 bg-background/50 p-0.5" role="group" aria-label="Filter settings">
+                        {(['all','modified','nondefault'] as const).map(mode => (
+                          <button
+                            key={mode}
+                            type="button"
+                            onClick={() => setFilterMode(mode)}
+                            className={`h-7 px-2.5 text-xs font-medium rounded transition-colors ${
+                              filterMode === mode
+                                ? 'bg-primary/15 text-primary'
+                                : 'text-muted-foreground hover:text-foreground'
+                            }`}
+                          >
+                            {mode === 'nondefault' ? 'non-default' : mode}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   </div>
-                  {iniSettings['DoLuaChecksum']?.toLowerCase() === 'true' && (
-                    <Alert variant="destructive" className="mb-4">
-                      <AlertTriangle className="h-4 w-4" />
-                      <AlertTitle>Lua Checksum is enabled</AlertTitle>
-                      <AlertDescription>
-                        PanelBridge modifies server-side Lua files. With Lua Checksum enabled, clients will fail verification and cannot connect. Disable <strong>DoLuaChecksum</strong> in the Mods category to allow players to join.
-                      </AlertDescription>
-                    </Alert>
-                  )}
                   {searchQuery ? (
                     // Search mode: flat results across all categories, grouped by category label
                     <ScrollArea className="h-[calc(100vh-420px)] min-h-[360px] pr-4">
@@ -1752,47 +1993,179 @@ export default function ServerConfig() {
                       )}
                     </ScrollArea>
                   ) : (
-                    // Rail mode: vertical category nav + single active category content
+                    // Rail mode: vertical category nav (grouped) + single active category content
                     <div className="grid gap-0 md:grid-cols-[252px_minmax(0,1fr)]">
                       <nav
                         aria-label="Server settings categories"
                         className="-mx-2 flex gap-0.5 overflow-x-auto px-2 pb-2 md:mx-0 md:flex-col md:overflow-x-visible md:overflow-y-auto md:border-r md:border-border/50 md:pb-0 md:pr-3 md:pt-1 md:max-h-[calc(100vh-420px)] md:min-h-[360px]"
                       >
-                        {INI_CATEGORIES.map(category => {
-                          const count = (filteredIniSettings[category.id] || []).length
-                          if (count === 0) return null
-                          const isActive = activeIniCategory === category.id
+                        <div className="hidden md:flex items-center justify-between px-3 pb-1">
+                          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">
+                            Categories
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setAllGroupsCollapsed('ini', !iniAllCollapsed)}
+                            className="inline-flex items-center gap-1 rounded text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60 hover:text-foreground transition-colors"
+                            aria-label={iniAllCollapsed ? 'Expand all category groups' : 'Collapse all category groups'}
+                          >
+                            {iniAllCollapsed
+                              ? <ChevronsUpDown className="h-3 w-3" />
+                              : <ChevronsDownUp className="h-3 w-3" />}
+                            <span>{iniAllCollapsed ? 'Expand all' : 'Collapse all'}</span>
+                          </button>
+                        </div>
+                        {INI_CATEGORY_GROUPS.map((group, gIdx) => {
+                          const cats = INI_CATEGORIES.filter(c => c.group === group.id)
+                          // Hide whole group if every category is empty under current filter
+                          const totalInGroup = cats.reduce((acc, c) => acc + (filteredIniSettings[c.id] || []).length, 0)
+                          if (totalInGroup === 0 && filterMode !== 'all') return null
+                          const groupKey = `ini:${group.id}`
+                          const isCollapsed = !!collapsedGroups[groupKey]
+                          const groupModCount = cats.reduce((acc, c) => acc + (iniModifiedByCategory[c.id] || 0), 0)
+                          return (
+                            <div key={group.id} className={gIdx > 0 ? 'mt-2 md:mt-3' : ''}>
+                              <button
+                                type="button"
+                                onClick={() => toggleGroup(groupKey)}
+                                aria-expanded={!isCollapsed}
+                                className="hidden md:flex w-full items-center gap-2 px-3 pb-1 pt-1 text-xs font-semibold uppercase tracking-wide text-foreground/80 hover:text-foreground transition-colors"
+                              >
+                                {isCollapsed
+                                  ? <ChevronRight className="h-3 w-3 shrink-0" />
+                                  : <ChevronDown className="h-3 w-3 shrink-0" />
+                                }
+                                <span>{group.label}</span>
+                                {groupModCount > 0 && (
+                                  <span className="rounded-full bg-warning/20 px-1.5 py-0.5 text-[8px] font-semibold text-warning">{groupModCount}</span>
+                                )}
+                                <span className="h-px flex-1 bg-border/40" />
+                              </button>
+                              {!isCollapsed && cats.map(category => {
+                                const count = (filteredIniSettings[category.id] || []).length
+                                if (count === 0 && filterMode !== 'all') return null
+                                const isActive = activeIniCategory === category.id
+                                const modCount = iniModifiedByCategory[category.id] || 0
+                                return (
+                                  <button
+                                    key={category.id}
+                                    type="button"
+                                    onClick={() => setActiveIniCategory(category.id)}
+                                    aria-current={isActive ? 'page' : undefined}
+                                    className={`group relative flex shrink-0 items-center gap-2 whitespace-nowrap border-l-2 px-3 py-2 text-left text-sm transition-colors md:whitespace-normal ${
+                                      isActive
+                                        ? 'border-primary bg-primary/10 text-primary'
+                                        : 'border-transparent text-muted-foreground hover:border-primary/30 hover:bg-muted/40 hover:text-foreground'
+                                    }`}
+                                  >
+                                    <CategoryIcon name={category.icon} isActive={isActive} className="h-4 w-4 shrink-0" />
+                                    <span className="min-w-0 flex-1 truncate font-medium">{category.label}</span>
+                                    {modCount > 0 && (
+                                      <span
+                                        className="shrink-0 rounded-full bg-warning/20 px-1.5 py-0.5 text-[9px] font-mono font-semibold uppercase tracking-wider text-warning"
+                                        title={`${modCount} unsaved change${modCount === 1 ? '' : 's'}`}
+                                      >
+                                        {modCount}
+                                      </span>
+                                    )}
+                                    <span className={`shrink-0 min-w-[1.5rem] rounded text-center px-1 py-0.5 text-[10px] font-mono tabular-nums ${
+                                      isActive ? 'text-primary/80' : 'bg-muted text-muted-foreground'
+                                    }`}>
+                                      {count}
+                                    </span>
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          )
+                        })}
+                        {uncategorizedIniKeys.length > 0 && (() => {
+                          const isActive = activeIniCategory === 'uncategorized'
                           return (
                             <button
-                              key={category.id}
+                              key="uncategorized"
                               type="button"
-                              onClick={() => setActiveIniCategory(category.id)}
+                              onClick={() => setActiveIniCategory('uncategorized')}
                               aria-current={isActive ? 'page' : undefined}
-                              className={`group relative flex shrink-0 items-center gap-2 whitespace-nowrap border-l-2 px-3 py-2 text-left text-sm transition-colors md:whitespace-normal ${
+                              className={`group relative mt-2 flex shrink-0 items-center gap-2 whitespace-nowrap border-l-2 px-3 py-2 text-left text-sm transition-colors md:mt-3 md:whitespace-normal md:border-t md:border-t-border/50 md:pt-3 ${
                                 isActive
-                                  ? 'border-primary bg-primary/10 text-primary'
-                                  : 'border-transparent text-muted-foreground hover:border-primary/30 hover:bg-muted/40 hover:text-foreground'
+                                  ? 'border-l-amber-500 bg-amber-500/10 text-amber-500'
+                                  : 'border-l-transparent text-muted-foreground hover:border-l-amber-500/30 hover:bg-amber-500/5 hover:text-amber-500/80'
                               }`}
+                              title="Keys present in your INI file but not in the schema (newer vanilla keys, mod-injected keys, or custom)"
                             >
-                              <CategoryIcon name={category.icon} isActive={isActive} className="h-4 w-4 shrink-0" />
-                              <span className="min-w-0 flex-1 truncate font-medium">{category.label}</span>
+                              <span className="min-w-0 flex-1 truncate font-medium">Uncategorized / Unknown</span>
                               <span className={`shrink-0 min-w-[1.5rem] rounded text-center px-1 py-0.5 text-[10px] font-mono tabular-nums ${
-                                isActive ? 'text-primary/80' : 'bg-muted text-muted-foreground'
+                                isActive ? 'text-amber-500/80' : 'bg-muted text-muted-foreground'
                               }`}>
-                                {count}
+                                {uncategorizedIniKeys.length}
                               </span>
                             </button>
                           )
-                        })}
+                        })()}
                       </nav>
                       <ScrollArea className="h-[calc(100vh-420px)] min-h-[360px] md:pl-5 pr-4">
                         {(() => {
+                          if (activeIniCategory === 'uncategorized') {
+                            if (uncategorizedIniKeys.length === 0) {
+                              return (
+                                <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
+                                  No uncategorized keys.
+                                </div>
+                              )
+                            }
+                            return (
+                              <div>
+                                <div className="sticky top-0 z-10 -mx-1 mb-3 flex items-baseline justify-between border-b border-amber-500/30 bg-card/95 px-1 pb-2 pt-1 backdrop-blur">
+                                  <h3 className="text-sm font-semibold uppercase tracking-wider text-amber-500">
+                                    Uncategorized / Unknown Keys
+                                  </h3>
+                                  <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+                                    {uncategorizedIniKeys.length} key{uncategorizedIniKeys.length === 1 ? '' : 's'}
+                                  </span>
+                                </div>
+                                <p className="mb-3 text-xs text-muted-foreground">
+                                  Keys present in your INI but not recognized by the schema. Likely newer vanilla settings or mod-injected. Values are preserved on save — edit with care.
+                                </p>
+                                <div className="space-y-1">
+                                  {uncategorizedIniKeys.map(({ key, value }) => {
+                                    const orig = originalIniSettings[key]
+                                    const isModified = orig !== undefined && orig !== value
+                                    return (
+                                      <div key={key} className={`flex items-center justify-between gap-3 rounded-md px-3 py-2 transition-colors ${isModified ? 'border border-amber-500/20 bg-amber-500/10' : 'hover:bg-muted/50'}`}>
+                                        <div className="min-w-0 flex-1">
+                                          <div className="flex items-center gap-2">
+                                            <span className="truncate text-sm font-medium" title={key}>{key}</span>
+                                            {isModified && (
+                                              <button
+                                                onClick={() => setIniSettings(prev => ({ ...prev, [key]: orig ?? '' }))}
+                                                className="text-xs text-amber-500 hover:text-amber-400"
+                                                title="Undo change"
+                                              >↩</button>
+                                            )}
+                                          </div>
+                                        </div>
+                                        <Input
+                                          className="h-8 w-56 text-sm"
+                                          value={value}
+                                          maxLength={500}
+                                          onChange={e => setIniSettings(prev => ({ ...prev, [key]: e.target.value }))}
+                                        />
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              </div>
+                            )
+                          }
                           const settings = filteredIniSettings[activeIniCategory] || []
                           const active = INI_CATEGORIES.find(c => c.id === activeIniCategory)
                           if (settings.length === 0) {
                             return (
                               <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
-                                No settings in this category.
+                                {filterMode === 'modified' ? 'No modified settings in this category.' :
+                                 filterMode === 'nondefault' ? 'All settings in this category are at defaults.' :
+                                 'No settings in this category.'}
                               </div>
                             )
                           }
@@ -1827,37 +2200,35 @@ export default function ServerConfig() {
                   )}
                 </div>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </TacticalPanel>
         </TabsContent>
 
         {/* Sandbox Tab */}
         <TabsContent value="sandbox" className="mt-4">
-          <Card className="border-border/60">
-            <CardHeader className="border-b border-border/50 py-3">
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                <span className="flex h-6 items-center gap-1.5 rounded border border-border/60 bg-muted/40 px-2 font-mono text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  <Code className="h-3 w-3" /> Lua
-                </span>
-                <CardDescription className="min-w-0 flex-1 truncate text-xs">
-                  Configure world generation, zombies, and survival settings
-                </CardDescription>
-                {hasSandboxChanges && (
-                  <Badge variant="warning" className="h-6">
-                    <AlertTriangle className="mr-1 h-3 w-3" />
-                    {changedSandboxCount} unsaved
-                  </Badge>
-                )}
-                <div className="flex items-center gap-2 sm:ml-auto">
+          <TacticalPanel tone={hasSandboxChanges ? 'warning' : 'primary'}>
+            <SectionHeader
+              label="sandbox"
+              sublabel="world, zombies, survival"
+              icon={Code}
+              tone={hasSandboxChanges ? 'warning' : 'primary'}
+              action={
+                <div className="flex items-center gap-1.5">
+                  {hasSandboxChanges && (
+                    <Badge variant="warning" className="h-5 px-1.5 py-0 font-mono text-[10px]">
+                      <AlertTriangle className="mr-1 h-3 w-3" />
+                      {changedSandboxCount}
+                    </Badge>
+                  )}
                   <div className="flex items-center gap-0.5 rounded-md border border-border/60 bg-muted/30 p-0.5">
                     <Button
                       variant={editorMode === 'structured' ? 'secondary' : 'ghost'}
                       size="sm"
                       onClick={() => setEditorMode('structured')}
-                      className="h-8 gap-1.5 px-2 text-xs"
+                      className="h-7 gap-1.5 px-2 text-xs font-medium"
                       aria-pressed={editorMode === 'structured'}
                     >
-                      <FormInput className="h-3.5 w-3.5" /> Structured
+                      <FormInput className="h-3 w-3" /> form
                     </Button>
                     <Button
                       variant={editorMode === 'raw' ? 'secondary' : 'ghost'}
@@ -1866,34 +2237,42 @@ export default function ServerConfig() {
                         setEditorMode('raw')
                         loadRawContent('sandbox')
                       }}
-                      className="h-8 gap-1.5 px-2 text-xs"
+                      className="h-7 gap-1.5 px-2 text-xs font-medium"
                       aria-pressed={editorMode === 'raw'}
                     >
-                      <Code className="h-3.5 w-3.5" /> Raw
+                      <Code className="h-3 w-3" /> raw
                     </Button>
                   </div>
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Button variant="outline" size="icon" className="h-9 w-9" onClick={() => handleCreateBackup('sandbox')} aria-label="Download Sandbox backup">
-                          <Download className="h-4 w-4" />
+                        <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => handleCreateBackup('sandbox')} aria-label="Download Sandbox backup">
+                          <Download className="h-3.5 w-3.5" />
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent>Download Sandbox backup</TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
-                  <Button onClick={handleSaveSandbox} disabled={saving} size="sm" className="h-9">
+                  <a
+                    href="https://pzwiki.net/wiki/Sandbox_options"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex h-7 items-center gap-1 rounded border border-border/60 bg-muted/30 px-2 text-xs font-medium text-muted-foreground hover:border-primary/40 hover:text-primary"
+                  >
+                    <ExternalLink className="h-3 w-3" /> wiki
+                  </a>
+                  <Button onClick={handleSaveSandbox} disabled={saving || !hasSandboxChanges} variant="command" size="sm" className="h-7 gap-1.5 text-xs font-medium">
                     {saving ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      <Loader2 className="h-3 w-3 animate-spin" />
                     ) : (
-                      <Save className="mr-2 h-4 w-4" />
+                      <Save className="h-3 w-3" />
                     )}
-                    Save &amp; Reload
+                    save &amp; reload
                   </Button>
                 </div>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-4">
+              }
+            />
+            <div className="p-4">
               {editorMode === 'raw' ? (
                 <div className="relative">
                   <TooltipProvider>
@@ -1925,34 +2304,52 @@ export default function ServerConfig() {
               ) : (
                 <div className="min-h-[400px]">
                   {/* Scoped search — applies to all categories on this tab */}
-                  <div className="mb-3 flex flex-wrap items-center gap-2">
+                  <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2">
                     <div className="relative min-w-0 flex-1 sm:max-w-md">
                       <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                       <Input
                         placeholder="Search sandbox settings…"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="h-9 bg-background/50 pl-9"
+                        className="h-8 bg-background/50 pl-9 pr-20"
                         aria-label="Search sandbox settings"
                         maxLength={128}
                       />
                       {searchQuery && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2 p-0"
-                          onClick={() => setSearchQuery('')}
-                          aria-label="Clear search"
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
+                        <div className="pointer-events-none absolute right-1 top-1/2 flex -translate-y-1/2 items-center gap-1">
+                          <span className="text-[11px] tabular-nums text-muted-foreground">
+                            {searchResultsCount}
+                          </span>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="pointer-events-auto h-6 w-6 p-0"
+                            onClick={() => setSearchQuery('')}
+                            aria-label="Clear search"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
                       )}
                     </div>
-                    {searchQuery && (
-                      <Badge variant="secondary" className="h-6 text-xs">
-                        {searchResultsCount} result{searchResultsCount !== 1 ? 's' : ''}
-                      </Badge>
-                    )}
+                    <div className="ml-auto flex items-center gap-2">
+                      <div className="inline-flex items-center rounded-md border border-border/60 bg-background/50 p-0.5" role="group" aria-label="Filter settings">
+                        {(['all','modified','nondefault'] as const).map(mode => (
+                          <button
+                            key={mode}
+                            type="button"
+                            onClick={() => setFilterMode(mode)}
+                            className={`h-7 px-2.5 text-xs font-medium rounded transition-colors ${
+                              filterMode === mode
+                                ? 'bg-primary/15 text-primary'
+                                : 'text-muted-foreground hover:text-foreground'
+                            }`}
+                          >
+                            {mode === 'nondefault' ? 'non-default' : mode}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                   {searchQuery ? (
                     // Search mode: flat, grouped by category label
@@ -1992,36 +2389,89 @@ export default function ServerConfig() {
                       )}
                     </ScrollArea>
                   ) : (
-                    // Rail mode: vertical category nav + single active category content
+                    // Rail mode: vertical category nav (grouped) + single active category content
                     <div className="grid gap-0 md:grid-cols-[252px_minmax(0,1fr)]">
                       <nav
                         aria-label="Sandbox categories"
                         className="-mx-2 flex gap-0.5 overflow-x-auto px-2 pb-2 md:mx-0 md:flex-col md:overflow-x-visible md:overflow-y-auto md:border-r md:border-border/50 md:pb-0 md:pr-3 md:pt-1 md:max-h-[calc(100vh-420px)] md:min-h-[360px]"
                       >
-                        {SANDBOX_CATEGORIES.map(category => {
-                          const count = (filteredSandboxSettings[category.id] || []).length
-                          if (count === 0) return null
-                          const isActive = activeSandboxCategory === category.id
+                        <div className="hidden md:flex items-center justify-between px-3 pb-1">
+                          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">
+                            Categories
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setAllGroupsCollapsed('sandbox', !sandboxAllCollapsed)}
+                            className="inline-flex items-center gap-1 rounded text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60 hover:text-foreground transition-colors"
+                            aria-label={sandboxAllCollapsed ? 'Expand all category groups' : 'Collapse all category groups'}
+                          >
+                            {sandboxAllCollapsed
+                              ? <ChevronsUpDown className="h-3 w-3" />
+                              : <ChevronsDownUp className="h-3 w-3" />}
+                            <span>{sandboxAllCollapsed ? 'Expand all' : 'Collapse all'}</span>
+                          </button>
+                        </div>
+                        {SANDBOX_CATEGORY_GROUPS.map((group, gIdx) => {
+                          const cats = SANDBOX_CATEGORIES.filter(c => c.group === group.id)
+                          const totalInGroup = cats.reduce((acc, c) => acc + (filteredSandboxSettings[c.id] || []).length, 0)
+                          if (totalInGroup === 0 && filterMode !== 'all') return null
+                          const groupKey = `sandbox:${group.id}`
+                          const isCollapsed = !!collapsedGroups[groupKey]
+                          const groupModCount = cats.reduce((acc, c) => acc + (sandboxModifiedByCategory[c.id] || 0), 0)
                           return (
-                            <button
-                              key={category.id}
-                              type="button"
-                              onClick={() => setActiveSandboxCategory(category.id)}
-                              aria-current={isActive ? 'page' : undefined}
-                              className={`group relative flex shrink-0 items-center gap-2 whitespace-nowrap border-l-2 px-3 py-2 text-left text-sm transition-colors md:whitespace-normal ${
-                                isActive
-                                  ? 'border-primary bg-primary/10 text-primary'
-                                  : 'border-transparent text-muted-foreground hover:border-primary/30 hover:bg-muted/40 hover:text-foreground'
-                              }`}
-                            >
-                              <CategoryIcon name={category.icon} isActive={isActive} className="h-4 w-4 shrink-0" />
-                              <span className="min-w-0 flex-1 truncate font-medium">{category.label}</span>
-                              <span className={`shrink-0 min-w-[1.5rem] rounded text-center px-1 py-0.5 text-[10px] font-mono tabular-nums ${
-                                isActive ? 'text-primary/80' : 'bg-muted text-muted-foreground'
-                              }`}>
-                                {count}
-                              </span>
-                            </button>
+                            <div key={group.id} className={gIdx > 0 ? 'mt-2 md:mt-3' : ''}>
+                              <button
+                                type="button"
+                                onClick={() => toggleGroup(groupKey)}
+                                aria-expanded={!isCollapsed}
+                                className="hidden md:flex w-full items-center gap-2 px-3 pb-1 pt-1 text-xs font-semibold uppercase tracking-wide text-foreground/80 hover:text-foreground transition-colors"
+                              >
+                                {isCollapsed
+                                  ? <ChevronRight className="h-3 w-3 shrink-0" />
+                                  : <ChevronDown className="h-3 w-3 shrink-0" />
+                                }
+                                <span>{group.label}</span>
+                                {groupModCount > 0 && (
+                                  <span className="rounded-full bg-warning/20 px-1.5 py-0.5 text-[8px] font-semibold text-warning">{groupModCount}</span>
+                                )}
+                                <span className="h-px flex-1 bg-border/40" />
+                              </button>
+                              {!isCollapsed && cats.map(category => {
+                                const count = (filteredSandboxSettings[category.id] || []).length
+                                if (count === 0 && filterMode !== 'all') return null
+                                const isActive = activeSandboxCategory === category.id
+                                const modCount = sandboxModifiedByCategory[category.id] || 0
+                                return (
+                                  <button
+                                    key={category.id}
+                                    type="button"
+                                    onClick={() => setActiveSandboxCategory(category.id)}
+                                    aria-current={isActive ? 'page' : undefined}
+                                    className={`group relative flex shrink-0 items-center gap-2 whitespace-nowrap border-l-2 px-3 py-2 text-left text-sm transition-colors md:whitespace-normal ${
+                                      isActive
+                                        ? 'border-primary bg-primary/10 text-primary'
+                                        : 'border-transparent text-muted-foreground hover:border-primary/30 hover:bg-muted/40 hover:text-foreground'
+                                    }`}
+                                  >
+                                    <CategoryIcon name={category.icon} isActive={isActive} className="h-4 w-4 shrink-0" />
+                                    <span className="min-w-0 flex-1 truncate font-medium">{category.label}</span>
+                                    {modCount > 0 && (
+                                      <span
+                                        className="shrink-0 rounded-full bg-warning/20 px-1.5 py-0.5 text-[9px] font-mono font-semibold uppercase tracking-wider text-warning"
+                                        title={`${modCount} unsaved change${modCount === 1 ? '' : 's'}`}
+                                      >
+                                        {modCount}
+                                      </span>
+                                    )}
+                                    <span className={`shrink-0 min-w-[1.5rem] rounded text-center px-1 py-0.5 text-[10px] font-mono tabular-nums ${
+                                      isActive ? 'text-primary/80' : 'bg-muted text-muted-foreground'
+                                    }`}>
+                                      {count}
+                                    </span>
+                                  </button>
+                                )
+                              })}
+                            </div>
                           )
                         })}
                         {uncategorizedSandboxKeys.length > 0 && (() => {
@@ -2032,7 +2482,7 @@ export default function ServerConfig() {
                               type="button"
                               onClick={() => setActiveSandboxCategory('uncategorized')}
                               aria-current={isActive ? 'page' : undefined}
-                              className={`group relative mt-1 flex shrink-0 items-center gap-2 whitespace-nowrap border-l-2 px-3 py-2 text-left text-sm transition-colors md:mt-2 md:whitespace-normal md:border-t md:border-t-border/50 md:pt-3 ${
+                              className={`group relative mt-2 flex shrink-0 items-center gap-2 whitespace-nowrap border-l-2 px-3 py-2 text-left text-sm transition-colors md:mt-3 md:whitespace-normal md:border-t md:border-t-border/50 md:pt-3 ${
                                 isActive
                                   ? 'border-l-amber-500 bg-amber-500/10 text-amber-500'
                                   : 'border-l-transparent text-muted-foreground hover:border-l-amber-500/30 hover:bg-amber-500/5 hover:text-amber-500/80'
@@ -2133,7 +2583,9 @@ export default function ServerConfig() {
                           if (settings.length === 0) {
                             return (
                               <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
-                                No settings in this category.
+                                {filterMode === 'modified' ? 'No modified settings in this category.' :
+                                 filterMode === 'nondefault' ? 'All settings in this category are at defaults.' :
+                                 'No settings in this category.'}
                               </div>
                             )
                           }
@@ -2167,32 +2619,48 @@ export default function ServerConfig() {
                   )}
                 </div>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </TacticalPanel>
         </TabsContent>
 
         {/* Spawn Points Tab */}
         <TabsContent value="spawnpoints" className="mt-4">
-          <Card className="border-border/60">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="flex items-center gap-2">
-                    <div className="rounded-lg border border-primary/20 bg-primary/10 p-1.5 text-primary">
-                      <MapPin className="w-4 h-4" />
-                    </div>
-                    Spawn Points
-                  </CardTitle>
-                  <CardDescription className="mt-1">
-                    Player spawn locations - typically managed by mods
-                  </CardDescription>
-                </div>
-                <div className="flex items-center gap-2">
+          <TacticalPanel tone="muted">
+            <SectionHeader
+              label="spawn points"
+              sublabel="mod-managed · player start locations"
+              icon={MapPin}
+              tone="muted"
+              action={
+                <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-0.5 rounded-md border border-border/60 bg-muted/30 p-0.5">
+                    <Button
+                      variant={editorMode === 'structured' ? 'secondary' : 'ghost'}
+                      size="sm"
+                      onClick={() => setEditorMode('structured')}
+                      className="h-7 gap-1.5 px-2 text-xs font-medium"
+                      aria-pressed={editorMode === 'structured'}
+                    >
+                      <FormInput className="h-3 w-3" /> info
+                    </Button>
+                    <Button
+                      variant={editorMode === 'raw' ? 'secondary' : 'ghost'}
+                      size="sm"
+                      onClick={() => {
+                        setEditorMode('raw')
+                        loadRawContent('spawnpoints')
+                      }}
+                      className="h-7 gap-1.5 px-2 text-xs font-medium"
+                      aria-pressed={editorMode === 'raw'}
+                    >
+                      <Code className="h-3 w-3" /> raw
+                    </Button>
+                  </div>
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Button variant="outline" size="icon" className="h-11 w-11 sm:h-9 sm:w-9" onClick={() => handleCreateBackup('spawnpoints')} aria-label="Download Spawn Points backup">
-                          <Download className="w-4 h-4" />
+                        <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => handleCreateBackup('spawnpoints')} aria-label="Download Spawn Points backup">
+                          <Download className="h-3.5 w-3.5" />
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent>Download Spawnpoints backup</TooltipContent>
@@ -2202,14 +2670,24 @@ export default function ServerConfig() {
                     href="https://map.projectzomboid.com/"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-xs text-muted-foreground hover:text-primary flex items-center gap-1 px-2 py-1 rounded border bg-muted/30"
+                    className="flex h-7 items-center gap-1 rounded border border-border/60 bg-muted/30 px-2 text-xs font-medium text-muted-foreground hover:border-primary/40 hover:text-primary"
                   >
-                    <ExternalLink className="w-3 h-3" /> Map Coordinates <span className="sr-only">(opens in new tab)</span>
+                    <ExternalLink className="h-3 w-3" /> map
                   </a>
+                  {editorMode === 'raw' && (
+                    <Button onClick={handleSaveSpawnPoints} disabled={saving} variant="command" size="sm" className="h-7 gap-1.5 text-xs font-medium">
+                      {saving ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <Save className="h-3 w-3" />
+                      )}
+                      save
+                    </Button>
+                  )}
                 </div>
-              </div>
-            </CardHeader>
-            <CardContent>
+              }
+            />
+            <div className="p-4">
               {editorMode === 'raw' ? (
                 <div className="relative">
                   <TooltipProvider>
@@ -2237,26 +2715,16 @@ export default function ServerConfig() {
                     className="h-[400px] resize-y font-mono text-sm"
                     spellCheck={false}
                   />
-                  <div className="flex justify-end mt-3">
-                    <Button onClick={handleSaveSpawnPoints} disabled={saving}>
-                      {saving ? (
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      ) : (
-                        <Save className="w-4 h-4 mr-2" />
-                      )}
-                      Save
-                    </Button>
-                  </div>
                 </div>
               ) : (
                 <div className="text-center py-16">
                   <div className="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-full border border-primary/20 bg-primary/10 text-primary">
                     <MapPin className="w-8 h-8" />
                   </div>
-                  <h3 className="text-lg font-medium mb-2">Spawn Points Managed by Mods</h3>
-                  <p className="text-muted-foreground max-w-md mx-auto">
-                    Spawn point configuration is typically handled by mods like "Spawn Select" or similar.
-                    Switch to <strong>Raw</strong> mode to view or edit the file directly if needed.
+                  <h3 className="text-lg font-medium mb-2">Spawn points are mod-managed</h3>
+                  <p className="text-muted-foreground max-w-md mx-auto text-sm">
+                    Spawn locations are typically handled by mods like &ldquo;Spawn Select.&rdquo;
+                    Switch to <strong>raw</strong> to inspect or edit the file directly.
                   </p>
                   <div className="mt-6">
                     <Button
@@ -2265,56 +2733,71 @@ export default function ServerConfig() {
                         setEditorMode('raw')
                         loadRawContent('spawnpoints')
                       }}
+                      className="gap-1.5 text-xs font-medium"
                     >
-                      <Code className="w-4 h-4 mr-2" />
-                      View Raw File
+                      <Code className="h-3.5 w-3.5" /> open raw file
                     </Button>
                   </div>
                 </div>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </TacticalPanel>
         </TabsContent>
 
         {/* Spawn Regions Tab */}
         <TabsContent value="spawnregions" className="mt-4">
-          <Card className="border-border/60">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="flex items-center gap-2">
-                    <div className="rounded-lg border border-primary/20 bg-primary/10 p-1.5 text-primary">
-                      <Map className="w-4 h-4" />
-                    </div>
-                    Spawn Regions
-                  </CardTitle>
-                  <CardDescription className="mt-1">
-                    Define available spawn regions (cities/towns) - these determine where players can choose to spawn
-                  </CardDescription>
-                </div>
-                <div className="flex items-center gap-2">
+          <TacticalPanel tone="primary">
+            <SectionHeader
+              label="spawn regions"
+              sublabel={`${spawnRegions.length} region${spawnRegions.length === 1 ? '' : 's'} · cities & towns`}
+              icon={Map}
+              action={
+                <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-0.5 rounded-md border border-border/60 bg-muted/30 p-0.5">
+                    <Button
+                      variant={editorMode === 'structured' ? 'secondary' : 'ghost'}
+                      size="sm"
+                      onClick={() => setEditorMode('structured')}
+                      className="h-7 gap-1.5 px-2 text-xs font-medium"
+                      aria-pressed={editorMode === 'structured'}
+                    >
+                      <FormInput className="h-3 w-3" /> form
+                    </Button>
+                    <Button
+                      variant={editorMode === 'raw' ? 'secondary' : 'ghost'}
+                      size="sm"
+                      onClick={() => {
+                        setEditorMode('raw')
+                        loadRawContent('spawnregions')
+                      }}
+                      className="h-7 gap-1.5 px-2 text-xs font-medium"
+                      aria-pressed={editorMode === 'raw'}
+                    >
+                      <Code className="h-3 w-3" /> raw
+                    </Button>
+                  </div>
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Button variant="outline" size="icon" className="h-11 w-11 sm:h-9 sm:w-9" onClick={() => handleCreateBackup('spawnregions')} aria-label="Download Spawn Regions backup">
-                          <Download className="w-4 h-4" />
+                        <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => handleCreateBackup('spawnregions')} aria-label="Download Spawn Regions backup">
+                          <Download className="h-3.5 w-3.5" />
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent>Download Spawnregions backup</TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
-                  <Button onClick={handleSaveSpawnRegions} disabled={saving}>
+                  <Button onClick={handleSaveSpawnRegions} disabled={saving} variant="command" size="sm" className="h-7 gap-1.5 text-xs font-medium">
                     {saving ? (
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      <Loader2 className="h-3 w-3 animate-spin" />
                     ) : (
-                      <Save className="w-4 h-4 mr-2" />
+                      <Save className="h-3 w-3" />
                     )}
-                    Save
+                    save
                   </Button>
                 </div>
-              </div>
-            </CardHeader>
-            <CardContent>
+              }
+            />
+            <div className="p-4">
               {editorMode === 'raw' ? (
                 <Textarea
                   value={rawContent}
@@ -2327,15 +2810,25 @@ export default function ServerConfig() {
                   {spawnRegions.length === 0 ? (
                     <EmptyState type="noData" title="No spawn regions found" description="Try switching to Raw mode to view the file contents" compact />
                   ) : (
-                    <div className="space-y-2">
-                      {spawnRegions.map((region, index) => (
-                        <div key={index} className="flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-start">
-                          <div className="flex items-center gap-2 sm:w-[220px] sm:flex-shrink-0">
-                            <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-md border border-border bg-muted/40 px-1.5 text-xs font-mono font-medium text-muted-foreground">
+                    <div className="overflow-hidden rounded-lg border">
+                      {/* Column headers (sm+ only) */}
+                      <div className="hidden sm:grid grid-cols-[2rem_minmax(180px,260px)_minmax(0,1fr)_2.25rem] items-center gap-3 border-b bg-muted/30 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        <span className="text-center">#</span>
+                        <span>Display Name</span>
+                        <span>Map File Path</span>
+                        <span aria-hidden="true" />
+                      </div>
+                      <ul className="divide-y divide-border/60">
+                        {spawnRegions.map((region, index) => (
+                          <li
+                            key={index}
+                            className="grid grid-cols-1 gap-3 px-3 py-2.5 sm:grid-cols-[2rem_minmax(180px,260px)_minmax(0,1fr)_2.25rem] sm:items-center"
+                          >
+                            <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-md border border-border bg-muted/40 px-1.5 text-xs font-mono font-medium text-muted-foreground sm:justify-self-center">
                               {index + 1}
                             </span>
-                            <div className="flex-1 min-w-0">
-                              <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Display Name</Label>
+                            <div className="min-w-0">
+                              <Label className="sm:sr-only text-[10px] uppercase tracking-wide text-muted-foreground">Display Name</Label>
                               <Input
                                 value={region.name}
                                 onChange={(e) => {
@@ -2345,40 +2838,49 @@ export default function ServerConfig() {
                                 }}
                                 placeholder="e.g., Muldraugh, KY"
                                 maxLength={64}
-                                className="mt-0.5 h-9"
+                                className="mt-0.5 h-9 sm:mt-0"
+                                aria-label={`Region ${index + 1} display name`}
                               />
                             </div>
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <Label className="text-[10px] uppercase tracking-wide text-muted-foreground flex items-center gap-2">
-                              {region.isServerFile ? 'Server File' : 'Map File Path'}
-                              {region.isServerFile && (
-                                <Badge variant="secondary" className="text-[10px] py-0">serverfile</Badge>
-                              )}
-                            </Label>
-                            <Input
-                              value={region.file}
-                              onChange={(e) => {
-                                const newRegions = [...spawnRegions]
-                                newRegions[index] = { ...region, file: e.target.value }
-                                setSpawnRegions(newRegions)
-                              }}
-                              placeholder={region.isServerFile ? "ServerName_spawnpoints.lua" : "media/maps/Muldraugh, KY/spawnpoints.lua"}
-                              className="mt-0.5 h-9 font-mono text-xs"
-                              maxLength={512}
-                            />
-                          </div>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-9 w-9 self-end text-muted-foreground hover:text-destructive sm:self-start sm:mt-[18px]"
-                            onClick={() => setSpawnRegions(spawnRegions.filter((_, i) => i !== index))}
-                            aria-label={`Delete spawn region ${region.name || index + 1}`}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      ))}
+                            <div className="min-w-0">
+                              <Label className="sm:sr-only text-[10px] uppercase tracking-wide text-muted-foreground flex items-center gap-2">
+                                {region.isServerFile ? 'Server File' : 'Map File Path'}
+                                {region.isServerFile && (
+                                  <Badge variant="secondary" className="text-[10px] py-0">serverfile</Badge>
+                                )}
+                              </Label>
+                              <div className="relative mt-0.5 sm:mt-0">
+                                <Input
+                                  value={region.file}
+                                  onChange={(e) => {
+                                    const newRegions = [...spawnRegions]
+                                    newRegions[index] = { ...region, file: e.target.value }
+                                    setSpawnRegions(newRegions)
+                                  }}
+                                  placeholder={region.isServerFile ? "ServerName_spawnpoints.lua" : "media/maps/Muldraugh, KY/spawnpoints.lua"}
+                                  className={`h-9 font-mono text-xs ${region.isServerFile ? 'pr-20' : ''}`}
+                                  maxLength={512}
+                                  aria-label={`Region ${index + 1} ${region.isServerFile ? 'server file' : 'map file path'}`}
+                                />
+                                {region.isServerFile && (
+                                  <Badge variant="secondary" className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] py-0">
+                                    serverfile
+                                  </Badge>
+                                )}
+                              </div>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-9 w-9 justify-self-end text-muted-foreground hover:text-destructive sm:justify-self-center"
+                              onClick={() => setSpawnRegions(spawnRegions.filter((_, i) => i !== index))}
+                              aria-label={`Delete spawn region ${region.name || index + 1}`}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </li>
+                        ))}
+                      </ul>
                     </div>
                   )}
 
@@ -2387,52 +2889,52 @@ export default function ServerConfig() {
                       variant="outline"
                       size="sm"
                       onClick={() => setSpawnRegions([...spawnRegions, { name: '', file: 'media/maps/' }])}
+                      className="gap-1.5 text-xs font-medium"
                     >
-                      <Plus className="w-4 h-4 mr-1" /> Add Map Region
+                      <Plus className="h-3.5 w-3.5" /> add region
                     </Button>
                   </div>
                 </div>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </TacticalPanel>
         </TabsContent>
 
         {/* Mod Settings Tab (Live from PanelBridge) */}
         <TabsContent value="modsettings" className="mt-4">
-          <Card className="border-border/60">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="flex items-center gap-2">
-                    <div className="rounded-lg border border-primary/20 bg-primary/10 p-1.5 text-primary">
-                      <Puzzle className="w-4 h-4" />
-                    </div>
-                    Mod Sandbox Options
-                  </CardTitle>
-                  <CardDescription className="mt-1">
-                    Live sandbox settings registered by mods, read from the running server via PanelBridge.
-                  </CardDescription>
-                </div>
-                <div className="flex items-center gap-2">
+          <TacticalPanel tone={modifiedModSettingsCount > 0 ? 'warning' : 'info'}>
+            <SectionHeader
+              label="mod sandbox options"
+              sublabel={modSettings ? `${modSettingsGroups.length} mod${modSettingsGroups.length === 1 ? '' : 's'} · live from bridge` : 'panelbridge · live'}
+              icon={Puzzle}
+              tone={modifiedModSettingsCount > 0 ? 'warning' : 'info'}
+              action={
+                <div className="flex items-center gap-1.5">
+                  {modifiedModSettingsCount > 0 && (
+                    <Badge variant="warning" className="h-5 px-1.5 py-0 font-mono text-[10px]">
+                      {modifiedModSettingsCount} modified
+                    </Badge>
+                  )}
                   <Button
-                    variant="outline"
+                    variant="command"
                     size="sm"
                     onClick={loadModSettings}
                     disabled={modSettingsLoading}
-                    className="gap-2"
+                    className="h-7 gap-1.5 text-xs font-medium"
                   >
                     {modSettingsLoading ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <Loader2 className="h-3 w-3 animate-spin" />
                     ) : (
-                      <RefreshCw className="w-4 h-4" />
+                      <RefreshCw className="h-3 w-3" />
                     )}
-                    {modSettings ? 'Refresh' : 'Load from Server'}
+                    {modSettings ? 'refresh' : 'load'}
                   </Button>
                 </div>
-              </div>
-
+              }
+            />
+            <div className="p-4">
               {modSettings && modSettingsGroups.length > 0 && (
-                <div className="mt-3 flex flex-wrap items-center gap-2">
+                <div className="mb-3 flex flex-wrap items-center gap-2">
                   <div className="relative flex-1 min-w-[200px]">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <Input
@@ -2459,12 +2961,12 @@ export default function ServerConfig() {
                     size="sm"
                     onClick={() => setModSettingsModifiedOnly(v => !v)}
                     disabled={modifiedModSettingsCount === 0 && !modSettingsModifiedOnly}
-                    className="shrink-0 h-9 gap-1.5"
+                    className="shrink-0 h-9 gap-1.5 text-xs font-medium"
                     aria-pressed={modSettingsModifiedOnly}
                     title={modifiedModSettingsCount === 0 ? 'No options differ from default' : 'Show only options changed from default'}
                   >
                     <Filter className="w-3.5 h-3.5" />
-                    Modified
+                    modified
                     {modifiedModSettingsCount > 0 && (
                       <Badge variant={modSettingsModifiedOnly ? 'secondary' : 'warning'} className="ml-0.5 h-4 px-1.5 py-0 text-xs">
                         {modifiedModSettingsCount}
@@ -2482,23 +2984,21 @@ export default function ServerConfig() {
                         setExpandedModGroups(new Set(filteredModGroups.map(g => g.name)))
                       }
                     }}
-                    className="shrink-0 text-xs gap-1.5"
+                    className="shrink-0 gap-1.5 text-xs font-medium"
                   >
                     {filteredModGroups.length > 0 && filteredModGroups.every(g => expandedModGroups.has(g.name)) ? (
-                      <><ChevronDown className="w-3.5 h-3.5" /> Collapse All</>
+                      <><ChevronDown className="w-3.5 h-3.5" /> collapse all</>
                     ) : (
-                      <><ChevronRight className="w-3.5 h-3.5" /> Expand All</>
+                      <><ChevronRight className="w-3.5 h-3.5" /> expand all</>
                     )}
                   </Button>
                 </div>
               )}
-            </CardHeader>
-            <CardContent>
               {!modSettings && !modSettingsLoading && !modSettingsError && (
                 <EmptyState
                   type="noMods"
-                  title="Loading mod settings…"
-                  description="Fetching sandbox options from all installed mods via PanelBridge. The PZ server must be running with PanelBridge active."
+                  title="Mod settings not loaded"
+                  description="Click load to fetch sandbox options from all installed mods via PanelBridge. The PZ server must be running with PanelBridge active."
                 />
               )}
 
@@ -2796,8 +3296,8 @@ export default function ServerConfig() {
                   )}
                 </ScrollArea>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </TacticalPanel>
         </TabsContent>
       </Tabs>
 
@@ -2813,12 +3313,12 @@ export default function ServerConfig() {
               <AlertTriangle className="h-4 w-4" />
             </span>
             <div className="min-w-0 flex-1">
-              <div className="text-sm font-semibold text-foreground">
+              <div className="text-xs font-medium text-foreground">
                 {activeTab === 'ini' ? changedIniCount : changedSandboxCount}{' '}
                 unsaved {((activeTab === 'ini' ? changedIniCount : changedSandboxCount) === 1) ? 'change' : 'changes'}
               </div>
               <div className="text-[11px] text-muted-foreground">
-                {activeTab === 'ini' ? 'Server INI' : 'Sandbox (Lua)'} · Ctrl+S to save · changes apply on reload
+                {activeTab === 'ini' ? 'server ini' : 'sandbox lua'} · ctrl+s to save · applies on reload
               </div>
             </div>
             <Button
@@ -2826,18 +3326,19 @@ export default function ServerConfig() {
               size="sm"
               onClick={activeTab === 'ini' ? discardIniChanges : discardSandboxChanges}
               disabled={saving}
-              className="h-8 text-muted-foreground hover:text-destructive"
+              className="h-8 gap-1.5 text-xs font-medium text-muted-foreground hover:text-destructive"
             >
-              <Undo2 className="mr-1.5 h-3.5 w-3.5" /> Discard
+              <Undo2 className="h-3 w-3" /> discard
             </Button>
             <Button
+              variant="command"
               size="sm"
               onClick={activeTab === 'ini' ? handleSaveIni : handleSaveSandbox}
               disabled={saving}
-              className="h-8"
+              className="h-8 gap-1.5 text-xs font-medium"
             >
-              {saving ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Save className="mr-1.5 h-3.5 w-3.5" />}
-              Save &amp; Reload
+              {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+              save &amp; reload
             </Button>
           </div>
         </div>

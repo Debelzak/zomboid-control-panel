@@ -7,6 +7,7 @@ import crypto from 'crypto';
 import { createLogger } from '../utils/logger.js';
 const log = createLogger('API:Mods');
 import { getTrackedMods, addTrackedMod, removeTrackedMod, clearModUpdates, getSetting, getActiveServer, getModPresets, createModPreset, updateModPreset, deleteModPreset, addIgnoredMod, getIgnoredMods, removeIgnoredMod, clearAllIgnoredMods, isModIgnored, getIgnoredModPairs, addIgnoredModPair, removeIgnoredModPair } from '../database/init.js';
+import { getDataPaths } from '../utils/paths.js';
 import { sanitizeError, sanitizeIniValue, sanitizeIniList } from '../utils/sanitize.js';
 import {
   getCollectionContents,
@@ -443,7 +444,10 @@ router.post('/auto-restart', async (req, res) => {
     const modChecker = getModChecker(req, res);
     if (!modChecker) return;
     
-    const { enabled } = req.body;
+    const { enabled } = req.body || {};
+    if (typeof enabled !== 'boolean') {
+      return res.status(400).json({ error: '`enabled` must be a boolean' });
+    }
     
     if (enabled) {
       await modChecker.setUpdateCallback(async (updatedMods) => {
@@ -466,7 +470,22 @@ router.put('/restart-options', async (req, res) => {
     const modChecker = getModChecker(req, res);
     if (!modChecker) return;
     
-    const { warningMinutes, delayIfPlayersOnline, maxDelayMinutes, checkInterval } = req.body;
+    const { warningMinutes, delayIfPlayersOnline, maxDelayMinutes, checkInterval } = req.body || {};
+
+    // Validate each field if present. Allow undefined (means "don't change").
+    const inRange = (v, min, max) => Number.isFinite(Number(v)) && Number(v) >= min && Number(v) <= max;
+    if (warningMinutes !== undefined && !inRange(warningMinutes, 0, 1440)) {
+      return res.status(400).json({ error: 'warningMinutes must be 0-1440' });
+    }
+    if (maxDelayMinutes !== undefined && !inRange(maxDelayMinutes, 0, 1440)) {
+      return res.status(400).json({ error: 'maxDelayMinutes must be 0-1440' });
+    }
+    if (checkInterval !== undefined && !inRange(checkInterval, 60_000, 24 * 60 * 60 * 1000)) {
+      return res.status(400).json({ error: 'checkInterval must be 60000-86400000 ms' });
+    }
+    if (delayIfPlayersOnline !== undefined && typeof delayIfPlayersOnline !== 'boolean') {
+      return res.status(400).json({ error: 'delayIfPlayersOnline must be a boolean' });
+    }
     
     await modChecker.setRestartOptions({
       warningMinutes,
@@ -5128,6 +5147,144 @@ router.post('/enable-disk-mod', async (req, res) => {
   } catch (error) {
     log.error(`Failed to enable disk-only mod: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
+// ─── Mod thumbnail proxy ────────────────────────────────────────────────────
+// Streams the Steam Workshop preview image for a tracked mod, caching the
+// bytes to disk so we hit Steam at most once per mod. Loaded via <img> tags
+// so it must remain auth-exempt (see services/auth.js middleware).
+//
+// Cache lives at <dataDir>/mod-thumbnails/<workshopId>.img — single file per
+// mod, no extension games. Content-Type is always reported as image/jpeg;
+// browsers handle the actual decoding regardless (Steam serves JPEG or PNG).
+const THUMB_FETCH_TIMEOUT_MS = 12_000;
+const THUMB_MAX_BYTES = 5 * 1024 * 1024; // 5 MB hard cap
+const THUMB_INFLIGHT = new Map(); // workshopId → Promise<Buffer|null>
+
+async function fetchSteamPreviewUrl(workshopId) {
+  // Fallback: hit GetPublishedFileDetails for a single ID if our DB row has no
+  // preview_url yet (mod was added but update check hasn't run).
+  const params = new URLSearchParams();
+  params.append('itemcount', '1');
+  params.append('publishedfileids[0]', workshopId);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), THUMB_FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(
+      'https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/',
+      { method: 'POST', body: params, signal: controller.signal }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    const item = data?.response?.publishedfiledetails?.[0];
+    if (item?.result === 1 && typeof item.preview_url === 'string') {
+      return item.preview_url;
+    }
+    return null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function downloadThumbnail(previewUrl) {
+  // Only allow Steam CDN hosts to prevent SSRF via tampered DB values.
+  let parsed;
+  try { parsed = new URL(previewUrl); } catch { return null; }
+  if (parsed.protocol !== 'https:') return null;
+  const host = parsed.hostname.toLowerCase();
+  const allowed = host === 'steamuserimages-a.akamaihd.net'
+    || host.endsWith('.steamstatic.com')
+    || host.endsWith('.akamaihd.net')
+    || host === 'images.steamusercontent.com';
+  if (!allowed) return null;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), THUMB_FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(previewUrl, { signal: controller.signal });
+    if (!res.ok) return null;
+    const ct = res.headers.get('content-type') || '';
+    if (!ct.startsWith('image/')) return null;
+    const len = parseInt(res.headers.get('content-length') || '0', 10);
+    if (len && len > THUMB_MAX_BYTES) return null;
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length > THUMB_MAX_BYTES) return null;
+    return buf;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+router.get('/thumbnail/:workshopId', async (req, res) => {
+  const wsId = String(req.params.workshopId || '');
+  if (!/^\d{1,15}$/.test(wsId)) {
+    return res.status(400).end();
+  }
+
+  const dataDir = getDataPaths().dataDir;
+  const cacheDir = path.join(dataDir, 'mod-thumbnails');
+  const cacheFile = path.join(cacheDir, `${wsId}.img`);
+
+  // Defensive: confirm resolved path stays inside cacheDir.
+  if (!cacheFile.startsWith(cacheDir + path.sep)) {
+    return res.status(400).end();
+  }
+
+  try {
+    const st = await fsp.stat(cacheFile);
+    if (st.size > 0) {
+      res.setHeader('Content-Type', 'image/jpeg');
+      res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
+      return res.sendFile(cacheFile);
+    }
+  } catch { /* not cached yet */ }
+
+  // Coalesce concurrent requests for the same mod.
+  let pending = THUMB_INFLIGHT.get(wsId);
+  if (!pending) {
+    pending = (async () => {
+      // Locate preview URL from tracked mods (across all servers, not just
+      // active — thumbnails are per-mod, not per-server).
+      const tracked = await getTrackedMods();
+      let mod = tracked.find(m => m.workshop_id === wsId);
+      let previewUrl = mod?.preview_url || null;
+      if (!previewUrl) {
+        previewUrl = await fetchSteamPreviewUrl(wsId);
+        if (previewUrl) {
+          try {
+            const { setModPreviewUrl } = await import('../database/init.js');
+            await setModPreviewUrl(wsId, previewUrl);
+          } catch { /* best-effort */ }
+        }
+      }
+      if (!previewUrl) return null;
+      const buf = await downloadThumbnail(previewUrl);
+      if (!buf) return null;
+      await fsp.mkdir(cacheDir, { recursive: true });
+      const tmp = `${cacheFile}.tmp-${process.pid}-${Date.now()}`;
+      await fsp.writeFile(tmp, buf);
+      await fsp.rename(tmp, cacheFile);
+      return buf;
+    })().finally(() => {
+      THUMB_INFLIGHT.delete(wsId);
+    });
+    THUMB_INFLIGHT.set(wsId, pending);
+  }
+
+  try {
+    const buf = await pending;
+    if (!buf) return res.status(404).end();
+    res.setHeader('Content-Type', 'image/jpeg');
+    res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
+    return res.end(buf);
+  } catch (err) {
+    log.debug(`Thumbnail fetch failed for ${wsId}: ${err.message}`);
+    return res.status(404).end();
   }
 });
 

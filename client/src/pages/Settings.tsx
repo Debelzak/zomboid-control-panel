@@ -1358,19 +1358,36 @@ export default function Settings() {
     <div className="page-transition">
       {/* Unsaved Changes Warning */}
       {isDirty && (
-        <Alert className="border-warning/40 bg-warning/10 shadow-sm mb-5">
-          <AlertTriangle className="h-4 w-4 text-warning" />
-          <AlertTitle className="text-warning">Unsaved Changes</AlertTitle>
-          <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <span className="text-sm text-muted-foreground">
-              You have unsaved settings. Save changes to apply them.
-            </span>
-            <Button onClick={handleSave} disabled={saving || Boolean(corsOriginValidationError)} size="sm" variant="warning" className="self-start gap-2">
+        <div
+          role="status"
+          aria-live="polite"
+          className="relative mb-5 overflow-hidden rounded-lg border border-warning/45 bg-warning/[0.08] shadow-sm"
+        >
+          <div className="absolute inset-y-0 left-0 w-[3px] bg-gradient-to-b from-warning via-warning/80 to-warning/30" aria-hidden="true" />
+          <div className="flex flex-col gap-3 p-4 pl-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <div className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-warning/40 bg-warning/15 text-warning">
+                <AlertTriangle className="h-4 w-4" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="relative inline-flex w-2 h-2" aria-hidden="true">
+                    <span className="absolute inset-0 rounded-full bg-warning/50 animate-ping motion-reduce:hidden" />
+                    <span className="relative w-2 h-2 rounded-full bg-warning" />
+                  </span>
+                  <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-warning">Unsaved changes</p>
+                </div>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  You have pending edits. Save changes to apply them to the live panel.
+                </p>
+              </div>
+            </div>
+            <Button onClick={handleSave} disabled={saving || Boolean(corsOriginValidationError)} size="sm" variant="warning" className="self-start gap-2 sm:self-auto">
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
               Save Changes
             </Button>
-          </AlertDescription>
-        </Alert>
+          </div>
+        </div>
       )}
       
       <PageHeader
@@ -1393,7 +1410,7 @@ export default function Settings() {
       <Tabs value={activeSection} onValueChange={handleTabChange} className="mt-6">
         <TabsList
           aria-label="Settings sections"
-          className="flex h-auto flex-wrap gap-1 bg-muted/40 p-1 rounded-lg w-full"
+          className="flex h-auto flex-wrap gap-1 rounded-lg border border-border/60 bg-gradient-to-b from-muted/50 to-muted/25 p-1.5 w-full shadow-inner"
         >
           {settingsSections.map((section, idx) => {
             const Icon = section.icon
@@ -1404,7 +1421,7 @@ export default function Settings() {
                 {showSeparator && (
                   <div
                     aria-hidden="true"
-                    className="mx-0.5 w-px self-stretch bg-border/50"
+                    className="mx-0.5 w-px self-stretch bg-border/60"
                   />
                 )}
                 <Tooltip>
@@ -1412,9 +1429,9 @@ export default function Settings() {
                     <TabsTrigger
                       value={section.id}
                       aria-label={section.label}
-                      className="flex items-center gap-1.5 px-2.5 py-2 text-[11px] sm:text-sm whitespace-nowrap data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-sm focus-visible:ring-2 focus-visible:ring-primary/60 focus-visible:ring-offset-1"
+                      className="group/tab flex items-center gap-1.5 rounded-md px-2.5 py-2 text-[11px] sm:text-sm whitespace-nowrap text-muted-foreground transition-colors hover:text-foreground data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-sm data-[state=active]:ring-1 data-[state=active]:ring-primary/25 focus-visible:ring-2 focus-visible:ring-primary/60 focus-visible:ring-offset-1"
                     >
-                      <Icon className="w-3.5 h-3.5 shrink-0" />
+                      <Icon className="w-3.5 h-3.5 shrink-0 transition-transform group-data-[state=active]/tab:scale-110" />
                       <span>{section.label}</span>
                     </TabsTrigger>
                   </TooltipTrigger>

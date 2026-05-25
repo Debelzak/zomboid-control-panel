@@ -595,58 +595,62 @@ export default function Scheduler() {
       </Dialog>
 
       {/* Status Cards — only when tasks exist */}
-      {tasks.length > 0 && (
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Clock className="w-4 h-4" />
-              Active Tasks
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <span className="text-2xl font-bold">{tasks.filter(t => t.enabled).length}</span>
-            <p className="text-xs text-muted-foreground mt-1">
-              {tasks.length} total tasks
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <RotateCcw className="w-4 h-4" />
-              Restart Tasks
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <span className="text-2xl font-bold">
-              {tasks.filter(t => t.enabled && t.command.toLowerCase() === 'restart').length > 0 ? 'Scheduled' : 'None'}
-            </span>
-            <p className="text-xs text-muted-foreground mt-1">
-              {tasks.filter(t => t.command.toLowerCase() === 'restart').length} restart task(s)
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Calendar className="w-4 h-4" />
-              Mod Update Restart
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <span className="text-2xl font-bold">
-              {status?.modUpdateRestartPending ? 'Pending' : 'None'}
-            </span>
-            <p className="text-xs text-muted-foreground mt-1">
-              Auto-restart on mod updates
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-      )}
+      {tasks.length > 0 && (() => {
+        const activeCount = tasks.filter(t => t.enabled).length
+        const totalCount = tasks.length
+        const restartCount = tasks.filter(t => t.command.toLowerCase() === 'restart').length
+        const restartActive = tasks.filter(t => t.enabled && t.command.toLowerCase() === 'restart').length > 0
+        const modRestartPending = !!status?.modUpdateRestartPending
+        const tiles = [
+          {
+            icon: <Clock className="w-4 h-4" />,
+            label: 'Active Tasks',
+            value: String(activeCount),
+            sub: `${totalCount} total task${totalCount === 1 ? '' : 's'}`,
+            tone: activeCount > 0 ? 'primary' : 'muted',
+          },
+          {
+            icon: <RotateCcw className="w-4 h-4" />,
+            label: 'Restart Tasks',
+            value: restartActive ? 'Scheduled' : 'None',
+            sub: `${restartCount} restart task${restartCount === 1 ? '' : 's'}`,
+            tone: restartActive ? 'primary' : 'muted',
+          },
+          {
+            icon: <Calendar className="w-4 h-4" />,
+            label: 'Mod Update Restart',
+            value: modRestartPending ? 'Pending' : 'None',
+            sub: 'Auto-restart on mod updates',
+            tone: modRestartPending ? 'warning' : 'muted',
+          },
+        ] as const
+        const toneClasses = {
+          primary: { tile: 'border-primary/30 bg-primary/[0.06] text-primary', value: 'text-foreground' },
+          warning: { tile: 'border-warning/40 bg-warning/10 text-warning', value: 'text-warning' },
+          muted: { tile: 'border-border/55 bg-muted/30 text-muted-foreground', value: 'text-muted-foreground' },
+        }
+        return (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {tiles.map(t => {
+              const cls = toneClasses[t.tone]
+              return (
+                <Card key={t.label} className="overflow-hidden">
+                  <CardContent className="flex items-center gap-3 p-4">
+                    <div className={`grid place-items-center w-10 h-10 rounded-md border ${cls.tile}`} aria-hidden="true">
+                      {t.icon}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{t.label}</p>
+                      <p className={`text-xl font-semibold leading-tight mt-0.5 ${cls.value}`}>{t.value}</p>
+                      <p className="text-[11px] text-muted-foreground/80 mt-0.5 truncate">{t.sub}</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              )
+            })}
+          </div>
+        )
+      })()}
 
       {/* Quick Actions — 2-col grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -844,24 +848,37 @@ export default function Scheduler() {
                 {tasks.map((task) => (
                   <div
                     key={task.id}
-                    className={`p-4 rounded-lg border ${
-                      task.enabled ? 'bg-card' : 'bg-muted/50 text-muted-foreground'
+                    className={`group relative flex items-center gap-3 p-4 rounded-lg border transition-colors ${
+                      task.enabled
+                        ? 'bg-card border-border/60 hover:border-primary/40'
+                        : 'bg-muted/30 border-border/40 text-muted-foreground'
                     }`}
                   >
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3 min-w-0">
-                          <h3 className="font-medium truncate">{task.name}</h3>
-                          <code className="text-xs bg-muted px-2 py-0.5 rounded shrink min-w-0 truncate max-w-[200px]" title={task.cron_expression}>
+                    {/* Leading status pip — solid + ping when active, hollow when disabled */}
+                    <div className="shrink-0 self-stretch flex items-center" aria-hidden="true">
+                      {task.enabled ? (
+                        <span className="relative inline-flex">
+                          <span className="absolute inset-0 rounded-full bg-primary/40 animate-ping motion-reduce:hidden" />
+                          <span className="relative w-2 h-2 rounded-full bg-primary" />
+                        </span>
+                      ) : (
+                        <span className="w-2 h-2 rounded-full border border-muted-foreground/50" />
+                      )}
+                    </div>
+                    <div className="flex flex-1 items-center justify-between min-w-0">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <h3 className="font-medium truncate text-foreground">{task.name}</h3>
+                          <code className="shrink-0 text-[11px] font-mono bg-muted/70 border border-border/50 px-1.5 py-0.5 rounded text-muted-foreground truncate max-w-[180px]" title={task.cron_expression}>
                             {task.cron_expression}
                           </code>
                         </div>
                         <p className="text-sm text-muted-foreground mt-1 truncate">
-                          Command: <code className="text-primary">{task.command}</code>
+                          <code className="text-primary/90 font-mono text-xs">{task.command}</code>
                         </p>
                         {task.last_run && (
-                          <p className="text-xs text-muted-foreground mt-1">
-                            Last run: {new Date(task.last_run).toLocaleString()}
+                          <p className="text-[11px] text-muted-foreground/70 mt-1">
+                            Last run · {new Date(task.last_run).toLocaleString()}
                           </p>
                         )}
                       </div>
@@ -989,8 +1006,10 @@ export default function Scheduler() {
                 {history.map((entry) => (
                   <div
                     key={entry.id}
-                    className={`p-3 rounded-lg border ${
-                      entry.success ? 'bg-card' : 'bg-destructive/10 border-destructive/30'
+                    className={`p-3 rounded-lg border-l-2 border-y border-r border-y-border/40 border-r-border/40 ${
+                      entry.success
+                        ? 'bg-card border-l-primary/50'
+                        : 'bg-destructive/[0.06] border-l-destructive border-y-destructive/25 border-r-destructive/25'
                     }`}
                   >
                     <div className="flex items-start justify-between">
