@@ -41,3 +41,34 @@ export function sanitizeIniValue(value) {
 export function sanitizeIniList(values) {
   return values.map(v => sanitizeIniValue(v)).filter(Boolean).join(';');
 }
+
+/**
+ * Workshop IDs are 5-15 digit numeric strings (Steam fileId). PZ mod IDs
+ * (the `id=` field inside mod.info) are letter-based identifiers and must
+ * never be all-numeric. We use this to gate Mods= writes so workshop IDs
+ * never get accidentally written into the Mods= line.
+ */
+export function looksLikeWorkshopId(value) {
+  return typeof value === 'string' && /^\d{5,15}$/.test(value);
+}
+
+/**
+ * Sanitize an array of mod IDs for the Mods= INI field. Drops any entry
+ * that looks like a Steam Workshop file ID — those belong in
+ * WorkshopItems=, never in Mods=, and writing them into Mods= results in
+ * a polluted INI that PZ silently ignores.
+ *
+ * Returns the joined semicolon string. The dropped count is appended on
+ * the returned function as a side channel via a wrapper if callers need
+ * to log it; for simplicity we just filter here.
+ */
+export function sanitizeModIdList(values) {
+  const out = [];
+  for (const raw of values || []) {
+    const v = sanitizeIniValue(raw);
+    if (!v) continue;
+    if (looksLikeWorkshopId(v)) continue; // workshop ID misplaced in Mods=
+    out.push(v);
+  }
+  return out.join(';');
+}

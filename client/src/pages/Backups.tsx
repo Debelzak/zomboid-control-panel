@@ -145,7 +145,7 @@ export default function Backups() {
         fetchBackupStatus(),
         fetchBackups(),
         // Active server may change between visits to this page — always re-check.
-        serversApi.getActive()
+        serversApi.getResolvedActive()
           .then(({ server }) => setActiveServerRemote(!!server?.isRemote))
           .catch(() => setActiveServerRemote(false)),
       ])

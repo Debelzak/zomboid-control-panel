@@ -1068,6 +1068,14 @@ io.on('connection', (socket) => {
   socket.on('subscribe:logs', () => {
     socket.join('logs');
   });
+
+  // Subscribe to performance snapshots
+  socket.on('subscribe:perf', () => {
+    socket.join('perf');
+  });
+  socket.on('unsubscribe:perf', () => {
+    socket.leave('perf');
+  });
 });
 
 // Stream logs to Socket.IO clients
@@ -1319,13 +1327,14 @@ async function startPerfPolling() {
 
       // Broadcast to any connected clients on the perf room
       io.to('logs').emit('perf:snapshot', snapshot);
+      io.to('perf').emit('perf:snapshot', snapshot);
     } catch (err) {
       log.debug(`Perf snapshot failed: ${err.message}`);
     }
-  }, 60000); // every 60 seconds
+  }, 15000); // every 15 seconds
 
   if (perfPollingInterval.unref) perfPollingInterval.unref();
-  log.info('Performance polling started (60s interval)');
+  log.info('Performance polling started (15s interval)');
 }
 
 function stopPerfPolling() {

@@ -227,7 +227,7 @@ export default function Settings() {
   const [panelApplyLog, setPanelApplyLog] = useState<string | null>(null)
   const [panelApplyResultDismissed, setPanelApplyResultDismissed] = useState(false)
   const { toast } = useToast()
-  const { user, authEnabled } = useAuth()
+  const { user, authEnabled, logout } = useAuth()
   
   // Change password state
   const [currentPassword, setCurrentPassword] = useState('')
@@ -236,6 +236,14 @@ export default function Settings() {
   const [changingPassword, setChangingPassword] = useState(false)
   const [showCurrentPassword, setShowCurrentPassword] = useState(false)
   const [showNewPassword, setShowNewPassword] = useState(false)
+  const [localPasswordResetSupported, setLocalPasswordResetSupported] = useState(false)
+  const [showLocalPasswordReset, setShowLocalPasswordReset] = useState(false)
+  const [localPasswordResetToken, setLocalPasswordResetToken] = useState('')
+  const [localPasswordResetPassword, setLocalPasswordResetPassword] = useState('')
+  const [localPasswordResetConfirm, setLocalPasswordResetConfirm] = useState('')
+  const [preparingLocalPasswordReset, setPreparingLocalPasswordReset] = useState(false)
+  const [resettingLocalPassword, setResettingLocalPassword] = useState(false)
+  const [showLocalResetPassword, setShowLocalResetPassword] = useState(false)
   
   // Panel Bridge state
   const [bridgeStatus, setBridgeStatus] = useState<{
@@ -454,14 +462,15 @@ export default function Settings() {
     fetchPanelUpdateStatus()
   }, [fetchPanelUpdateStatus])
 
+  const hasActionablePanelUpdate = Boolean(panelUpdateStatus?.updateAvailable || panelUpdateStatus?.stagedUpdate)
+  const stagedPanelUpdatePath = panelUpdateStatus?.stagedUpdate?.path
+
   // Run preflight once status tells us we're in a packaged build and there is
   // anything actionable (either an available update or a staged file on disk).
   useEffect(() => {
-    if (!panelUpdateStatus) return
-    if (panelUpdateStatus.updateAvailable || panelUpdateStatus.stagedUpdate) {
-      fetchPanelUpdatePreflight()
-    }
-  }, [panelUpdateStatus?.updateAvailable, panelUpdateStatus?.stagedUpdate?.path, fetchPanelUpdatePreflight])
+    if (!hasActionablePanelUpdate) return
+    fetchPanelUpdatePreflight()
+  }, [hasActionablePanelUpdate, stagedPanelUpdatePath, fetchPanelUpdatePreflight])
 
   const normalizePort = (value: string): string => {
     const parsed = Number.parseInt(value, 10)
@@ -1318,6 +1327,33 @@ export default function Settings() {
     ? `${selectedInstallServer.installPath}${sep}media${sep}lua${sep}server${sep}PanelBridge.lua`
     : null
 
+  useEffect(() => {
+    let cancelled = false
+
+    if (!authEnabled) {
+      setLocalPasswordResetSupported(false)
+      setShowLocalPasswordReset(false)
+      return () => {
+        cancelled = true
+      }
+    }
+
+    fetch('/api/auth/reset-status')
+      .then((response) => response.json())
+      .then((data) => {
+        if (cancelled) return
+        setLocalPasswordResetSupported(data.localResetSupported === true)
+      })
+      .catch(() => {
+        if (cancelled) return
+        setLocalPasswordResetSupported(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [authEnabled])
+
   const handleChangePassword = async () => {
     if (!newPassword || !confirmPassword) return
     if (newPassword !== confirmPassword) {
@@ -1343,6 +1379,83 @@ export default function Settings() {
       })
     } finally {
       setChangingPassword(false)
+    }
+  }
+
+  const handlePrepareLocalPasswordReset = async () => {
+    setPreparingLocalPasswordReset(true)
+    try {
+      const response = await fetch('/api/auth/reset-token/local', { method: 'POST' })
+      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data.error || 'The panel could not prepare password recovery on this server.')
+      }
+
+      setLocalPasswordResetSupported(true)
+      setShowLocalPasswordReset(true)
+      setLocalPasswordResetToken(typeof data.token === 'string' ? data.token : '')
+      toast({
+        title: 'Recovery Ready',
+        description: typeof data.message === 'string' ? data.message : 'Set a new password below.',
+      })
+    } catch (error) {
+      toast({
+        title: 'Recovery Unavailable',
+        description: error instanceof Error ? error.message : 'The panel could not prepare password recovery on this server.',
+        variant: 'destructive',
+      })
+    } finally {
+      setPreparingLocalPasswordReset(false)
+    }
+  }
+
+  const handleResetLostPassword = async () => {
+    if (!localPasswordResetToken) {
+      toast({ title: 'Recovery token missing', variant: 'destructive' })
+      return
+    }
+    if (!localPasswordResetPassword || !localPasswordResetConfirm) return
+    if (localPasswordResetPassword !== localPasswordResetConfirm) {
+      toast({ title: 'Passwords do not match', variant: 'destructive' })
+      return
+    }
+    if (localPasswordResetPassword.length < 6) {
+      toast({ title: 'Password must be at least 6 characters', variant: 'destructive' })
+      return
+    }
+
+    setResettingLocalPassword(true)
+    try {
+      const response = await fetch('/api/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: localPasswordResetToken, newPassword: localPasswordResetPassword }),
+      })
+      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data.error || 'The panel could not reset your password from this server.')
+      }
+
+      setCurrentPassword('')
+      setNewPassword('')
+      setConfirmPassword('')
+      setShowLocalPasswordReset(false)
+      setLocalPasswordResetToken('')
+      setLocalPasswordResetPassword('')
+      setLocalPasswordResetConfirm('')
+      toast({
+        title: 'Password Reset',
+        description: 'Your password has been reset. Sign in again with the new password.',
+      })
+      await logout()
+    } catch (error) {
+      toast({
+        title: 'Password Reset Failed',
+        description: error instanceof Error ? error.message : 'The panel could not reset your password from this server.',
+        variant: 'destructive',
+      })
+    } finally {
+      setResettingLocalPassword(false)
     }
   }
 
@@ -3059,6 +3172,125 @@ export default function Settings() {
                   {changingPassword ? 'Changing...' : 'Change Password'}
                 </Button>
               </form>
+
+              <div className="max-w-2xl rounded-xl border border-border/70 bg-muted/35 p-4 text-sm text-muted-foreground">
+                <div className="flex items-start gap-3">
+                  <Info className="mt-0.5 h-4 w-4 text-primary" />
+                  <div className="space-y-1.5 leading-6">
+                    <p className="font-medium text-foreground">Recovery when the current password is lost</p>
+                    {localPasswordResetSupported ? (
+                      <>
+                        <p>
+                          This panel session is running from the server itself, so you can reset the password here without typing the current one.
+                        </p>
+                        <div className="flex flex-col gap-2 pt-1 sm:flex-row">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="sm:w-auto"
+                            onClick={() => void handlePrepareLocalPasswordReset()}
+                            disabled={preparingLocalPasswordReset || resettingLocalPassword}
+                          >
+                            {preparingLocalPasswordReset ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Key className="mr-2 h-4 w-4" />}
+                            {showLocalPasswordReset ? 'Refresh Local Recovery' : 'Reset Password On This Server'}
+                          </Button>
+                          {showLocalPasswordReset && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              className="sm:w-auto"
+                              onClick={() => {
+                                setShowLocalPasswordReset(false)
+                                setLocalPasswordResetToken('')
+                                setLocalPasswordResetPassword('')
+                                setLocalPasswordResetConfirm('')
+                              }}
+                              disabled={preparingLocalPasswordReset || resettingLocalPassword}
+                            >
+                              Hide
+                            </Button>
+                          )}
+                        </div>
+                        {showLocalPasswordReset && (
+                          <form
+                            className="max-w-sm space-y-3 pt-2"
+                            onSubmit={(e) => {
+                              e.preventDefault()
+                              if (resettingLocalPassword) return
+                              void handleResetLostPassword()
+                            }}
+                          >
+                            <div className="relative">
+                              <Input
+                                type={showLocalResetPassword ? 'text' : 'password'}
+                                value={localPasswordResetPassword}
+                                onChange={(e) => setLocalPasswordResetPassword(e.target.value)}
+                                placeholder="New password"
+                                className="h-11 pr-10"
+                                maxLength={128}
+                                autoComplete="new-password"
+                                aria-label="New password for local reset"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setShowLocalResetPassword(!showLocalResetPassword)}
+                                className="absolute right-3 inset-y-0 flex items-center text-muted-foreground hover:text-foreground"
+                                aria-label={showLocalResetPassword ? 'Hide password' : 'Show password'}
+                              >
+                                {showLocalResetPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                              </button>
+                            </div>
+                            <Input
+                              type={showLocalResetPassword ? 'text' : 'password'}
+                              value={localPasswordResetConfirm}
+                              onChange={(e) => setLocalPasswordResetConfirm(e.target.value)}
+                              placeholder="Confirm new password"
+                              className="h-11"
+                              maxLength={128}
+                              autoComplete="new-password"
+                              aria-label="Confirm new password for local reset"
+                            />
+                            {localPasswordResetPassword && localPasswordResetConfirm && localPasswordResetPassword !== localPasswordResetConfirm && (
+                              <p className="text-xs text-destructive flex items-center gap-1" role="alert">
+                                <XCircle className="w-3 h-3" /> Passwords do not match
+                              </p>
+                            )}
+                            {localPasswordResetPassword && localPasswordResetPassword.length < 6 && (
+                              <p className="text-xs text-destructive flex items-center gap-1" role="alert">
+                                <XCircle className="w-3 h-3" /> Password must be at least 6 characters
+                              </p>
+                            )}
+                            <Button
+                              type="submit"
+                              className="gap-2"
+                              disabled={
+                                resettingLocalPassword ||
+                                preparingLocalPasswordReset ||
+                                !localPasswordResetPassword ||
+                                !localPasswordResetConfirm ||
+                                localPasswordResetPassword !== localPasswordResetConfirm ||
+                                localPasswordResetPassword.length < 6
+                              }
+                            >
+                              {resettingLocalPassword ? <Loader2 className="w-4 h-4 animate-spin" /> : <Key className="w-4 h-4" />}
+                              {resettingLocalPassword ? 'Resetting...' : 'Reset Password and Sign Out'}
+                            </Button>
+                          </form>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <p>
+                          The panel cannot show existing passwords. If you still have filesystem access to the panel host, sign out and either create <span className="font-mono text-foreground/85">data/reset-token.txt</span> or start the panel with <span className="font-mono text-foreground/85">--reset-password</span>.
+                        </p>
+                        <p>
+                          Once the token file exists, the login screen will show a recovery option so you can set a new admin password without knowing the old one.
+                        </p>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 

@@ -343,7 +343,7 @@ export default function Servers() {
     }
     
     fetchBranches()
-  }, [steamOperation, steamcmdPath])
+  }, [steamOperation, steamcmdPath, updateInfo?.installed?.branch])
 
   // Listen for server changes
   useEffect(() => {

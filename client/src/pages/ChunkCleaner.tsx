@@ -396,7 +396,7 @@ export default function ChunkCleaner() {
       const savesList = await fetchSaves()
       if (savesList.length === 0) return
       try {
-        const { server } = await serversApi.getActive()
+        const { server } = await serversApi.getResolvedActive()
         if (server?.serverName) {
           const match = savesList.find((s: SaveInfo) => s.name === server.serverName)
           if (match) setSelectedSave(match.name)
@@ -426,7 +426,7 @@ export default function ChunkCleaner() {
   // One-click "try this path" handler for the empty-state suggestions panel.
   // Pre-fills the custom path input and triggers a fetch in one motion so the
   // user doesn't have to copy/paste from the suggestion list.
-  const useSuggestedPath = useCallback(async (suggested: string) => {
+  const applySuggestedPath = useCallback(async (suggested: string) => {
     setCustomPathInput(suggested)
     setCustomPath(suggested)
     setSelectedSave('')
@@ -2036,7 +2036,7 @@ export default function ChunkCleaner() {
                                   variant="outline"
                                   size="sm"
                                   className="h-7 text-[10px]"
-                                  onClick={() => void useSuggestedPath(debugInfo.rejection!.parentSuggestion!)}
+                                  onClick={() => void applySuggestedPath(debugInfo.rejection!.parentSuggestion!)}
                                 >
                                   <FolderOpen className="w-3 h-3 mr-1" />
                                   Try parent: <span className="font-mono ml-1 truncate max-w-[180px]">{debugInfo.rejection.parentSuggestion}</span>
@@ -2072,7 +2072,7 @@ export default function ChunkCleaner() {
                                 <li key={s.path} className="flex items-center gap-2">
                                   <button
                                     type="button"
-                                    onClick={() => void useSuggestedPath(s.path)}
+                                    onClick={() => void applySuggestedPath(s.path)}
                                     disabled={!s.exists || loadingSaves}
                                     className="flex-1 text-left text-[11px] font-mono px-2 py-1 rounded border border-border/40 bg-background hover:bg-accent/30 disabled:opacity-40 disabled:cursor-not-allowed transition-colors break-all"
                                     title={s.exists ? (s.hasSaves ? 'Has saves — click to load' : 'Folder exists — click to try') : 'Folder does not exist on this host'}

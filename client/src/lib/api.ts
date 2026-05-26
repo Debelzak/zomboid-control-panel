@@ -550,7 +550,7 @@ export const playersApi = {
   getPerks: () => apiGet('/players/perks'),
   getAccessLevels: () => apiGet('/players/access-levels'),
   // Ban/unban by SteamID
-  banSteamId: (steamId: string) => apiPost('/players/banid', { steamId }),
+  banSteamId: (steamId: string, reason?: string) => apiPost('/players/banid', { steamId, reason }),
   unbanSteamId: (steamId: string) => apiPost('/players/unbanid', { steamId }),
   getSteamIdBans: () => apiGet('/players/steamid-bans'),
   // Voice ban
@@ -692,6 +692,34 @@ export const modsApi = {
     success: boolean
     workshopId: string
     modIdsAdded: number
+  }>,
+
+  // Delete a mod from disk: removes the workshop folder and strips it from the INI.
+  deleteDiskMod: (workshopId: string) => apiPost('/mods/delete-disk-mod', { workshopId }) as Promise<{
+    success: boolean
+    workshopId: string
+    deletedFromDisk: boolean
+    modIdsStripped: number
+  }>,
+
+  // Batch delete: removes multiple workshop folders + strips them from the INI in one INI write.
+  batchDeleteDiskMods: (workshopIds: string[]) => apiPost('/mods/batch-delete-disk-mods', { workshopIds }) as Promise<{
+    success: boolean
+    total: number
+    deletedFromDisk: number
+    modIdsStripped: number
+    results: Array<{ workshopId: string; deletedFromDisk: boolean }>
+  }>,
+
+  // Smart triage for orphan WorkshopItems= entries.
+  // Per ID: ignored or missing → drop from WorkshopItems=; downloaded → add its mod IDs to Mods=.
+  resolveOrphanWorkshop: (workshopIds: string[]) => apiPost('/mods/resolve-orphan-workshop', { workshopIds }) as Promise<{
+    success: boolean
+    total: number
+    counts: { enabled: number; droppedIgnored: number; droppedMissing: number; droppedNoModInfo: number }
+    modIdsAdded: number
+    wsDropped: number
+    breakdown: Array<{ workshopId: string; action: string; modIds: string[] }>
   }>,
   
   // Toggle a single mod ID on/off in the Mods= line
@@ -983,6 +1011,10 @@ export interface ServerInstance {
 export const serversApi = {
   getAll: () => apiGet('/servers') as Promise<{ servers: ServerInstance[] }>,
   getActive: () => apiGet('/servers/active') as Promise<{ server: ServerInstance }>,
+  getResolvedActive: async () => {
+    const data = await apiGet('/servers') as { servers: ServerInstance[] }
+    return { server: data.servers.find(server => server.isActive) ?? data.servers[0] ?? null }
+  },
   getStatus: () => apiGet('/servers/status') as Promise<{
     servers: Array<{ id: string; name: string; running: boolean; pid: string | null; isActive: boolean }>
     detectedProcesses: number

@@ -1008,7 +1008,7 @@ class PanelBridge extends EventEmitter {
         this.modStatus = status;
         this.emit('modStatus', status);
         
-        if (status.alive) {
+        if (status.alive && (aliveChanged || isNewStatus)) {
           log.info(`Mod connected (age: ${Math.round(age / 1000)}s, players: ${status.playerCount})`);
         }
       }

@@ -1125,6 +1125,69 @@ async function parseServerIni(iniPath) {
 // Walk steamapps/workshop/content/108600/<id>/mods/<modName> and return
 // Map<workshopId, { mods: string[], maps: string[] }>. Skips items that
 // haven't finished downloading (no mod.info inside).
+//
+// PZ resolves Mods= against the `id=` value(s) declared in each mod.info,
+// NOT the folder name. A single mod.info can declare MULTIPLE `id=` lines
+// (sub-mods bundled in one folder). We collect every declared id and also
+// include the folder name as a fallback for legacy / non-conforming mods.
+//
+// B42 introduced a multi-version layout where mod.info and media/maps/
+// can live under versioned subfolders like `common/`, `41/`, `42/`
+// (e.g. <mod>/42/mod.info and <mod>/common/media/maps/<name>/). We
+// therefore probe the mod root AND each direct subdirectory.
+async function readModIds(modInfoPath, fallbackName) {
+  try {
+    const text = await fs.promises.readFile(modInfoPath, 'utf-8');
+    const ids = [];
+    for (const raw of text.split(/\r?\n/)) {
+      const line = raw.trim();
+      if (!line || line.startsWith('#') || line.startsWith(';')) continue;
+      const m = line.match(/^id\s*=\s*(.+?)\s*$/i);
+      if (m && m[1]) ids.push(m[1]);
+    }
+    if (ids.length === 0 && fallbackName) ids.push(fallbackName);
+    else if (fallbackName && !ids.includes(fallbackName)) ids.push(fallbackName);
+    return ids;
+  } catch {
+    return fallbackName ? [fallbackName] : [];
+  }
+}
+
+// Collect declared mod ids + map folder names from a single mod folder,
+// handling both legacy (<mod>/mod.info, <mod>/media/maps/) and B42
+// versioned layouts (<mod>/<version>/mod.info, <mod>/<version>/media/maps/).
+async function collectModContent(modDir, fallbackName) {
+  const ids = new Set();
+  const maps = new Set();
+
+  // Candidate roots: the mod dir itself plus every direct subdirectory.
+  // B42 conventions use `common`, `41`, `42`, but mods sometimes use other
+  // names too (e.g. `43`), so we don't whitelist — we just probe one level.
+  const candidateRoots = [modDir];
+  const children = await safeReaddir(modDir);
+  if (children) {
+    await Promise.all(children.map(async (child) => {
+      const childPath = path.join(modDir, child);
+      const st = await safeStat(childPath);
+      if (st && st.isDirectory()) candidateRoots.push(childPath);
+    }));
+  }
+
+  await Promise.all(candidateRoots.map(async (root) => {
+    const miPath = path.join(root, 'mod.info');
+    const mi = await safeStat(miPath);
+    if (mi && mi.isFile()) {
+      const declared = await readModIds(miPath, fallbackName);
+      for (const id of declared) ids.add(id);
+    }
+    const mapDir = path.join(root, 'media', 'maps');
+    const mapNames = await safeReaddir(mapDir);
+    if (mapNames) for (const m of mapNames) maps.add(m);
+  }));
+
+  return { ids: [...ids], maps: [...maps] };
+}
+
 async function scanWorkshopMods(installPath) {
   const out = new Map();
   if (!installPath) return out;
@@ -1138,11 +1201,9 @@ async function scanWorkshopMods(installPath) {
     if (!modNames) return;
     const entry = { mods: [], maps: [] };
     await Promise.all(modNames.map(async (name) => {
-      const mi = await safeStat(path.join(modsRoot, name, 'mod.info'));
-      if (mi && mi.isFile()) entry.mods.push(name);
-      const mapDir = path.join(modsRoot, name, 'media', 'maps');
-      const mapNames = await safeReaddir(mapDir);
-      if (mapNames) for (const m of mapNames) entry.maps.push(m);
+      const collected = await collectModContent(path.join(modsRoot, name), name);
+      for (const declaredId of collected.ids) entry.mods.push(declaredId);
+      for (const m of collected.maps) entry.maps.push(m);
     }));
     if (entry.mods.length || entry.maps.length) out.set(id, entry);
   }));
@@ -1150,7 +1211,8 @@ async function scanWorkshopMods(installPath) {
 }
 
 // Local (non-Workshop) mods live under <zPath>/mods/<name>/mod.info.
-// Returns { mods: Set<string>, maps: Set<string> }.
+// Returns { mods: Set<string>, maps: Set<string> }. Same B42-aware layout
+// probing as scanWorkshopMods.
 async function scanLocalMods(zPath) {
   const mods = new Set();
   const maps = new Set();
@@ -1160,11 +1222,9 @@ async function scanLocalMods(zPath) {
     const names = await safeReaddir(root);
     if (!names) continue;
     await Promise.all(names.map(async (name) => {
-      const mi = await safeStat(path.join(root, name, 'mod.info'));
-      if (mi && mi.isFile()) mods.add(name);
-      const mapDir = path.join(root, name, 'media', 'maps');
-      const mapNames = await safeReaddir(mapDir);
-      if (mapNames) for (const m of mapNames) maps.add(m);
+      const collected = await collectModContent(path.join(root, name), name);
+      for (const declaredId of collected.ids) mods.add(declaredId);
+      for (const m of collected.maps) maps.add(m);
     }));
   }
   return { mods, maps };
@@ -1322,14 +1382,90 @@ async function safeStat(p) {
 async function getDiskFree(targetPath) {
   try {
     if (!targetPath) return null;
-    if (typeof fs.promises.statfs !== 'function') return null;
-    // statfs can hang on dead mounts on Linux — wrap with timeout.
-    const stats = await withTimeout(fs.promises.statfs(targetPath), FS_TIMEOUT_MS, null);
-    if (!stats) return null;
-    return {
-      free: stats.bavail * stats.bsize,
-      total: stats.blocks * stats.bsize
-    };
+    // Preferred path: fs.promises.statfs (Node 18.15+). The pkg-bundled Node
+    // is 18.5 and lacks this method, so we fall through to platform shells.
+    if (typeof fs.promises.statfs === 'function') {
+      // statfs can hang on dead mounts on Linux — wrap with timeout.
+      const stats = await withTimeout(fs.promises.statfs(targetPath), FS_TIMEOUT_MS, null);
+      if (stats) {
+        return {
+          free: stats.bavail * stats.bsize,
+          total: stats.blocks * stats.bsize
+        };
+      }
+    }
+    return await getDiskFreeFallback(targetPath);
+  } catch {
+    return null;
+  }
+}
+
+function execFileP(file, args, opts = {}) {
+  return new Promise((resolve) => {
+    try {
+      execFile(file, args, { timeout: FS_TIMEOUT_MS, windowsHide: true, ...opts },
+        (err, stdout, stderr) => {
+          if (err) resolve({ ok: false, stdout: stdout || '', stderr: stderr || '' });
+          else resolve({ ok: true, stdout: stdout || '', stderr: stderr || '' });
+        });
+    } catch {
+      resolve({ ok: false, stdout: '', stderr: '' });
+    }
+  });
+}
+
+async function getDiskFreeFallback(targetPath) {
+  try {
+    const resolved = path.resolve(targetPath);
+    if (process.platform === 'win32') {
+      // wmic is deprecated but still present on most Windows installs; fall
+      // back to PowerShell Get-PSDrive when it isn't.
+      const drive = resolved.slice(0, 2); // e.g. "E:"
+      if (!/^[A-Za-z]:$/.test(drive)) return null;
+      const letter = drive[0].toUpperCase();
+      // Try PowerShell first (works on Win10/11 and Server 2016+).
+      const ps = await execFileP('powershell.exe', [
+        '-NoProfile', '-NonInteractive', '-Command',
+        `$d = Get-PSDrive -Name '${letter}' -ErrorAction SilentlyContinue; if ($d) { '{0} {1}' -f $d.Free, ($d.Free + $d.Used) }`
+      ]);
+      if (ps.ok) {
+        const parts = ps.stdout.trim().split(/\s+/);
+        if (parts.length === 2) {
+          const free = Number(parts[0]);
+          const total = Number(parts[1]);
+          if (Number.isFinite(free) && Number.isFinite(total) && total > 0) {
+            return { free, total };
+          }
+        }
+      }
+      // wmic fallback.
+      const wmic = await execFileP('wmic', [
+        'logicaldisk', 'where', `DeviceID='${letter}:'`, 'get', 'FreeSpace,Size', '/value'
+      ]);
+      if (wmic.ok) {
+        const freeMatch = wmic.stdout.match(/FreeSpace=(\d+)/);
+        const sizeMatch = wmic.stdout.match(/Size=(\d+)/);
+        if (freeMatch && sizeMatch) {
+          const free = Number(freeMatch[1]);
+          const total = Number(sizeMatch[1]);
+          if (Number.isFinite(free) && Number.isFinite(total) && total > 0) {
+            return { free, total };
+          }
+        }
+      }
+      return null;
+    }
+    // POSIX: df -Pk <path> → blocks (1K), used, available, capacity, mounted
+    const df = await execFileP('df', ['-Pk', resolved]);
+    if (!df.ok) return null;
+    const lines = df.stdout.trim().split(/\r?\n/);
+    if (lines.length < 2) return null;
+    const cols = lines[1].trim().split(/\s+/);
+    if (cols.length < 4) return null;
+    const totalKb = Number(cols[1]);
+    const freeKb = Number(cols[3]);
+    if (!Number.isFinite(totalKb) || !Number.isFinite(freeKb)) return null;
+    return { free: freeKb * 1024, total: totalKb * 1024 };
   } catch {
     return null;
   }
@@ -1710,8 +1846,23 @@ router.get('/diagnostics', async (req, res) => {
           for (const m of v.maps) wsMapNames.add(m);
         }
 
-        const unresolvedMods = ini.Mods.filter(m => !wsModNames.has(m) && !localScan.mods.has(m));
-        if (unresolvedMods.length === 0 && ini.Mods.length > 0) {
+        const allUnresolved = ini.Mods.filter(m => !wsModNames.has(m) && !localScan.mods.has(m));
+        // Numeric "Mods=" entries are almost always Workshop IDs that the
+        // user pasted into the wrong field. They can never resolve as mod
+        // folder names, so flag them separately with a safe auto-fix.
+        const numericInMods = allUnresolved.filter(m => /^\d{5,}$/.test(m));
+        const unresolvedMods = allUnresolved.filter(m => !/^\d{5,}$/.test(m));
+
+        if (numericInMods.length > 0) {
+          const shown = numericInMods.slice(0, 5).join(', ');
+          const list = numericInMods.length > 5 ? `${shown}, +${numericInMods.length - 5} more` : shown;
+          const plural = numericInMods.length === 1 ? 'y' : 'ies';
+          checks.push(diagWarn('mods.numericInMods', 'Workshop IDs misplaced in Mods=',
+            `${numericInMods.length} numeric entr${plural} in Mods= look like Workshop IDs, not mod folder names: ${list}. These belong in WorkshopItems= and will never load from Mods=.`,
+            { category: 'server', hint: 'Remove these from Mods= and add them to WorkshopItems= instead.', meta: { numericInMods } }));
+        }
+
+        if (allUnresolved.length === 0 && ini.Mods.length > 0) {
           checks.push(diagOk('mods.resolved', 'Mods= entries all resolve',
             `${ini.Mods.length} mod${ini.Mods.length === 1 ? '' : 's'} listed, all match an installed Workshop or local mod folder.`,
             { category: 'server' }));
@@ -1727,18 +1878,36 @@ router.get('/diagnostics', async (req, res) => {
         // but disabled — usually intentional, sometimes a bug. Warn quietly.
         const modSet = new Set(ini.Mods);
         const orphanWorkshop = [];
-        for (const [id, v] of wsScan.entries()) {
-          if (!ini.WorkshopItems.includes(id)) continue; // only check subscribed ones
+        // Also flag IDs in WorkshopItems= that don't exist on disk at all —
+        // these are "dead subscriptions" that will never load and just waste
+        // Steam bandwidth on every server start.
+        const deadWorkshop = [];
+        for (const id of ini.WorkshopItems) {
+          if (!/^\d{1,15}$/.test(id)) continue;
+          const v = wsScan.get(id);
+          if (!v) {
+            // Subscribed but no folder on disk → dead.
+            deadWorkshop.push(id);
+            continue;
+          }
           const provides = [...v.mods, ...v.maps];
           if (provides.length === 0) continue;
           if (!provides.some(name => modSet.has(name))) orphanWorkshop.push(id);
         }
-        if (orphanWorkshop.length > 0) {
-          const shown = orphanWorkshop.slice(0, 5).join(', ');
-          const list = orphanWorkshop.length > 5 ? `${shown}, +${orphanWorkshop.length - 5} more` : shown;
+        if (orphanWorkshop.length > 0 || deadWorkshop.length > 0) {
+          const all = [...orphanWorkshop, ...deadWorkshop];
+          const shown = all.slice(0, 5).join(', ');
+          const list = all.length > 5 ? `${shown}, +${all.length - 5} more` : shown;
+          const parts = [];
+          if (orphanWorkshop.length) parts.push(`${orphanWorkshop.length} downloaded but not in Mods=`);
+          if (deadWorkshop.length) parts.push(`${deadWorkshop.length} not on disk (dead subscription)`);
           checks.push(diagWarn('mods.orphanWorkshop', 'Subscribed Workshop items not enabled',
-            `${orphanWorkshop.length} Workshop item${orphanWorkshop.length === 1 ? ' is' : 's are'} listed in WorkshopItems= but their mod name${orphanWorkshop.length === 1 ? ' is' : 's are'} not in Mods=. They will download but not load. ID${orphanWorkshop.length === 1 ? '' : 's'}: ${list}.`,
-            { category: 'server', hint: 'Add the mod folder name(s) to Mods=, or remove the ID from WorkshopItems= to save disk space.', meta: { orphanWorkshop } }));
+            `${all.length} Workshop item${all.length === 1 ? ' is' : 's are'} listed in WorkshopItems= but won't load: ${parts.join(', ')}. IDs: ${list}.`,
+            {
+              category: 'server',
+              hint: 'Auto-fix triages each ID: downloaded → resolves and adds to Mods=; ignored or missing → removes from WorkshopItems=.',
+              meta: { orphanWorkshop: all, downloadedOrphans: orphanWorkshop, deadOrphans: deadWorkshop },
+            }));
         }
 
         // Duplicate Mods= / WorkshopItems= entries (cosmetic but confusing).
@@ -1754,18 +1923,44 @@ router.get('/diagnostics', async (req, res) => {
         }
 
         // Map= validity. `Muldraugh, KY` is the built-in base map; everything
-        // else has to come from a mod's media/maps/ folder.
+        // else has to come from a mod's media/maps/ folder. Match case-
+        // insensitively because PZ's Windows resolver is case-insensitive
+        // and many map mods use mixed case folder names.
         const BUILTIN_MAPS = new Set(['Muldraugh, KY']);
-        const mapNamesKnown = new Set([...BUILTIN_MAPS, ...wsMapNames, ...localScan.maps]);
-        const missingMaps = ini.Map.filter(m => !mapNamesKnown.has(m));
+        const mapNamesKnownLower = new Set();
+        for (const m of BUILTIN_MAPS) mapNamesKnownLower.add(m.toLowerCase());
+        for (const m of wsMapNames) mapNamesKnownLower.add(m.toLowerCase());
+        for (const m of localScan.maps) mapNamesKnownLower.add(m.toLowerCase());
+        // Build a lowercase set of every *mod folder name* so we can detect
+        // the classic confusion: "I put my mod name in Map=" (it belongs in
+        // Mods= only).
+        const modNamesKnownLower = new Set();
+        for (const m of wsModNames) modNamesKnownLower.add(m.toLowerCase());
+        for (const m of localScan.mods) modNamesKnownLower.add(m.toLowerCase());
+
+        const missingMaps = ini.Map.filter(m => !mapNamesKnownLower.has(m.toLowerCase()));
         if (ini.Map.length > 0 && missingMaps.length === 0) {
           checks.push(diagOk('mods.maps', 'Map= entries resolve',
             `${ini.Map.length} map layer${ini.Map.length === 1 ? '' : 's'} configured.`,
             { category: 'server' }));
         } else if (missingMaps.length > 0) {
+          const modsInMap = missingMaps.filter(m => modNamesKnownLower.has(m.toLowerCase()));
+          const trulyMissing = missingMaps.filter(m => !modNamesKnownLower.has(m.toLowerCase()));
+          const parts = [];
+          if (modsInMap.length > 0) {
+            parts.push(`${modsInMap.length} entr${modsInMap.length === 1 ? 'y is a mod' : 'ies are mods'}, not a map (belong only in Mods=): ${modsInMap.join(', ')}`);
+          }
+          if (trulyMissing.length > 0) {
+            parts.push(`${trulyMissing.length} not found in any installed mod: ${trulyMissing.join(', ')}`);
+          }
+          const hint = modsInMap.length > 0 && trulyMissing.length === 0
+            ? 'These names are mods, not maps. Remove them from Map= — they only need to be in Mods=.'
+            : trulyMissing.length > 0 && modsInMap.length === 0
+              ? 'Players will spawn into the void. Add the matching map mod or fix the spelling in Server Config.'
+              : 'Remove mod names from Map=, and add the matching map mod or fix spelling for the rest.';
           checks.push(diagFail('mods.maps', 'Map= entries do not resolve',
-            `${missingMaps.length} map name${missingMaps.length === 1 ? '' : 's'} in Map= cannot be found in any installed mod: ${missingMaps.join(', ')}.`,
-            { category: 'server', hint: 'Players will spawn into the void. Add the matching map mod or fix the spelling in Server Config.', meta: { missingMaps } }));
+            `${missingMaps.length} entr${missingMaps.length === 1 ? 'y' : 'ies'} in Map= cannot be found. ${parts.join('. ')}.`,
+            { category: 'server', hint, meta: { missingMaps, modsInMap, trulyMissing } }));
         }
       }
 

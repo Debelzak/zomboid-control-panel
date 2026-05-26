@@ -513,7 +513,8 @@ router.get('/steamid-bans', async (req, res) => {
 router.post('/banid', async (req, res) => {
   try {
     const rconService = req.app.get('rconService');
-    const { steamId } = req.body;
+    const { steamId, reason } = req.body;
+    const normalizedReason = typeof reason === 'string' ? reason.trim() : '';
     
     if (!steamId) {
       return res.status(400).json({ error: 'SteamID is required' });
@@ -523,11 +524,15 @@ router.post('/banid', async (req, res) => {
     if (!/^\d{17}$/.test(steamId)) {
       return res.status(400).json({ error: 'Invalid SteamID format (must be 17 digits)' });
     }
+
+    if (normalizedReason && !isValidText(normalizedReason)) {
+      return res.status(400).json({ error: 'Invalid reason format' });
+    }
     
     const result = await rconService.banSteamId(steamId);
     log.info(`POST /banid: SteamID ${steamId}`);
-    await addSteamIdBan(steamId);
-    await logPlayerAction(steamId, 'banid', null);
+    await addSteamIdBan(steamId, normalizedReason || null);
+    await logPlayerAction(steamId, 'banid', normalizedReason || null);
     
     res.json(result);
   } catch (error) {

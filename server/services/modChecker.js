@@ -260,19 +260,32 @@ export class ModChecker extends EventEmitter {
       
       if (!fs.existsSync(contentDir)) return null;
       
-      // Inside workshop folder, there is usually 'mods/ModName/mod.info' 
-      // OR sometimes just 'mods/ModName'
-      // We need to find valid mod folders
+      // Inside workshop folder, there is usually 'mods/ModName/mod.info'
+      // OR sometimes just 'mods/ModName'. B42 mods may also put mod.info
+      // under a versioned subdirectory: 'mods/ModName/common/mod.info',
+      // 'mods/ModName/42/mod.info', 'mods/ModName/42.0/mod.info', etc.
+      // We probe the mod root and every direct subdirectory.
       const modsDir = path.join(contentDir, 'mods');
       if (fs.existsSync(modsDir)) {
          const modFolders = fs.readdirSync(modsDir);
          // Just take the first valid mod found in the package
          for (const folder of modFolders) {
-            const modInfoPath = path.join(modsDir, folder, 'mod.info');
-            if (fs.existsSync(modInfoPath)) {
+            const modFolderPath = path.join(modsDir, folder);
+            const candidatePaths = [path.join(modFolderPath, 'mod.info')];
+            try {
+              for (const sub of fs.readdirSync(modFolderPath, { withFileTypes: true })) {
+                if (sub.isDirectory()) {
+                  candidatePaths.push(path.join(modFolderPath, sub.name, 'mod.info'));
+                }
+              }
+            } catch {
+              // Not a directory or unreadable — fall through
+            }
+            const modInfoPath = candidatePaths.find(p => fs.existsSync(p));
+            if (modInfoPath) {
                let content = fs.readFileSync(modInfoPath, 'utf-8');
                if (content.charCodeAt(0) === 0xFEFF) content = content.slice(1);
-               const nameMatch = content.match(/name=(.+)/);
+               const nameMatch = content.match(/^\s*name\s*=\s*(.+)$/m);
                if (nameMatch && nameMatch[1]) {
                    const name = nameMatch[1].trim();
                    // Update cache

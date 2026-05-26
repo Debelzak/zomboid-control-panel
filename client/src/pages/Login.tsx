@@ -63,6 +63,10 @@ export default function Login() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [resetSuccess, setResetSuccess] = useState('')
   const [showNewPassword, setShowNewPassword] = useState(false)
+  const [localResetSupported, setLocalResetSupported] = useState(false)
+  const [showRecoveryHelp, setShowRecoveryHelp] = useState(false)
+  const [checkingResetStatus, setCheckingResetStatus] = useState(false)
+  const [creatingLocalReset, setCreatingLocalReset] = useState(false)
   const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const clock = useClock()
@@ -74,12 +78,23 @@ export default function Login() {
     }
   }, [])
 
+  const fetchResetStatus = async (signal?: AbortSignal) => {
+    const response = await fetch('/api/auth/reset-status', signal ? { signal } : undefined)
+    const data = await response.json()
+    const available = data.resetAvailable === true
+    const localSupported = data.localResetSupported === true
+    setResetAvailable(available)
+    setLocalResetSupported(localSupported)
+    return { available, localSupported }
+  }
+
   useEffect(() => {
     const controller = new AbortController()
-    fetch('/api/auth/reset-status', { signal: controller.signal })
-      .then(r => r.json())
-      .then(data => setResetAvailable(data.resetAvailable))
-      .catch(() => setResetAvailable(false))
+    fetchResetStatus(controller.signal)
+      .catch(() => {
+        setResetAvailable(false)
+        setLocalResetSupported(false)
+      })
     return () => controller.abort()
   }, [])
 
@@ -100,6 +115,14 @@ export default function Login() {
     e.preventDefault()
     setError('')
     setResetSuccess('')
+    if (!resetToken || resetToken.trim().length < 8) {
+      setError('Reset token must be at least 8 characters')
+      return
+    }
+    if (!newPassword || newPassword.length < 6) {
+      setError('Password must be at least 6 characters')
+      return
+    }
     if (newPassword !== confirmPassword) {
       setError('Passwords do not match')
       return
@@ -117,6 +140,7 @@ export default function Login() {
       setResetToken('')
       setNewPassword('')
       setConfirmPassword('')
+      setShowRecoveryHelp(false)
       setResetAvailable(false)
       const timer = setTimeout(() => {
         setResetMode(false)
@@ -127,6 +151,64 @@ export default function Login() {
       setError(err instanceof Error ? err.message : 'Reset failed')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleLostPassword = () => {
+    setError('')
+    setResetSuccess('')
+    if (resetAvailable) {
+      setShowRecoveryHelp(false)
+      setResetMode(true)
+      return
+    }
+    if (localResetSupported) {
+      void handleCreateLocalReset()
+      return
+    }
+    setShowRecoveryHelp(current => !current)
+  }
+
+  const handleRecoveryCheck = async () => {
+    setError('')
+    setCheckingResetStatus(true)
+    try {
+      const { available } = await fetchResetStatus()
+
+      if (available) {
+        setShowRecoveryHelp(false)
+        setResetMode(true)
+        return
+      }
+
+      setError('No recovery token found yet. Create data/reset-token.txt on the panel host, then try again.')
+    } catch {
+      setError('Could not check recovery status. Try again in a moment.')
+    } finally {
+      setCheckingResetStatus(false)
+    }
+  }
+
+  const handleCreateLocalReset = async () => {
+    setError('')
+    setResetSuccess('')
+    setCreatingLocalReset(true)
+    try {
+      const res = await fetch('/api/auth/reset-token/local', { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Could not create a recovery token')
+
+      setResetAvailable(true)
+      setLocalResetSupported(true)
+      setResetToken(typeof data.token === 'string' ? data.token : '')
+      setShowRecoveryHelp(false)
+      setResetSuccess(typeof data.message === 'string' ? data.message : 'Recovery token created on this server.')
+      setResetMode(true)
+    } catch (err) {
+      setShowRecoveryHelp(true)
+      setError(err instanceof Error ? err.message : 'Could not create a recovery token')
+    } finally {
+      setCreatingLocalReset(false)
     }
   }
 
@@ -406,15 +488,83 @@ export default function Login() {
                     {loading ? (<><Loader2 className="w-4 h-4 animate-spin" /> Signing In…</>) : 'Sign In'}
                   </Button>
 
-                  {resetAvailable && (
-                    <button
-                      type="button"
-                      onClick={() => { setResetMode(true); setError('') }}
-                      className="flex w-full items-center justify-center gap-1.5 text-center text-xs uppercase tracking-[0.1em] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                    >
-                      <KeyRound className="w-3 h-3" />
-                      Forgot password — reset via token
-                    </button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="w-full gap-1.5 tracking-[0.08em] uppercase text-muted-foreground hover:text-foreground"
+                    onClick={handleLostPassword}
+                    disabled={loading || checkingResetStatus || creatingLocalReset}
+                  >
+                    {creatingLocalReset ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <KeyRound className="w-3.5 h-3.5" />}
+                    {creatingLocalReset
+                      ? 'Preparing Recovery…'
+                      : resetAvailable
+                        ? 'Lost Password? Recover Access'
+                        : localResetSupported
+                          ? 'Lost Password? Reset On This Server'
+                          : 'Lost Password?'}
+                  </Button>
+
+                  {showRecoveryHelp && !resetAvailable && (
+                    <div className="rounded-sm border border-border/60 bg-muted/20 px-3 py-3 text-xs text-muted-foreground">
+                      <p className="font-medium uppercase tracking-[0.08em] text-foreground/90">Recover Access</p>
+                      {localResetSupported ? (
+                        <>
+                          <p className="mt-2 leading-5">
+                            You opened the panel locally on the server, so the panel can create the recovery token for you automatically.
+                          </p>
+                          <p className="mt-2 leading-5">
+                            If that local recovery step fails, you can still use <span className="font-mono text-foreground/85">--reset-password</span> from the server terminal.
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="mt-2 leading-5">
+                            If you still have access to the panel host, you can reset the admin password without knowing the old one.
+                          </p>
+                          <ol className="mt-2 list-decimal space-y-1.5 pl-4 leading-5">
+                            <li>Create <span className="font-mono text-foreground/85">data/reset-token.txt</span> on the panel host with any token that is at least 8 characters long.</li>
+                            <li>Click the button below to check for that token.</li>
+                            <li>When the token is found, this screen will switch to the password reset form automatically.</li>
+                          </ol>
+                          <p className="mt-2 leading-5">
+                            Alternative: start the panel with <span className="font-mono text-foreground/85">--reset-password</span> from the server terminal.
+                          </p>
+                        </>
+                      )}
+                      <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                        {localResetSupported ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="sm:flex-1"
+                            onClick={() => void handleCreateLocalReset()}
+                            disabled={creatingLocalReset || checkingResetStatus || loading}
+                          >
+                            {creatingLocalReset ? (<><Loader2 className="w-4 h-4 animate-spin" /> Preparing…</>) : 'Create Recovery Token On This Server'}
+                          </Button>
+                        ) : (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="sm:flex-1"
+                            onClick={handleRecoveryCheck}
+                            disabled={checkingResetStatus || loading}
+                          >
+                            {checkingResetStatus ? (<><Loader2 className="w-4 h-4 animate-spin" /> Checking…</>) : 'Check for Recovery Token'}
+                          </Button>
+                        )}
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          className="sm:flex-1"
+                          onClick={() => { setShowRecoveryHelp(false); setError('') }}
+                          disabled={creatingLocalReset || checkingResetStatus || loading}
+                        >
+                          Hide Help
+                        </Button>
+                      </div>
+                    </div>
                   )}
                 </form>
               )}

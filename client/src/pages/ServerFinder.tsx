@@ -221,6 +221,10 @@ export default function ServerFinder() {
     // Only reset to page 1 when actual filters/sort change, not when pings update
   }, [servers, debouncedSearch, hideEmpty, hideFull, hidePrivate, showVacOnly, versionFilter, sortField, sortDirection]) // eslint-disable-line react-hooks/exhaustive-deps -- serverPings intentionally excluded to avoid pagination reset on ping updates
 
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [debouncedSearch, hideEmpty, hideFull, hidePrivate, showVacOnly, versionFilter, sortField, sortDirection])
+
   // Re-sort when pings arrive without resetting the current page
   useEffect(() => {
     if (sortField !== 'ping') return
@@ -256,6 +260,11 @@ export default function ServerFinder() {
 
   // Calculate pagination from filtered servers
   const totalPages = Math.max(1, Math.ceil(filteredServers.length / ITEMS_PER_PAGE))
+
+  useEffect(() => {
+    setCurrentPage(prev => Math.min(prev, totalPages))
+  }, [totalPages])
+
   const paginatedServers = useMemo(() => filteredServers.slice(
     (currentPage - 1) * ITEMS_PER_PAGE,
     currentPage * ITEMS_PER_PAGE

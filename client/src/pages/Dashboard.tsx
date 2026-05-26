@@ -5,7 +5,7 @@ import {
   Play, Square, RotateCcw, Save, Server, Wifi, Loader2, AlertTriangle, RefreshCw, AlertCircle,
   LogIn, LogOut, Activity, Archive, Skull, Sword, ShieldAlert, Copy, Gamepad2, Globe, FolderOpen,
   X, MoreHorizontal, Zap, Trash2, Download, Sparkles, CalendarClock,
-  ChevronRight,
+  ChevronRight, Monitor,
 } from 'lucide-react'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { useToast } from '@/components/ui/use-toast'
@@ -51,7 +51,7 @@ interface ServerStatus {
 }
 interface Player { name: string; online: boolean }
 interface PerformancePoint {
-  time: string; playerCount: number; memoryMB: number
+  time: string; timestamp?: string; playerCount: number; memoryMB: number
   pzMemMB?: number; cpuPercent?: number; hostMemUsedGB?: number; hostMemTotalGB?: number
 }
 
@@ -73,6 +73,13 @@ function getDashboardSuccessCopy(action: string) {
     case 'Connect RCON':   return { title: 'RCON connected',      description: 'Remote command control ready.' }
     default:               return { title: 'Action complete',     description: `${action} completed successfully.` }
   }
+}
+
+function isFailedActionResult(value: unknown): value is { success: false; error?: string; message?: string } {
+  return typeof value === 'object'
+    && value !== null
+    && 'success' in value
+    && (value as { success?: boolean }).success === false
 }
 
 function formatAge(iso: string): string {
@@ -222,7 +229,7 @@ export default function Dashboard() {
 
   const dismissQuickStart = () => {
     setShowQuickStart(false)
-    try { localStorage.setItem(DASHBOARD_ONBOARDING_DISMISSED_KEY, 'true') } catch {}
+    try { localStorage.setItem(DASHBOARD_ONBOARDING_DISMISSED_KEY, 'true') } catch { /* ignore storage failures */ }
   }
 
   /* ---------------------------- fetchers ---------------------------------- */
@@ -245,20 +252,22 @@ export default function Dashboard() {
   }, [])
   const fetchPerformanceHistory = useCallback(async () => {
     try {
-      const data = await debugApi.getPerformanceHistory(30)
+      const data = await debugApi.getPerformanceHistory(60)
       if (data.history) {
-        setPerformanceHistory(data.history.map((h) => ({
-          time: new Date(h.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-          timestamp: h.timestamp,
-          playerCount: h.playerCount || 0,
-          memoryMB: Math.round((h.memoryUsed || 0) / (1024 * 1024)),
-          pzMemMB: h.pzMemUsed ? Math.round(h.pzMemUsed / (1024 * 1024)) : undefined,
-          cpuPercent: h.cpuUsage != null ? Math.round(h.cpuUsage) : undefined,
-          hostMemUsedGB: h.hostMemUsed ? +(h.hostMemUsed / (1024 * 1024 * 1024)).toFixed(1) : undefined,
-          hostMemTotalGB: h.hostMemTotal ? +(h.hostMemTotal / (1024 * 1024 * 1024)).toFixed(1) : undefined,
+        setPerformanceHistory(data.history.map((h: Record<string, unknown>) => ({
+          time: new Date(h.timestamp as string).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+          timestamp: h.timestamp as string,
+          playerCount: (h.playerCount as number) || 0,
+          memoryMB: Math.round(((h.memoryUsed as number) || 0) / (1024 * 1024)),
+          pzMemMB: h.pzMemUsed ? Math.round((h.pzMemUsed as number) / (1024 * 1024)) : undefined,
+          cpuPercent: h.cpuUsage != null ? Math.round(h.cpuUsage as number) : undefined,
+          hostMemUsedGB: h.hostMemUsed ? +((h.hostMemUsed as number) / (1024 * 1024 * 1024)).toFixed(1) : undefined,
+          hostMemTotalGB: h.hostMemTotal ? +((h.hostMemTotal as number) / (1024 * 1024 * 1024)).toFixed(1) : undefined,
         })))
       }
-    } catch {}
+    } catch {
+      // Ignore missing telemetry history so the rest of the dashboard can render.
+    }
   }, [])
   const fetchAutoStartSetting = useCallback(async () => {
     try {
@@ -266,10 +275,12 @@ export default function Dashboard() {
       if (r?.settings?.autoStartServer !== undefined) {
         setAutoStartServer(r.settings.autoStartServer === true || r.settings.autoStartServer === 'true')
       }
-    } catch {}
+    } catch {
+      // Ignore settings fetch failures and keep the current fallback value.
+    }
   }, [])
   const fetchActiveServer = useCallback(async () => {
-    try { const d = await serversApi.getActive(); setActiveServer(d.server ?? null) } catch { setActiveServer(null) }
+    try { const d = await serversApi.getResolvedActive(); setActiveServer(d.server ?? null) } catch { setActiveServer(null) }
   }, [])
   const fetchMaintenance = useCallback(async () => {
     const [backupRes, modsRes, tasksRes] = await Promise.allSettled([
@@ -332,7 +343,6 @@ export default function Dashboard() {
     const interval = setInterval(() => {
       if (document.visibilityState === 'hidden') return
       fetchPlayerActivity()
-      if (showPerformanceCharts) fetchPerformanceHistory()
     }, 15000)
     const maintenanceInterval = setInterval(() => {
       if (document.visibilityState === 'hidden') return
@@ -345,8 +355,8 @@ export default function Dashboard() {
       clearInterval(maintenanceInterval)
       if (pollIntervalRef.current) { clearInterval(pollIntervalRef.current); pollIntervalRef.current = null }
     }
-  }, [fetchStatus, fetchPlayers, fetchBridgeStatus, fetchPlayerActivity, fetchPerformanceHistory,
-      fetchAutoStartSetting, fetchActiveServer, fetchMaintenance, showPerformanceCharts])
+  }, [fetchStatus, fetchPlayers, fetchBridgeStatus, fetchPlayerActivity,
+      fetchAutoStartSetting, fetchActiveServer, fetchMaintenance])
 
   useEffect(() => {
     if (!socket) return
@@ -403,6 +413,33 @@ export default function Dashboard() {
 
   useEffect(() => { if (showPerformanceCharts) fetchPerformanceHistory() }, [showPerformanceCharts, fetchPerformanceHistory])
 
+  // Real-time perf subscription via Socket.IO — appends each new snapshot
+  useEffect(() => {
+    if (!socket || !showPerformanceCharts) return
+    socket.emit('subscribe:perf')
+    const onSnapshot = (snap: Record<string, unknown>) => {
+      const point: PerformancePoint = {
+        time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+        timestamp: new Date().toISOString(),
+        playerCount: (snap.playerCount as number) || 0,
+        memoryMB: Math.round(((snap.memoryUsed as number) || 0) / (1024 * 1024)),
+        pzMemMB: snap.pzMemUsed ? Math.round((snap.pzMemUsed as number) / (1024 * 1024)) : undefined,
+        cpuPercent: snap.cpuUsage != null ? Math.round(snap.cpuUsage as number) : undefined,
+        hostMemUsedGB: snap.hostMemUsed ? +((snap.hostMemUsed as number) / (1024 * 1024 * 1024)).toFixed(1) : undefined,
+        hostMemTotalGB: snap.hostMemTotal ? +((snap.hostMemTotal as number) / (1024 * 1024 * 1024)).toFixed(1) : undefined,
+      }
+      setPerformanceHistory(prev => {
+        const next = [...prev, point]
+        return next.length > 60 ? next.slice(-60) : next
+      })
+    }
+    socket.on('perf:snapshot', onSnapshot)
+    return () => {
+      socket.off('perf:snapshot', onSnapshot)
+      socket.emit('unsubscribe:perf')
+    }
+  }, [socket, showPerformanceCharts])
+
   useEffect(() => {
     const onVis = () => {
       if (document.visibilityState === 'visible') {
@@ -418,7 +455,10 @@ export default function Dashboard() {
   const handleAction = async (action: string, fn: () => Promise<unknown>) => {
     setLoading(action)
     try {
-      await fn()
+      const result = await fn()
+      if (isFailedActionResult(result)) {
+        throw new Error(result.error || result.message || 'Action failed.')
+      }
       const copy = getDashboardSuccessCopy(action)
       toast({ title: copy.title, description: copy.description, variant: 'success' as const })
       if (action === 'Start server') {
@@ -458,10 +498,12 @@ export default function Dashboard() {
   }
 
   /* ---------------------------- derived ----------------------------------- */
-  const online = !!status?.running
   const hasServer = !!activeServer
+  const online = hasServer && !!status?.running
   const modsPending = maintenance.modUpdatesAvailable > 0
-  const stateLabel = online
+  const stateLabel = !hasServer
+    ? 'Not configured'
+    : online
     ? 'Online'
     : status?.configured ? 'Offline' : 'Not configured'
   void stateLabel
@@ -471,87 +513,111 @@ export default function Dashboard() {
   /* ====================================================================== */
   return (
     <div className="page-transition pb-12">
-      {/* ─── TOP STATUS BAR (slim, flat, no wash) ───────────────────────── */}
+      {/* ─── TOP STATUS BAR ───────────────────────────────────────── */}
       <header
         aria-label="Server status"
-        className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-border/60 bg-card/40 px-3 py-2"
+        className="overflow-hidden rounded-lg border border-border/50 bg-card/30"
       >
-        <div className="flex min-w-0 items-center gap-2.5">
-          <span
-            className={cn(
-              'h-2 w-2 rounded-full shrink-0',
-              online ? 'bg-success' : status?.configured ? 'bg-destructive' : 'bg-warning'
-            )}
-            aria-hidden="true"
-          />
-          <span
-            role="status"
-            aria-live="polite"
-            className={cn(
-              'font-mono text-[11px] font-semibold uppercase tracking-[0.18em]',
-              online ? 'text-success' : status?.configured ? 'text-destructive' : 'text-warning'
-            )}
-          >
-            {stateLabel}
-          </span>
-          <span className="h-3.5 w-px bg-border/60" aria-hidden="true" />
-          <h1 className="min-w-0 truncate text-sm font-semibold text-foreground" title={activeServer?.serverName ?? 'No active server'}>
-            {activeServer?.serverName ?? 'No active server'}
-          </h1>
-          {online && status && status.uptime > 0 && (
-            <span className="font-mono text-[11px] tabular-nums text-muted-foreground/80">
-              up {formatUptime(status.uptime)}
+        {/* Main row */}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-3.5 py-2.5">
+          {/* Identity cluster: status + name + uptime */}
+          <div className="flex min-w-0 items-center gap-3">
+            {/* Status badge */}
+            <span
+              className={cn(
+                'inline-flex items-center gap-1.5 rounded-sm px-2 py-0.5 font-mono text-[10px] font-bold uppercase tracking-[0.2em]',
+                online
+                  ? 'bg-success/12 text-success ring-1 ring-inset ring-success/25'
+                  : status?.configured
+                    ? 'bg-destructive/12 text-destructive ring-1 ring-inset ring-destructive/25'
+                    : 'bg-warning/12 text-warning ring-1 ring-inset ring-warning/25'
+              )}
+            >
+              <span
+                className={cn(
+                  'h-1.5 w-1.5 rounded-full',
+                  online ? 'bg-success shadow-[0_0_4px] shadow-success/60' : status?.configured ? 'bg-destructive' : 'bg-warning'
+                )}
+                aria-hidden="true"
+              />
+              <span role="status" aria-live="polite">{stateLabel}</span>
             </span>
-          )}
-          {activeServer?.isRemote && (
-            <span className="rounded-sm bg-muted/50 px-1.5 py-0.5 text-xs font-medium text-muted-foreground">remote</span>
-          )}
-        </div>
 
-        {/* address pills — middle, compact */}
-        <div className="flex flex-wrap items-center gap-1">
-          {status?.publicIp && (
-            <button
-              onClick={() => copyToClipboard(`${status.publicIp}${status.port ? `:${status.port}` : ''}`, 'Public address')}
-              className="group inline-flex items-center gap-1.5 rounded px-1.5 py-0.5 text-muted-foreground transition-colors hover:bg-muted/40 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
-              aria-label={`Copy public address: ${status.publicIp}${status.port ? `:${status.port}` : ''}`}
-            >
-              <span className="text-xs font-medium text-muted-foreground/55">pub</span>
-              <span className="font-mono text-[11px] tabular-nums">{status.publicIp}{status.port ? `:${status.port}` : ''}</span>
-              <Copy className="h-3 w-3 opacity-0 transition-opacity group-hover:opacity-60" />
-            </button>
-          )}
-          {status?.localIp && (
-            <button
-              onClick={() => copyToClipboard(`${status.localIp}${status.port ? `:${status.port}` : ''}`, 'Local address')}
-              className="group inline-flex items-center gap-1.5 rounded px-1.5 py-0.5 text-muted-foreground transition-colors hover:bg-muted/40 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
-              aria-label={`Copy local address: ${status.localIp}${status.port ? `:${status.port}` : ''}`}
-            >
-              <span className="text-xs font-medium text-muted-foreground/55">lan</span>
-              <span className="font-mono text-[11px] tabular-nums">{status.localIp}{status.port ? `:${status.port}` : ''}</span>
-            </button>
-          )}
-          {status?.publicIp && status?.port && (
-            <a
-              href={`steam://connect/${status.publicIp}:${status.port}`}
-              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-muted-foreground transition-colors hover:bg-muted/40 hover:text-primary"
-              title="Connect with Steam"
-            >
-              <Gamepad2 className="h-3 w-3" />
-              <span className="text-[11px]">steam</span>
-            </a>
-          )}
-        </div>
+            {/* Separator */}
+            <span className="h-4 w-px bg-border/40" aria-hidden="true" />
 
-        {/* primary controls — slim, right-aligned */}
-        <div className="ml-auto flex items-center gap-1">
+            {/* Server name */}
+            <h1 className="min-w-0 truncate font-mono text-sm font-semibold tracking-wide text-foreground" title={activeServer?.serverName ?? 'No active server'}>
+              {activeServer?.serverName ?? 'No active server'}
+            </h1>
+
+            {/* Uptime */}
+            {online && status && status.uptime > 0 && (
+              <span className="hidden font-mono text-[11px] tabular-nums text-muted-foreground/60 sm:inline">
+                up {formatUptime(status.uptime)}
+              </span>
+            )}
+            {activeServer?.isRemote && (
+              <span className="rounded-sm bg-muted/50 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">remote</span>
+            )}
+          </div>
+
+          {/* Address cluster — grouped, distinct background */}
+          <div className="flex flex-wrap items-center gap-px rounded-md bg-muted/25 p-0.5 ring-1 ring-inset ring-border/30">
+            {status?.publicIp && (
+              <button
+                onClick={() => copyToClipboard(`${status.publicIp}${status.port ? `:${status.port}` : ''}`, 'Public address')}
+                className="group inline-flex items-center gap-1.5 rounded-sm px-2 py-1 text-muted-foreground transition-colors hover:bg-background/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
+                aria-label={`Copy public address: ${status.publicIp}${status.port ? `:${status.port}` : ''}`}
+              >
+                <Globe className="h-3 w-3 text-amber-500/70" />
+                <span className="font-mono text-[11px] tabular-nums">{status.publicIp}{status.port ? `:${status.port}` : ''}</span>
+                <Copy className="h-2.5 w-2.5 opacity-0 transition-opacity group-hover:opacity-60" />
+              </button>
+            )}
+            {status?.localIp && (
+              <button
+                onClick={() => copyToClipboard(`${status.localIp}${status.port ? `:${status.port}` : ''}`, 'Local address')}
+                className="group inline-flex items-center gap-1.5 rounded-sm px-2 py-1 text-muted-foreground transition-colors hover:bg-background/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
+                aria-label={`Copy local address: ${status.localIp}${status.port ? `:${status.port}` : ''}`}
+              >
+                <Wifi className="h-3 w-3 text-emerald-500/70" />
+                <span className="font-mono text-[11px] tabular-nums">{status.localIp}{status.port ? `:${status.port}` : ''}</span>
+                <Copy className="h-2.5 w-2.5 opacity-0 transition-opacity group-hover:opacity-60" />
+              </button>
+            )}
+            {status?.publicIp && status?.port && (
+              <a
+                href={`steam://connect/${status.publicIp}:${status.port}`}
+                className="inline-flex items-center gap-1.5 rounded-sm px-2 py-1 text-muted-foreground transition-colors hover:bg-background/60 hover:text-foreground"
+                title="Connect with Steam"
+              >
+                <Gamepad2 className="h-3 w-3 text-blue-400/70" />
+                <span className="font-mono text-[11px]">steam</span>
+              </a>
+            )}
+            {panelInfo && (
+              <button
+                onClick={() => copyToClipboard(panelInfo.url, 'Panel address')}
+                className="group inline-flex items-center gap-1.5 rounded-sm px-2 py-1 text-muted-foreground transition-colors hover:bg-background/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
+                aria-label={`Copy panel address: ${panelInfo.url}`}
+              >
+                <Monitor className="h-3 w-3 text-primary/70" />
+                <span className="font-mono text-[11px] tabular-nums">{panelInfo.localIp}:{panelInfo.port}</span>
+                <Copy className="h-2.5 w-2.5 opacity-0 transition-opacity group-hover:opacity-60" />
+              </button>
+            )}
+          </div>
+
+          {/* primary controls — right-aligned */}
+          <div className="ml-auto flex items-center gap-1">
           <Button
             onClick={() => handleAction('Start server', serverApi.start)}
-            disabled={online || loading !== null || activeServer?.isRemote}
-            variant={online ? 'outline' : 'success'}
+            disabled={!hasServer || online || loading !== null || activeServer?.isRemote}
+            variant="ghost"
             size="sm"
-            className="h-8 gap-1.5 px-2.5 text-xs"
-            title={activeServer?.isRemote ? 'Not available for remote (RCON-only) servers' : undefined}
+            className="h-8 gap-1.5 rounded-md border border-emerald-500/30 px-2.5 text-xs text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300 disabled:border-border/50 disabled:text-muted-foreground"
+            title={!hasServer ? 'Add or select a server first' : activeServer?.isRemote ? 'Not available for remote (RCON-only) servers' : undefined}
           >
             {loading === 'Start server' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
             Start
@@ -563,10 +629,10 @@ export default function Dashboard() {
               action: serverApi.stop,
               variant: 'destructive',
             })}
-            disabled={!online || loading !== null}
-            variant="outline"
+            disabled={!hasServer || !online || loading !== null}
+            variant="ghost"
             size="sm"
-            className="h-8 gap-1.5 px-2.5 text-xs hover:border-destructive/40 hover:text-destructive"
+            className="h-8 gap-1.5 rounded-md border border-red-500/30 px-2.5 text-xs text-red-400 hover:bg-red-500/10 hover:text-red-300 disabled:border-border/50 disabled:text-muted-foreground"
           >
             {loading === 'Stop server' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Square className="h-3.5 w-3.5" />}
             Stop
@@ -578,33 +644,33 @@ export default function Dashboard() {
               action: () => serverApi.restart(5),
               variant: 'warning',
             })}
-            disabled={!online || loading !== null || activeServer?.isRemote}
-            variant="outline"
+            disabled={!hasServer || !online || loading !== null || activeServer?.isRemote}
+            variant="ghost"
             size="sm"
-            className="h-8 gap-1.5 px-2.5 text-xs hover:border-warning/40 hover:text-warning"
-            title={activeServer?.isRemote ? 'Not available for remote (RCON-only) servers' : undefined}
+            className="h-8 gap-1.5 rounded-md border border-amber-500/30 px-2.5 text-xs text-amber-400 hover:bg-amber-500/10 hover:text-amber-300 disabled:border-border/50 disabled:text-muted-foreground"
+            title={!hasServer ? 'Add or select a server first' : activeServer?.isRemote ? 'Not available for remote (RCON-only) servers' : undefined}
           >
             <RotateCcw className="h-3.5 w-3.5" /> Restart
           </Button>
           <Button
             onClick={() => handleAction('Save world', serverApi.save)}
-            disabled={!online || loading !== null}
-            variant="outline"
+            disabled={!hasServer || !online || loading !== null}
+            variant="ghost"
             size="sm"
-            className="h-8 gap-1.5 px-2.5 text-xs"
+            className="h-8 gap-1.5 rounded-md border border-sky-500/30 px-2.5 text-xs text-sky-400 hover:bg-sky-500/10 hover:text-sky-300 disabled:border-border/50 disabled:text-muted-foreground"
           >
             <Save className="h-3.5 w-3.5" /> Save
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="icon" className="h-8 w-8" aria-label="More server actions">
+              <Button variant="outline" size="icon" className="h-8 w-8 border-border/60 text-muted-foreground hover:text-foreground" aria-label="More server actions">
                 <MoreHorizontal className="h-3.5 w-3.5" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem
                 onClick={() => handleAction('Create backup', () => backupApi.createBackup({ includeDb: true }).then(() => fetchMaintenance()))}
-                disabled={loading !== null || activeServer?.isRemote}
+                disabled={!hasServer || loading !== null || activeServer?.isRemote}
               >
                 <Archive className="mr-2 h-4 w-4" /> Create backup
               </DropdownMenuItem>
@@ -615,7 +681,7 @@ export default function Dashboard() {
                 <Link to="/settings" className="flex items-center"><Server className="mr-2 h-4 w-4" /> Bridge settings</Link>
               </DropdownMenuItem>
               {!status?.rcon?.connected && (
-                <DropdownMenuItem onClick={handleConnect} disabled={loading !== null}>
+                <DropdownMenuItem onClick={handleConnect} disabled={!hasServer || loading !== null}>
                   <Wifi className="mr-2 h-4 w-4" /> Connect RCON
                 </DropdownMenuItem>
               )}
@@ -627,20 +693,21 @@ export default function Dashboard() {
                   action: () => serverApi.restart(0),
                   variant: 'destructive',
                 })}
-                disabled={!online || loading !== null || activeServer?.isRemote}
+                disabled={!hasServer || !online || loading !== null || activeServer?.isRemote}
                 className="text-destructive focus:text-destructive"
               >
                 <Zap className="mr-2 h-4 w-4" /> Restart now
               </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={() => { setWipePreview(null); setWipeDialog(true) }}
-                disabled={online || loading !== null || activeServer?.isRemote}
+                disabled={!hasServer || online || loading !== null || activeServer?.isRemote}
                 className="text-destructive focus:text-destructive"
               >
                 <Trash2 className="mr-2 h-4 w-4" /> Wipe server
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+        </div>
         </div>
       </header>
 
@@ -657,7 +724,7 @@ export default function Dashboard() {
         void lastFailed
         const dismiss = () => {
           if (!latest) return
-          try { sessionStorage.setItem('panel-update-banner-dismissed', latest) } catch {}
+          try { sessionStorage.setItem('panel-update-banner-dismissed', latest) } catch { /* ignore storage failures */ }
           setPanelUpdateDismissedVersion(latest)
         }
         const accent = lastFailed ? 'destructive' : 'primary'
@@ -861,14 +928,14 @@ export default function Dashboard() {
                 <ConnLine label="Panel" state="on" value={panelInfo.url.replace(/^https?:\/\//, '')} />
               )}
             </div>
-            {!status?.rcon?.connected && status?.configured && (
+            {!status?.rcon?.connected && hasServer && status?.configured && (
               <div className="border-t border-border/30 p-2">
                 <Button
                   size="sm"
                   variant="outline"
                   className="h-7 w-full gap-1.5 text-xs"
                   onClick={handleConnect}
-                  disabled={loading !== null}
+                  disabled={!hasServer || loading !== null}
                 >
                   {loading === 'Connect RCON' ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wifi className="h-3 w-3" />}
                   Connect RCON
@@ -964,7 +1031,15 @@ export default function Dashboard() {
               <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground/70">
                 {(() => {
                   if (performanceHistory.length === 0) return online ? 'sampling' : 'standby'
-                  return `last ${performanceHistory.length} min`
+                  if (performanceHistory.length < 2) return 'live'
+                  const first = performanceHistory[0].timestamp
+                  const last = performanceHistory[performanceHistory.length - 1].timestamp
+                  if (first && last) {
+                    const spanSec = (new Date(last).getTime() - new Date(first).getTime()) / 1000
+                    if (spanSec < 120) return `last ${Math.round(spanSec)}s · live`
+                    return `last ${Math.round(spanSec / 60)} min · live`
+                  }
+                  return 'live'
                 })()}
               </span>
             </header>
@@ -1048,7 +1123,7 @@ export default function Dashboard() {
                     size="sm"
                     variant="outline"
                     className="h-7 w-full gap-1.5 text-xs"
-                    disabled={loading !== null || activeServer?.isRemote}
+                    disabled={!hasServer || loading !== null || activeServer?.isRemote}
                     onClick={() => handleAction('Create backup', () => backupApi.createBackup({ includeDb: true }).then(() => fetchMaintenance()))}
                   >
                     {loading === 'Create backup' ? <Loader2 className="h-3 w-3 animate-spin" /> : <Archive className="h-3 w-3" />}
@@ -1083,7 +1158,7 @@ export default function Dashboard() {
                   size="sm"
                   variant="outline"
                   className="h-7 w-full justify-start gap-2 text-xs"
-                  disabled={loading !== null || activeServer?.isRemote}
+                  disabled={!hasServer || loading !== null || activeServer?.isRemote}
                   onClick={() => handleAction('Create backup', () => backupApi.createBackup({ includeDb: true }).then(() => fetchMaintenance()))}
                 >
                   {loading === 'Create backup' ? <Loader2 className="h-3 w-3 animate-spin" /> : <Archive className="h-3 w-3" />}
@@ -1093,7 +1168,7 @@ export default function Dashboard() {
                   size="sm"
                   variant="outline"
                   className="h-7 w-full justify-start gap-2 text-xs text-destructive hover:text-destructive"
-                  disabled={online || loading !== null || activeServer?.isRemote}
+                  disabled={!hasServer || online || loading !== null || activeServer?.isRemote}
                   onClick={() => { setWipePreview(null); setWipeDialog(true) }}
                   title={online ? 'Stop the server before wiping' : 'Delete map / players / world state'}
                 >

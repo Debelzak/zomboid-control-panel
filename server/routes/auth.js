@@ -8,6 +8,7 @@ import rateLimit from 'express-rate-limit';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
+import os from 'os';
 import authService from '../services/auth.js';
 import { createLogger } from '../utils/logger.js';
 import { sanitizeError } from '../utils/sanitize.js';
@@ -35,6 +36,79 @@ function getRefreshCookieOptions(req, includeMaxAge = true) {
 
 function isNonEmptyString(value) {
   return typeof value === 'string' && value.length > 0;
+}
+
+const RESET_TOKEN_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const RESET_TOKEN_MAX_BYTES = 1024;
+const LOOPBACK_REMOTE_ADDRESSES = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+
+function normalizeIpAddress(address) {
+  if (typeof address !== 'string') return '';
+  const trimmed = address.trim().toLowerCase().replace(/^\[|\]$/g, '');
+  if (!trimmed) return '';
+  const withoutZone = trimmed.split('%')[0];
+  return withoutZone.startsWith('::ffff:') ? withoutZone.slice(7) : withoutZone;
+}
+
+function getLocalPanelAddresses() {
+  const addresses = new Set(
+    [...LOOPBACK_REMOTE_ADDRESSES].map((address) => normalizeIpAddress(address)).filter(Boolean)
+  );
+
+  const interfaces = os.networkInterfaces();
+  for (const entries of Object.values(interfaces)) {
+    for (const entry of entries || []) {
+      const normalized = normalizeIpAddress(entry.address);
+      if (normalized) {
+        addresses.add(normalized);
+      }
+    }
+  }
+
+  return addresses;
+}
+
+function getResetTokenPath() {
+  const { dataDir } = getDataPaths();
+  return path.join(dataDir, 'reset-token.txt');
+}
+
+function isLocalPanelRequest(req) {
+  const candidateAddresses = [
+    req.ip,
+    ...(Array.isArray(req.ips) ? req.ips : []),
+    req.socket?.remoteAddress,
+    req.connection?.remoteAddress,
+  ]
+    .map((address) => normalizeIpAddress(address))
+    .filter(Boolean);
+
+  const localAddresses = getLocalPanelAddresses();
+  return candidateAddresses.some((address) => localAddresses.has(address));
+}
+
+function getResetTokenState() {
+  const tokenPath = getResetTokenPath();
+  if (!fs.existsSync(tokenPath)) {
+    return { tokenPath, available: false, reason: 'missing', token: null };
+  }
+
+  const stat = fs.statSync(tokenPath);
+  if (stat.size > RESET_TOKEN_MAX_BYTES) {
+    return { tokenPath, available: false, reason: 'too-large', token: null, stat };
+  }
+
+  const ageMs = Date.now() - stat.mtimeMs;
+  if (ageMs > RESET_TOKEN_MAX_AGE_MS) {
+    return { tokenPath, available: false, reason: 'expired', token: null, stat };
+  }
+
+  const token = fs.readFileSync(tokenPath, 'utf-8').trim();
+  if (!token || token.length < 8) {
+    return { tokenPath, available: false, reason: 'too-short', token: null, stat };
+  }
+
+  return { tokenPath, available: true, reason: 'ok', token, stat, ageMs };
 }
 
 async function getAuthenticatedUser(req) {
@@ -249,18 +323,69 @@ const resetLimiter = rateLimit({
  */
 router.get('/reset-status', async (req, res) => {
   try {
-    const { dataDir } = getDataPaths();
-    const tokenPath = path.join(dataDir, 'reset-token.txt');
-    if (!fs.existsSync(tokenPath)) {
-      return res.json({ resetAvailable: false });
-    }
-    // Token files expire after 24h to avoid forgotten files sitting on disk indefinitely.
-    const stat = fs.statSync(tokenPath);
-    const ageMs = Date.now() - stat.mtimeMs;
-    const available = ageMs < 24 * 60 * 60 * 1000;
-    res.json({ resetAvailable: available });
+    const tokenState = getResetTokenState();
+    res.json({
+      resetAvailable: tokenState.available,
+      localResetSupported: isLocalPanelRequest(req),
+    });
   } catch (error) {
-    res.json({ resetAvailable: false });
+    res.json({ resetAvailable: false, localResetSupported: false });
+  }
+});
+
+const localResetTokenLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many local recovery attempts. Please try again later.' },
+});
+
+/**
+ * POST /api/auth/reset-token/local
+ * Create or reuse a reset token when the panel is opened locally on the server host.
+ *
+ * Security model: this is only allowed for requests that originate from the server itself
+ * (loopback or one of the machine's own assigned IP addresses). Remote browser clients
+ * cannot trigger it, even if they spoof forwarded headers.
+ */
+router.post('/reset-token/local', localResetTokenLimiter, async (req, res) => {
+  try {
+    if (!isLocalPanelRequest(req)) {
+      return res.status(403).json({
+        error: 'This recovery action is only available when the panel is opened from the server itself.',
+      });
+    }
+
+    const tokenState = getResetTokenState();
+    if (tokenState.available && tokenState.token) {
+      return res.json({
+        success: true,
+        token: tokenState.token,
+        resetAvailable: true,
+        message: 'A recovery token is already available on this server. Choose a new password below.',
+      });
+    }
+
+    if (tokenState.reason === 'expired' || tokenState.reason === 'too-large' || tokenState.reason === 'too-short') {
+      try {
+        fs.unlinkSync(tokenState.tokenPath);
+      } catch {}
+    }
+
+    const token = crypto.randomBytes(24).toString('hex');
+    fs.writeFileSync(tokenState.tokenPath, `${token}\n`, { encoding: 'utf-8', mode: 0o600 });
+
+    log.info('Local recovery token created from a request originating on the server');
+    res.json({
+      success: true,
+      token,
+      resetAvailable: true,
+      message: 'Recovery token created on this server. Set a new password below.',
+    });
+  } catch (error) {
+    log.error(`Local recovery token creation failed: ${error.message}`);
+    res.status(500).json({ error: 'Could not create a recovery token on this server.' });
   }
 });
 
@@ -283,8 +408,7 @@ router.post('/reset-password', resetLimiter, async (req, res) => {
       return res.status(400).json({ error: 'Password must be 128 characters or fewer' });
     }
 
-    const { dataDir } = getDataPaths();
-    const tokenPath = path.join(dataDir, 'reset-token.txt');
+    const tokenPath = getResetTokenPath();
 
     if (!fs.existsSync(tokenPath)) {
       log.warn('Password reset attempted but no reset-token.txt exists');
@@ -293,14 +417,14 @@ router.post('/reset-password', resetLimiter, async (req, res) => {
 
     // Guard against oversized token files
     const stat = fs.statSync(tokenPath);
-    if (stat.size > 1024) {
+    if (stat.size > RESET_TOKEN_MAX_BYTES) {
       log.warn('Password reset token file is too large');
       return res.status(403).json({ error: 'Reset token file is invalid (too large). Max 1KB.' });
     }
 
     // Token files older than 24h are rejected to prevent stale reset files from being abused.
     const ageMs = Date.now() - stat.mtimeMs;
-    if (ageMs > 24 * 60 * 60 * 1000) {
+    if (ageMs > RESET_TOKEN_MAX_AGE_MS) {
       log.warn('Password reset attempted with expired token file (>24h old)');
       try { fs.unlinkSync(tokenPath); } catch {}
       return res.status(403).json({ error: 'Reset token file is older than 24 hours. Recreate it on the server.' });

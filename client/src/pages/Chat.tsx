@@ -120,18 +120,19 @@ export default function Chat() {
         const msg = data.message
         if (!msg) return
         setChatHistory(prev => {
-             // Coalesce optimistic broadcasts with their echoed log line.
-             // The log tailer's timestamp can lag by several seconds when the
-             // PZ log is buffered, so match on (author, message) within the
-             // last 30s rather than a tight 2s window.
-             const incomingTs = new Date(data.timestamp || Date.now()).getTime();
-             const recent = prev.slice(-10);
-             const isDuplicate = recent.some(m =>
-                 m.message === msg &&
-                 m.author === data.author &&
-                 Math.abs(m.timestamp.getTime() - incomingTs) < 30000
-             );
-             if (isDuplicate) return prev;
+             // Coalesce an optimistic local post with the echoed server log line
+             // without dropping a legitimate repeated chat message from a player.
+             const parsedTs = data.timestamp ? Date.parse(data.timestamp) : Number.NaN
+             const incomingTs = Number.isFinite(parsedTs) ? parsedTs : Date.now()
+             const recent = prev.slice(-20)
+             const hasSameSocketId = data.id ? recent.some(m => m.id === data.id) : false
+             const isOptimisticEcho = recent.some(m =>
+               m.id.startsWith('local-') &&
+               m.message === msg &&
+               m.author === data.author &&
+               Math.abs(m.timestamp.getTime() - incomingTs) < 15000
+             )
+             if (hasSameSocketId || isOptimisticEcho) return prev
 
              const newMessage: ChatMessage = {
                 id: data.id || `${incomingTs}-${Math.random().toString(36).slice(2, 8)}`,
@@ -139,10 +140,10 @@ export default function Chat() {
                 author: data.author,
                 message: msg,
                 timestamp: new Date(incomingTs)
-             };
+             }
 
-             return [...prev, newMessage].slice(-200);
-        });
+             return [...prev, newMessage].slice(-200)
+        })
       }
 
       socket.on('chat:message', handleSocketMessage)

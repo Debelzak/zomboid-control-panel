@@ -209,7 +209,7 @@ async function main() {
     entryPoints: ['./server/index.js'],
     bundle: true,
     platform: 'node',
-    target: 'node18',
+    target: 'node22',
     format: 'cjs',
     outfile: './dist-exe/server.cjs',
     external: ['@aws-sdk/client-s3'],
@@ -231,7 +231,7 @@ async function main() {
     bin: 'server.cjs',
     pkg: {
       scripts: 'server.cjs',
-      targets: targets.map((target) => `node18-${target}-x64`),
+      targets: targets.map((target) => `node22-${target}-x64`),
       outputPath: '.',
     },
   };
@@ -240,6 +240,8 @@ async function main() {
 
   console.log(`Creating executables for: ${targets.join(', ')}`);
   try {
+    // @yao-pkg/pkg is the actively maintained fork of vercel/pkg (which is
+    // stuck on Node 18.5). Its CLI is also named `pkg`.
     execSync('npx pkg . --compress GZip', {
       cwd: distDir,
       stdio: 'inherit',

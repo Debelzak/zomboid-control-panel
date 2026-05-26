@@ -579,6 +579,18 @@ export default function Players() {
     }
   }, [])
 
+  const fetchBannedSteamIds = useCallback(async () => {
+    setLoadingBans(true)
+    try {
+      const res = await playersApi.getSteamIdBans()
+      setBannedSteamIds(res.bans || [])
+    } catch {
+      // Silently fail — list will be empty, manual input still works
+    } finally {
+      setLoadingBans(false)
+    }
+  }, [])
+
   useEffect(() => {
     Promise.all([fetchPlayers(), fetchData(), fetchNotesAndStats(), fetchBannedSteamIds()]).catch(err => {
       reportClientError('Failed to load initial player data.', err)
@@ -606,7 +618,7 @@ export default function Players() {
       isMounted = false
       clearInterval(interval)
     }
-  }, [fetchPlayers, fetchData, fetchNotesAndStats])
+  }, [fetchPlayers, fetchData, fetchNotesAndStats, fetchBannedSteamIds])
   
   // Load note/tags when selected player changes
   useEffect(() => {
@@ -680,18 +692,6 @@ export default function Players() {
     })
   }
 
-  const fetchBannedSteamIds = useCallback(async () => {
-    setLoadingBans(true)
-    try {
-      const res = await playersApi.getSteamIdBans()
-      setBannedSteamIds(res.bans || [])
-    } catch {
-      // Silently fail — list will be empty, manual input still works
-    } finally {
-      setLoadingBans(false)
-    }
-  }, [])
-
   const handleTeleport = (targetOverride?: string) => {
     const target = (targetOverride ?? teleportTarget ?? '').trim() || selectedPlayer
     if (!target || !teleportX || !teleportY) return
@@ -709,11 +709,14 @@ export default function Players() {
   }
 
   const handleSteamIdBan = () => {
-    if (!banSteamId) return
-    handleAction('Ban SteamID', () => playersApi.banSteamId(banSteamId), () => {
+    const steamId = banSteamId.trim()
+    const reason = steamBanReason.trim()
+    if (!steamId) return
+    handleAction('Ban SteamID', () => playersApi.banSteamId(steamId, reason), () => {
       setSteamIdBanDialogOpen(false)
       setBanSteamId('')
       setSteamBanReason('')
+      void fetchBannedSteamIds()
     })
   }
 

@@ -69,6 +69,8 @@ import { panelBridgeApi, updateApi, serversApi } from '@/lib/api'
 import { useToast } from '@/components/ui/use-toast'
 import { cn } from '@/lib/utils'
 
+const TILE_RETRY_MS = [2_000, 10_000, 60_000] as const
+
 // ─── Types ────────────────────────────────────────────────
 interface MapPlayer {
   username: string
@@ -470,6 +472,7 @@ export default function WorldMap() {
   const [selectedPlayer, setSelectedPlayer] = useState<MapPlayer | null>(null)
   const [bridgeConnected, setBridgeConnected] = useState(false)
   const [bridgeLoading, setBridgeLoading] = useState(false)
+  const [hasActiveServer, setHasActiveServer] = useState(false)
   const [loading, setLoading] = useState(true)
   const [hoveredPlayer, setHoveredPlayer] = useState<string | null>(null)
   const [isDragging, setIsDragging] = useState(false)
@@ -575,11 +578,16 @@ export default function WorldMap() {
       try {
         const [statusRes, serverRes] = await Promise.allSettled([
           updateApi.getStatus(),
-          serversApi.getActive(),
+          serversApi.getResolvedActive(),
         ])
         if (cancelled) return
 
         let isB41 = false
+        if (serverRes.status === 'fulfilled') {
+          setHasActiveServer(!!serverRes.value.server)
+        } else {
+          setHasActiveServer(false)
+        }
         if (statusRes.status === 'fulfilled' && statusRes.value.gameVersion) {
           isB41 = statusRes.value.gameVersion.startsWith('41.')
         }
@@ -620,6 +628,16 @@ export default function WorldMap() {
     detect()
     return () => { cancelled = true }
   }, [])
+
+  useEffect(() => {
+    if (hasActiveServer) return
+    setBridgeConnected(false)
+    setBridgeLoading(false)
+    setPlayers([])
+    setVehicles([])
+    setSafehouses([])
+    setLoading(false)
+  }, [hasActiveServer])
 
   // Track mounted state to guard async callbacks
   useEffect(() => {
@@ -662,7 +680,6 @@ export default function WorldMap() {
   const tileFailRef = useRef<Record<string, { count: number; nextAt: number }>>({})
   const tileFailureCountRef = useRef(0)
   const [tileLoadFailing, setTileLoadFailing] = useState(false)
-  const TILE_RETRY_MS = [2_000, 10_000, 60_000] // backoff schedule per tile
 
   const loadDziTile = useCallback((level: number, col: number, row: number) => {
     const f = floorRef.current
@@ -752,6 +769,13 @@ export default function WorldMap() {
 
   // ─── Data fetching ──────────────────────────────────────
   const fetchPlayerPositions = useCallback(async () => {
+    if (!hasActiveServer) {
+      setBridgeConnected(false)
+      setPlayers([])
+      setLoading(false)
+      return
+    }
+
     try {
       const res = await panelBridgeApi.getServerInfo()
       const rawPlayers = res.success && res.data?.players
@@ -785,9 +809,15 @@ export default function WorldMap() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [hasActiveServer])
 
   const checkBridgeStatus = useCallback(async () => {
+    if (!hasActiveServer) {
+      setBridgeConnected(false)
+      setBridgeLoading(false)
+      return
+    }
+
     setBridgeLoading(true)
     try {
       const res = await panelBridgeApi.getStatus()
@@ -797,11 +827,11 @@ export default function WorldMap() {
     } finally {
       setBridgeLoading(false)
     }
-  }, [])
+  }, [hasActiveServer])
 
   // Fetch vehicles + safehouses from PanelBridge
   const fetchOverlays = useCallback(async () => {
-    if (!mountedRef.current) return
+    if (!mountedRef.current || !hasActiveServer) return
     try {
       const [vRes, sRes] = await Promise.allSettled([
         panelBridgeApi.sendCommand('getVehiclesDetailed'),
@@ -819,7 +849,7 @@ export default function WorldMap() {
         setSafehouses((sList as MapSafehouse[]).filter(s => typeof s.x === 'number' && typeof s.y === 'number' && isFinite(s.x) && isFinite(s.y)))
       }
     } catch { /* best-effort */ }
-  }, [])
+  }, [hasActiveServer])
 
   // ─── Polling ────────────────────────────────────────────
   useEffect(() => {
@@ -829,21 +859,21 @@ export default function WorldMap() {
 
   // Fetch overlays on bridge connect and periodically (every 15s)
   useEffect(() => {
-    if (!bridgeConnected) return
+    if (!hasActiveServer || !bridgeConnected) return
     fetchOverlays()
     const interval = setInterval(() => {
       if (document.visibilityState !== 'hidden') fetchOverlays()
     }, 15_000)
     return () => clearInterval(interval)
-  }, [bridgeConnected, fetchOverlays])
+  }, [bridgeConnected, fetchOverlays, hasActiveServer])
 
   useEffect(() => {
-    if (!bridgeConnected) return
+    if (!hasActiveServer || !bridgeConnected) return
     const interval = setInterval(() => {
       if (document.visibilityState !== 'hidden') fetchPlayerPositions()
     }, POLL_INTERVAL)
     return () => clearInterval(interval)
-  }, [bridgeConnected, fetchPlayerPositions])
+  }, [bridgeConnected, fetchPlayerPositions, hasActiveServer])
 
   useEffect(() => { playersRef.current = players }, [players])
 
@@ -2085,7 +2115,7 @@ export default function WorldMap() {
         }
       }
     },
-    [toast]
+    [toast, fetchPlayerPositions]
   )
 
   // Teleport an arbitrary online player to the right-clicked coordinate.

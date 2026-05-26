@@ -16,7 +16,7 @@ const RETENTION = {
   player_logs: 1000,
   server_events: 500,
   schedule_history: 500,
-  performance_history: 1440,   // 24h at 1-min intervals
+  performance_history: 5760,   // 24h at 15-sec intervals
   player_sessions: 50,         // per player
   bridge_logs: 500,
 };

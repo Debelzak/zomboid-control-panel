@@ -127,7 +127,12 @@ export class RconService extends EventEmitter {
           log.info('Successfully connected!');
         }
       } catch (e) {
-        log.warn(`Connection failed, retrying in ${this.currentReconnectDelay}ms: ${e.message}`);
+        // During server startup, only log at debug level to reduce noise
+        if (this.serverStarting) {
+          log.debug(`Connection failed during startup, retrying: ${e.message}`);
+        } else {
+          log.warn(`Connection failed, retrying in ${this.currentReconnectDelay}ms: ${e.message}`);
+        }
         // Using updated backoff delay for the next interval would require complex restructuring of setInterval
         // Instead, we trust the internal backoff of execute() retries and keep this loop simple
       }
@@ -553,8 +558,10 @@ export class RconService extends EventEmitter {
       const now = Date.now();
       if (now - this.lastConnectionErrorLog > this.connectionErrorLogCooldown) {
         this.lastConnectionErrorLog = now;
-        // Use warn for expected errors (server offline), error for unexpected
-        if (error.message.includes('ECONNREFUSED') || error.message.includes('ETIMEDOUT') || error.message.includes('timed out')) {
+        // During server startup, suppress warnings to reduce noise
+        if (this.serverStarting) {
+          log.debug(`connection failed during startup: ${error.message}`);
+        } else if (error.message.includes('ECONNREFUSED') || error.message.includes('ETIMEDOUT') || error.message.includes('timed out')) {
           log.warn(`connection failed (server may be offline): ${error.message}`);
         } else {
           log.error(`connection failed: ${error.message}`);

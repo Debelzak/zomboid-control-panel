@@ -70,7 +70,7 @@ import { SocketContext } from '@/contexts/SocketContext'
 import { PageHeader } from '@/components/PageHeader'
 import { EmptyState } from '@/components/EmptyState'
 import { cn, copyText } from '@/lib/utils'
-import { apiFetch, panelBridgeApi } from '@/lib/api'
+import { apiFetch, modsApi, panelBridgeApi } from '@/lib/api'
 
 interface LogEntry {
   id: string
@@ -167,6 +167,7 @@ interface DiagCheck {
   message: string
   hint?: string
   category: string
+  meta?: Record<string, unknown>
 }
 
 interface DiagSummary { ok: number; warn: number; fail: number; info: number; skip: number }
@@ -218,6 +219,313 @@ interface WorldMapDiagnostics {
 
 type TimeFormat = 'relative' | 'time' | 'datetime'
 
+type DiagnosticsFixAction = {
+  label: string
+  automated: boolean
+  /** When true, ask the user before applying (used for bulk destructive operations). */
+  requiresConfirm?: boolean
+  /** Confirmation text shown in the native confirm dialog. */
+  confirmMessage?: string
+  openServerConfig?: boolean
+  openMods?: boolean
+  /** Extra navigation buttons rendered next to the primary action. */
+  links?: Array<{ to: string; label: string }>
+  note?: string
+}
+
+function getDiagMetaStringList(check: DiagCheck, key: string): string[] {
+  const raw = check.meta?.[key]
+  if (!Array.isArray(raw)) return []
+  return raw.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+}
+
+function getDiagnosticsFixAction(check: DiagCheck): DiagnosticsFixAction | null {
+  // Never show a fix button for passing or skipped checks.
+  if (check.status === 'ok' || check.status === 'skip') return null
+
+  switch (check.id) {
+    case 'mods.numericInMods': {
+      const count = getDiagMetaStringList(check, 'numericInMods').length
+      return {
+        label: count > 0 ? `Strip ${count} numeric IDs from Mods=` : 'Strip numeric IDs from Mods=',
+        automated: true,
+        requiresConfirm: count > 10,
+        confirmMessage: `This will remove ${count} numeric Workshop ID${count === 1 ? '' : 's'} from Mods= (they belong in WorkshopItems=). Restart required.\n\nProceed?`,
+        openServerConfig: true,
+        note: count > 0
+          ? `Removes ${count} numeric ID${count === 1 ? '' : 's'} from Mods=. Restart required.`
+          : 'Removes numeric Workshop IDs from Mods=. Restart required.'
+      }
+    }
+    case 'mods.resolved': {
+      // INTENTIONALLY manual: bulk-disabling unresolved Mods= entries is
+      // destructive. The most common cause is "Workshop downloads still
+      // pending" or "Mods= / WorkshopItems= drift" — not typos. Running
+      // the orphanWorkshop fix first usually resolves many of these.
+      const count = getDiagMetaStringList(check, 'unresolvedMods').length
+      return {
+        label: count > 0 ? `Review ${count} unresolved` : 'Review unresolved',
+        automated: false,
+        openServerConfig: true,
+        openMods: true,
+        note: 'Fix orphan Workshop items first (below), then re-run diagnostics. Disable manually only if entries truly don\u2019t resolve after downloads finish.'
+      }
+    }
+    case 'mods.orphanWorkshop': {
+      const count = getDiagMetaStringList(check, 'orphanWorkshop').length
+      return {
+        label: count > 0 ? `Auto-fix ${count} Workshop IDs` : 'Auto-fix Workshop IDs',
+        automated: true,
+        requiresConfirm: count > 10,
+        confirmMessage: `This will triage ${count} Workshop item${count === 1 ? '' : 's'}: downloaded → added to Mods=; ignored or missing → removed from WorkshopItems=. The server must restart for changes to take effect.\n\nProceed?`,
+        openServerConfig: true,
+        openMods: true,
+        note: count > 0
+          ? `Triages ${count} Workshop item${count === 1 ? '' : 's'}: enables downloaded mods, drops ignored/missing IDs. Restart required.`
+          : 'Triages Workshop items: enables downloaded mods, drops ignored/missing IDs. Restart required.'
+      }
+    }
+    case 'mods.maps':
+      return {
+        label: 'Repair Map=',
+        automated: true,
+        openServerConfig: true,
+        note: 'Removes invalid Map= entries and re-adds detected map folders. Restart required.'
+      }
+    case 'mods.duplicates': {
+      const dupCount = getDiagMetaStringList(check, 'dupMods').length + getDiagMetaStringList(check, 'dupWs').length
+      return {
+        label: dupCount > 0 ? `Deduplicate ${dupCount}` : 'Deduplicate',
+        automated: true,
+        openServerConfig: true,
+        note: 'Removes duplicate Mods= entries. Restart required.'
+      }
+    }
+    case 'mods.workshopCrash':
+      return {
+        label: 'Open Mods',
+        automated: false,
+        openMods: true,
+        note: 'Re-check Workshop downloads and remove or replace the failing mod, then restart.'
+      }
+
+    // ─── Server / process ──────────────────────────────────────────────────
+    case 'server.process':
+      return {
+        label: 'Open Dashboard',
+        automated: false,
+        links: [{ to: '/', label: 'Open Dashboard' }],
+        note: 'Start the server from the dashboard.'
+      }
+    case 'server.active':
+    case 'server.installPath':
+      return {
+        label: 'Open Servers',
+        automated: false,
+        links: [
+          { to: '/servers', label: 'Open Servers' },
+          { to: '/server-finder', label: 'Auto-detect' },
+        ],
+        note: 'Select or configure an active server with a valid install path.'
+      }
+    case 'server.zomboidData':
+      return {
+        label: 'Open Settings',
+        automated: false,
+        links: [{ to: '/settings', label: 'Open Settings' }],
+        note: 'Set the Zomboid data path in Settings.'
+      }
+    case 'server.startScript':
+    case 'server.jre':
+    case 'server.jreWorks':
+      return {
+        label: 'Open Server Finder',
+        automated: false,
+        links: [{ to: '/server-finder', label: 'Open Server Finder' }],
+        note: 'Re-run server detection or reinstall the dedicated server files.'
+      }
+    case 'server.ini':
+    case 'server.sandboxVars':
+      return {
+        label: 'Open Server Config',
+        automated: false,
+        openServerConfig: true,
+        note: 'Configure server settings to generate or repair the .ini files.'
+      }
+    case 'server.rconPassword':
+      return {
+        label: 'Open Server Config',
+        automated: false,
+        openServerConfig: true,
+        links: [{ to: '/settings', label: 'Open Settings' }],
+        note: 'Set the RCON password in Server Config (and matching value in Settings).'
+      }
+    case 'server.bridgeMod':
+      return {
+        label: 'Open Server Finder',
+        automated: false,
+        links: [{ to: '/server-finder', label: 'Open Server Finder' }],
+        note: 'Re-deploy the PanelBridge mod via Server Finder.'
+      }
+    case 'server.configDrift':
+      return {
+        label: 'Open Server Config',
+        automated: false,
+        openServerConfig: true,
+        note: 'Reload the panel\u2019s config from server.ini, or push your changes back to disk.'
+      }
+    case 'server.staleLocks':
+      return {
+        label: 'Open Chunk Cleaner',
+        automated: false,
+        links: [{ to: '/chunks', label: 'Open Chunk Cleaner' }],
+        note: 'Stop the server, then delete the .lock files in the save folder before restarting.'
+      }
+    case 'server.recentCrash':
+      return {
+        label: 'View crash logs',
+        automated: false,
+        note: 'See the Crash Logs tab on this page for the latest stack trace.'
+      }
+
+    // ─── Services ──────────────────────────────────────────────────────────
+    case 'rcon.connected':
+      return {
+        label: 'Open Settings',
+        automated: false,
+        openServerConfig: true,
+        links: [{ to: '/settings', label: 'Open Settings' }],
+        note: 'Verify the RCON password matches in Server Config and Settings, then restart the server.'
+      }
+    case 'modChecker':
+    case 'scheduler':
+    case 'services.error':
+      return {
+        label: 'Open Settings',
+        automated: false,
+        links: [{ to: '/settings', label: 'Open Settings' }],
+        note: 'Restarting the panel usually clears stuck services.'
+      }
+    case 'discord.bot':
+      return {
+        label: 'Open Discord',
+        automated: false,
+        links: [{ to: '/discord', label: 'Open Discord' }],
+        note: 'Check the bot token and intents in Discord settings.'
+      }
+
+    // ─── Bridge ────────────────────────────────────────────────────────────
+    case 'bridge.writable':
+    case 'bridge.heartbeat':
+      return {
+        label: 'Open Server Finder',
+        automated: false,
+        links: [{ to: '/server-finder', label: 'Open Server Finder' }],
+        note: 'Re-deploy PanelBridge, ensure the server is running, and check write permissions on the bridge folder.'
+      }
+
+    // ─── Database / storage ────────────────────────────────────────────────
+    case 'db.exists':
+    case 'db.writable':
+      return {
+        label: 'Open Settings',
+        automated: false,
+        links: [{ to: '/settings', label: 'Open Settings' }],
+        note: 'Verify the data directory path exists and the panel can write to it.'
+      }
+    case 'db.backup':
+      return {
+        label: 'Open Backups',
+        automated: false,
+        links: [{ to: '/backups', label: 'Open Backups' }],
+        note: 'Trigger or schedule a backup, or check the configured backup directory.'
+      }
+    case 'logs.writable':
+      return {
+        label: 'Open Settings',
+        automated: false,
+        links: [{ to: '/settings', label: 'Open Settings' }],
+        note: 'Verify the logs directory path exists and is writable.'
+      }
+    case 'disk.free':
+      return {
+        label: 'Open Backups',
+        automated: false,
+        links: [
+          { to: '/backups', label: 'Open Backups' },
+          { to: '/chunks', label: 'Open Chunk Cleaner' },
+        ],
+        note: 'Free up disk space — delete old backups or clean unused chunks.'
+      }
+    case 'storage.saveSize':
+      return {
+        label: 'Open Chunk Cleaner',
+        automated: false,
+        links: [{ to: '/chunks', label: 'Open Chunk Cleaner' }],
+        note: 'Trim the save by removing unreachable chunks.'
+      }
+
+    // ─── Runtime ───────────────────────────────────────────────────────────
+    case 'runtime.heap':
+    case 'runtime.hostMem':
+      return {
+        label: 'Open Settings',
+        automated: false,
+        links: [{ to: '/settings', label: 'Open Settings' }],
+        note: 'Restarting the panel reclaims heap. Close other processes if host RAM is exhausted.'
+      }
+    case 'runtime.timeSkew':
+      return {
+        label: 'Show recommended fix',
+        automated: false,
+        note: 'Sync the host system clock (NTP / Windows Time service) and re-run diagnostics.'
+      }
+
+    // ─── Updates ───────────────────────────────────────────────────────────
+    case 'update.panel':
+    case 'updates.error':
+      return {
+        label: 'Open Settings',
+        automated: false,
+        links: [{ to: '/settings', label: 'Open Settings' }],
+        note: 'Panel updates are managed from Settings → Updates.'
+      }
+    case 'update.mods':
+      return {
+        label: 'Open Mods',
+        automated: false,
+        openMods: true,
+        note: 'Review and apply Workshop mod updates from the Mods page.'
+      }
+    case 'update.steamApi':
+      return {
+        label: 'Show recommended fix',
+        automated: false,
+        note: 'Verify outbound internet access to api.steampowered.com.'
+      }
+
+    default: {
+      // Fallback: only surface a button for warn/fail. Informational checks
+      // (e.g. "panel uptime") have no actionable fix — don't show a button.
+      if (check.status === 'info') return null
+      const hint = (check.hint || '').toLowerCase()
+      const category = check.category
+      const links: Array<{ to: string; label: string }> = []
+      if (category === 'worldmap' && !links.some(l => l.to === '/world-map')) {
+        links.push({ to: '/world-map', label: 'Open World Map' })
+      }
+      return {
+        label: 'Show recommended fix',
+        automated: false,
+        openServerConfig: hint.includes('server config') || hint.includes('server.ini'),
+        openMods: category === 'mods' || hint.includes('mods='),
+        links: links.length > 0 ? links : undefined,
+        note: check.hint || 'Manual fix \u2014 see hint above.'
+      }
+    }
+  }
+}
+
 const DebugPerformanceCharts = lazy(() => import('@/components/DebugPerformanceCharts'))
 
 export default function Debug() {
@@ -255,6 +563,7 @@ export default function Debug() {
   const [diagnostics, setDiagnostics] = useState<DiagnosticsResult | null>(null)
   const [refreshingDiagnostics, setRefreshingDiagnostics] = useState(false)
   const [diagnosticsHideOk, setDiagnosticsHideOk] = useState(false)
+  const [fixingDiagnosticsCheckId, setFixingDiagnosticsCheckId] = useState<string | null>(null)
   const [worldMapDiag, setWorldMapDiag] = useState<WorldMapDiagnostics | null>(null)
   const [refreshingWorldMap, setRefreshingWorldMap] = useState(false)
   const [worldMapTilePreviewKey, setWorldMapTilePreviewKey] = useState(0)
@@ -380,6 +689,91 @@ export default function Debug() {
       setRefreshingDiagnostics(false)
     }
   }, [authFetch])
+
+  const handleDiagnosticsFix = useCallback(async (check: DiagCheck) => {
+    const action = getDiagnosticsFixAction(check)
+    if (!action) return
+
+    setFixingDiagnosticsCheckId(check.id)
+    try {
+      if (!action.automated) {
+        toast({
+          title: 'Manual fix recommended',
+          description: action.note || check.hint || 'Open the suggested page and apply the listed fix.'
+        })
+        return
+      }
+
+      if (action.requiresConfirm) {
+        const message = action.confirmMessage || `Apply ${action.label}?`
+        // eslint-disable-next-line no-alert
+        if (!window.confirm(message)) {
+          return
+        }
+      }
+
+      const restartHint = ' Restart the server to apply the changes.'
+
+      if (check.id === 'mods.numericInMods') {
+        const numericIds = getDiagMetaStringList(check, 'numericInMods')
+        if (numericIds.length === 0) {
+          throw new Error('No numeric Mods= entries were provided by diagnostics.')
+        }
+        const result = await modsApi.batchToggleModIds(
+          numericIds.map(modId => ({ modId, enabled: false }))
+        )
+        toast({
+          title: 'Numeric IDs removed from Mods=',
+          description: `Stripped ${result.changed} entry${result.changed === 1 ? '' : 'ies'} from Mods=.${restartHint}`
+        })
+      } else if (check.id === 'mods.orphanWorkshop') {
+        const orphanWorkshop = getDiagMetaStringList(check, 'orphanWorkshop')
+        if (orphanWorkshop.length === 0) {
+          throw new Error('No orphan Workshop IDs were provided by diagnostics.')
+        }
+
+        const result = await modsApi.resolveOrphanWorkshop(orphanWorkshop)
+        const { counts, modIdsAdded, wsDropped } = result
+        const droppedTotal = counts.droppedIgnored + counts.droppedMissing + counts.droppedNoModInfo
+        const parts: string[] = []
+        if (counts.enabled > 0) parts.push(`enabled ${counts.enabled} (added ${modIdsAdded} mod ID${modIdsAdded === 1 ? '' : 's'})`)
+        if (droppedTotal > 0) {
+          const sub: string[] = []
+          if (counts.droppedIgnored) sub.push(`${counts.droppedIgnored} ignored`)
+          if (counts.droppedMissing) sub.push(`${counts.droppedMissing} not on disk`)
+          if (counts.droppedNoModInfo) sub.push(`${counts.droppedNoModInfo} no mod.info`)
+          parts.push(`dropped ${droppedTotal} from WorkshopItems= (${sub.join(', ')})`)
+        }
+        toast({
+          title: 'Workshop items resolved',
+          description: parts.length > 0
+            ? `${parts.join('; ')}.${counts.enabled > 0 ? restartHint : ''}`
+            : `Nothing to change for ${result.total} ID${result.total === 1 ? '' : 's'}.`
+        })
+        void wsDropped // count already reflected in droppedTotal
+      } else if (check.id === 'mods.maps') {
+        const result = await modsApi.repairMapEntries()
+        toast({
+          title: 'Map entries repaired',
+          description: `${result.message}${restartHint}`
+        })
+      } else if (check.id === 'mods.duplicates') {
+        const result = await modsApi.deduplicateModIds()
+        toast({
+          title: 'Duplicates cleaned',
+          description: `${result.message}${restartHint}`
+        })
+      }
+
+      await fetchDiagnostics()
+    } catch (error) {
+      reportClientError('Diagnostics auto-fix failed.', error)
+      const message = error instanceof Error ? error.message : 'Could not apply fix.'
+      toast({ title: 'Fix failed', description: message, variant: 'destructive' })
+    } finally {
+      setFixingDiagnosticsCheckId(null)
+    }
+  }, [fetchDiagnostics, toast])
 
   // Fetch world-map specific diagnostics
   const fetchWorldMapDiag = useCallback(async () => {
@@ -1377,7 +1771,7 @@ export default function Debug() {
             .map(([catKey, catMeta]) => {
               const items = diagnostics.checks
                 .filter(c => c.category === catKey)
-                .filter(c => !diagnosticsHideOk || c.status !== 'ok')
+                .filter(c => !diagnosticsHideOk || (c.status !== 'ok' && c.status !== 'skip' && c.status !== 'info'))
               if (items.length === 0) return null
 
               const catFails = items.filter(c => c.status === 'fail').length
@@ -1415,6 +1809,7 @@ export default function Debug() {
                           check.status === 'warn' ? 'text-warning' :
                           check.status === 'info' ? 'text-primary/70' :
                           'text-muted-foreground'
+                        const fixAction = getDiagnosticsFixAction(check)
                         return (
                           <li key={check.id} className="py-2.5 flex items-start gap-3">
                             <Icon className={cn('w-4 h-4 mt-0.5 shrink-0', iconClass)} />
@@ -1430,6 +1825,40 @@ export default function Debug() {
                                 <p className="text-xs mt-1 text-foreground/70">
                                   <span className="font-medium text-foreground/90">Fix:</span> {check.hint}
                                 </p>
+                              )}
+                              {fixAction && (
+                                <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+                                  <Button
+                                    size="sm"
+                                    className="h-7 px-2 text-[11px]"
+                                    variant={fixAction.automated ? 'default' : 'outline'}
+                                    onClick={() => { void handleDiagnosticsFix(check) }}
+                                    disabled={!!fixingDiagnosticsCheckId && fixingDiagnosticsCheckId !== check.id}
+                                  >
+                                    {fixingDiagnosticsCheckId === check.id && (
+                                      <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                                    )}
+                                    {fixAction.label}
+                                  </Button>
+                                  {fixAction.openServerConfig && (
+                                    <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-[11px]">
+                                      <Link to="/server-config">Open Server Config</Link>
+                                    </Button>
+                                  )}
+                                  {fixAction.openMods && (
+                                    <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-[11px]">
+                                      <Link to="/mods">Open Mods</Link>
+                                    </Button>
+                                  )}
+                                  {fixAction.links?.map(link => (
+                                    <Button key={link.to} asChild size="sm" variant="ghost" className="h-7 px-2 text-[11px]">
+                                      <Link to={link.to}>{link.label}</Link>
+                                    </Button>
+                                  ))}
+                                  {fixAction.note && (
+                                    <span className="text-[11px] text-muted-foreground">{fixAction.note}</span>
+                                  )}
+                                </div>
                               )}
                             </div>
                           </li>

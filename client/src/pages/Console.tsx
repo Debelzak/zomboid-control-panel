@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useToast } from '@/components/ui/use-toast'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { rconApi, configApi, serverApi } from '@/lib/api'
+import { rconApi, configApi, serverApi, serversApi, type ServerInstance } from '@/lib/api'
 import { useSocket } from '@/contexts/SocketContext'
 import { EmptyState } from '@/components/EmptyState'
 import { PageHeader } from '@/components/PageHeader'
@@ -195,6 +195,8 @@ const quickBroadcasts = [
 
 export default function Console() {
   const [command, setCommand] = useState('')
+  const [activeServer, setActiveServer] = useState<ServerInstance | null>(null)
+  const [consoleTargetLoading, setConsoleTargetLoading] = useState(true)
   const [history, setHistory] = useState<CommandEntry[]>([])
   const [liveLog, setLiveLog] = useState<RconResponse[]>([])
   const [loading, setLoading] = useState(false)
@@ -234,6 +236,48 @@ export default function Console() {
   const serverLogRef = useRef<HTMLDivElement>(null)
   const serverLogIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const serverLogSizeRef = useRef(0) // Track size without recreating interval
+  const hasActiveServer = !!activeServer
+  const hasServerLogSource = !!activeServer && !activeServer.isRemote && Boolean(activeServer.zomboidDataPath || activeServer.installPath)
+  const hasRconConfig = !!activeServer && Boolean(activeServer.rconHost && activeServer.rconPort && activeServer.rconPassword)
+  const serverLogUnavailable = !hasServerLogSource
+    ? activeServer?.isRemote
+      ? {
+          title: 'Server log unavailable for remote servers',
+          description: 'Remote servers expose RCON only. Use the RCON tab for live commands.',
+        }
+      : {
+          title: 'Server log path not configured',
+          description: 'Set the server install path or Zomboid data path in My Servers first.',
+        }
+    : null
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadConsoleTarget = async () => {
+      try {
+        const data = await serversApi.getAll()
+        if (cancelled) return
+
+        const nextActiveServer = data.servers.find(server => server.isActive) ?? data.servers[0] ?? null
+        setActiveServer(nextActiveServer)
+      } catch {
+        if (!cancelled) {
+          setActiveServer(null)
+        }
+      } finally {
+        if (!cancelled) {
+          setConsoleTargetLoading(false)
+        }
+      }
+    }
+
+    loadConsoleTarget()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   // Patterns to filter out (uninteresting/repetitive messages) - memoized to prevent recreation
   const noisePatterns = useMemo(() => [
@@ -256,6 +300,12 @@ export default function Console() {
   }, [serverLogLines, serverLogFiltered, noisePatterns])
 
   const fetchHistory = useCallback(async () => {
+    if (!hasActiveServer) {
+      setHistory([])
+      setCommandCache([])
+      return
+    }
+
     try {
       const data = await rconApi.getHistory(50)
       setHistory(data.history || [])
@@ -267,9 +317,15 @@ export default function Console() {
         variant: 'destructive',
       })
     }
-  }, [toast])
+  }, [hasActiveServer, toast])
 
   const testRconConnection = useCallback(async () => {
+    if (!hasRconConfig) {
+      setRconConnected(null)
+      setTestingConnection(false)
+      return
+    }
+
     setTestingConnection(true)
     try {
       const result = await configApi.testRcon()
@@ -279,10 +335,24 @@ export default function Console() {
     } finally {
       setTestingConnection(false)
     }
-  }, [])
+  }, [hasRconConfig])
 
   // Server Console Log functions
   const fetchServerLog = useCallback(async (initial = false) => {
+    if (!hasServerLogSource) {
+      if (initial) {
+        setServerLogLines([])
+        setServerLogSize(0)
+        setServerLogPath('')
+        setServerLogExists(false)
+        setServerLogError(null)
+        serverLogErrorCountRef.current = 0
+        serverLogSizeRef.current = 0
+      }
+      setServerLogLoading(false)
+      return
+    }
+
     if (serverLogPausedRef.current && !initial) return
     
     try {
@@ -322,7 +392,7 @@ export default function Console() {
     } finally {
       setServerLogLoading(false)
     }
-  }, []) // No deps - uses refs for mutable state
+  }, [hasServerLogSource])
 
   const clearServerLog = async () => {
     try {
@@ -351,6 +421,14 @@ export default function Console() {
 
   // Start/stop server log polling
   useEffect(() => {
+    if (!hasServerLogSource) {
+      if (serverLogIntervalRef.current) {
+        clearInterval(serverLogIntervalRef.current)
+        serverLogIntervalRef.current = null
+      }
+      return undefined
+    }
+
     // Initial fetch
     fetchServerLog(true)
     
@@ -364,9 +442,10 @@ export default function Console() {
     return () => {
       if (serverLogIntervalRef.current) {
         clearInterval(serverLogIntervalRef.current)
+        serverLogIntervalRef.current = null
       }
     }
-  }, [fetchServerLog])
+  }, [fetchServerLog, hasServerLogSource])
 
   // Auto-scroll server log
   useEffect(() => {
@@ -377,11 +456,17 @@ export default function Console() {
   }, [serverLogLines, serverLogAutoScroll])
 
   useEffect(() => {
+    if (!hasActiveServer) return
+
     fetchHistory()
-    testRconConnection()
+    if (hasRconConfig) {
+      testRconConnection()
+    } else {
+      setRconConnected(null)
+    }
     // Auto-focus input on mount
     inputRef.current?.focus()
-  }, [fetchHistory, testRconConnection])
+  }, [fetchHistory, hasActiveServer, hasRconConfig, testRconConnection])
 
   useEffect(() => {
     if (socket) {
@@ -534,6 +619,45 @@ export default function Console() {
 
 
 
+  if (consoleTargetLoading) {
+    return (
+      <div className="space-y-6 page-transition">
+        <PageHeader
+          title="Console"
+          description="Server log output and RCON commands"
+          tone="ops"
+          icon={<TerminalIcon className="w-5 h-5" />}
+        />
+        <div className="flex min-h-[18rem] items-center justify-center rounded-md border border-border/50 bg-card/50">
+          <div className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            checking server target
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (!hasActiveServer) {
+    return (
+      <div className="space-y-6 page-transition">
+        <PageHeader
+          title="Console"
+          description="Server log output and RCON commands"
+          tone="ops"
+          icon={<TerminalIcon className="w-5 h-5" />}
+        />
+        <div className="rounded-md border border-border/50 bg-card/50 p-4">
+          <EmptyState
+            type="empty"
+            title="No active server configured"
+            description="Add or select a server in My Servers before opening the console."
+          />
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6 page-transition">
       <PageHeader
@@ -562,6 +686,12 @@ export default function Console() {
 
         {/* Server Console Log Tab */}
         <TabsContent value="server-log" className="space-y-3 mt-4">
+          {serverLogUnavailable ? (
+            <div className="flex h-[calc(100vh-360px)] min-h-[300px] items-center justify-center rounded-md border border-border/50 bg-muted/20 p-4">
+              <EmptyState type="noFile" title={serverLogUnavailable.title} description={serverLogUnavailable.description} compact />
+            </div>
+          ) : (
+            <>
           {/* Tactical toolbar strip */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-3 py-2 rounded-md border border-border/50 bg-card/70 backdrop-blur-sm">
             <div className="flex items-center gap-2 min-w-0">
@@ -710,6 +840,8 @@ export default function Console() {
               </div>
             </div>
           )}
+            </>
+          )}
         </TabsContent>
 
         {/* RCON Console Tab */}
@@ -721,6 +853,11 @@ export default function Console() {
                 <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
                   <Loader2 className="w-3 h-3 animate-spin" />
                   checking…
+                </span>
+              ) : !hasRconConfig ? (
+                <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-warning">
+                  <WifiOff className="w-3 h-3" />
+                  rcon not configured
                 </span>
               ) : rconConnected === null ? (
                 <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
@@ -744,15 +881,30 @@ export default function Console() {
               size="sm"
               className="h-7 px-2 font-mono text-[10px] uppercase tracking-[0.16em]"
               onClick={testRconConnection}
-              disabled={testingConnection}
+              disabled={testingConnection || !hasRconConfig}
             >
               <RefreshCw className={cn('w-3 h-3 mr-1', testingConnection && 'animate-spin')} />
               recheck
             </Button>
           </div>
 
+          {!hasRconConfig && (
+            <div
+              role="status"
+              className="flex items-center gap-3 rounded-md border border-warning/30 bg-warning/10 px-3 py-2"
+            >
+              <WifiOff className="w-4 h-4 shrink-0 text-warning" />
+              <div className="min-w-0">
+                <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-warning">rcon not configured</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Set the host, port, and password in My Servers before using live commands.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* RCON Disconnected Warning */}
-          {rconConnected === false && (
+          {hasRconConfig && rconConnected === false && (
             <div
               role="alert"
               className="flex items-center gap-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2"
@@ -839,7 +991,7 @@ export default function Console() {
                   setCommand(qc.command)
                   inputRef.current?.focus()
                 }}
-                disabled={rconConnected === false}
+                disabled={!hasRconConfig || rconConnected === false}
               >
                 {qc.label}
               </Button>
@@ -859,14 +1011,14 @@ export default function Console() {
                 onKeyDown={handleKeyDown}
                 placeholder="type a command…"
                 className="pl-[5.5rem] font-mono bg-card/70 border-border/55 focus-visible:border-primary/60"
-                disabled={loading}
+                disabled={loading || !hasRconConfig}
                 maxLength={2000}
                 aria-label="RCON command input"
               />
             </div>
             <Button
               onClick={executeCommand}
-              disabled={loading || !command.trim()}
+              disabled={loading || !command.trim() || !hasRconConfig}
               aria-label="Execute command"
               className="font-mono text-[11px] uppercase tracking-[0.18em]"
             >
@@ -904,7 +1056,7 @@ export default function Console() {
                       size="sm"
                       className="text-xs h-7"
                       onClick={() => setAnnouncement(qb.message)}
-                      disabled={rconConnected === false}
+                      disabled={!hasRconConfig || rconConnected === false}
                     >
                       {qb.label}
                     </Button>
@@ -937,7 +1089,7 @@ export default function Console() {
                     aria-label="Broadcast message"
                     className="min-h-[80px]"
                     maxLength={500}
-                    disabled={sendingAnnouncement || rconConnected === false}
+                    disabled={sendingAnnouncement || !hasRconConfig || rconConnected === false}
                   />
                 </div>
 
@@ -947,7 +1099,7 @@ export default function Console() {
                   </p>
                   <Button
                     onClick={sendAnnouncement}
-                    disabled={sendingAnnouncement || !announcement.trim() || rconConnected === false}
+                    disabled={sendingAnnouncement || !announcement.trim() || !hasRconConfig || rconConnected === false}
                   >
                     {sendingAnnouncement ? (
                       <Loader2 className="w-4 h-4 animate-spin mr-2" />

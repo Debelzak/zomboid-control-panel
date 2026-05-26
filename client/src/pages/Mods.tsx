@@ -192,6 +192,7 @@ export default function Mods() {
   const [disabledMods, setDisabledMods] = useState<Array<{ workshop_id: string; name: string }>>([])
   const [disabledLoading, setDisabledLoading] = useState(false)
   const [enablingId, setEnablingId] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   // Ctrl+K = focus search
   usePageShortcut('k', () => { searchInputRef.current?.focus() }, { ctrl: true })
@@ -540,6 +541,87 @@ export default function Mods() {
       setEnablingId(null)
     }
   }, [enablingId, toast, fetchData, fetchDisabled])
+
+  // Delete a single mod's files from disk (and strip it from the INI).
+  // Used by the "Disabled mods on disk" and "Ignored mods" panels.
+  const handleDeleteDiskMod = useCallback(async (workshopId: string, modName?: string) => {
+    if (deletingId) return
+    const label = modName ? `"${modName}" (${workshopId})` : workshopId
+    if (!window.confirm(`Delete ${label} from disk? This removes the workshop folder and strips it from the server INI. This cannot be undone (Steam will re-download on next start if the mod is still in WorkshopItems= elsewhere).`)) {
+      return
+    }
+    setDeletingId(workshopId)
+    try {
+      const r = await modsApi.deleteDiskMod(workshopId)
+      toast({
+        title: 'Mod deleted',
+        description: r.deletedFromDisk
+          ? `Removed from disk (${r.modIdsStripped} mod ID${r.modIdsStripped === 1 ? '' : 's'} stripped from INI).`
+          : 'Folder was already missing; INI cleaned up.',
+      })
+      await Promise.allSettled([fetchData(), fetchDisabled()])
+    } catch (error) {
+      toast({
+        title: 'Delete failed',
+        description: error instanceof Error ? error.message : 'Failed to delete mod',
+        variant: 'destructive',
+      })
+    } finally {
+      setDeletingId(null)
+    }
+  }, [deletingId, toast, fetchData, fetchDisabled])
+
+  // Bulk delete all currently shown disabled-on-disk mods.
+  const handleDeleteAllDisabled = useCallback(async () => {
+    if (deletingId || disabledMods.length === 0) return
+    if (!window.confirm(`Delete all ${disabledMods.length} disabled mod${disabledMods.length === 1 ? '' : 's'} from disk? This removes every workshop folder listed below.`)) {
+      return
+    }
+    setDeletingId('__batch_disabled__')
+    try {
+      const ids = disabledMods.map(m => m.workshop_id)
+      const r = await modsApi.batchDeleteDiskMods(ids)
+      toast({
+        title: 'Bulk delete complete',
+        description: `Deleted ${r.deletedFromDisk}/${r.total} mod folder${r.total === 1 ? '' : 's'} (${r.modIdsStripped} mod ID${r.modIdsStripped === 1 ? '' : 's'} stripped from INI).`,
+      })
+      await Promise.allSettled([fetchData(), fetchDisabled()])
+    } catch (error) {
+      toast({
+        title: 'Bulk delete failed',
+        description: error instanceof Error ? error.message : 'Failed to delete mods',
+        variant: 'destructive',
+      })
+    } finally {
+      setDeletingId(null)
+    }
+  }, [deletingId, disabledMods, toast, fetchData, fetchDisabled])
+
+  // Bulk delete all ignored mods from disk.
+  const handleDeleteAllIgnoredFromDisk = useCallback(async () => {
+    if (deletingId || ignoredMods.length === 0) return
+    if (!window.confirm(`Delete all ${ignoredMods.length} ignored mod${ignoredMods.length === 1 ? '' : 's'} from disk? This removes every workshop folder listed below AND clears the ignore list.`)) {
+      return
+    }
+    setDeletingId('__batch_ignored__')
+    try {
+      const ids = ignoredMods.map(m => m.workshop_id)
+      const r = await modsApi.batchDeleteDiskMods(ids)
+      toast({
+        title: 'Bulk delete complete',
+        description: `Deleted ${r.deletedFromDisk}/${r.total} mod folder${r.total === 1 ? '' : 's'} (${r.modIdsStripped} mod ID${r.modIdsStripped === 1 ? '' : 's'} stripped from INI).`,
+      })
+      await Promise.allSettled([fetchData(), fetchDisabled()])
+    } catch (error) {
+      toast({
+        title: 'Bulk delete failed',
+        description: error instanceof Error ? error.message : 'Failed to delete mods',
+        variant: 'destructive',
+      })
+    } finally {
+      setDeletingId(null)
+    }
+  }, [deletingId, ignoredMods, toast, fetchData, fetchDisabled])
 
   // Fetch the workshop-collection diff. Cheap one-shot read; only updates the
   // header indicator. Errors are stored on state so the user can see why
@@ -1505,7 +1587,7 @@ export default function Mods() {
     window.open(`https://steamcommunity.com/sharedfiles/filedetails/?id=${workshopId}`, '_blank')
   }
 
-  const toggleModSelect = (workshopId: string) => {
+  const toggleModSelect = useCallback((workshopId: string) => {
     setSelectedMods(prev => {
       const newSet = new Set(prev)
       if (newSet.has(workshopId)) {
@@ -1515,7 +1597,7 @@ export default function Mods() {
       }
       return newSet
     })
-  }
+  }, [])
 
   const selectAllVisible = () => {
     setSelectedMods(new Set(filteredMods.map(m => m.workshop_id)))
@@ -3299,16 +3381,34 @@ export default function Mods() {
                       </span>
                     )}
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 px-2 text-xs"
-                    onClick={fetchDisabled}
-                    disabled={disabledLoading}
-                  >
-                    {disabledLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-                    <span className="ml-1.5">Refresh</span>
-                  </Button>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      onClick={fetchDisabled}
+                      disabled={disabledLoading}
+                    >
+                      {disabledLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                      <span className="ml-1.5">Refresh</span>
+                    </Button>
+                    {disabledMods.length > 0 && !disabledLoading && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
+                        onClick={handleDeleteAllDisabled}
+                        disabled={deletingId !== null || loading}
+                      >
+                        {deletingId === '__batch_disabled__' ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Trash2 className="w-3.5 h-3.5" />
+                        )}
+                        <span className="ml-1.5">Delete all</span>
+                      </Button>
+                    )}
+                  </div>
                 </div>
                 {disabledLoading ? (
                   <div className="px-4 py-6 text-center text-sm text-muted-foreground">
@@ -3349,7 +3449,7 @@ export default function Mods() {
                             size="sm"
                             className="h-7 px-2.5 text-xs"
                             onClick={() => handleEnableDiskMod(mod.workshop_id)}
-                            disabled={enablingId === mod.workshop_id || loading}
+                            disabled={enablingId === mod.workshop_id || deletingId !== null || loading}
                           >
                             {enablingId === mod.workshop_id ? (
                               <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -3360,6 +3460,24 @@ export default function Mods() {
                               </>
                             )}
                           </Button>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="iconDense"
+                                className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                                onClick={() => handleDeleteDiskMod(mod.workshop_id, mod.name)}
+                                disabled={deletingId !== null || enablingId === mod.workshop_id || loading}
+                              >
+                                {deletingId === mod.workshop_id ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                )}
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Delete from disk</TooltipContent>
+                          </Tooltip>
                         </div>
                       </div>
                     ))}
@@ -3392,24 +3510,58 @@ export default function Mods() {
                           <span className="truncate text-muted-foreground">{mod.name || `Workshop Mod ${mod.workshop_id}`}</span>
                           <span className="text-xs text-muted-foreground/50 tabular-nums shrink-0">{mod.workshop_id}</span>
                         </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 px-2 text-xs shrink-0"
-                          onClick={() => handleUnignoreMod(mod.workshop_id)}
-                          disabled={loading}
-                        >
-                          Re-track
-                        </Button>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs"
+                            onClick={() => handleUnignoreMod(mod.workshop_id)}
+                            disabled={loading || deletingId !== null}
+                          >
+                            Re-track
+                          </Button>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="iconDense"
+                                className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                                onClick={() => handleDeleteDiskMod(mod.workshop_id, mod.name || undefined)}
+                                disabled={deletingId !== null || loading}
+                              >
+                                {deletingId === mod.workshop_id ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                )}
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Delete from disk</TooltipContent>
+                          </Tooltip>
+                        </div>
                       </div>
                     ))}
-                    <div className="flex justify-end pt-1 pb-0.5 border-t border-border/20 mt-1">
+                    <div className="flex justify-end gap-1 pt-1 pb-0.5 border-t border-border/20 mt-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
+                        onClick={handleDeleteAllIgnoredFromDisk}
+                        disabled={loading || deletingId !== null}
+                      >
+                        {deletingId === '__batch_ignored__' ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Trash2 className="w-3.5 h-3.5" />
+                        )}
+                        <span className="ml-1.5">Delete all from disk</span>
+                      </Button>
                       <Button
                         variant="ghost"
                         size="sm"
                         className="h-7 px-2 text-xs text-destructive hover:text-destructive"
                         onClick={handleClearAllIgnored}
-                        disabled={loading}
+                        disabled={loading || deletingId !== null}
                       >
                         Clear all ignored
                       </Button>

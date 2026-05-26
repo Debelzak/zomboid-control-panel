@@ -1,6 +1,6 @@
 {
   "name": "pz-server-manager",
-  "version": "1.0.30",
+  "version": "1.0.33",
   "description": "Project Zomboid Server Manager - Web-based admin panel",
   "main": "server/index.js",
   "type": "module",
@@ -43,10 +43,10 @@
     "ws": "^8.18.3"
   },
   "devDependencies": {
+    "@yao-pkg/pkg": "^6.19.0",
     "concurrently": "^9.1.0",
     "esbuild": "^0.27.1",
     "nodemon": "^3.1.7",
-    "pkg": "^5.8.1",
     "vitest": "^4.1.0"
   }
 }
