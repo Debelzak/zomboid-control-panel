@@ -360,6 +360,40 @@ export class Scheduler {
     log.debug(`Restart warnings configured for ${warningMinutes} minutes before restart`);
   }
 
+  /**
+   * Broadcast a restart message to all players. PZ's `servermsg` RCON command
+   * is the canonical broadcast for both B41 and B42 and is what shows up in
+   * every player's chat. We also fire it through PanelBridge's sendToServerChat
+   * when the mod is connected so the message appears via the in-game chat
+   * pipeline too (belt-and-braces — version-agnostic on the Lua side). Both
+   * paths are best-effort and never throw.
+   */
+  async _broadcastRestartMessage(text) {
+    // RCON `servermsg` — primary path, works on B41 + B42 without the mod.
+    try {
+      const r = await this.rconService.serverMessage(text, { skipLog: true });
+      if (!r?.success) {
+        log.warn(`Restart broadcast (RCON) failed: ${r?.error || r?.response || 'unknown'}`);
+      }
+    } catch (err) {
+      log.warn(`Restart broadcast (RCON) threw: ${err.message}`);
+    }
+
+    // PanelBridge in-game chat — secondary visibility boost. Only fire if
+    // the mod is currently connected; fire-and-forget so we don't add latency
+    // to the countdown cadence. isAlert=true triggers PZ's server alert
+    // notification (red banner / alert sound) on both B41 and B42.
+    try {
+      if (panelBridge && typeof panelBridge.isModConnected === 'function' && panelBridge.isModConnected()) {
+        panelBridge.sendCommand('sendToServerChat', { message: text, isAlert: true }).catch(err => {
+          log.debug(`Restart broadcast (bridge) failed: ${err.message}`);
+        });
+      }
+    } catch (err) {
+      log.debug(`Restart broadcast (bridge) threw: ${err.message}`);
+    }
+  }
+
   async performRestart(warningMinutesParam = null) {
     // Prevent concurrent restarts
     if (this.restartInProgress) {
@@ -450,39 +484,55 @@ export class Scheduler {
        }
 
       if (warningMinutes > 0) {
-        // Send countdown warnings - skip logging for automated restart messages
+        // Per-minute countdown. Plain ASCII so PZ's servermsg delivers it
+        // verbatim (no emoji stripping). Bracketed prefix is the standard
+        // PZ convention for server broadcasts and is visible in-chat on
+        // both B41 and B42.
         for (let i = warningMinutes; i > 0; i--) {
           if (this.restartCancelled) {
             log.info('Auto-restart: Cancelled during countdown');
-            await this.rconService.serverMessage('ℹ️ Server restart has been cancelled.', { skipLog: true });
+            await this._broadcastRestartMessage('[SERVER] Restart CANCELLED.');
             return { success: false, message: 'Restart cancelled' };
           }
-          const msgResult = await this.rconService.serverMessage(`⚠️ Server restarting in ${i} minute(s)!`, { skipLog: true });
-          if (!msgResult.success) {
-            log.warn(`Auto-restart: Warning message failed: ${msgResult.error}`);
-          }
-          
+          const minuteWord = i === 1 ? 'MINUTE' : 'MINUTES';
+          await this._broadcastRestartMessage(`[SERVER] *** RESTART IN ${i} ${minuteWord} ***`);
+
           if (i > 1) {
             await this.sleep(60000); // Wait 1 minute
           }
         }
 
-        if (this.restartCancelled) {
-          log.info('Auto-restart: Cancelled during countdown');
-          await this.rconService.serverMessage('ℹ️ Server restart has been cancelled.', { skipLog: true });
-          return { success: false, message: 'Restart cancelled' };
+        // Final 60 seconds: 30s warning, 10s warning, then 5..1 each second.
+        // Sleep happens BEFORE each tick, so timing after the last per-minute
+        // warning is: +30s -> "30 SECONDS", +20s -> "10 SECONDS",
+        // +5s -> "5", +1s -> "4", +1s -> "3", +1s -> "2", +1s -> "1",
+        // +1s -> "RESTARTING NOW".
+        const finalTicks = [
+          { wait: 30000, msg: '[SERVER] *** RESTART IN 30 SECONDS ***' },
+          { wait: 20000, msg: '[SERVER] *** RESTART IN 10 SECONDS ***' },
+          { wait: 5000,  msg: '[SERVER] 5...' },
+          { wait: 1000,  msg: '[SERVER] 4...' },
+          { wait: 1000,  msg: '[SERVER] 3...' },
+          { wait: 1000,  msg: '[SERVER] 2...' },
+          { wait: 1000,  msg: '[SERVER] 1...' },
+        ];
+        for (const tick of finalTicks) {
+          await this.sleep(tick.wait);
+          if (this.restartCancelled) {
+            log.info('Auto-restart: Cancelled during final countdown');
+            await this._broadcastRestartMessage('[SERVER] Restart CANCELLED.');
+            return { success: false, message: 'Restart cancelled' };
+          }
+          await this._broadcastRestartMessage(tick.msg);
         }
 
-        // 30 second warning
-        await this.rconService.serverMessage('⚠️ Server restarting in 30 seconds!', { skipLog: true });
-        await this.sleep(25000);
-
-        // Final warning
-        await this.rconService.serverMessage('🔄 Server restarting NOW! Please reconnect in a few minutes.', { skipLog: true });
-        await this.sleep(5000);
+        // One last second, then go.
+        await this.sleep(1000);
+        await this._broadcastRestartMessage('[SERVER] *** RESTARTING NOW - please reconnect in a few minutes ***');
+        await this.sleep(2000);
       } else {
         // Immediate restart - just a brief message
-        await this.rconService.serverMessage('🔄 Server restarting NOW!', { skipLog: true });
+        await this._broadcastRestartMessage('[SERVER] *** RESTARTING NOW ***');
         await this.sleep(2000);
       }
 

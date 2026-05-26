@@ -70,7 +70,7 @@ import { SocketContext } from '@/contexts/SocketContext'
 import { PageHeader } from '@/components/PageHeader'
 import { EmptyState } from '@/components/EmptyState'
 import { cn, copyText } from '@/lib/utils'
-import { apiFetch, modsApi, panelBridgeApi } from '@/lib/api'
+import { apiFetch, modsApi, panelBridgeApi, serverApi, rconApi, backupApi } from '@/lib/api'
 
 interface LogEntry {
   id: string
@@ -312,10 +312,10 @@ function getDiagnosticsFixAction(check: DiagCheck): DiagnosticsFixAction | null 
     // ─── Server / process ──────────────────────────────────────────────────
     case 'server.process':
       return {
-        label: 'Open Dashboard',
-        automated: false,
+        label: 'Start server',
+        automated: true,
         links: [{ to: '/', label: 'Open Dashboard' }],
-        note: 'Start the server from the dashboard.'
+        note: 'Starts the dedicated server using the active configuration.'
       }
     case 'server.active':
     case 'server.installPath':
@@ -376,26 +376,28 @@ function getDiagnosticsFixAction(check: DiagCheck): DiagnosticsFixAction | null 
       }
     case 'server.staleLocks':
       return {
-        label: 'Open Chunk Cleaner',
-        automated: false,
+        label: 'Delete stale lock files',
+        automated: true,
+        requiresConfirm: true,
+        confirmMessage: 'This will delete every *.lock file older than 1 hour in the active save folder. The server must be stopped first.\n\nProceed?',
         links: [{ to: '/chunks', label: 'Open Chunk Cleaner' }],
-        note: 'Stop the server, then delete the .lock files in the save folder before restarting.'
+        note: 'Stops the server is NOT automated — make sure the server is stopped first. Then deletes stale .lock files.'
       }
     case 'server.recentCrash':
       return {
         label: 'View crash logs',
-        automated: false,
-        note: 'See the Crash Logs tab on this page for the latest stack trace.'
+        automated: true,
+        note: 'Opens the Crash Logs tab on this page for the latest stack trace.'
       }
 
     // ─── Services ──────────────────────────────────────────────────────────
     case 'rcon.connected':
       return {
-        label: 'Open Settings',
-        automated: false,
+        label: 'Reconnect RCON',
+        automated: true,
         openServerConfig: true,
         links: [{ to: '/settings', label: 'Open Settings' }],
-        note: 'Verify the RCON password matches in Server Config and Settings, then restart the server.'
+        note: 'Tries to reconnect to RCON using the saved password. If it still fails, check that the password in Server Config matches Settings, then restart the server.'
       }
     case 'modChecker':
     case 'scheduler':
@@ -435,10 +437,10 @@ function getDiagnosticsFixAction(check: DiagCheck): DiagnosticsFixAction | null 
       }
     case 'db.backup':
       return {
-        label: 'Open Backups',
-        automated: false,
+        label: 'Create database backup',
+        automated: true,
         links: [{ to: '/backups', label: 'Open Backups' }],
-        note: 'Trigger or schedule a backup, or check the configured backup directory.'
+        note: 'Creates a manual database backup right now. Schedule recurring backups from the Backups page.'
       }
     case 'logs.writable':
       return {
@@ -763,6 +765,52 @@ export default function Debug() {
           title: 'Duplicates cleaned',
           description: `${result.message}${restartHint}`
         })
+      } else if (check.id === 'server.process') {
+        const result = await serverApi.start() as { success?: boolean; message?: string; error?: string }
+        if (result?.success === false) {
+          throw new Error(result.error || result.message || 'Server failed to start.')
+        }
+        toast({
+          title: 'Server starting',
+          description: result?.message || 'Dedicated server start signal sent. Check the Dashboard for status.'
+        })
+      } else if (check.id === 'rcon.connected') {
+        const result = await rconApi.connect() as { success?: boolean; connected?: boolean; message?: string; error?: string }
+        const connected = result?.connected === true || result?.success === true
+        if (!connected) {
+          throw new Error(result?.error || result?.message || 'RCON connect attempt failed.')
+        }
+        toast({
+          title: 'RCON reconnected',
+          description: result?.message || 'RCON connection re-established.'
+        })
+      } else if (check.id === 'db.backup') {
+        const result = await backupApi.createBackup({ includeDb: true })
+        if (result?.success === false) {
+          throw new Error(result?.message || 'Backup failed.')
+        }
+        const backupName = result?.backup?.name ? ` (${result.backup.name})` : ''
+        toast({
+          title: 'Database backup created',
+          description: `Backup completed${backupName}.`
+        })
+      } else if (check.id === 'server.staleLocks') {
+        const res = await authFetch('/api/debug/clear-stale-locks', { method: 'POST' })
+        const data = await res.json().catch(() => null) as
+          { success?: boolean; deleted?: number; failed?: number; message?: string; error?: string } | null
+        if (!res.ok || data?.success === false) {
+          throw new Error(data?.error || data?.message || `HTTP ${res.status}`)
+        }
+        toast({
+          title: 'Stale lock files removed',
+          description: data?.message || `Deleted ${data?.deleted ?? 0} lock file(s).`
+        })
+      } else if (check.id === 'server.recentCrash') {
+        setActiveTab('crashes')
+        toast({
+          title: 'Crash Logs opened',
+          description: 'Review the latest crash report below.'
+        })
       }
 
       await fetchDiagnostics()
@@ -773,7 +821,7 @@ export default function Debug() {
     } finally {
       setFixingDiagnosticsCheckId(null)
     }
-  }, [fetchDiagnostics, toast])
+  }, [fetchDiagnostics, toast, authFetch])
 
   // Fetch world-map specific diagnostics
   const fetchWorldMapDiag = useCallback(async () => {
