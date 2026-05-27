@@ -32,6 +32,42 @@ import { loadOrCreateCerts } from './utils/certs.js';
 import { sanitizeError } from './utils/sanitize.js';
 import { getEmbeddedPanelBridgeLua, compareModVersions, writeLuaAtomic } from './utils/embeddedLua.js';
 
+// === Supervisor bootstrap ===
+// If the .exe was double-clicked directly (no PANEL_SUPERVISOR_V env var) and
+// a Start.bat exists next to it, re-launch ourselves via Start.bat and exit.
+// This makes the supervisor path the one and only path on Windows: future
+// in-app updates always have the .bat available to do the rename + relaunch.
+// Opt out with PANEL_NO_SUPERVISOR=1 (services, nssm wrappers, advanced users).
+(function maybeReexecViaSupervisor() {
+  try {
+    if (process.platform !== 'win32') return;
+    if (typeof process.pkg === 'undefined') return; // dev mode, ignore
+    if (process.env.PANEL_SUPERVISOR_V === '2') return; // already supervised
+    if (process.env.PANEL_NO_SUPERVISOR === '1') return; // explicit opt-out
+    // Strip .new/.new2 suffix when resolving the install dir — we may have
+    // been launched from a staged slot.
+    const exeDir = path.dirname(process.execPath.replace(/\.new2?$/i, ''));
+    const startBat = path.join(exeDir, 'Start.bat');
+    if (!fs.existsSync(startBat)) return; // legacy install without supervisor
+    // Detached so Start.bat survives our exit. windowsHide: false so the
+    // user actually sees the supervisor console (closing it stops the panel,
+    // which is the same UX as before).
+    const child = spawn(process.env.ComSpec || 'cmd.exe', ['/c', 'start', '', startBat], {
+      detached: true,
+      stdio: 'ignore',
+      cwd: exeDir,
+      windowsHide: false,
+    });
+    child.unref();
+    // Exit before any service init — we don't want two panels racing for port 3001.
+    process.exit(0);
+  } catch (err) {
+    // Don't block startup on a bootstrap failure; fall through to direct boot.
+    // eslint-disable-next-line no-console
+    console.error('Supervisor bootstrap failed, continuing without it:', err.message);
+  }
+})();
+
 // Prevent EPIPE on stdout/stderr from crashing the process
 // (happens when terminal is closed while the exe keeps running)
 process.stdout?.on?.('error', (err) => { if (err.code !== 'EPIPE') throw err; });
@@ -801,8 +837,40 @@ app.post('/api/panel/restart', async (req, res) => {
   const isWindows = process.platform === 'win32';
   const staged = checker && typeof checker.getStagedUpdate === 'function' ? checker.getStagedUpdate() : null;
 
-  // Windows + packaged + staged update → spawn helper, then exit.
+  // Windows + packaged + staged update → supervisor (Start.bat v2) handoff
+  // when available, otherwise legacy spawned-helper.
   if (isPackaged && isWindows && staged) {
+    // Preferred path: the panel was launched by Start.bat v2 (PANEL_SUPERVISOR_V=2).
+    // We don't run a detached cmd helper at all — we just write a marker and
+    // exit with code 75. The .bat handles the rename + relaunch. This avoids
+    // every failure mode of the old helper (ASR/AV killing detached scripts,
+    // .exe.new having no shell association, TIME_WAIT races on port 3001).
+    if (typeof checker.isSupervisorAvailable === 'function' && checker.isSupervisorAvailable()) {
+      try {
+        if (checker.isApplying) {
+          log.warn('Supervisor restart-and-apply request rejected: another apply is in progress');
+          return res.status(409).json({ error: 'An update apply is already in progress.', code: 'apply_in_progress' });
+        }
+        checker.isApplying = true;
+        if (staged.version) {
+          await setSetting('pendingPanelUpdate', staged.version);
+          await flushWrites();
+        }
+        const markerPath = checker.writeSupervisorMarker(staged);
+        log.info(`Staged update will be applied by supervisor (Start.bat v2). Marker: ${markerPath}`);
+        res.json({ success: true, message: 'Stopping panel for supervisor to apply update...', applyingUpdate: true, supervisor: true });
+        // Exit code 75 tells Start.bat to apply the marker and relaunch.
+        setTimeout(() => process.exit(75), 500);
+        return;
+      } catch (err) {
+        log.error(`Could not write supervisor marker: ${err.message}`);
+        return res.status(500).json({ error: sanitizeError(err.message) });
+      }
+    }
+
+    // Legacy path: spawn a detached cmd helper. Kept for installs that
+    // haven't yet picked up Start.bat v2 (first run after upgrading from
+    // pre-supervisor releases).
     try {
       // Commit the apply: write the pending marker FIRST and flush to disk
       // before we exit. reconcilePendingUpdate() on next boot uses this to

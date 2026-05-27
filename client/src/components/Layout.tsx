@@ -27,7 +27,8 @@ import {
   Github,
   Coffee,
   PanelLeftClose,
-  PanelLeft
+  PanelLeft,
+  LogOut
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ConnectionStatus } from './ConnectionStatus'
@@ -201,16 +202,16 @@ function AuthFooter() {
   if (!authEnabled || !user) return null
   
   return (
-    <span className="inline-flex items-center gap-1.5 text-xs min-w-0">
-      <span className="truncate text-foreground/85 font-medium" title={user.username}>{user.username}</span>
-      <span className="text-muted-foreground/50">·</span>
+    <span className="inline-flex min-w-0 items-center gap-1.5 text-xs">
+      <span className="min-w-0 truncate text-foreground/85 font-medium" title={user.username}>{user.username}</span>
+      <span className="shrink-0 text-muted-foreground/50">·</span>
       <button
         type="button"
         onClick={logout}
         className="shrink-0 text-muted-foreground/70 hover:text-foreground transition-colors"
         title="Sign out"
       >
-        sign out
+        <LogOut className="h-3 w-3" />
       </button>
     </span>
   )
@@ -862,14 +863,16 @@ export default function Layout({ children }: LayoutProps) {
           })}
         </nav>
 
-        {/* Footer — single dense row */}
-        <div className={cn('border-t border-border/30', sidebarCollapsed ? 'p-2 space-y-1.5' : 'px-3 py-2 space-y-1.5')}>
+        {/* Footer */}
+        <div className={cn('border-t border-border/30', sidebarCollapsed ? 'p-2 space-y-1.5' : 'px-3 py-2 space-y-1')}>
           {!sidebarCollapsed ? (
             <>
               <div className="flex items-center gap-2 text-[11px]">
                 <ConnectionStatus />
                 <AuthFooter />
-                <span className="ml-auto flex shrink-0 items-center gap-2">
+              </div>
+              <div className="flex items-center gap-2 text-[11px]">
+                <span className="flex items-center gap-2">
                   {panelUpdateAvailable && (
                     <NavLink
                       to="/settings"

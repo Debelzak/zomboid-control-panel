@@ -440,6 +440,44 @@ export class PanelUpdateChecker {
   }
 
   /**
+   * Supervisor (Start.bat v2+) hand-off. When the panel was launched by the
+   * v2 supervisor batch, we don't run an in-process helper to swap the exe
+   * at all — we just drop a marker file next to the exe and exit with code
+   * 75. The supervisor sees the marker (or the exit code), renames the
+   * staged .new/.new2 over the canonical .exe, then relaunches the panel.
+   *
+   * This sidesteps every Windows failure mode of the old helper:
+   *   - No detached cmd.exe child (Defender / ASR can't kill it mid-flight).
+   *   - No taskkill of our own PID (no behavioral signature).
+   *   - No `start "" foo.exe.new` (no broken extension association).
+   *   - The swap happens BETWEEN runs of the panel, so there's no TIME_WAIT
+   *     race on port 3001.
+   *   - The supervisor is a plain-text .bat the user already launches —
+   *     fully visible, no hidden process, no UNC redirector games.
+   *
+   * The marker is intentionally a plain JSON sentinel; the .bat only needs
+   * to see that it exists. The payload is for human post-mortems and for
+   * reconcilePendingUpdate() on the next boot.
+   */
+  isSupervisorAvailable() {
+    return process.platform === 'win32' && process.env.PANEL_SUPERVISOR_V === '2';
+  }
+
+  writeSupervisorMarker(staged) {
+    const exeDir = path.dirname(this.getExeBasePath());
+    const markerPath = path.join(exeDir, '.update-pending');
+    const payload = {
+      version: staged?.version || null,
+      stagedFile: staged?.stagedPath ? path.basename(staged.stagedPath) : null,
+      stagedAt: new Date().toISOString(),
+      requestedBy: `panel-pid-${process.pid}`,
+    };
+    fs.writeFileSync(markerPath, JSON.stringify(payload, null, 2), { encoding: 'utf8' });
+    log.info(`Wrote supervisor marker: ${markerPath} (v${payload.version})`);
+    return markerPath;
+  }
+
+  /**
    * Resolve the "base" exe path by stripping any .new/.new2 suffix from
    * process.execPath. After a launch-in-place apply, the running process's
    * execPath is the staged file (e.g. ...\ZomboidControlPanel.exe.new), but

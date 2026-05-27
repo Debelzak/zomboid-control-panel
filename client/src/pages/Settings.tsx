@@ -1529,7 +1529,7 @@ export default function Settings() {
       <Tabs value={activeSection} onValueChange={handleTabChange} className="mt-6">
         <TabsList
           aria-label="Settings sections"
-          className="flex h-auto flex-wrap gap-1 rounded-lg border border-border/60 bg-gradient-to-b from-muted/50 to-muted/25 p-1.5 w-full shadow-inner"
+          className="flex h-auto flex-wrap gap-1 bg-muted/30 border border-border/50 p-1 rounded-md w-full"
         >
           {settingsSections.map((section, idx) => {
             const Icon = section.icon
@@ -1548,9 +1548,9 @@ export default function Settings() {
                     <TabsTrigger
                       value={section.id}
                       aria-label={section.label}
-                      className="group/tab flex items-center gap-1.5 rounded-md px-2.5 py-2 text-[11px] sm:text-sm whitespace-nowrap text-muted-foreground transition-colors hover:text-foreground data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-sm data-[state=active]:ring-1 data-[state=active]:ring-primary/25 focus-visible:ring-2 focus-visible:ring-primary/60 focus-visible:ring-offset-1"
+                      className="flex-1 min-w-[110px] flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium data-[state=active]:bg-primary/15 data-[state=active]:text-primary data-[state=active]:shadow-none"
                     >
-                      <Icon className="w-3.5 h-3.5 shrink-0 transition-transform group-data-[state=active]/tab:scale-110" />
+                      <Icon className="w-4 h-4 shrink-0" />
                       <span>{section.label}</span>
                     </TabsTrigger>
                   </TooltipTrigger>
