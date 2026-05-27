@@ -3396,7 +3396,7 @@ export default function Settings() {
           {/* Links */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
             <a
-              href="https://discord.gg/bq4SuyDDZb"
+              href="https://discord.gg/jHsWJDNmSg"
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center justify-center gap-2 rounded-lg border border-[#5865F2]/40 bg-[#5865F2]/10 px-3 py-2 text-sm text-[#5865F2] hover:bg-[#5865F2]/20 transition-colors"

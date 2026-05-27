@@ -1519,10 +1519,12 @@ export default function Events() {
             )}
           </div>
 
-          {/* Target picker */}
+          {/* Target picker — only relevant for sounds & player actions (atmosphere/world/console are world-wide) */}
           <div className="flex flex-wrap items-center gap-3">
-            <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-primary/85 whitespace-nowrap">
-              target
+            {(activeIntent === 'signal' || activeIntent === 'dispatch') && (
+              <>
+                <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-primary/85 whitespace-nowrap">
+                  target
             </span>
             <div className="inline-flex rounded-md border border-border/70 bg-background/60 p-0.5 shadow-sm">
               <button
@@ -1569,6 +1571,8 @@ export default function Events() {
                   )}
                 </SelectContent>
               </Select>
+            )}
+              </>
             )}
             <div className={cn(
               'flex items-center gap-1.5 px-2.5 py-1 rounded-md border whitespace-nowrap',
