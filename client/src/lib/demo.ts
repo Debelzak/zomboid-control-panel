@@ -88,6 +88,9 @@ export function installDemoFetchShim(): void {
     if (path === '/api/health') {
       return jsonResponse({ version: `${(typeof __PANEL_VERSION__ !== 'undefined' ? __PANEL_VERSION__ : '0.0.0')}-demo` })
     }
+    if (path === '/api/panel-info') {
+      return jsonResponse({ localIp: '127.0.0.1', port: 3001, url: 'http://demo.local:3001' })
+    }
     if (path === '/api/servers') {
       return jsonResponse({ servers: [demoServer()] })
     }

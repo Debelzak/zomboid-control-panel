@@ -924,7 +924,7 @@ export default function Dashboard() {
                     : bridgeStatus?.isRunning ? 'pending' : 'offline'
                 }
               />
-              {panelInfo && (
+              {panelInfo?.url && (
                 <ConnLine label="Panel" state="on" value={panelInfo.url.replace(/^https?:\/\//, '')} />
               )}
             </div>
