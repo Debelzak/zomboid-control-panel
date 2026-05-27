@@ -783,7 +783,7 @@ export class ModChecker extends EventEmitter {
     }
 
     if (result.size > 0 && result.size < workshopIds.length) {
-      log.info(`Steam API returned data for ${result.size}/${workshopIds.length} mods (partial)`);
+      log.debug(`Steam API returned data for ${result.size}/${workshopIds.length} mods (partial)`);
     }
 
     return result;

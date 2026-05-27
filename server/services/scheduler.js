@@ -613,6 +613,13 @@ export class Scheduler {
         log.info(`Auto-restart: RCON waiting ${delaySeconds}s before attempt ${i + 1}/${rconDelays.length}...`);
         await this.sleep(rconDelays[i]);
         
+        // If RCON connected during the wait (via auto-reconnect), we're done
+        if (this.rconService.connected) {
+          rconConnected = true;
+          log.info('Auto-restart: RCON connected during wait period');
+          break;
+        }
+        
         // Reset connection state before each attempt to clear any stalled state
         if (this.rconService.forceResetConnectionState) {
           this.rconService.forceResetConnectionState();

@@ -3490,11 +3490,35 @@ end
 local function getChatSystem()
     local result = {}
     -- ChatServer: server-side component — available on dedicated servers in both B41 and B42
+    -- B42 may expose it differently: try multiple access patterns
     local ChatServerClass = resolveJavaClass("ChatServer", "zombie.network.chat.ChatServer")
+    -- B42 alternate: sometimes exposed under zombie.chat package
+    if not ChatServerClass then
+        ChatServerClass = resolveJavaClass("ChatServer", "zombie.chat.ChatServer")
+    end
+    -- B42 alternate: try via getChatServer global if PZ exposes it
+    if not ChatServerClass then
+        local ok, cs = pcall(function() return getChatServer end)
+        if ok and cs and type(cs) == "function" then
+            local ok2, inst = pcall(cs)
+            if ok2 and inst then
+                result.server = inst
+                return result
+            end
+        end
+    end
     if ChatServerClass then
-        local ok, inst = pcall(function() return ChatServerClass.getInstance() end)
-        if ok and inst then
-            result.server = inst
+        -- Check if chat system is initialized before calling getInstance
+        local inited = true
+        if ChatServerClass.isInited then
+            local ok, val = pcall(function() return ChatServerClass.isInited() end)
+            if ok then inited = val end
+        end
+        if inited then
+            local ok, inst = pcall(function() return ChatServerClass.getInstance() end)
+            if ok and inst then
+                result.server = inst
+            end
         end
     end
     -- ChatManager: client-side component — may NOT work on dedicated server
@@ -6644,6 +6668,17 @@ function PanelBridge.onServerStarted()
     PanelBridge.info("PanelBridge ready", { path = PanelBridge.getBasePath() })
     print("[PanelBridge] Ready at: " .. PanelBridge.getBasePath())
     print("[PanelBridge] Debug mode: " .. (PanelBridge.DEBUG_MODE and "ON" or "OFF"))
+    
+    -- Probe chat system availability for diagnostics
+    local chatProbe = getChatSystem()
+    if chatProbe and chatProbe.server then
+        print("[PanelBridge] ChatServer: available")
+    elseif chatProbe and chatProbe.manager then
+        print("[PanelBridge] ChatServer: unavailable, ChatManager: available")
+    else
+        print("[PanelBridge] ChatServer: NOT FOUND (sendToServerChat will rely on RCON servermsg)")
+    end
+    
     print("[PanelBridge] ========================================")
 end
 

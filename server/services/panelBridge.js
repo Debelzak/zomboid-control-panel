@@ -920,7 +920,10 @@ class PanelBridge extends EventEmitter {
         log.debug(`PanelBridge result: action=${pending.action} success=true (${elapsed}ms)`);
         pending.resolve({ success: true, data: result.data });
       } else {
-        log.warn(`PanelBridge result: action=${pending.action} failed: ${result.error || 'unknown'} (${elapsed}ms)`);
+        // Downgrade chat failures to debug (RCON servermsg is the primary path; bridge chat is a secondary boost)
+        const isChatFallback = pending.action === 'sendToServerChat' || pending.action === 'sendToAdminChat' || pending.action === 'sendToGeneralChat';
+        const logLevel = isChatFallback ? 'debug' : 'warn';
+        log[logLevel](`PanelBridge result: action=${pending.action} failed: ${result.error || 'unknown'} (${elapsed}ms)`);
         pending.reject(new Error(result.error || 'Command failed'));
       }
     }
