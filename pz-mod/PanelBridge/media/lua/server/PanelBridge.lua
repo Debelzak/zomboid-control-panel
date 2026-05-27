@@ -1073,8 +1073,8 @@ handlers.checkAPI = function(args)
     elseif objName == "World" then
         obj = getWorld and getWorld()
     elseif objName == "ChatServer" then
-        local ok, chatServer = pcall(function() return ChatServer.getInstance() end)
-        if ok then obj = chatServer end
+        local chat = getChatSystem()
+        if chat and chat.server then obj = chat.server end
     elseif objName == "SandboxOptions" then
         obj = getSandboxOptions and getSandboxOptions()
     end
@@ -3485,18 +3485,17 @@ local function resolveJavaClass(globalName, fullPath)
 end
 
 -- Helper: get chat system components
--- ChatServer (zombie.network.chat.ChatServer) = SERVER-SIDE, works on both B41 and B42 dedicated servers
--- ChatManager (zombie.chat.ChatManager) = CLIENT-SIDE, only works on client (not on dedicated server)
+-- ChatServer (zombie.network.chat.ChatServer) = SERVER-SIDE chat API
+-- On B42 dedicated servers this class exists in Java but is NOT exposed to Lua.
+-- The function returns nil in that case — chat then falls through to RCON on the backend.
 local function getChatSystem()
     local result = {}
-    -- ChatServer: server-side component — available on dedicated servers in both B41 and B42
-    -- B42 may expose it differently: try multiple access patterns
+    -- Try multiple access patterns for ChatServer
     local ChatServerClass = resolveJavaClass("ChatServer", "zombie.network.chat.ChatServer")
-    -- B42 alternate: sometimes exposed under zombie.chat package
     if not ChatServerClass then
         ChatServerClass = resolveJavaClass("ChatServer", "zombie.chat.ChatServer")
     end
-    -- B42 alternate: try via getChatServer global if PZ exposes it
+    -- Try getChatServer global if PZ exposes it
     if not ChatServerClass then
         local ok, cs = pcall(function() return getChatServer end)
         if ok and cs and type(cs) == "function" then
@@ -3508,7 +3507,6 @@ local function getChatSystem()
         end
     end
     if ChatServerClass then
-        -- Check if chat system is initialized before calling getInstance
         local inited = true
         if ChatServerClass.isInited then
             local ok, val = pcall(function() return ChatServerClass.isInited() end)
@@ -3521,24 +3519,7 @@ local function getChatSystem()
             end
         end
     end
-    -- ChatManager: client-side component — may NOT work on dedicated server
-    local ChatManagerClass = resolveJavaClass("ChatManager", "zombie.chat.ChatManager")
-    if ChatManagerClass then
-        local ok, inst = pcall(function() return ChatManagerClass.getInstance() end)
-        if ok and inst then
-            result.manager = inst
-        end
-    end
-    if result.server or result.manager then return result end
-    return nil
-end
-
--- Helper: resolve ChatType enum value safely
-local function getChatType(typeName)
-    local ChatTypeClass = resolveJavaClass("ChatType", "zombie.chat.ChatType")
-    if not ChatTypeClass then return nil end
-    local ok, val = pcall(function() return ChatTypeClass[typeName] end)
-    if ok and val then return val end
+    if result.server then return result end
     return nil
 end
 
@@ -3552,9 +3533,8 @@ handlers.sendToServerChat = function(args)
     end
 
     local chat = getChatSystem()
-    local debugInfo = {}
 
-    -- ChatServer: server-side, works on both B41 and B42 dedicated servers
+    -- ChatServer: server-side native API (available on builds that expose it to Lua)
     if chat and chat.server then
         local ok, err = pcall(function()
             if isAlert then
@@ -3566,20 +3546,7 @@ handlers.sendToServerChat = function(args)
         if ok then
             return true, { message = "Message sent to server chat", isAlert = isAlert, method = "ChatServer" }
         end
-        debugInfo[#debugInfo + 1] = "ChatServer.send failed: " .. tostring(err)
-    else
-        debugInfo[#debugInfo + 1] = "ChatServer: " .. (chat and "getInstance returned nil" or "class not found")
-    end
-
-    -- ChatManager fallback (client-side, unlikely to work on dedicated server)
-    if chat and chat.manager then
-        local ok, err = pcall(function()
-            chat.manager:showServerChatMessage(message)
-        end)
-        if ok then
-            return true, { message = "Message sent to server chat", isAlert = isAlert, method = "ChatManager" }
-        end
-        debugInfo[#debugInfo + 1] = "ChatManager.show failed: " .. tostring(err)
+        -- ChatServer exists but send failed — fall through to player:Say
     end
 
     -- Fallback: Say to each player (shows as overhead text only, not in chat window)
@@ -3597,19 +3564,9 @@ handlers.sendToServerChat = function(args)
     if ok3 and sent3 then
         return true, { message = "Message sent via player:Say (overhead text only)", isAlert = isAlert, method = "player:Say" }
     end
-    debugInfo[#debugInfo + 1] = ok3 and "player:Say fallback: no players online" or ("player:Say fallback failed: " .. tostring(sent3))
 
-    -- If no players are online, treat as success (nobody to deliver to)
-    local playerCount = 0
-    pcall(function()
-        local pl = getOnlinePlayers()
-        if pl then playerCount = pl:size() end
-    end)
-    if playerCount == 0 then
-        return true, { message = "No players online - message skipped", isAlert = isAlert, method = "skipped" }
-    end
-
-    return false, nil, "Chat system not available: " .. table.concat(debugInfo, "; ")
+    -- No ChatServer and no players online — tell backend to use RCON
+    return false, nil, "useRCON"
 end
 
 -- Send message to admin chat (only admins see it)
@@ -3622,7 +3579,7 @@ handlers.sendToAdminChat = function(args)
 
     local chat = getChatSystem()
 
-    -- ChatServer: server-side, works on both B41 and B42 dedicated servers
+    -- ChatServer: server-side native API
     if chat and chat.server then
         local ok, err = pcall(function()
             chat.server:sendMessageToAdminChat(message)
@@ -3632,20 +3589,7 @@ handlers.sendToAdminChat = function(args)
         end
     end
 
-    -- ChatManager fallback (client-side, unlikely to work on dedicated server)
-    if chat and chat.manager then
-        local adminType = getChatType("admin")
-        if adminType then
-            local ok, err = pcall(function()
-                chat.manager:sendMessageToChat(adminType, message)
-            end)
-            if ok then
-                return true, { message = "Message sent to admin chat", method = "ChatManager" }
-            end
-        end
-    end
-
-    -- Fallback: Say to each player with [ADMIN] prefix (overhead text only)
+    -- Fallback: Say to each admin player (overhead text only)
     local ok3, sent3 = pcall(function()
         local players = getOnlinePlayers()
         if players and players:size() > 0 then
@@ -3663,17 +3607,7 @@ handlers.sendToAdminChat = function(args)
         return true, { message = "Message sent via player:Say (admin, overhead text only)", method = "player:Say" }
     end
 
-    -- If no players are online, treat as success (nobody to deliver to)
-    local playerCount = 0
-    pcall(function()
-        local pl = getOnlinePlayers()
-        if pl then playerCount = pl:size() end
-    end)
-    if playerCount == 0 then
-        return true, { message = "No players online - message skipped", method = "skipped" }
-    end
-
-    return false, nil, "Admin chat not available"
+    return false, nil, "useRCON"
 end
 
 -- Send message to general chat (with custom author name)
@@ -3692,33 +3626,13 @@ handlers.sendToGeneralChat = function(args)
 
     local chat = getChatSystem()
 
-    -- ChatServer: server-side, works on both B41 and B42 dedicated servers
+    -- ChatServer: server-side native API
     if chat and chat.server then
         local ok, err = pcall(function()
             chat.server:sendMessageFromDiscordToGeneralChat(author, message)
         end)
         if ok then
             return true, { message = "Message sent to general chat", author = author, method = "ChatServer" }
-        end
-    end
-
-    -- ChatManager fallback (client-side, unlikely to work on dedicated server)
-    if chat and chat.manager then
-        local generalType = getChatType("general")
-        if generalType then
-            local ok, err = pcall(function()
-                chat.manager:sendMessageToChat(author, generalType, message)
-            end)
-            if ok then
-                return true, { message = "Message sent to general chat", author = author, method = "ChatManager" }
-            end
-        end
-
-        local ok2, err2 = pcall(function()
-            chat.manager:addMessage(author, message)
-        end)
-        if ok2 then
-            return true, { message = "Message sent to general chat", author = author, method = "ChatManager.addMessage" }
         end
     end
 
@@ -3738,7 +3652,7 @@ handlers.sendToGeneralChat = function(args)
         return true, { message = "Message sent via player:Say (overhead text only)", author = author, method = "player:Say" }
     end
 
-    return false, nil, "General chat not available"
+    return false, nil, "useRCON"
 end
 
 -- Get available chat types info
@@ -3750,9 +3664,9 @@ handlers.getChatInfo = function(args)
             "adminChat - Messages visible only to admins",
             "generalChat - General chat with custom author name"
         },
-        note = "Use sendToServerChat, sendToAdminChat, or sendToGeneralChat handlers",
+        note = "Chat handlers try native ChatServer API first, then player:Say, then signal backend to use RCON",
         chatServerAvailable = chat ~= nil and chat.server ~= nil,
-        chatManagerAvailable = chat ~= nil and chat.manager ~= nil
+        rconFallback = chat == nil or chat.server == nil
     }
 
     return true, info
@@ -6670,13 +6584,15 @@ function PanelBridge.onServerStarted()
     print("[PanelBridge] Debug mode: " .. (PanelBridge.DEBUG_MODE and "ON" or "OFF"))
     
     -- Probe chat system availability for diagnostics
+    -- NOTE: On B42 dedicated servers, ChatServer is NOT exposed to Lua (the Java class exists
+    -- but PZ doesn't register it as a Lua global). This is normal — chat messages are sent
+    -- via RCON 'servermsg' by the Node.js backend instead. PanelBridge chat handlers are a
+    -- secondary enhancement that only works on builds where ChatServer is Lua-accessible.
     local chatProbe = getChatSystem()
     if chatProbe and chatProbe.server then
-        print("[PanelBridge] ChatServer: available")
-    elseif chatProbe and chatProbe.manager then
-        print("[PanelBridge] ChatServer: unavailable, ChatManager: available")
+        print("[PanelBridge] ChatServer: available (native chat API)")
     else
-        print("[PanelBridge] ChatServer: NOT FOUND (sendToServerChat will rely on RCON servermsg)")
+        print("[PanelBridge] ChatServer: not exposed to Lua (normal on B42 — chat uses RCON servermsg)")
     end
     
     print("[PanelBridge] ========================================")
