@@ -3575,6 +3575,16 @@ handlers.sendToServerChat = function(args)
     end
     debugInfo[#debugInfo + 1] = ok3 and "player:Say fallback: no players online" or ("player:Say fallback failed: " .. tostring(sent3))
 
+    -- If no players are online, treat as success (nobody to deliver to)
+    local playerCount = 0
+    pcall(function()
+        local pl = getOnlinePlayers()
+        if pl then playerCount = pl:size() end
+    end)
+    if playerCount == 0 then
+        return true, { message = "No players online - message skipped", isAlert = isAlert, method = "skipped" }
+    end
+
     return false, nil, "Chat system not available: " .. table.concat(debugInfo, "; ")
 end
 
@@ -3627,6 +3637,16 @@ handlers.sendToAdminChat = function(args)
     end)
     if ok3 and sent3 then
         return true, { message = "Message sent via player:Say (admin, overhead text only)", method = "player:Say" }
+    end
+
+    -- If no players are online, treat as success (nobody to deliver to)
+    local playerCount = 0
+    pcall(function()
+        local pl = getOnlinePlayers()
+        if pl then playerCount = pl:size() end
+    end)
+    if playerCount == 0 then
+        return true, { message = "No players online - message skipped", method = "skipped" }
     end
 
     return false, nil, "Admin chat not available"
