@@ -1548,7 +1548,7 @@ export default function Settings() {
                     <TabsTrigger
                       value={section.id}
                       aria-label={section.label}
-                      className="flex-1 min-w-[110px] flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium data-[state=active]:bg-primary/15 data-[state=active]:text-primary data-[state=active]:shadow-none"
+                      className="settings-tab-trigger flex-1 min-w-[110px] flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium relative overflow-hidden text-muted-foreground/70 hover:text-foreground hover:bg-muted/50 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none"
                     >
                       <Icon className="w-4 h-4 shrink-0" />
                       <span>{section.label}</span>

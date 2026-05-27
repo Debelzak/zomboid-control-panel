@@ -1384,6 +1384,40 @@ input[type="number"] {
   animation: tabContentIn 0.2s var(--ease-out-expo);
 }
 
+/* ── Settings tab trigger effects ── */
+.settings-tab-trigger {
+  transition: color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
+}
+.settings-tab-trigger::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: 0;
+  height: 2px;
+  background: hsl(var(--primary));
+  border-radius: 1px;
+  transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1), left 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.settings-tab-trigger:hover::after {
+  width: 40%;
+  left: 30%;
+}
+.settings-tab-trigger[data-state="active"]::after {
+  width: 60%;
+  left: 20%;
+  background: hsl(var(--primary));
+  box-shadow: 0 0 6px hsl(var(--primary) / 0.4);
+}
+.settings-tab-trigger[data-state="active"] svg {
+  filter: drop-shadow(0 0 3px hsl(var(--primary) / 0.5));
+  transform: scale(1.1);
+  transition: transform 0.2s ease, filter 0.2s ease;
+}
+.settings-tab-trigger svg {
+  transition: transform 0.2s ease, filter 0.2s ease, color 0.2s ease;
+}
+
 /* ── Sub-tab content crossfade + slide ── */
 @keyframes subTabIn {
   from { opacity: 0; transform: translateY(4px); }
