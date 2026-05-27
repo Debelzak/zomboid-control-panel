@@ -7,7 +7,7 @@
 
 Web-based admin panel for **Project Zomboid dedicated servers**. Runs on Windows, Linux, Docker, or a VPS.
 
-One place to manage your server instead of juggling five different tools.
+Server control, RCON console, live player map, mod manager, scheduler, backups, Discord bot, and a Lua bridge for actions RCON can't reach — all from one dark-mode control room, instead of juggling five different tools.
 
 **[Live demo →](https://fpsacha.github.io/zomboid-control-panel/)** &nbsp;·&nbsp; **[Discord →](https://discord.gg/bq4SuyDDZb)** &nbsp;·&nbsp; **[Releases →](https://github.com/fpsacha/zomboid-control-panel/releases/latest)**
 
