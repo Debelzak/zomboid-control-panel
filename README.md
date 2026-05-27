@@ -6,7 +6,7 @@
 
 [![Latest Release](https://img.shields.io/github/v/release/fpsacha/zomboid-control-panel?style=for-the-badge&logo=github&color=8a9a5b)](https://github.com/fpsacha/zomboid-control-panel/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/fpsacha/zomboid-control-panel/total?style=for-the-badge&logo=github&color=8a9a5b)](https://github.com/fpsacha/zomboid-control-panel/releases)
-[![Discord](https://img.shields.io/discord/1451201091831332895?style=for-the-badge&label=discord&logo=discord&logoColor=white&color=5865F2)](https://discord.gg/bq4SuyDDZb)
+[![Discord](https://img.shields.io/badge/discord-join-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/jHsWJDNmSg)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg?style=for-the-badge)](LICENSE)
 
 **Server control · RCON · live world map · mods · scheduler · backups · Discord bot · Lua bridge**
@@ -14,7 +14,7 @@ One dark-mode control room instead of five different tools.
 
 [**🚀 Download**](https://github.com/fpsacha/zomboid-control-panel/releases/latest) ·
 [**👁️ Live demo**](https://fpsacha.github.io/zomboid-control-panel/) ·
-[**💬 Discord**](https://discord.gg/bq4SuyDDZb) ·
+[**💬 Discord**](https://discord.gg/jHsWJDNmSg) ·
 [**📖 Setup**](#quick-start)
 
 </div>
@@ -273,7 +273,7 @@ npm test                   # Run tests
 
 ## Community
 
-- **Discord** — [discord.gg/bq4SuyDDZb](https://discord.gg/bq4SuyDDZb) for questions, support, and feature ideas.
+- **Discord** — [discord.gg/jHsWJDNmSg](https://discord.gg/jHsWJDNmSg) for questions, support, and feature ideas.
 - **Issues** — [Report bugs or request features](https://github.com/fpsacha/zomboid-control-panel/issues) on GitHub.
 - **Changelog** — See the [latest release notes](https://github.com/fpsacha/zomboid-control-panel/releases/latest) for what's new.
 
