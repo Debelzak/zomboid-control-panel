@@ -1,35 +1,132 @@
-# Zomboid Control Panel
+<div align="center">
 
-[![Latest Release](https://img.shields.io/github/v/release/fpsacha/zomboid-control-panel)](https://github.com/fpsacha/zomboid-control-panel/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/fpsacha/zomboid-control-panel/total)](https://github.com/fpsacha/zomboid-control-panel/releases)
-[![Discord](https://img.shields.io/discord/1451201091831332895?label=discord&logo=discord&logoColor=white&color=5865F2)](https://discord.gg/bq4SuyDDZb)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+# 🧟 Zomboid Control Panel
 
-Web-based admin panel for **Project Zomboid dedicated servers**. Runs on Windows, Linux, Docker, or a VPS.
+### The complete admin cockpit for Project Zomboid dedicated servers
 
-Server control, RCON console, live player map, mod manager, scheduler, backups, Discord bot, and a Lua bridge for actions RCON can't reach — all from one dark-mode control room, instead of juggling five different tools.
+[![Latest Release](https://img.shields.io/github/v/release/fpsacha/zomboid-control-panel?style=for-the-badge&logo=github&color=8a9a5b)](https://github.com/fpsacha/zomboid-control-panel/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/fpsacha/zomboid-control-panel/total?style=for-the-badge&logo=github&color=8a9a5b)](https://github.com/fpsacha/zomboid-control-panel/releases)
+[![Discord](https://img.shields.io/discord/1451201091831332895?style=for-the-badge&label=discord&logo=discord&logoColor=white&color=5865F2)](https://discord.gg/bq4SuyDDZb)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg?style=for-the-badge)](LICENSE)
 
-**[Live demo →](https://fpsacha.github.io/zomboid-control-panel/)** &nbsp;·&nbsp; **[Discord →](https://discord.gg/bq4SuyDDZb)** &nbsp;·&nbsp; **[Releases →](https://github.com/fpsacha/zomboid-control-panel/releases/latest)**
+**Server control · RCON · live world map · mods · scheduler · backups · Discord bot · Lua bridge**
+One dark-mode control room instead of five different tools.
 
-![Dashboard](Screenshots/screenshot-dashboard.png)
+[**🚀 Download**](https://github.com/fpsacha/zomboid-control-panel/releases/latest) ·
+[**👁️ Live demo**](https://fpsacha.github.io/zomboid-control-panel/) ·
+[**💬 Discord**](https://discord.gg/bq4SuyDDZb) ·
+[**📖 Setup**](#quick-start)
 
-<p align="center">
-   <img src="Screenshots/screenshot-events.png" width="49%" alt="Events &amp; Weather" />
-   <img src="Screenshots/screenshot-mods.png" width="49%" alt="Mod Manager" />
-</p>
-<p align="center">
-   <img src="Screenshots/screenshot-console.png" width="49%" alt="Console" />
-   <img src="Screenshots/screenshot-players.png" width="49%" alt="Players" />
-</p>
-<p align="center">
-   <img src="Screenshots/screenshot-worldmap.png" width="49%" alt="World Map" />
-   <img src="Screenshots/screenshot-config.png" width="49%" alt="Server Configuration" />
-</p>
-<p align="center">
-   <img src="Screenshots/screenshot-backups.png" width="49%" alt="Backups" />
-</p>
+</div>
 
-No existing PZ server tool covered the full workflow. Most handled one or two parts. So I built the whole thing. [Background story →](https://www.youtube.com/watch?v=P2k0VFX1FUw)
+<br />
+
+![Dashboard](Screenshots/screenshot-dashboard-v2.png)
+
+> **At a glance** — server status, RCON & PanelBridge connection state, live player activity, host telemetry, backup readiness, and quick actions. One screen covers 80% of routine admin work.
+
+---
+
+## 🎮 Built for live ops
+
+No existing PZ server tool covered the full workflow. Most handled one or two parts. So I built the whole thing — for the moment you log in at 2 AM because the server crashed mid-horde-night and you need to fix it without ten tabs open. [**Background story →**](https://www.youtube.com/watch?v=P2k0VFX1FUw)
+
+<br />
+
+## ✨ Feature tour
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+### 🌧️ Events & Weather
+Force-trigger blizzards, tropical storms, or rain at any intensity. Fine-grained climate sliders for fog, wind, temperature, clouds, humidity. Target all players or specific ones. The closest thing to PZ admin god-mode.
+
+<img src="Screenshots/screenshot-events-v2.png" alt="Events & Weather" />
+
+</td>
+<td width="50%" valign="top">
+
+### 🗺️ Live World Map
+Real-time player positions on Knox County. Multi-floor support, layer toggles, zoom & pan. Right-click any player for instant teleport, heal, kick, or message — straight from the map.
+
+<img src="Screenshots/screenshot-worldmap-v2.png" alt="World Map" />
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+### 👥 Player Management
+Roster with online / offline / banned tabs. Per-player dossier with moderation, spawn loadout, powers (heal, teleport, god mode), notes & history. Voice ban, SteamID ban, manual targeting.
+
+<img src="Screenshots/screenshot-players-v2.png" alt="Players" />
+
+</td>
+<td width="50%" valign="top">
+
+### 🧩 Mod Manager
+Tracks every Workshop mod on your server. Detects updates via the Steam API and surfaces pending changes. Pull mod list straight from your server config — no manual entry.
+
+<img src="Screenshots/screenshot-mods-v2.png" alt="Mod Manager" />
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+### ⚠️ Mod Conflict Detection
+Scans your mod list for known incompatibilities, missing dependencies, and load-order issues. Severity-tinted findings so you see real problems before you boot the server.
+
+<img src="Screenshots/screenshot-mods-conflicts.png" alt="Mod Conflicts" />
+
+</td>
+<td width="50%" valign="top">
+
+### ⚙️ Server Configuration
+Full in-browser INI editor for sandbox options, spawn regions, mod settings, and server flags. Searchable, structured view + raw view for power users. No more notepad-and-restart.
+
+<img src="Screenshots/screenshot-config-v2.png" alt="Server Configuration" />
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+### 🆕 Server Setup Wizard
+Spin up a fresh PZ server in minutes. SteamCMD install, port config, RCON setup, admin account — all stepped through with sensible defaults.
+
+<img src="Screenshots/screenshot-server-setup.png" alt="Server Setup" />
+
+</td>
+<td width="50%" valign="top">
+
+### 🤖 Discord Bot Setup
+Guided wizard for creating the Discord app, getting tokens, configuring intents and inviting the bot. Slash commands + two-way chat relay + event notifications ship turnkey.
+
+<img src="Screenshots/screenshot-discord-setup.png" alt="Discord Setup" />
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+### 📊 Performance Telemetry
+Host RAM and CPU graphs, PZ process memory, player count history. Time-range selectable, exportable. Catch slow leaks and load spikes before players notice.
+
+<img src="Screenshots/screenshot-debug-performance.png" alt="Performance" />
+
+</td>
+<td width="50%" valign="top">
+
+### 🐛 Crash Logs & Diagnostics
+Java crash dumps, error logs, support bundles. One-click `.zip` export for when you need to share state with someone smarter than you. Health, environment, and activity tabs included.
+
+<img src="Screenshots/screenshot-debug-crashes.png" alt="Crash Logs" />
+
+</td>
+</tr>
+</table>
 
 ---
 
