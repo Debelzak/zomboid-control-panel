@@ -34,7 +34,12 @@ import {
   Check,
   Heart,
   Coffee,
-  MessageCircle
+  MessageCircle,
+  Plus,
+  Minus,
+  Search,
+  Bookmark,
+  BookmarkPlus,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { reportClientError } from '@/lib/client-errors'
@@ -75,6 +80,7 @@ import {
   PanelUpdatePreflight,
   ServerInstance
 } from '@/lib/api'
+import { getAccessToken } from '@/lib/authToken'
 import { useSocket } from '@/contexts/SocketContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTheme, type ThemeName } from '@/contexts/ThemeContext'
@@ -3501,8 +3507,21 @@ function WorkshopCollectionSyncCard({
   const [diffLoading, setDiffLoading] = useState(false)
   const [diffCheckedAt, setDiffCheckedAt] = useState<Date | null>(null)
   const [syncing, setSyncing] = useState(false)
+  const [browsers, setBrowsers] = useState<Awaited<ReturnType<typeof modsApi.collectionBrowsers>> | null>(null)
+  const [extractingFrom, setExtractingFrom] = useState<string | null>(null)
+  const [extensionInfoOpen, setExtensionInfoOpen] = useState(false)
+  const [downloadingExt, setDownloadingExt] = useState(false)
+  const [copied, setCopied] = useState<string | null>(null)
   const [testing, setTesting] = useState(false)
   const [showCookies, setShowCookies] = useState(false)
+
+  // Unified mod table state.
+  // Filter defaults to "mismatch" so the page lands on actionable rows;
+  // user can switch to "all" / "tracked" / "collection" to inspect.
+  const [itemFilter, setItemFilter] = useState<'all' | 'mismatch' | 'tracked' | 'collection'>('mismatch')
+  const [itemSearch, setItemSearch] = useState('')
+  // Per-row busy flag: { [workshopId]: 'add' | 'remove' | 'track' | 'untrack' | null }
+  const [rowBusy, setRowBusy] = useState<Record<string, string | null>>({})
 
   // Trust the server's credential check over a brittle bullet-prefix sniff:
   // the diff endpoint reports `hasCredentials` based on the actual stored
@@ -3651,6 +3670,145 @@ function WorkshopCollectionSyncCard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [collectionIdValid])
 
+  // Probe which local browsers we can read cookies from. Cheap, just a
+  // filesystem check on the panel host. Runs once on mount.
+  useEffect(() => {
+    let cancelled = false
+    modsApi.collectionBrowsers()
+      .then((r) => { if (!cancelled) setBrowsers(r) })
+      .catch(() => { /* not fatal — the section just won't appear */ })
+    return () => { cancelled = true }
+  }, [])
+
+  const handleAutoExtract = async (browserId: string, label: string) => {
+    if (extractingFrom) return
+    setExtractingFrom(browserId)
+    try {
+      const r = await modsApi.collectionExtractCookies(browserId)
+      if (r.ok && r.sessionid && r.steamLoginSecure) {
+        updateSetting('steamSessionId', r.sessionid)
+        updateSetting('steamLoginSecure', r.steamLoginSecure)
+        toast({
+          title: `Cookies extracted from ${label}`,
+          description: r.notes && r.notes.length > 0
+            ? r.notes[0]
+            : "Don't forget to save settings.",
+        })
+      } else {
+        toast({
+          variant: 'destructive',
+          title: `Couldn't extract from ${label}`,
+          description: r.error || 'Unknown failure',
+        })
+      }
+    } catch (err: any) {
+      toast({
+        variant: 'destructive',
+        title: `Couldn't extract from ${label}`,
+        description: err?.message || 'Request failed',
+      })
+    } finally {
+      setExtractingFrom(null)
+    }
+  }
+
+  // Browser detection from User-Agent — used to tailor the extension
+  // install instructions to whatever the admin is using right now.
+  // Order matters: Edge/Brave/Opera UA also contain "Chrome".
+  const detectedBrowser: 'firefox' | 'edge' | 'brave' | 'opera' | 'chrome' | 'safari' | 'other' = (() => {
+    if (typeof navigator === 'undefined') return 'other'
+    const ua = navigator.userAgent
+    if (/Firefox\//i.test(ua)) return 'firefox'
+    // Brave only differentiates via navigator.brave at runtime — UA mimics Chrome.
+    const nav: any = navigator
+    if (nav?.brave?.isBrave) return 'brave'
+    if (/Edg\//i.test(ua)) return 'edge'
+    if (/OPR\/|Opera/i.test(ua)) return 'opera'
+    if (/Chrome\//i.test(ua)) return 'chrome'
+    if (/Safari\//i.test(ua) && !/Chrome\//i.test(ua)) return 'safari'
+    return 'other'
+  })()
+
+  const extensionsUrl = ((): string => {
+    switch (detectedBrowser) {
+      case 'firefox': return 'about:debugging#/runtime/this-firefox'
+      case 'edge': return 'edge://extensions'
+      case 'brave': return 'brave://extensions'
+      case 'opera': return 'opera://extensions'
+      case 'chrome': return 'chrome://extensions'
+      default: return 'chrome://extensions'
+    }
+  })()
+
+  const extensionsUrlLabel = ((): string => {
+    switch (detectedBrowser) {
+      case 'firefox': return 'about:debugging'
+      case 'edge': return 'edge://extensions'
+      case 'brave': return 'brave://extensions'
+      case 'opera': return 'opera://extensions'
+      case 'chrome': return 'chrome://extensions'
+      default: return 'chrome://extensions'
+    }
+  })()
+
+  const browserLabel = ((): string => {
+    switch (detectedBrowser) {
+      case 'firefox': return 'Firefox'
+      case 'edge': return 'Edge'
+      case 'brave': return 'Brave'
+      case 'opera': return 'Opera'
+      case 'chrome': return 'Chrome'
+      case 'safari': return 'Safari'
+      default: return 'your browser'
+    }
+  })()
+
+  const copyToClipboard = async (text: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(label)
+      window.setTimeout(() => setCopied((c) => (c === label ? null : c)), 1800)
+    } catch {
+      toast({ variant: 'destructive', title: 'Copy failed', description: 'Your browser blocked clipboard access — copy it manually.' })
+    }
+  }
+
+  // Pulls the bundled extension .zip from the panel itself so the user can
+  // install it without going to GitHub. Auth'd via the same bearer token as
+  // every other API call.
+  const handleDownloadExtension = async () => {
+    if (downloadingExt) return
+    setDownloadingExt(true)
+    try {
+      const token = getAccessToken()
+      const res = await fetch('/api/mods/collection/extension-bundle', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      })
+      if (!res.ok) {
+        let detail = ''
+        try { detail = ((await res.json()) as any)?.error || '' } catch { /* ignore */ }
+        throw new Error(detail || `Download failed (${res.status})`)
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'zomboid-panel-extension.zip'
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      window.setTimeout(() => URL.revokeObjectURL(url), 1500)
+      toast({
+        title: 'Extension downloaded',
+        description: 'Unzip it somewhere safe, then follow the steps below to load it into ' + browserLabel + '.',
+      })
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Download failed', description: err?.message || 'Unknown error' })
+    } finally {
+      setDownloadingExt(false)
+    }
+  }
+
   const handleSync = async () => {
     if (syncing) return
     setSyncing(true)
@@ -3685,6 +3843,48 @@ function WorkshopCollectionSyncCard({
 
   const inSync = diff && diff.ok && diff.toAdd.length === 0 && diff.toRemove.length === 0
   const driftCount = diff && diff.ok ? diff.toAdd.length + diff.toRemove.length : 0
+
+  // ── Unified item table derivation ───────────────────────────────────────
+  const allItems = (diff?.ok && Array.isArray(diff.items)) ? diff.items : []
+  const filteredItems = allItems.filter((it) => {
+    if (itemFilter === 'mismatch' && it.status === 'synced') return false
+    if (itemFilter === 'tracked' && !it.inTracked) return false
+    if (itemFilter === 'collection' && !it.inCollection) return false
+    if (itemSearch.trim()) {
+      const q = itemSearch.trim().toLowerCase()
+      if (!it.workshopId.includes(q) && !(it.name || '').toLowerCase().includes(q)) return false
+    }
+    return true
+  })
+
+  // Row-level actions. Optimistic feel: spinner on the clicked button,
+  // then re-fetch the diff. Errors surface as toasts and the row remains
+  // unchanged because refreshDiff re-reads ground truth from Steam.
+  const runRowAction = async (workshopId: string, action: 'add' | 'remove' | 'track' | 'untrack') => {
+    setRowBusy((prev) => ({ ...prev, [workshopId]: action }))
+    try {
+      if (action === 'add') {
+        if (!credsConfigured) throw new Error('Add Steam cookies first to write to the collection.')
+        await modsApi.collectionAddItem(workshopId)
+      } else if (action === 'remove') {
+        if (!credsConfigured) throw new Error('Add Steam cookies first to write to the collection.')
+        await modsApi.collectionRemoveItem(workshopId)
+      } else if (action === 'track') {
+        await modsApi.trackMod(workshopId)
+      } else if (action === 'untrack') {
+        await modsApi.untrackMod(workshopId)
+      }
+      await refreshDiff()
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Action failed', description: err?.message || 'Steam rejected the change' })
+    } finally {
+      setRowBusy((prev) => {
+        const next = { ...prev }
+        delete next[workshopId]
+        return next
+      })
+    }
+  }
 
   return (
     <Card id="settings-workshop-collection">
@@ -3796,6 +3996,169 @@ function WorkshopCollectionSyncCard({
             {showCookies ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
             {showCookies ? 'Hide cookies' : 'Show cookies'}
           </button>
+
+          {/* Auto-detect from local browser — fastest path when Steam is
+              logged in on the same machine the panel runs on. */}
+          {browsers && browsers.supported && browsers.browsers.some((b) => b.detected) && (
+            <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 mt-3 space-y-3">
+              <div className="flex items-start gap-3">
+                <Zap className="w-4 h-4 text-primary mt-0.5 shrink-0" />
+                <div className="flex-1 space-y-1">
+                  <p className="font-medium text-sm">Auto-detect from this machine's browser</p>
+                  <p className="text-xs text-muted-foreground">
+                    Reads cookies directly from a browser installed on the panel host.
+                    Works for browsers logged into Steam on <strong>this machine</strong>.
+                    Close the browser first for best results.
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {browsers.browsers.filter((b) => b.detected).map((b) => (
+                  <Button
+                    key={b.id}
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={!!extractingFrom}
+                    onClick={() => handleAutoExtract(b.id, b.label)}
+                  >
+                    {extractingFrom === b.id ? (
+                      <RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                    ) : (
+                      <Check className="w-3.5 h-3.5 mr-1.5" />
+                    )}
+                    {b.label}
+                  </Button>
+                ))}
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Chrome 127+ may seal <code>steamLoginSecure</code> away from this method (App-Bound Encryption).
+                If extraction returns nothing, use the panel browser extension below instead.
+              </p>
+            </div>
+          )}
+
+          {/* Browser extension — works regardless of platform or which
+              machine Steam is logged in on. Guided install with one-button
+              download and copy-to-clipboard helpers for the bits browsers
+              won't let us automate (chrome:// nav, extension load). */}
+          <div className="rounded-lg border border-primary/40 bg-primary/5 p-4 mt-3 space-y-3">
+            <div className="flex items-start gap-3">
+              <ExternalLink className="w-4 h-4 text-primary mt-0.5 shrink-0" />
+              <div className="flex-1 space-y-1">
+                <p className="font-medium text-sm">
+                  Install the panel extension — recommended
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  We detected <strong>{browserLabel}</strong>. Three clicks total: download, load, paste — then you'll have a one-click "send cookies" button in your toolbar forever.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="default"
+                onClick={handleDownloadExtension}
+                disabled={downloadingExt}
+              >
+                {downloadingExt ? (
+                  <RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                ) : (
+                  <Download className="w-3.5 h-3.5 mr-1.5" />
+                )}
+                1. Download extension
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => copyToClipboard(extensionsUrl, 'ext-url')}
+                title={`Copy ${extensionsUrlLabel} to your clipboard — browsers don't let websites navigate to this URL.`}
+              >
+                {copied === 'ext-url' ? (
+                  <Check className="w-3.5 h-3.5 mr-1.5 text-green-500" />
+                ) : (
+                  <ExternalLink className="w-3.5 h-3.5 mr-1.5" />
+                )}
+                2. Copy {extensionsUrlLabel}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => copyToClipboard(typeof window !== 'undefined' ? window.location.origin : '', 'panel-url')}
+                title="Copy your panel URL — paste it into the extension popup so it knows where to send cookies."
+              >
+                {copied === 'panel-url' ? (
+                  <Check className="w-3.5 h-3.5 mr-1.5 text-green-500" />
+                ) : (
+                  <ExternalLink className="w-3.5 h-3.5 mr-1.5" />
+                )}
+                3. Copy panel URL
+              </Button>
+            </div>
+
+            {/* Browser-specific load steps. Kept terse — long walls of text
+                kill momentum at the "I almost have this working" phase. */}
+            <div className="rounded-md border border-border/40 bg-background/40 p-3 text-xs text-muted-foreground space-y-2">
+              {detectedBrowser === 'firefox' ? (
+                <>
+                  <p className="font-medium text-foreground">Load into Firefox</p>
+                  <ol className="list-decimal list-inside space-y-1 pl-1">
+                    <li>Unzip the downloaded file somewhere you won't accidentally delete.</li>
+                    <li>Paste <code>about:debugging#/runtime/this-firefox</code> in a new tab.</li>
+                    <li>Click <strong>Load Temporary Add-on…</strong> and pick <code>manifest.json</code> from the unzipped folder.</li>
+                    <li>Click the puzzle-piece icon in your toolbar, then pin "Zomboid Control Panel".</li>
+                  </ol>
+                  <p className="text-[11px]">
+                    Note: Firefox unloads temporary add-ons on restart. To make it permanent, sign it on
+                    {' '}<a className="underline" href="https://addons.mozilla.org/developers/" target="_blank" rel="noopener">addons.mozilla.org</a> or use Firefox Developer/Nightly with <code>xpinstall.signatures.required = false</code>.
+                  </p>
+                </>
+              ) : detectedBrowser === 'safari' ? (
+                <>
+                  <p className="font-medium text-foreground">Safari isn't supported yet</p>
+                  <p>
+                    Safari requires extensions to be packaged as a signed macOS app. For now, use the auto-detect buttons above, the cookie-paste helper below, or install the extension in another browser.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="font-medium text-foreground">Load into {browserLabel}</p>
+                  <ol className="list-decimal list-inside space-y-1 pl-1">
+                    <li>Unzip the downloaded file somewhere you won't accidentally delete.</li>
+                    <li>Paste <code>{extensionsUrlLabel}</code> in a new tab.</li>
+                    <li>Toggle <strong>Developer mode</strong> (top-right of the extensions page).</li>
+                    <li>Click <strong>Load unpacked</strong> and pick the unzipped folder.</li>
+                    <li>Click the puzzle-piece icon in your toolbar, then pin "Zomboid Control Panel".</li>
+                  </ol>
+                </>
+              )}
+              <div className="pt-1 border-t border-border/30 mt-2">
+                <p className="font-medium text-foreground mb-1">Then, in the extension popup</p>
+                <ol className="list-decimal list-inside space-y-1 pl-1">
+                  <li>Paste the panel URL (use the button above) and your panel login.</li>
+                  <li>Click <em>Test login</em>, then make sure you're signed into <code>steamcommunity.com</code>.</li>
+                  <li>Click <em>Send Steam cookies to panel</em>. From now on it's a one-click refresh.</li>
+                </ol>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setExtensionInfoOpen((v) => !v)}
+              className="text-[11px] text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
+            >
+              {extensionInfoOpen ? 'Hide privacy & permissions' : 'Privacy & permissions'}
+            </button>
+            {extensionInfoOpen && (
+              <p className="text-[11px] text-muted-foreground">
+                The extension only talks to <code>steamcommunity.com</code> (locally, to read your <code>sessionid</code> + <code>steamLoginSecure</code> cookies) and to the panel URL you configured. Your password is <strong>not</strong> stored unless you explicitly tick "Remember password" — by default only a short-lived access token is cached.
+              </p>
+            )}
+          </div>
 
           {/* Paste helper — much faster than copying two cookies by hand */}
           <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 mt-3 space-y-3">
@@ -3955,31 +4318,181 @@ function WorkshopCollectionSyncCard({
           )}
         </div>
 
-        {/* Drift detail */}
-        {diff?.ok && (diff.toAdd.length > 0 || diff.toRemove.length > 0) && (
-          <div className="grid gap-3 sm:grid-cols-2">
-            {diff.toAdd.length > 0 && (
-              <div className="rounded-md border border-success/30 bg-success/5 p-3">
-                <p className="text-xs font-medium text-success mb-1.5">+ Add to collection ({diff.toAdd.length})</p>
-                <div className="flex flex-wrap gap-1 text-[11px] font-mono">
-                  {diff.toAdd.slice(0, 30).map(id => (
-                    <a key={id} href={`https://steamcommunity.com/sharedfiles/filedetails/?id=${id}`} target="_blank" rel="noreferrer" className="text-success/80 hover:text-success underline-offset-2 hover:underline">{id}</a>
-                  ))}
-                  {diff.toAdd.length > 30 && <span className="text-muted-foreground">+{diff.toAdd.length - 30} more…</span>}
-                </div>
+        {/* Unified mod table — every tracked + collection mod in one place,
+            filterable, with per-row actions. The user can fix drift one
+            row at a time or click "Sync now" for a one-shot bulk pass. */}
+        {diff?.ok && allItems.length > 0 && (
+          <div className="space-y-2 pt-2 border-t border-border/40">
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Filter pills */}
+              <div className="flex items-center gap-1 rounded-md border border-border/60 bg-muted/30 p-0.5 text-xs">
+                {([
+                  ['mismatch', 'Mismatch', driftCount],
+                  ['all', 'All', allItems.length],
+                  ['tracked', 'Tracked', allItems.filter(i => i.inTracked).length],
+                  ['collection', 'Collection', allItems.filter(i => i.inCollection).length],
+                ] as const).map(([key, label, count]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setItemFilter(key)}
+                    className={cn(
+                      'px-2 py-1 rounded-sm transition-colors',
+                      itemFilter === key
+                        ? 'bg-primary text-primary-foreground'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
+                    )}
+                  >
+                    {label} <span className="opacity-70">({count})</span>
+                  </button>
+                ))}
               </div>
-            )}
-            {diff.toRemove.length > 0 && (
-              <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3">
-                <p className="text-xs font-medium text-destructive mb-1.5">− Remove from collection ({diff.toRemove.length})</p>
-                <div className="flex flex-wrap gap-1 text-[11px] font-mono">
-                  {diff.toRemove.slice(0, 30).map(id => (
-                    <a key={id} href={`https://steamcommunity.com/sharedfiles/filedetails/?id=${id}`} target="_blank" rel="noreferrer" className="text-destructive/80 hover:text-destructive underline-offset-2 hover:underline">{id}</a>
-                  ))}
-                  {diff.toRemove.length > 30 && <span className="text-muted-foreground">+{diff.toRemove.length - 30} more…</span>}
-                </div>
+
+              {/* Search */}
+              <div className="relative ml-auto">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+                <Input
+                  value={itemSearch}
+                  onChange={(e) => setItemSearch(e.target.value)}
+                  placeholder="Filter by name or ID…"
+                  className="h-8 pl-7 pr-7 text-xs w-56"
+                />
+                {itemSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setItemSearch('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    aria-label="Clear search"
+                  >
+                    <XCircle className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
-            )}
+            </div>
+
+            {/* Table */}
+            <div className="rounded-md border border-border/60 overflow-hidden">
+              <div className="max-h-[420px] overflow-auto">
+                {filteredItems.length === 0 ? (
+                  <div className="px-3 py-6 text-center text-xs text-muted-foreground">
+                    {itemSearch ? 'No mods match your search.' : 'Nothing in this filter.'}
+                  </div>
+                ) : (
+                  <table className="w-full text-xs">
+                    <thead className="sticky top-0 bg-muted/80 backdrop-blur z-10">
+                      <tr className="text-left text-muted-foreground border-b border-border/50">
+                        <th className="font-medium px-3 py-2 w-[120px]">Status</th>
+                        <th className="font-medium px-3 py-2">Mod</th>
+                        <th className="font-medium px-3 py-2 w-[300px] text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredItems.map((it) => {
+                        const busy = rowBusy[it.workshopId]
+                        const statusMeta =
+                          it.status === 'synced'
+                            ? { label: 'In sync', cls: 'text-success border-success/40 bg-success/10', icon: <Check className="w-3 h-3" /> }
+                            : it.status === 'to-add'
+                              ? { label: 'Missing in collection', cls: 'text-warning border-warning/40 bg-warning/10', icon: <Plus className="w-3 h-3" /> }
+                              : { label: 'Not tracked', cls: 'text-destructive border-destructive/40 bg-destructive/10', icon: <AlertTriangle className="w-3 h-3" /> }
+                        return (
+                          <tr key={it.workshopId} className="border-b border-border/30 last:border-b-0 hover:bg-muted/30">
+                            <td className="px-3 py-2 align-top">
+                              <span className={cn('inline-flex items-center gap-1 rounded-sm border px-1.5 py-0.5 text-[10px] font-medium', statusMeta.cls)}>
+                                {statusMeta.icon}
+                                {statusMeta.label}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 align-top">
+                              <div className="flex flex-col min-w-0">
+                                <a
+                                  href={`https://steamcommunity.com/sharedfiles/filedetails/?id=${it.workshopId}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="truncate text-foreground hover:text-primary hover:underline underline-offset-2 font-medium"
+                                  title={it.name || it.workshopId}
+                                >
+                                  {it.name || <span className="font-mono text-muted-foreground">{it.workshopId}</span>}
+                                </a>
+                                <div className="flex items-center gap-2 text-[10px] text-muted-foreground/80 font-mono">
+                                  <span>{it.workshopId}</span>
+                                  <span>·</span>
+                                  <span>{it.inTracked ? 'tracked' : 'not tracked'}</span>
+                                  <span>·</span>
+                                  <span>{it.inCollection ? 'in collection' : 'not in collection'}</span>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-3 py-2 align-top">
+                              <div className="flex items-center justify-end gap-1">
+                                {/* Collection side */}
+                                {it.inCollection ? (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-7 px-2 text-[11px] text-destructive hover:text-destructive hover:bg-destructive/10"
+                                    onClick={() => runRowAction(it.workshopId, 'remove')}
+                                    disabled={!!busy || !credsConfigured}
+                                    title={!credsConfigured ? 'Need Steam cookies' : 'Remove from Steam collection'}
+                                  >
+                                    {busy === 'remove' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Minus className="w-3 h-3" />}
+                                    <span className="ml-1">From collection</span>
+                                  </Button>
+                                ) : (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-7 px-2 text-[11px] text-success hover:text-success hover:bg-success/10"
+                                    onClick={() => runRowAction(it.workshopId, 'add')}
+                                    disabled={!!busy || !credsConfigured}
+                                    title={!credsConfigured ? 'Need Steam cookies' : 'Add to Steam collection'}
+                                  >
+                                    {busy === 'add' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
+                                    <span className="ml-1">To collection</span>
+                                  </Button>
+                                )}
+                                {/* Tracked side */}
+                                {it.inTracked ? (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-7 px-2 text-[11px] text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                                    onClick={() => runRowAction(it.workshopId, 'untrack')}
+                                    disabled={!!busy}
+                                    title="Untrack locally (panel stops watching this mod)"
+                                  >
+                                    {busy === 'untrack' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bookmark className="w-3 h-3" />}
+                                    <span className="ml-1">Untrack</span>
+                                  </Button>
+                                ) : (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-7 px-2 text-[11px] text-muted-foreground hover:text-primary hover:bg-primary/10"
+                                    onClick={() => runRowAction(it.workshopId, 'track')}
+                                    disabled={!!busy}
+                                    title="Track locally (panel will watch this mod for updates)"
+                                  >
+                                    {busy === 'track' ? <Loader2 className="w-3 h-3 animate-spin" /> : <BookmarkPlus className="w-3 h-3" />}
+                                    <span className="ml-1">Track</span>
+                                  </Button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+              <div className="flex items-center justify-between px-3 py-1.5 border-t border-border/40 bg-muted/20 text-[10px] text-muted-foreground">
+                <span>{filteredItems.length} of {allItems.length} shown</span>
+                <span className="hidden sm:inline">
+                  Per-row actions apply immediately · &ldquo;Sync now&rdquo; pushes every mismatch at once
+                </span>
+              </div>
+            </div>
           </div>
         )}
       </CardContent>

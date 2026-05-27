@@ -43,6 +43,7 @@ import {
 } from 'lucide-react'
 import { ConflictScanResult, ScanStreamModScanned, ScanStreamConflictFound } from '@/types'
 import { FileDiffViewer } from '@/components/FileDiffViewer'
+import { WorkshopCollectionPanel } from '@/components/WorkshopCollectionPanel'
 import { getAccessToken } from '@/lib/authToken'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { PageHeader } from '@/components/PageHeader'
@@ -1707,7 +1708,7 @@ export default function Mods() {
             alt=""
             loading="lazy"
             decoding="async"
-            className="absolute inset-0 w-full h-full object-cover"
+            className="absolute inset-0 w-full h-full object-cover rounded-md"
             onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
           />
         </div>
@@ -2478,6 +2479,10 @@ export default function Mods() {
               <TabsTrigger value="conflicts" className="gap-2 px-3 py-1.5 text-sm font-medium" onClick={() => { if (!conflicts && !conflictsLoading) scanConflicts() }}>
                 <Shield className="w-4 h-4" />
                 Conflicts
+              </TabsTrigger>
+              <TabsTrigger value="collection" className="gap-2 px-3 py-1.5 text-sm font-medium">
+                <Library className="w-4 h-4" />
+                Collection
               </TabsTrigger>
             </TabsList>
 
@@ -5848,6 +5853,11 @@ export default function Mods() {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* ─── Collection Tab ─── */}
+          <TabsContent value="collection" className="space-y-4">
+            <WorkshopCollectionPanel />
           </TabsContent>
         </Tabs>
       </div>

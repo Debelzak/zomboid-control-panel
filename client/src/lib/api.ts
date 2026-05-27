@@ -815,11 +815,22 @@ export const modsApi = {
     inCollection: string[]
     toAdd: string[]
     toRemove: string[]
+    items: Array<{
+      workshopId: string
+      name: string | null
+      status: 'synced' | 'to-add' | 'to-remove'
+      inTracked: boolean
+      inCollection: boolean
+    }>
     collectionId: string | null
     autoSync: boolean
     hasCredentials: boolean
     trackedCount: number
   }>,
+  collectionAddItem: (workshopId: string) =>
+    apiPost('/mods/collection/items', { workshopId }) as Promise<{ ok: true; workshopId: string; action: 'add' }>,
+  collectionRemoveItem: (workshopId: string) =>
+    apiDelete(`/mods/collection/items/${workshopId}`) as Promise<{ ok: true; workshopId: string; action: 'remove' }>,
   collectionSync: () => apiPost('/mods/collection/sync', {}) as Promise<{
     success: boolean
     collectionId: string
@@ -834,6 +845,20 @@ export const modsApi = {
     title: string | null
     itemCount: number
     message: string
+  }>,
+  collectionBrowsers: () => apiGet('/mods/collection/browsers') as Promise<{
+    supported: boolean
+    platform: string
+    browsers: Array<{ id: string; label: string; family: string; detected: boolean }>
+  }>,
+  collectionExtractCookies: (browser: string) => apiPost('/mods/collection/extract-cookies', { browser }) as Promise<{
+    ok: boolean
+    browser: string
+    sessionid: string | null
+    steamLoginSecure: string | null
+    missing?: string[]
+    notes?: string[]
+    error?: string | null
   }>,
   
   // Sync mod IDs from downloaded workshop mods - reads mod.info files and updates Mods= in ini

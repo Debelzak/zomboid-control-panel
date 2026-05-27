@@ -82,6 +82,56 @@ export async function getCollectionContents(collectionId) {
 }
 
 /**
+ * Resolve human-readable titles for a list of Workshop item IDs.
+ * Uses the public ISteamRemoteStorage/GetPublishedFileDetails endpoint
+ * (no credentials). Batched in a single POST. Returns Map<id, title>.
+ *
+ * Resilient: any failure returns an empty Map rather than throwing —
+ * the UI still works (just shows raw IDs) when Steam is unreachable.
+ */
+export async function fetchPublishedFileTitles(workshopIds) {
+  const out = new Map();
+  const ids = (Array.isArray(workshopIds) ? workshopIds : [])
+    .map(String)
+    .filter(isValidWorkshopId);
+  if (ids.length === 0) return out;
+  // GetPublishedFileDetails supports many IDs per call. Be defensive and
+  // chunk at 200 to stay well under any Steam-side limit.
+  const CHUNK = 200;
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const slice = ids.slice(i, i + CHUNK);
+    try {
+      const body = new URLSearchParams();
+      body.set('itemcount', String(slice.length));
+      slice.forEach((id, idx) => body.set(`publishedfileids[${idx}]`, id));
+      const res = await fetchWithTimeout(
+        `${STEAM_API}/ISteamRemoteStorage/GetPublishedFileDetails/v1/`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'User-Agent': USER_AGENT,
+          },
+          body: body.toString(),
+        },
+      );
+      if (!res.ok) continue;
+      const json = await res.json();
+      const list = json?.response?.publishedfiledetails;
+      if (!Array.isArray(list)) continue;
+      for (const item of list) {
+        const id = item?.publishedfileid ? String(item.publishedfileid) : null;
+        const title = typeof item?.title === 'string' ? item.title.trim() : '';
+        if (id && title) out.set(id, title);
+      }
+    } catch (err) {
+      log.warn(`fetchPublishedFileTitles chunk failed: ${err.message}`);
+    }
+  }
+  return out;
+}
+
+/**
  * Build the cookie header from settings. Returns null if either piece is missing.
  */
 async function buildAuthCookies() {

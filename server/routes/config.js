@@ -166,6 +166,19 @@ router.post('/option', async (req, res) => {
 // Sensitive keys that should be masked in API responses
 const SENSITIVE_KEYS = ['rconPassword', 'discordToken', 'steamApiKey', 'steamSessionId', 'steamLoginSecure'];
 
+// Detect a value that is just the bullet-mask we send to the client.
+// If the user saves Settings without re-pasting a sensitive value, the
+// masked string would otherwise overwrite the real secret in the DB.
+// Accepts the canonical "•••...xxxx" sentinel from maskSensitiveSettings
+// as well as values that are entirely bullets / asterisks (defence in
+// depth in case the mask format changes).
+export function isMaskedSecret(value) {
+  if (typeof value !== 'string' || value.length === 0) return false;
+  if (value.startsWith('••••••••')) return true;
+  if (/^[•*\u2022\u25CF\u25CB]+$/.test(value)) return true;
+  return false;
+}
+
 function maskSensitiveSettings(settings) {
   const masked = { ...settings };
   for (const key of SENSITIVE_KEYS) {
@@ -232,7 +245,20 @@ router.put('/app-settings', async (req, res) => {
       validEntries.push([key, value]);
     }
 
-    for (const [key, value] of validEntries) {
+    // Never overwrite a stored secret with the masked sentinel we send to
+    // the client. Without this guard, clicking Save after a page reload
+    // (where the input pre-fills with •••...) would silently corrupt
+    // RCON passwords, Discord tokens, and Steam cookies. See workshop
+    // collection "cookies not configured" bug for the symptom.
+    const filtered = validEntries.filter(([key, value]) => {
+      if (SENSITIVE_KEYS.includes(key) && isMaskedSecret(value)) {
+        log.info(`Preserving stored value for sensitive key "${key}" (masked input ignored)`);
+        return false;
+      }
+      return true;
+    });
+
+    for (const [key, value] of filtered) {
       await setSetting(key, value);
     }
     

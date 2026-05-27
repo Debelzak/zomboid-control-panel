@@ -6,7 +6,7 @@ import os from 'os';
 import crypto from 'crypto';
 import { createLogger } from '../utils/logger.js';
 const log = createLogger('API:Mods');
-import { getTrackedMods, addTrackedMod, removeTrackedMod, clearModUpdates, getSetting, getActiveServer, getModPresets, createModPreset, updateModPreset, deleteModPreset, addIgnoredMod, getIgnoredMods, removeIgnoredMod, clearAllIgnoredMods, isModIgnored, getIgnoredModPairs, addIgnoredModPair, removeIgnoredModPair } from '../database/init.js';
+import { getTrackedMods, addTrackedMod, removeTrackedMod, clearModUpdates, getSetting, setSetting, getActiveServer, getModPresets, createModPreset, updateModPreset, deleteModPreset, addIgnoredMod, getIgnoredMods, removeIgnoredMod, clearAllIgnoredMods, isModIgnored, getIgnoredModPairs, addIgnoredModPair, removeIgnoredModPair } from '../database/init.js';
 import { getDataPaths } from '../utils/paths.js';
 import { sanitizeError, sanitizeIniValue, sanitizeIniList, sanitizeModIdList, looksLikeWorkshopId } from '../utils/sanitize.js';
 import {
@@ -15,7 +15,9 @@ import {
   removeItemFromCollection,
   computeDiff as computeCollectionDiff,
   syncSingleChange as autoSyncCollection,
+  fetchPublishedFileTitles,
 } from '../services/workshopCollectionSync.js';
+import { listAvailableBrowsers, extractSteamCookies } from '../utils/browserCookies.js';
 
 const router = express.Router();
 
@@ -693,15 +695,108 @@ router.get('/collection/diff', async (req, res) => {
     const tracked = await getTrackedMods();
     const ids = tracked.map((m) => String(m.workshop_id));
     const diff = await computeCollectionDiff(ids);
+
+    // Build a unified, name-enriched item list so the UI can show every
+    // tracked + collection mod in one table with per-row actions. This is
+    // best-effort: if Steam is unreachable we still return the raw IDs.
+    let items = [];
+    if (diff.ok) {
+      const trackedNames = new Map(tracked.map((m) => [String(m.workshop_id), m.name || null]));
+      const inCollection = new Set(diff.inCollection.map(String));
+      const allIds = new Set([...trackedNames.keys(), ...inCollection]);
+      // Resolve names for collection-only items (and any tracked items
+      // missing a stored name).
+      const needTitles = [...allIds].filter((id) => !trackedNames.get(id));
+      const titleMap = needTitles.length > 0 ? await fetchPublishedFileTitles(needTitles) : new Map();
+      items = [...allIds].map((id) => {
+        const inTracked = trackedNames.has(id);
+        const inColl = inCollection.has(id);
+        let status;
+        if (inTracked && inColl) status = 'synced';
+        else if (inTracked && !inColl) status = 'to-add';
+        else status = 'to-remove'; // in collection, not tracked
+        return {
+          workshopId: id,
+          name: trackedNames.get(id) || titleMap.get(id) || null,
+          status,
+          inTracked,
+          inCollection: inColl,
+        };
+      });
+      // Sort: mismatches first (to-add then to-remove), then synced.
+      const order = { 'to-add': 0, 'to-remove': 1, synced: 2 };
+      items.sort((a, b) => {
+        if (order[a.status] !== order[b.status]) return order[a.status] - order[b.status];
+        const an = (a.name || a.workshopId).toLowerCase();
+        const bn = (b.name || b.workshopId).toLowerCase();
+        return an.localeCompare(bn);
+      });
+    }
+
+    // Match the same shape buildAuthCookies() requires: real (non-masked)
+    // strings, of plausible length. Otherwise the UI would happily show
+    // "configured" while the actual write endpoints fail with "Steam
+    // session cookies not configured".
+    const sidVal = await getSetting('steamSessionId');
+    const lsVal = await getSetting('steamLoginSecure');
+    const looksMasked = (v) => typeof v === 'string' && (v.startsWith('••••••••') || /^[•*]+$/.test(v));
+    const hasCredentials =
+      typeof sidVal === 'string' && sidVal.trim().length >= 8 && !looksMasked(sidVal) &&
+      typeof lsVal === 'string' && lsVal.trim().length >= 16 && !looksMasked(lsVal);
+
     res.json({
       ...diff,
+      items,
       collectionId: await getSetting('workshopCollectionId') || null,
       autoSync: !!(await getSetting('workshopCollectionAutoSync')),
-      hasCredentials: !!((await getSetting('steamSessionId')) && (await getSetting('steamLoginSecure'))),
+      hasCredentials,
       trackedCount: ids.length,
     });
   } catch (error) {
     log.error(`Collection diff failed: ${error.message}`);
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
+// ── Per-item collection mutations ─────────────────────────────────────────
+// Used by the unified Sync UI: each row in the table has its own
+// add/remove button. Bulk sync (`/collection/sync`) is still available
+// for one-click "fix everything".
+
+router.post('/collection/items', async (req, res) => {
+  try {
+    const collectionId = await getSetting('workshopCollectionId');
+    if (!collectionId) {
+      return res.status(400).json({ error: 'Collection ID not configured' });
+    }
+    const workshopId = String(req.body?.workshopId || '').trim();
+    if (!/^\d{1,15}$/.test(workshopId)) {
+      return res.status(400).json({ error: 'Invalid workshop ID' });
+    }
+    const r = await addItemToCollection(collectionId, workshopId);
+    if (!r.ok) return res.status(502).json({ error: r.error || 'Steam rejected the change' });
+    res.json({ ok: true, workshopId, action: 'add' });
+  } catch (error) {
+    log.error(`Collection add failed: ${error.message}`);
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
+router.delete('/collection/items/:workshopId', async (req, res) => {
+  try {
+    const collectionId = await getSetting('workshopCollectionId');
+    if (!collectionId) {
+      return res.status(400).json({ error: 'Collection ID not configured' });
+    }
+    const workshopId = String(req.params.workshopId || '').trim();
+    if (!/^\d{1,15}$/.test(workshopId)) {
+      return res.status(400).json({ error: 'Invalid workshop ID' });
+    }
+    const r = await removeItemFromCollection(collectionId, workshopId);
+    if (!r.ok) return res.status(502).json({ error: r.error || 'Steam rejected the change' });
+    res.json({ ok: true, workshopId, action: 'remove' });
+  } catch (error) {
+    log.error(`Collection remove failed: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
@@ -801,6 +896,108 @@ router.post('/collection/test', async (req, res) => {
     });
   } catch (error) {
     log.error(`Collection test failed: ${error.message}`);
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
+// ─── Browser cookie auto-extraction ─────────────────────────────────────────
+// Lists browsers detected on the host machine and (optionally) extracts the
+// Steam session cookies from one of them so the user does not have to paste
+// them manually. Windows-only for now; Firefox/Chrome/Edge/Brave supported.
+
+router.get('/collection/browsers', async (req, res) => {
+  try {
+    const info = listAvailableBrowsers();
+    res.json(info);
+  } catch (error) {
+    log.error(`List browsers failed: ${error.message}`);
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
+router.post('/collection/extract-cookies', async (req, res) => {
+  try {
+    const browser = String(req.body?.browser || '').toLowerCase().trim();
+    const allowed = ['firefox', 'chrome', 'edge', 'brave'];
+    if (!allowed.includes(browser)) {
+      return res.status(400).json({ error: 'Invalid browser. Must be one of: ' + allowed.join(', ') });
+    }
+    const result = await extractSteamCookies(browser);
+    if (!result.ok) {
+      return res.status(200).json(result); // 200 with ok:false so the UI can render the message
+    }
+    res.json(result);
+  } catch (error) {
+    log.error(`Extract cookies failed: ${error.message}`);
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
+// Push endpoint used by the panel browser extension. The extension reads
+// Steam cookies via the WebExtensions `cookies` API (works regardless of
+// Chrome's App-Bound Encryption) and POSTs them here. Authentication is the
+// usual JWT — the extension logs in with the panel's normal username/password
+// first to obtain a token.
+router.post('/collection/extension-push', async (req, res) => {
+  try {
+    const sessionid = typeof req.body?.sessionid === 'string' ? req.body.sessionid.trim() : '';
+    const loginSecure = typeof req.body?.steamLoginSecure === 'string' ? req.body.steamLoginSecure.trim() : '';
+
+    if (!sessionid || !loginSecure) {
+      return res.status(400).json({ error: 'Both sessionid and steamLoginSecure are required' });
+    }
+    // Cookie values must not contain CR/LF/null/semicolon — those would break
+    // the Cookie header we build for Workshop write requests and could be
+    // used for header injection.
+    const HAS_CONTROL = /[\r\n\0;]/;
+    if (HAS_CONTROL.test(sessionid) || HAS_CONTROL.test(loginSecure)) {
+      return res.status(400).json({ error: 'Cookie values contain forbidden control characters' });
+    }
+    // Sanity-check value lengths — Steam cookies are well under 1 KB each.
+    if (sessionid.length > 4096 || loginSecure.length > 4096) {
+      return res.status(400).json({ error: 'Cookie values are unexpectedly long' });
+    }
+
+    await setSetting('steamSessionId', sessionid);
+    await setSetting('steamLoginSecure', loginSecure);
+
+    log.info(`Steam cookies updated via browser extension (user: ${req.user?.username || 'unknown'})`);
+    res.json({ ok: true, message: 'Cookies saved' });
+  } catch (error) {
+    log.error(`Extension push failed: ${error.message}`);
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
+// Serves the panel's bundled browser extension as a zip so the user can
+// install it without round-tripping to GitHub. Resolves the zip relative to
+// the panel's install directory (next to the .exe in production, project
+// root in dev).
+router.get('/collection/extension-bundle', async (req, res) => {
+  try {
+    const isPkg = typeof process.pkg !== 'undefined';
+    const baseDir = isPkg
+      ? path.dirname(process.execPath)
+      : path.resolve(process.cwd());
+    const candidates = [
+      path.join(baseDir, 'zomboid-panel-extension.zip'),
+      path.join(baseDir, 'release', 'zomboid-panel-extension.zip'),
+      path.join(baseDir, '..', 'release', 'zomboid-panel-extension.zip'),
+    ];
+    let zipPath = null;
+    for (const c of candidates) {
+      try { if (fs.existsSync(c)) { zipPath = c; break; } } catch { /* ignore */ }
+    }
+    if (!zipPath) {
+      return res.status(404).json({ error: 'Extension bundle not found next to the panel install. Re-run the panel build, or grab the zip from GitHub releases.' });
+    }
+    const stat = fs.statSync(zipPath);
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', 'attachment; filename="zomboid-panel-extension.zip"');
+    res.setHeader('Content-Length', String(stat.size));
+    fs.createReadStream(zipPath).pipe(res);
+  } catch (error) {
+    log.error(`Extension bundle serve failed: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
