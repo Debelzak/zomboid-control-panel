@@ -40,7 +40,7 @@ No existing PZ server tool covered the full workflow. Most handled one or two pa
 <td width="50%" valign="top">
 
 ### 🌧️ Events & Weather
-Force-trigger blizzards, tropical storms, or rain at any intensity. Fine-grained climate sliders for fog, wind, temperature, clouds, humidity. Target all players or specific ones. The closest thing to PZ admin god-mode.
+Force-trigger blizzards, tropical storms, or rain at any intensity. Fine-grained climate sliders for fog, wind, temperature, clouds, humidity. Spawn helicopter events or lightning strikes on demand. The closest thing to PZ admin god-mode.
 
 <img src="Screenshots/screenshot-events-v2.png" alt="Events & Weather" />
 
