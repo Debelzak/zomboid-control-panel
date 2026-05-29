@@ -114,7 +114,7 @@ const eventLabels: Record<string, { label: string; description: string; variable
   playerLeave: { label: 'Player Leave', description: 'When a player disconnects', variables: '{player}' },
   scheduledRestart: { label: 'Scheduled Restart', description: 'Before scheduled restart', variables: '{minutes}' },
   backupComplete: { label: 'Backup Complete', description: 'After backup finishes', variables: 'None' },
-  playerDeath: { label: 'Player Death', description: 'When a player dies', variables: '{player}' }
+  playerDeath: { label: 'Player Death', description: 'When a player dies', variables: '{player}, {location}, {x}, {y}, {z}, {pvp}' }
 }
 
 const SETUP_STEPS = [

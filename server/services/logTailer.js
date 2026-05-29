@@ -13,14 +13,16 @@ export class LogTailer extends EventEmitter {
     this.chatLogPath = null;   // B42 dedicated chat log file (Logs/*_chat.txt)
     this.chatLogSize = 0;
     this.currentSize = 0;
+    this.userLogPath = null;   // B42 player event log (Logs/*_user.txt) — deaths, joins, etc.
+    this.userLogSize = 0;
     this.isWatching = false;
     this.checkTimer = null;
-    this.logsDir = null;       // Path to Logs/ directory for chat log discovery
+    this.logsDir = null;       // Path to Logs/ directory for chat/user log discovery
   }
 
   async init() {
     await this.findLogPath();
-    if (this.logPath || this.chatLogPath) {
+    if (this.logPath || this.chatLogPath || this.userLogPath) {
         this.startWatching();
     }
   }
@@ -53,11 +55,12 @@ export class LogTailer extends EventEmitter {
             log.warn(`Could not find server-console.txt at ${consoleLogPath}`);
         }
 
-        // B42 dedicated chat log: Logs/*_chat.txt
+        // B42 dedicated logs: Logs/*_chat.txt + Logs/*_user.txt
         const logsDir = path.join(basePath, 'Logs');
         if (fs.existsSync(logsDir)) {
             this.logsDir = logsDir;
             this.findLatestChatLog();
+            this.findLatestUserLog();
         }
 
     } catch (e) {
@@ -96,6 +99,38 @@ export class LogTailer extends EventEmitter {
     }
   }
 
+  // Find the most recently modified *_user.txt in the Logs/ directory
+  // (PZ records player join/leave/death events here).
+  findLatestUserLog() {
+    if (!this.logsDir) return;
+    try {
+        const files = fs.readdirSync(this.logsDir)
+            .filter(f => f.endsWith('_user.txt'))
+            .map(f => {
+                const full = path.join(this.logsDir, f);
+                try { return { path: full, mtime: fs.statSync(full).mtimeMs }; }
+                catch { return null; }
+            })
+            .filter(Boolean)
+            .sort((a, b) => b.mtime - a.mtime);
+
+        if (files.length > 0) {
+            const latest = files[0].path;
+            if (latest !== this.userLogPath) {
+                this.userLogPath = latest;
+                // Start from end so we don't replay historical deaths on startup
+                try { this.userLogSize = fs.statSync(latest).size; } catch (e) {
+                    log.debug(`LogTailer: initial user log stat failed: ${e.message}`);
+                    this.userLogSize = 0;
+                }
+                log.info(`Tailing B42 user log: ${latest}`);
+            }
+        }
+    } catch (e) {
+        log.debug(`Error scanning user logs: ${e.message}`);
+    }
+  }
+
   async startWatching() {
     if (this.isWatching) return;
 
@@ -105,7 +140,7 @@ export class LogTailer extends EventEmitter {
             this.currentSize = stats.size;
         }
 
-        log.info(`Started watching (console: ${this.logPath || 'none'}, chatLog: ${this.chatLogPath || 'none'})`);
+        log.info(`Started watching (console: ${this.logPath || 'none'}, chatLog: ${this.chatLogPath || 'none'}, userLog: ${this.userLogPath || 'none'})`);
         
         this.isWatching = true;
         this.checkLoop();
@@ -129,6 +164,7 @@ export class LogTailer extends EventEmitter {
       
       await this.checkConsoleLog();
       await this.checkChatLog();
+      await this.checkUserLog();
       
       if (this.isWatching) {
           this.checkTimer = setTimeout(() => this.checkLoop(), 2000);
@@ -263,6 +299,70 @@ export class LogTailer extends EventEmitter {
                 message: alertMatch[1],
                 type: 'server',
                 timestamp: new Date()
+            });
+        }
+    }
+  }
+
+  // Tail the active B42 *_user.txt file (player join/leave/death events).
+  async checkUserLog() {
+     if (this.logsDir) {
+       const prev = this.userLogPath;
+       this.findLatestUserLog();
+       if (this.userLogPath && this.userLogPath !== prev) {
+         log.info(`LogTailer: new user log discovered: ${this.userLogPath}`);
+       }
+     }
+     if (!this.userLogPath) return;
+
+     try {
+         let stats;
+         try { stats = await fs.promises.stat(this.userLogPath); } catch (e) {
+           log.debug(`LogTailer: user log stat failed: ${e.message}`);
+           return;
+         }
+
+         if (stats.size > this.userLogSize) {
+             const bytesToRead = stats.size - this.userLogSize;
+             if (bytesToRead > 1024 * 1024) {
+                 this.userLogSize = stats.size;
+                 return;
+             }
+             const data = await this.readChunk(this.userLogPath, this.userLogSize, stats.size);
+             this.userLogSize = stats.size;
+             if (data) this.processUserLogData(data);
+         } else if (stats.size < this.userLogSize) {
+             this.userLogSize = 0;
+         }
+     } catch (e) {
+       log.debug(`LogTailer: user log polling error: ${e.message}`);
+     }
+  }
+
+  // Parse B42 user.txt lines.
+  // Death format example:
+  //   [29-05-26 17:42:08.123] user Bob died at (2384,5923,0) (non pvp).
+  //   [29-05-26 17:42:08.123] user Bob died at (2384,5923,0) (pvp).
+  // Username may contain spaces; we anchor on the " died at " marker.
+  processUserLogData(data) {
+    const lines = data.split(/\r?\n/);
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+
+        const deathMatch = trimmed.match(/user\s+(.+?)\s+died at\s+\((-?\d+),(-?\d+),(-?\d+)\)\s*(?:\((non\s*pvp|pvp)\))?/i);
+        if (deathMatch) {
+            const player = deathMatch[1];
+            const x = parseInt(deathMatch[2], 10);
+            const y = parseInt(deathMatch[3], 10);
+            const z = parseInt(deathMatch[4], 10);
+            const pvp = (deathMatch[5] || '').toLowerCase() === 'pvp';
+            this.emit('playerDeath', {
+                player,
+                x, y, z,
+                pvp,
+                location: `${x},${y},${z}`,
+                timestamp: new Date(),
             });
         }
     }

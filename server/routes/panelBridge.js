@@ -1918,10 +1918,10 @@ router.post('/zombies/clear-all', async (req, res) => {
   try {
     log.info('Clearing all zombies');
     const result = await bridge.sendCommand('clearAllZombies', {});
-    log.info('Clear all zombies result: %o', result);
+    log.info(`Clear all zombies result: ${JSON.stringify(result)}`);
     res.json(result);
   } catch (error) {
-    log.warn('Clear all zombies failed: %s', error.message);
+    log.warn(`Clear all zombies failed: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
@@ -1937,12 +1937,12 @@ router.post('/zombies/spawn-near', async (req, res) => {
   }
   const safeCount = Math.min(Math.max(Math.floor(Number(count) || 50), 1), 500);
   try {
-    log.info('Spawning horde near player: %s (count: %d)', username, safeCount);
+    log.info(`Spawning horde near player: ${username} (count: ${safeCount})`);
     const result = await bridge.sendCommand('spawnHordeNearPlayer', { username, count: safeCount });
-    log.info('Spawn horde near result: %o', result);
+    log.info(`Spawn horde near result: ${JSON.stringify(result)}`);
     res.json(result);
   } catch (error) {
-    log.warn('Spawn horde near failed: %s', error.message);
+    log.warn(`Spawn horde near failed: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
@@ -1958,12 +1958,12 @@ router.post('/zombies/spawn-behind', async (req, res) => {
   }
   const safeCount = Math.min(Math.max(Math.floor(Number(count) || 50), 1), 500);
   try {
-    log.info('Spawning horde behind player: %s (count: %d)', username, safeCount);
+    log.info(`Spawning horde behind player: ${username} (count: ${safeCount})`);
     const result = await bridge.sendCommand('spawnHordeBehindPlayer', { username, count: safeCount });
-    log.info('Spawn horde behind result: %o', result);
+    log.info(`Spawn horde behind result: ${JSON.stringify(result)}`);
     res.json(result);
   } catch (error) {
-    log.warn('Spawn horde behind failed: %s', error.message);
+    log.warn(`Spawn horde behind failed: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });
   }
 });

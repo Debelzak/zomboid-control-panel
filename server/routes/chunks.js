@@ -1512,20 +1512,21 @@ async function getDirSize(dirPath) {
   try {
     const files = await fs.promises.readdir(dirPath, { withFileTypes: true });
     
-    for (const file of files) {
+    const promises = files.map(async (file) => {
       const filePath = path.join(dirPath, file.name);
       if (file.isDirectory()) {
-         totalSize += await getDirSize(filePath);
+        return getDirSize(filePath);
       } else {
-         // Optimization: We could just ignore stat failures
-         try {
-           const stats = await fs.promises.stat(filePath);
-           totalSize += stats.size;
-         } catch (e) {
-           // Stat failure for individual file in size calculation
-         }
+        try {
+          const stats = await fs.promises.stat(filePath);
+          return stats.size;
+        } catch (e) {
+          return 0;
+        }
       }
-    }
+    });
+    const sizes = await Promise.all(promises);
+    totalSize = sizes.reduce((a, b) => a + b, 0);
   } catch (err) {
     if (err.code !== 'EACCES' && err.code !== 'ENOENT') log.debug(`getDirSize error for ${dirPath}: ${err.message}`);
   }
@@ -1533,16 +1534,22 @@ async function getDirSize(dirPath) {
 }
 
 // Count files recursively (handles B42's subdirectory structure)
+// Uses parallel I/O for speed on large saves with many chunk directories.
 async function countFiles(dirPath) {
   let count = 0;
   try {
     const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
+    const subdirPromises = [];
     for (const entry of entries) {
       if (entry.isDirectory()) {
-        count += await countFiles(path.join(dirPath, entry.name));
+        subdirPromises.push(countFiles(path.join(dirPath, entry.name)));
       } else {
         count++;
       }
+    }
+    if (subdirPromises.length > 0) {
+      const subCounts = await Promise.all(subdirPromises);
+      count += subCounts.reduce((a, b) => a + b, 0);
     }
   } catch (err) {
     if (err.code !== 'EACCES' && err.code !== 'ENOENT') log.debug(`countFiles error for ${dirPath}: ${err.message}`);

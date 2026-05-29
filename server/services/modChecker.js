@@ -20,6 +20,12 @@ export class ModChecker extends EventEmitter {
     this.serverManager = null;  // Will be set by init()
     this.io = null;  // Socket.io instance for emitting events
     this.workshopAcfPath = null;  // Path to appworkshop_108600.acf
+
+    // Track the last reported set of mods needing updates so we don't
+    // re-emit the same news on every 5-minute poll. Without this, a stale
+    // backlog of 3 mods quietly logs ~288 duplicate events per day and
+    // floods socket clients with redundant `mods:updates_available` blasts.
+    this._lastReportedUpdateKey = '';
     
     // Advanced options
     this.restartWarningMinutes = 5;  // Minutes to warn before restart
@@ -991,14 +997,28 @@ export class ModChecker extends EventEmitter {
       }
 
       if (updatedMods.length > 0) {
-        log.info(`${updatedMods.length} mod(s) have updates available`);
-        await logServerEvent('mod_update_detected', JSON.stringify(updatedMods.map(m => m.name)));
-        
-        if (this.io) {
-          this.io.emit('mods:updates_available', { 
-            count: updatedMods.length,
-            mods: updatedMods 
-          });
+        // Build a stable key from the current set of needs-update mods so we
+        // can dedupe across polls. Key = sorted (workshopId, latestTimestamp)
+        // pairs — so a NEWER update to the same mod still re-fires.
+        const updateKey = updatedMods
+          .map(m => `${m.workshopId}@${m.latestTimestamp?.getTime?.() || 0}`)
+          .sort()
+          .join(',');
+        const isNewReport = updateKey !== this._lastReportedUpdateKey;
+        this._lastReportedUpdateKey = updateKey;
+
+        if (isNewReport) {
+          log.info(`${updatedMods.length} mod(s) have updates available`);
+          await logServerEvent('mod_update_detected', JSON.stringify(updatedMods.map(m => m.name)));
+
+          if (this.io) {
+            this.io.emit('mods:updates_available', {
+              count: updatedMods.length,
+              mods: updatedMods
+            });
+          }
+        } else {
+          log.debug(`${updatedMods.length} mod(s) still need updates (unchanged set, skipping re-notify)`);
         }
         
         // Filter out mods whose exact steam timestamp was already processed (dedup)
@@ -1050,6 +1070,10 @@ export class ModChecker extends EventEmitter {
           log.debug('Restart already pending, skipping callback');
         }
       } else {
+        // Set is empty — clear the dedupe key so the next non-empty set
+        // re-fires the notification (e.g. user updated mods, then a new
+        // update appears later).
+        if (this._lastReportedUpdateKey !== '') this._lastReportedUpdateKey = '';
         log.debug('No mod updates available');
       }
 

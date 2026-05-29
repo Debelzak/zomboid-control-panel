@@ -5520,14 +5520,25 @@ local function findVehicleById(vehicleId)
 end
 
 handlers.getVehiclesDetailed = function(args)
-    local vehicles = getVehiclesList()
+    -- Wrap the list lookup itself: getVehiclesList() / vehicles:size() can
+    -- throw java.lang.RuntimeException on some modded servers (broken Ki5
+    -- vehicles, missing scripts, etc.) BEFORE the per-vehicle pcall below
+    -- gets a chance to fire. Without this outer guard, the entire handler
+    -- crashes and the panel loses all vehicle visibility.
+    local listOk, vehicles = pcall(getVehiclesList)
+    if not listOk then
+        return false, nil, "Vehicle list lookup failed: " .. tostring(vehicles)
+    end
     if not vehicles then
         return false, nil, "Vehicle list not available"
     end
 
     local out = {}
     local skipped = 0
-    local size = vehicles.size and vehicles:size() or 0
+    local sizeOk, size = pcall(function() return vehicles.size and vehicles:size() or 0 end)
+    if not sizeOk then
+        return false, nil, "Vehicle list size lookup failed: " .. tostring(size)
+    end
     for i = 0, size - 1 do
         -- Wrap each vehicle individually: a single broken modded vehicle
         -- (e.g. Ki5 cars whose getters throw java.lang.RuntimeException)

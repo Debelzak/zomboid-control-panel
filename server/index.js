@@ -16,7 +16,7 @@ import cookieParser from 'cookie-parser';
 
 import { onLog, createLogger, logSection, logBanner, logReady } from './utils/logger.js';
 const log = createLogger('Panel');
-import { initDatabase, getActiveServer, getAllSettings, getSetting, setSetting, flushWrites, recordPerformanceSnapshot } from './database/init.js';
+import { initDatabase, getActiveServer, getAllSettings, getSetting, setSetting, flushWrites, recordPerformanceSnapshot, logServerEvent } from './database/init.js';
 import { RconService } from './services/rcon.js';
 import { ServerManager } from './services/serverManager.js';
 import { ModChecker } from './services/modChecker.js';
@@ -735,13 +735,23 @@ rconService.on('connected', async () => {
   await tryStartPanelBridge('rcon-connected');
 });
 
-rconService.on('disconnected', () => {
-  // Optionally stop the bridge when RCON disconnects (server stopped)
-  // Uncomment if you want bridge to stop when server stops:
-  // if (panelBridge.isRunning) {
-  //   panelBridge.stop();
-  //   log.info('[PanelBridge] Stopped due to RCON disconnect');
-  // }
+rconService.on('disconnected', async () => {
+  // When RCON disconnects, check if server actually stopped
+  // This gives faster detection than the 10s watchdog interval
+  setTimeout(async () => {
+    try {
+      const running = await serverManager.checkServerRunning();
+      if (!running && lastKnownRunning !== false) {
+        lastKnownRunning = false;
+        log.info('RCON disconnected and server process gone — emitting stopped status');
+        io.emit('server:status', { running: false });
+        await logServerEvent('server_stop', 'Server process exited (detected after RCON disconnect)');
+        discordBot.sendEventNotification('serverStop', {}).catch(err => log.debug(`Discord serverStop notification failed: ${err.message}`));
+      }
+    } catch (err) {
+      log.debug(`Post-RCON-disconnect check failed: ${err.message}`);
+    }
+  }, 3000); // wait 3s for process to fully exit
 });
 
 // Emit PanelBridge status changes to connected clients via Socket.IO
@@ -1444,6 +1454,45 @@ function stopPerfPolling() {
   }
 }
 
+// ============================================
+// Server status watchdog — detects unexpected exits
+// ============================================
+let statusWatchdogInterval = null;
+let lastKnownRunning = null;
+
+function startStatusWatchdog() {
+  if (statusWatchdogInterval) clearInterval(statusWatchdogInterval);
+
+  statusWatchdogInterval = setInterval(async () => {
+    try {
+      const running = await serverManager.checkServerRunning();
+      if (lastKnownRunning !== null && running !== lastKnownRunning) {
+        log.info(`Status watchdog: server state changed → ${running ? 'running' : 'stopped'}`);
+        io.emit('server:status', { running });
+        if (!running) {
+          logServerEvent('server_stop', 'Server process exited (detected by watchdog)');
+          discordBot.sendEventNotification('serverStop', {}).catch(err => log.debug(`Discord serverStop notification failed: ${err.message}`));
+        } else {
+          discordBot.sendEventNotification('serverStart', {}).catch(err => log.debug(`Discord serverStart notification failed: ${err.message}`));
+        }
+      }
+      lastKnownRunning = running;
+    } catch (err) {
+      log.debug(`Status watchdog error: ${err.message}`);
+    }
+  }, 10000); // check every 10 seconds
+
+  if (statusWatchdogInterval.unref) statusWatchdogInterval.unref();
+  log.info('Server status watchdog started (10s interval)');
+}
+
+function stopStatusWatchdog() {
+  if (statusWatchdogInterval) {
+    clearInterval(statusWatchdogInterval);
+    statusWatchdogInterval = null;
+  }
+}
+
 // Initialize and start server
 async function start() {
   try {
@@ -1453,6 +1502,24 @@ async function start() {
       panelVersion = typeof PANEL_VERSION !== 'undefined' ? PANEL_VERSION : JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf-8')).version;
     } catch { panelVersion = '0.0.0'; }
     logBanner(panelVersion);
+
+    // ── Single-instance lock ──
+    // Prevents two panels racing on the same data folder, which causes
+    // EADDRINUSE restart loops (systemd respawn vs. live process) and
+    // db.json rename races.
+    try {
+      const { acquireLock } = await import('./utils/pidLock.js');
+      const { getDataPaths } = await import('./utils/paths.js');
+      const { dataDir } = getDataPaths();
+      const lockResult = acquireLock(dataDir);
+      if (!lockResult.acquired) {
+        log.error(`Refusing to start: ${lockResult.reason}.`);
+        log.error(`If you're sure no other panel is running, delete ${lockResult.lockPath} and try again.`);
+        process.exit(1);
+      }
+    } catch (err) {
+      log.warn(`Lock check skipped: ${err.message}`);
+    }
 
     // ── Database ──
     logSection('Database');
@@ -1546,6 +1613,27 @@ async function start() {
             message: data.message,
             timestamp: data.timestamp
         });
+    });
+
+    // Player death events parsed from B42 user.txt — forward to Discord
+    // and persist as a player action so it shows up in player history.
+    logTailer.on('playerDeath', async (data) => {
+        try {
+            const { logPlayerAction } = await import('./database/init.js');
+            logPlayerAction(data.player, 'death', `${data.pvp ? 'PvP' : 'non-pvp'} death at (${data.location})`)
+                .catch(err => log.debug(`Failed to log player death: ${err.message}`));
+        } catch (err) {
+            log.debug(`playerDeath DB log failed: ${err.message}`);
+        }
+        discordBot.sendEventNotification('playerDeath', {
+            player: data.player,
+            x: String(data.x),
+            y: String(data.y),
+            z: String(data.z),
+            location: data.location,
+            pvp: data.pvp ? 'PvP' : 'non-pvp',
+        }).catch(err => log.debug(`Discord playerDeath notification failed: ${err.message}`));
+        io.emit('player:death', data);
     });
     
     // Initialize scheduler first (needed by modChecker for auto-restart)
@@ -1734,6 +1822,9 @@ async function start() {
     
     // Start performance snapshot polling (host + PZ server stats)
     startPerfPolling();
+
+    // Start status watchdog (detects unexpected server exits)
+    startStatusWatchdog();
     
     // Start update checker for server updates
     updateChecker.start();
@@ -1896,7 +1987,9 @@ async function start() {
         log.warn(`Port ${PORT} busy, retrying in ${delay}ms (attempt ${listenRetries}/${maxListenRetries})...`);
         setTimeout(listenWithRetry, delay);
       } else if (err.code === 'EADDRINUSE') {
-        log.error(`Port ${PORT} is still in use after ${maxListenRetries} retries. Kill the other process or change PORT.`);
+        log.error(`Port ${PORT} is in use by another process (not a panel — the single-instance lock would have caught that).`);
+        log.error(`Find the offender with: ${process.platform === 'win32' ? `netstat -ano | findstr :${PORT}` : `ss -tlnp | grep :${PORT}  (or: lsof -i :${PORT})`}`);
+        log.error(`Then either kill it, or set PORT to a free port in Settings / env var.`);
         process.exit(1);
       } else {
         log.error(`Server error: ${err.message}`);

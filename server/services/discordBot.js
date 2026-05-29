@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes, EmbedBuilder, PermissionFlagsBits } from 'discord.js';
+import { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes, EmbedBuilder, PermissionFlagsBits, escapeMarkdown } from 'discord.js';
 import { createLogger } from '../utils/logger.js';
 const log = createLogger('Discord');
 import { getSetting, setSetting } from '../database/init.js';
@@ -35,30 +35,53 @@ export class DiscordBot {
     this.commandPermissions = { ...DEFAULT_COMMAND_PERMISSIONS };
     this.chatRelayEnabled = true;
     this.chatRelayChannelId = null; // null = use main channelId
-    
+
+    // Notification circuit breaker — avoids log/network spam when Discord
+    // is unreachable (DNS failures, transient outages). After N consecutive
+    // failures we open the circuit for COOLDOWN_MS and drop sends silently.
+    this._notifyFailures = 0;
+    this._notifyCircuitUntil = 0;
+    this._notifySuppressedCount = 0;
+
+    // Lifecycle dedupe — serverStart/serverStop webhooks can be triggered
+    // from several paths (HTTP /start /stop /force-stop, Discord slash
+    // commands, the status watchdog, RCON-disconnect detection). Track the
+    // last fired state so we send exactly one webhook per real transition.
+    this._lastLifecycleState = null; // 'running' | 'stopped' | null
+
+    // Serialise registerCommands() — it can be invoked from start() and
+    // from updateCommandPermissions() at roughly the same time on a fresh
+    // boot; without a lock the two REST.put() calls race and either set
+    // can win, leaving Discord in an inconsistent state.
+    this._registerInFlight = null;
+
+    // Remember the last guildId we registered commands for so that
+    // changing guilds via updateConfig() can clean up the OLD guild's
+    // commands instead of leaving them ghosted forever.
+    this._registeredGuildId = null;
+
+    // Hold onto the chatMessage listener as a bound reference so we can
+    // off() it during stop(). An inline arrow would be anonymous and leak.
+    this._onGameChat = null;
+
     // Setup Chat Bridge listener
     if (this.logTailer) {
-        this.logTailer.on('chatMessage', (data) => this.handleGameChat(data));
+        this._onGameChat = (data) => this.handleGameChat(data);
+        this.logTailer.on('chatMessage', this._onGameChat);
     }
   }
 
   async handleGameChat(data) {
       if (!this.chatRelayEnabled || !this.isRunning || !this.client) return;
-      
+
       // Use dedicated chat relay channel if set, otherwise fall back to main channel
       const targetChannelId = this.chatRelayChannelId || this.channelId;
       if (!targetChannelId) return;
       log.debug(`Relaying game chat from ${data?.author || 'unknown'} to Discord`);
-      
-      try {
-          const channel = await this.client.channels.fetch(targetChannelId);
-          if (channel && channel.isTextBased()) {
-              const cleanMessage = data.message.replace(/@everyone/g, '(everyone)').replace(/@here/g, '(here)');
-              await channel.send(`**<${data.author}>** ${cleanMessage}`);
-          }
-      } catch (e) {
-          log.warn(`Failed to bridge chat: ${e.message}`);
-      }
+
+      const cleanMessage = String(data.message || '').replace(/@everyone/g, '(everyone)').replace(/@here/g, '(here)');
+      const cleanAuthor = String(data.author || 'unknown').replace(/[\r\n]+/g, ' ').slice(0, 80);
+      await this._sendToChannel(targetChannelId, `**<${cleanAuthor}>** ${cleanMessage}`, { label: 'game chat relay' });
   }
 
   async loadConfig() {
@@ -87,11 +110,17 @@ export class DiscordBot {
 
     // Load webhook events
     const savedEvents = await getSetting('discordWebhookEvents');
+    this.webhookEvents = {};
     if (savedEvents) {
       try {
-        this.webhookEvents = typeof savedEvents === 'string' ? JSON.parse(savedEvents) : savedEvents;
+        const parsed = typeof savedEvents === 'string' ? JSON.parse(savedEvents) : savedEvents;
+        // Guard against `null` (valid JSON) and non-object payloads — otherwise
+        // `this.webhookEvents[eventType]` later would throw a TypeError.
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          this.webhookEvents = parsed;
+        }
       } catch (e) {
-        this.webhookEvents = {};
+        log.warn(`Failed to parse saved webhookEvents: ${e.message}`);
       }
     }
   }
@@ -103,19 +132,53 @@ export class DiscordBot {
 
   async sendEventNotification(eventType, variables = {}) {
     if (!this.isRunning || !this.channelId) return;
-    
-    const event = this.webhookEvents[eventType];
-    if (!event || !event.enabled) return;
-    
-    let message = event.template;
-    for (const [key, value] of Object.entries(variables)) {
-      message = message.replace(new RegExp(`\\{${key}\\}`, 'g'), value);
+
+    // Dedupe lifecycle transitions — these events can fire from multiple
+    // code paths for the same real state change (HTTP route + watchdog +
+    // RCON-disconnect handler all observe the same stop, etc.).
+    const isLifecycle = (eventType === 'serverStart' || eventType === 'serverStop');
+    let newState = null;
+    if (isLifecycle) {
+      newState = eventType === 'serverStart' ? 'running' : 'stopped';
+      if (this._lastLifecycleState === newState) {
+        return; // already notified for this transition
+      }
     }
-    
+
+    const event = this.webhookEvents[eventType];
+    if (!event || !event.enabled || typeof event.template !== 'string') {
+      // Update dedupe state even when the event is disabled — otherwise
+      // enabling the event later would replay the historical transition.
+      if (isLifecycle) this._lastLifecycleState = newState;
+      return;
+    }
+
+    // Single-pass substitution: builds one regex over all known variable
+    // names and uses a callback so that:
+    //   - values containing $1, $&, etc. are NOT interpreted as regex backrefs
+    //   - replacement order doesn't matter (no risk of {player} clobbering
+    //     the start of {playerCount})
+    //   - undefined/null/object values render as empty string
+    let message = event.template;
+    const keys = Object.keys(variables || {});
+    if (keys.length > 0) {
+      const escaped = keys.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+      const re = new RegExp(`\\{(${escaped.join('|')})\\}`, 'g');
+      message = message.replace(re, (_, k) => {
+        const v = variables[k];
+        if (v === undefined || v === null) return '';
+        return typeof v === 'string' ? v : String(v);
+      });
+    }
+
      // Prevent @everyone / @here Discord pings triggered by player-supplied variable values
      message = message.replace(/@everyone/g, '(everyone)').replace(/@here/g, '(here)');
 
-    await this.sendNotification(message);
+    const sent = await this.sendNotification(message);
+    // Only commit lifecycle dedupe state on a successful send. If the send
+    // failed (circuit open, missing perms, channel deleted), keep the old
+    // state so the next attempt isn't suppressed.
+    if (isLifecycle && sent) this._lastLifecycleState = newState;
   }
 
   async updateConfig(token, guildId, adminRoleId, channelId, modRoleId) {
@@ -124,12 +187,30 @@ export class DiscordBot {
     await setSetting('discordAdminRoleId', adminRoleId);
     await setSetting('discordModRoleId', modRoleId || '');
     await setSetting('discordChannelId', channelId || '');
-    
+
+    const previousGuildId = this.guildId;
     this.token = token;
     this.guildId = guildId;
     this.adminRoleId = adminRoleId;
     this.modRoleId = modRoleId || null;
     this.channelId = channelId;
+
+    // If we changed guilds and the bot is currently running, clean up the
+    // old guild's command list — otherwise the old guild keeps showing
+    // ghost slash commands forever.
+    if (this.isRunning && this.client?.user && previousGuildId && previousGuildId !== guildId) {
+      try {
+        const rest = new REST({ version: '10' }).setToken(this.token);
+        await rest.put(
+          Routes.applicationGuildCommands(this.client.user.id, previousGuildId),
+          { body: [] }
+        );
+        log.info(`Cleared slash commands from previous guild ${previousGuildId}`);
+      } catch (e) {
+        log.warn(`Failed to clear commands from previous guild ${previousGuildId}: ${e.message}`);
+      }
+      this._registeredGuildId = null;
+    }
   }
 
   async updateChatRelay(enabled, channelId) {
@@ -249,20 +330,35 @@ export class DiscordBot {
       throw new Error('Discord client not ready');
     }
 
+    // Serialise concurrent registrations — a fresh boot can hit this via
+    // both start() and updateCommandPermissions() within the same tick.
+    if (this._registerInFlight) {
+      return this._registerInFlight;
+    }
+
+    const targetGuildId = this.guildId;
+    const targetUserId = this.client.user.id;
     const rest = new REST({ version: '10' }).setToken(this.token);
     const commands = this.getCommands().map(cmd => cmd.toJSON());
 
-    try {
-      log.info('Registering Discord slash commands...');
-      await rest.put(
-        Routes.applicationGuildCommands(this.client.user.id, this.guildId),
-        { body: commands }
-      );
-      log.info(`Registered ${commands.length} Discord commands`);
-    } catch (error) {
-      log.error(`Failed to register Discord commands: ${error.stack || error.message}`);
-      throw error;
-    }
+    this._registerInFlight = (async () => {
+      try {
+        log.info('Registering Discord slash commands...');
+        await rest.put(
+          Routes.applicationGuildCommands(targetUserId, targetGuildId),
+          { body: commands }
+        );
+        this._registeredGuildId = targetGuildId;
+        log.info(`Registered ${commands.length} Discord commands`);
+      } catch (error) {
+        log.error(`Failed to register Discord commands: ${error.stack || error.message}`);
+        throw error;
+      } finally {
+        this._registerInFlight = null;
+      }
+    })();
+
+    return this._registerInFlight;
   }
 
   hasRole(interaction, roleId) {
@@ -413,29 +509,56 @@ export class DiscordBot {
 
   async handlePlayers(interaction) {
     await interaction.deferReply();
-    
+
     const isRunning = await this.serverManager.checkServerRunning();
     if (!isRunning) {
       await interaction.editReply('🔴 Server is offline');
       return;
     }
-    
+
+    if (!this.rconService?.connected) {
+      await interaction.editReply('❌ RCON is not connected — cannot list players.');
+      return;
+    }
+
     const result = await this.rconService.getPlayers();
-    
+
     if (!result.success) {
-      await interaction.editReply(`❌ Failed to get players: ${result.error}`);
+      await interaction.editReply(`❌ Failed to get players: ${sanitizeError(result.error)}`);
       return;
     }
     
     const players = result.players || [];
-    
+
+    // Discord embed description is hard-capped at 4096 chars. Build the
+    // list incrementally and stop just shy of the cap, appending a
+    // truncation footer instead of crashing the editReply call.
+    const MAX_DESC = 4000; // leave room for the truncation suffix
+    let description;
+    if (players.length === 0) {
+      description = 'No players online';
+    } else {
+      const lines = [];
+      let total = 0;
+      let truncated = 0;
+      for (let i = 0; i < players.length; i++) {
+        const p = players[i];
+        const line = `• ${escapeMarkdown(String(typeof p === 'object' ? (p.name ?? '') : p))}`;
+        if (total + line.length + 1 > MAX_DESC) {
+          truncated = players.length - i;
+          break;
+        }
+        lines.push(line);
+        total += line.length + 1;
+      }
+      if (truncated > 0) lines.push(`… and ${truncated} more`);
+      description = lines.join('\n');
+    }
+
     const embed = new EmbedBuilder()
       .setTitle('👥 Online Players')
       .setColor(0x3498db)
-      .setDescription(players.length > 0 
-        ? players.map(p => `• ${typeof p === 'object' ? p.name : p}`).join('\n')
-        : 'No players online'
-      )
+      .setDescription(description)
       .setFooter({ text: `${players.length} player(s)` })
       .setTimestamp();
     
@@ -444,56 +567,69 @@ export class DiscordBot {
 
   async handleStart(interaction) {
     await interaction.deferReply();
-    
+
     const isRunning = await this.serverManager.checkServerRunning();
     if (isRunning) {
       await interaction.editReply('⚠️ Server is already running');
       return;
     }
-    
+
     await this.serverManager.startServer();
     await interaction.editReply('🚀 Server is starting...');
-    
+
     // Send notification to channel
-    await this.sendNotification(`🚀 **Server started** by ${interaction.user.tag}`);
+    const safeTag = escapeMarkdown(String(interaction.user.tag));
+    await this.sendNotification(`🚀 **Server started** by ${safeTag}`);
   }
 
   async handleStop(interaction) {
     await interaction.deferReply();
-    
+
     const isRunning = await this.serverManager.checkServerRunning();
     if (!isRunning) {
       await interaction.editReply('⚠️ Server is not running');
       return;
     }
-    
+
+    if (!this.rconService?.connected) {
+      await interaction.editReply('❌ RCON is not connected — cannot gracefully stop the server. Use the panel UI to force-stop if needed.');
+      return;
+    }
+
     // Save first
     await this.rconService.save();
     await this.rconService.quit();
-    
+
     await interaction.editReply('🛑 Server is stopping...');
-    await this.sendNotification(`🛑 **Server stopped** by ${interaction.user.tag}`);
+    const safeTag = escapeMarkdown(String(interaction.user.tag));
+    await this.sendNotification(`🛑 **Server stopped** by ${safeTag}`);
   }
 
   async handleRestart(interaction) {
     await interaction.deferReply();
-    
+
     const minutes = interaction.options.getInteger('minutes') ?? 5;
-    
+
     const isRunning = await this.serverManager.checkServerRunning();
     if (!isRunning) {
       await interaction.editReply('⚠️ Server is not running. Use /start to start the server.');
       return;
     }
-    
+
+    if (!this.rconService?.connected) {
+      await interaction.editReply('❌ RCON is not connected — cannot send the restart warning. Try again once RCON reconnects.');
+      return;
+    }
+
     // Send initial message
     if (minutes > 0) {
       await this.rconService.serverMessage(`Server restarting in ${minutes} minute(s)!`);
     }
-    
+
     await interaction.editReply(`🔄 Server restart initiated (${minutes} min warning)`);
-    await this.sendNotification(`🔄 **Server restart** initiated by ${interaction.user.tag}`);
-    
+    const safeTag = escapeMarkdown(String(interaction.user.tag));
+    await this.sendNotification(`🔄 **Server restart** initiated by ${safeTag}`);
+
     // Use scheduler for proper restart with the specified warning time
     try {
       await this.scheduler.performRestart(minutes);
@@ -505,81 +641,178 @@ export class DiscordBot {
 
   async handleSave(interaction) {
     await interaction.deferReply();
-    
+
+    if (!this.rconService?.connected) {
+      await interaction.editReply('❌ RCON is not connected — cannot save.');
+      return;
+    }
+
     const result = await this.rconService.save();
-    
+
     if (result.success) {
       await interaction.editReply('💾 World saved successfully');
     } else {
-      await interaction.editReply(`❌ Save failed: ${result.error}`);
+      await interaction.editReply(`❌ Save failed: ${sanitizeError(result.error)}`);
     }
   }
 
   async handleBroadcast(interaction) {
     const message = interaction.options.getString('message');
-    
+
     await interaction.deferReply();
-    
-    const result = await this.rconService.serverMessage(message);
-    
+
+    if (!this.rconService?.connected) {
+      await interaction.editReply('❌ RCON is not connected — cannot broadcast.');
+      return;
+    }
+
+    // Cap at 200 chars — PZ chat UI gets cluttered with very long messages
+    // and overlong RCON payloads can stall the server briefly.
+    const safeMessage = String(message).replace(/[\r\n]+/g, ' ').slice(0, 200);
+
+    const result = await this.rconService.serverMessage(safeMessage);
+
     if (result.success) {
-      await interaction.editReply(`📢 Broadcast sent: "${message}"`);
+      await interaction.editReply(`📢 Broadcast sent: "${escapeMarkdown(safeMessage)}"`);
     } else {
-      await interaction.editReply(`❌ Broadcast failed: ${result.error}`);
+      await interaction.editReply(`❌ Broadcast failed: ${sanitizeError(result.error)}`);
     }
   }
 
   async handleKick(interaction) {
     const player = interaction.options.getString('player');
     const reason = interaction.options.getString('reason') || 'No reason given';
-    
+
     await interaction.deferReply();
-    
+
+    if (!this.rconService?.connected) {
+      await interaction.editReply('❌ RCON is not connected — cannot kick.');
+      return;
+    }
+
     // Sanitize inputs to prevent command injection
     const safePlayer = this.rconService.sanitize(player);
+    if (!safePlayer) {
+      await interaction.editReply('❌ Invalid player name.');
+      return;
+    }
     // Project Zomboid RCON only supports 'kickuser' and no reason flag
     const result = await this.rconService.execute(`kickuser "${safePlayer}"`);
-    
+
     if (result.success) {
-      await interaction.editReply(`👢 Kicked ${player}: ${reason}`);
-      await this.sendNotification(`👢 **${player}** was kicked by ${interaction.user.tag}\nReason: ${reason}`);
+      const safeName = escapeMarkdown(String(player));
+      const safeTag = escapeMarkdown(String(interaction.user.tag));
+      const safeReason = escapeMarkdown(String(reason));
+      await interaction.editReply(`👢 Kicked ${safeName}: ${safeReason}`);
+      await this.sendNotification(`👢 **${safeName}** was kicked by ${safeTag}\nReason: ${safeReason}`);
     } else {
-      await interaction.editReply(`❌ Kick failed: ${result.error}`);
+      await interaction.editReply(`❌ Kick failed: ${sanitizeError(result.error)}`);
     }
   }
 
   async handleRcon(interaction) {
     const command = interaction.options.getString('command');
-    
+
     await interaction.deferReply({ ephemeral: true });
-    
-    // Basic sanitization - remove potential injection characters
-    const safeCommand = this.rconService.sanitize(command);
+
+    if (!this.rconService?.connected) {
+      await interaction.editReply('❌ RCON is not connected.');
+      return;
+    }
+
+    // Cap RCON commands at 500 chars — anything longer is almost certainly
+    // accidental (copy-paste) and risks tripping rcon-srcds packet limits.
+    const trimmed = String(command).slice(0, 500);
+    const safeCommand = this.rconService.sanitize(trimmed);
+    if (!safeCommand) {
+      await interaction.editReply('❌ Empty or invalid command.');
+      return;
+    }
     const result = await this.rconService.execute(safeCommand);
-    
-    const response = result.success 
-      ? `✅ **Response:**\n\`\`\`${result.response || 'No response'}\`\`\``
-      : `❌ **Error:** ${result.error}`;
-    
+
+    // Discord message bodies cap at 2000 chars; trim response to keep room
+    // for the code-fence wrapper. Strip ``` from the response — leaving them
+     // in would break the surrounding triple-backtick code fence.
+     const rawResponse = String(result.response || 'No response').replace(/`{3,}/g, '\u02cb\u02cb\u02cb').slice(0, 1800);
+    const response = result.success
+      ? `✅ **Response:**\n\`\`\`${rawResponse}\`\`\``
+      : `❌ **Error:** ${sanitizeError(result.error)}`;
+
     await interaction.editReply(response);
   }
 
   async sendNotification(message) {
-    if (!this.channelId || !this.client) return;
+    if (!this.channelId || !this.client) return false;
     log.info(`Sending Discord notification: ${String(message).substring(0, 80)}`);
-    
+    return await this._sendToChannel(this.channelId, message, { label: 'notification' });
+  }
+
+  // Centralized channel send with circuit-breaker. All Discord-bound message
+  // sends (notifications, webhook events, chat relay) should go through here
+  // so a Discord outage doesn't spam logs from multiple code paths.
+  async _sendToChannel(channelId, message, { label = 'message' } = {}) {
+    if (!channelId || !this.client) return false;
+
+    const FAILURE_THRESHOLD = 3;
+    const COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
+    const now = Date.now();
+
+    if (now < this._notifyCircuitUntil) {
+      this._notifySuppressedCount++;
+      return false;
+    }
+
     try {
-      const channel = await this.client.channels.fetch(this.channelId);
+      const channel = await this.client.channels.fetch(channelId);
       if (channel && channel.isTextBased()) {
         await channel.send(message);
       }
+      if (this._notifyFailures > 0 || this._notifySuppressedCount > 0) {
+        if (this._notifySuppressedCount > 0) {
+          log.info(`Discord recovered — ${this._notifySuppressedCount} send(s) were suppressed during the outage`);
+        }
+        this._notifyFailures = 0;
+        this._notifySuppressedCount = 0;
+      }
+      return true;
     } catch (error) {
-      log.error(`Failed to send Discord notification: ${error.message}`);
+      this._notifyFailures++;
+      const transient = /EAI_AGAIN|ENOTFOUND|ETIMEDOUT|ECONNRESET|ECONNREFUSED|Connect Timeout|fetch failed|UND_ERR/i.test(error.message || '');
+
+      // Open the circuit on N consecutive failures of ANY kind. For
+      // non-transient errors (channel deleted, missing perms, invalid token)
+      // we hold the breaker longer since retries won't help — only an admin
+      // fixing config will. For transient network errors, COOLDOWN_MS is
+      // enough for a typical DNS/route blip to resolve.
+      if (this._notifyFailures >= FAILURE_THRESHOLD) {
+        const cooldown = transient ? COOLDOWN_MS : COOLDOWN_MS * 6; // 5 min vs 30 min
+        this._notifyCircuitUntil = now + cooldown;
+        const kind = transient ? 'unreachable' : 'misconfigured (likely channel/perms)';
+        log.error(`Discord ${kind} (${this._notifyFailures} consecutive failures): ${error.message}. Suppressing sends for ${Math.round(cooldown / 60000)} min.`);
+      } else {
+        log.error(`Failed to send Discord ${label}: ${error.message}`);
+      }
+      return false;
     }
   }
 
   async start() {
+    // Guard against double-start — calling start() twice would attach a
+    // second messageCreate listener and double-relay every Discord message
+    // into the game. Caller should stop() first if they want to restart.
+    if (this.isRunning || this.client) {
+      log.warn('start() called while bot is already running — ignoring');
+      return true;
+    }
+
     await this.loadConfig();
+
+    // If a previous stop() detached the chatMessage listener, reattach it
+    // now so the freshly started bot can relay in-game chat again.
+    if (this.logTailer && !this._onGameChat) {
+        this._onGameChat = (data) => this.handleGameChat(data);
+        this.logTailer.on('chatMessage', this._onGameChat);
+    }
     
     if (!this.token) {
       log.info('bot not configured (no token)');
@@ -596,9 +829,18 @@ export class DiscordBot {
     });
 
     // Two-way Chat Bridge: Discord -> Server
+    // Rate-limited per Discord user to prevent in-game chat spam: max 5
+    // messages per 10-second window. Excess messages are silently dropped.
+    const CHAT_BRIDGE_LIMIT = 5;
+    const CHAT_BRIDGE_WINDOW_MS = 10_000;
+    const chatBridgeRate = new Map(); // userId -> [timestamps]
     this.client.on('messageCreate', async (message) => {
         // Ignore stats from bots (including self) or if bot is stopped
         if (!this.isRunning || !this.channelId || message.author.bot) return;
+        // Ignore Discord system messages (pin notifications, member joins,
+        // boost messages, etc.) — these have empty content and would relay
+        // as `<username>: ` to in-game chat.
+        if (message.system) return;
 
         // Check if message is in the bridge channel
         if (message.channelId === this.channelId) {
@@ -606,14 +848,53 @@ export class DiscordBot {
                 // Check if RCON is connected
                 if (this.rconService && this.rconService.connected) {
                     const user = message.author.username;
+                    const userId = message.author.id;
                     // Sanitize content: remove newlines and double quotes to prevent command injection/formatting issues
                     let content = message.content;
                     if (!content) return; // Ignore empty messages (images etc)
 
+                    // Rate-limit per Discord user
+                    const now = Date.now();
+                    const hits = (chatBridgeRate.get(userId) || []).filter(t => now - t < CHAT_BRIDGE_WINDOW_MS);
+                    if (hits.length >= CHAT_BRIDGE_LIMIT) {
+                        log.debug(`Chat bridge rate-limited user ${user} (${userId})`);
+                        return;
+                    }
+                    hits.push(now);
+                    chatBridgeRate.set(userId, hits);
+                    // Opportunistic GC so the map doesn't grow unbounded
+                    if (chatBridgeRate.size > 200) {
+                        for (const [id, ts] of chatBridgeRate) {
+                            if (!ts.some(t => now - t < CHAT_BRIDGE_WINDOW_MS)) chatBridgeRate.delete(id);
+                        }
+                    }
+
+                    // Resolve Discord mention/channel/emoji tokens to readable text
+                    // so PZ in-game chat doesn't show ugly `<@123456789>` blobs.
+                    let resolved = content
+                        // User mentions: <@id> or <@!id>
+                        .replace(/<@!?(\d+)>/g, (_, id) => {
+                            const u = message.mentions?.users?.get(id);
+                            return u ? `@${u.username}` : '@user';
+                        })
+                        // Role mentions: <@&id>
+                        .replace(/<@&(\d+)>/g, (_, id) => {
+                            const r = message.mentions?.roles?.get(id);
+                            return r ? `@${r.name}` : '@role';
+                        })
+                        // Channel mentions: <#id>
+                        .replace(/<#(\d+)>/g, (_, id) => {
+                            const c = message.mentions?.channels?.get(id);
+                            return c ? `#${c.name}` : '#channel';
+                        })
+                        // Custom emoji: <:name:id> or <a:name:id>
+                        .replace(/<a?:([^:>]+):\d+>/g, ':$1:');
+
                      // serverMessage() sanitizes control chars internally; we cap lengths here
                      // to prevent overlong RCON messages from high-entropy Discord usernames/content
                      const safeUser = user.slice(0, 50);
-                     const safeMsg  = content.replace(/[\r\n]+/g, ' ').slice(0, 200);
+                     const safeMsg  = resolved.replace(/[\r\n]+/g, ' ').slice(0, 200);
+                     if (!safeMsg.trim()) return; // mentions-only message after stripping
                      await this.rconService.serverMessage(`[Discord] ${safeUser}: ${safeMsg}`);
                    }
             } catch (e) {
@@ -671,9 +952,26 @@ export class DiscordBot {
   }
   async stop() {
     if (this.client) {
+       // Detach the chatMessage listener so a swapped LogTailer (e.g. a
+       // restart of the panel-managed game-server changes the tailer instance)
+       // doesn't leak handlers across bot lifecycles.
+       if (this.logTailer && this._onGameChat) {
+         try { this.logTailer.off('chatMessage', this._onGameChat); } catch { /* noop */ }
+         this._onGameChat = null;
+       }
        await this.client.destroy();
        this.client = null;
        this.isRunning = false;
+       // Reset lifecycle dedupe so the next bot session can fire a fresh
+       // serverStart/serverStop without being suppressed by the previous run.
+       this._lastLifecycleState = null;
+       // Reset breaker state too — stale failure counts shouldn't carry over.
+       this._notifyFailures = 0;
+       this._notifyCircuitUntil = 0;
+       this._notifySuppressedCount = 0;
+       // Drop registration tracking; a fresh start() should re-register.
+       this._registerInFlight = null;
+       this._registeredGuildId = null;
        log.info('bot stopped');
     }
   }

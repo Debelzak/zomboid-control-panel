@@ -157,7 +157,11 @@ export async function flushWrites() {
       // mode 0o600 — db.json contains plaintext RCON password & JWT secret.
       // We chmod the tmp file BEFORE rename because writeFileSync's `mode` option
       // is ignored when the file already exists (e.g. orphaned tmp from prior crash).
-      const tmpPath = dbPath + '.tmp';
+      // Unique tmp name per write — when two panel instances overlap (e.g.
+      // systemd restart racing the previous process's shutdown), a shared
+      // `.tmp` suffix causes the second rename to fail with ENOENT after the
+      // first instance consumed it. PID + random suffix isolates them.
+      const tmpPath = `${dbPath}.${process.pid}.${Math.random().toString(36).slice(2, 8)}.tmp`;
       const data = JSON.stringify(db.data, null, 2);
       fs.writeFileSync(tmpPath, data, { encoding: 'utf-8', mode: 0o600 });
       try { fs.chmodSync(tmpPath, 0o600); } catch (_) { /* best-effort: Windows */ }

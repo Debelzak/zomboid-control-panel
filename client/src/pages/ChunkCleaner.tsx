@@ -395,17 +395,38 @@ export default function ChunkCleaner() {
     (async () => {
       const savesList = await fetchSaves()
       if (savesList.length === 0) return
+
+      let picked = false
       try {
         const { server } = await serversApi.getResolvedActive()
         if (server?.serverName) {
           const match = savesList.find((s: SaveInfo) => s.name === server.serverName)
-          if (match) setSelectedSave(match.name)
+          if (match) {
+            setSelectedSave(match.name)
+            picked = true
+          }
         }
       } catch {
-        // No active server configured — user picks manually
+        // No active server configured — fall through to auto-pick below
+      }
+
+      // Fallback: if the active-server lookup didn't yield a match, auto-select
+      // the only save (common on single-server Linux setups) or the first one.
+      if (!picked) {
+        setSelectedSave(savesList[0].name)
       }
     })()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Safety net: if the saves list changes (Refresh, custom-path swap) and
+  // the current selection is no longer valid, auto-pick the first save so
+  // the user never gets stuck staring at a populated list with nothing
+  // loaded. This complements the mount-time active-server preference.
+  useEffect(() => {
+    if (saves.length === 0) return
+    if (selectedSave && saves.some(s => s.name === selectedSave)) return
+    setSelectedSave(saves[0].name)
+  }, [saves, selectedSave])
 
   const applyCustomPath = useCallback(async () => {
     const nextPath = customPathInput.trim()

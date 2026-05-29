@@ -232,16 +232,17 @@ function buildResponseError(response: Response, payload?: unknown): ApiError {
 
 async function fetchWithRetry(
   url: string,
-  options?: RequestInit,
+  options?: RequestInit & { timeout?: number },
   retries: number = RETRY_CONFIG.maxRetries
 ): Promise<Response> {
   let lastError: unknown
+  const effectiveTimeout = options?.timeout || RETRY_CONFIG.fetchTimeout
   
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       // Create AbortController for timeout
       const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), RETRY_CONFIG.fetchTimeout)
+      const timeoutId = setTimeout(() => controller.abort(), effectiveTimeout)
 
       // If caller provided a signal, abort our controller when it fires
       const externalSignal = options?.signal
@@ -265,7 +266,7 @@ async function fetchWithRetry(
           const refreshed = await tryRefreshToken()
           if (refreshed) {
             const retryController = new AbortController()
-            const retryTimeoutId = setTimeout(() => retryController.abort(), RETRY_CONFIG.fetchTimeout)
+            const retryTimeoutId = setTimeout(() => retryController.abort(), effectiveTimeout)
             // Retry with new token
             const retryResponse = await fetch(url, {
               ...withAuth(options),
@@ -326,7 +327,7 @@ async function handleResponse<T = any>(response: Response): Promise<T> {
 }
 
 // Helper for GET requests with retry
-function apiGet<T = any>(endpoint: string, options?: RequestInit): Promise<T> {
+function apiGet<T = any>(endpoint: string, options?: RequestInit & { timeout?: number }): Promise<T> {
   return fetchWithRetry(`${API_BASE}${endpoint}`, options).then((response) => handleResponse<T>(response))
 }
 
@@ -909,10 +910,12 @@ export const modsApi = {
 }
 
 // Chunks API (Chunk Cleaner)
+// Large saves can have 50k+ chunk files — directory traversal takes time, so we
+// use a generous 60s timeout rather than the default 15s.
 export const chunksApi = {
-  getSaves: (customPath?: string) => apiGet(`/chunks/saves${customPath ? `?customPath=${encodeURIComponent(customPath)}` : ''}`),
-  getChunks: (saveName: string, customPath?: string) => apiGet(`/chunks/chunks/${encodeURIComponent(saveName)}${customPath ? `?customPath=${encodeURIComponent(customPath)}` : ''}`),
-  getStats: (saveName: string, customPath?: string) => apiGet(`/chunks/stats/${encodeURIComponent(saveName)}${customPath ? `?customPath=${encodeURIComponent(customPath)}` : ''}`),
+  getSaves: (customPath?: string) => apiGet(`/chunks/saves${customPath ? `?customPath=${encodeURIComponent(customPath)}` : ''}`, { timeout: 60000 }),
+  getChunks: (saveName: string, customPath?: string) => apiGet(`/chunks/chunks/${encodeURIComponent(saveName)}${customPath ? `?customPath=${encodeURIComponent(customPath)}` : ''}`, { timeout: 60000 }),
+  getStats: (saveName: string, customPath?: string) => apiGet(`/chunks/stats/${encodeURIComponent(saveName)}${customPath ? `?customPath=${encodeURIComponent(customPath)}` : ''}`, { timeout: 60000 }),
   deleteChunks: (
     saveName: string,
     chunks: Array<{ file: string; x: number; y: number; source?: string; cellX?: number; cellY?: number }>,
