@@ -164,11 +164,20 @@ function resolveSavesPath(zomboidDataPath) {
 
   if (!fs.existsSync(savesPath)) {
     const basename = path.basename(zomboidDataPath);
-    const parentBase = path.basename(path.dirname(zomboidDataPath));
+    const parentDir = path.dirname(zomboidDataPath);
+    const parentBase = path.basename(parentDir);
+    const grandparentBase = path.basename(path.dirname(parentDir));
     if (basename === 'Multiplayer' && parentBase === 'Saves') {
+      // User pointed at .../Saves/Multiplayer directly
       savesPath = zomboidDataPath;
     } else if (basename === 'Saves') {
+      // User pointed at .../Saves — append Multiplayer
       savesPath = path.join(zomboidDataPath, 'Multiplayer');
+    } else if (parentBase === 'Multiplayer' && grandparentBase === 'Saves') {
+      // User pointed at an INDIVIDUAL save directory (.../Saves/Multiplayer/<savename>).
+      // Walk up one level so we list saves from the right parent. Without this we
+      // double-append and log: "Saves path not found: .../<savename>/Saves/Multiplayer".
+      savesPath = parentDir;
     }
   }
 
@@ -301,7 +310,9 @@ router.get('/saves', async (req, res) => {
     if (!fs.existsSync(savesPath)) {
       // Maybe the user pointed directly to Saves/Multiplayer
       const basename = path.basename(zomboidDataPath);
-      const parentBase = path.basename(path.dirname(zomboidDataPath));
+      const parentDir = path.dirname(zomboidDataPath);
+      const parentBase = path.basename(parentDir);
+      const grandparentBase = path.basename(path.dirname(parentDir));
       if (basename === 'Multiplayer' && parentBase === 'Saves') {
         savesPath = zomboidDataPath;
         log.info(`[ChunkCleaner] Path points directly to Saves/Multiplayer`);
@@ -309,6 +320,11 @@ router.get('/saves', async (req, res) => {
         savesPath = path.join(zomboidDataPath, 'Multiplayer');
         attempted.push(savesPath);
         log.info(`[ChunkCleaner] Path points directly to Saves dir`);
+      } else if (parentBase === 'Multiplayer' && grandparentBase === 'Saves') {
+        // Individual save directory — walk up to list siblings
+        savesPath = parentDir;
+        attempted.push(savesPath);
+        log.info(`[ChunkCleaner] Path points to an individual save; using parent Saves/Multiplayer`);
       } else {
         log.warn(`[ChunkCleaner] Saves path not found: ${savesPath}`);
         log.info(`[ChunkCleaner] zomboidDataPath: ${zomboidDataPath}`);
@@ -418,7 +434,15 @@ router.get('/saves', async (req, res) => {
       },
     });
   } catch (error) {
-    log.error(`Failed to get saves: ${error.message}`);
+    // User-input rejections (400/403 with structured details) are not panel
+    // bugs — log them at WARN so alerting/email pipelines don't fire on every
+    // typo in the path field. Real failures (no statusCode = 500) stay ERROR.
+    const isUserError = error.statusCode && error.statusCode < 500;
+    if (isUserError) {
+      log.warn(`Get saves rejected (${error.statusCode}): ${error.message}`);
+    } else {
+      log.error(`Failed to get saves: ${error.message}`);
+    }
     // Forward structured rejection details (reason, checks, parentSuggestion)
     // so the frontend empty-state panel can render targeted remediation.
     const payload = { error: sanitizeError(error.message) };
