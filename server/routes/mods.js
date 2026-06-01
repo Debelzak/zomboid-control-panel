@@ -200,6 +200,84 @@ router.get('/tracked', async (req, res) => {
   }
 });
 
+// Refresh display names for tracked mods that still show a generic
+// "Workshop Mod <id>" placeholder. Tries the on-disk mod.info first, then
+// falls back to Steam's GetPublishedFileDetails (batched) for mods whose
+// workshop folder isn't on this machine yet.
+router.post('/refresh-names', async (req, res) => {
+  try {
+    const modChecker = req.app.get('modChecker');
+    const { workshopIds } = req.body || {};
+    const targetSet = Array.isArray(workshopIds) && workshopIds.length > 0
+      ? new Set(workshopIds.map(String).filter(id => /^\d{1,15}$/.test(id)))
+      : null;
+
+    const mods = await getTrackedMods();
+    const candidates = mods.filter(m => {
+      if (targetSet && !targetSet.has(m.workshop_id)) return false;
+      return !m.name || /^Workshop Mod /i.test(m.name);
+    });
+
+    let diskResolved = 0;
+    let steamResolved = 0;
+    const stillUnresolved = [];
+
+    // Pass 1: try disk
+    for (const mod of candidates) {
+      const nameFromDisk = modChecker?.resolveModNameFromDisk(mod.workshop_id, true);
+      if (nameFromDisk) {
+        await addTrackedMod(mod.workshop_id, nameFromDisk);
+        diskResolved++;
+      } else {
+        stillUnresolved.push(mod.workshop_id);
+      }
+    }
+
+    // Pass 2: batched Steam API for whatever's left
+    if (stillUnresolved.length > 0) {
+      const BATCH = 100;
+      for (let i = 0; i < stillUnresolved.length; i += BATCH) {
+        const slice = stillUnresolved.slice(i, i + BATCH);
+        const params = new URLSearchParams();
+        params.append('itemcount', String(slice.length));
+        slice.forEach((id, idx) => params.append(`publishedfileids[${idx}]`, id));
+        try {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 10000);
+          const r = await fetch(
+            'https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/',
+            { method: 'POST', body: params, signal: controller.signal }
+          );
+          clearTimeout(timer);
+          if (!r.ok) continue;
+          const data = await r.json();
+          const items = data?.response?.publishedfiledetails || [];
+          for (const item of items) {
+            if (item?.result === 1 && typeof item.title === 'string' && item.title.trim()) {
+              await addTrackedMod(String(item.publishedfileid), item.title.trim());
+              steamResolved++;
+            }
+          }
+        } catch (e) {
+          log.debug(`Steam name refresh batch failed: ${e.message}`);
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      checked: candidates.length,
+      diskResolved,
+      steamResolved,
+      totalResolved: diskResolved + steamResolved,
+      unresolved: candidates.length - diskResolved - steamResolved
+    });
+  } catch (error) {
+    log.error(`Failed to refresh mod names: ${error.message}`);
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
 // Add a mod to track
 router.post('/track', async (req, res) => {
   try {
@@ -744,12 +822,32 @@ router.get('/collection/diff', async (req, res) => {
       typeof sidVal === 'string' && sidVal.trim().length >= 8 && !looksMasked(sidVal) &&
       typeof lsVal === 'string' && lsVal.trim().length >= 16 && !looksMasked(lsVal);
 
+    // Decode JWT expiry from steamLoginSecure to warn the UI about stale tokens.
+    let tokenExpiry = null;
+    let tokenExpired = false;
+    if (hasCredentials && lsVal) {
+      try {
+        // steamLoginSecure format: <steamid>%7C%7C<jwt> (URL-encoded ||)
+        const decoded = decodeURIComponent(lsVal.trim());
+        const jwtPart = decoded.split('||')[1];
+        if (jwtPart) {
+          const payload = JSON.parse(Buffer.from(jwtPart.split('.')[1], 'base64').toString());
+          if (payload.exp) {
+            tokenExpiry = payload.exp * 1000; // ms epoch
+            tokenExpired = Date.now() > tokenExpiry;
+          }
+        }
+      } catch { /* non-JWT format or decode failure — ignore */ }
+    }
+
     res.json({
       ...diff,
       items,
       collectionId: await getSetting('workshopCollectionId') || null,
       autoSync: !!(await getSetting('workshopCollectionAutoSync')),
       hasCredentials,
+      tokenExpiry,
+      tokenExpired,
       trackedCount: ids.length,
     });
   } catch (error) {
@@ -4677,9 +4775,17 @@ function findMissingDeps(modInfoMap, modIdsFromIni, serverPath) {
   const missingDeps = [];
   for (const [modId, depInfo] of Object.entries(dependencies)) {
     for (const req of depInfo.requires) {
-      if (!allModIds.has(req)) {
-        missingDeps.push({ modId, modName: depInfo.modName, workshopId: depInfo.workshopId, missingDep: req });
-      }
+      if (allModIds.has(req)) continue;
+      // Accept variant IDs of the same mod (e.g. require=AZASFrequencyIndex satisfied by
+      // AZASFrequencyIndex_RefactorTest). Modders use "<id>_<suffix>" for test/beta/legacy
+      // forks shipped from the same Workshop item. Case-insensitive to be forgiving.
+      const reqLower = req.toLowerCase();
+      const variantMatch = Array.from(allModIds).find(id => {
+        const lower = id.toLowerCase();
+        return lower.startsWith(reqLower + '_') || lower.startsWith(reqLower + '-');
+      });
+      if (variantMatch) continue;
+      missingDeps.push({ modId, modName: depInfo.modName, workshopId: depInfo.workshopId, missingDep: req });
     }
   }
 

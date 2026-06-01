@@ -2,6 +2,7 @@ import { spawn, exec, execFile } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
+import net from 'net';
 import { createLogger } from '../utils/logger.js';
 const log = createLogger('Server');
 import { logServerEvent, getSetting, getActiveServer } from '../database/init.js';
@@ -375,6 +376,24 @@ export class ServerManager {
         const isRunning = await this.checkServerRunning();
         if (isRunning) {
           throw new Error('Server is already running');
+        }
+
+        // Defense in depth: even if process detection failed (WMI timeout),
+        // check if the RCON port is already occupied. If something is listening
+        // on it, a PZ server is almost certainly running and starting another
+        // would crash on port conflict (RakNet Code 5).
+        const rconPort = parseInt(await getSetting('rconPort')) || 27015;
+        const rconHost = (await getSetting('rconHost')) || '127.0.0.1';
+        const portInUse = await new Promise((resolve) => {
+          const socket = new net.Socket();
+          socket.setTimeout(2000);
+          socket.once('connect', () => { socket.destroy(); resolve(true); });
+          socket.once('timeout', () => { socket.destroy(); resolve(false); });
+          socket.once('error', () => { socket.destroy(); resolve(false); });
+          try { socket.connect(rconPort, rconHost); } catch { resolve(false); }
+        });
+        if (portInUse) {
+          throw new Error(`RCON port ${rconHost}:${rconPort} is already in use — a server may be running that process detection missed. Aborting start to prevent port conflict.`);
         }
       }
 

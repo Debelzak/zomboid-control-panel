@@ -1871,6 +1871,35 @@ end
 -- SOUND & NOISE HANDLERS
 -- ============================================
 
+-- Safely emit a world sound that zombies can hear.
+-- The global addSound() is not guaranteed to exist on every B41/B42 build,
+-- so fall back to the WorldSoundManager API when it is missing. Returns
+-- (true, method) on success or (false, errorMessage) on failure so callers
+-- never crash with "attempt to call nil value (global 'addSound')".
+local function emitWorldSound(player, x, y, z, radius, volume)
+    local method = "unknown"
+    local ok, err = pcall(function()
+        if addSound then
+            addSound(player, x, y, z, radius, volume)
+            method = "addSound"
+        elseif getWorld and getWorld() and getWorld().getWorldSoundManager then
+            local wsm = getWorld():getWorldSoundManager()
+            if wsm and wsm.addSound then
+                wsm:addSound(player, x, y, z, radius, volume)
+                method = "WorldSoundManager.addSound"
+            else
+                error("No sound API available")
+            end
+        else
+            error("No sound API available")
+        end
+    end)
+    if not ok then
+        return false, "sound emission failed: " .. tostring(err)
+    end
+    return true, method
+end
+
 -- Play a sound at specific world coordinates
 -- This creates an audible sound that zombies can hear and respond to
 handlers.playWorldSound = function(args)
@@ -1886,7 +1915,10 @@ handlers.playWorldSound = function(args)
     
     -- AddWorldSound creates a noise that zombies can hear
     -- Parameters: player (can be nil), x, y, z, radius, volume
-    addSound(nil, x, y, z, radius, volume)
+    local ok, methodOrErr = emitWorldSound(nil, x, y, z, radius, volume)
+    if not ok then
+        return false, nil, methodOrErr
+    end
     
     return true, { 
         message = "World sound created", 
@@ -1894,7 +1926,8 @@ handlers.playWorldSound = function(args)
         y = y, 
         z = z, 
         radius = radius, 
-        volume = volume 
+        volume = volume,
+        method = methodOrErr
     }
 end
 
@@ -1918,7 +1951,10 @@ handlers.playSoundNearPlayer = function(args)
     local z = player:getZ()
     
     -- Create sound at player's location
-    addSound(player, x, y, z, radius, volume)
+    local ok, methodOrErr = emitWorldSound(player, x, y, z, radius, volume)
+    if not ok then
+        return false, nil, methodOrErr
+    end
     
     return true, { 
         message = "Sound created near player", 
@@ -1927,7 +1963,8 @@ handlers.playSoundNearPlayer = function(args)
         y = y, 
         z = z, 
         radius = radius, 
-        volume = volume 
+        volume = volume,
+        method = methodOrErr
     }
 end
 
@@ -1958,14 +1995,18 @@ handlers.triggerGunshot = function(args)
     local gunshotRadius = 150
     local gunshotVolume = 200
     
-    addSound(nil, x, y, z, gunshotRadius, gunshotVolume)
+    local ok, methodOrErr = emitWorldSound(nil, x, y, z, gunshotRadius, gunshotVolume)
+    if not ok then
+        return false, nil, methodOrErr
+    end
     
     return true, { 
         message = "Gunshot sound triggered", 
         x = x, 
         y = y, 
         z = z, 
-        radius = gunshotRadius 
+        radius = gunshotRadius,
+        method = methodOrErr
     }
 end
 
@@ -1996,14 +2037,18 @@ handlers.triggerAlarmSound = function(args)
     local alarmRadius = 80
     local alarmVolume = 100
     
-    addSound(nil, x, y, z, alarmRadius, alarmVolume)
+    local ok, methodOrErr = emitWorldSound(nil, x, y, z, alarmRadius, alarmVolume)
+    if not ok then
+        return false, nil, methodOrErr
+    end
     
     return true, { 
         message = "Alarm sound triggered", 
         x = x, 
         y = y, 
         z = z, 
-        radius = alarmRadius 
+        radius = alarmRadius,
+        method = methodOrErr
     }
 end
 
@@ -2036,25 +2081,9 @@ handlers.createNoise = function(args)
     radius = math.min(math.max(radius, 10), 500)
     volume = math.min(math.max(volume, 1), 500)
 
-    local method = "unknown"
-    local ok, err = pcall(function()
-        if addSound then
-            addSound(nil, x, y, z, radius, volume)
-            method = "addSound"
-        elseif getWorld and getWorld() and getWorld().getWorldSoundManager then
-            local wsm = getWorld():getWorldSoundManager()
-            if wsm and wsm.addSound then
-                wsm:addSound(nil, x, y, z, radius, volume)
-                method = "WorldSoundManager.addSound"
-            else
-                error("No sound API available")
-            end
-        else
-            error("No sound API available")
-        end
-    end)
+    local ok, method = emitWorldSound(nil, x, y, z, radius, volume)
     if not ok then
-        return false, nil, "createNoise failed: " .. tostring(err)
+        return false, nil, "createNoise failed: " .. tostring(method)
     end
 
     return true, {

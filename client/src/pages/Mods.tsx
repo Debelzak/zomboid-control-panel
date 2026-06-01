@@ -159,6 +159,22 @@ const CONFLICT_FILE_LIMIT = 50
 type ModEntry = { id: string; name: string; enabled: boolean; require?: string[] }
 type WsGroup = { wsId: string; mods: ModEntry[]; allEnabled: boolean; someEnabled: boolean }
 
+// ── useState wrapper that persists value to localStorage under a stable key. ──
+// Used so the conflict tab remembers the user's filter choices across reloads.
+function useLocalStorageState<T>(key: string, defaultValue: T): [T, React.Dispatch<React.SetStateAction<T>>] {
+  const [value, setValue] = useState<T>(() => {
+    try {
+      const raw = localStorage.getItem(key)
+      if (raw == null) return defaultValue
+      return JSON.parse(raw) as T
+    } catch { return defaultValue }
+  })
+  useEffect(() => {
+    try { localStorage.setItem(key, JSON.stringify(value)) } catch { /* quota or disabled — ignore */ }
+  }, [key, value])
+  return [value, setValue]
+}
+
 // ── Pure helper — parse workshop ID from URL or numeric input ──
 function parseWorkshopId(input: string): string | null {
   const trimmed = input.trim()
@@ -266,7 +282,7 @@ export default function Mods() {
   const [conflictsError, setConflictsError] = useState<string | null>(null)
   const [lastScanTime, setLastScanTime] = useState<Date | null>(null)
   const [scanIniSnapshot, setScanIniSnapshot] = useState<string | null>(null)
-  const [openPairs, setOpenPairs] = useState<string[]>([])
+  const [openPairs, setOpenPairs] = useLocalStorageState<string[]>('zcp:mods:conflicts:openPairs', [])
   // SSE streaming scan state
   const [scanProgress, setScanProgress] = useState(0)
   const [scanCurrentMod, setScanCurrentMod] = useState<string | null>(null)
@@ -280,16 +296,19 @@ export default function Mods() {
   const scanBatchRef = useRef<{ progress: number; modName: string | null; modsScanned: number; dirty: boolean; raf: number }>({ progress: 0, modName: null, modsScanned: 0, dirty: false, raf: 0 })
 
   // Inner sub-tab within Conflicts: 'network' or 'dependencies'
-  const [conflictSubTab, setConflictSubTab] = useState<'network' | 'dependencies'>('network')
+  const [conflictSubTab, setConflictSubTab] = useLocalStorageState<'network' | 'dependencies'>('zcp:mods:conflicts:subTab', 'network')
   // Severity filter for pairs list: 'all' | 'high' | 'medium' | 'low'
-  const [pairSeverityFilter, setPairSeverityFilter] = useState<'all' | 'real' | 'high' | 'medium' | 'low'>('real')
-  const [groupByWinner, setGroupByWinner] = useState<boolean>(true)
+  const [pairSeverityFilter, setPairSeverityFilter] = useLocalStorageState<'all' | 'real' | 'high' | 'medium' | 'low'>('zcp:mods:conflicts:severity', 'real')
+  const [groupByWinner, setGroupByWinner] = useLocalStorageState<boolean>('zcp:mods:conflicts:groupByWinner', true)
+  const [pairSearchQuery, setPairSearchQuery] = useLocalStorageState<string>('zcp:mods:conflicts:search', '')
   const [showAllTopMods, setShowAllTopMods] = useState<boolean>(false)
   // Graph filter state (used for pair filtering in the conflict list)
   const [graphFilterMod, setGraphFilterMod] = useState<string | null>(null)
 
   // Track which conflict pairs have "show all files" expanded
   const [expandedFilePairs, setExpandedFilePairs] = useState<Set<string>>(new Set())
+  // Mod-details drawer — when set, opens a Dialog showing every conflict that mod is in.
+  const [modDetailsId, setModDetailsId] = useState<string | null>(null)
   // Missing deps state
   const [depAdding, setDepAdding] = useState<string[]>([])
   const [depAddResults, setDepAddResults] = useState<Record<string, 'added' | 'error'>>({})
@@ -853,18 +872,28 @@ export default function Mods() {
     })
   }, [mods, deferredSearchQuery, showUpdatesOnly])
 
-  // Group mods by status for scannable display
+  // Group mods by status for scannable display.
+  // Mods that are tracked but no longer present in the server INI's
+  // WorkshopItems= list are routed to a separate "Deactivated" bucket so
+  // they don't pollute the active server view.
+  const configuredWorkshopIds = useMemo(() => new Set(iniConfig?.workshopIds || []), [iniConfig?.workshopIds])
   const groupedMods = useMemo(() => {
     const updateAvailable: TrackedMod[] = []
     const neverChecked: TrackedMod[] = []
     const upToDate: TrackedMod[] = []
+    const deactivated: TrackedMod[] = []
+    const configLoaded = iniConfig !== null
     for (const mod of filteredMods) {
+      if (configLoaded && !configuredWorkshopIds.has(mod.workshop_id)) {
+        deactivated.push(mod)
+        continue
+      }
       if (mod.update_available) updateAvailable.push(mod)
       else if (!mod.last_checked) neverChecked.push(mod)
       else upToDate.push(mod)
     }
-    return { updateAvailable, neverChecked, upToDate }
-  }, [filteredMods])
+    return { updateAvailable, neverChecked, upToDate, deactivated }
+  }, [filteredMods, iniConfig, configuredWorkshopIds])
 
   // Collapse "up-to-date" by default, expand when searching
   const [upToDateExpanded, setUpToDateExpanded] = useState(false)
@@ -1147,6 +1176,92 @@ export default function Mods() {
       toast({
         title: 'Remove Failed',
         description: error instanceof Error ? error.message : 'Failed to remove mod',
+        variant: 'destructive',
+      })
+    } finally {
+      setLoading(false)
+      busyRef.current = false
+    }
+  }
+
+  // Re-enable a deactivated tracked mod by appending its workshop ID to the
+  // server INI's WorkshopItems= list. SteamCMD will (re)download it on next
+  // server start if the workshop folder isn't already on disk.
+  const handleEnableMod = async (workshopId: string) => {
+    if (busyRef.current) return
+    busyRef.current = true
+    setLoading(true)
+    try {
+      await modsApi.addToIni(workshopId)
+      toast({
+        title: 'Mod Re-enabled',
+        description: 'Added back to server INI. Restart the server for it to load.',
+        variant: 'success' as const,
+      })
+      fetchData()
+    } catch (error) {
+      toast({
+        title: 'Enable Failed',
+        description: error instanceof Error ? error.message : 'Failed to enable mod',
+        variant: 'destructive',
+      })
+    } finally {
+      setLoading(false)
+      busyRef.current = false
+    }
+  }
+
+  // Bulk: re-enable every selected deactivated mod. Falls back to sequential
+  // addToIni calls because there's no dedicated batch endpoint and the volume
+  // is expected to be small (handful of leftovers).
+  const handleBulkEnable = async (workshopIds: string[]) => {
+    if (workshopIds.length === 0 || busyRef.current) return
+    busyRef.current = true
+    setLoading(true)
+    let ok = 0
+    let failed = 0
+    try {
+      for (const id of workshopIds) {
+        try {
+          await modsApi.addToIni(id)
+          ok++
+        } catch {
+          failed++
+        }
+      }
+      toast({
+        title: failed === 0 ? 'Mods Re-enabled' : 'Partial Re-enable',
+        description: `Added ${ok} mod${ok === 1 ? '' : 's'} back to the INI${failed > 0 ? ` · ${failed} failed` : ''}.`,
+        variant: failed === 0 ? ('success' as const) : ('destructive' as const),
+      })
+      setSelectedMods(new Set())
+      fetchData()
+    } finally {
+      setLoading(false)
+      busyRef.current = false
+    }
+  }
+
+  const handleRefreshNames = async (workshopIds?: string[]) => {
+    if (busyRef.current) return
+    busyRef.current = true
+    setLoading(true)
+    try {
+      const result = await modsApi.refreshNames(workshopIds)
+      const total = result.totalResolved ?? 0
+      const left = result.unresolved ?? 0
+      toast({
+        title: total > 0 ? `Resolved ${total} name${total === 1 ? '' : 's'}` : 'No new names found',
+        description: total > 0
+          ? `${result.diskResolved} from disk · ${result.steamResolved} from Steam${left > 0 ? ` · ${left} still unknown (deleted/private mod)` : ''}.`
+          : `Checked ${result.checked} placeholder name${result.checked === 1 ? '' : 's'} — none could be resolved. The mods may be deleted or private on Steam.`,
+        variant: total > 0 ? ('success' as const) : ('default' as const),
+      })
+      if (total > 0) fetchData()
+    } catch (error: any) {
+      toast({
+        title: 'Refresh failed',
+        description: error?.message || 'Could not refresh names',
         variant: 'destructive',
       })
     } finally {
@@ -1574,6 +1689,50 @@ export default function Mods() {
     }
   }
 
+  // Move winnerModId in the load order so it loads AFTER loserModId.
+  // Used by the inline "Make X win" buttons inside each conflict pair card.
+  // Saves immediately and optimistically updates the conflict scan's load-order map
+  // so the winner indicators flip without a full rescan.
+  const promoteModOverOpponent = async (winnerModId: string, winnerName: string, loserModId: string, loserName: string) => {
+    if (busyRef.current) return
+    const source = (iniConfig?.modIds && iniConfig.modIds.length > 0) ? iniConfig.modIds : orderedModIds
+    const next = [...source]
+    const wi = next.indexOf(winnerModId)
+    if (wi === -1 || next.indexOf(loserModId) === -1) {
+      toast({
+        title: 'Cannot reorder',
+        description: 'One of these mods is not in the active load order.',
+        variant: 'destructive',
+      })
+      return
+    }
+    next.splice(wi, 1)
+    const newLi = next.indexOf(loserModId)
+    next.splice(newLi + 1, 0, winnerModId)
+
+    busyRef.current = true
+    try {
+      setSavingModOrder(true)
+      await modsApi.saveModOrder(next)
+      setOrderedModIds(next)
+      setConflicts(prev => prev ? { ...prev, modLoadOrder: next } : prev)
+      toast({
+        title: 'Load order updated',
+        description: `${winnerName} now loads after ${loserName}.`,
+      })
+      fetchData()
+    } catch (error) {
+      toast({
+        title: 'Could not update load order',
+        description: error instanceof Error ? error.message : 'Failed to save mod order',
+        variant: 'destructive',
+      })
+    } finally {
+      setSavingModOrder(false)
+      busyRef.current = false
+    }
+  }
+
   const hasModOrderChanged = useMemo(() => {
     if (!iniConfig?.modIds) return false
     if (orderedModIds.length !== iniConfig.modIds.length) return true // Different count = changed
@@ -1661,7 +1820,6 @@ export default function Mods() {
 
   // Memoized list of mods with updates available
   const modsWithUpdates = useMemo(() => mods.filter(m => m.update_available), [mods])
-  const configuredWorkshopIds = useMemo(() => new Set(iniConfig?.workshopIds || []), [iniConfig?.workshopIds])
   const selectedCollectionCount = useMemo(() => collectionMods.filter(m => m.selected).length, [collectionMods])
 
   // Render a single mod row — extracted to avoid duplication across groups.
@@ -1811,10 +1969,11 @@ export default function Mods() {
   }, [selectedMods, configuredWorkshopIds, loading, toggleModSelect, toast])
 
   // ── Virtualized tracked mods list ──
+  type ModGroup = 'update' | 'neverChecked' | 'upToDate' | 'deactivated'
   type FlatModItem =
-    | { type: 'header'; group: 'update' | 'neverChecked' | 'upToDate'; count: number }
+    | { type: 'header'; group: ModGroup; count: number }
     | { type: 'hint' }
-    | { type: 'mod'; mod: TrackedMod; group: 'update' | 'neverChecked' | 'upToDate' }
+    | { type: 'mod'; mod: TrackedMod; group: ModGroup }
 
   const modListRef = useRef<HTMLDivElement>(null)
 
@@ -1872,12 +2031,24 @@ export default function Mods() {
     const enabledCount = enabledIds.size
     const multiIdCount = groups.filter(g => g.mods.length > 1).length
 
-    // Build missing-deps map: modId → list of required mod IDs not currently enabled
+    // Build missing-deps map: modId → list of required mod IDs not currently enabled.
+    // A require is satisfied either by an exact-id enabled mod or by a variant whose id
+    // is "<required>_<suffix>" / "<required>-<suffix>" (the convention modders use for
+    // refactor / test / legacy forks of the same mod shipped from the same workshop item).
+    const enabledLower = new Set(Array.from(enabledIds, id => id.toLowerCase()))
+    const isRequireSatisfied = (req: string) => {
+      if (enabledIds.has(req)) return true
+      const r = req.toLowerCase()
+      for (const id of enabledLower) {
+        if (id.startsWith(r + '_') || id.startsWith(r + '-')) return true
+      }
+      return false
+    }
     const missingDepsMap = new Map<string, string[]>()
     for (const g of groups) {
       for (const mod of g.mods) {
         if (!mod.require?.length || !mod.enabled) continue
-        const missing = mod.require.filter(r => !enabledIds.has(r))
+        const missing = mod.require.filter(r => !isRequireSatisfied(r))
         if (missing.length > 0) missingDepsMap.set(mod.id, missing)
       }
     }
@@ -2038,8 +2209,17 @@ export default function Mods() {
         return true
       })
     }
+    const q = pairSearchQuery.trim().toLowerCase()
+    if (q) {
+      pairs = pairs.filter(p =>
+        p.modA.modName.toLowerCase().includes(q) ||
+        p.modB.modName.toLowerCase().includes(q) ||
+        p.modA.modId.toLowerCase().includes(q) ||
+        p.modB.modId.toLowerCase().includes(q)
+      )
+    }
     return pairs
-  }, [conflicts?.pairs, graphFilterMod, pairSeverityFilter])
+  }, [conflicts?.pairs, graphFilterMod, pairSeverityFilter, pairSearchQuery])
 
   // Top conflicting mods — ranked by number of pairs and severity
   const topConflictingMods = useMemo(() => {
@@ -2483,6 +2663,15 @@ export default function Mods() {
               <TabsTrigger value="collection" className="gap-2 px-3 py-1.5 text-sm font-medium">
                 <Library className="w-4 h-4" />
                 Collection
+              </TabsTrigger>
+              <TabsTrigger value="deactivated" className="gap-2 px-3 py-1.5 text-sm font-medium">
+                <EyeOff className="w-4 h-4" />
+                Deactivated
+                {groupedMods.deactivated.length > 0 && (
+                  <span className="inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-muted-foreground/20 px-1 font-mono text-[10px] tabular-nums text-muted-foreground">
+                    {groupedMods.deactivated.length}
+                  </span>
+                )}
               </TabsTrigger>
             </TabsList>
 
@@ -3276,8 +3465,8 @@ export default function Mods() {
                         const item = flatModItems[virtualRow.index]
                         const groupBorder =
                           item.type === 'hint' ? 'border-l-2 border-muted-foreground/30'
-                          : (item.type === 'header' ? item.group : item.group) === 'update' ? 'border-l-2 border-warning'
-                          : (item.type === 'header' ? item.group : item.group) === 'neverChecked' ? 'border-l-2 border-muted-foreground/30'
+                          : item.group === 'update' ? 'border-l-2 border-warning'
+                          : item.group === 'neverChecked' ? 'border-l-2 border-muted-foreground/30'
                           : 'border-l-2 border-primary/30'
 
                         return (
@@ -5231,6 +5420,28 @@ export default function Mods() {
                                       ))}
                                     </div>
                                     <div className="flex items-center gap-3">
+                                      <div className="relative">
+                                        <Search className="w-3 h-3 absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground/60 pointer-events-none" aria-hidden="true" />
+                                        <input
+                                          type="text"
+                                          value={pairSearchQuery}
+                                          onChange={(e) => setPairSearchQuery(e.target.value)}
+                                          placeholder="Filter by mod name..."
+                                          aria-label="Filter conflict pairs by mod name"
+                                          className="h-7 w-44 pl-6 pr-6 rounded-md text-[11px] bg-muted/20 border border-border/40 focus:outline-none focus:ring-1 focus:ring-accent focus:border-accent placeholder:text-muted-foreground/50"
+                                        />
+                                        {pairSearchQuery && (
+                                          <button
+                                            type="button"
+                                            onClick={() => setPairSearchQuery('')}
+                                            className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground/60 hover:text-foreground text-[10px] leading-none"
+                                            aria-label="Clear filter"
+                                            title="Clear filter"
+                                          >
+                                            ×
+                                          </button>
+                                        )}
+                                      </div>
                                       <button
                                         type="button"
                                         onClick={() => setGroupByWinner(v => !v)}
@@ -5427,7 +5638,7 @@ export default function Mods() {
                                               <AccordionContent>
                                                 <div className="px-4 pb-3 pt-1 space-y-1">
                                                   {/* Severity breakdown — shown in expanded detail */}
-                                                  <div className="flex items-center gap-2 mb-2">
+                                                  <div className="flex items-center gap-2 mb-2 flex-wrap">
                                                     {pair.highCount > 0 && (
                                                       <Badge variant="destructive" className="text-[11px] leading-none h-[18px] px-1.5">{pair.highCount} high — Lua scripts</Badge>
                                                     )}
@@ -5438,6 +5649,58 @@ export default function Mods() {
                                                       <Badge variant="secondary" className="text-[11px] leading-none h-[18px] px-1.5 border-primary/20 text-primary">{pair.lowCount} low — cosmetic</Badge>
                                                     )}
                                                     <span className="text-[11px] text-muted-foreground/70">Click a file to compare</span>
+
+                                                    {/* Fix-it actions: promote one mod over the other in load order. */}
+                                                    {posA != null && posB != null && (
+                                                      <div className="ml-auto flex items-center gap-1.5 flex-wrap">
+                                                        <Button
+                                                          size="sm"
+                                                          variant="outline"
+                                                          className="h-7 px-2 text-[11px] gap-1"
+                                                          disabled={savingModOrder || posA > posB}
+                                                          title={posA > posB ? `${pair.modA.modName} already loads last` : `Move ${pair.modA.modName} to load after ${pair.modB.modName}`}
+                                                          onClick={(e) => {
+                                                            e.stopPropagation()
+                                                            promoteModOverOpponent(pair.modA.modId, pair.modA.modName, pair.modB.modId, pair.modB.modName)
+                                                          }}
+                                                        >
+                                                          <Wrench className="w-3 h-3" />
+                                                          <span className="truncate max-w-[140px]">Make {pair.modA.modName} win</span>
+                                                        </Button>
+                                                        <Button
+                                                          size="sm"
+                                                          variant="outline"
+                                                          className="h-7 px-2 text-[11px] gap-1"
+                                                          disabled={savingModOrder || posB > posA}
+                                                          title={posB > posA ? `${pair.modB.modName} already loads last` : `Move ${pair.modB.modName} to load after ${pair.modA.modName}`}
+                                                          onClick={(e) => {
+                                                            e.stopPropagation()
+                                                            promoteModOverOpponent(pair.modB.modId, pair.modB.modName, pair.modA.modId, pair.modA.modName)
+                                                          }}
+                                                        >
+                                                          <Wrench className="w-3 h-3" />
+                                                          <span className="truncate max-w-[140px]">Make {pair.modB.modName} win</span>
+                                                        </Button>
+                                                        <Button
+                                                          size="sm"
+                                                          variant="ghost"
+                                                          className="h-7 px-2 text-[11px] gap-1 text-muted-foreground hover:text-foreground"
+                                                          title={`See every conflict involving ${pair.modA.modName}`}
+                                                          onClick={(e) => { e.stopPropagation(); setModDetailsId(pair.modA.modId) }}
+                                                        >
+                                                          <Info className="w-3 h-3" /> A details
+                                                        </Button>
+                                                        <Button
+                                                          size="sm"
+                                                          variant="ghost"
+                                                          className="h-7 px-2 text-[11px] gap-1 text-muted-foreground hover:text-foreground"
+                                                          title={`See every conflict involving ${pair.modB.modName}`}
+                                                          onClick={(e) => { e.stopPropagation(); setModDetailsId(pair.modB.modId) }}
+                                                        >
+                                                          <Info className="w-3 h-3" /> B details
+                                                        </Button>
+                                                      </div>
+                                                    )}
                                                   </div>
                                                   {visibleFiles.map((f) => {
                                                     const winnerName = f.winner?.modId === pair.modA.modId
@@ -5853,11 +6116,404 @@ export default function Mods() {
                 )}
               </CardContent>
             </Card>
+
+            {/* ─── Per-mod conflict details drawer ─── */}
+            <Dialog open={modDetailsId != null} onOpenChange={(open) => { if (!open) setModDetailsId(null) }}>
+              <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto sm:max-h-[80vh]">
+                {(() => {
+                  if (!modDetailsId || !conflicts) return null
+                  const allPairs = conflicts.pairs ?? []
+                  const myPairs = allPairs.filter(p => p.modA.modId === modDetailsId || p.modB.modId === modDetailsId)
+                  if (myPairs.length === 0) {
+                    return (
+                      <>
+                        <DialogHeader>
+                          <DialogTitle>No conflicts</DialogTitle>
+                          <DialogDescription>This mod has no recorded conflicts in the latest scan.</DialogDescription>
+                        </DialogHeader>
+                      </>
+                    )
+                  }
+                  // Resolve display name from first pair we find
+                  const firstHit = myPairs[0]
+                  const modName = firstHit.modA.modId === modDetailsId ? firstHit.modA.modName : firstHit.modB.modName
+                  const pos = loadOrderMap.get(modDetailsId)
+                  // Tally wins/losses across pairs (based on load order)
+                  let winsPairs = 0, losesPairs = 0, tiedPairs = 0
+                  let totalFiles = 0
+                  const extCounts = new Map<string, number>()
+                  for (const p of myPairs) {
+                    totalFiles += p.files.length
+                    for (const f of p.files) {
+                      const dot = f.file.lastIndexOf('.')
+                      const ext = dot >= 0 ? f.file.slice(dot + 1).toLowerCase() : '(no ext)'
+                      extCounts.set(ext, (extCounts.get(ext) ?? 0) + 1)
+                    }
+                    const myPos = loadOrderMap.get(modDetailsId)
+                    const otherId = p.modA.modId === modDetailsId ? p.modB.modId : p.modA.modId
+                    const otherPos = loadOrderMap.get(otherId)
+                    if (myPos != null && otherPos != null) {
+                      if (myPos > otherPos) winsPairs++
+                      else if (myPos < otherPos) losesPairs++
+                      else tiedPairs++
+                    }
+                  }
+                  const topExts = Array.from(extCounts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5)
+                  const sortedPairs = [...myPairs].sort((a, b) =>
+                    (b.highCount - a.highCount) || (b.mediumCount - a.mediumCount) || (b.files.length - a.files.length)
+                  )
+
+                  const jumpToPair = (pair: typeof myPairs[number]) => {
+                    const key = `${pair.modA.modId}--${pair.modB.modId}`
+                    setOpenPairs(prev => prev.includes(key) ? prev : [...prev, key])
+                    setModDetailsId(null)
+                    // Defer scroll until accordion has opened
+                    setTimeout(() => {
+                      const el = document.querySelector(`[data-state][value="${CSS.escape(key)}"]`) as HTMLElement | null
+                      el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                    }, 120)
+                  }
+
+                  return (
+                    <>
+                      <DialogHeader>
+                        <DialogTitle className="text-base flex items-center gap-2 min-w-0">
+                          <Info className="w-4 h-4 shrink-0 text-accent" />
+                          <span className="truncate">{modName}</span>
+                          {pos != null && (
+                            <span className="text-[11px] font-normal text-muted-foreground shrink-0">load #{pos}</span>
+                          )}
+                        </DialogTitle>
+                        <DialogDescription>
+                          {myPairs.length} pair{myPairs.length !== 1 ? 's' : ''} · {totalFiles} overlapping file{totalFiles !== 1 ? 's' : ''}
+                          {(winsPairs > 0 || losesPairs > 0 || tiedPairs > 0) && (
+                            <> · wins {winsPairs} · loses {losesPairs}{tiedPairs > 0 ? ` · tied ${tiedPairs}` : ''}</>
+                          )}
+                        </DialogDescription>
+                      </DialogHeader>
+
+                      {topExts.length > 0 && (
+                        <div className="flex items-center gap-1.5 flex-wrap pb-1 border-b border-border/30">
+                          <span className="text-[11px] text-muted-foreground">Top file types:</span>
+                          {topExts.map(([ext, count]) => (
+                            <Badge key={ext} variant="secondary" className="text-[10px] h-5 px-1.5 tabular-nums">
+                              .{ext} <span className="text-muted-foreground/80 ml-1">{count}</span>
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+
+                      <ul className="space-y-1.5">
+                        {sortedPairs.map((p) => {
+                          const isA = p.modA.modId === modDetailsId
+                          const other = isA ? p.modB : p.modA
+                          const otherPos = loadOrderMap.get(other.modId)
+                          const myPos = loadOrderMap.get(modDetailsId)
+                          const winning = myPos != null && otherPos != null ? (myPos > otherPos ? 'win' : myPos < otherPos ? 'lose' : 'tie') : 'unknown'
+                          const maxSev = p.highCount > 0 ? 'high' : p.mediumCount > 0 ? 'medium' : 'low'
+                          return (
+                            <li key={`${p.modA.modId}--${p.modB.modId}`}
+                                className={`flex items-center gap-2 rounded-md border px-2.5 py-2 ${
+                                  maxSev === 'high' ? 'border-destructive/40 bg-destructive/[0.03]' :
+                                  maxSev === 'medium' ? 'border-warning/40 bg-warning/[0.03]' :
+                                  'border-border/40'
+                                }`}>
+                              <span className={`w-2 h-2 rounded-full shrink-0 ${
+                                maxSev === 'high' ? 'bg-destructive' : maxSev === 'medium' ? 'bg-warning' : 'bg-primary/60'
+                              }`} aria-hidden="true" />
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-medium truncate">{other.modName}</div>
+                                <div className="text-[11px] text-muted-foreground flex items-center gap-2 flex-wrap">
+                                  <span className="tabular-nums">{p.files.length} file{p.files.length !== 1 ? 's' : ''}</span>
+                                  {p.highCount > 0 && <span className="text-destructive/80 tabular-nums">{p.highCount} high</span>}
+                                  {p.mediumCount > 0 && <span className="text-warning/80 tabular-nums">{p.mediumCount} med</span>}
+                                  {p.lowCount > 0 && <span className="text-primary/70 tabular-nums">{p.lowCount} low</span>}
+                                  {otherPos != null && <span>load #{otherPos}</span>}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                {winning === 'win' && (
+                                  <Badge variant="secondary" className="text-[10px] h-5 px-1.5 border-success/30 bg-success/10 text-success">wins</Badge>
+                                )}
+                                {winning === 'lose' && (
+                                  <Badge variant="secondary" className="text-[10px] h-5 px-1.5 border-warning/30 bg-warning/10 text-warning">loses</Badge>
+                                )}
+                                {winning === 'lose' && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-6 px-2 text-[10px] gap-1"
+                                    disabled={savingModOrder}
+                                    onClick={() => promoteModOverOpponent(modDetailsId, modName, other.modId, other.modName)}
+                                  >
+                                    <Wrench className="w-3 h-3" /> Win it
+                                  </Button>
+                                )}
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-6 px-2 text-[10px]"
+                                  onClick={() => jumpToPair(p)}
+                                >
+                                  View
+                                </Button>
+                              </div>
+                            </li>
+                          )
+                        })}
+                      </ul>
+
+                      <DialogFooter className="pt-2">
+                        <Button variant="outline" size="sm" onClick={() => setModDetailsId(null)}>Close</Button>
+                      </DialogFooter>
+                    </>
+                  )
+                })()}
+              </DialogContent>
+            </Dialog>
           </TabsContent>
 
           {/* ─── Collection Tab ─── */}
           <TabsContent value="collection" className="space-y-4">
             <WorkshopCollectionPanel />
+          </TabsContent>
+
+          {/* ─── Deactivated Tab ───
+              Tracked mods that are no longer present in the active server INI's
+              WorkshopItems= list. Kept tracked so you can re-enable them, but
+              segregated from the live server view. */}
+          <TabsContent value="deactivated" className="space-y-4">
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-2">
+                  <EyeOff className="w-4 h-4 text-muted-foreground" />
+                  <CardTitle className="text-base">Deactivated Mods</CardTitle>
+                  <Badge variant="outline" className="font-mono text-[11px] tabular-nums">
+                    {groupedMods.deactivated.length}
+                  </Badge>
+                </div>
+                <CardDescription>
+                  Tracked by the panel but not present in the server INI's <code className="text-[11px]">WorkshopItems=</code> list. They won't be loaded by the server. Re-enable to put them back into the INI, or delete to stop tracking entirely.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="p-0">
+                {!iniConfig ? (
+                  <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+                    Loading server config…
+                  </div>
+                ) : groupedMods.deactivated.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center gap-2 px-4 py-12 text-center">
+                    <CheckCircle className="w-8 h-8 text-muted-foreground/40" />
+                    <p className="text-sm text-muted-foreground">
+                      No deactivated mods.
+                    </p>
+                    <p className="text-xs text-muted-foreground/70 max-w-md">
+                      Every tracked mod is referenced in the server INI's WorkshopItems= list.
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    {/* Toolbar: select-all / enable / delete bulk actions */}
+                    {(() => {
+                      const deactivatedIds = groupedMods.deactivated.map(m => m.workshop_id)
+                      const selectedDeactivated = deactivatedIds.filter(id => selectedMods.has(id))
+                      const allSelected = selectedDeactivated.length === deactivatedIds.length && deactivatedIds.length > 0
+                      const someSelected = selectedDeactivated.length > 0
+                      const missingNameCount = groupedMods.deactivated.filter(m => !m.name || /^Workshop Mod /i.test(m.name)).length
+                      return (
+                        <div className="flex flex-col gap-2 border-b border-border/40 bg-muted/15 px-4 py-2.5">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <div className="flex items-center gap-2">
+                              <Checkbox
+                                checked={allSelected}
+                                onCheckedChange={(checked) => {
+                                  setSelectedMods(prev => {
+                                    const next = new Set(prev)
+                                    if (checked) {
+                                      for (const id of deactivatedIds) next.add(id)
+                                    } else {
+                                      for (const id of deactivatedIds) next.delete(id)
+                                    }
+                                    return next
+                                  })
+                                }}
+                                aria-label="Select all deactivated mods"
+                              />
+                              <span className="text-xs text-muted-foreground">
+                                {someSelected ? `${selectedDeactivated.length} selected` : `Select all (${deactivatedIds.length})`}
+                              </span>
+                            </div>
+                            <div className="ml-auto flex items-center gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={!someSelected || loading}
+                                onClick={() => handleBulkEnable(selectedDeactivated)}
+                              >
+                                <PlusCircle className="w-4 h-4 mr-1.5" />
+                                Re-enable{someSelected ? ` (${selectedDeactivated.length})` : ''}
+                              </Button>
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                disabled={loading || (deactivatedIds.length === 0)}
+                                onClick={() => {
+                                  const ids = someSelected ? selectedDeactivated : deactivatedIds
+                                  const label = someSelected
+                                    ? `Delete ${ids.length} selected deactivated mod${ids.length === 1 ? '' : 's'} from tracking? This cannot be undone (re-add them manually if needed).`
+                                    : `Delete ALL ${ids.length} deactivated mod${ids.length === 1 ? '' : 's'} from tracking? This cannot be undone (re-add them manually if needed).`
+                                  if (!window.confirm(label)) return
+                                  setSelectedMods(new Set(ids))
+                                  handleBulkRemove()
+                                }}
+                              >
+                                <Trash2 className="w-4 h-4 mr-1.5" />
+                                {someSelected ? `Delete (${selectedDeactivated.length})` : `Delete All (${deactivatedIds.length})`}
+                              </Button>
+                            </div>
+                          </div>
+                          {missingNameCount > 0 && (
+                            <div className="flex items-start gap-2 rounded border border-border/40 bg-card/40 px-2.5 py-1.5 text-[11px] text-muted-foreground">
+                              <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                              <div className="flex-1 flex items-center gap-2 flex-wrap">
+                                <span className="flex-1 min-w-0">
+                                  <strong className="text-foreground/80">{missingNameCount}</strong> mod{missingNameCount === 1 ? '' : 's'} show a generic name. Click <strong>Refresh names</strong> to look them up (checks disk first, then the Steam Workshop API).
+                                </span>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-6 px-2 text-[11px]"
+                                  disabled={loading}
+                                  onClick={() => {
+                                    const targets = groupedMods.deactivated
+                                      .filter(m => !m.name || /^Workshop Mod /i.test(m.name))
+                                      .map(m => m.workshop_id)
+                                    handleRefreshNames(targets)
+                                  }}
+                                >
+                                  <RefreshCw className={`w-3 h-3 mr-1 ${loading ? 'animate-spin' : ''}`} />
+                                  Refresh names
+                                </Button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })()}
+
+                    {/* Rows: per-row Enable + Delete; checkbox for bulk select */}
+                    <div className="divide-y divide-border/30">
+                      {groupedMods.deactivated.map(mod => {
+                        const isSelected = selectedMods.has(mod.workshop_id)
+                        return (
+                          <div
+                            key={mod.id}
+                            className={`group/modrow flex items-center gap-3 px-3 py-2.5 border-l-2 border-muted-foreground/20 hover:bg-accent/40 transition-colors ${isSelected ? 'bg-accent/30' : ''}`}
+                          >
+                            <div className="shrink-0">
+                              <Checkbox
+                                checked={isSelected}
+                                onCheckedChange={() => toggleModSelect(mod.workshop_id)}
+                                aria-label={`Select ${mod.name || mod.workshop_id}`}
+                              />
+                            </div>
+                            <div className="shrink-0 relative grid place-items-center w-16 h-16 rounded-md border border-border/50 bg-muted/30 text-muted-foreground overflow-hidden">
+                              <Package className="w-7 h-7" />
+                              <img
+                                src={`/api/mods/thumbnail/${mod.workshop_id}`}
+                                alt=""
+                                loading="lazy"
+                                decoding="async"
+                                className="absolute inset-0 w-full h-full object-cover rounded-md opacity-80"
+                                onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
+                              />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <span className="truncate text-sm font-medium text-foreground/90">
+                                  {mod.name || `Workshop Mod ${mod.workshop_id}`}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1.5 flex-wrap mt-0.5 text-[11px] text-muted-foreground">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    copyText(mod.workshop_id).then(() => {
+                                      toast({ title: 'Copied', description: `Workshop ID ${mod.workshop_id}` })
+                                    }).catch(() => { /* no-op */ })
+                                  }}
+                                  className="inline-flex items-center gap-1 rounded border border-border/40 bg-muted/40 px-1 py-0.5 font-mono text-[10px] leading-none text-muted-foreground hover:border-primary/40 hover:bg-primary/10 hover:text-primary transition-colors"
+                                  aria-label={`Copy workshop ID ${mod.workshop_id}`}
+                                >
+                                  <span className="text-[9px] font-semibold uppercase tracking-wider opacity-70">WS</span>
+                                  <span>{mod.workshop_id}</span>
+                                </button>
+                                {mod.last_checked && (
+                                  <span>Checked {new Date(mod.last_checked).toLocaleDateString()}</span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="shrink-0 flex items-center gap-0.5">
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <a
+                                    href={`https://steamcommunity.com/sharedfiles/filedetails/?id=${mod.workshop_id}`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex"
+                                  >
+                                    <Button
+                                      variant="ghost"
+                                      size="iconDense"
+                                      className="h-8 w-8 text-muted-foreground hover:text-primary"
+                                      aria-label="Open workshop page"
+                                    >
+                                      <ExternalLink className="w-4 h-4" />
+                                    </Button>
+                                  </a>
+                                </TooltipTrigger>
+                                <TooltipContent>Open Workshop Page</TooltipContent>
+                              </Tooltip>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="iconDense"
+                                    className="h-8 w-8 text-muted-foreground hover:text-primary"
+                                    onClick={() => handleEnableMod(mod.workshop_id)}
+                                    disabled={loading}
+                                    aria-label={`Re-enable ${mod.name || mod.workshop_id}`}
+                                  >
+                                    <PlusCircle className="w-4 h-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Re-enable (add back to WorkshopItems=)</TooltipContent>
+                              </Tooltip>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="iconDense"
+                                    className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                                    onClick={() => setConfirmRemoveMod(mod.workshop_id)}
+                                    disabled={loading}
+                                    aria-label={`Delete ${mod.name || mod.workshop_id} from tracking`}
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Delete from tracking</TooltipContent>
+                              </Tooltip>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
           </TabsContent>
         </Tabs>
       </div>

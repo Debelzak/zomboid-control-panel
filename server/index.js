@@ -1715,12 +1715,14 @@ async function start() {
 
           // Process detection can fail with wrappers (WinGSM) or restricted permissions.
           // Probe the RCON port directly as a fallback so we don't wait 60s for auto-reconnect.
+          let rconPortOccupied = false;
           try {
             await rconService.loadConfig();
             const rconHost = rconService.config.host || '127.0.0.1';
             const rconPort = rconService.config.port || 27015;
             const portOpen = await rconService.checkPortOpen(rconHost, rconPort);
             if (portOpen) {
+              rconPortOccupied = true;
               log.info(`RCON port ${rconHost}:${rconPort} is open even though process check failed — connecting...`);
               try {
                 await Promise.race([
@@ -1741,71 +1743,79 @@ async function start() {
           // Check if auto-start is enabled
           const autoStartServer = await getSetting('autoStartServer');
           if (autoStartServer === true || autoStartServer === 'true') {
-            log.info('Auto-start is enabled - starting PZ server...');
+            // SAFETY: Do NOT auto-start if the RCON port is occupied.
+            // Something is already listening on it (likely the PZ server that process
+            // detection missed). Starting a duplicate would crash on port conflict.
+            if (rconPortOccupied) {
+              log.warn('Auto-start SKIPPED: RCON port is already occupied — a PZ server is likely running but process detection failed. Will keep retrying RCON connection.');
+              rconService.setServerStarting(false);
+            } else {
+              log.info('Auto-start is enabled - starting PZ server...');
             
-            // Set flag to prevent auto-reconnect from interfering
-            rconService.setServerStarting(true);
+              // Set flag to prevent auto-reconnect from interfering
+              rconService.setServerStarting(true);
             
-            try {
-              const startResult = await serverManager.startServer();
-              if (startResult.success) {
-                log.info('PZ server auto-started successfully');
+              try {
+                const startResult = await serverManager.startServer();
+                if (startResult.success) {
+                  log.info('PZ server auto-started successfully');
                 
-                // Wait for server to fully start before connecting RCON
-                // Monitor the TCP port instead of hard waiting
-                log.info('PZ server auto-started - Monitoring RCON port...');
+                  // Wait for server to fully start before connecting RCON
+                  // Monitor the TCP port instead of hard waiting
+                  log.info('PZ server auto-started - Monitoring RCON port...');
                 
-                await rconService.loadConfig(); // Ensure clean config
-                const rconHost = rconService.config.host || '127.0.0.1';
-                const rconPort = rconService.config.port || 27015;
+                  await rconService.loadConfig(); // Ensure clean config
+                  const rconHost = rconService.config.host || '127.0.0.1';
+                  const rconPort = rconService.config.port || 27015;
                 
-                let connected = false;
-                const maxPollAttempts = 60; // 5 minutes max
+                  let connected = false;
+                  const maxPollAttempts = 60; // 5 minutes max
                 
-                for (let i = 0; i < maxPollAttempts; i++) {
-                  // Check port readiness
-                  const portOpen = await rconService.checkPortOpen(rconHost, rconPort);
+                  for (let i = 0; i < maxPollAttempts; i++) {
+                    // Check port readiness
+                    const portOpen = await rconService.checkPortOpen(rconHost, rconPort);
                   
-                  if (!portOpen) {
-                    // Log every 30s
-                    if (i % 6 === 0) {
-                      log.debug(`Auto-start: Waiting for RCON port ${rconHost}:${rconPort}...`);
+                    if (!portOpen) {
+                      // Log every 30s
+                      if (i % 6 === 0) {
+                        log.debug(`Auto-start: Waiting for RCON port ${rconHost}:${rconPort}...`);
+                      }
+                      await new Promise(r => setTimeout(r, 5000));
+                      continue;
                     }
-                    await new Promise(r => setTimeout(r, 5000));
-                    continue;
-                  }
                   
-                  // Port is open, try to connect
-                  log.info(`RCON port open! Attempting connection...`);
+                    // Port is open, try to connect
+                    log.info(`RCON port open! Attempting connection...`);
                   
-                  try {
-                    await Promise.race([
-                      rconService.connect(),
-                      new Promise((_, reject) => setTimeout(() => reject(new Error('RCON connection timeout')), 15000))
-                    ]);
+                    try {
+                      await Promise.race([
+                        rconService.connect(),
+                        new Promise((_, reject) => setTimeout(() => reject(new Error('RCON connection timeout')), 15000))
+                      ]);
                     
-                    if (rconService.connected) {
-                      log.info('RCON connected successfully after auto-start');
-                      connected = true;
-                      break;
-                    } else {
+                      if (rconService.connected) {
+                        log.info('RCON connected successfully after auto-start');
+                        connected = true;
+                        break;
+                      } else {
                         // Port open but auth/handshake failed
                         log.debug('RCON port open but connection failed, retrying in 5s...');
                         await new Promise(r => setTimeout(r, 5000));
+                      }
+                    } catch (e) {
+                      log.debug(`Auto-start RCON connection failed: ${e.message}`);
+                      await new Promise(r => setTimeout(r, 5000));
                     }
-                  } catch (e) {
-                    log.debug(`Auto-start RCON connection failed: ${e.message}`);
-                    await new Promise(r => setTimeout(r, 5000));
                   }
+                } else {
+                  log.error('Failed to auto-start PZ server:', startResult.error);
                 }
-              } else {
-                log.error('Failed to auto-start PZ server:', startResult.error);
+              } catch (e) {
+                log.error('Error during auto-start:', e.message);
+              } finally {
+                // Clear the flag so auto-reconnect can resume normally
+                rconService.setServerStarting(false);
               }
-            } catch (e) {
-              log.error('Error during auto-start:', e.message);
-            } finally {
-              // Clear the flag so auto-reconnect can resume normally
-              rconService.setServerStarting(false);
             }
           }
           

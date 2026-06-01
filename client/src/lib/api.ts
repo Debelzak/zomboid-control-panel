@@ -682,6 +682,16 @@ export const modsApi = {
   // Batch remove multiple mods from tracking AND server .ini in one operation
   batchRemove: (workshopIds: string[]) => apiPost('/mods/batch-remove', { workshopIds }),
 
+  // Refresh display names for tracked mods with placeholder names (tries disk then Steam API)
+  refreshNames: (workshopIds?: string[]) => apiPost('/mods/refresh-names', { workshopIds }) as Promise<{
+    success: boolean
+    checked: number
+    diskResolved: number
+    steamResolved: number
+    totalResolved: number
+    unresolved: number
+  }>,
+
   // List mods that exist on disk in the workshop folder but are NOT enabled in the server INI.
   listDiskOnly: () => apiGet('/mods/disk-only') as Promise<{
     mods: Array<{ workshop_id: string; name: string }>
@@ -826,6 +836,8 @@ export const modsApi = {
     collectionId: string | null
     autoSync: boolean
     hasCredentials: boolean
+    tokenExpiry: number | null
+    tokenExpired: boolean
     trackedCount: number
   }>,
   collectionAddItem: (workshopId: string) =>
@@ -911,10 +923,18 @@ export const modsApi = {
 
 // Chunks API (Chunk Cleaner)
 // Large saves can have 50k+ chunk files — directory traversal takes time, so we
-// use a generous 60s timeout rather than the default 15s.
+// use a generous timeout. The chunk scan streams `chunkScan:progress` over the
+// socket, so the UI shows real progress; we allow up to 10 min for slow UNC
+// shares rather than aborting at 60s and leaving the map blank.
 export const chunksApi = {
   getSaves: (customPath?: string) => apiGet(`/chunks/saves${customPath ? `?customPath=${encodeURIComponent(customPath)}` : ''}`, { timeout: 60000 }),
-  getChunks: (saveName: string, customPath?: string) => apiGet(`/chunks/chunks/${encodeURIComponent(saveName)}${customPath ? `?customPath=${encodeURIComponent(customPath)}` : ''}`, { timeout: 60000 }),
+  getChunks: (saveName: string, customPath?: string, scanId?: string) => {
+    const params = new URLSearchParams()
+    if (customPath) params.set('customPath', customPath)
+    if (scanId) params.set('scanId', scanId)
+    const qs = params.toString()
+    return apiGet(`/chunks/chunks/${encodeURIComponent(saveName)}${qs ? `?${qs}` : ''}`, { timeout: 600000 })
+  },
   getStats: (saveName: string, customPath?: string) => apiGet(`/chunks/stats/${encodeURIComponent(saveName)}${customPath ? `?customPath=${encodeURIComponent(customPath)}` : ''}`, { timeout: 60000 }),
   deleteChunks: (
     saveName: string,

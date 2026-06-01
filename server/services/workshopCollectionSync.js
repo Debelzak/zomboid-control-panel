@@ -200,7 +200,9 @@ async function postSharedfilesAction(action, collectionId, childId) {
       if (json && (json.success === 1 || json.success === true)) {
         return { ok: true };
       }
-      return { ok: false, error: json?.error || 'Steam returned non-success' };
+      const detail = `Steam returned non-success (success=${json?.success}, body=${text.slice(0, 200)})`;
+      log.warn(`[WorkshopCollectionSync] ${action} ${childId} → ${collectionId}: ${detail}`);
+      return { ok: false, error: detail };
     } catch {
       // Sometimes it returns HTML (full page) on success too. If we see the
       // child id reflected back, treat as success; otherwise fail loudly.

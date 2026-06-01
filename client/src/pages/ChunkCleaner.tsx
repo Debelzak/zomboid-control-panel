@@ -55,6 +55,7 @@ import { Separator } from '@/components/ui/separator'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { chunksApi, serversApi, panelBridgeApi, ApiError } from '@/lib/api'
 import { useTheme } from '@/contexts/ThemeContext'
+import { useSocket } from '@/contexts/SocketContext'
 
 interface SaveInfo {
   name: string
@@ -197,12 +198,16 @@ function findLastRenderableChunkIndex(chunks: ChunkInfo[], maxX: number): number
 
 export default function ChunkCleaner() {
   const { theme } = useTheme()
+  const socket = useSocket()
   const [saves, setSaves] = useState<SaveInfo[]>([])
   const [selectedSave, setSelectedSave] = useState<string>('')
   const [chunks, setChunks] = useState<ChunkInfo[]>([])
   const [bounds, setBounds] = useState<ChunkBounds | null>(null)
   const [stats, setStats] = useState<SaveStats | null>(null)
   const [loading, setLoading] = useState(false)
+  // Live scan progress streamed over the socket while the map is loading.
+  // total === 0 means indeterminate (B41 flat saves don't report per-dir progress).
+  const [scanProgress, setScanProgress] = useState<{ scanned: number; total: number; chunks: number } | null>(null)
   const [loadingSaves, setLoadingSaves] = useState(false)
   const [selectedChunks, setSelectedChunks] = useState<Set<string>>(new Set())
   const { toast } = useToast()
@@ -487,18 +492,28 @@ export default function ChunkCleaner() {
     if (!selectedSave) return
     const thisLoadId = ++loadIdRef.current
     setLoading(true)
+    setScanProgress(null)
     setChunks([])
     setBounds(null)
     setStats(null)
     setSelectedChunks(new Set())
     setChunkVehicles([])
     setChunkSafehouses([])
-    
+
+    // Unique id so concurrent/stale scans don't update each other's progress.
+    const scanId = `${thisLoadId}-${Date.now().toString(36)}`
+    const handleProgress = (p: { scanId: string; scanned: number; total: number; chunks: number }) => {
+      // Ignore events from a previous scan (user switched saves mid-load).
+      if (p.scanId !== scanId || thisLoadId !== loadIdRef.current) return
+      setScanProgress({ scanned: p.scanned, total: p.total, chunks: p.chunks })
+    }
+    socket?.on('chunkScan:progress', handleProgress)
+
     try {
       const pathToUse = customPath || undefined
       // Load chunks and stats independently so a stats failure doesn't block the map
       const [chunksSettled, statsSettled] = await Promise.allSettled([
-        chunksApi.getChunks(selectedSave, pathToUse),
+        chunksApi.getChunks(selectedSave, pathToUse, scanId),
         chunksApi.getStats(selectedSave, pathToUse)
       ])
       
@@ -530,9 +545,13 @@ export default function ChunkCleaner() {
         variant: 'destructive',
       })
     } finally {
-      if (thisLoadId === loadIdRef.current) setLoading(false)
+      socket?.off('chunkScan:progress', handleProgress)
+      if (thisLoadId === loadIdRef.current) {
+        setLoading(false)
+        setScanProgress(null)
+      }
     }
-  }, [selectedSave, customPath, toast])
+  }, [selectedSave, customPath, toast, socket])
 
   // Fetch vehicles + safehouses from PanelBridge, convert to chunk coords
   const fetchOverlayData = useCallback(async () => {
@@ -2152,9 +2171,28 @@ export default function ChunkCleaner() {
                   )
                 ) : loading ? (
                   <div className="h-full flex items-center justify-center">
-                    <div className="text-center text-muted-foreground">
+                    <div className="text-center text-muted-foreground w-56 max-w-[80%]">
                       <RefreshCw className="w-6 h-6 mx-auto animate-spin" />
-                      <p className="mt-2 text-xs">Loading chunks...</p>
+                      {scanProgress && scanProgress.total > 0 ? (
+                        <>
+                          <p className="mt-3 text-xs font-medium text-foreground tabular-nums">
+                            Scanning map… {Math.floor((scanProgress.scanned / scanProgress.total) * 100)}%
+                          </p>
+                          <div className="mt-2 h-1.5 w-full rounded-full bg-muted overflow-hidden">
+                            <div
+                              className="h-full bg-primary transition-[width] duration-200 ease-out"
+                              style={{ width: `${Math.min(100, (scanProgress.scanned / scanProgress.total) * 100)}%` }}
+                            />
+                          </div>
+                          <p className="mt-1.5 text-[11px] opacity-70 tabular-nums">
+                            {scanProgress.chunks.toLocaleString()} chunks · {scanProgress.scanned.toLocaleString()}/{scanProgress.total.toLocaleString()} folders
+                          </p>
+                        </>
+                      ) : (
+                        <p className="mt-2 text-xs">
+                          {scanProgress ? `Scanning map… ${scanProgress.chunks.toLocaleString()} chunks` : 'Loading chunks…'}
+                        </p>
+                      )}
                     </div>
                   </div>
                 ) : chunks.length === 0 ? (

@@ -110,6 +110,7 @@ export function WorkshopCollectionPanel() {
 
   const collectionId = diff?.collectionId || ''
   const credsConfigured = !!diff?.hasCredentials
+  const tokenExpired = !!diff?.tokenExpired
   const autoSync = !!diff?.autoSync
   const items: DiffItem[] = useMemo(() => (diff?.ok && diff.items) ? diff.items : [], [diff])
 
@@ -173,9 +174,11 @@ export function WorkshopCollectionPanel() {
     try {
       if (action === 'add') {
         if (!credsConfigured) throw new Error('Add Steam cookies in Settings first.')
+        if (tokenExpired) throw new Error('Steam session expired — paste fresh cookies in Settings.')
         await modsApi.collectionAddItem(workshopId)
       } else if (action === 'remove') {
         if (!credsConfigured) throw new Error('Add Steam cookies in Settings first.')
+        if (tokenExpired) throw new Error('Steam session expired — paste fresh cookies in Settings.')
         await modsApi.collectionRemoveItem(workshopId)
       } else if (action === 'track') {
         await modsApi.trackMod(workshopId)
@@ -214,6 +217,10 @@ export function WorkshopCollectionPanel() {
     }
     if ((action === 'add' || action === 'remove') && !credsConfigured) {
       toast({ variant: 'destructive', title: 'Steam cookies required', description: 'Open Settings → Workshop Collection Sync to add them.' })
+      return
+    }
+    if ((action === 'add' || action === 'remove') && tokenExpired) {
+      toast({ variant: 'destructive', title: 'Steam session expired', description: 'Your Steam cookies have expired. Paste fresh ones in Settings → Workshop Collection Sync.' })
       return
     }
     setBulkBusy(action)
@@ -348,6 +355,16 @@ export function WorkshopCollectionPanel() {
                   </span>
                 </>
               )}
+              {credsConfigured && tokenExpired && (
+                <>
+                  <span className="text-muted-foreground/60">·</span>
+                  <span className="inline-flex items-center gap-1 text-destructive">
+                    <AlertTriangle className="w-3 h-3" />
+                    Steam session expired — paste fresh cookies in{' '}
+                    <Link to="/settings" className="underline underline-offset-2">Settings</Link>
+                  </span>
+                </>
+              )}
             </CardDescription>
           </div>
           <div className="flex items-center gap-2 shrink-0">
@@ -370,12 +387,13 @@ export function WorkshopCollectionPanel() {
             </Button>
             <Button
               onClick={handleSyncAll}
-              disabled={syncing || counts.mismatch === 0 || !credsConfigured}
+              disabled={syncing || counts.mismatch === 0 || !credsConfigured || tokenExpired}
               size="sm"
               variant={counts.mismatch > 0 ? 'warning' : 'outline'}
               className="h-8"
               title={
-                !credsConfigured ? 'Steam cookies required'
+                tokenExpired ? 'Steam session expired — update cookies in Settings'
+                : !credsConfigured ? 'Steam cookies required'
                 : counts.mismatch === 0 ? 'Nothing to sync'
                 : `Push all ${counts.mismatch} mismatches`
               }
@@ -519,7 +537,7 @@ export function WorkshopCollectionPanel() {
               variant="ghost"
               className="h-7 px-2 text-[11px] text-success hover:text-success hover:bg-success/10"
               onClick={() => runBulk('add')}
-              disabled={!!bulkBusy || !credsConfigured}
+              disabled={!!bulkBusy || !credsConfigured || tokenExpired}
             >
               {bulkBusy === 'add' ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Plus className="w-3 h-3 mr-1" />}
               Add to collection
@@ -529,7 +547,7 @@ export function WorkshopCollectionPanel() {
               variant="ghost"
               className="h-7 px-2 text-[11px] text-destructive hover:text-destructive hover:bg-destructive/10"
               onClick={() => runBulk('remove')}
-              disabled={!!bulkBusy || !credsConfigured}
+              disabled={!!bulkBusy || !credsConfigured || tokenExpired}
             >
               {bulkBusy === 'remove' ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Minus className="w-3 h-3 mr-1" />}
               Remove from collection
@@ -614,6 +632,7 @@ export function WorkshopCollectionPanel() {
                       onToggleSelect={() => toggleOne(it.workshopId)}
                       busy={rowBusy[it.workshopId] || null}
                       credsConfigured={credsConfigured}
+                      tokenExpired={tokenExpired}
                       onAction={(action) => runRowAction(it.workshopId, action)}
                     />
                   ))}
@@ -690,6 +709,7 @@ function Row({
   onToggleSelect,
   busy,
   credsConfigured,
+  tokenExpired,
   onAction,
 }: {
   item: DiffItem
@@ -697,6 +717,7 @@ function Row({
   onToggleSelect: () => void
   busy: RowAction | null
   credsConfigured: boolean
+  tokenExpired: boolean
   onAction: (action: RowAction) => void
 }) {
   const statusMeta =
@@ -753,8 +774,8 @@ function Row({
               variant="ghost"
               className="h-7 px-2 text-[11px] text-destructive hover:text-destructive hover:bg-destructive/10"
               onClick={() => onAction('remove')}
-              disabled={!!busy || !credsConfigured}
-              title={!credsConfigured ? 'Need Steam cookies' : 'Remove from Steam collection'}
+              disabled={!!busy || !credsConfigured || tokenExpired}
+              title={tokenExpired ? 'Steam session expired' : !credsConfigured ? 'Need Steam cookies' : 'Remove from Steam collection'}
             >
               {busy === 'remove' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Minus className="w-3 h-3" />}
               <span className="ml-1 hidden sm:inline">Remove</span>
@@ -765,8 +786,8 @@ function Row({
               variant="ghost"
               className="h-7 px-2 text-[11px] text-success hover:text-success hover:bg-success/10"
               onClick={() => onAction('add')}
-              disabled={!!busy || !credsConfigured}
-              title={!credsConfigured ? 'Need Steam cookies' : 'Add to Steam collection'}
+              disabled={!!busy || !credsConfigured || tokenExpired}
+              title={tokenExpired ? 'Steam session expired' : !credsConfigured ? 'Need Steam cookies' : 'Add to Steam collection'}
             >
               {busy === 'add' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
               <span className="ml-1 hidden sm:inline">Add</span>

@@ -380,7 +380,12 @@ router.get('/saves', async (req, res) => {
         },
       });
     }
-    const directories = entries.filter(d => d.isDirectory());
+    // Exclude our own `backups` folder. Chunk/region deletions write backups
+    // to `<zomboidDataPath>/backups`. When the user points the data path
+    // directly at `Saves/Multiplayer` (a supported config), that backups
+    // folder lands inside the saves listing and would otherwise show up as a
+    // fake, un-loadable "save". It is never a real PZ multiplayer save.
+    const directories = entries.filter(d => d.isDirectory() && d.name.toLowerCase() !== 'backups');
     
     log.info(`[ChunkCleaner] Found ${directories.length} save directories: ${directories.map(d => d.name).join(', ')}`);
     
@@ -520,7 +525,23 @@ router.get('/chunks/:saveName', async (req, res) => {
   try {
     const { saveName } = req.params;
     const customPath = req.query.customPath ? String(req.query.customPath) : null;
-    
+
+    // Optional progress streaming: the client passes a scanId and subscribes to
+    // `chunkScan:progress` over Socket.IO. Scanning a huge save over a slow UNC
+    // share can take a while, so we report % completion (by directory) instead
+    // of capping the result. No scanId → no emits (back-compat).
+    const scanId = req.query.scanId ? String(req.query.scanId) : null;
+    const io = req.app.get('io');
+    let lastProgressAt = 0;
+    const emitProgress = (scanned, total, found, { force = false } = {}) => {
+      if (!io || !scanId) return;
+      const now = Date.now();
+      // Throttle to ~5/sec to avoid flooding the socket on fast local disks.
+      if (!force && now - lastProgressAt < 200) return;
+      lastProgressAt = now;
+      io.emit('chunkScan:progress', { scanId, scanned, total, chunks: found });
+    };
+
     // Sanitize saveName to prevent path traversal
     const sanitizedSaveName = path.basename(saveName);
     if (!sanitizedSaveName || sanitizedSaveName !== saveName) {
@@ -592,6 +613,8 @@ router.get('/chunks/:saveName', async (req, res) => {
       let totalNonBinFiles = 0;
       let sampleNonBinFiles = [];
       let emptyDirs = 0;
+      let scannedDirs = 0;
+      emitProgress(0, xDirs.length, 0, { force: true });
       
       for (const xDir of xDirs) {
         const x = parseInt(xDir.name, 10);
@@ -652,10 +675,14 @@ router.get('/chunks/:saveName', async (req, res) => {
         } catch (err) {
           log.warn(`Error reading chunk directory ${xPath}: ${err.message}`);
         }
+
+        scannedDirs++;
+        emitProgress(scannedDirs, xDirs.length, chunks.length);
       }
       
       // Diagnostic: log what was found inside the B42 dirs
       log.info(`[ChunkCleaner] B42 scan: ${totalChunks} chunks loaded, ${totalBinFiles} .bin files, ${emptyDirs} empty dirs, ${totalNonBinFiles} non-.bin files${sampleNonBinFiles.length > 0 ? ' (samples: ' + sampleNonBinFiles.join(', ') + ')' : ''}`);
+      emitProgress(xDirs.length, xDirs.length, chunks.length, { force: true });
     } else {
       // Legacy flat file structure: map_X_Y.bin or X_Y.bin
       const files = mapContents.filter(f => f.isFile() && f.name.endsWith('.bin')).map(f => f.name);
@@ -838,8 +865,15 @@ router.get('/chunks/:saveName', async (req, res) => {
       isB42
     });
   } catch (error) {
-    log.error(`Failed to get chunks: ${error.message}`);
-    res.status(500).json({ error: sanitizeError(error.message) });
+    // resolveCustomOrDefaultDataPath throws 400/403 for bad custom paths —
+    // forward that status (and structured rejection details) instead of
+    // masking it as a generic 500 so the UI can render targeted remediation.
+    const isUserError = error.statusCode && error.statusCode < 500;
+    if (isUserError) log.warn(`Get chunks rejected (${error.statusCode}): ${error.message}`);
+    else log.error(`Failed to get chunks: ${error.message}`);
+    const payload = { error: sanitizeError(error.message) };
+    if (error.details) payload.rejection = error.details;
+    res.status(error.statusCode || 500).json(payload);
   }
 });
 
@@ -1525,8 +1559,12 @@ router.get('/stats/:saveName', async (req, res) => {
     
     res.json(stats);
   } catch (error) {
-    log.error(`Failed to get save stats: ${error.message}`);
-    res.status(500).json({ error: sanitizeError(error.message) });
+    const isUserError = error.statusCode && error.statusCode < 500;
+    if (isUserError) log.warn(`Get stats rejected (${error.statusCode}): ${error.message}`);
+    else log.error(`Failed to get save stats: ${error.message}`);
+    const payload = { error: sanitizeError(error.message) };
+    if (error.details) payload.rejection = error.details;
+    res.status(error.statusCode || 500).json(payload);
   }
 });
 
