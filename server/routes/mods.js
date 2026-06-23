@@ -32,6 +32,24 @@ function withIniLock(iniPath, fn) {
   return next;
 }
 
+export function filterOwnedClientModIds(clientModIds, ownedModIds) {
+  const ownedSet = new Set((ownedModIds || []).map(String));
+  if (!ownedSet.size || !Array.isArray(clientModIds)) return [];
+
+  const filtered = [];
+  const seen = new Set();
+  for (const rawId of clientModIds) {
+    if (typeof rawId !== 'string') continue;
+    const modId = sanitizeIniValue(rawId).trim();
+    if (!modId || modId.length >= 200) continue;
+    if (looksLikeWorkshopId(modId)) continue;
+    if (!ownedSet.has(modId) || seen.has(modId)) continue;
+    seen.add(modId);
+    filtered.push(modId);
+  }
+  return filtered;
+}
+
 // Strip UTF-8 BOM (byte-order mark) that some text editors prepend to files.
 // If present, the BOM breaks regex patterns anchored with ^ on the first line.
 function stripBom(str) {
@@ -114,6 +132,10 @@ function getModChecker(req, res) {
   return modChecker;
 }
 
+function shouldRefreshTrackedModName(name) {
+  return !name || /^Workshop Mod /i.test(name) || /\[\s*Legacy\s*\]/i.test(name);
+}
+
 // Get mod checker status
 router.get('/status', async (req, res) => {
   try {
@@ -173,14 +195,14 @@ router.get('/tracked', async (req, res) => {
 
     const mods = await getTrackedMods();
     
-    // Enrich mods that still have generic "Workshop Mod" names with real names from disk
+    // Enrich generic or stale display names with real names from disk.
     const modChecker = req.app.get('modChecker');
     if (modChecker) {
       let updated = 0;
       for (const mod of mods) {
-        if (!mod.name || mod.name.startsWith('Workshop Mod ')) {
-          const realName = modChecker.resolveModNameFromDisk(mod.workshop_id);
-          if (realName) {
+        if (shouldRefreshTrackedModName(mod.name)) {
+          const realName = modChecker.resolveModNameFromDisk(mod.workshop_id, true);
+          if (realName && realName !== mod.name) {
             mod.name = realName;
             // Persist the resolved name in the database
             await addTrackedMod(mod.workshop_id, realName);
@@ -215,7 +237,7 @@ router.post('/refresh-names', async (req, res) => {
     const mods = await getTrackedMods();
     const candidates = mods.filter(m => {
       if (targetSet && !targetSet.has(m.workshop_id)) return false;
-      return !m.name || /^Workshop Mod /i.test(m.name);
+      return shouldRefreshTrackedModName(m.name);
     });
 
     let diskResolved = 0;
@@ -2096,7 +2118,31 @@ function findModIdFromWorkshop(workshopId, serverPath) {
 // A single mod.info can ALSO declare multiple `id=` lines (sub-mods that
 // share assets). We collect every id rather than letting later lines
 // overwrite earlier ones.
-function getModDetailsFromWorkshop(workshopId, serverPath) {
+function parseModInfoVersionFolder(folderName) {
+  if (!/^\d+(?:\.\d+)*$/.test(folderName)) return null;
+  return folderName.split('.').map(part => Number.parseInt(part, 10));
+}
+
+function compareModInfoCandidatePaths(leftCandidate, rightCandidate) {
+  const leftVersion = leftCandidate.version;
+  const rightVersion = rightCandidate.version;
+
+  if (leftVersion && !rightVersion) return -1;
+  if (!leftVersion && rightVersion) return 1;
+
+  if (leftVersion && rightVersion) {
+    const maxParts = Math.max(leftVersion.length, rightVersion.length);
+    for (let partIndex = 0; partIndex < maxParts; partIndex++) {
+      const leftPart = leftVersion[partIndex] || 0;
+      const rightPart = rightVersion[partIndex] || 0;
+      if (leftPart !== rightPart) return rightPart - leftPart;
+    }
+  }
+
+  return leftCandidate.order - rightCandidate.order;
+}
+
+export function getModDetailsFromWorkshop(workshopId, serverPath) {
   const mods = [];
   const seenIds = new Set();
   const possiblePaths = getWorkshopPaths(workshopId, serverPath);
@@ -2145,12 +2191,22 @@ function getModDetailsFromWorkshop(workshopId, serverPath) {
         const modDir = path.join(searchPath, entry.name);
         // Build candidate mod.info paths: the mod root, plus every direct
         // subdirectory (covers `common/`, `42/`, `42.0/`, `41/`, `43/`, ...).
-        const candidatePaths = [path.join(modDir, 'mod.info')];
+        const candidatePaths = [{
+          path: path.join(modDir, 'mod.info'),
+          version: null,
+          order: 0
+        }];
         try {
-          for (const sub of fs.readdirSync(modDir, { withFileTypes: true })) {
-            if (sub.isDirectory()) {
-              candidatePaths.push(path.join(modDir, sub.name, 'mod.info'));
-            }
+          const subfolders = fs.readdirSync(modDir, { withFileTypes: true })
+            .filter(sub => sub.isDirectory())
+            .map(sub => sub.name)
+            .sort((leftName, rightName) => leftName.localeCompare(rightName, undefined, { numeric: true, sensitivity: 'base' }));
+          for (const [subIndex, subfolder] of subfolders.entries()) {
+            candidatePaths.push({
+              path: path.join(modDir, subfolder, 'mod.info'),
+              version: parseModInfoVersionFolder(subfolder),
+              order: subIndex + 1
+            });
           }
         } catch (e) {
           log.debug(`Failed to scan subdirs for ${modDir}: ${e.message}`);
@@ -2158,9 +2214,10 @@ function getModDetailsFromWorkshop(workshopId, serverPath) {
 
         // Read every existing mod.info under this mod folder. Multiple
         // version-specific files may coexist; we union the declared ids.
-        for (const modInfoPath of candidatePaths) {
-          if (!fs.existsSync(modInfoPath)) continue;
-          const { ids, meta } = parseModInfoFile(modInfoPath);
+        for (const candidate of candidatePaths
+          .filter(item => fs.existsSync(item.path))
+          .sort(compareModInfoCandidatePaths)) {
+          const { ids, meta } = parseModInfoFile(candidate.path);
           for (const id of ids) {
             if (seenIds.has(id)) continue;
             seenIds.add(id);
@@ -2187,6 +2244,26 @@ function getModDetailsFromWorkshop(workshopId, serverPath) {
   }
 
   return mods;
+}
+
+export function scoreWorkshopDependencyMatch(query, modId, modName) {
+  const normalize = (value) => String(value || '').toLowerCase().replace(/[\s_.\-+\[\]()]/g, '');
+  const queryLower = String(query || '').toLowerCase().trim();
+  const idLower = String(modId || '').toLowerCase();
+  const nameLower = String(modName || '').toLowerCase();
+  const queryNormalized = normalize(query);
+  const idNormalized = normalize(modId);
+  const nameNormalized = normalize(modName);
+
+  if (!queryLower || !idLower) return { score: 0, matchType: 'none' };
+  if (idLower === queryLower) return { score: 1200, matchType: 'exact-id' };
+  if (idNormalized === queryNormalized) return { score: 1100, matchType: 'exact-id' };
+  if (nameLower === queryLower || nameNormalized === queryNormalized) return { score: 950, matchType: 'exact-name' };
+  if (idLower.startsWith(queryLower) || idNormalized.startsWith(queryNormalized)) return { score: 650, matchType: 'id-prefix' };
+  if (nameLower.startsWith(queryLower) || nameNormalized.startsWith(queryNormalized)) return { score: 550, matchType: 'name-prefix' };
+  if (idLower.includes(queryLower) || idNormalized.includes(queryNormalized)) return { score: 350, matchType: 'id-contains' };
+  if (nameLower.includes(queryLower) || nameNormalized.includes(queryNormalized)) return { score: 250, matchType: 'name-contains' };
+  return { score: 0, matchType: 'none' };
 }
 
 // Return available Mod IDs inside a downloaded Workshop Item
@@ -2239,10 +2316,7 @@ router.post('/remove-from-ini', async (req, res) => {
       return res.status(400).json({ error: 'Invalid Workshop ID' });
     }
 
-    // Validate optional modIds array from client
-    const knownModIds = Array.isArray(clientModIds)
-      ? clientModIds.filter(id => typeof id === 'string' && id.length > 0 && id.length < 200).slice(0, 50)
-      : [];
+    const knownModIds = Array.isArray(clientModIds) ? clientModIds.slice(0, 50) : [];
     
     const serverConfigPath = await getServerConfigPath();
     const serverPath = await getServerPath();
@@ -2281,10 +2355,12 @@ router.post('/remove-from-ini', async (req, res) => {
     
       // Determine which mod IDs to remove (a workshop item can have multiple mods)
       let removedModIds = [];
+      let ownedModIds = [];
     
       if (serverPath) {
         // Find ALL mod IDs for this workshop item
         const allModIds = findAllModIdsFromWorkshop(String(workshopId), serverPath);
+        ownedModIds = allModIds;
         if (allModIds.length > 0) {
           for (const mid of allModIds) {
             if (modIds.includes(mid)) {
@@ -2296,8 +2372,9 @@ router.post('/remove-from-ini', async (req, res) => {
         }
       }
     
-      // Also remove explicitly provided modId if not already removed
-      if (modId && !removedModIds.includes(modId) && modIds.includes(modId)) {
+      // Also remove explicitly provided modId if server-side workshop data
+      // verifies that it belongs to this workshop item.
+      if (modId && ownedModIds.includes(modId) && !removedModIds.includes(modId) && modIds.includes(modId)) {
         modIds = modIds.filter(id => id !== modId);
         removedModIds.push(modId);
       }
@@ -2311,11 +2388,11 @@ router.post('/remove-from-ini', async (req, res) => {
         }
       }
     
-      // Last resort: when filesystem lookup couldn't find mod IDs, use the
-      // mod IDs the client already knows about (from the UI's config data)
-      // to prevent WorkshopItems/Mods desync.
-      if (removedModIds.length === 0 && knownModIds.length > 0) {
-        for (const mid of knownModIds) {
+      // Last resort: use client-known IDs only when they are also verified
+      // against server-side workshop data for this exact Workshop item.
+      const verifiedKnownModIds = filterOwnedClientModIds(knownModIds, ownedModIds);
+      if (removedModIds.length === 0 && verifiedKnownModIds.length > 0) {
+        for (const mid of verifiedKnownModIds) {
           if (modIds.includes(mid) && !removedModIds.includes(mid)) {
             modIds = modIds.filter(id => id !== mid);
             removedModIds.push(mid);
@@ -2421,18 +2498,10 @@ router.post('/batch-remove', async (req, res) => {
       modNameMap.set(mod.workshop_id, mod.name);
     }
 
-    // Step 2: Remove all from database and add to ignore list
+    // Step 2: Prepare database removal results. Apply these only after the
+    // INI edit succeeds so a filesystem error cannot leave tracking removed
+    // while WorkshopItems= still loads the mod.
     const dbResults = { removed: 0, failed: 0 };
-    for (const wsId of validIds) {
-      try {
-        await removeTrackedMod(wsId);
-        await addIgnoredMod(wsId, modNameMap.get(wsId) || null);
-        dbResults.removed++;
-      } catch (e) {
-        dbResults.failed++;
-        log.debug(`DB removal failed for ${wsId}: ${e.message}`);
-      }
-    }
 
     // Step 2: Remove all from INI in a single locked write
     const serverConfigPath = await getServerConfigPath();
@@ -2504,6 +2573,20 @@ router.post('/batch-remove', async (req, res) => {
             return { removed: wsRemoved, skipped: validIds.length - wsRemoved };
           });
         }
+      }
+    }
+
+    // Step 3: Remove all from database and add to ignore list. This happens
+    // after the INI operation so a locked-write failure aborts before any
+    // tracking state is changed.
+    for (const wsId of validIds) {
+      try {
+        await removeTrackedMod(wsId);
+        await addIgnoredMod(wsId, modNameMap.get(wsId) || null);
+        dbResults.removed++;
+      } catch (e) {
+        dbResults.failed++;
+        log.debug(`DB removal failed for ${wsId}: ${e.message}`);
       }
     }
 
@@ -2975,12 +3058,12 @@ router.post('/search-workshop-mods', async (req, res) => {
     // Phase 1: Search locally downloaded mods — match by mod ID (exact or partial) and mod name
     const localResults = [];
     const seenWorkshopIds = new Set();
+    let hasExactLocalMatch = false;
     if (serverPath) {
       const workshopPaths = [
         path.join(serverPath, 'steamapps', 'workshop', 'content', '108600'),
         path.join(serverPath, '..', 'steamapps', 'workshop', 'content', '108600'),
       ];
-      const searchLower = searchTerm.toLowerCase();
       for (const workshopBase of workshopPaths) {
         if (!fs.existsSync(workshopBase)) continue;
         try {
@@ -2993,9 +3076,8 @@ router.post('/search-workshop-mods', async (req, res) => {
               const details = getModDetailsFromWorkshop(entry.name, serverPath);
               for (const mod of details) {
                 if (parentModClean && mod.id === parentModClean) continue;
-                const idMatch = mod.id.toLowerCase() === searchLower; // exact ID match (highest priority)
-                const partialMatch = mod.id.toLowerCase().includes(searchLower) || mod.name.toLowerCase().includes(searchLower);
-                if (idMatch || partialMatch) {
+                const scored = scoreWorkshopDependencyMatch(searchTerm, mod.id, mod.name);
+                if (scored.score > 0) {
                   if (!seenWorkshopIds.has(`${entry.name}-${mod.id}`)) {
                     seenWorkshopIds.add(`${entry.name}-${mod.id}`);
                     localResults.push({
@@ -3004,7 +3086,9 @@ router.post('/search-workshop-mods', async (req, res) => {
                       modName: mod.name,
                       source: 'local',
                       isDownloaded: true,
-                      exactMatch: idMatch,
+                      exactMatch: scored.matchType === 'exact-id',
+                      matchType: scored.matchType,
+                      relevance: scored.score,
                     });
                   }
                 }
@@ -3014,10 +3098,18 @@ router.post('/search-workshop-mods', async (req, res) => {
         } catch (e) { log.debug(`Error reading workshop dir during search: ${e.message}`); }
         if (localResults.length >= 20) break;
       }
-      // Sort: exact matches first, then alphabetical
+      // If the required internal ID exists locally, keep the answer sharp:
+      // exact ID candidates are what the admin needs to add. Prefix/contains
+      // matches are useful only when no exact ID is available.
+      const exactLocalMatches = localResults.filter(result => result.matchType === 'exact-id');
+      if (exactLocalMatches.length > 0) {
+        hasExactLocalMatch = true;
+        localResults.splice(0, localResults.length, ...exactLocalMatches);
+      }
+
+      // Sort: strongest match first, then popularity-ish stable name order.
       localResults.sort((a, b) => {
-        if (a.exactMatch && !b.exactMatch) return -1;
-        if (!a.exactMatch && b.exactMatch) return 1;
+        if ((b.relevance || 0) !== (a.relevance || 0)) return (b.relevance || 0) - (a.relevance || 0);
         return a.modName.localeCompare(b.modName);
       });
     }
@@ -3058,7 +3150,7 @@ router.post('/search-workshop-mods', async (req, res) => {
     // may have come from a sibling mod that happens to share the substring.
     let steamSearchEnabled = false;
     let steamSearchAttempted = false;
-    if (!/^\d{5,15}$/.test(searchTerm)) {
+    if (!/^\d{5,15}$/.test(searchTerm) && !hasExactLocalMatch) {
       try {
         const steamApiKey = await getSetting('steamApiKey');
         if (steamApiKey && typeof steamApiKey === 'string' && steamApiKey.length > 10) {
@@ -5830,6 +5922,13 @@ router.post('/resolve-orphan-workshop', async (req, res) => {
 const THUMB_FETCH_TIMEOUT_MS = 12_000;
 const THUMB_MAX_BYTES = 5 * 1024 * 1024; // 5 MB hard cap
 const THUMB_INFLIGHT = new Map(); // workshopId → Promise<Buffer|null>
+const THUMB_EMPTY_GIF = Buffer.from('R0lGODlhAQABAPAAAP///wAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw==', 'base64');
+
+function sendEmptyThumbnail(res) {
+  res.setHeader('Content-Type', 'image/gif');
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  return res.end(THUMB_EMPTY_GIF);
+}
 
 async function fetchSteamPreviewUrl(workshopId) {
   // Fallback: hit GetPublishedFileDetails for a single ID if our DB row has no
@@ -5947,13 +6046,13 @@ router.get('/thumbnail/:workshopId', async (req, res) => {
 
   try {
     const buf = await pending;
-    if (!buf) return res.status(404).end();
+    if (!buf) return sendEmptyThumbnail(res);
     res.setHeader('Content-Type', 'image/jpeg');
     res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
     return res.end(buf);
   } catch (err) {
     log.debug(`Thumbnail fetch failed for ${wsId}: ${err.message}`);
-    return res.status(404).end();
+    return sendEmptyThumbnail(res);
   }
 });
 

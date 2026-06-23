@@ -49,6 +49,7 @@ import { Badge } from "@/components/ui/badge"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { KeyboardShortcutsHelp } from './KeyboardShortcutsHelp'
+import { preloadRouteModule } from '@/lib/routePreload'
 
 // Standalone top-level nav item (not collapsible)
 const dashboardItem = { to: '/', icon: Gauge, label: 'Dashboard' }
@@ -680,6 +681,8 @@ export default function Layout({ children }: LayoutProps) {
               <NavLink
                 to={dashboardItem.to}
                 end
+                onPointerEnter={() => preloadRouteModule(dashboardItem.to)}
+                onFocus={() => preloadRouteModule(dashboardItem.to)}
                 onClick={() => setMobileMenuOpen(false)}
                 className={cn(
                   'group relative flex min-h-9 items-center rounded-md text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60',
@@ -720,6 +723,8 @@ export default function Layout({ children }: LayoutProps) {
                         <TooltipTrigger asChild>
                           <NavLink
                             to={item.to}
+                            onPointerEnter={() => preloadRouteModule(item.to)}
+                            onFocus={() => preloadRouteModule(item.to)}
                             onClick={() => setMobileMenuOpen(false)}
                             className={cn(
                               'group relative flex min-h-9 items-center justify-center rounded-md px-2 py-2 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60',
@@ -803,6 +808,8 @@ export default function Layout({ children }: LayoutProps) {
                       <NavLink
                         key={item.to}
                         to={item.to}
+                        onPointerEnter={() => preloadRouteModule(item.to)}
+                        onFocus={() => preloadRouteModule(item.to)}
                         onClick={() => setMobileMenuOpen(false)}
                         className={({ isActive }) =>
                           cn(

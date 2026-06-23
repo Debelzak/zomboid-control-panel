@@ -7,6 +7,30 @@ import { EventEmitter } from 'events';
 import { sanitizeError } from '../utils/sanitize.js';
 import panelBridge from './panelBridge.js';
 
+function parseModInfoVersionFolder(folderName) {
+  if (!/^\d+(?:\.\d+)*$/.test(folderName)) return null;
+  return folderName.split('.').map(part => Number.parseInt(part, 10));
+}
+
+function compareModInfoCandidates(leftCandidate, rightCandidate) {
+  const leftVersion = leftCandidate.version;
+  const rightVersion = rightCandidate.version;
+
+  if (leftVersion && !rightVersion) return -1;
+  if (!leftVersion && rightVersion) return 1;
+
+  if (leftVersion && rightVersion) {
+    const maxParts = Math.max(leftVersion.length, rightVersion.length);
+    for (let partIndex = 0; partIndex < maxParts; partIndex++) {
+      const leftPart = leftVersion[partIndex] || 0;
+      const rightPart = rightVersion[partIndex] || 0;
+      if (leftPart !== rightPart) return rightPart - leftPart;
+    }
+  }
+
+  return leftCandidate.order - rightCandidate.order;
+}
+
 export class ModChecker extends EventEmitter {
   constructor() {
     super();
@@ -273,21 +297,36 @@ export class ModChecker extends EventEmitter {
       // We probe the mod root and every direct subdirectory.
       const modsDir = path.join(contentDir, 'mods');
       if (fs.existsSync(modsDir)) {
-         const modFolders = fs.readdirSync(modsDir);
+         const modFolders = fs.readdirSync(modsDir, { withFileTypes: true })
+           .filter(entry => entry.isDirectory())
+           .map(entry => entry.name)
+           .sort((leftName, rightName) => leftName.localeCompare(rightName, undefined, { numeric: true, sensitivity: 'base' }));
          // Just take the first valid mod found in the package
          for (const folder of modFolders) {
             const modFolderPath = path.join(modsDir, folder);
-            const candidatePaths = [path.join(modFolderPath, 'mod.info')];
+            const candidatePaths = [{
+              path: path.join(modFolderPath, 'mod.info'),
+              version: null,
+              order: 0
+            }];
             try {
-              for (const sub of fs.readdirSync(modFolderPath, { withFileTypes: true })) {
-                if (sub.isDirectory()) {
-                  candidatePaths.push(path.join(modFolderPath, sub.name, 'mod.info'));
-                }
+              const subfolders = fs.readdirSync(modFolderPath, { withFileTypes: true })
+                .filter(entry => entry.isDirectory())
+                .map(entry => entry.name)
+                .sort((leftName, rightName) => leftName.localeCompare(rightName, undefined, { numeric: true, sensitivity: 'base' }));
+              for (const [subIndex, subfolder] of subfolders.entries()) {
+                candidatePaths.push({
+                  path: path.join(modFolderPath, subfolder, 'mod.info'),
+                  version: parseModInfoVersionFolder(subfolder),
+                  order: subIndex + 1
+                });
               }
             } catch {
               // Not a directory or unreadable — fall through
             }
-            const modInfoPath = candidatePaths.find(p => fs.existsSync(p));
+            const modInfoPath = candidatePaths
+              .filter(candidate => fs.existsSync(candidate.path))
+              .sort(compareModInfoCandidates)[0]?.path;
             if (modInfoPath) {
                let content = fs.readFileSync(modInfoPath, 'utf-8');
                if (content.charCodeAt(0) === 0xFEFF) content = content.slice(1);
@@ -489,7 +528,7 @@ export class ModChecker extends EventEmitter {
     if (!this.scheduler) {
       log.warn('Scheduler not available, cannot trigger restart');
       this.pendingRestart = false;
-      return;
+      return { success: false, retry: true, reason: 'scheduler_unavailable' };
     }
     
     // Check if we should delay for players
@@ -513,7 +552,7 @@ export class ModChecker extends EventEmitter {
           
           // Start player count monitoring
           this.startPlayerMonitoring(updatedMods);
-          return;
+          return { success: true, pending: true, markProcessed: true, reason: 'waiting_for_players' };
         }
       } catch (error) {
         log.warn(`Failed to check player count: ${error.message}`);
@@ -522,10 +561,11 @@ export class ModChecker extends EventEmitter {
     
     // No delay, trigger restart immediately
     try {
-      await this.triggerModRestart(updatedMods);
+      return await this.triggerModRestart(updatedMods);
     } catch (e) {
       log.error(`handleModUpdate: triggerModRestart threw: ${e.message}`);
       this.pendingRestart = false;
+      return { success: false, retry: true, reason: 'restart_error' };
     }
   }
 
@@ -605,13 +645,28 @@ export class ModChecker extends EventEmitter {
     // RCON readiness gate — verify RCON is connected before attempting restart
     const rconService = this.scheduler?.rconService;
     if (!rconService || !rconService.connected) {
-      log.warn('RCON not connected — cannot trigger mod restart safely. Will retry on next check cycle.');
+      let serverRunning = true;
+      if (this.serverManager && typeof this.serverManager.checkServerRunning === 'function') {
+        try {
+          serverRunning = await this.serverManager.checkServerRunning();
+        } catch (error) {
+          log.debug(`Could not verify server process before mod restart retry decision: ${error.message}`);
+        }
+      }
+
+      if (serverRunning === false) {
+        log.info('Mod updates detected while the PZ server is offline — no restart needed until the server is running.');
+        this.pendingRestart = false;
+        return { success: true, skipped: true, markProcessed: true, reason: 'server_offline' };
+      }
+
+      log.warn('RCON not connected while server appears to be running — cannot trigger mod restart safely. Will retry on next check cycle.');
       // Clear processed updates so they'll be re-detected on next cycle when RCON may be ready
       for (const m of updatedMods) {
         this.processedUpdates.delete(m.workshopId);
       }
       this.pendingRestart = false;
-      return;
+      return { success: false, retry: true, reason: 'rcon_disconnected' };
     }
     
     const modNames = updatedMods.map(m => String(m.name || 'Unknown').replace(/[\r\n]/g, '')).join(', ');
@@ -668,7 +723,7 @@ export class ModChecker extends EventEmitter {
         for (const m of updatedMods) {
           this.processedUpdates.delete(m.workshopId);
         }
-        return;
+        return { success: false, retry: true, reason: 'restart_incomplete' };
       }
       
       log.info(`Mod restart completed successfully for: ${modNames.substring(0, 200)}`);
@@ -677,6 +732,7 @@ export class ModChecker extends EventEmitter {
       if (this.io) {
         this.io.emit('mods:restart_complete', { mods: updatedMods });
       }
+      return { success: true, markProcessed: true, reason: 'restart_complete' };
     } catch (error) {
       log.error(`Restart failed: ${error.message}`);
       if (this.io) {
@@ -686,6 +742,7 @@ export class ModChecker extends EventEmitter {
       for (const m of updatedMods) {
         this.processedUpdates.delete(m.workshopId);
       }
+      return { success: false, retry: true, reason: 'restart_error' };
     } finally {
       // Always clear pendingRestart when triggerModRestart finishes
       this.pendingRestart = false;
@@ -1048,17 +1105,18 @@ export class ModChecker extends EventEmitter {
         if (this.onUpdateCallback && !this.pendingRestart && newUpdates.length > 0) {
           try {
             log.info(`Triggering auto-restart callback for ${newUpdates.length} new update(s)`);
-            await this.onUpdateCallback(newUpdates);
-            // Mark these updates as processed ONLY if a restart actually proceeded
-            // (handleModUpdate/triggerModRestart sets pendingRestart=true on success and
-            // false on early aborts like "RCON not connected"). Marking processed when
-            // the restart aborted would suppress retries on every subsequent poll.
-            if (this.pendingRestart) {
+            const callbackResult = await this.onUpdateCallback(newUpdates);
+            // Mark updates only when work actually happened or no restart is needed.
+            // Transient aborts, such as a running server with disconnected RCON, retry.
+            if (this.pendingRestart || callbackResult?.markProcessed === true) {
               for (const m of newUpdates) {
                 const steamTs = m.latestTimestamp?.getTime?.() || 0;
                 if (steamTs) {
                   this.processedUpdates.set(m.workshopId, steamTs);
                 }
+              }
+              if (callbackResult?.reason) {
+                log.debug(`Marked mod updates processed after ${callbackResult.reason}`);
               }
             } else {
               log.info('Restart did not proceed (likely aborted) — keeping updates eligible for retry on next cycle');

@@ -1,4 +1,4 @@
-import { Routes, Route, Link, Navigate } from 'react-router-dom'
+import { Routes, Route, Link, Navigate, useLocation } from 'react-router-dom'
 import { useEffect, useState, useCallback, lazy, Suspense } from 'react'
 import type { Socket } from 'socket.io-client'
 import Layout from './components/Layout'
@@ -15,6 +15,136 @@ import { useToast } from './components/ui/use-toast'
 import { PageSkeleton } from './components/PageSkeleton'
 import { ScrollToTop } from './components/ScrollToTop'
 import { isDemoMode } from './lib/demo'
+
+type RouteLoaderMeta = {
+  title: string
+  description: string
+  eyebrow: string
+  variant: 'dashboard' | 'list' | 'form' | 'console' | 'map' | 'default'
+  metrics: string[]
+}
+
+const ROUTE_LOADERS: Record<string, RouteLoaderMeta> = {
+  '/': {
+    title: 'Dashboard',
+    description: 'Loading live server state, players, actions, and maintenance telemetry.',
+    eyebrow: '// LIVE · OVERVIEW',
+    variant: 'dashboard',
+    metrics: ['status', 'players', 'rcon'],
+  },
+  '/players': {
+    title: 'Online Players',
+    description: 'Preparing player rows, admin actions, notes, and session details.',
+    eyebrow: '// LIVE · PLAYERS',
+    variant: 'list',
+    metrics: ['roster', 'actions', 'notes'],
+  },
+  '/console': {
+    title: 'Server Console',
+    description: 'Opening command history, RCON state, and live output stream.',
+    eyebrow: '// LIVE · CONSOLE',
+    variant: 'console',
+    metrics: ['rcon', 'history', 'stream'],
+  },
+  '/chat': {
+    title: 'In-Game Chat',
+    description: 'Loading bridge chat channels and recent server messages.',
+    eyebrow: '// LIVE · CHAT',
+    variant: 'console',
+    metrics: ['bridge', 'messages', 'send'],
+  },
+  '/events': {
+    title: 'Events & Weather',
+    description: 'Preparing world controls, weather overrides, and event triggers.',
+    eyebrow: '// WORLD · CONTROL',
+    variant: 'form',
+    metrics: ['weather', 'time', 'events'],
+  },
+  '/world-map': {
+    title: 'World Map',
+    description: 'Loading map tiles, marker tools, and player/world overlays.',
+    eyebrow: '// WORLD · MAP',
+    variant: 'map',
+    metrics: ['tiles', 'markers', 'layers'],
+  },
+  '/server-config': {
+    title: 'Server Configuration',
+    description: 'Loading INI sections, validation, and server-safe edit controls.',
+    eyebrow: '// CONFIG · INI',
+    variant: 'form',
+    metrics: ['ini', 'validate', 'save'],
+  },
+  '/mods': {
+    title: 'Mod Manager',
+    description: 'Loading Workshop status, active mod IDs, conflicts, and update state.',
+    eyebrow: '// CONFIG · WORKSHOP',
+    variant: 'list',
+    metrics: ['workshop', 'mods', 'conflicts'],
+  },
+  '/scheduler': {
+    title: 'Scheduled Tasks',
+    description: 'Preparing task rules, run history, and automation controls.',
+    eyebrow: '// MAINTAIN · SCHEDULE',
+    variant: 'list',
+    metrics: ['tasks', 'history', 'cron'],
+  },
+  '/backups': {
+    title: 'World Backups',
+    description: 'Loading backup inventory, restore controls, and storage status.',
+    eyebrow: '// MAINTAIN · BACKUPS',
+    variant: 'list',
+    metrics: ['files', 'storage', 'restore'],
+  },
+  '/chunks': {
+    title: 'Map Cleanup',
+    description: 'Preparing chunk previews, safety checks, and cleanup tools.',
+    eyebrow: '// MAINTAIN · MAP DATA',
+    variant: 'map',
+    metrics: ['chunks', 'preview', 'safe'],
+  },
+  '/servers': {
+    title: 'My Servers',
+    description: 'Loading server profiles, active target, and connection details.',
+    eyebrow: '// SERVERS · PROFILES',
+    variant: 'list',
+    metrics: ['profiles', 'active', 'paths'],
+  },
+  '/server-setup': {
+    title: 'Server Setup',
+    description: 'Preparing install choices, paths, ports, and launch checks.',
+    eyebrow: '// SERVERS · SETUP',
+    variant: 'form',
+    metrics: ['install', 'ports', 'start'],
+  },
+  '/server-finder': {
+    title: 'Browse Public Servers',
+    description: 'Loading discovery filters, search results, and server details.',
+    eyebrow: '// SERVERS · DISCOVERY',
+    variant: 'list',
+    metrics: ['search', 'filters', 'results'],
+  },
+  '/discord': {
+    title: 'Discord Integration',
+    description: 'Loading bot status, channel wiring, and message controls.',
+    eyebrow: '// SYSTEM · DISCORD',
+    variant: 'form',
+    metrics: ['bot', 'channels', 'alerts'],
+  },
+  '/settings': {
+    title: 'Panel Settings',
+    description: 'Loading access, paths, network, and panel preference controls.',
+    eyebrow: '// SYSTEM · SETTINGS',
+    variant: 'form',
+    metrics: ['auth', 'paths', 'network'],
+  },
+  '/debug': {
+    title: 'Debug Logs',
+    description: 'Preparing diagnostics, probes, logs, and support bundle tools.',
+    eyebrow: '// SYSTEM · DIAGNOSTICS',
+    variant: 'console',
+    metrics: ['logs', 'probes', 'bundle'],
+  },
+}
 
 const AUTH_BOOT_STEPS = [
   { code: 'AUTH', label: 'Verifying credentials' },
@@ -47,7 +177,9 @@ const Setup = lazy(() => import('./pages/Setup'))
 
 // Loading fallback — shows a skeleton layout instead of a plain spinner
 function PageLoader() {
-  return <PageSkeleton variant="default" />
+  const { pathname } = useLocation()
+  const meta = ROUTE_LOADERS[pathname] || ROUTE_LOADERS['/']
+  return <PageSkeleton {...meta} />
 }
 
 function AuthScreenLoader() {

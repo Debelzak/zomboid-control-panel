@@ -1399,10 +1399,10 @@ export default function Settings() {
 
       setLocalPasswordResetSupported(true)
       setShowLocalPasswordReset(true)
-      setLocalPasswordResetToken(typeof data.token === 'string' ? data.token : '')
+      setLocalPasswordResetToken('')
       toast({
         title: 'Recovery Ready',
-        description: typeof data.message === 'string' ? data.message : 'Set a new password below.',
+        description: typeof data.message === 'string' ? data.message : 'Recovery token created at data/reset-token.txt. Paste it below to continue.',
       })
     } catch (error) {
       toast({

@@ -153,7 +153,7 @@ interface IniConfig {
 }
 
 // ── Conflict scanner constants (hoisted to avoid re-creation in render) ──
-const CONFLICT_FILE_LIMIT = 50
+const CONFLICT_FILE_LIMIT = 12
 
 // ── Types used in Active Mods sub-tab (hoisted for memoization) ──
 type ModEntry = { id: string; name: string; enabled: boolean; require?: string[] }
@@ -246,6 +246,7 @@ export default function Mods() {
   const [iniConfig, setIniConfig] = useState<IniConfig | null>(null)
   const [modsToInstall, setModsToInstall] = useState<CollectionMod[]>([])
   const [orderedModIds, setOrderedModIds] = useState<string[]>([])
+  const [selectedActiveWsId, setSelectedActiveWsId] = useState<string | null>(null)
   const [savingModOrder, setSavingModOrder] = useState(false)
   const [draggedModIndex, setDraggedModIndex] = useState<number | null>(null)  
   // Expand/collapse states
@@ -282,7 +283,7 @@ export default function Mods() {
   const [conflictsError, setConflictsError] = useState<string | null>(null)
   const [lastScanTime, setLastScanTime] = useState<Date | null>(null)
   const [scanIniSnapshot, setScanIniSnapshot] = useState<string | null>(null)
-  const [openPairs, setOpenPairs] = useLocalStorageState<string[]>('zcp:mods:conflicts:openPairs', [])
+  const [openPairs, setOpenPairs] = useState<string[]>([])
   // SSE streaming scan state
   const [scanProgress, setScanProgress] = useState(0)
   const [scanCurrentMod, setScanCurrentMod] = useState<string | null>(null)
@@ -324,6 +325,7 @@ export default function Mods() {
     isDownloaded: boolean
     matchedVariant?: string
     relevance?: number
+    matchType?: string
   }
   type DepSearchState = { loading: boolean; results: DepSearchHit[]; error: string | null; searchUrl: string | null; variantsTried?: string[]; steamSearchEnabled?: boolean }
   const [depSearchOpen, setDepSearchOpen] = useState<Set<string>>(new Set())
@@ -895,6 +897,11 @@ export default function Mods() {
     return { updateAvailable, neverChecked, upToDate, deactivated }
   }, [filteredMods, iniConfig, configuredWorkshopIds])
 
+  const visibleServerMods = useMemo(
+    () => [...groupedMods.updateAvailable, ...groupedMods.neverChecked, ...groupedMods.upToDate],
+    [groupedMods]
+  )
+
   // Collapse "up-to-date" by default, expand when searching
   const [upToDateExpanded, setUpToDateExpanded] = useState(false)
   // Collapse "never checked" by default — it's an alphabetical dump until a check has run
@@ -1270,12 +1277,12 @@ export default function Mods() {
     }
   }
 
-  const handleBulkRemove = async () => {
-    if (selectedMods.size === 0 || busyRef.current) return
+  const handleBulkRemove = async (workshopIdsOverride?: string[]) => {
+    const workshopIds = workshopIdsOverride ?? Array.from(selectedMods)
+    if (workshopIds.length === 0 || busyRef.current) return
     busyRef.current = true
     
     setLoading(true)
-    const workshopIds = Array.from(selectedMods)
     
     try {
       const result = await modsApi.batchRemove(workshopIds) as { success?: boolean; total?: number; dbRemoved?: number; dbFailed?: number; iniRemoved?: number; error?: string }
@@ -1296,7 +1303,15 @@ export default function Mods() {
           description: `Removed ${result.total ?? workshopIds.length} mod${(result.total ?? workshopIds.length) !== 1 ? 's' : ''} from tracking and server config`,
         })
       }
-      setSelectedMods(new Set())
+      if (workshopIdsOverride) {
+        setSelectedMods(prev => {
+          const next = new Set(prev)
+          for (const workshopId of workshopIds) next.delete(workshopId)
+          return next
+        })
+      } else {
+        setSelectedMods(new Set())
+      }
       fetchData()
     } catch (error) {
       toast({
@@ -1390,28 +1405,6 @@ export default function Mods() {
       toast({
         title: 'Sync Failed',
         description: error instanceof Error ? error.message : 'Failed to sync mods',
-        variant: 'destructive',
-      })
-    } finally {
-      setLoading(false)
-      busyRef.current = false
-    }
-  }
-
-  const handleClearUpdates = async () => {
-    if (busyRef.current) return
-    busyRef.current = true
-    setLoading(true)
-    try {
-      await modsApi.clearUpdates()
-      toast({
-        title: 'Update Flags Cleared',
-      })
-      fetchData()
-    } catch (error) {
-      toast({
-        title: 'Clear Failed',
-        description: error instanceof Error ? error.message : 'Failed to clear updates',
         variant: 'destructive',
       })
     } finally {
@@ -1760,7 +1753,7 @@ export default function Mods() {
   }, [])
 
   const selectAllVisible = () => {
-    setSelectedMods(new Set(filteredMods.map(m => m.workshop_id)))
+    setSelectedMods(new Set(visibleServerMods.map(mod => mod.workshop_id)))
   }
 
   const deselectAll = () => {
@@ -1850,17 +1843,21 @@ export default function Mods() {
 
         {/* Leading status tile — gives each row a visual anchor and carries
             the per-mod state colour (update / unchecked / up-to-date). */}
-        <div
-          className={`shrink-0 relative grid place-items-center w-20 h-20 rounded-md border overflow-hidden ${
+        <a
+          href={`https://steamcommunity.com/sharedfiles/filedetails/?id=${mod.workshop_id}`}
+          target="_blank"
+          rel="noreferrer"
+          className={`shrink-0 relative grid place-items-center w-20 h-20 rounded-md border overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 ${
             mod.update_available
               ? 'border-warning/40 bg-warning/10 text-warning'
               : !mod.last_checked
                 ? 'border-border/50 bg-muted/30 text-muted-foreground'
                 : 'border-primary/25 bg-primary/[0.06] text-primary/85'
           }`}
-          aria-hidden="true"
+          aria-label={`Open ${mod.name || `Workshop item ${mod.workshop_id}`} on Steam Workshop`}
+          title="Open Steam Workshop page"
         >
-          <Package className="w-8 h-8" />
+          <Package className="w-8 h-8" aria-hidden="true" />
           <img
             src={`/api/mods/thumbnail/${mod.workshop_id}`}
             alt=""
@@ -1869,7 +1866,7 @@ export default function Mods() {
             className="absolute inset-0 w-full h-full object-cover rounded-md"
             onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
           />
-        </div>
+        </a>
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 min-w-0">
@@ -2647,24 +2644,24 @@ export default function Mods() {
 
         <Tabs defaultValue="mods" className="space-y-4">
           <div className="flex items-center justify-between flex-wrap gap-2">
-            <TabsList className="inline-flex h-auto gap-1 rounded-md border border-border/55 bg-muted/30 p-1">
-              <TabsTrigger value="mods" className="gap-2 px-3 py-1.5 text-sm font-medium">
+            <TabsList className="flex h-auto w-full max-w-full justify-start gap-1 overflow-x-auto rounded-md border border-border/55 bg-muted/30 p-1 sm:inline-flex sm:w-auto">
+              <TabsTrigger value="mods" className="shrink-0 gap-2 px-3 py-1.5 text-sm font-medium">
                 <Package className="w-4 h-4" />
                 Server Mods
               </TabsTrigger>
-              <TabsTrigger value="config" className="gap-2 px-3 py-1.5 text-sm font-medium">
+              <TabsTrigger value="config" className="shrink-0 gap-2 px-3 py-1.5 text-sm font-medium">
                 <Settings2 className="w-4 h-4" />
                 Advanced
               </TabsTrigger>
-              <TabsTrigger value="conflicts" className="gap-2 px-3 py-1.5 text-sm font-medium" onClick={() => { if (!conflicts && !conflictsLoading) scanConflicts() }}>
+              <TabsTrigger value="conflicts" className="shrink-0 gap-2 px-3 py-1.5 text-sm font-medium" onClick={() => { if (!conflicts && !conflictsLoading) scanConflicts() }}>
                 <Shield className="w-4 h-4" />
                 Conflicts
               </TabsTrigger>
-              <TabsTrigger value="collection" className="gap-2 px-3 py-1.5 text-sm font-medium">
+              <TabsTrigger value="collection" className="shrink-0 gap-2 px-3 py-1.5 text-sm font-medium">
                 <Library className="w-4 h-4" />
                 Collection
               </TabsTrigger>
-              <TabsTrigger value="deactivated" className="gap-2 px-3 py-1.5 text-sm font-medium">
+              <TabsTrigger value="deactivated" className="shrink-0 gap-2 px-3 py-1.5 text-sm font-medium">
                 <EyeOff className="w-4 h-4" />
                 Deactivated
                 {groupedMods.deactivated.length > 0 && (
@@ -3221,28 +3218,6 @@ export default function Mods() {
 
           {/* Server Mods Tab — auto-tracks every workshop ID in the server INI. */}
           <TabsContent value="mods" className="space-y-4">
-            {/* Updates alert — slim, single-line. The status bar above already
-                shows the count; this strip exists so the "Restart to apply"
-                hint stays visible and the dismiss action is one click away. */}
-            {modsWithUpdates.length > 0 && (
-              <div className="flex items-center gap-2.5 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm shadow-sm flex-wrap">
-                <AlertTriangle className="w-4 h-4 text-warning shrink-0" aria-hidden="true" />
-                <span className="font-medium text-warning">
-                  {modsWithUpdates.length} mod{modsWithUpdates.length > 1 ? 's have' : ' has'} updates available
-                </span>
-                <span className="text-xs text-muted-foreground">— restart the server to apply</span>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button variant="outline" size="sm" onClick={handleClearUpdates} disabled={loading} className="ml-auto h-7 text-xs">
-                      <X className="mr-1 h-3 w-3" />
-                      Dismiss
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Clears the update flags. Won't restart the server.</TooltipContent>
-                </Tooltip>
-              </div>
-            )}
-
             {/* Search and Filters */}
             {mods.length > 0 && (
             <div className="flex items-center gap-4 flex-wrap">
@@ -3358,9 +3333,9 @@ export default function Mods() {
                 </div>
               )}
 
-              {selectedMods.size === 0 && filteredMods.length > 0 && (
+              {selectedMods.size === 0 && visibleServerMods.length > 0 && (
                 <Button variant="ghost" size="sm" onClick={selectAllVisible} className="ml-auto w-full sm:w-auto">
-                  Select All ({filteredMods.length})
+                  Select All ({visibleServerMods.length})
                 </Button>
               )}
             </div>
@@ -3771,7 +3746,7 @@ export default function Mods() {
             {iniConfig?.configured ? (
               <>
                 {/* ─── Sub-tab nav ─── */}
-                <div className="flex items-center gap-1 border-b border-border/40 pb-0 overflow-x-auto">
+                <div className="flex max-w-full items-center gap-1 overflow-x-auto rounded-lg border border-border/50 bg-card/45 p-1 shadow-[inset_0_1px_0_hsl(var(--foreground)/0.03)]">
                   {([
                     { key: 'active' as const, label: 'Active Mods', icon: <Package className="w-3.5 h-3.5" /> },
                     { key: 'order' as const, label: 'Load Order', icon: <GripVertical className="w-3.5 h-3.5" /> },
@@ -3782,10 +3757,10 @@ export default function Mods() {
                     <button
                       key={tab.key}
                       onClick={() => setConfigSubTab(tab.key)}
-                      className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors duration-150 whitespace-nowrap -mb-[1px] ${
+                      className={`flex min-h-9 shrink-0 items-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium transition-colors duration-150 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 ${
                         configSubTab === tab.key
-                          ? 'border-primary text-foreground'
-                          : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border/50'
+                          ? 'bg-primary/12 text-foreground shadow-[inset_0_0_0_1px_hsl(var(--primary)/0.22)]'
+                          : 'text-muted-foreground hover:bg-muted/45 hover:text-foreground'
                       }`}
                     >
                       {tab.icon}
@@ -3813,6 +3788,7 @@ export default function Mods() {
                   const displayGroups = filterMultiId ? filteredGroups.filter(g => g.mods.length > 1) : filteredGroups
                   const totalModCount = groups.reduce((s, g) => s + g.mods.length, 0)
                   const q = deferredModManagerSearch.toLowerCase().trim()
+                  const inspectedGroup = groups.find(g => g.wsId === selectedActiveWsId) || displayGroups[0] || null
 
                   const toggleMod = async (mod: ModEntry, wsId: string) => {
                     if (busyRef.current) return
@@ -3929,6 +3905,68 @@ export default function Mods() {
                     return first.name !== first.id ? first.name : first.id
                   }
 
+                  const getGroupMissingDeps = (g: WsGroup) => Array.from(new Set(g.mods.flatMap(m => missingDepsMap.get(m.id) || [])))
+                  const getGroupDuplicateIds = (g: WsGroup) => g.mods.filter(m => duplicateModIds.has(m.id)).map(m => m.id)
+
+                  const getInspectorDepKey = (g: WsGroup, dep: string) => `active-${g.wsId}-${dep}`
+
+                  const runInspectorDepSearch = async (g: WsGroup, dep: string, force = false) => {
+                    const key = getInspectorDepKey(g, dep)
+                    if (!force && depSearchData[key] && !depSearchData[key].error) return
+                    setDepSearchData(prev => ({ ...prev, [key]: { loading: true, results: [], error: null, searchUrl: null } }))
+                    try {
+                      const res = await modsApi.searchWorkshopMods(dep, {
+                        parentName: getGroupLabel(g),
+                        parentWorkshopId: g.wsId,
+                      })
+                      setDepSearchData(prev => ({
+                        ...prev,
+                        [key]: {
+                          loading: false,
+                          results: res.results || [],
+                          error: null,
+                          searchUrl: res.searchUrl,
+                          variantsTried: res.variantsTried,
+                          steamSearchEnabled: res.steamSearchEnabled,
+                        }
+                      }))
+                    } catch (err: any) {
+                      setDepSearchData(prev => ({ ...prev, [key]: { loading: false, results: [], error: err?.message || 'Search failed', searchUrl: null } }))
+                    }
+                  }
+
+                  const toggleInspectorDepSearch = (g: WsGroup, dep: string) => {
+                    const key = getInspectorDepKey(g, dep)
+                    setDepSearchOpen(prev => {
+                      const next = new Set(prev)
+                      if (next.has(key)) next.delete(key)
+                      else next.add(key)
+                      return next
+                    })
+                    if (!depSearchData[key]) runInspectorDepSearch(g, dep)
+                  }
+
+                  const handleInspectorAddDep = async (hit: DepSearchHit, dep: string, key: string) => {
+                    if (busyRef.current) return
+                    busyRef.current = true
+                    setDepAdding(prev => [...prev, key])
+                    try {
+                      await modsApi.addMissingDep(hit.workshopId, hit.modId || dep)
+                      setDepAddResults(prev => ({ ...prev, [key]: 'added' as const }))
+                      const updated = await modsApi.getCurrentConfig()
+                      setIniConfig(updated)
+                      if (updated?.modIds) setOrderedModIds(updated.modIds)
+                      toast({ title: 'Dependency added', description: `${hit.modName} added to the server config.` })
+                    } catch (err) {
+                      reportClientError('Failed to add dependency from inspector.', err)
+                      setDepAddResults(prev => ({ ...prev, [key]: 'error' as const }))
+                      toast({ title: 'Add failed', description: err instanceof Error ? err.message : 'Could not add dependency.', variant: 'destructive' })
+                    } finally {
+                      setDepAdding(prev => prev.filter(item => item !== key))
+                      busyRef.current = false
+                    }
+                  }
+
                   return (
                     <div className="space-y-3 sub-tab-enter">
                       {detectedConflicts.length > 0 && (
@@ -3989,38 +4027,44 @@ export default function Mods() {
                         </div>
                       )}
 
-                      {/* Toolbar: count + Multi-ID filter + missing-deps badge
-                          on the left, search input on the right. Keeps the
-                          status of the list and the way to refine it on a
-                          single row instead of three orphaned ones. */}
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span
-                            className="text-[11px] tabular-nums text-muted-foreground"
-                            title={`${enabledCount} of ${totalModCount} mod IDs are currently enabled. "Mod IDs" are the internal names PZ loads — a single Workshop item can ship several IDs (variants, add-on packs, etc.).`}
-                          >
-                            <span className="text-foreground/80">{enabledCount}</span>
-                            <span className="opacity-50"> / {totalModCount} IDs enabled</span>
-                          </span>
+                      <div className="rounded-lg border border-border/45 bg-card/35 px-3 py-2.5">
+                        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                          <div className="min-w-0 space-y-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span
+                                className="inline-flex items-center gap-1.5 rounded border border-primary/35 bg-primary/10 px-2 py-1 text-[11px] font-medium text-primary"
+                                title={`${enabledCount} of ${totalModCount} mod IDs are currently enabled. "Mod IDs" are the internal names PZ loads — a single Workshop item can ship several IDs (variants, add-on packs, etc.).`}
+                              >
+                                <span className="font-mono tabular-nums text-foreground">{enabledCount}</span>
+                                <span className="text-muted-foreground">of</span>
+                                <span className="font-mono tabular-nums text-foreground">{totalModCount}</span>
+                                <span>IDs enabled</span>
+                              </span>
+                              <span className="inline-flex items-center gap-1.5 rounded border border-border/45 bg-muted/25 px-2 py-1 text-[11px] text-muted-foreground">
+                                <Package className="h-3 w-3" aria-hidden="true" />
+                                <span className="font-mono tabular-nums text-foreground/85">{groups.length}</span>
+                                Workshop item{groups.length !== 1 ? 's' : ''}
+                              </span>
                           {multiIdCount > 0 && (
                             <button
                               onClick={() => setFilterMultiId(!filterMultiId)}
                               title={filterMultiId
                                 ? 'Showing only workshop items with more than one mod ID. These are usually variants where only some should be enabled together.'
                                 : 'Show only workshop items with multiple mod IDs (usually variants — only enable the ones you want).'}
-                              className={`text-[11px] px-2 py-0.5 rounded border transition-colors duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/50 ${filterMultiId ? 'bg-primary/20 border-primary/50 text-primary' : 'border-border/40 text-muted-foreground hover:text-foreground'}`}
+                              className={`inline-flex items-center gap-1.5 rounded border px-2 py-1 text-[11px] font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/50 ${filterMultiId ? 'bg-primary/20 border-primary/50 text-primary' : 'border-border/40 text-muted-foreground hover:bg-muted/35 hover:text-foreground'}`}
                             >
+                              <Filter className="h-3 w-3" aria-hidden="true" />
                               Multi-ID ({multiIdCount})
                             </button>
                           )}
                           {missingDepsMap.size > 0 && (
-                            <span className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded border border-destructive/40 bg-destructive/5 text-destructive" title="At least one enabled mod requires another mod that isn't enabled. See the Conflicts tab → Missing Dependencies.">
+                            <span className="inline-flex items-center gap-1.5 rounded border border-destructive/45 bg-destructive/10 px-2 py-1 text-[11px] font-medium text-destructive" title="At least one enabled mod requires another mod that isn't enabled. See the Conflicts tab → Missing Dependencies.">
                               <AlertTriangle className="w-3 h-3 shrink-0" aria-hidden="true" />
                               {missingDepsMap.size} missing dep{missingDepsMap.size !== 1 ? 's' : ''}
                             </span>
                           )}
                           {duplicateModIds.size > 0 && (
-                            <span className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded border border-warning/40 bg-warning/5 text-warning" title="Multiple workshop items declare the same internal mod ID. Only one will load — review the Conflicts tab.">
+                            <span className="inline-flex items-center gap-1.5 rounded border border-warning/45 bg-warning/10 px-2 py-1 text-[11px] font-medium text-warning" title="Multiple workshop items declare the same internal mod ID. Only one will load — review the Conflicts tab.">
                               <AlertTriangle className="w-3 h-3 shrink-0" aria-hidden="true" />
                               {duplicateModIds.size} duplicate ID{duplicateModIds.size !== 1 ? 's' : ''}
                             </span>
@@ -4030,26 +4074,33 @@ export default function Mods() {
                               <Check className="w-3 h-3" /> Saved to INI
                             </span>
                           )}
+                            </div>
+                            <p className="text-[11px] leading-4 text-muted-foreground/75">
+                              Toggle internal mod IDs here. Workshop items can contain add-ons, variants, and shared libraries; the green chips are what Project Zomboid actually loads.
+                            </p>
                         </div>
-                        <div className="relative w-full sm:w-56">
+                        <div className="relative w-full lg:w-72">
                           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
-                          <Input value={modManagerSearch} onChange={e => handleModManagerSearchChange(e.target.value)} placeholder="Filter mods..." aria-label="Filter mods" className="h-7 text-xs pl-8 bg-background/60" />
+                          <Input value={modManagerSearch} onChange={e => handleModManagerSearchChange(e.target.value)} placeholder="Filter active mods..." aria-label="Filter active mods" className="h-9 text-xs pl-8 bg-background/60" />
                           {modManagerSearch && (
                             <button onClick={() => { handleModManagerSearchChange('') }} aria-label="Clear search" className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground text-[11px] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/50 rounded">✕</button>
                           )}
+                        </div>
                         </div>
                       </div>
 
                       {/* (Dependency / duplicate badges are now inline above) */}
 
                       {/* Scrollable mod list */}
-                      <div className="rounded-lg border border-border bg-muted/50 shadow-md overflow-hidden">
+                      <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_21rem]">
+                      <div className="min-w-0 overflow-hidden rounded-lg border border-border bg-muted/50 shadow-md">
                         {displayGroups.length > 0 ? (
                           <ScrollArea className="h-[calc(100vh-340px)] min-h-[300px]">
-                            <div className="divide-y divide-border/60 [&>*:nth-child(even)]:bg-card/70">
+                            <div className="min-w-0 divide-y divide-border/60 [&>*:nth-child(even)]:bg-card/70">
                               {displayGroups.map(g => {
                                 const isSingle = g.mods.length === 1
                                 const mod0 = g.mods[0]
+                                const isInspected = inspectedGroup?.wsId === g.wsId
                                 // Collect dep/conflict info for the whole group
                                 const groupMissing = g.mods.flatMap(m => missingDepsMap.get(m.id) || [])
                                 const groupDupes = g.mods.filter(m => duplicateModIds.has(m.id))
@@ -4059,7 +4110,8 @@ export default function Mods() {
                                   return (
                                     <div
                                       key={g.wsId}
-                                      className={`perf-list-row group flex items-center gap-3 px-3 py-1.5 transition-colors duration-150 hover:bg-muted/10 ${!mod0.enabled ? 'opacity-50' : ''}`}
+                                      onClick={() => setSelectedActiveWsId(g.wsId)}
+                                      className={`perf-list-row group flex flex-wrap items-center gap-2 px-3 py-2.5 transition-colors duration-150 hover:bg-muted/10 sm:flex-nowrap sm:gap-3 ${isInspected ? 'bg-primary/[0.055] shadow-[inset_2px_0_0_hsl(var(--primary)/0.55)]' : ''} ${!mod0.enabled ? 'opacity-60' : ''}`}
                                     >
                                       <Checkbox
                                         checked={mod0.enabled}
@@ -4067,11 +4119,13 @@ export default function Mods() {
                                         className="shrink-0"
                                       aria-label={`${mod0.enabled ? "Disable" : "Enable"} ${mod0.name || mod0.id}`}
                                       />
-                                      <div className="min-w-0 flex-1">
-                                        <div className="flex items-baseline gap-2">
-                                          <span className="text-xs font-mono truncate">{mod0.id}</span>
+                                      <div className="min-w-0 flex-[1_1_calc(100%-2rem)] space-y-1 sm:flex-1">
+                                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                          <span className="text-sm font-semibold leading-tight text-foreground truncate">{mod0.name || mod0.id}</span>
                                           {mod0.name !== mod0.id && (
-                                            <span className="text-[11px] text-muted-foreground/70 truncate hidden sm:inline">{mod0.name}</span>
+                                            <span className="inline-flex items-center rounded border border-success/25 bg-success/10 px-1.5 py-0.5 font-mono text-[10px] leading-none text-success">
+                                              {mod0.id}
+                                            </span>
                                           )}
                                           {groupDupes.length > 0 && (
                                             <span className="text-[10px] px-1.5 py-0 rounded bg-warning/15 text-warning border border-warning/30 shrink-0" title={`Also provided by workshop item${duplicateModIds.get(mod0.id)!.length > 2 ? 's' : ''} ${duplicateModIds.get(mod0.id)!.filter(w => w !== g.wsId).join(', ')}`}>
@@ -4079,9 +4133,19 @@ export default function Mods() {
                                             </span>
                                           )}
                                         </div>
+                                        <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
+                                          <span className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-medium ${mod0.enabled ? 'border-success/30 bg-success/10 text-success' : 'border-border/45 bg-muted/25 text-muted-foreground'}`}>
+                                            <span className={`h-1.5 w-1.5 rounded-full ${mod0.enabled ? 'bg-success' : 'bg-muted-foreground/50'}`} aria-hidden="true" />
+                                            {mod0.enabled ? 'Enabled' : 'Disabled'}
+                                          </span>
+                                          <span className="inline-flex items-center gap-1 rounded border border-border/35 bg-muted/20 px-1.5 py-0.5 font-mono tabular-nums" title={`Workshop ID: ${g.wsId}`}>
+                                            WS {g.wsId}
+                                          </span>
+                                        </div>
                                         {mod0.enabled && groupRequires.length > 0 && groupMissing.length > 0 && (
-                                          <div className="flex flex-wrap items-center gap-1 mt-0.5">
-                                            <span className="text-[10px] text-destructive/80">missing:</span>
+                                          <div className="flex flex-wrap items-center gap-1 rounded border border-destructive/35 bg-destructive/10 px-2 py-1">
+                                            <AlertTriangle className="h-3 w-3 text-destructive" aria-hidden="true" />
+                                            <span className="text-[10px] font-medium text-destructive/90">Missing required ID:</span>
                                             {groupRequires.filter(dep => groupMissing.includes(dep)).map(dep => (
                                               <span key={dep} className="text-[10px] px-1 rounded font-mono bg-destructive/15 text-destructive border border-destructive/30" title={`${dep} is not enabled — this mod may not work`}>
                                                 {dep}
@@ -4090,45 +4154,85 @@ export default function Mods() {
                                           </div>
                                         )}
                                       </div>
-                                      <span className="text-xs text-muted-foreground/60 tabular-nums shrink-0 hidden md:inline group-hover:text-muted-foreground/85 transition-colors" title={`Workshop ID: ${g.wsId}`}>#{g.wsId.slice(-5)}</span>
-                                      <button
-                                        onClick={() => setConfirmRemoveWorkshop({ wsId: g.wsId, knownModIds: g.mods.map(m => m.id) })}
-                                        className="text-destructive/80 hover:text-destructive hover:bg-destructive/15 rounded p-1.5 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-destructive/50"
-                                        title={`Remove workshop item ${g.wsId} from INI`}
-                                        aria-label={`Remove ${mod0.id}`}
-                                      >
-                                        <X className="w-4 h-4" />
-                                      </button>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <a
+                                            href={`https://steamcommunity.com/sharedfiles/filedetails/?id=${g.wsId}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="rounded p-1.5 text-muted-foreground transition-colors duration-150 hover:bg-muted/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/50"
+                                            aria-label={`Open workshop page for ${mod0.name || mod0.id}`}
+                                          >
+                                            <ExternalLink className="w-4 h-4" />
+                                          </a>
+                                        </TooltipTrigger>
+                                        <TooltipContent>Open Workshop page</TooltipContent>
+                                      </Tooltip>
+                                      <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                          <Button variant="ghost" size="iconDense" className="h-8 w-8 text-muted-foreground hover:text-foreground" aria-label={`More actions for ${mod0.name || mod0.id}`}>
+                                            <MoreVertical className="h-4 w-4" />
+                                          </Button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="end">
+                                          <DropdownMenuItem onClick={() => copyText(g.wsId).then(() => toast({ title: 'Copied', description: `Workshop ID ${g.wsId}` })).catch(() => {})}>
+                                            <FileText className="mr-2 h-4 w-4" />
+                                            Copy Workshop ID
+                                          </DropdownMenuItem>
+                                          <DropdownMenuSeparator />
+                                          <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => setConfirmRemoveWorkshop({ wsId: g.wsId, knownModIds: g.mods.map(m => m.id) })}>
+                                            <Trash2 className="mr-2 h-4 w-4" />
+                                            Remove from server INI
+                                          </DropdownMenuItem>
+                                        </DropdownMenuContent>
+                                      </DropdownMenu>
                                     </div>
                                   )
                                 }
 
                                 return (
-                                  <div key={g.wsId} className={`perf-list-row group ${!g.someEnabled ? 'opacity-50' : ''}`}>
-                                    <div className="flex items-center gap-3 px-3 py-1.5">
+                                  <div
+                                    key={g.wsId}
+                                    onClick={() => setSelectedActiveWsId(g.wsId)}
+                                    className={`perf-list-row group ${isInspected ? 'bg-primary/[0.055] shadow-[inset_2px_0_0_hsl(var(--primary)/0.55)]' : ''} ${!g.someEnabled ? 'opacity-60' : ''}`}
+                                  >
+                                    <div className="flex flex-wrap items-center gap-2 px-3 py-2.5 sm:flex-nowrap sm:gap-3">
                                       <button
-                                        onClick={() => toggleAllInGroup(g)}
-                                        className="flex items-center gap-3 flex-1 min-w-0 text-left hover:bg-muted/10 -mx-3 -my-1.5 px-3 py-1.5 transition-colors duration-150 focus-visible:outline-none focus-visible:bg-muted/10"
+                                        type="button"
+                                        onClick={(event) => {
+                                          event.stopPropagation()
+                                          setSelectedActiveWsId(g.wsId)
+                                        }}
+                                        className="flex min-w-0 flex-[1_1_100%] items-center gap-3 text-left transition-colors duration-150 hover:bg-muted/10 focus-visible:outline-none focus-visible:bg-muted/10 sm:-mx-3 sm:-my-2.5 sm:flex-1 sm:px-3 sm:py-2.5"
                                       >
                                         <div className={`w-2 h-2 rounded-sm shrink-0 ${g.allEnabled ? 'bg-success' : g.someEnabled ? 'bg-success/40' : 'bg-muted-foreground/20'}`} />
-                                        <span className="text-xs font-medium truncate flex-1">{getGroupLabel(g)}</span>
+                                        <div className="min-w-0 flex-1">
+                                          <div className="truncate text-sm font-semibold leading-tight text-foreground">{getGroupLabel(g)}</div>
+                                          <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
+                                            <span className="inline-flex items-center gap-1 rounded border border-border/35 bg-muted/20 px-1.5 py-0.5 font-mono tabular-nums" title={`Workshop ID: ${g.wsId}`}>
+                                              WS {g.wsId}
+                                            </span>
+                                          </div>
+                                        </div>
                                         {(() => {
                                           const enabledN = g.mods.filter(m => m.enabled).length
                                           const totalN = g.mods.length
                                           return (
                                             <span
-                                              className="text-xs tabular-nums shrink-0 text-muted-foreground/85"
+                                              className={`inline-flex shrink-0 items-center gap-1 rounded border px-2 py-1 text-[11px] font-medium tabular-nums ${g.allEnabled ? 'border-success/30 bg-success/10 text-success' : g.someEnabled ? 'border-warning/35 bg-warning/10 text-warning' : 'border-border/45 bg-muted/25 text-muted-foreground'}`}
                                               title={
                                                 totalN === 1
                                                   ? `${enabledN} of ${totalN} enabled`
                                                   : `${enabledN} of ${totalN} mod IDs enabled. Some workshop items ship multiple compatible IDs (e.g. add-on packs); others ship alternatives (e.g. Lite vs Full). Check the workshop page if unsure.`
                                               }
                                             >
-                                              {enabledN} of {totalN}
+                                              <span>{enabledN}</span>
+                                              <span className="opacity-60">of</span>
+                                              <span>{totalN}</span>
+                                              <span className="hidden sm:inline opacity-75">enabled</span>
                                             </span>
                                           )
                                         })()}
-                                        <span className="text-xs text-muted-foreground/60 tabular-nums shrink-0 hidden md:inline group-hover:text-muted-foreground/85 transition-colors" title={`Workshop ID: ${g.wsId}`}>#{g.wsId.slice(-5)}</span>
                                       </button>
                                       <a
                                         href={`https://steamcommunity.com/sharedfiles/filedetails/?id=${g.wsId}`}
@@ -4141,16 +4245,26 @@ export default function Mods() {
                                       >
                                         <ExternalLink className="w-4 h-4" />
                                       </a>
-                                      <button
-                                        onClick={() => setConfirmRemoveWorkshop({ wsId: g.wsId, knownModIds: g.mods.map(m => m.id) })}
-                                        className="text-destructive/80 hover:text-destructive hover:bg-destructive/15 rounded p-1.5 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-destructive/50 shrink-0"
-                                        title={`Remove workshop item ${g.wsId} from INI`}
-                                        aria-label={`Remove ${getGroupLabel(g)}`}
-                                      >
-                                        <X className="w-4 h-4" />
-                                      </button>
+                                      <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                          <Button variant="ghost" size="iconDense" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" aria-label={`More actions for ${getGroupLabel(g)}`}>
+                                            <MoreVertical className="h-4 w-4" />
+                                          </Button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="end">
+                                          <DropdownMenuItem onClick={() => copyText(g.wsId).then(() => toast({ title: 'Copied', description: `Workshop ID ${g.wsId}` })).catch(() => {})}>
+                                            <FileText className="mr-2 h-4 w-4" />
+                                            Copy Workshop ID
+                                          </DropdownMenuItem>
+                                          <DropdownMenuSeparator />
+                                          <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => setConfirmRemoveWorkshop({ wsId: g.wsId, knownModIds: g.mods.map(m => m.id) })}>
+                                            <Trash2 className="mr-2 h-4 w-4" />
+                                            Remove from server INI
+                                          </DropdownMenuItem>
+                                        </DropdownMenuContent>
+                                      </DropdownMenu>
                                     </div>
-                                    <div className="pl-8 pr-3 pb-1.5 space-y-1">
+                                    <div className="pl-3 pr-3 pb-2 space-y-1 sm:pl-8">
                                       <div className="flex flex-wrap gap-1">
                                       {(() => {
                                         const groupSiblings = siblingConflictsMap.get(g.wsId)
@@ -4327,8 +4441,9 @@ export default function Mods() {
                                         return null
                                       })()}
                                       {g.someEnabled && groupRequires.length > 0 && groupMissing.length > 0 && (
-                                        <div className="flex flex-wrap items-center gap-1">
-                                          <span className="text-[10px] text-destructive/80">missing:</span>
+                                        <div className="flex flex-wrap items-center gap-1 rounded border border-destructive/35 bg-destructive/10 px-2 py-1">
+                                          <AlertTriangle className="h-3 w-3 text-destructive" aria-hidden="true" />
+                                          <span className="text-[10px] font-medium text-destructive/90">Missing required ID:</span>
                                           {groupRequires.filter(dep => groupMissing.includes(dep)).map(dep => (
                                             <span key={dep} className="text-[10px] px-1 rounded font-mono bg-destructive/15 text-destructive border border-destructive/30" title={`${dep} is not enabled — this mod may not work`}>
                                               {dep}
@@ -4372,6 +4487,240 @@ export default function Mods() {
                             {q ? `No mods matching "${modManagerSearch}"` : 'No mod IDs found'}
                           </div>
                         )}
+                      </div>
+
+                      {inspectedGroup && (
+                        <aside className="rounded-lg border border-border/55 bg-card/55 shadow-md xl:sticky xl:top-3 xl:self-start" aria-label="Selected workshop item details">
+                          <div className="border-b border-border/45 px-3 py-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground/70">Selected item</p>
+                                <h3 className="mt-1 truncate text-sm font-semibold text-foreground" title={getGroupLabel(inspectedGroup)}>{getGroupLabel(inspectedGroup)}</h3>
+                              </div>
+                              <span className={`inline-flex shrink-0 items-center gap-1 rounded border px-2 py-1 text-[11px] font-medium tabular-nums ${inspectedGroup.allEnabled ? 'border-success/30 bg-success/10 text-success' : inspectedGroup.someEnabled ? 'border-warning/35 bg-warning/10 text-warning' : 'border-border/45 bg-muted/25 text-muted-foreground'}`}>
+                                {inspectedGroup.mods.filter(m => m.enabled).length} of {inspectedGroup.mods.length}
+                              </span>
+                            </div>
+                            <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
+                              <span className="inline-flex items-center rounded border border-border/35 bg-muted/20 px-1.5 py-0.5 font-mono tabular-nums">WS {inspectedGroup.wsId}</span>
+                              {inspectedGroup.mods.length > 1 && <span className="inline-flex items-center rounded border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-primary">Multi-ID</span>}
+                            </div>
+                          </div>
+
+                          <div className="space-y-3 px-3 py-3">
+                            <div className="grid grid-cols-2 gap-2">
+                              <a
+                                href={`https://steamcommunity.com/sharedfiles/filedetails/?id=${inspectedGroup.wsId}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-border/55 bg-background/55 px-2 text-xs font-medium text-foreground hover:bg-muted/55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+                              >
+                                <ExternalLink className="h-3.5 w-3.5" />
+                                Workshop
+                              </a>
+                              <button
+                                type="button"
+                                onClick={() => copyText(inspectedGroup.wsId).then(() => toast({ title: 'Copied', description: `Workshop ID ${inspectedGroup.wsId}` })).catch(() => {})}
+                                className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-border/55 bg-background/55 px-2 text-xs font-medium text-foreground hover:bg-muted/55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+                              >
+                                <FileText className="h-3.5 w-3.5" />
+                                Copy WS
+                              </button>
+                            </div>
+
+                            <div className="space-y-1.5">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground/75">Loaded IDs</p>
+                                <button
+                                  type="button"
+                                  onClick={() => toggleAllInGroup(inspectedGroup)}
+                                  className="rounded border border-border/45 bg-muted/25 px-2 py-1 text-[10px] font-medium text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60"
+                                >
+                                  {inspectedGroup.allEnabled ? 'Disable all' : 'Enable all'}
+                                </button>
+                              </div>
+                              <div className="space-y-1.5">
+                                {inspectedGroup.mods.map(mod => {
+                                  const missing = missingDepsMap.get(mod.id) || []
+                                  const isDupe = duplicateModIds.has(mod.id)
+                                  return (
+                                    <button
+                                      key={mod.id}
+                                      type="button"
+                                      onClick={() => toggleMod(mod, inspectedGroup.wsId)}
+                                      className={`flex w-full items-center gap-2 rounded border px-2 py-1.5 text-left text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60 ${mod.enabled ? 'border-success/25 bg-success/10 text-success' : 'border-border/45 bg-muted/20 text-muted-foreground hover:text-foreground'}`}
+                                      title={`Click to ${mod.enabled ? 'disable' : 'enable'} ${mod.id}`}
+                                    >
+                                      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${mod.enabled ? 'bg-success' : 'bg-muted-foreground/45'}`} aria-hidden="true" />
+                                      <span className="min-w-0 flex-1 truncate font-mono">{mod.id}</span>
+                                      {missing.length > 0 && <AlertTriangle className="h-3 w-3 shrink-0 text-destructive" aria-label="Missing dependency" />}
+                                      {isDupe && <span className="shrink-0 rounded border border-warning/35 bg-warning/10 px-1 py-0 text-[9px] uppercase tracking-wide text-warning">dup</span>}
+                                    </button>
+                                  )
+                                })}
+                              </div>
+                            </div>
+
+                            {getGroupMissingDeps(inspectedGroup).length > 0 && (
+                              <div className="rounded border border-destructive/35 bg-destructive/10 px-2 py-2">
+                                <div className="flex items-center gap-1.5 text-[11px] font-medium text-destructive">
+                                  <AlertTriangle className="h-3.5 w-3.5" />
+                                  Missing required IDs
+                                </div>
+                                <div className="mt-1.5 space-y-2">
+                                  {getGroupMissingDeps(inspectedGroup).map(dep => {
+                                    const key = getInspectorDepKey(inspectedGroup, dep)
+                                    const searchOpen = depSearchOpen.has(key)
+                                    const searchState = depSearchData[key]
+                                    const adding = depAdding.includes(key)
+                                    const added = depAddResults[key] === 'added'
+                                    const errored = depAddResults[key] === 'error'
+
+                                    return (
+                                      <div key={dep} className="rounded border border-destructive/25 bg-background/25 p-1.5">
+                                        <div className="flex flex-wrap items-center gap-1.5">
+                                          <button
+                                            type="button"
+                                            onClick={() => toggleInspectorDepSearch(inspectedGroup, dep)}
+                                            className="inline-flex items-center gap-1 rounded border border-destructive/30 bg-destructive/15 px-1.5 py-0.5 font-mono text-[10px] text-destructive transition-colors hover:bg-destructive/20 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-destructive/60"
+                                            aria-expanded={searchOpen}
+                                            aria-controls={`active-dep-search-${key}`}
+                                            title={`Search Steam Workshop for ${dep}`}
+                                          >
+                                            <Search className="h-3 w-3" aria-hidden="true" />
+                                            {dep}
+                                          </button>
+                                          <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            className="h-6 px-2 text-[10px]"
+                                            onClick={() => {
+                                              if (!searchOpen) toggleInspectorDepSearch(inspectedGroup, dep)
+                                              else runInspectorDepSearch(inspectedGroup, dep, true)
+                                            }}
+                                            disabled={searchState?.loading}
+                                          >
+                                            {searchState?.loading ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Search className="mr-1 h-3 w-3" />}
+                                            Find in Workshop
+                                          </Button>
+                                          {added && <span className="inline-flex items-center gap-1 text-[10px] font-medium text-success"><Check className="h-3 w-3" /> Added</span>}
+                                          {errored && <span className="text-[10px] font-medium text-destructive">Add failed</span>}
+                                        </div>
+
+                                        {searchOpen && (
+                                          <div id={`active-dep-search-${key}`} className="mt-2 space-y-2">
+                                            {searchState?.loading ? (
+                                              <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                                                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Searching Workshop for {dep}...
+                                              </div>
+                                            ) : searchState?.error ? (
+                                              <div className="flex items-center justify-between gap-2 text-[11px]">
+                                                <span className="break-words text-destructive">Search failed: {searchState.error}</span>
+                                                <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={() => runInspectorDepSearch(inspectedGroup, dep, true)}>Retry</Button>
+                                              </div>
+                                            ) : searchState && searchState.results.length === 0 ? (
+                                              <div className="space-y-1 text-[11px] text-muted-foreground">
+                                                <p>No matches found. Try the Steam search page if the dependency has a different Workshop title.</p>
+                                                {searchState.searchUrl && (
+                                                  <a href={searchState.searchUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary hover:text-primary/80">
+                                                    <ExternalLink className="h-3 w-3" /> Open Workshop search
+                                                  </a>
+                                                )}
+                                              </div>
+                                            ) : searchState && searchState.results.length > 0 ? (
+                                              <div className="space-y-1.5">
+                                                <p className="text-[10px] text-muted-foreground">Pick the matching Workshop item, then add it to the server config.</p>
+                                                {searchState.results.slice(0, 4).map((hit, hitIndex) => {
+                                                  const isBest = hit.matchType === 'exact-id' || hitIndex === 0
+                                                  return (
+                                                  <div key={`${dep}-${hit.workshopId}-${hit.modId || ''}`} className={`rounded border px-2 py-1.5 ${isBest ? 'border-success/35 bg-success/[0.055]' : 'border-border/40 bg-card/45'}`}>
+                                                    <div className="flex items-start justify-between gap-2">
+                                                      <div className="min-w-0">
+                                                        <div className="flex min-w-0 items-center gap-1.5">
+                                                          <p className="truncate text-[11px] font-medium text-foreground" title={hit.modName}>{hit.modName}</p>
+                                                          {isBest && (
+                                                            <span className="shrink-0 rounded border border-success/35 bg-success/10 px-1 py-0 text-[9px] font-semibold uppercase tracking-wide text-success">
+                                                              Best
+                                                            </span>
+                                                          )}
+                                                        </div>
+                                                        <p className="mt-0.5 flex flex-wrap items-center gap-1 text-[10px] text-muted-foreground">
+                                                          <span className="font-mono">WS {hit.workshopId}</span>
+                                                          {hit.modId && <span className="font-mono">ID {hit.modId}</span>}
+                                                          <span>{hit.source === 'local' ? 'local' : 'Steam'}</span>
+                                                          {hit.matchType === 'exact-id' && <span className="text-success">exact ID</span>}
+                                                        </p>
+                                                      </div>
+                                                      <div className="flex shrink-0 items-center gap-1">
+                                                        <a
+                                                          href={`https://steamcommunity.com/sharedfiles/filedetails/?id=${hit.workshopId}`}
+                                                          target="_blank"
+                                                          rel="noopener noreferrer"
+                                                          className="rounded p-1 text-muted-foreground hover:bg-muted/45 hover:text-foreground"
+                                                          aria-label={`Open ${hit.modName} on Steam Workshop`}
+                                                        >
+                                                          <ExternalLink className="h-3.5 w-3.5" />
+                                                        </a>
+                                                        <Button
+                                                          type="button"
+                                                          variant="outline"
+                                                          size="sm"
+                                                          className="h-6 px-2 text-[10px]"
+                                                          onClick={() => handleInspectorAddDep(hit, dep, key)}
+                                                          disabled={adding || added}
+                                                        >
+                                                          {adding ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : added ? <Check className="mr-1 h-3 w-3" /> : <Plus className="mr-1 h-3 w-3" />}
+                                                          {added ? 'Added' : 'Add'}
+                                                        </Button>
+                                                      </div>
+                                                    </div>
+                                                  </div>
+                                                )})}
+                                                {searchState.searchUrl && (
+                                                  <a href={searchState.searchUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[10px] text-primary hover:text-primary/80">
+                                                    <ExternalLink className="h-3 w-3" /> Open full Workshop search
+                                                  </a>
+                                                )}
+                                              </div>
+                                            ) : null}
+                                          </div>
+                                        )}
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
+                            {getGroupDuplicateIds(inspectedGroup).length > 0 && (
+                              <div className="rounded border border-warning/35 bg-warning/10 px-2 py-2">
+                                <div className="flex items-center gap-1.5 text-[11px] font-medium text-warning">
+                                  <AlertTriangle className="h-3.5 w-3.5" />
+                                  Duplicate internal IDs
+                                </div>
+                                <div className="mt-1.5 flex flex-wrap gap-1">
+                                  {getGroupDuplicateIds(inspectedGroup).map(id => (
+                                    <span key={id} className="rounded border border-warning/30 bg-warning/15 px-1.5 py-0.5 font-mono text-[10px] text-warning">{id}</span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            <div className="border-t border-border/35 pt-3">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 w-full justify-start text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                onClick={() => setConfirmRemoveWorkshop({ wsId: inspectedGroup.wsId, knownModIds: inspectedGroup.mods.map(m => m.id) })}
+                              >
+                                <Trash2 className="mr-2 h-3.5 w-3.5" />
+                                Remove from server INI
+                              </Button>
+                            </div>
+                          </div>
+                        </aside>
+                      )}
                       </div>
 
                       {/* Mods= raw line — collapsed by default */}
@@ -5333,11 +5682,11 @@ export default function Mods() {
                         {conflictSubTab === 'network' && (
                           <div className="space-y-3">
 
-                            {/* Top Conflicting Mods — ranked summary.
-                                Filtered & re-counted by the active severity tab so the
-                                chips can never disagree with the list below. */}
-                            {topConflictingMods.length > 0 && (() => {
-                              const sevFiltered = topConflictingMods
+                            {/* Severity filter tabs + pairs header */}
+                            {(conflicts.pairs?.length ?? 0) > 0 && (() => {
+                              const allPairKeys = filteredPairs.map(p => `${p.modA.modId}--${p.modB.modId}`)
+                              const allExpanded = openPairs.length === allPairKeys.length && allPairKeys.length > 0
+                              const sevFilteredTopMods = topConflictingMods
                                 .map(m => {
                                   if (pairSeverityFilter === 'high') return { ...m, medium: 0, low: 0 }
                                   if (pairSeverityFilter === 'medium') return { ...m, high: 0, low: 0 }
@@ -5346,56 +5695,13 @@ export default function Mods() {
                                   return m
                                 })
                                 .filter(m => (m.high + m.medium + m.low) > 0)
-                              if (sevFiltered.length === 0) return null
-                              const visibleTopMods = showAllTopMods ? sevFiltered : sevFiltered.slice(0, 8)
-                              const hiddenTopCount = sevFiltered.length - visibleTopMods.length
-                              return (
-                              <div className="overflow-hidden">
-                                <div className="flex flex-wrap items-center gap-1.5">
-                                  {visibleTopMods.map((mod) => {
-                                    const isSelected = graphFilterMod === mod.modId
-                                    const total = mod.high + mod.medium + mod.low
-                                    return (
-                                      <button
-                                        key={mod.modId}
-                                        onClick={() => setGraphFilterMod(isSelected ? null : mod.modId)}
-                                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs transition-colors border ${
-                                          isSelected
-                                            ? 'bg-accent/15 border-accent/40 text-accent-foreground'
-                                            : 'bg-muted/5 border-border/30 text-foreground/70 hover:bg-muted/20 hover:border-border/50'
-                                        }`}
-                                        title={`${mod.modName} — ${total} conflict${total !== 1 ? 's' : ''} (${mod.high}H ${mod.medium}M ${mod.low}L) across ${mod.pairs} pair${mod.pairs !== 1 ? 's' : ''}`}
-                                      >
-                                        <span className="truncate max-w-[160px]">{mod.modName}</span>
-                                        <span className="flex items-center gap-1 shrink-0 text-[11px] tabular-nums">
-                                          {mod.high > 0 && <span className="text-destructive/80">{mod.high}H</span>}
-                                          {mod.medium > 0 && <span className="text-warning/80">{mod.medium}M</span>}
-                                          {mod.low > 0 && <span className="text-primary/60">{mod.low}L</span>}
-                                        </span>
-                                      </button>
-                                    )
-                                  })}
-                                  {(hiddenTopCount > 0 || showAllTopMods) && (
-                                    <button
-                                      onClick={() => setShowAllTopMods(v => !v)}
-                                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-muted/20 transition-colors border border-dashed border-border/30"
-                                    >
-                                      {showAllTopMods ? 'Show less' : `+${hiddenTopCount} more`}
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                              )
-                            })()}
-
-                            {/* Severity filter tabs + pairs header */}
-                            {(conflicts.pairs?.length ?? 0) > 0 && (() => {
-                              const allPairKeys = filteredPairs.map(p => `${p.modA.modId}--${p.modB.modId}`)
-                              const allExpanded = openPairs.length === allPairKeys.length && allPairKeys.length > 0
+                              const visibleTopMods = showAllTopMods ? sevFilteredTopMods : sevFilteredTopMods.slice(0, 6)
+                              const hiddenTopCount = sevFilteredTopMods.length - visibleTopMods.length
                               return (
                                 <>
-                                  <div className="flex items-center justify-between gap-2 flex-wrap">
-                                    <div className="flex items-center gap-1">
+                                  <div className="rounded-lg border border-border/35 bg-card/35 px-3 py-2.5 space-y-2">
+                                  <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                                    <div className="flex flex-wrap items-center gap-1">
                                       {[
                                         { key: 'real' as const, label: 'Real', count: severityCounts.real, dot: 'bg-warning', color: 'text-warning' },
                                         { key: 'high' as const, label: 'Critical', count: severityCounts.high, dot: 'bg-destructive', color: 'text-destructive' },
@@ -5419,7 +5725,7 @@ export default function Mods() {
                                         </button>
                                       ))}
                                     </div>
-                                    <div className="flex items-center gap-3">
+                                    <div className="flex flex-wrap items-center gap-2">
                                       <div className="relative">
                                         <Search className="w-3 h-3 absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground/60 pointer-events-none" aria-hidden="true" />
                                         <input
@@ -5428,7 +5734,7 @@ export default function Mods() {
                                           onChange={(e) => setPairSearchQuery(e.target.value)}
                                           placeholder="Filter by mod name..."
                                           aria-label="Filter conflict pairs by mod name"
-                                          className="h-7 w-44 pl-6 pr-6 rounded-md text-[11px] bg-muted/20 border border-border/40 focus:outline-none focus:ring-1 focus:ring-accent focus:border-accent placeholder:text-muted-foreground/50"
+                                          className="h-8 w-full min-w-[14rem] pl-6 pr-6 rounded-md text-[11px] bg-background/50 border border-border/40 focus:outline-none focus:ring-1 focus:ring-accent focus:border-accent placeholder:text-muted-foreground/50 sm:w-56"
                                         />
                                         {pairSearchQuery && (
                                           <button
@@ -5442,35 +5748,83 @@ export default function Mods() {
                                           </button>
                                         )}
                                       </div>
-                                      <button
-                                        type="button"
-                                        onClick={() => setGroupByWinner(v => !v)}
-                                        className={`inline-flex items-center gap-1.5 px-2 py-1 rounded text-[11px] font-medium border transition-colors ${
-                                          groupByWinner
-                                            ? 'border-accent/40 bg-accent/10 text-accent-foreground'
-                                            : 'border-border/40 text-muted-foreground hover:text-foreground hover:bg-muted/20'
-                                        }`}
-                                        title="Collapse pairs under whichever mod wins them. Off = flat list."
-                                      >
-                                        <Layers className="w-3 h-3" aria-hidden="true" />
-                                        Group by winner
-                                      </button>
                                       {graphFilterMod && (
                                         <button
-                                          className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+                                          className="rounded border border-border/40 bg-muted/25 px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
                                           onClick={() => setGraphFilterMod(null)}
                                         >
                                           Clear mod filter
                                         </button>
                                       )}
-                                      <button
-                                        type="button"
-                                        className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                                        onClick={() => setOpenPairs(allExpanded ? [] : allPairKeys)}
-                                      >
-                                        {allExpanded ? 'Collapse all' : 'Expand all'}
-                                      </button>
                                     </div>
+                                  </div>
+
+                                  <details className="group/conflict-tools rounded border border-border/25 bg-muted/15 px-2 py-1.5">
+                                    <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-[11px] text-muted-foreground hover:text-foreground">
+                                      <span className="inline-flex items-center gap-1.5">
+                                        <ChevronRight className="h-3 w-3 transition-transform group-open/conflict-tools:rotate-90" aria-hidden="true" />
+                                        Triage controls
+                                      </span>
+                                      <span className="font-mono text-[10px] text-muted-foreground/65">
+                                        {groupByWinner ? 'grouped' : 'flat'} · {openPairs.length} open
+                                      </span>
+                                    </summary>
+                                    <div className="mt-2 space-y-2 border-t border-border/25 pt-2">
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <button
+                                          type="button"
+                                          onClick={() => setGroupByWinner(v => !v)}
+                                          className={`inline-flex items-center gap-1.5 rounded border px-2 py-1 text-[11px] font-medium transition-colors ${
+                                            groupByWinner
+                                              ? 'border-accent/40 bg-accent/10 text-accent-foreground'
+                                              : 'border-border/40 text-muted-foreground hover:text-foreground hover:bg-muted/20'
+                                          }`}
+                                          title="Collapse pairs under whichever mod wins them. Off = flat list."
+                                        >
+                                          <Layers className="w-3 h-3" aria-hidden="true" />
+                                          Group by winner
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="rounded border border-border/40 px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted/20 hover:text-foreground transition-colors"
+                                          onClick={() => setOpenPairs(allExpanded ? [] : allPairKeys)}
+                                        >
+                                          {allExpanded ? 'Collapse all pairs' : 'Expand all pairs'}
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="rounded border border-border/40 px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted/20 hover:text-foreground transition-colors"
+                                          onClick={() => setShowAllTopMods(v => !v)}
+                                          disabled={hiddenTopCount <= 0 && !showAllTopMods}
+                                        >
+                                          {showAllTopMods ? 'Show fewer top mods' : `Show ${Math.max(hiddenTopCount, 0)} more top mods`}
+                                        </button>
+                                      </div>
+                                      {sevFilteredTopMods.length > 0 && (
+                                        <div className="flex flex-wrap items-center gap-1.5">
+                                          {visibleTopMods.map((mod) => {
+                                            const isSelected = graphFilterMod === mod.modId
+                                            const total = mod.high + mod.medium + mod.low
+                                            return (
+                                              <button
+                                                key={mod.modId}
+                                                onClick={() => setGraphFilterMod(isSelected ? null : mod.modId)}
+                                                className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] transition-colors ${
+                                                  isSelected
+                                                    ? 'bg-accent/15 border-accent/40 text-accent-foreground'
+                                                    : 'bg-muted/5 border-border/30 text-foreground/70 hover:bg-muted/20 hover:border-border/50'
+                                                }`}
+                                                title={`${mod.modName} — ${total} conflict${total !== 1 ? 's' : ''} (${mod.high}H ${mod.medium}M ${mod.low}L) across ${mod.pairs} pair${mod.pairs !== 1 ? 's' : ''}`}
+                                              >
+                                                <span className="max-w-[150px] truncate">{mod.modName}</span>
+                                                <span className="shrink-0 font-mono tabular-nums text-[10px] text-muted-foreground/80">{total}</span>
+                                              </button>
+                                            )
+                                          })}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </details>
                                   </div>
 
                                   {/* Pairs list */}
@@ -5509,7 +5863,7 @@ export default function Mods() {
                                               maxSeverity === 'high' ? 'border-l-destructive/60 bg-destructive/[0.02]' : maxSeverity === 'medium' ? 'border-l-warning/50' : 'border-l-primary/40'
                                             }`} style={{ animationDelay: `${Math.min(pairIdx * 50, 400)}ms` }}>
                                               <AccordionTrigger className="px-3 py-2.5 hover:no-underline hover:bg-muted/20 [&[data-state=open]]:bg-muted/15 transition-colors">
-                                                <div className="flex items-center gap-3 flex-1 min-w-0 text-left">
+                                                <div className="flex min-w-0 flex-1 flex-col gap-2 text-left sm:flex-row sm:items-center sm:gap-3">
                                                   <div className={`w-2 h-2 rounded-full shrink-0 ${
                                                     maxSeverity === 'high' ? 'bg-destructive severity-pulse' : maxSeverity === 'medium' ? 'bg-warning' : 'bg-primary/60'
                                                   }`} aria-hidden="true" />
@@ -5545,15 +5899,15 @@ export default function Mods() {
                                                     )
 
                                                     return (
-                                                      <div className="flex-1 min-w-0 flex items-center gap-2">
+                                                      <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center">
                                                         {modPill(pair.modA, posA, aWinsAll || fallbackWinnerSide === 'A', bWinsAll || fallbackWinnerSide === 'B')}
                                                         <ArrowRight className={`w-3.5 h-3.5 shrink-0 ${
                                                           aWinsAll || fallbackWinnerSide === 'A' ? 'text-success/60 -scale-x-100' : bWinsAll || fallbackWinnerSide === 'B' ? 'text-success/60' : 'text-muted-foreground/40'
-                                                        }`} aria-hidden="true" />
+                                                        } hidden sm:block`} aria-hidden="true" />
                                                         {modPill(pair.modB, posB, bWinsAll || fallbackWinnerSide === 'B', aWinsAll || fallbackWinnerSide === 'A')}
 
                                                         {/* Verdict pill on the right */}
-                                                        <div className="ml-auto flex items-center gap-2 shrink-0">
+                                                        <div className="flex shrink-0 flex-wrap items-center gap-2 sm:ml-auto sm:flex-nowrap">
                                                           {/* File count + severity dots */}
                                                           <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-muted/30 border border-border/30">
                                                             <span className="text-[11px] tabular-nums font-medium text-foreground/80">
@@ -5648,7 +6002,7 @@ export default function Mods() {
                                                     {pair.lowCount > 0 && (
                                                       <Badge variant="secondary" className="text-[11px] leading-none h-[18px] px-1.5 border-primary/20 text-primary">{pair.lowCount} low — cosmetic</Badge>
                                                     )}
-                                                    <span className="text-[11px] text-muted-foreground/70">Click a file to compare</span>
+                                                    <span className="text-[11px] text-muted-foreground/70">{visibleFiles.length} shown{hiddenCount > 0 ? ` · ${hiddenCount} hidden` : ''}</span>
 
                                                     {/* Fix-it actions: promote one mod over the other in load order. */}
                                                     {posA != null && posB != null && (
@@ -5665,7 +6019,7 @@ export default function Mods() {
                                                           }}
                                                         >
                                                           <Wrench className="w-3 h-3" />
-                                                          <span className="truncate max-w-[140px]">Make {pair.modA.modName} win</span>
+                                                          <span className="truncate max-w-[140px]">Make A win</span>
                                                         </Button>
                                                         <Button
                                                           size="sm"
@@ -5679,7 +6033,7 @@ export default function Mods() {
                                                           }}
                                                         >
                                                           <Wrench className="w-3 h-3" />
-                                                          <span className="truncate max-w-[140px]">Make {pair.modB.modName} win</span>
+                                                          <span className="truncate max-w-[140px]">Make B win</span>
                                                         </Button>
                                                         <Button
                                                           size="sm"
@@ -5688,7 +6042,7 @@ export default function Mods() {
                                                           title={`See every conflict involving ${pair.modA.modName}`}
                                                           onClick={(e) => { e.stopPropagation(); setModDetailsId(pair.modA.modId) }}
                                                         >
-                                                          <Info className="w-3 h-3" /> A details
+                                                          <Info className="w-3 h-3" /> Details A
                                                         </Button>
                                                         <Button
                                                           size="sm"
@@ -5697,7 +6051,7 @@ export default function Mods() {
                                                           title={`See every conflict involving ${pair.modB.modName}`}
                                                           onClick={(e) => { e.stopPropagation(); setModDetailsId(pair.modB.modId) }}
                                                         >
-                                                          <Info className="w-3 h-3" /> B details
+                                                          <Info className="w-3 h-3" /> Details B
                                                         </Button>
                                                       </div>
                                                     )}
@@ -6321,7 +6675,7 @@ export default function Mods() {
                       const someSelected = selectedDeactivated.length > 0
                       const missingNameCount = groupedMods.deactivated.filter(m => !m.name || /^Workshop Mod /i.test(m.name)).length
                       return (
-                        <div className="flex flex-col gap-2 border-b border-border/40 bg-muted/15 px-4 py-2.5">
+                        <div className="space-y-2 border-b border-border/40 bg-muted/15 px-4 py-2.5">
                           <div className="flex flex-wrap items-center gap-2">
                             <div className="flex items-center gap-2">
                               <Checkbox
@@ -6353,9 +6707,24 @@ export default function Mods() {
                                 <PlusCircle className="w-4 h-4 mr-1.5" />
                                 Re-enable{someSelected ? ` (${selectedDeactivated.length})` : ''}
                               </Button>
+                            </div>
+                          </div>
+                          <details className="group/deactivated-danger rounded border border-border/35 bg-card/35 px-2.5 py-1.5">
+                            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-[11px] text-muted-foreground hover:text-foreground">
+                              <span className="inline-flex items-center gap-1.5">
+                                <ChevronRight className="h-3 w-3 transition-transform group-open/deactivated-danger:rotate-90" aria-hidden="true" />
+                                Tracking cleanup
+                              </span>
+                              <span className="text-muted-foreground/65">destructive</span>
+                            </summary>
+                            <div className="mt-2 flex flex-col gap-2 border-t border-border/25 pt-2 sm:flex-row sm:items-center sm:justify-between">
+                              <p className="text-[11px] leading-4 text-muted-foreground">
+                                Delete only removes panel tracking. Workshop files stay on disk, but you will need to add the mod manually later.
+                              </p>
                               <Button
                                 variant="destructive"
                                 size="sm"
+                                className="self-start sm:self-auto"
                                 disabled={loading || (deactivatedIds.length === 0)}
                                 onClick={() => {
                                   const ids = someSelected ? selectedDeactivated : deactivatedIds
@@ -6364,14 +6733,14 @@ export default function Mods() {
                                     : `Delete ALL ${ids.length} deactivated mod${ids.length === 1 ? '' : 's'} from tracking? This cannot be undone (re-add them manually if needed).`
                                   if (!window.confirm(label)) return
                                   setSelectedMods(new Set(ids))
-                                  handleBulkRemove()
+                                  handleBulkRemove(ids)
                                 }}
                               >
                                 <Trash2 className="w-4 h-4 mr-1.5" />
-                                {someSelected ? `Delete (${selectedDeactivated.length})` : `Delete All (${deactivatedIds.length})`}
+                                {someSelected ? `Delete selected (${selectedDeactivated.length})` : `Delete all (${deactivatedIds.length})`}
                               </Button>
                             </div>
-                          </div>
+                          </details>
                           {missingNameCount > 0 && (
                             <div className="flex items-start gap-2 rounded border border-border/40 bg-card/40 px-2.5 py-1.5 text-[11px] text-muted-foreground">
                               <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
@@ -6417,8 +6786,15 @@ export default function Mods() {
                                 aria-label={`Select ${mod.name || mod.workshop_id}`}
                               />
                             </div>
-                            <div className="shrink-0 relative grid place-items-center w-16 h-16 rounded-md border border-border/50 bg-muted/30 text-muted-foreground overflow-hidden">
-                              <Package className="w-7 h-7" />
+                            <a
+                              href={`https://steamcommunity.com/sharedfiles/filedetails/?id=${mod.workshop_id}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="shrink-0 relative grid place-items-center w-16 h-16 rounded-md border border-border/50 bg-muted/30 text-muted-foreground overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70"
+                              aria-label={`Open ${mod.name || `Workshop item ${mod.workshop_id}`} on Steam Workshop`}
+                              title="Open Steam Workshop page"
+                            >
+                              <Package className="w-7 h-7" aria-hidden="true" />
                               <img
                                 src={`/api/mods/thumbnail/${mod.workshop_id}`}
                                 alt=""
@@ -6427,7 +6803,7 @@ export default function Mods() {
                                 className="absolute inset-0 w-full h-full object-cover rounded-md opacity-80"
                                 onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
                               />
-                            </div>
+                            </a>
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-1.5 min-w-0">
                                 <span className="truncate text-sm font-medium text-foreground/90">

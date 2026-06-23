@@ -414,72 +414,50 @@ export function WorkshopCollectionPanel() {
           </div>
         )}
 
-        {/* Stat tiles + sync progress */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          <StatTile
-            label="Tracked locally"
-            value={counts.tracked}
-            icon={<Bookmark className="w-3.5 h-3.5" />}
-            accent="primary"
-          />
-          <StatTile
-            label="In Steam collection"
-            value={counts.inColl}
-            icon={<Library className="w-3.5 h-3.5" />}
-            accent="primary"
-          />
-          <StatTile
-            label="Missing from collection"
-            value={counts.toAdd}
-            icon={<Plus className="w-3.5 h-3.5" />}
-            accent={counts.toAdd > 0 ? 'warning' : 'muted'}
-            onClick={counts.toAdd > 0 ? () => setFilter('mismatch') : undefined}
-          />
-          <StatTile
-            label="Not tracked locally"
-            value={counts.toRemove}
-            icon={<AlertTriangle className="w-3.5 h-3.5" />}
-            accent={counts.toRemove > 0 ? 'destructive' : 'muted'}
-            onClick={counts.toRemove > 0 ? () => setFilter('mismatch') : undefined}
-          />
-        </div>
-
-        {/* Sync ratio bar — quiet when everything's in sync, loud otherwise */}
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-            <span className="inline-flex items-center gap-1.5">
-              {inSync ? (
-                <>
-                  <CheckCircle2 className="w-3.5 h-3.5 text-success" />
-                  <span className="text-success font-medium">Collection in sync</span>
-                </>
-              ) : (
-                <>
-                  <AlertTriangle className="w-3.5 h-3.5 text-warning" />
-                  <span className="text-warning font-medium">
-                    {counts.mismatch} mismatch{counts.mismatch !== 1 ? 'es' : ''}
-                  </span>
-                </>
-              )}
-            </span>
-            <span className="tabular-nums">
-              {counts.synced} / {counts.total} synced ({Math.round(syncedRatio)}%)
-            </span>
+        {/* Sync summary — one calm read of the state, details tucked away. */}
+        <div className={cn(
+          'rounded-lg border px-3 py-3',
+          inSync ? 'border-success/30 bg-success/[0.04]' : 'border-warning/35 bg-warning/[0.045]'
+        )}>
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="flex min-w-0 items-center gap-3">
+              {inSync ? <CheckCircle2 className="h-5 w-5 shrink-0 text-success" /> : <AlertTriangle className="h-5 w-5 shrink-0 text-warning" />}
+              <div className="min-w-0">
+                <p className={cn('text-sm font-semibold', inSync ? 'text-success' : 'text-warning')}>
+                  {inSync ? 'Collection in sync' : `${counts.mismatch} mismatch${counts.mismatch !== 1 ? 'es' : ''} to review`}
+                </p>
+                <p className="mt-0.5 text-[11px] text-muted-foreground">
+                  {counts.synced} of {counts.total} Workshop item{counts.total !== 1 ? 's' : ''} aligned with tracked mods.
+                </p>
+              </div>
+            </div>
+            <div className="min-w-[12rem] space-y-1.5">
+              <div className="flex items-center justify-between font-mono text-[10px] text-muted-foreground">
+                <span>{Math.round(syncedRatio)}%</span>
+                {!inSync && <span>{counts.toAdd} add · {counts.toRemove} remove</span>}
+              </div>
+              <div className="h-1.5 overflow-hidden rounded-full bg-border/40">
+                <div className={cn('h-full rounded-full transition-all duration-500 ease-out', inSync ? 'bg-success' : 'bg-warning')} style={{ width: `${syncedRatio}%` }} />
+              </div>
+            </div>
           </div>
-          <div className="h-1 rounded-full bg-border/40 overflow-hidden">
-            <div
-              className={cn(
-                'h-full rounded-full transition-all duration-500 ease-out',
-                inSync ? 'bg-success' : 'bg-warning'
-              )}
-              style={{ width: `${syncedRatio}%` }}
-            />
-          </div>
+          <details className="group/collection-details mt-2 border-t border-border/25 pt-2">
+            <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground">
+              <span className="transition-transform group-open/collection-details:rotate-90"><Plus className="h-3 w-3" /></span>
+              Show collection counts
+            </summary>
+            <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <StatTile label="Tracked locally" value={counts.tracked} icon={<Bookmark className="w-3.5 h-3.5" />} accent="primary" />
+              <StatTile label="In Steam collection" value={counts.inColl} icon={<Library className="w-3.5 h-3.5" />} accent="primary" />
+              <StatTile label="Missing from collection" value={counts.toAdd} icon={<Plus className="w-3.5 h-3.5" />} accent={counts.toAdd > 0 ? 'warning' : 'muted'} onClick={counts.toAdd > 0 ? () => setFilter('mismatch') : undefined} />
+              <StatTile label="Not tracked locally" value={counts.toRemove} icon={<AlertTriangle className="w-3.5 h-3.5" />} accent={counts.toRemove > 0 ? 'destructive' : 'muted'} onClick={counts.toRemove > 0 ? () => setFilter('mismatch') : undefined} />
+            </div>
+          </details>
         </div>
 
         {/* Toolbar: filter pills + search + bulk actions */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="inline-flex items-center gap-0.5 rounded-md border border-border/55 bg-muted/30 p-0.5 text-[11px] font-medium">
+        <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex max-w-full items-center gap-0.5 overflow-x-auto rounded-md border border-border/55 bg-muted/30 p-0.5 text-[11px] font-medium">
             {([
               ['mismatch', 'Mismatch', counts.mismatch],
               ['all', 'All', counts.total],
@@ -492,7 +470,7 @@ export function WorkshopCollectionPanel() {
                 type="button"
                 onClick={() => setFilter(key)}
                 className={cn(
-                  'px-2 py-1 rounded-sm transition-colors',
+                  'shrink-0 px-2 py-1 rounded-sm transition-colors',
                   filter === key
                     ? 'bg-primary text-primary-foreground shadow-sm'
                     : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
@@ -503,13 +481,13 @@ export function WorkshopCollectionPanel() {
             ))}
           </div>
 
-          <div className="relative ml-auto">
+          <div className="relative w-full lg:w-64">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Filter by name or ID…"
-              className="h-8 pl-7 pr-7 text-xs w-56"
+              className="h-8 w-full pl-7 pr-7 text-xs"
             />
             {search && (
               <button

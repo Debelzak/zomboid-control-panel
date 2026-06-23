@@ -73,10 +73,8 @@ function getResetTokenPath() {
   return path.join(dataDir, 'reset-token.txt');
 }
 
-function isLocalPanelRequest(req) {
+export function isLocalPanelRequest(req) {
   const candidateAddresses = [
-    req.ip,
-    ...(Array.isArray(req.ips) ? req.ips : []),
     req.socket?.remoteAddress,
     req.connection?.remoteAddress,
   ]
@@ -85,6 +83,14 @@ function isLocalPanelRequest(req) {
 
   const localAddresses = getLocalPanelAddresses();
   return candidateAddresses.some((address) => localAddresses.has(address));
+}
+
+export function createLocalResetResponse(message) {
+  return {
+    success: true,
+    resetAvailable: true,
+    message,
+  };
 }
 
 function getResetTokenState() {
@@ -346,8 +352,8 @@ const localResetTokenLimiter = rateLimit({
  * Create or reuse a reset token when the panel is opened locally on the server host.
  *
  * Security model: this is only allowed for requests that originate from the server itself
- * (loopback or one of the machine's own assigned IP addresses). Remote browser clients
- * cannot trigger it, even if they spoof forwarded headers.
+ * (loopback or one of the machine's own assigned IP addresses). The response never
+ * includes the token value; the caller must still read data/reset-token.txt on disk.
  */
 router.post('/reset-token/local', localResetTokenLimiter, async (req, res) => {
   try {
@@ -359,12 +365,7 @@ router.post('/reset-token/local', localResetTokenLimiter, async (req, res) => {
 
     const tokenState = getResetTokenState();
     if (tokenState.available && tokenState.token) {
-      return res.json({
-        success: true,
-        token: tokenState.token,
-        resetAvailable: true,
-        message: 'A recovery token is already available on this server. Choose a new password below.',
-      });
+      return res.json(createLocalResetResponse('A recovery token is already available at data/reset-token.txt. Paste it below to continue.'));
     }
 
     if (tokenState.reason === 'expired' || tokenState.reason === 'too-large' || tokenState.reason === 'too-short') {
@@ -377,12 +378,7 @@ router.post('/reset-token/local', localResetTokenLimiter, async (req, res) => {
     fs.writeFileSync(tokenState.tokenPath, `${token}\n`, { encoding: 'utf-8', mode: 0o600 });
 
     log.info('Local recovery token created from a request originating on the server');
-    res.json({
-      success: true,
-      token,
-      resetAvailable: true,
-      message: 'Recovery token created on this server. Set a new password below.',
-    });
+    res.json(createLocalResetResponse('Recovery token created at data/reset-token.txt. Paste it below to continue.'));
   } catch (error) {
     log.error(`Local recovery token creation failed: ${error.message}`);
     res.status(500).json({ error: 'Could not create a recovery token on this server.' });
