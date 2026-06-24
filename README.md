@@ -25,14 +25,6 @@ One dark-mode control room instead of five different tools.
 
 > **At a glance** — server status, RCON & PanelBridge connection state, live player activity, host telemetry, backup readiness, and quick actions. One screen covers 80% of routine admin work.
 
----
-
-## 🎮 Built for live ops
-
-No existing PZ server tool covered the full workflow. Most handled one or two parts. So I built the whole thing — for the moment you log in at 2 AM because the server crashed mid-horde-night and you need to fix it without ten tabs open. [**Background story →**](https://www.youtube.com/watch?v=P2k0VFX1FUw)
-
-<br />
-
 ## ✨ Feature tour
 
 <table>
