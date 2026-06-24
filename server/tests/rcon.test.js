@@ -196,4 +196,31 @@ describe('RconService', () => {
       expect(result.success).toBe(false);
     });
   });
+
+  describe('quoted argument safety', () => {
+    it('rejects player names that could break out of quoted RCON args', async () => {
+      const liveRcon = new RconService();
+      const executeSpy = vi.spyOn(liveRcon, 'execute').mockResolvedValue({ success: true, response: 'ok' });
+
+      await expect(liveRcon.kickPlayer('Player" servermsg "owned')).rejects.toThrow('Username contains unsupported characters');
+      expect(executeSpy).not.toHaveBeenCalled();
+    });
+
+    it('rejects control characters in quoted RCON args', async () => {
+      const liveRcon = new RconService();
+      const executeSpy = vi.spyOn(liveRcon, 'execute').mockResolvedValue({ success: true, response: 'ok' });
+
+      await expect(liveRcon.addToWhitelist('Admin\nquit')).rejects.toThrow('Username contains unsupported characters');
+      expect(executeSpy).not.toHaveBeenCalled();
+    });
+
+    it('preserves safe quoted arguments instead of rewriting them', async () => {
+      const liveRcon = new RconService();
+      const executeSpy = vi.spyOn(liveRcon, 'execute').mockResolvedValue({ success: true, response: 'ok' });
+
+      await liveRcon.setAccessLevel('Safe Player', 'admin');
+
+      expect(executeSpy).toHaveBeenCalledWith('setaccesslevel "Safe Player" "admin"');
+    });
+  });
 });

@@ -637,7 +637,10 @@ export class BackupService {
                 return;
               }
 
-              if (entry.type === 'Directory') {
+              if (entry.type !== 'Directory' && entry.type !== 'File') {
+                log.warn(`Skipping unsupported backup entry type ${entry.type}: ${entry.path}`);
+                entry.autodrain();
+              } else if (entry.type === 'Directory') {
                 fs.mkdirSync(resolvedEntry, { recursive: true });
                 entry.autodrain();
               } else {

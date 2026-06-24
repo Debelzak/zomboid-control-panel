@@ -2078,9 +2078,7 @@ router.get('/chat/info', async (req, res) => {
 async function trySendViaRcon(req, text) {
   const rconService = req.app.get('rconService');
   if (!rconService || !rconService.connected) return null;
-  // Escape quotes for RCON command
-  const safe = text.replace(/"/g, '\\"');
-  const result = await rconService.execute(`servermsg "${safe}"`, { skipLog: true });
+  const result = await rconService.serverMessage(text, { skipLog: true });
   return result?.success ? result : null;
 }
 

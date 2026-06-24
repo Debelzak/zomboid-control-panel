@@ -850,6 +850,23 @@ export class RconService extends EventEmitter {
     return String(input).replace(/["\\]|[\x00-\x1F\x7F]/g, '');
   }
 
+  sanitizeQuotedArg(input, label = 'RCON argument', maxLength = 128) {
+    if (input === null || input === undefined) {
+      throw new Error(`${label} is required`);
+    }
+    const value = String(input).trim();
+    if (!value) {
+      throw new Error(`${label} is required`);
+    }
+    if (value.length > maxLength) {
+      throw new Error(`${label} is too long`);
+    }
+    if (/["\\]|[\x00-\x1F\x7F]/.test(value)) {
+      throw new Error(`${label} contains unsupported characters`);
+    }
+    return value;
+  }
+
   // Server commands
   async save({ skipLog = false } = {}) {
     return this.execute('save', { skipLog });
@@ -940,7 +957,7 @@ export class RconService extends EventEmitter {
 
   // Player commands
   async kickPlayer(username, reason = '') {
-    const safeUser = this.sanitize(username);
+    const safeUser = this.sanitizeQuotedArg(username, 'Username', 64);
     // PZ RCON kick syntax: kickuser "username" — no reason flag supported
     return this.execute(`kickuser "${safeUser}"`);
   }
@@ -952,7 +969,7 @@ export class RconService extends EventEmitter {
   }
 
   async banPlayer(username, banIp = false, reason = '') {
-    const safeUser = this.sanitize(username);
+    const safeUser = this.sanitizeQuotedArg(username, 'Username', 64);
     const safeReason = this.sanitizeForBanReason(reason);
     let cmd = `banuser "${safeUser}"`;
     if (banIp) cmd += ' -ip';
@@ -961,25 +978,25 @@ export class RconService extends EventEmitter {
   }
 
   async unbanPlayer(username) {
-    return this.execute(`unbanuser "${this.sanitize(username)}"`);
+    return this.execute(`unbanuser "${this.sanitizeQuotedArg(username, 'Username', 64)}"`);
   }
 
   async setAccessLevel(username, level) {
-    return this.execute(`setaccesslevel "${this.sanitize(username)}" "${this.sanitize(level)}"`);
+    return this.execute(`setaccesslevel "${this.sanitizeQuotedArg(username, 'Username', 64)}" "${this.sanitizeQuotedArg(level, 'Access level', 32)}"`);
   }
 
   async addToWhitelist(username) {
-    return this.execute(`addusertowhitelist "${this.sanitize(username)}"`);
+    return this.execute(`addusertowhitelist "${this.sanitizeQuotedArg(username, 'Username', 64)}"`);
   }
 
   async removeFromWhitelist(username) {
-    return this.execute(`removeuserfromwhitelist "${this.sanitize(username)}"`);
+    return this.execute(`removeuserfromwhitelist "${this.sanitizeQuotedArg(username, 'Username', 64)}"`);
   }
 
   async teleportPlayer(player1, player2 = null) {
-    const safeP1 = this.sanitize(player1);
+    const safeP1 = this.sanitizeQuotedArg(player1, 'Username', 64);
     if (player2) {
-      return this.execute(`teleport "${safeP1}" "${this.sanitize(player2)}"`);
+      return this.execute(`teleport "${safeP1}" "${this.sanitizeQuotedArg(player2, 'Target username', 64)}"`);
     }
     return this.execute(`teleport "${safeP1}"`);
   }
@@ -997,7 +1014,7 @@ export class RconService extends EventEmitter {
     const safeItem = this.sanitize(item);
     const n = Math.min(Math.max(Math.floor(Number(count)) || 1, 1), 100);
     if (username) {
-      return this.execute(`additem "${this.sanitize(username)}" "${safeItem}" ${n}`);
+      return this.execute(`additem "${this.sanitizeQuotedArg(username, 'Username', 64)}" "${safeItem}" ${n}`);
     }
     return this.execute(`additem "${safeItem}" ${n}`);
   }
@@ -1005,13 +1022,13 @@ export class RconService extends EventEmitter {
   async addXp(username, perk, amount) {
     const n = Number(amount);
     if (!Number.isFinite(n)) throw new Error('amount must be a number');
-    return this.execute(`addxp "${this.sanitize(username)}" "${this.sanitize(perk)}"=${n}`);
+    return this.execute(`addxp "${this.sanitizeQuotedArg(username, 'Username', 64)}" "${this.sanitizeQuotedArg(perk, 'Perk', 64)}"=${n}`);
   }
 
   async addVehicle(vehicle, username = null) {
     const safeVehicle = this.sanitize(vehicle);
     if (username) {
-      return this.execute(`addvehicle "${safeVehicle}" "${this.sanitize(username)}"`);
+      return this.execute(`addvehicle "${safeVehicle}" "${this.sanitizeQuotedArg(username, 'Username', 64)}"`);
     }
     return this.execute(`addvehicle "${safeVehicle}"`);
   }
@@ -1054,14 +1071,14 @@ export class RconService extends EventEmitter {
 
   async triggerLightning(username = null) {
     if (username) {
-      return this.execute(`lightning "${this.sanitize(username)}"`);
+      return this.execute(`lightning "${this.sanitizeQuotedArg(username, 'Username', 64)}"`);
     }
     return this.execute('lightning');
   }
 
   async triggerThunder(username = null) {
     if (username) {
-      return this.execute(`thunder "${this.sanitize(username)}"`);
+      return this.execute(`thunder "${this.sanitizeQuotedArg(username, 'Username', 64)}"`);
     }
     return this.execute('thunder');
   }
@@ -1069,7 +1086,7 @@ export class RconService extends EventEmitter {
   async createHorde(count, username = null) {
     const n = Math.min(Math.max(Math.floor(Number(count)) || 50, 1), 500);
     if (username) {
-      return this.execute(`createhorde ${n} "${this.sanitize(username)}"`);
+      return this.execute(`createhorde ${n} "${this.sanitizeQuotedArg(username, 'Username', 64)}"`);
     }
     return this.execute(`createhorde ${n}`);
   }
@@ -1078,7 +1095,7 @@ export class RconService extends EventEmitter {
   async setGodMode(username, enabled) {
     const value = enabled ? '-true' : '-false';
     if (username) {
-      return this.execute(`godmod "${this.sanitize(username)}" ${value}`);
+      return this.execute(`godmod "${this.sanitizeQuotedArg(username, 'Username', 64)}" ${value}`);
     }
     return this.execute(`godmod ${value}`);
   }
@@ -1086,7 +1103,7 @@ export class RconService extends EventEmitter {
   async setInvisible(username, enabled) {
     const value = enabled ? '-true' : '-false';
     if (username) {
-      return this.execute(`invisible "${this.sanitize(username)}" ${value}`);
+      return this.execute(`invisible "${this.sanitizeQuotedArg(username, 'Username', 64)}" ${value}`);
     }
     return this.execute(`invisible ${value}`);
   }
@@ -1094,7 +1111,7 @@ export class RconService extends EventEmitter {
   async setNoclip(username, enabled) {
     const value = enabled ? '-true' : '-false';
     if (username) {
-      return this.execute(`noclip "${this.sanitize(username)}" ${value}`);
+      return this.execute(`noclip "${this.sanitizeQuotedArg(username, 'Username', 64)}" ${value}`);
     }
     return this.execute(`noclip ${value}`);
   }
@@ -1130,12 +1147,12 @@ export class RconService extends EventEmitter {
   // Voice ban
   async voiceBan(username, enabled) {
     const value = enabled ? '-true' : '-false';
-    return this.execute(`voiceban "${this.sanitize(username)}" ${value}`);
+    return this.execute(`voiceban "${this.sanitizeQuotedArg(username, 'Username', 64)}" ${value}`);
   }
 
   // Whitelist management
   async addUser(username, password) {
-    return this.execute(`adduser "${this.sanitize(username)}" "${this.sanitize(password)}"`);
+    return this.execute(`adduser "${this.sanitizeQuotedArg(username, 'Username', 64)}" "${this.sanitizeQuotedArg(password, 'Password', 128)}"`);
   }
 
   async addAllToWhitelist() {
