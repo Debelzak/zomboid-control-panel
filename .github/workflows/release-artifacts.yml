@@ -17,11 +17,15 @@ jobs:
         include:
           - os: windows-latest
             artifact_name: windows-zip
+            binary_artifact_name: windows-binary
             archive_file: ZomboidControlPanel-windows.zip
+            binary_file: ZomboidControlPanel.exe
             build_arg: --windows
           - os: ubuntu-latest
             artifact_name: linux-tarball
+            binary_artifact_name: linux-binary
             archive_file: ZomboidControlPanel-linux.tar.gz
+            binary_file: ZomboidControlPanel
             build_arg: --linux
     runs-on: ${{ matrix.os }}
 
@@ -63,6 +67,13 @@ jobs:
           path: ${{ matrix.archive_file }}
           if-no-files-found: error
 
+      - name: Upload raw binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.binary_artifact_name }}
+          path: release/${{ matrix.binary_file }}
+          if-no-files-found: error
+
   publish:
     needs: build
     if: startsWith(github.ref, 'refs/tags/')
@@ -81,20 +92,42 @@ jobs:
           name: linux-tarball
           path: .
 
+      - name: Download Windows binary
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-binary
+          path: .
+
+      - name: Download Linux binary
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-binary
+          path: .
+
       - name: Generate checksums
-        run: sha256sum ZomboidControlPanel-windows.zip ZomboidControlPanel-linux.tar.gz > checksums.txt
+        run: |
+          sha256sum \
+            ZomboidControlPanel.exe \
+            ZomboidControlPanel \
+            ZomboidControlPanel-windows.zip \
+            ZomboidControlPanel-linux.tar.gz > checksums.txt
 
       - name: Create release manifest
         run: |
           node -e "
             const fs = require('fs');
+            const crypto = require('crypto');
+            const sha256 = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+            const artifact = (platform, file, kind) => ({ platform, file, kind, sha256: sha256(file) });
             const manifest = {
               version: process.env.GITHUB_REF_NAME,
               builtAt: new Date().toISOString(),
               platform: 'ci',
               artifacts: [
-                { platform: 'win',   file: 'ZomboidControlPanel-windows.zip' },
-                { platform: 'linux', file: 'ZomboidControlPanel-linux.tar.gz' }
+                artifact('win', 'ZomboidControlPanel.exe', 'binary'),
+                artifact('linux', 'ZomboidControlPanel', 'binary'),
+                artifact('win', 'ZomboidControlPanel-windows.zip', 'archive'),
+                artifact('linux', 'ZomboidControlPanel-linux.tar.gz', 'archive')
               ]
             };
             fs.writeFileSync('release-manifest.json', JSON.stringify(manifest, null, 2));
@@ -104,6 +137,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
+            ZomboidControlPanel.exe
+            ZomboidControlPanel
             ZomboidControlPanel-windows.zip
             ZomboidControlPanel-linux.tar.gz
             checksums.txt

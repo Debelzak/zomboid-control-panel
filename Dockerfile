@@ -9,7 +9,7 @@
 # for realistic topology examples.
 
 # --- Build stage ---
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
@@ -27,7 +27,7 @@ COPY client/ ./client/
 RUN cd client && npm run build
 
 # --- Runtime stage ---
-FROM node:20-alpine
+FROM node:22-alpine
 
 # Configurable UID/GID to match the host user — avoids bind-mount permission issues.
 # Override at build time:

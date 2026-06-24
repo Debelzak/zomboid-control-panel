@@ -280,6 +280,37 @@ if ($SkipBuild) {
         Pop-Location
         $tarSize = [math]::Round((Get-Item $tarPath).Length / 1MB, 1)
         Write-Ok "Linux archive created: ZomboidControlPanel-linux.tar.gz ($tarSize MB)"
+
+        $releaseArtifacts = @(
+            @{ platform = "win";   kind = "binary"; file = "ZomboidControlPanel.exe";          path = $winExe },
+            @{ platform = "linux"; kind = "binary"; file = "ZomboidControlPanel";              path = $linuxBin },
+            @{ platform = "win";   kind = "archive"; file = "ZomboidControlPanel-windows.zip"; path = $zipPath },
+            @{ platform = "linux"; kind = "archive"; file = "ZomboidControlPanel-linux.tar.gz"; path = $tarPath }
+        )
+
+        $checksumLines = @()
+        $manifestArtifacts = @()
+        foreach ($artifact in $releaseArtifacts) {
+            $hash = (Get-FileHash -Algorithm SHA256 -Path $artifact.path).Hash.ToLowerInvariant()
+            $checksumLines += "$hash  $($artifact.file)"
+            $manifestArtifacts += [pscustomobject]@{
+                platform = $artifact.platform
+                kind = $artifact.kind
+                file = $artifact.file
+                sha256 = $hash
+            }
+        }
+        Set-Content -Path $checksums -Value ($checksumLines -join "`n") -NoNewline
+        Add-Content -Path $checksums -Value ""
+        $manifestObject = [pscustomobject]@{
+            version = $Version
+            builtAt = (Get-Date).ToUniversalTime().ToString("o")
+            hostPlatform = "win32"
+            targets = @("win", "linux")
+            artifacts = $manifestArtifacts
+        }
+        $manifestObject | ConvertTo-Json -Depth 5 | Set-Content -Path $manifest -NoNewline
+        Write-Ok "Checksums and manifest updated for binaries + archives"
     } finally {
         Pop-Location
     }
