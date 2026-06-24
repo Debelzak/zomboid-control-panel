@@ -45,6 +45,7 @@ import { ConflictScanResult, ScanStreamModScanned, ScanStreamConflictFound } fro
 import { FileDiffViewer } from '@/components/FileDiffViewer'
 import { WorkshopCollectionPanel } from '@/components/WorkshopCollectionPanel'
 import { getAccessToken } from '@/lib/authToken'
+import { isDemoMode } from '@/lib/demo'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { PageHeader } from '@/components/PageHeader'
 import { Button } from '@/components/ui/button'
@@ -187,6 +188,7 @@ function parseWorkshopId(input: string): string | null {
 }
 
 export default function Mods() {
+  const demoMode = isDemoMode()
   const [mods, setMods] = useState<TrackedMod[]>([])
   const [status, setStatus] = useState<ModStatus | null>(null)
   const [loading, setLoading] = useState(false)
@@ -1859,7 +1861,7 @@ export default function Mods() {
         >
           <Package className="w-8 h-8" aria-hidden="true" />
           <img
-            src={`/api/mods/thumbnail/${mod.workshop_id}`}
+            src={demoMode ? `${import.meta.env.BASE_URL}spiffo.png` : `/api/mods/thumbnail/${mod.workshop_id}`}
             alt=""
             loading="lazy"
             decoding="async"
@@ -1963,7 +1965,7 @@ export default function Mods() {
         </div>
       </div>
     )
-  }, [selectedMods, configuredWorkshopIds, loading, toggleModSelect, toast])
+  }, [demoMode, selectedMods, configuredWorkshopIds, loading, toggleModSelect, toast])
 
   // ── Virtualized tracked mods list ──
   type ModGroup = 'update' | 'neverChecked' | 'upToDate' | 'deactivated'
@@ -6796,7 +6798,7 @@ export default function Mods() {
                             >
                               <Package className="w-7 h-7" aria-hidden="true" />
                               <img
-                                src={`/api/mods/thumbnail/${mod.workshop_id}`}
+                                src={demoMode ? `${import.meta.env.BASE_URL}spiffo.png` : `/api/mods/thumbnail/${mod.workshop_id}`}
                                 alt=""
                                 loading="lazy"
                                 decoding="async"
