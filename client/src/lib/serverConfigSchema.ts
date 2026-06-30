@@ -3393,22 +3393,61 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
     section: 'settings'
   },
   {
-    key: 'FuelStationGas',
-    label: 'Fuel Station Gas',
-    description: 'Starting fuel at gas stations.',
+    key: 'InitialGas',
+    label: 'Initial Vehicle Gas',
+    description: 'How full the gas tank of discovered vehicles will be.',
     type: 'select',
     options: [
-      { value: 1, label: 'Empty' },
-      { value: 2, label: 'Super Low' },
-      { value: 3, label: 'Very Low' },
-      { value: 4, label: 'Low' },
-      { value: 5, label: 'Normal' },
-      { value: 6, label: 'High' },
-      { value: 7, label: 'Very High' },
-      { value: 8, label: 'Full' },
-      { value: 9, label: 'Infinite' }
+      { value: 1, label: 'Very Low' },
+      { value: 2, label: 'Low' },
+      { value: 3, label: 'Normal' },
+      { value: 4, label: 'High' },
+      { value: 5, label: 'Very High' },
+      { value: 6, label: 'Full' }
     ],
-    default: 5,
+    default: 2,
+    category: 'vehicles',
+    section: 'settings'
+  },
+  {
+    key: 'FuelStationGasInfinite',
+    label: 'Infinite Fuel Station Gas',
+    description: 'If enabled, gas pumps will never run out of fuel.',
+    type: 'boolean',
+    default: false,
+    category: 'vehicles',
+    section: 'settings'
+  },
+  {
+    key: 'FuelStationGasMin',
+    label: 'Fuel Station Gas Min',
+    description: 'The minimum amount of gasoline that can spawn in gas pumps.',
+    type: 'number',
+    min: 0,
+    max: 1,
+    default: 0.0,
+    category: 'vehicles',
+    section: 'settings'
+  },
+  {
+    key: 'FuelStationGasMax',
+    label: 'Fuel Station Gas Max',
+    description: 'The maximum amount of gasoline that can spawn in gas pumps.',
+    type: 'number',
+    min: 0,
+    max: 1,
+    default: 0.8,
+    category: 'vehicles',
+    section: 'settings'
+  },
+  {
+    key: 'FuelStationGasEmptyChance',
+    label: 'Fuel Station Empty Chance',
+    description: 'The chance, as a percentage, that individual gas pumps will initially have no fuel.',
+    type: 'number',
+    min: 0,
+    max: 100,
+    default: 20,
     category: 'vehicles',
     section: 'settings'
   },
@@ -3517,16 +3556,9 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
   {
     key: 'PlayerDamageFromCrash',
     label: 'Crash Damage to Player',
-    description: 'Damage to the driver when crashing at high speed.',
-    type: 'select',
-    options: [
-      { value: 1, label: 'None' },
-      { value: 2, label: 'Low' },
-      { value: 3, label: 'Normal' },
-      { value: 4, label: 'High' },
-      { value: 5, label: 'Very High' }
-    ],
-    default: 3,
+    description: 'If the player can get injured from being in a car accident.',
+    type: 'boolean',
+    default: true,
     category: 'vehicles',
     section: 'settings'
   },
@@ -3544,22 +3576,29 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
   {
     key: 'ChanceHasGas',
     label: 'Chance Has Gas',
-    description: 'Chance a vehicle spawns with gas. -1 = default vehicle spawn rules.',
-    type: 'number',
-    min: -1,
-    max: 100,
-    default: -1,
+    description: 'The chance of finding a vehicle with gas in its tank.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'Low' },
+      { value: 2, label: 'Normal' },
+      { value: 3, label: 'High' }
+    ],
+    default: 2,
     category: 'vehicles',
     section: 'settings'
   },
   {
     key: 'RecentlySurvivorVehicles',
     label: 'Recently Survivor Vehicles',
-    description: 'Amount of customized survivor vehicles spawning. 0 = none.',
-    type: 'number',
-    min: 0,
-    max: 100,
-    default: 0,
+    description: 'Whether a player can discover a car that has been cared for after the Knox infection struck.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'None' },
+      { value: 2, label: 'Low' },
+      { value: 3, label: 'Normal' },
+      { value: 4, label: 'High' }
+    ],
+    default: 2,
     category: 'vehicles',
     section: 'settings'
   },
@@ -3577,123 +3616,152 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
   {
     key: 'SirenEffectsZombies',
     label: 'Siren Effects Zombies',
-    description: 'Siren radius for attracting zombies. 0 = disabled.',
-    type: 'number',
-    min: 0,
-    max: 500,
-    default: 0,
-    category: 'vehicles',
-    section: 'settings'
-  },
-  {
-    key: 'FuelStationGasModifier',
-    label: 'Fuel Station Gas Modifier',
-    description: 'Value override for fuel station gas level. -1 = use preset.',
-    type: 'number',
-    min: -1,
-    max: 50000,
-    default: -1,
+    description: 'If zombies will head towards the sound of vehicle sirens.',
+    type: 'boolean',
+    default: true,
     category: 'vehicles',
     section: 'settings'
   },
 
+
   // ==================== Animals & Farming ====================
   {
     key: 'AnimalStatsModifier',
-    label: 'Animal Stats Modifier',
-    description: 'Multiplier for animal health/taming speed. Higher = easier.',
-    type: 'number',
-    min: 0.01,
-    max: 10,
-    default: 1.0,
+    label: 'Animal Stats Speed',
+    description: 'Speed at which animal stats (hunger, thirst etc.) reduce.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'Ultra Fast' },
+      { value: 2, label: 'Very Fast' },
+      { value: 3, label: 'Fast' },
+      { value: 4, label: 'Normal' },
+      { value: 5, label: 'Slow' },
+      { value: 6, label: 'Very Slow' }
+    ],
+    default: 4,
     category: 'animals',
     section: 'settings'
   },
   {
     key: 'AnimalMetaStatsModifier',
-    label: 'Animal Meta Stats',
-    description: 'Multiplier for meta/overworld animal populations.',
-    type: 'number',
-    min: 0.01,
-    max: 10,
-    default: 1.0,
+    label: 'Animal Meta Stats Speed',
+    description: 'Speed at which animal stats reduce while in meta (overworld).',
+    type: 'select',
+    options: [
+      { value: 1, label: 'Ultra Fast' },
+      { value: 2, label: 'Very Fast' },
+      { value: 3, label: 'Fast' },
+      { value: 4, label: 'Normal' },
+      { value: 5, label: 'Slow' },
+      { value: 6, label: 'Very Slow' }
+    ],
+    default: 4,
     category: 'animals',
     section: 'settings'
   },
   {
     key: 'AnimalPregnancyTime',
     label: 'Animal Pregnancy Time',
-    description: 'Multiplier for animal pregnancy duration. Lower = faster.',
-    type: 'number',
-    min: 0.01,
-    max: 10,
-    default: 1.0,
+    description: 'How long animals will be pregnant for before giving birth.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'Ultra Fast' },
+      { value: 2, label: 'Very Fast' },
+      { value: 3, label: 'Fast' },
+      { value: 4, label: 'Normal' },
+      { value: 5, label: 'Slow' },
+      { value: 6, label: 'Very Slow' }
+    ],
+    default: 4,
     category: 'animals',
     section: 'settings'
   },
   {
     key: 'AnimalAgeModifier',
-    label: 'Animal Age Modifier',
-    description: 'Multiplier for animal aging speed. Lower = faster.',
-    type: 'number',
-    min: 0.01,
-    max: 10,
-    default: 1.0,
+    label: 'Animal Aging Speed',
+    description: 'Speed at which animals age.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'Ultra Fast' },
+      { value: 2, label: 'Very Fast' },
+      { value: 3, label: 'Fast' },
+      { value: 4, label: 'Normal' },
+      { value: 5, label: 'Slow' },
+      { value: 6, label: 'Very Slow' }
+    ],
+    default: 4,
     category: 'animals',
     section: 'settings'
   },
   {
     key: 'AnimalMilkIncModifier',
-    label: 'Milk Production Modifier',
-    description: 'Multiplier for milk increments.',
-    type: 'number',
-    min: 0.01,
-    max: 10,
-    default: 1.0,
+    label: 'Milk Production Speed',
+    description: 'Speed of milk production.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'Ultra Fast' },
+      { value: 2, label: 'Very Fast' },
+      { value: 3, label: 'Fast' },
+      { value: 4, label: 'Normal' },
+      { value: 5, label: 'Slow' },
+      { value: 6, label: 'Very Slow' }
+    ],
+    default: 4,
     category: 'animals',
     section: 'settings'
   },
   {
     key: 'AnimalWoolIncModifier',
-    label: 'Wool Production Modifier',
-    description: 'Multiplier for wool increments.',
-    type: 'number',
-    min: 0.01,
-    max: 10,
-    default: 1.0,
+    label: 'Wool Production Speed',
+    description: 'Speed of wool production.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'Ultra Fast' },
+      { value: 2, label: 'Very Fast' },
+      { value: 3, label: 'Fast' },
+      { value: 4, label: 'Normal' },
+      { value: 5, label: 'Slow' },
+      { value: 6, label: 'Very Slow' }
+    ],
+    default: 4,
     category: 'animals',
     section: 'settings'
   },
   {
     key: 'AnimalRanchChance',
     label: 'Animal Ranch Chance',
-    description: 'Multiplier for finding animals at ranch locations.',
-    type: 'number',
-    min: 0,
-    max: 10,
-    default: 1.0,
+    description: 'The chance of finding animals in farms.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'Never' },
+      { value: 2, label: 'Extremely Rare' },
+      { value: 3, label: 'Rare' },
+      { value: 4, label: 'Sometimes' },
+      { value: 5, label: 'Often' },
+      { value: 6, label: 'Very Often' },
+      { value: 7, label: 'Always' }
+    ],
+    default: 5,
     category: 'animals',
     section: 'settings'
   },
   {
     key: 'AnimalGrassRegrowTime',
     label: 'Grass Regrow Time',
-    description: 'Multiplier for pen grass regrowth. Lower = faster.',
+    description: 'The number of hours grass will regrow after being eaten by an animal or cut by the player.',
     type: 'number',
-    min: 0.01,
-    max: 10,
-    default: 1.0,
+    min: 1,
+    max: 9999,
+    default: 240,
     category: 'animals',
     section: 'settings'
   },
   {
     key: 'AnimalMetaPredator',
-    label: 'Meta Predator Level',
-    description: 'Multiplier for meta predator spawning. 0 = no predators.',
-    type: 'number',
-    min: 0,
-    max: 10,
-    default: 1.0,
+    label: 'Meta Predator',
+    description: 'If a meta fox may attack your chickens if the hutch door is left open at night.',
+    type: 'boolean',
+    default: false,
     category: 'animals',
     section: 'settings'
   },
@@ -3708,45 +3776,61 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
   },
   {
     key: 'AnimalEggHatch',
-    label: 'Egg Hatch Modifier',
-    description: 'Multiplier for egg hatch time. Lower = faster.',
-    type: 'number',
-    min: 0.01,
-    max: 10,
-    default: 1.0,
+    label: 'Egg Hatch Time',
+    description: 'How long before baby animals will hatch from eggs.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'Ultra Fast' },
+      { value: 2, label: 'Very Fast' },
+      { value: 3, label: 'Fast' },
+      { value: 4, label: 'Normal' },
+      { value: 5, label: 'Slow' },
+      { value: 6, label: 'Very Slow' }
+    ],
+    default: 4,
     category: 'animals',
     section: 'settings'
   },
   {
     key: 'AnimalSoundAttractZombies',
     label: 'Animal Sound Attracts Zombies',
-    description: 'Multiplier for how much animal sounds attract zombies. 0 = disabled.',
-    type: 'number',
-    min: 0,
-    max: 10,
-    default: 1.0,
+    description: 'If true, animal calls will attract nearby zombies.',
+    type: 'boolean',
+    default: false,
     category: 'animals',
     section: 'settings'
   },
   {
     key: 'AnimalTrackChance',
     label: 'Animal Track Chance',
-    description: 'Multiplier for finding animal tracks while foraging.',
-    type: 'number',
-    min: 0,
-    max: 10,
-    default: 1.0,
+    description: 'The chance of animals leaving tracks.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'Never' },
+      { value: 2, label: 'Extremely Rare' },
+      { value: 3, label: 'Rare' },
+      { value: 4, label: 'Sometimes' },
+      { value: 5, label: 'Often' },
+      { value: 6, label: 'Very Often' }
+    ],
+    default: 4,
     category: 'animals',
     section: 'settings'
   },
   {
     key: 'AnimalPathChance',
     label: 'Animal Path Chance',
-    description: 'Multiplier for finding animal paths while foraging.',
-    type: 'number',
-    min: 0,
-    max: 10,
-    default: 1.0,
+    description: 'The chance of creating a path for animals to be hunted.',
+    type: 'select',
+    options: [
+      { value: 1, label: 'Never' },
+      { value: 2, label: 'Extremely Rare' },
+      { value: 3, label: 'Rare' },
+      { value: 4, label: 'Sometimes' },
+      { value: 5, label: 'Often' },
+      { value: 6, label: 'Very Often' }
+    ],
+    default: 4,
     category: 'animals',
     section: 'settings'
   },
@@ -4406,9 +4490,20 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
     label: 'Rally Group Size',
     description: 'Base number of zombies in rally groups.',
     type: 'number',
-    min: 1,
+    min: 0,
     max: 1000,
     default: 20,
+    category: 'zombiePopulation',
+    section: 'ZombieConfig'
+  },
+  {
+    key: 'RallyGroupSizeVariance',
+    label: 'Rally Group Size Variance',
+    description: 'The amount, as a percentage, that zombie groups can vary in size from the default (both larger and smaller).',
+    type: 'number',
+    min: 0,
+    max: 100,
+    default: 50,
     category: 'zombiePopulation',
     section: 'ZombieConfig'
   },
@@ -4440,17 +4535,28 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
     description: 'Radius of area a rally group spreads across.',
     type: 'number',
     min: 1,
-    max: 25,
+    max: 10,
     default: 3,
+    category: 'zombiePopulation',
+    section: 'ZombieConfig'
+  },
+  {
+    key: 'ZombiesCountBeforeDelete',
+    label: 'Zombies Count Before Delete',
+    description: 'Minimum zombie count in a cell before deletion can occur.',
+    type: 'number',
+    min: 10,
+    max: 500,
+    default: 300,
     category: 'zombiePopulation',
     section: 'ZombieConfig'
   },
 
   // ==================== XP Multipliers ====================
   {
-    key: 'XPMultiplier',
+    key: 'Global',
     label: 'Global XP Multiplier',
-    description: 'Global experience gain multiplier.',
+    description: 'The rate at which all skills level up.',
     type: 'number',
     min: 0.001,
     max: 1000,
@@ -4459,9 +4565,9 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
     section: 'MultiplierConfig'
   },
   {
-    key: 'XPMultiplierAffectsQuest',
-    label: 'XP Multiplier Affects Quests',
-    description: 'Whether the global XP multiplier applies to quest XP.',
+    key: 'GlobalToggle',
+    label: 'Use Global Multiplier For All Skills',
+    description: 'When enabled, all skills will use the Global Multiplier instead of individual values.',
     type: 'boolean',
     default: true,
     category: 'xpMultipliers',
@@ -4492,7 +4598,7 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
     section: 'MultiplierConfig'
   },
   {
-    key: 'Sneaking',
+    key: 'Sneak',
     label: 'Sneaking XP',
     type: 'number', min: 0.001, max: 1000, default: 1.0,
     description: 'XP multiplier for Sneaking skill.',
@@ -4668,10 +4774,42 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
     section: 'MultiplierConfig'
   },
   {
-    key: 'Combat',
-    label: 'Combat XP',
+    key: 'FlintKnapping',
+    label: 'Knapping XP',
     type: 'number', min: 0.001, max: 1000, default: 1.0,
-    description: 'XP multiplier for Combat skill.',
+    description: 'XP multiplier for Knapping skill.',
+    category: 'xpMultipliers',
+    section: 'MultiplierConfig'
+  },
+  {
+    key: 'Carving',
+    label: 'Carving XP',
+    type: 'number', min: 0.001, max: 1000, default: 1.0,
+    description: 'XP multiplier for Carving skill.',
+    category: 'xpMultipliers',
+    section: 'MultiplierConfig'
+  },
+  {
+    key: 'Tracking',
+    label: 'Tracking XP',
+    type: 'number', min: 0.001, max: 1000, default: 1.0,
+    description: 'XP multiplier for Tracking skill.',
+    category: 'xpMultipliers',
+    section: 'MultiplierConfig'
+  },
+  {
+    key: 'Butchering',
+    label: 'Butchering XP',
+    type: 'number', min: 0.001, max: 1000, default: 1.0,
+    description: 'XP multiplier for Butchering skill.',
+    category: 'xpMultipliers',
+    section: 'MultiplierConfig'
+  },
+  {
+    key: 'Glassmaking',
+    label: 'Glassmaking XP',
+    type: 'number', min: 0.001, max: 1000, default: 1.0,
+    description: 'XP multiplier for Glassmaking skill.',
     category: 'xpMultipliers',
     section: 'MultiplierConfig'
   },
