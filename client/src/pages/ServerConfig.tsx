@@ -162,15 +162,15 @@ function AuthImage({ filePath, alt, className }: { filePath: string; alt?: strin
 
 // --- Optimized Row Components ---
 
-const IniSettingRow = memo(({ 
-  setting, 
-  value, 
+const IniSettingRow = memo(({
+  setting,
+  value,
   originalValue,
   onChange,
   onReset,
   onBrowse
-}: { 
-  setting: IniSetting; 
+}: {
+  setting: IniSetting;
   value: string;
   originalValue?: string;
   onChange: (key: string, value: string) => void;
@@ -355,18 +355,18 @@ const IniSettingRow = memo(({
 })
 IniSettingRow.displayName = 'IniSettingRow'
 
-const SandboxSettingRow = memo(({ 
-  setting, 
-  value, 
+const SandboxSettingRow = memo(({
+  setting,
+  value,
   originalValue,
   onChange,
   onReset
-}: { 
-  setting: SandboxSetting; 
+}: {
+  setting: SandboxSetting;
   value: SandboxScalar;
   originalValue?: SandboxScalar;
-  onChange: (key: string, value: SandboxScalar) => void;
-  onReset?: (key: string) => void;
+  onChange: (setting: SandboxSetting, value: SandboxScalar) => void;
+  onReset?: (setting: SandboxSetting) => void;
 }) => {
   const isModified = originalValue !== undefined && JSON.stringify(value) !== JSON.stringify(originalValue)
   const isDifferentFromDefault = setting.default !== undefined && JSON.stringify(value) !== JSON.stringify(setting.default)
@@ -376,7 +376,6 @@ const SandboxSettingRow = memo(({
       isModified ? 'border-l-2 border-l-warning bg-warning/5' : 'border-l-2 border-l-transparent hover:bg-muted/20'
     }`}>
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4">
-        <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <Label className="text-sm font-medium">{setting.label}</Label>
             {isModified && (
@@ -396,7 +395,7 @@ const SandboxSettingRow = memo(({
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-11 w-11 text-warning hover:text-warning sm:h-9 sm:w-9" onClick={() => onReset(setting.key)} aria-label={`Reset ${setting.label} to loaded value`}>
+                  <Button variant="ghost" size="icon" className="h-11 w-11 text-warning hover:text-warning sm:h-9 sm:w-9" onClick={() => onReset(setting)} aria-label={`Reset ${setting.label} to loaded value`}>
                     <Undo2 className="w-3.5 h-3.5" />
                   </Button>
                 </TooltipTrigger>
@@ -410,12 +409,12 @@ const SandboxSettingRow = memo(({
                 <span className="text-xs text-muted-foreground">{Boolean(value) ? 'On' : 'Off'}</span>
                 <Switch
                   checked={Boolean(value)}
-                  onCheckedChange={(checked) => onChange(setting.key, checked)}
+                  onCheckedChange={(checked) => onChange(setting, checked)}
                   aria-label={setting.label || setting.key}
                 />
               </div>
             ) : setting.type === 'select' && setting.options ? (
-              <Select value={String(value || '')} onValueChange={(v) => onChange(setting.key, Number(v))}>
+              <Select value={String(value || '')} onValueChange={(v) => onChange(setting, Number(v))}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -430,7 +429,7 @@ const SandboxSettingRow = memo(({
                 <Input
                   type="number"
                   value={value !== undefined ? String(value) : ''}
-                  onChange={(e) => onChange(setting.key, e.target.value)}
+                  onChange={(e) => onChange(setting, e.target.value)}
                   min={setting.min}
                   max={setting.max}
                   step={setting.max && setting.max <= 1 ? 0.1 : 1}
@@ -631,23 +630,23 @@ export default function ServerConfig() {
     return 'all'
   })
   useEffect(() => { try { localStorage.setItem('serverconfig-filter-mode', filterMode) } catch { /* ignore */ } }, [filterMode])
-  
+
   // File paths info
   const [pathsInfo, setPathsInfo] = useState<{
     configPath: string
     serverName: string
     exists: { ini: boolean; sandbox: boolean; spawnpoints: boolean; spawnregions: boolean }
   } | null>(null)
-  
+
   // Data states
   const [iniSettings, setIniSettings] = useState<Record<string, string>>({})
   const [sandboxData, setSandboxData] = useState<SandboxData | null>(null)
   const [spawnPoints, setSpawnPoints] = useState<SpawnPointsByProfession>({})
   const [spawnRegions, setSpawnRegions] = useState<SpawnRegion[]>([])
-  
+
   // Raw content for raw editing mode
   const [rawContent, setRawContent] = useState('')
-  
+
   // Active category in the vertical rail (one-at-a-time, tab-style)
   const [activeIniCategory, setActiveIniCategory] = useState<string>(() => {
     try { return localStorage.getItem('serverconfig-ini-cat') || 'general' } catch { return 'general' }
@@ -692,12 +691,12 @@ export default function ServerConfig() {
     () => SANDBOX_CATEGORY_GROUPS.every(g => !!collapsedGroups[`sandbox:${g.id}`]),
     [collapsedGroups]
   )
-  
+
   // Backups dialog
   const [showBackups, setShowBackups] = useState(false)
   const [backups, setBackups] = useState<{ filename: string; size: number; created: string }[]>([])
   const [backupFilter, setBackupFilter] = useState<'all' | 'ini' | 'sandbox' | 'spawnpoints' | 'spawnregions'>('all')
-  
+
   // Templates dialog
   const [showTemplates, setShowTemplates] = useState(false)
   const [templates, setTemplates] = useState<ConfigTemplate[]>([])
@@ -707,12 +706,12 @@ export default function ServerConfig() {
   const [newTemplateDesc, setNewTemplateDesc] = useState('')
   const [saveTemplateIni, setSaveTemplateIni] = useState(true)
   const [saveTemplateSandbox, setSaveTemplateSandbox] = useState(true)
-  
+
   // Track original data for change detection
   const [originalIniSettings, setOriginalIniSettings] = useState<Record<string, string>>({})
   const [originalSandboxData, setOriginalSandboxData] = useState<SandboxData | null>(null)
   const [originalRawContent, setOriginalRawContent] = useState('')
-  
+
   // Mod Settings (live from PanelBridge)
   const [modSettings, setModSettings] = useState<Record<string, Array<{
     name?: string; shortName?: string; tableName?: string; value?: unknown;
@@ -774,7 +773,7 @@ export default function ServerConfig() {
       .filter(g => g.filteredOpts.length > 0)
       .sort((a, b) => a.name.localeCompare(b.name))
   }, [modSettings, modSettingsGroups, modSettingsSearch, modSettingsModifiedOnly, isOptModified])
-  
+
   // Copy state
   const [copied, setCopied] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -852,7 +851,7 @@ export default function ServerConfig() {
 
   // Track if raw content is loading
   const [_loadingRaw, setLoadingRaw] = useState(false)
-  
+
   // Load raw content when switching to raw mode
   const loadRawContent = async (type: 'ini' | 'sandbox' | 'spawnpoints' | 'spawnregions') => {
     setLoadingRaw(true)
@@ -1117,7 +1116,7 @@ export default function ServerConfig() {
         await serverFilesApi.saveIni(iniSettings)
         setOriginalIniSettings({ ...iniSettings })
       }
-      
+
       // Try to reload via RCON, but don't fail if RCON is not connected
       try {
         await serverFilesApi.saveAndReload()
@@ -1126,7 +1125,7 @@ export default function ServerConfig() {
         // File was saved, but RCON reload failed - that's okay
         toast({ title: 'Saved', description: 'Settings saved. Restart server to apply changes.' })
       }
-      
+
       // Refresh from server to ensure frontend matches the saved file
       try {
         if (editorMode === 'raw') {
@@ -1158,7 +1157,7 @@ export default function ServerConfig() {
       } else if (sandboxData) {
         // Create a deep copy to sanitize numbers
         const cleanData = JSON.parse(JSON.stringify(sandboxData)) as SandboxData
-        
+
         // Ensure numbers are actually numbers (not strings from input keys)
         SANDBOX_SCHEMA.forEach(setting => {
           if (setting.type === 'number') {
@@ -1173,13 +1172,13 @@ export default function ServerConfig() {
             }
           }
         })
-        
+
         await serverFilesApi.saveSandbox(cleanData)
         // Update local state to match sanitized data
         setSandboxData(cleanData)
         setOriginalSandboxData(cleanData)
       }
-      
+
       // Try to reload via RCON, but don't fail if RCON is not connected
       try {
         await serverFilesApi.saveAndReload()
@@ -1188,7 +1187,7 @@ export default function ServerConfig() {
         // File was saved, but RCON reload failed - that's okay
         toast({ title: 'Saved', description: 'Settings saved. Restart server to apply changes.' })
       }
-      
+
       // Refresh from server to ensure frontend matches the saved file
       try {
         if (editorMode === 'raw') {
@@ -1352,7 +1351,7 @@ export default function ServerConfig() {
     if (!sandboxData) return []
     const schemaKeys = new Set(SANDBOX_SCHEMA.map(s => `${s.section || 'settings'}.${s.key}`))
     const uncategorized: { section: string; key: string; value: string | number | boolean }[] = []
-    
+
     for (const sectionName of Object.keys(sandboxData)) {
       if (sectionName === 'VERSION') continue
       const sectionData = sandboxData[sectionName as keyof SandboxData]
@@ -1427,7 +1426,7 @@ export default function ServerConfig() {
       toast({ title: 'Error', description: 'Template name is required', variant: 'destructive' })
       return
     }
-    
+
     setTemplateLoading(true)
     try {
       const result = await serverFilesApi.saveAsTemplate({
@@ -1461,9 +1460,9 @@ export default function ServerConfig() {
     setTemplateLoading(true)
     try {
       const result = await serverFilesApi.applyTemplate(id)
-      toast({ 
-        title: 'Applied', 
-        description: result.message 
+      toast({
+        title: 'Applied',
+        description: result.message
       })
       setShowTemplates(false)
       loadData() // Reload the config data
@@ -1481,7 +1480,7 @@ export default function ServerConfig() {
   // Delete template
   const handleDeleteTemplate = async (id: string, name: string) => {
     if (!confirm(`Delete template "${name}"? This cannot be undone.`)) return
-    
+
     try {
       await serverFilesApi.deleteTemplate(id)
       toast({ title: 'Deleted', description: `Template "${name}" deleted` })
@@ -1500,19 +1499,13 @@ export default function ServerConfig() {
     setIniSettings(prev => ({ ...prev, [key]: value }))
   }, [])
 
-  const updateSandboxValue = useCallback((key: string, value: SandboxScalar) => {
+  const updateSandboxValue = useCallback((setting: SandboxSetting, value: SandboxScalar) => {
     setSandboxData(prev => {
       if (!prev) return prev
-      // Determine section - this requires us to know the section, but we only have the key
-      // We can scan the schema to find the section, or rely on the passed section prop if we had one
-      // Since SandboxSettingRow doesn't know the section, we need to find it
-      // OPTIMIZATION: In a real app we'd pass section to the row, or map keys to sections
-      
-      const category = SANDBOX_SCHEMA.find(s => s.key === key)?.section || 'settings'
-      
-      const sectionData = { ...(prev[category as keyof SandboxData] as Record<string, unknown> || {}) }
-      sectionData[key] = value
-      return { ...prev, [category]: sectionData } as SandboxData
+      const section = (setting.section || 'settings') as keyof SandboxData
+      const sectionData = { ...(prev[section] as Record<string, unknown> || {}) }
+      sectionData[setting.key] = value
+      return { ...prev, [section]: sectionData } as SandboxData
     })
   }, [])
 
@@ -1534,21 +1527,18 @@ export default function ServerConfig() {
   }, [originalSandboxData])
 
   // Reset individual Sandbox setting to original loaded value
-  const resetSandboxValue = useCallback((key: string) => {
+  const resetSandboxValue = useCallback((setting: SandboxSetting) => {
     if (!originalSandboxData || !sandboxData) return
-    // Find the setting in schema to determine section
-    const schemaSetting = SANDBOX_SCHEMA.find(s => s.key === key)
-    if (!schemaSetting) return
-    const section = (schemaSetting.section || 'settings') as keyof SandboxData
+    const section = (setting.section || 'settings') as keyof SandboxData
     const originalSection = originalSandboxData[section] as SandboxRecord | undefined
-    if (originalSection && originalSection[key] !== undefined) {
+    if (originalSection && originalSection[setting.key] !== undefined) {
       setSandboxData(prev => {
         if (!prev) return prev
         return {
           ...prev,
           [section]: {
             ...(prev[section] as SandboxRecord),
-            [key]: originalSection[key]
+            [setting.key]: originalSection[setting.key]
           }
         }
       })
@@ -2273,6 +2263,13 @@ export default function ServerConfig() {
               }
             />
             <div className="p-4">
+              <Alert className="mb-3 border-primary/30 bg-primary/5">
+                <AlertCircle className="h-4 w-4 text-primary" />
+                <AlertTitle>Build 42 Optimized</AlertTitle>
+                <AlertDescription>
+                  Sandbox values and option wording in this editor are aligned to Project Zomboid Build 42 defaults.
+                </AlertDescription>
+              </Alert>
               {editorMode === 'raw' ? (
                 <div className="relative">
                   <TooltipProvider>
@@ -2370,7 +2367,7 @@ export default function ServerConfig() {
                             <div className="space-y-1">
                               {settings.map(setting => (
                                 <SandboxSettingRow
-                                  key={setting.key}
+                                  key={`${setting.section || 'settings'}.${setting.key}`}
                                   setting={setting}
                                   value={(sandboxData?.[(setting.section || 'settings') as keyof SandboxData] as SandboxRecord)?.[setting.key]}
                                   originalValue={(originalSandboxData?.[(setting.section || 'settings') as keyof SandboxData] as SandboxRecord)?.[setting.key]}
@@ -2602,7 +2599,7 @@ export default function ServerConfig() {
                               <div className="space-y-1">
                                 {settings.map(setting => (
                                   <SandboxSettingRow
-                                    key={setting.key}
+                                    key={`${setting.section || 'settings'}.${setting.key}`}
                                     setting={setting}
                                     value={(sandboxData?.[(setting.section || 'settings') as keyof SandboxData] as SandboxRecord)?.[setting.key]}
                                     originalValue={(originalSandboxData?.[(setting.section || 'settings') as keyof SandboxData] as SandboxRecord)?.[setting.key]}
@@ -3354,7 +3351,7 @@ export default function ServerConfig() {
               Restore a previous version of your configuration files. Backups are created automatically when you save.
             </DialogDescription>
           </DialogHeader>
-          
+
           {/* Filter tabs */}
           <div className="flex items-center gap-2 border-b pb-3">
             <span className="text-sm text-muted-foreground mr-2">
@@ -3373,7 +3370,7 @@ export default function ServerConfig() {
               </Button>
             ))}
           </div>
-          
+
           <ScrollArea className="h-[400px]">
             {backups.length === 0 ? (
               <EmptyState type="noData" title="No backups available yet" description="Backups are created automatically when you save any config file" compact />
@@ -3407,7 +3404,7 @@ export default function ServerConfig() {
                       fileType = 'SpawnRegions'
                       typeColor = 'bg-warning'
                     }
-                    
+
                     return (
                       <div key={backup.filename} className="flex flex-col gap-3 rounded-lg border p-3 transition-colors hover:bg-muted/50 sm:flex-row sm:items-center sm:justify-between">
                         <div className="flex min-w-0 items-start gap-3 sm:items-center">
@@ -3458,7 +3455,7 @@ export default function ServerConfig() {
               </div>
             )}
           </ScrollArea>
-          
+
           <DialogFooter className="flex items-center justify-between sm:justify-between">
             <p className="text-xs text-muted-foreground">
               {backups.length} backup{backups.length !== 1 ? 's' : ''} total
@@ -3482,7 +3479,7 @@ export default function ServerConfig() {
               Save your current configuration as a template or load a saved template.
             </DialogDescription>
           </DialogHeader>
-          
+
           {/* Save as Template button */}
           <div className="flex items-center justify-between border-b pb-3">
             <span className="text-sm text-muted-foreground">
@@ -3493,7 +3490,7 @@ export default function ServerConfig() {
               Save Current as Template
             </Button>
           </div>
-          
+
           <ScrollArea className="h-[400px]">
             {templates.length === 0 ? (
               <EmptyState type="noData" title="No templates saved yet" description="Click 'Save Current as Template' to create your first template" compact />
@@ -3572,7 +3569,7 @@ export default function ServerConfig() {
               </div>
             )}
           </ScrollArea>
-          
+
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowTemplates(false)}>
               Close
@@ -3593,7 +3590,7 @@ export default function ServerConfig() {
               Save your current INI and/or Sandbox settings as a reusable template.
             </DialogDescription>
           </DialogHeader>
-          
+
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label htmlFor="template-name">Template Name *</Label>
@@ -3606,7 +3603,7 @@ export default function ServerConfig() {
               />
               <p className="text-xs text-muted-foreground">{newTemplateName.length}/60 characters</p>
             </div>
-            
+
             <div className="space-y-2">
               <Label htmlFor="template-desc">Description (optional)</Label>
               <Textarea
@@ -3619,7 +3616,7 @@ export default function ServerConfig() {
               />
               <p className="text-xs text-muted-foreground">{newTemplateDesc.length}/240 characters</p>
             </div>
-            
+
             <div className="space-y-3">
               <Label>Include in Template</Label>
               <div className="flex items-center justify-between p-3 border rounded-lg">
@@ -3646,13 +3643,13 @@ export default function ServerConfig() {
               </div>
             </div>
           </div>
-          
+
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowSaveTemplate(false)}>
               Cancel
             </Button>
-            <Button 
-              onClick={handleSaveTemplate} 
+            <Button
+              onClick={handleSaveTemplate}
               disabled={templateLoading || !newTemplateName.trim() || (!saveTemplateIni && !saveTemplateSandbox)}
             >
               {templateLoading ? (

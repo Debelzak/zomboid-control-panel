@@ -1847,7 +1847,7 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
     type: 'number',
     min: 0,
     max: 4,
-    default: 0.6,
+    default: 0.8,
     category: 'loot',
     section: 'settings'
   },
@@ -1935,7 +1935,7 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
     type: 'number',
     min: 0,
     max: 4,
-    default: 2.0,
+    default: 1.2,
     category: 'loot',
     section: 'settings'
   },
@@ -2067,7 +2067,7 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
     type: 'number',
     min: 0,
     max: 4,
-    default: 0.6,
+    default: 0.8,
     category: 'loot',
     section: 'settings'
   },
@@ -2079,15 +2079,6 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
     min: 0.1,
     max: 100,
     default: 1.0,
-    category: 'loot',
-    section: 'settings'
-  },
-  {
-    key: 'LootItemRemovalList',
-    label: 'Loot Removal List',
-    description: 'Comma-separated list of item types that will not spawn as loot.',
-    type: 'string',
-    default: '',
     category: 'loot',
     section: 'settings'
   },
@@ -2477,7 +2468,7 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
       { value: 4, label: 'Slow (200 Days)' },
       { value: 5, label: 'Very Slow (500 Days)' }
     ],
-    default: 3,
+    default: 4,
     category: 'environment',
     section: 'settings'
   },
@@ -2582,7 +2573,7 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
     label: 'Fire Spread',
     description: 'Whether fires spread when started.',
     type: 'boolean',
-    default: false,
+    default: true,
     category: 'environment',
     section: 'settings'
   },
@@ -2858,7 +2849,7 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
     type: 'number',
     min: 0,
     max: 10,
-    default: 0,
+    default: 1.0,
     category: 'survival',
     section: 'settings'
   },
@@ -3027,7 +3018,7 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
       { value: 5, label: 'Often' },
       { value: 6, label: 'Very Often' }
     ],
-    default: 4,
+    default: 6,
     category: 'survival',
     section: 'settings'
   },
@@ -3041,7 +3032,7 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
       { value: 2, label: 'Once' },
       { value: 3, label: 'Sometimes' }
     ],
-    default: 3,
+    default: 2,
     category: 'survival',
     section: 'settings'
   },
@@ -3067,7 +3058,7 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
       { value: 1, label: 'Never' },
       { value: 2, label: 'Sometimes' }
     ],
-    default: 2,
+    default: 1,
     category: 'survival',
     section: 'settings'
   },
@@ -3099,7 +3090,7 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
       { value: 4, label: 'Abundant' },
       { value: 5, label: 'Very Abundant' }
     ],
-    default: 3,
+    default: 2,
     category: 'survival',
     section: 'settings'
   },
@@ -3127,7 +3118,7 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
     type: 'number',
     min: 0,
     max: 100,
-    default: 0,
+    default: 3,
     category: 'survival',
     section: 'settings'
   },
@@ -3143,7 +3134,7 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
       { value: 4, label: 'Often' },
       { value: 5, label: 'Very Often' }
     ],
-    default: 3,
+    default: 4,
     category: 'survival',
     section: 'settings'
   },
@@ -3154,7 +3145,7 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
     type: 'number',
     min: 0,
     max: 100,
-    default: 1.0,
+    default: 0.1,
     category: 'survival',
     section: 'settings'
   },
@@ -3174,7 +3165,7 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
     type: 'number',
     min: 1,
     max: 50,
-    default: 5,
+    default: 20,
     category: 'survival',
     section: 'settings'
   },
@@ -3185,7 +3176,7 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
     type: 'number',
     min: 0,
     max: 10,
-    default: 0,
+    default: 3,
     category: 'survival',
     section: 'settings'
   },
@@ -3222,7 +3213,7 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
     label: 'World Item Removal List',
     description: 'Types of items removed from world (comma separated, e.g. Base.Vest).',
     type: 'string',
-    default: '',
+    default: 'Base.Hat, Base.Glasses, Base.Maggots, Base.Slug, Base.Slug2, Base.Snail, Base.Worm, Base.Dung_Mouse, Base.Dung_Rat',
     category: 'survival',
     section: 'settings'
   },
@@ -3233,7 +3224,7 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
     type: 'number',
     min: 0,
     max: 8760,
-    default: 0,
+    default: 24,
     category: 'survival',
     section: 'settings'
   },
@@ -3278,7 +3269,7 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
     type: 'number',
     min: 0,
     max: 100,
-    default: 0.15,
+    default: 2,
     category: 'combat',
     section: 'settings'
   },
@@ -3330,10 +3321,8 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
     key: 'FirearmHeadGearEffect',
     label: 'Firearm Head Gear Effect',
     description: 'How much head-covering gear like helmets affects firearm aim/shoulder.',
-    type: 'number',
-    min: 0,
-    max: 100,
-    default: 1.0,
+    type: 'boolean',
+    default: true,
     category: 'combat',
     section: 'settings'
   },
@@ -3360,7 +3349,7 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
       { value: 4, label: 'Normal' },
       { value: 5, label: 'High' }
     ],
-    default: 4,
+    default: 3,
     category: 'vehicles',
     section: 'settings'
   },
@@ -3370,25 +3359,6 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
     description: 'All vehicles are automatic and easy to start.',
     type: 'boolean',
     default: false,
-    category: 'vehicles',
-    section: 'settings'
-  },
-  {
-    key: 'InitialGas',
-    label: 'Initial Gas',
-    description: 'Starting gas in discovered vehicles.',
-    type: 'select',
-    options: [
-      { value: 1, label: 'Empty' },
-      { value: 2, label: 'Super Low' },
-      { value: 3, label: 'Very Low' },
-      { value: 4, label: 'Low' },
-      { value: 5, label: 'Normal' },
-      { value: 6, label: 'High' },
-      { value: 7, label: 'Very High' },
-      { value: 8, label: 'Full' }
-    ],
-    default: 5,
     category: 'vehicles',
     section: 'settings'
   },
@@ -3523,7 +3493,7 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
       { value: 4, label: 'High' },
       { value: 5, label: 'Very High' }
     ],
-    default: 3,
+    default: 1,
     category: 'vehicles',
     section: 'settings'
   },
@@ -3549,7 +3519,7 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
       { value: 5, label: 'Often' },
       { value: 6, label: 'Very Often' }
     ],
-    default: 4,
+    default: 3,
     category: 'vehicles',
     section: 'settings'
   },
@@ -3796,7 +3766,7 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
     label: 'Animal Sound Attracts Zombies',
     description: 'If true, animal calls will attract nearby zombies.',
     type: 'boolean',
-    default: false,
+    default: true,
     category: 'animals',
     section: 'settings'
   },
@@ -3841,7 +3811,7 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
     type: 'number',
     min: 0,
     max: 100,
-    default: 100,
+    default: 25,
     category: 'animals',
     section: 'settings'
   },
@@ -3852,20 +3822,23 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
     type: 'number',
     min: 1,
     max: 3650,
-    default: 120,
+    default: 90,
     category: 'animals',
     section: 'settings'
   },
   {
     key: 'Farming',
-    label: 'Farming',
-    description: 'Whether farming is enabled.',
+    label: 'Agriculture Multiplier',
+    description: 'Rate at which Agriculture skill levels up.',
     type: 'select',
     options: [
-      { value: 1, label: 'Enabled' },
-      { value: 2, label: 'Disabled' }
+      { value: 1, label: 'Very Low' },
+      { value: 2, label: 'Low' },
+      { value: 3, label: 'Normal' },
+      { value: 4, label: 'High' },
+      { value: 5, label: 'Very High' }
     ],
-    default: 1,
+    default: 3,
     category: 'animals',
     section: 'settings'
   },
@@ -3956,8 +3929,8 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
     description: 'Chance of finding clay when digging near lakes.',
     type: 'number',
     min: 0,
-    max: 100,
-    default: 100,
+    max: 1,
+    default: 0.05,
     category: 'animals',
     section: 'settings'
   },
@@ -3967,8 +3940,8 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
     description: 'Chance of finding clay when digging near rivers.',
     type: 'number',
     min: 0,
-    max: 100,
-    default: 100,
+    max: 1,
+    default: 0.05,
     category: 'animals',
     section: 'settings'
   },
@@ -3987,7 +3960,7 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
       { value: 5, label: 'Often' },
       { value: 6, label: 'Very Often' }
     ],
-    default: 4,
+    default: 3,
     category: 'world',
     section: 'settings'
   },
@@ -4004,7 +3977,7 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
       { value: 5, label: 'Often' },
       { value: 6, label: 'Very Often' }
     ],
-    default: 4,
+    default: 3,
     category: 'world',
     section: 'settings'
   },
@@ -4021,7 +3994,7 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
       { value: 5, label: 'Often' },
       { value: 6, label: 'Very Often' }
     ],
-    default: 4,
+    default: 3,
     category: 'world',
     section: 'settings'
   },
@@ -4038,13 +4011,13 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
       { value: 3, label: 'Shamblers' },
       { value: 4, label: 'Random' }
     ],
-    default: 3,
+    default: 4,
     category: 'zombieLore',
     section: 'ZombieLore'
   },
   {
     key: 'Strength',
-    label: 'Zombie Strength',
+    label: 'Strength',
     description: 'How strong zombies are.',
     type: 'select',
     options: [
@@ -4059,7 +4032,7 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
   },
   {
     key: 'Toughness',
-    label: 'Zombie Toughness',
+    label: 'Toughness',
     description: 'How tough zombies are to kill.',
     type: 'select',
     options: [
@@ -4068,17 +4041,17 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
       { value: 3, label: 'Fragile' },
       { value: 4, label: 'Random' }
     ],
-    default: 2,
+    default: 4,
     category: 'zombieLore',
     section: 'ZombieLore'
   },
   {
     key: 'Transmission',
-    label: 'Infection Transmission',
+    label: 'Transmission',
     description: 'How the zombie infection spreads.',
     type: 'select',
     options: [
-      { value: 1, label: 'Blood + Saliva' },
+      { value: 1, label: 'Blood and Saliva' },
       { value: 2, label: 'Saliva Only' },
       { value: 3, label: 'Everyone\'s Infected' },
       { value: 4, label: 'None' }
@@ -4099,7 +4072,7 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
       { value: 4, label: '0-12 Hours' },
       { value: 5, label: '2-3 Days' },
       { value: 6, label: '1-2 Weeks' },
-      { value: 7, label: '7-14 Days' }
+      { value: 7, label: 'Never' }
     ],
     default: 5,
     category: 'zombieLore',
@@ -4107,11 +4080,11 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
   },
   {
     key: 'Cognition',
-    label: 'Zombie Intelligence',
+    label: 'Cognition',
     description: 'What zombies can interact with.',
     type: 'select',
     options: [
-      { value: 1, label: 'Navigate + Use Doors' },
+      { value: 1, label: 'Navigate and Use Doors' },
       { value: 2, label: 'Navigate' },
       { value: 3, label: 'Basic Navigation' },
       { value: 4, label: 'Random' }
@@ -4122,14 +4095,16 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
   },
   {
     key: 'Memory',
-    label: 'Zombie Memory',
+    label: 'Memory',
     description: 'How long zombies remember where they last saw a target.',
     type: 'select',
     options: [
       { value: 1, label: 'Long (2500)' },
       { value: 2, label: 'Normal (750)' },
       { value: 3, label: 'Short (500)' },
-      { value: 4, label: 'None (25)' }
+      { value: 4, label: 'None (25)' },
+      { value: 5, label: 'Random' },
+      { value: 6, label: 'Random between Normal and None' }
     ],
     default: 2,
     category: 'zombieLore',
@@ -4137,49 +4112,48 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
   },
   {
     key: 'Sight',
-    label: 'Zombie Sight',
+    label: 'Sight',
     description: 'How far zombies can see targets.',
     type: 'select',
     options: [
-      { value: 1, label: 'Eagle-eyed' },
+      { value: 1, label: 'Eagle' },
       { value: 2, label: 'Normal' },
-      { value: 3, label: 'Poor' }
+      { value: 3, label: 'Poor' },
+      { value: 4, label: 'Random' },
+      { value: 5, label: 'Random between Normal and Poor' }
     ],
-    default: 2,
+    default: 5,
     category: 'zombieLore',
     section: 'ZombieLore'
   },
   {
     key: 'Hearing',
-    label: 'Zombie Hearing',
+    label: 'Hearing',
     description: 'How well zombies can hear sounds.',
     type: 'select',
     options: [
       { value: 1, label: 'Pinpoint' },
       { value: 2, label: 'Normal' },
-      { value: 3, label: 'Poor' }
+      { value: 3, label: 'Poor' },
+      { value: 4, label: 'Random' },
+      { value: 5, label: 'Random between Normal and Poor' }
     ],
-    default: 2,
+    default: 5,
     category: 'zombieLore',
     section: 'ZombieLore'
   },
   {
     key: 'SpottedLogic',
-    label: 'Spotted Logic',
+    label: 'New Stealth System',
     description: 'How zombies decide to chase their targets.',
-    type: 'select',
-    options: [
-      { value: 1, label: 'Instant (B41 default)' },
-      { value: 2, label: 'Line of Sight + Sound' },
-      { value: 3, label: 'Sound Only' }
-    ],
-    default: 1,
+    type: 'boolean',
+    default: true,
     category: 'zombieLore',
     section: 'ZombieLore'
   },
   {
     key: 'ThumpNoChasing',
-    label: 'Thump No Chasing',
+    label: 'Environmental Attacks',
     description: 'Zombies that weren\'t chasing a player will not thump constructions.',
     type: 'boolean',
     default: false,
@@ -4188,7 +4162,7 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
   },
   {
     key: 'ThumpOnConstruction',
-    label: 'Thump on Constructions',
+    label: 'Damage Construction',
     description: 'Zombies thump player-built structures.',
     type: 'boolean',
     default: true,
@@ -4197,13 +4171,13 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
   },
   {
     key: 'ActiveOnly',
-    label: 'Active Only',
+    label: 'Day/Night Zombie Speed Effect',
     description: 'Zombies active during specific times.',
     type: 'select',
     options: [
-      { value: 1, label: 'Both (Always Active)' },
-      { value: 2, label: 'Night Only' },
-      { value: 3, label: 'Day Only' }
+      { value: 1, label: 'Both' },
+      { value: 2, label: 'Night' },
+      { value: 3, label: 'Day' }
     ],
     default: 1,
     category: 'zombieLore',
@@ -4211,7 +4185,7 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
   },
   {
     key: 'TriggerHouseAlarm',
-    label: 'Trigger House Alarms',
+    label: 'Zombie House Alarm Triggering',
     description: 'Whether zombies can randomly trigger house alarms.',
     type: 'boolean',
     default: true,
@@ -4252,50 +4226,52 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
     type: 'number',
     min: 0,
     max: 100,
-    default: 1.0,
+    default: 2.0,
     category: 'zombieLore',
     section: 'ZombieLore'
   },
   {
     key: 'ZombiesMaxDefense',
-    label: 'Zombies Max Defense',
+    label: 'Maximum Zombie Armor Defense',
     description: 'Maximum defense value zombies can have.',
     type: 'number',
     min: 0,
     max: 100,
-    default: 100.0,
+    default: 85,
     category: 'zombieLore',
     section: 'ZombieLore'
   },
   {
     key: 'ChanceOfAttachedWeapon',
-    label: 'Attached Weapon Chance',
+    label: 'Chance Of Attached Weapon',
     description: 'Chance a zombie has a weapon stuck in them.',
     type: 'number',
     min: 0,
     max: 100,
-    default: 1,
+    default: 6,
     category: 'zombieLore',
     section: 'ZombieLore'
   },
   {
     key: 'ZombiesFallDamage',
-    label: 'Zombies Fall Damage',
+    label: 'Zombie Fall Damage Multiplier',
     description: 'Whether zombies can die from falling.',
-    type: 'boolean',
-    default: true,
+    type: 'number',
+    min: 0,
+    max: 100,
+    default: 1.0,
     category: 'zombieLore',
     section: 'ZombieLore'
   },
   {
     key: 'DisableFakeDead',
-    label: 'Disable Fake Dead',
+    label: 'Fake Dead Zombie Reanimation',
     description: 'No zombies will pretend to be dead.',
     type: 'select',
     options: [
-      { value: 1, label: 'Enabled' },
-      { value: 2, label: 'Disabled' },
-      { value: 3, label: 'Force Enabled' }
+      { value: 1, label: 'World Zombies' },
+      { value: 2, label: 'World and Combat Zombies' },
+      { value: 3, label: 'Never' }
     ],
     default: 1,
     category: 'zombieLore',
@@ -4313,18 +4289,18 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
       { value: 4, label: 'Large' },
       { value: 5, label: 'Very Large' }
     ],
-    default: 3,
+    default: 1,
     category: 'zombieLore',
     section: 'ZombieLore'
   },
   {
     key: 'FenceThumpersRequired',
-    label: 'Fence Thumpers Required',
+    label: 'Zombies To Damage Fences',
     description: 'Minimum zombies needed to damage a fence.',
     type: 'number',
     min: 1,
     max: 100,
-    default: 2,
+    default: 25,
     category: 'zombieLore',
     section: 'ZombieLore'
   },
@@ -4341,12 +4317,12 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
   },
   {
     key: 'DoorOpeningPercentage',
-    label: 'Door Opening Percentage',
+    label: 'Random Door Opening Amount',
     description: 'Percentage of zombies that can open doors when cognition allows it.',
     type: 'number',
     min: 0,
     max: 100,
-    default: 50,
+    default: 0,
     category: 'zombieLore',
     section: 'ZombieLore'
   },
@@ -4357,30 +4333,42 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
     type: 'select',
     options: [
       { value: 1, label: 'Crawlers Only' },
-      { value: 2, label: 'All Zombies' },
-      { value: 3, label: 'Disabled' }
+      { value: 2, label: 'Extremely Rare' },
+      { value: 3, label: 'Rare' },
+      { value: 4, label: 'Sometimes' },
+      { value: 5, label: 'Often' },
+      { value: 6, label: 'Very Often' },
+      { value: 7, label: 'Always' }
     ],
-    default: 1,
+    default: 5,
     category: 'zombieLore',
     section: 'ZombieLore'
   },
   {
     key: 'SprinterPercentage',
-    label: 'Sprinter Percentage',
+    label: 'Random Sprinter Amount',
     description: 'Percentage of sprinter zombies when Speed is set to Random.',
     type: 'number',
     min: 0,
     max: 100,
-    default: 30,
+    default: 0,
     category: 'zombieLore',
     section: 'ZombieLore'
   },
   {
     key: 'Reanimate',
-    label: 'Reanimate',
+    label: 'Reanimate Time',
     description: 'Dead zombies can get back up after being killed.',
-    type: 'boolean',
-    default: false,
+    type: 'select',
+    options: [
+      { value: 1, label: 'Instant' },
+      { value: 2, label: '0-30 Seconds' },
+      { value: 3, label: '0-1 Minutes' },
+      { value: 4, label: '0-12 Hours' },
+      { value: 5, label: '2-3 Days' },
+      { value: 6, label: '1-2 Weeks' }
+    ],
+    default: 3,
     category: 'zombieLore',
     section: 'ZombieLore'
   },
@@ -4393,7 +4381,7 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
     type: 'number',
     min: 0,
     max: 4,
-    default: 1.0,
+    default: 0.65,
     category: 'zombiePopulation',
     section: 'ZombieConfig'
   },
@@ -4437,7 +4425,7 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
     type: 'number',
     min: 0,
     max: 8760,
-    default: 72,
+    default: 0,
     category: 'zombiePopulation',
     section: 'ZombieConfig'
   },
@@ -4448,7 +4436,7 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
     type: 'number',
     min: 0,
     max: 8760,
-    default: 16,
+    default: 0,
     category: 'zombiePopulation',
     section: 'ZombieConfig'
   },
@@ -4459,7 +4447,7 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
     type: 'number',
     min: 0,
     max: 1,
-    default: 0.1,
+    default: 0,
     category: 'zombiePopulation',
     section: 'ZombieConfig'
   },
