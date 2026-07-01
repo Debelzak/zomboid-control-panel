@@ -127,6 +127,7 @@ Java crash dumps, error logs, support bundles. One-click `.zip` export for when 
 - [What It Does](#what-it-does)
 - [Requirements](#requirements)
 - [Quick Start](#quick-start)
+- [Installation](#installation)
 - [Setup](#setup)
 - [PanelBridge](#panelbridge-optional)
 - [Remote Access](#remote-access)
@@ -204,6 +205,81 @@ Then open `http://localhost:3001`.
 Before bringing it up for real, edit [`docker-compose.yml`](docker-compose.yml) and uncomment the volume mounts that point at your PZ install and `~/Zomboid` folder — the file has two annotated topology examples (PZ on the host vs. PZ on a remote machine). All env vars are documented in [`.env.example`](.env.example).
 
 Prebuilt images are published to GHCR: `ghcr.io/fpsacha/zomboid-panel:latest` and `:vX.Y.Z`. Prefer to build from source? Comment out `image:` in the compose file and uncomment the `build:` block.
+
+---
+
+## Installation
+
+Want the easiest path? Choose one option below.
+
+### Option A: Windows (fastest)
+1. Download `ZomboidControlPanel-windows.zip` from [latest release](https://github.com/fpsacha/zomboid-control-panel/releases/latest).
+2. Right-click the zip and extract it.
+3. Open the extracted folder and run `Start.bat`.
+4. Open `http://localhost:3001` in your browser.
+
+### Option B: Linux server (Ubuntu/Debian/Rocky)
+1. Download `ZomboidControlPanel-linux.tar.gz` from [latest release](https://github.com/fpsacha/zomboid-control-panel/releases/latest).
+2. Extract and start:
+
+```bash
+tar xzf ZomboidControlPanel-linux.tar.gz
+cd ZomboidControlPanel-linux* 2>/dev/null || true
+chmod +x ZomboidControlPanel start.sh
+./start.sh
+```
+
+3. Open `http://YOUR-SERVER-IP:3001`.
+
+### Option C: Docker (best for VPS)
+1. Create a folder and fetch compose + env template:
+
+```bash
+mkdir -p ~/zomboid-panel && cd ~/zomboid-panel
+curl -O https://raw.githubusercontent.com/fpsacha/zomboid-control-panel/main/docker-compose.yml
+curl -O https://raw.githubusercontent.com/fpsacha/zomboid-control-panel/main/.env.example
+cp .env.example .env
+```
+
+2. Edit `.env` and `docker-compose.yml` for your paths.
+3. Start:
+
+```bash
+docker compose up -d
+```
+
+4. Open `http://YOUR-SERVER-IP:3001`.
+
+### Option D: macOS (source run)
+There is no packaged macOS binary yet. Use Node.js runtime:
+
+```bash
+git clone https://github.com/fpsacha/zomboid-control-panel.git
+cd zomboid-control-panel
+npm run install:all
+npm run dev
+```
+
+Then open `http://localhost:5173` (frontend dev) and `http://localhost:3001` (API).
+
+### First-time setup (all platforms)
+1. Create your admin account in the web UI.
+2. Open **Settings** and configure:
+	- Project Zomboid install path
+	- Zomboid data folder path
+	- RCON host/port/password
+3. Save, then test server status and RCON from the dashboard.
+
+### Optional but recommended: PanelBridge
+For advanced features (teleport, heal, map-driven actions, weather control), copy:
+
+`pz-mod/PanelBridge/media/lua/server/PanelBridge.lua`
+
+to your PZ server install folder:
+
+`Install/media/lua/server/PanelBridge.lua`
+
+Then set `DoLuaChecksum=false` in your server INI and restart the PZ server.
 
 ---
 

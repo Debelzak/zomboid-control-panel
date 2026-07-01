@@ -376,6 +376,7 @@ const SandboxSettingRow = memo(({
       isModified ? 'border-l-2 border-l-warning bg-warning/5' : 'border-l-2 border-l-transparent hover:bg-muted/20'
     }`}>
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4">
+        <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <Label className="text-sm font-medium">{setting.label}</Label>
             {isModified && (
