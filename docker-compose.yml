@@ -20,6 +20,12 @@
 #      - PanelBridge file IPC won't work unless you share the Zomboid folder
 #        over the network (NFS/SMB) and bind-mount that share here
 #
+#   3) PZ server in another Docker container (same host)
+#      - Put both containers on the same Docker network
+#      - Set RCON host to the PZ service/container name (e.g. pzserver)
+#      - Mount the same install + Zomboid data paths into this panel container
+#        as /pz-server and /zomboid for full PanelBridge support
+#
 # ============================================================================
 # QUICK START
 # ============================================================================

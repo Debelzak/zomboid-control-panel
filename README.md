@@ -250,6 +250,61 @@ docker compose up -d
 
 4. Open `http://YOUR-SERVER-IP:3001`.
 
+#### If panel and PZ are both in Docker
+This works well and is often the easiest setup.
+
+Use these rules:
+1. Put both containers on the same Docker network.
+2. Set `RCON_HOST` to the PZ service/container name (not `127.0.0.1`).
+3. Mount the same PZ paths into the panel container so advanced features work:
+	 - PZ install -> `/pz-server`
+	 - Zomboid user data -> `/zomboid`
+4. In panel **Settings**, use container paths (`/pz-server`, `/zomboid`), not host paths.
+
+Example (adapt paths and image to your PZ container):
+
+```yaml
+services:
+	pzserver:
+		image: <your-pz-image>
+		container_name: pzserver
+		networks: [pznet]
+		volumes:
+			- /srv/pz/install:/pz-server
+			- /srv/pz/Zomboid:/zomboid
+		ports:
+			- "16261:16261/udp"
+			- "16262:16262/udp"
+			- "27015:27015/tcp" # RCON
+
+	panel:
+		image: ghcr.io/fpsacha/zomboid-panel:latest
+		container_name: zomboid-panel
+		networks: [pznet]
+		ports:
+			- "3001:3001"
+		environment:
+			- PZ_SERVER_PATH=/pz-server
+			- PZ_SAVE_PATH=/zomboid
+			- PZ_SERVER_BAT=start-server.sh
+			- RCON_HOST=pzserver
+			- RCON_PORT=27015
+			- RCON_PASSWORD=change-me
+		volumes:
+			- ./data:/app/data
+			- ./logs:/app/logs
+			- /srv/pz/install:/pz-server:ro
+			- /srv/pz/Zomboid:/zomboid
+
+networks:
+	pznet:
+		driver: bridge
+```
+
+PanelBridge note:
+- If you skip the `/zomboid` mount, basic RCON control still works.
+- Advanced features (teleport/map actions/weather via PanelBridge file exchange) will not.
+
 ### Option D: macOS (source run)
 There is no packaged macOS binary yet. Use Node.js runtime:
 
