@@ -242,7 +242,9 @@ async function main() {
   try {
     // @yao-pkg/pkg is the actively maintained fork of vercel/pkg (which is
     // stuck on Node 18.5). Its CLI is also named `pkg`.
-    execSync('npx pkg . --compress GZip', {
+    // Build without embedded V8 bytecode cache so binaries remain portable
+    // across Linux hosts and don't fail with "V8 rejected the bytecode cache".
+    execSync('npx pkg . --compress GZip --public --public-packages "*"', {
       cwd: distDir,
       stdio: 'inherit',
     });
