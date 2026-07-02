@@ -192,7 +192,9 @@ foreach ($pkgFile in $packageFiles) {
         if ($DryRun) {
             Write-Dry "Would update $pkgFile"
         } else {
-            Set-Content $pkgFile -Value $newContent -NoNewline
+            # Set-Content intermittently throws "Stream was not readable" in some
+            # shells even when the file is writable; direct file I/O is reliable.
+            [System.IO.File]::WriteAllText($pkgFile, $newContent, [System.Text.UTF8Encoding]::new($false))
             Write-Ok "Updated $pkgFile"
         }
     } else {
