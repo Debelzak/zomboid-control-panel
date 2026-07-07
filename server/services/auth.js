@@ -499,10 +499,10 @@ class AuthService {
         }
 
         // Allow map tile proxy (loaded via <img> tags, can't send auth headers).
-        // Both /tiles/ (B42 via b42map.com) and /b41tiles/ (B41 via map.projectzomboid.com)
-        // must bypass — the proxy itself only forwards to those two hardcoded
-        // public domains, so there's no SSRF surface to protect.
-        if (req.path.startsWith('/api/map/tiles/') || req.path.startsWith('/api/map/b41tiles/')) {
+        // Both /tiles/ (B42 iso via map.projectzomboid.com) and /b41tiles/ (B41) and
+        // /toptiles/ (B42 top-down for ChunkCleaner) must bypass — the proxy itself
+        // only forwards to the hardcoded public domain, so there's no SSRF surface.
+        if (req.path.startsWith('/api/map/tiles/') || req.path.startsWith('/api/map/b41tiles/') || req.path.startsWith('/api/map/toptiles/')) {
           return next();
         }
 

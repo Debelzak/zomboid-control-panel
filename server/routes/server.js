@@ -148,10 +148,15 @@ function sanitizeForBatch(str) {
     .trim();
 }
 
-// Security: Validate server name (alphanumeric, underscore, hyphen only)
+// Security: Validate server name (alphanumeric, underscore, hyphen, space allowed)
+// Spaces are permitted mid-name to match PZ server names like "The Gang Goes To Louisville".
+// Leading/trailing spaces are trimmed before validation.
 function isValidServerName(name) {
   if (!name || typeof name !== 'string') return false;
-  return /^[a-zA-Z0-9_-]{1,64}$/.test(name);
+  const trimmed = name.trim();
+  if (trimmed.length < 1 || trimmed.length > 64) return false;
+  // Must start and end with alphanumeric/underscore/hyphen; spaces allowed in the middle.
+  return /^[a-zA-Z0-9_-][a-zA-Z0-9_\- ]*[a-zA-Z0-9_-]$|^[a-zA-Z0-9_-]$/.test(trimmed);
 }
 
 // Security: Validate path is safe (no traversal, absolute path)

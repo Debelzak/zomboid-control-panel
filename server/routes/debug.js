@@ -2452,17 +2452,17 @@ router.get('/worldmap', async (req, res) => {
     let b41Probe = null;
     try {
       [b42Probe, b41Probe] = await Promise.all([
-        probeTile('https://b42map.com/map_data/base/layer0_files/0/0_0.jpg'),
+        probeTile('https://map.projectzomboid.com/maps/42.19.0/base/layer0_files/0/0_0.jpg'),
         probeTile('https://map.projectzomboid.com/maps/SurvivalB417812L0/map_files/0/0_0.jpg')
       ]);
 
       if (b42Probe.reachable) {
         checks.push(diagOk('worldmap.tiles.b42', 'B42 tile CDN reachable',
-          `b42map.com responded in ${b42Probe.latencyMs} ms (HTTP ${b42Probe.statusCode}).`,
+          `map.projectzomboid.com responded in ${b42Probe.latencyMs} ms (HTTP ${b42Probe.statusCode}).`,
           { category: 'worldmap' }));
       } else {
         checks.push(diagFail('worldmap.tiles.b42', 'B42 tile CDN unreachable',
-          `Could not reach b42map.com (${b42Probe.error || `HTTP ${b42Probe.statusCode}`}). The B42 base map will not load.`,
+          `Could not reach map.projectzomboid.com for B42 tiles (${b42Probe.error || `HTTP ${b42Probe.statusCode}`}). The B42 base map will not load.`,
           { category: 'worldmap', hint: 'Check the panel host\'s outbound HTTPS access. The /api/map/tiles proxy fetches tiles server-side.' }));
       }
 

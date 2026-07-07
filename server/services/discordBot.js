@@ -1,8 +1,51 @@
 import { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes, EmbedBuilder, PermissionFlagsBits, escapeMarkdown } from 'discord.js';
+import { request as undiciRequest, Headers as UndiciHeaders } from 'undici';
+import { STATUS_CODES } from 'http';
+import { types } from 'util';
 import { createLogger } from '../utils/logger.js';
 const log = createLogger('Discord');
 import { getSetting, setSetting } from '../database/init.js';
 import { sanitizeError } from '../utils/sanitize.js';
+
+// Workaround for undici 8.x + Node.js 22+/24+: undici adds Symbol(sensitiveHeaders)
+// to response header objects, but the WebIDL ByteString converter in undici's
+// Headers constructor throws on Symbol keys instead of skipping them (spec violation).
+// Provide a custom makeRequest that filters Symbol-keyed header properties before
+// constructing the Headers object.
+async function _resolveDiscordBody(body) {
+  if (body == null) return null;
+  if (typeof body === 'string') return body;
+  if (types.isUint8Array(body)) return body;
+  if (types.isArrayBuffer(body)) return new Uint8Array(body);
+  if (body instanceof URLSearchParams) return body.toString();
+  if (body instanceof DataView) return new Uint8Array(body.buffer);
+  if (body instanceof Blob) return new Uint8Array(await body.arrayBuffer());
+  if (body instanceof FormData) return body;
+  if (body[Symbol.iterator]) return Buffer.concat([...body]);
+  if (body[Symbol.asyncIterator]) {
+    const chunks = [];
+    for await (const chunk of body) chunks.push(chunk);
+    return Buffer.concat(chunks);
+  }
+  throw new TypeError('Unable to resolve body.');
+}
+
+async function _safeDiscordMakeRequest(url, init) {
+  const res = await undiciRequest(url, { ...init, body: await _resolveDiscordBody(init.body) });
+  return {
+    body: res.body,
+    arrayBuffer: () => res.body.arrayBuffer(),
+    json: () => res.body.json(),
+    text: () => res.body.text(),
+    get bodyUsed() { return res.body.bodyUsed; },
+    // Object.entries() only yields string-keyed enumerable properties, filtering
+    // out Symbol(sensitiveHeaders) and other Symbol keys that cause the TypeError.
+    headers: new UndiciHeaders(Object.fromEntries(Object.entries(res.headers))),
+    status: res.statusCode,
+    statusText: STATUS_CODES[res.statusCode] ?? '',
+    ok: res.statusCode >= 200 && res.statusCode < 300,
+  };
+}
 
 // Default permission levels for each command
 // 'everyone' = no role needed, 'moderator' = mod or admin role, 'admin' = admin role only
@@ -200,7 +243,7 @@ export class DiscordBot {
     // ghost slash commands forever.
     if (this.isRunning && this.client?.user && previousGuildId && previousGuildId !== guildId) {
       try {
-        const rest = new REST({ version: '10' }).setToken(this.token);
+        const rest = new REST({ version: '10', makeRequest: _safeDiscordMakeRequest }).setToken(this.token);
         await rest.put(
           Routes.applicationGuildCommands(this.client.user.id, previousGuildId),
           { body: [] }
@@ -338,7 +381,7 @@ export class DiscordBot {
 
     const targetGuildId = this.guildId;
     const targetUserId = this.client.user.id;
-    const rest = new REST({ version: '10' }).setToken(this.token);
+    const rest = new REST({ version: '10', makeRequest: _safeDiscordMakeRequest }).setToken(this.token);
     const commands = this.getCommands().map(cmd => cmd.toJSON());
 
     this._registerInFlight = (async () => {

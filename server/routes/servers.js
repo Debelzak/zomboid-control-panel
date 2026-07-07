@@ -470,9 +470,9 @@ router.post('/', async (req, res) => {
     }
     
     // Validate serverName against path traversal
-    const serverName = config.serverName || 'servertest';
-    if (!/^[a-zA-Z0-9_-]+$/.test(serverName)) {
-      return res.status(400).json({ error: 'Invalid server name: only letters, numbers, underscores and hyphens allowed' });
+    const serverName = (config.serverName || 'servertest').trim();
+    if (!/^[a-zA-Z0-9_-][a-zA-Z0-9_\- ]*[a-zA-Z0-9_-]$|^[a-zA-Z0-9_-]$/.test(serverName)) {
+      return res.status(400).json({ error: 'Invalid server name: only letters, numbers, underscores, hyphens and spaces allowed' });
     }
     
     // Validate server port if provided

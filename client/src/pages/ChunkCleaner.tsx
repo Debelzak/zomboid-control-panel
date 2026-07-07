@@ -121,8 +121,9 @@ const MIN_FIT_SCALE = 2  // minimum px/chunk when auto-fitting — chunks must b
 const MAP_TILE_SIZE = 100 // each grabofus tile covers 100x100 chunks
 const MAP_TILES_CDN = 'https://grabofus.github.io/zomboid-chunk-cleaner/assets'
 
-// B42 DZI map tiles from b42map.com (pzmap2dzi top-down view)
-const B42_DZI_CDN = 'https://b42map.com/map_data/base_top'
+// B42 DZI map tiles from map.projectzomboid.com (pzmap2dzi top-down view)
+// served via the backend proxy to avoid CORS (migrated from b42map.com).
+const B42_DZI_CDN = '/api/map/toptiles'
 const B42_DZI_FULL_W = 19968   // full-resolution image width in pixels
 const B42_DZI_FULL_H = 16128   // full-resolution image height in pixels
 const B42_DZI_TILE_PX = 256    // DZI tile size in pixels
