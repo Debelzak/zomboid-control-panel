@@ -198,7 +198,8 @@ router.post('/test', async (req, res) => {
     const response = await fetch('https://discord.com/api/v10/users/@me', {
       headers: {
         'Authorization': `Bot ${token}`
-      }
+      },
+      signal: AbortSignal.timeout(10000)
     });
     
     if (!response.ok) {

@@ -1,7 +1,7 @@
 /**
  * Authentication Service
  * Handles user registration, login, JWT tokens, and session management.
- * 
+ *
  * Design:
  * - bcryptjs for password hashing (pure JS, compatible with pkg)
  * - JWT access tokens (short-lived, 24h) + refresh tokens (long-lived, 30d)
@@ -10,17 +10,17 @@
  * - JWT secret is auto-generated per installation and stored in db.json
  */
 
-import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
-import crypto from 'crypto';
-import { createLogger } from '../utils/logger.js';
-import { getSetting, setSetting, getDb } from '../database/init.js';
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
+import crypto from "crypto";
+import { createLogger } from "../utils/logger.js";
+import { getSetting, setSetting, getDb } from "../database/init.js";
 
-const log = createLogger('Auth');
+const log = createLogger("Auth");
 
 const BCRYPT_ROUNDS = 12;
-const ACCESS_TOKEN_EXPIRY = '24h';
-const REFRESH_TOKEN_EXPIRY = '30d';
+const ACCESS_TOKEN_EXPIRY = "24h";
+const REFRESH_TOKEN_EXPIRY = "30d";
 const REFRESH_TOKEN_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000;
 const MAX_REFRESH_SESSIONS = 5;
 const MAX_FAILED_LOGINS = 10;
@@ -38,7 +38,10 @@ class AuthService {
   // Run a critical section serialized against other mutex holders.
   _withMutex(fn) {
     const run = this._writeMutex.then(fn, fn);
-    this._writeMutex = run.then(() => {}, () => {});
+    this._writeMutex = run.then(
+      () => {},
+      () => {},
+    );
     return run;
   }
 
@@ -53,9 +56,9 @@ class AuthService {
 
     const now = Date.now();
     user.refreshSessions = user.refreshSessions
-      .filter((session) => session && typeof session.id === 'string')
+      .filter((session) => session && typeof session.id === "string")
       .filter((session) => {
-        const expiresAt = Date.parse(session.expiresAt || '');
+        const expiresAt = Date.parse(session.expiresAt || "");
         return Number.isNaN(expiresAt) || expiresAt > now;
       })
       .slice(-MAX_REFRESH_SESSIONS);
@@ -82,20 +85,24 @@ class AuthService {
 
   findRefreshSession(user, sessionId) {
     this.ensureUserAuthState(user);
-    return user.refreshSessions.find((session) => session.id === sessionId) || null;
+    return (
+      user.refreshSessions.find((session) => session.id === sessionId) || null
+    );
   }
 
   revokeRefreshSession(user, sessionId) {
     this.ensureUserAuthState(user);
     const initialLength = user.refreshSessions.length;
-    user.refreshSessions = user.refreshSessions.filter((session) => session.id !== sessionId);
+    user.refreshSessions = user.refreshSessions.filter(
+      (session) => session.id !== sessionId,
+    );
     return user.refreshSessions.length !== initialLength;
   }
 
   async authenticateAccessToken(token) {
     try {
       const payload = jwt.verify(token, this.jwtSecret);
-      if (payload.type === 'refresh') {
+      if (payload.type === "refresh") {
         return null;
       }
 
@@ -130,15 +137,15 @@ class AuthService {
   async init() {
     try {
       // Load or generate JWT secret
-      let secret = await getSetting('jwtSecret');
+      let secret = await getSetting("jwtSecret");
       if (!secret) {
-        secret = crypto.randomBytes(64).toString('hex');
-        await setSetting('jwtSecret', secret);
-        log.info('Generated new JWT secret');
+        secret = crypto.randomBytes(64).toString("hex");
+        await setSetting("jwtSecret", secret);
+        log.info("Generated new JWT secret");
       }
       this.jwtSecret = secret;
       this.initialized = true;
-      log.info('Auth service initialized');
+      log.info("Auth service initialized");
     } catch (error) {
       log.error(`Failed to initialize auth service: ${error.message}`);
       throw error;
@@ -158,7 +165,7 @@ class AuthService {
    * Check if authentication is enabled
    */
   async isAuthEnabled() {
-    const authEnabled = await getSetting('authEnabled');
+    const authEnabled = await getSetting("authEnabled");
     // Default to true once users exist
     if (authEnabled === undefined || authEnabled === null) {
       const needsSetup = await this.needsSetup();
@@ -173,23 +180,25 @@ class AuthService {
   async createUser(username, password) {
     return this._withMutex(async () => {
       if (!username || !password) {
-        throw new Error('Username and password are required');
+        throw new Error("Username and password are required");
       }
 
       if (username.length < 3 || username.length > 32) {
-        throw new Error('Username must be 3-32 characters');
+        throw new Error("Username must be 3-32 characters");
       }
 
       if (!/^[a-zA-Z0-9_-]+$/.test(username)) {
-        throw new Error('Username can only contain letters, numbers, underscores and hyphens');
+        throw new Error(
+          "Username can only contain letters, numbers, underscores and hyphens",
+        );
       }
 
       if (password.length < 6) {
-        throw new Error('Password must be at least 6 characters');
+        throw new Error("Password must be at least 6 characters");
       }
 
       if (password.length > 128) {
-        throw new Error('Password must be 128 characters or fewer');
+        throw new Error("Password must be 128 characters or fewer");
       }
 
       const db = await getDb();
@@ -198,9 +207,11 @@ class AuthService {
       }
 
       // Check for duplicate username
-      const existing = db.data.users.find(u => u.username.toLowerCase() === username.toLowerCase());
+      const existing = db.data.users.find(
+        (u) => u.username.toLowerCase() === username.toLowerCase(),
+      );
       if (existing) {
-        throw new Error('Username already exists');
+        throw new Error("Username already exists");
       }
 
       const hashedPassword = await bcrypt.hash(password, BCRYPT_ROUNDS);
@@ -208,7 +219,7 @@ class AuthService {
         id: crypto.randomUUID(),
         username,
         password: hashedPassword,
-        role: 'admin',
+        role: "admin",
         createdAt: new Date().toISOString(),
         lastLogin: null,
       };
@@ -226,16 +237,18 @@ class AuthService {
    */
   async login(username, password, rememberMe = true) {
     if (!username || !password) {
-      throw new Error('Username and password are required');
+      throw new Error("Username and password are required");
     }
 
     const db = await getDb();
     const users = db.data.users || [];
-    const user = users.find(u => u.username.toLowerCase() === username.toLowerCase());
+    const user = users.find(
+      (u) => u.username.toLowerCase() === username.toLowerCase(),
+    );
 
     if (!user) {
       // Use generic error to prevent username enumeration
-      throw new Error('Invalid username or password');
+      throw new Error("Invalid username or password");
     }
 
     // Account lockout: reject early if the account is currently locked.
@@ -244,19 +257,25 @@ class AuthService {
     // attempts are failing, so the practical info gain is zero.
     const lockedUntil = user.lockedUntil ? Date.parse(user.lockedUntil) : 0;
     if (lockedUntil && lockedUntil > Date.now()) {
-      throw new Error('Invalid username or password');
+      throw new Error("Invalid username or password");
     }
 
     const valid = await bcrypt.compare(password, user.password);
     if (!valid) {
       user.failedLoginCount = (user.failedLoginCount || 0) + 1;
       if (user.failedLoginCount >= MAX_FAILED_LOGINS) {
-        user.lockedUntil = new Date(Date.now() + LOCKOUT_DURATION_MS).toISOString();
+        user.lockedUntil = new Date(
+          Date.now() + LOCKOUT_DURATION_MS,
+        ).toISOString();
         user.failedLoginCount = 0;
-        log.warn(`Account locked due to repeated failed logins: ${user.username}`);
+        log.warn(
+          `Account locked due to repeated failed logins: ${user.username}`,
+        );
       }
-      try { await db.write(); } catch {}
-      throw new Error('Invalid username or password');
+      try {
+        await db.write();
+      } catch {}
+      throw new Error("Invalid username or password");
     }
 
     // Successful auth — clear lockout state.
@@ -272,7 +291,9 @@ class AuthService {
 
     // Generate tokens
     const accessToken = this.generateAccessToken(user);
-    const refreshToken = refreshSession ? this.generateRefreshToken(user, refreshSession.id) : null;
+    const refreshToken = refreshSession
+      ? this.generateRefreshToken(user, refreshSession.id)
+      : null;
 
     log.info(`User logged in: ${username}`);
     return {
@@ -287,9 +308,14 @@ class AuthService {
    */
   generateAccessToken(user) {
     return jwt.sign(
-      { userId: user.id, username: user.username, role: user.role, tokenGen: user.tokenGen || 0 },
+      {
+        userId: user.id,
+        username: user.username,
+        role: user.role,
+        tokenGen: user.tokenGen || 0,
+      },
       this.jwtSecret,
-      { expiresIn: ACCESS_TOKEN_EXPIRY }
+      { expiresIn: ACCESS_TOKEN_EXPIRY },
     );
   }
 
@@ -299,9 +325,14 @@ class AuthService {
    */
   generateRefreshToken(user, sessionId) {
     return jwt.sign(
-      { userId: user.id, type: 'refresh', tokenGen: user.tokenGen || 0, sessionId },
+      {
+        userId: user.id,
+        type: "refresh",
+        tokenGen: user.tokenGen || 0,
+        sessionId,
+      },
       this.jwtSecret,
-      { expiresIn: REFRESH_TOKEN_EXPIRY }
+      { expiresIn: REFRESH_TOKEN_EXPIRY },
     );
   }
 
@@ -312,7 +343,7 @@ class AuthService {
     try {
       const payload = jwt.verify(token, this.jwtSecret);
       // Reject refresh tokens used as access tokens (token type confusion)
-      if (payload.type === 'refresh') return null;
+      if (payload.type === "refresh") return null;
       return payload;
     } catch (error) {
       return null;
@@ -326,16 +357,16 @@ class AuthService {
   async refreshAccessToken(refreshToken) {
     try {
       const payload = jwt.verify(refreshToken, this.jwtSecret);
-      if (payload.type !== 'refresh') {
-        throw new Error('Invalid token type');
+      if (payload.type !== "refresh") {
+        throw new Error("Invalid token type");
       }
 
       const db = await getDb();
       const users = db.data.users || [];
-      const user = users.find(u => u.id === payload.userId);
+      const user = users.find((u) => u.id === payload.userId);
 
       if (!user) {
-        throw new Error('User not found');
+        throw new Error("User not found");
       }
 
       this.ensureUserAuthState(user);
@@ -344,15 +375,15 @@ class AuthService {
       const currentGen = user.tokenGen || 0;
       const tokenGen = payload.tokenGen ?? 0;
       if (tokenGen !== currentGen) {
-        throw new Error('Refresh token has been revoked');
+        throw new Error("Refresh token has been revoked");
       }
 
       if (!payload.sessionId) {
-        throw new Error('Refresh token session is missing');
+        throw new Error("Refresh token session is missing");
       }
 
       if (!this.findRefreshSession(user, payload.sessionId)) {
-        throw new Error('Refresh token session is no longer active');
+        throw new Error("Refresh token session is no longer active");
       }
 
       this.revokeRefreshSession(user, payload.sessionId);
@@ -376,20 +407,20 @@ class AuthService {
    */
   async changePassword(userId, currentPassword, newPassword) {
     if (!newPassword || newPassword.length < 6) {
-      throw new Error('New password must be at least 6 characters');
+      throw new Error("New password must be at least 6 characters");
     }
 
     const db = await getDb();
     const users = db.data.users || [];
-    const user = users.find(u => u.id === userId);
+    const user = users.find((u) => u.id === userId);
 
     if (!user) {
-      throw new Error('User not found');
+      throw new Error("User not found");
     }
 
     const valid = await bcrypt.compare(currentPassword, user.password);
     if (!valid) {
-      throw new Error('Current password is incorrect');
+      throw new Error("Current password is incorrect");
     }
 
     user.password = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
@@ -408,7 +439,7 @@ class AuthService {
   async getUsers() {
     const db = await getDb();
     const users = db.data.users || [];
-    return users.map(u => ({
+    return users.map((u) => ({
       id: u.id,
       username: u.username,
       role: u.role,
@@ -425,7 +456,12 @@ class AuthService {
     try {
       // Decode without verifying so we can still revoke an expired-but-known session.
       const payload = jwt.decode(refreshToken);
-      if (!payload || typeof payload !== 'object' || payload.type !== 'refresh' || !payload.sessionId) {
+      if (
+        !payload ||
+        typeof payload !== "object" ||
+        payload.type !== "refresh" ||
+        !payload.sessionId
+      ) {
         return false;
       }
 
@@ -452,21 +488,25 @@ class AuthService {
    * Caller must verify the reset token before calling this.
    */
   async resetPassword(newPassword) {
-    if (!newPassword || typeof newPassword !== 'string' || newPassword.length < 6) {
-      throw new Error('Password must be at least 6 characters');
+    if (
+      !newPassword ||
+      typeof newPassword !== "string" ||
+      newPassword.length < 6
+    ) {
+      throw new Error("Password must be at least 6 characters");
     }
     if (newPassword.length > 128) {
-      throw new Error('Password must be 128 characters or fewer');
+      throw new Error("Password must be 128 characters or fewer");
     }
 
     const db = await getDb();
     const users = db.data.users || [];
     if (users.length === 0) {
-      throw new Error('No user accounts exist. Use setup instead.');
+      throw new Error("No user accounts exist. Use setup instead.");
     }
 
     // Reset the first admin account
-    const user = users.find(u => u.role === 'admin') || users[0];
+    const user = users.find((u) => u.role === "admin") || users[0];
     user.password = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
     user.tokenGen = (user.tokenGen || 0) + 1;
     user.refreshSessions = [];
@@ -484,17 +524,17 @@ class AuthService {
     return async (req, res, next) => {
       try {
         // Only protect API routes — let static files and SPA page routes through
-        if (!req.path.startsWith('/api')) {
+        if (!req.path.startsWith("/api")) {
           return next();
         }
 
         // Always allow auth routes (login, setup, status)
-        if (req.path.startsWith('/api/auth/')) {
+        if (req.path.startsWith("/api/auth/")) {
           return next();
         }
-  
+
         // Allow health check
-        if (req.path === '/api/health') {
+        if (req.path === "/api/health") {
           return next();
         }
 
@@ -502,13 +542,17 @@ class AuthService {
         // Both /tiles/ (B42 iso via map.projectzomboid.com) and /b41tiles/ (B41) and
         // /toptiles/ (B42 top-down for ChunkCleaner) must bypass — the proxy itself
         // only forwards to the hardcoded public domain, so there's no SSRF surface.
-        if (req.path.startsWith('/api/map/tiles/') || req.path.startsWith('/api/map/b41tiles/') || req.path.startsWith('/api/map/toptiles/')) {
+        if (
+          req.path.startsWith("/api/map/tiles/") ||
+          req.path.startsWith("/api/map/b41tiles/") ||
+          req.path.startsWith("/api/map/toptiles/")
+        ) {
           return next();
         }
 
         // Allow mod thumbnail proxy (also loaded via <img> tags). Only proxies
         // Steam Workshop preview URLs already stored in our DB — no arbitrary SSRF.
-        if (req.path.startsWith('/api/mods/thumbnail/')) {
+        if (req.path.startsWith("/api/mods/thumbnail/")) {
           return next();
         }
 
@@ -518,7 +562,7 @@ class AuthService {
           return next();
         }
 
-        // Skip auth if it's been explicitly disabled  
+        // Skip auth if it's been explicitly disabled
         const authEnabled = await this.isAuthEnabled();
         if (!authEnabled) {
           return next();
@@ -526,15 +570,19 @@ class AuthService {
 
         // Extract token from Authorization header
         const authHeader = req.headers.authorization;
-        if (!authHeader || !authHeader.startsWith('Bearer ')) {
-          return res.status(401).json({ error: 'Authentication required', code: 'AUTH_REQUIRED' });
+        if (!authHeader || !authHeader.startsWith("Bearer ")) {
+          return res
+            .status(401)
+            .json({ error: "Authentication required", code: "AUTH_REQUIRED" });
         }
 
         const token = authHeader.substring(7);
         const payload = await this.authenticateAccessToken(token);
 
         if (!payload) {
-          return res.status(401).json({ error: 'Invalid or expired token', code: 'TOKEN_EXPIRED' });
+          return res
+            .status(401)
+            .json({ error: "Invalid or expired token", code: "TOKEN_EXPIRED" });
         }
 
         // Attach user info to request
@@ -542,7 +590,7 @@ class AuthService {
         next();
       } catch (error) {
         log.error(`Auth middleware error: ${error.message}`);
-        return res.status(500).json({ error: 'Authentication error' });
+        return res.status(500).json({ error: "Authentication error" });
       }
     };
   }
