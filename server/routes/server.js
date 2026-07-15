@@ -1,5 +1,6 @@
 import express from "express";
-import { spawn } from "child_process";
+import { spawn, exec } from "child_process";
+import https from "https";
 import path from "path";
 import fs from "fs";
 import os from "os";
@@ -366,12 +367,10 @@ router.post("/start", async (req, res) => {
       `POST /start (server=${activeServer?.name || "unknown"}, remote=${activeServer?.isRemote || false})`,
     );
     if (activeServer?.isRemote) {
-      return res
-        .status(400)
-        .json({
-          error:
-            "Cannot start a remote server. Remote servers are managed externally — use RCON to interact.",
-        });
+      return res.status(400).json({
+        error:
+          "Cannot start a remote server. Remote servers are managed externally — use RCON to interact.",
+      });
     }
 
     const serverManager = req.app.get("serverManager");
@@ -640,12 +639,10 @@ router.post("/force-stop", async (req, res) => {
     log.info("POST /force-stop — force kill requested");
     const activeServer = await getActiveServer();
     if (activeServer?.isRemote) {
-      return res
-        .status(400)
-        .json({
-          error:
-            "Cannot force-stop a remote server. The process is not managed by this panel.",
-        });
+      return res.status(400).json({
+        error:
+          "Cannot force-stop a remote server. The process is not managed by this panel.",
+      });
     }
 
     const serverManager = req.app.get("serverManager");
@@ -666,12 +663,10 @@ router.post("/restart", async (req, res) => {
   try {
     const activeServer = await getActiveServer();
     if (activeServer?.isRemote) {
-      return res
-        .status(400)
-        .json({
-          error:
-            "Cannot restart a remote server. The process is not managed by this panel.",
-        });
+      return res.status(400).json({
+        error:
+          "Cannot restart a remote server. The process is not managed by this panel.",
+      });
     }
 
     const scheduler = req.app.get("scheduler");
@@ -1103,12 +1098,9 @@ router.post("/install", async (req, res) => {
 
     // Validate paths - Security check for path traversal
     if (!steamcmdPath || !installPath || !serverName) {
-      return res
-        .status(400)
-        .json({
-          error:
-            "Missing required fields: steamcmdPath, installPath, serverName",
-        });
+      return res.status(400).json({
+        error: "Missing required fields: steamcmdPath, installPath, serverName",
+      });
     }
 
     if (!isValidPath(steamcmdPath)) {
@@ -1120,12 +1112,10 @@ router.post("/install", async (req, res) => {
     }
 
     if (!isValidServerName(serverName)) {
-      return res
-        .status(400)
-        .json({
-          error:
-            "Invalid server name. Use only letters, numbers, underscores, hyphens, and spaces (max 64 chars)",
-        });
+      return res.status(400).json({
+        error:
+          "Invalid server name. Use only letters, numbers, underscores, hyphens, and spaces (max 64 chars)",
+      });
     }
 
     if (zomboidDataPath && !isValidPath(zomboidDataPath)) {
@@ -1506,12 +1496,10 @@ router.post("/quick-setup", async (req, res) => {
     }
 
     if (!isValidServerName(serverName)) {
-      return res
-        .status(400)
-        .json({
-          error:
-            "Invalid server name. Use only letters, numbers, underscores, hyphens, and spaces (max 64 chars)",
-        });
+      return res.status(400).json({
+        error:
+          "Invalid server name. Use only letters, numbers, underscores, hyphens, and spaces (max 64 chars)",
+      });
     }
 
     if (zomboidDataPath && !isValidPath(zomboidDataPath)) {
@@ -1714,11 +1702,9 @@ router.post("/configure-rcon", async (req, res) => {
     const serverName = await getServerName();
 
     if (!serverConfigPath) {
-      return res
-        .status(400)
-        .json({
-          error: "Server config path not set. Please run installation first.",
-        });
+      return res.status(400).json({
+        error: "Server config path not set. Please run installation first.",
+      });
     }
 
     const iniPath = path.join(serverConfigPath, `${serverName}.ini`);
@@ -1780,11 +1766,9 @@ router.post("/configure-network", async (req, res) => {
     const serverName = await getServerName();
 
     if (!serverConfigPath) {
-      return res
-        .status(400)
-        .json({
-          error: "Server config path not set. Please run installation first.",
-        });
+      return res.status(400).json({
+        error: "Server config path not set. Please run installation first.",
+      });
     }
 
     const iniPath = path.join(serverConfigPath, `${serverName}.ini`);
@@ -2244,7 +2228,6 @@ router.post("/steamcmd/download", async (req, res) => {
 
     if (isWindows) {
       // Windows: Download and extract zip
-      const https = await import("https");
       const unzipper = await import("unzipper");
       const steamcmdUrl =
         "https://steamcdn-a.akamaihd.net/client/installer/steamcmd.zip";
@@ -2269,7 +2252,7 @@ router.post("/steamcmd/download", async (req, res) => {
       };
 
       const downloadAndExtract = (url) => {
-        https.default
+        https
           .get(url, (response) => {
             if (response.statusCode === 301 || response.statusCode === 302) {
               downloadAndExtract(response.headers.location);
@@ -2314,7 +2297,7 @@ router.post("/steamcmd/download", async (req, res) => {
       }
     } else {
       // Linux: Download and extract tar.gz, then make executable
-      const { exec: execCb } = await import("child_process");
+      const execCb = exec;
       const tarUrl =
         "https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz";
       const tarPath = path.join(installPath, "steamcmd_linux.tar.gz");
@@ -2694,7 +2677,7 @@ router.post("/browse-folder", async (req, res) => {
 
     if (!isWindows) {
       // Linux: try zenity, then kdialog, then return unsupported
-      const { exec: execCb } = await import("child_process");
+      const execCb = exec;
       const safeDesc = description.replace(/'/g, "'\\''");
       const safePath =
         initialPath && isValidPath(initialPath)
@@ -2729,12 +2712,10 @@ router.post("/browse-folder", async (req, res) => {
             return res.json({ success: false, path: null, cancelled: true });
           }
           // No GUI dialog available
-          return res
-            .status(501)
-            .json({
-              error:
-                "No folder browser available. Install zenity or kdialog, or enter the path manually.",
-            });
+          return res.status(501).json({
+            error:
+              "No folder browser available. Install zenity or kdialog, or enter the path manually.",
+          });
         });
       });
       return;
@@ -3156,21 +3137,17 @@ router.post("/wipe/preview", async (req, res) => {
 
     const { targets } = req.body; // e.g. ["map", "players", "world"]
     if (!Array.isArray(targets) || targets.length === 0) {
-      return res
-        .status(400)
-        .json({
-          error: "targets must be a non-empty array of: map, players, world",
-        });
+      return res.status(400).json({
+        error: "targets must be a non-empty array of: map, players, world",
+      });
     }
 
     const allowedTargets = ["map", "players", "world"];
     const invalid = targets.filter((t) => !allowedTargets.includes(t));
     if (invalid.length > 0) {
-      return res
-        .status(400)
-        .json({
-          error: `Invalid targets: ${invalid.join(", ")}. Allowed: ${allowedTargets.join(", ")}`,
-        });
+      return res.status(400).json({
+        error: `Invalid targets: ${invalid.join(", ")}. Allowed: ${allowedTargets.join(", ")}`,
+      });
     }
 
     const savePath = serverManager.savePath;
@@ -3337,11 +3314,9 @@ router.post("/wipe", async (req, res) => {
   try {
     // Prevent concurrent wipes
     if (wipeInProgress) {
-      return res
-        .status(409)
-        .json({
-          error: "A wipe operation is already in progress. Please wait.",
-        });
+      return res.status(409).json({
+        error: "A wipe operation is already in progress. Please wait.",
+      });
     }
 
     const serverManager = req.app.get("serverManager");
@@ -3350,11 +3325,9 @@ router.post("/wipe", async (req, res) => {
     // Safety: server must be stopped
     const isRunning = await serverManager.checkServerRunning();
     if (isRunning) {
-      return res
-        .status(400)
-        .json({
-          error: "Server must be stopped before wiping. Stop the server first.",
-        });
+      return res.status(400).json({
+        error: "Server must be stopped before wiping. Stop the server first.",
+      });
     }
 
     const { targets, confirm } = req.body;
@@ -3362,11 +3335,9 @@ router.post("/wipe", async (req, res) => {
       return res.status(400).json({ error: "Wipe requires confirm: true" });
     }
     if (!Array.isArray(targets) || targets.length === 0) {
-      return res
-        .status(400)
-        .json({
-          error: "targets must be a non-empty array of: map, players, world",
-        });
+      return res.status(400).json({
+        error: "targets must be a non-empty array of: map, players, world",
+      });
     }
 
     const allowedTargets = ["map", "players", "world"];
