@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useSocket } from '@/contexts/SocketContext'
+import { useConfirm } from '@/contexts/ConfirmContext'
 import { usePageShortcut } from '../hooks/useKeyboardShortcuts'
 import { copyText } from '@/lib/utils'
 import { 
@@ -195,6 +196,7 @@ export default function Mods() {
   const [checking, setChecking] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const { toast } = useToast()
+  const confirm = useConfirm()
 
   // Search and filters
   const [searchQuery, setSearchQuery] = useState('')
@@ -571,7 +573,12 @@ export default function Mods() {
   const handleDeleteDiskMod = useCallback(async (workshopId: string, modName?: string) => {
     if (deletingId) return
     const label = modName ? `"${modName}" (${workshopId})` : workshopId
-    if (!window.confirm(`Delete ${label} from disk? This removes the workshop folder and strips it from the server INI. This cannot be undone (Steam will re-download on next start if the mod is still in WorkshopItems= elsewhere).`)) {
+    const ok = await confirm({
+      title: 'Delete mod from disk?',
+      description: `Delete ${label} from disk? This removes the workshop folder and strips it from the server INI. This cannot be undone (Steam will re-download on next start if the mod is still in WorkshopItems= elsewhere).`,
+      confirmLabel: 'Delete',
+    })
+    if (!ok) {
       return
     }
     setDeletingId(workshopId)
@@ -598,7 +605,13 @@ export default function Mods() {
   // Bulk delete all currently shown disabled-on-disk mods.
   const handleDeleteAllDisabled = useCallback(async () => {
     if (deletingId || disabledMods.length === 0) return
-    if (!window.confirm(`Delete all ${disabledMods.length} disabled mod${disabledMods.length === 1 ? '' : 's'} from disk? This removes every workshop folder listed below.`)) {
+    const ok = await confirm({
+      title: 'Delete disabled mods from disk?',
+      description: `Delete all ${disabledMods.length} disabled mod${disabledMods.length === 1 ? '' : 's'} from disk? This removes every workshop folder listed below.`,
+      items: disabledMods.map(m => m.name || m.workshop_id),
+      confirmLabel: 'Delete all',
+    })
+    if (!ok) {
       return
     }
     setDeletingId('__batch_disabled__')
@@ -624,7 +637,13 @@ export default function Mods() {
   // Bulk delete all ignored mods from disk.
   const handleDeleteAllIgnoredFromDisk = useCallback(async () => {
     if (deletingId || ignoredMods.length === 0) return
-    if (!window.confirm(`Delete all ${ignoredMods.length} ignored mod${ignoredMods.length === 1 ? '' : 's'} from disk? This removes every workshop folder listed below AND clears the ignore list.`)) {
+    const ok = await confirm({
+      title: 'Delete ignored mods from disk?',
+      description: `Delete all ${ignoredMods.length} ignored mod${ignoredMods.length === 1 ? '' : 's'} from disk? This removes every workshop folder listed below AND clears the ignore list.`,
+      items: ignoredMods.map(m => m.name || m.workshop_id),
+      confirmLabel: 'Delete all',
+    })
+    if (!ok) {
       return
     }
     setDeletingId('__batch_ignored__')
@@ -6728,12 +6747,13 @@ export default function Mods() {
                                 size="sm"
                                 className="self-start sm:self-auto"
                                 disabled={loading || (deactivatedIds.length === 0)}
-                                onClick={() => {
+                                onClick={async () => {
                                   const ids = someSelected ? selectedDeactivated : deactivatedIds
                                   const label = someSelected
                                     ? `Delete ${ids.length} selected deactivated mod${ids.length === 1 ? '' : 's'} from tracking? This cannot be undone (re-add them manually if needed).`
                                     : `Delete ALL ${ids.length} deactivated mod${ids.length === 1 ? '' : 's'} from tracking? This cannot be undone (re-add them manually if needed).`
-                                  if (!window.confirm(label)) return
+                                  const ok = await confirm({ title: 'Delete from tracking?', description: label, confirmLabel: 'Delete' })
+                                  if (!ok) return
                                   setSelectedMods(new Set(ids))
                                   handleBulkRemove(ids)
                                 }}

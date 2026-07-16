@@ -904,7 +904,7 @@ export class DiscordBot {
     }
 
     // Cap RCON commands at 500 chars — anything longer is almost certainly
-    // accidental (copy-paste) and risks tripping rcon-srcds packet limits.
+    // accidental (copy-paste) and risks tripping RCON packet limits.
     const trimmed = String(command).slice(0, 500);
     const safeCommand = this.rconService.sanitize(trimmed);
     if (!safeCommand) {

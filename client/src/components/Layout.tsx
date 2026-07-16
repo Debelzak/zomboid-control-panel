@@ -12,6 +12,7 @@ import {
   Download,
   Bug,
   Map,
+  Eraser,
   MessageSquare,
   Layers,
   ChevronDown,
@@ -112,7 +113,7 @@ const navSections: NavSection[] = [
     items: [
       { to: '/scheduler', icon: Clock, label: 'Scheduled Tasks' },
       { to: '/backups', icon: Archive, label: 'World Backups', requiresLocal: true },
-      { to: '/chunks', icon: Map, label: 'Map Cleanup', requiresLocal: true },
+      { to: '/chunks', icon: Eraser, label: 'Map Cleanup', requiresLocal: true },
     ]
   },
   {
@@ -575,7 +576,7 @@ export default function Layout({ children }: LayoutProps) {
                 <div className="flex items-center gap-1.5 text-[9.5px] font-medium uppercase leading-none tracking-[0.28em] text-muted-foreground/80">
                   <span className="shell-brand-subtitle truncate">CONTROL PANEL</span>
                   <span className="brand-strip__version font-mono normal-case tracking-normal text-muted-foreground/55">
-                    v{(typeof __PANEL_VERSION__ !== 'undefined' ? __PANEL_VERSION__ : '0')}
+                    v{panelVersion || (typeof __PANEL_VERSION__ !== 'undefined' ? __PANEL_VERSION__ : '0')}
                   </span>
                 </div>
               </div>

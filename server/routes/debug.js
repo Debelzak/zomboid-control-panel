@@ -1085,7 +1085,7 @@ router.get("/health", async (req, res) => {
       services: {
         rcon: {
           connected: rconService?.isConnected?.() || false,
-          host: rconService?.host || "not configured",
+          host: rconService?.config?.host || "not configured",
         },
         server: {
           running: (await serverManager?.checkServerRunning?.()) || false,
@@ -1898,7 +1898,7 @@ router.get("/diagnostics", async (req, res) => {
           diagOk(
             "rcon.connected",
             "RCON connected",
-            `Connected to ${rconService.host || "127.0.0.1"}:${rconService.port || 27015}.`,
+            `Connected to ${rconService.config?.host || "127.0.0.1"}:${rconService.config?.port || 27015}.`,
             { category: "services" },
           ),
         );
@@ -3910,7 +3910,7 @@ router.get("/worldmap", async (req, res) => {
 });
 router.get("/performance-history", async (req, res) => {
   try {
-    const limit = parseInt(req.query.limit) || 60;
+    const limit = parseInt(req.query.limit, 10) || 60;
     const history = await getPerformanceHistory(limit);
     res.json({ history });
   } catch (error) {
@@ -4314,7 +4314,7 @@ router.post("/client-errors", (req, res) => {
 // GET /api/debug/activity — Merge all log sources into a single chronological feed
 router.get("/activity", async (req, res) => {
   try {
-    const limit = Math.min(parseInt(req.query.limit) || 200, 500);
+    const limit = Math.min(parseInt(req.query.limit, 10) || 200, 500);
     const source = req.query.source || "all"; // 'all' | 'rcon' | 'bridge' | 'player' | 'server'
 
     const entries = [];

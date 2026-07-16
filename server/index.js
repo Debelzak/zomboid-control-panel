@@ -11,6 +11,7 @@ import path from "path";
 import fs from "fs";
 import os from "os";
 import readline from "readline";
+import { randomUUID } from "crypto";
 import { fileURLToPath } from "url";
 import { exec, execSync, spawn } from "child_process";
 import cookieParser from "cookie-parser";
@@ -43,6 +44,7 @@ import { UpdateChecker } from "./services/updateChecker.js";
 import { PanelUpdateChecker } from "./services/panelUpdateChecker.js";
 import { LogTailer } from "./services/logTailer.js";
 import authService from "./services/auth.js";
+import { requireRole } from "./services/auth.js";
 import authRoutes from "./routes/auth.js";
 import { loadOrCreateCerts } from "./utils/certs.js";
 import { sanitizeError } from "./utils/sanitize.js";
@@ -104,18 +106,31 @@ process.stderr?.on?.("error", (err) => {
   if (err.code !== "EPIPE") throw err;
 });
 
-// Global error handlers to prevent app crashes
+// Global error handlers.
+// Previously these only logged and deliberately did NOT exit ("keep the app
+// running"). After a genuine invariant break the process could end up
+// half-dead (leaked handles, a service stuck mid-mutation) yet still "up",
+// so failures became silent and hard to diagnose, and the orchestrator
+// (systemd/Docker) never got the non-zero exit that would restart a clean
+// copy. Now: log, best-effort flush any pending DB writes (bounded by a
+// short timeout so a stuck flush can't block the exit), then exit(1) so the
+// orchestrator restarts us. EPIPE (broken stdout/stderr, e.g. terminal
+// closed) is still swallowed — it's benign and would otherwise loop forever.
+function fatalExit(label, err) {
+  log.error(`${label}:`, err);
+  Promise.race([
+    flushWrites().catch(() => {}),
+    new Promise((resolve) => setTimeout(resolve, 3000)),
+  ]).finally(() => process.exit(1));
+}
+
 process.on("uncaughtException", (error) => {
-  // EPIPE means stdout/stderr pipe broke (e.g. terminal closed) — silently ignore
-  // to prevent an infinite error → log → error loop
   if (error && error.code === "EPIPE") return;
-  log.error("Uncaught Exception:", error);
-  // Don't exit - keep the app running
+  fatalExit("Uncaught Exception", error);
 });
 
-process.on("unhandledRejection", (reason, promise) => {
-  log.error("Unhandled Rejection at:", promise, "reason:", reason);
-  // Don't exit - keep the app running
+process.on("unhandledRejection", (reason) => {
+  fatalExit("Unhandled Rejection", reason);
 });
 
 // Graceful shutdown handling
@@ -216,7 +231,27 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-app.set("trust proxy", 1); // Trust first proxy hop (nginx, caddy, etc.) for correct req.ip and secure cookies
+// trust proxy is OFF by default and must be explicitly opted into via the
+// TRUST_PROXY env var (e.g. "1" for a single reverse-proxy hop like
+// nginx/caddy in front on a VPS). Leaving this unconditionally on let any
+// client that reaches the panel directly (no proxy in front — the common
+// LAN/home-server deployment) spoof X-Forwarded-For to dodge IP-keyed rate
+// limiting (login, setup, RCON limiters all key on req.ip) and to influence
+// the x-forwarded-proto secure-cookie logic.
+const trustProxyEnv = (process.env.TRUST_PROXY || "").trim().toLowerCase();
+let trustProxySetting = false;
+if (trustProxyEnv === "true") {
+  trustProxySetting = 1;
+} else if (trustProxyEnv && trustProxyEnv !== "false") {
+  const hops = parseInt(trustProxyEnv, 10);
+  trustProxySetting = Number.isFinite(hops) && hops > 0 ? hops : false;
+}
+app.set("trust proxy", trustProxySetting);
+if (trustProxySetting) {
+  log.info(
+    `trust proxy enabled (${trustProxySetting} hop${trustProxySetting === 1 ? "" : "s"}) via TRUST_PROXY env var`,
+  );
+}
 const httpServer = createServer(app);
 
 // HTTPS server — created during startup if certs are available
@@ -272,7 +307,10 @@ function isPrivateNetworkHost(host) {
     host === "::1" ||
     host.startsWith("192.168.") ||
     host.startsWith("10.") ||
-    host.startsWith("100.") ||
+    // CGNAT/Tailscale range is 100.64.0.0/10 (second octet 64-127), NOT the
+    // whole 100.0.0.0/8. `host.startsWith("100.")` used to match all of
+    // 100.0.0.0-100.63.255.255 too, which are regular public IPv4 addresses.
+    /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(host) ||
     /^172\.(1[6-9]|2\d|3[01])\./.test(host)
   );
 }
@@ -307,7 +345,7 @@ function recordCorsBlock(origin, source) {
     ? normalizedOrigin.slice(0, MAX_CORS_ORIGIN_LENGTH)
     : "null";
   const entry = {
-    id: Date.now() + Math.floor(Math.random() * 1000),
+    id: randomUUID(),
     origin: safeOrigin,
     source,
     blockedAt: new Date().toISOString(),
@@ -898,6 +936,36 @@ panelBridge.on("configured", ({ path }) => {
   io.emit("panelBridge:configured", { bridgePath: path });
 });
 
+// PanelBridge is the preferred source of truth for player presence (its
+// heartbeat-gated trackPlayerActivity() is more reliable than RCON polling,
+// which can see a player transiently vanish from the list on a network
+// hiccup). When the bridge is alive, route Discord join/leave notifications
+// and auto-export through ITS connect/disconnect events instead of RCON's —
+// see the corresponding guard in startPlayerPolling() below that skips these
+// same side effects while the bridge is alive, so they fire exactly once.
+panelBridge.on("playerConnect", (playerName) => {
+  discordBot
+    .sendEventNotification("playerJoin", { player: playerName })
+    .catch((err) =>
+      log.debug(`Discord playerJoin notification failed: ${err.message}`),
+    );
+  getSetting("autoExportOnLogin")
+    .then((autoExport) => {
+      if (autoExport === true || autoExport === "true") {
+        setTimeout(() => autoExportPlayer(playerName), 10000);
+      }
+    })
+    .catch(() => {});
+});
+
+panelBridge.on("playerDisconnect", (playerName) => {
+  discordBot
+    .sendEventNotification("playerLeave", { player: playerName })
+    .catch((err) =>
+      log.debug(`Discord playerLeave notification failed: ${err.message}`),
+    );
+});
+
 // Make services available to routes
 app.set("rconService", rconService);
 app.set("serverManager", serverManager);
@@ -975,7 +1043,7 @@ app.get("/api/panel-info", async (req, res) => {
 // Panel restart endpoint — restarts the panel process (works with exe or node)
 // If a downloaded-but-not-applied panel update is staged, hand off to the
 // external helper so the exe swap happens after this process exits.
-app.post("/api/panel/restart", async (req, res) => {
+app.post("/api/panel/restart", requireRole("admin"), async (req, res) => {
   log.info("Panel restart requested via API");
 
   const checker = req.app.get("panelUpdateChecker");
@@ -1282,26 +1350,30 @@ app.get("/api/panel/update-apply-log", (req, res) => {
   }
 });
 
-app.post("/api/panel/update-download", async (req, res) => {
-  try {
-    const checker = req.app.get("panelUpdateChecker");
-    if (!checker)
-      return res
-        .status(500)
-        .json({ error: "Panel update checker not available" });
-    const result = await checker.downloadUpdate();
-    if (!result.success) {
-      if (result.code === "already_downloading")
-        return res.status(409).json(result);
-      if (result.code === "no_update") return res.status(400).json(result);
-      return res.status(400).json(result);
+app.post(
+  "/api/panel/update-download",
+  requireRole("admin"),
+  async (req, res) => {
+    try {
+      const checker = req.app.get("panelUpdateChecker");
+      if (!checker)
+        return res
+          .status(500)
+          .json({ error: "Panel update checker not available" });
+      const result = await checker.downloadUpdate();
+      if (!result.success) {
+        if (result.code === "already_downloading")
+          return res.status(409).json(result);
+        if (result.code === "no_update") return res.status(400).json(result);
+        return res.status(400).json(result);
+      }
+      res.json(result);
+    } catch (error) {
+      log.error(`Panel update download failed: ${error.message}`);
+      res.status(500).json({ error: sanitizeError(error.message) });
     }
-    res.json(result);
-  } catch (error) {
-    log.error(`Panel update download failed: ${error.message}`);
-    res.status(500).json({ error: sanitizeError(error.message) });
-  }
-});
+  },
+);
 
 // Serve static files in production
 // Detect if running as packaged exe (pkg sets process.pkg)
@@ -1339,7 +1411,17 @@ app.use("/api", (err, req, res, next) => {
   res.status(status).json({ error: sanitizeError(err.message) });
 });
 
-app.get("*", (req, res, next) => {
+// SPA catch-all: serves index.html for any unmatched GET route so React
+// Router can handle client-side routing. Uses a path-less app.use()
+// middleware instead of app.get("*", ...) -- Express 5's path-to-regexp
+// (v6/v8) no longer accepts a bare "*" wildcard route pattern ("Missing
+// parameter name at index 1: *"); a path-less middleware sidesteps route
+// pattern parsing entirely and works identically on Express 4 and 5. The
+// explicit method check reproduces app.get()'s original GET-only behavior
+// (non-GET requests to unmatched paths fall through to Express's default
+// 404 handling, same as before).
+app.use((req, res, next) => {
+  if (req.method !== "GET") return next();
   if (req.path.startsWith("/api")) {
     res.status(404).json({ error: "API endpoint not found" });
   } else {
@@ -1536,7 +1618,10 @@ function startPlayerPolling() {
           // Notify Discord — only after we have an established baseline (skip on
           // the very first poll so we don't fire spurious join events for players
           // who were already online before the panel started).
-          if (lastSet.size > 0) {
+          // Skip entirely while PanelBridge is alive: its own connect/disconnect
+          // events (wired above) already send these same notifications from a
+          // more reliable presence source, and firing both would double them up.
+          if (lastSet.size > 0 && !panelBridge.modStatus?.alive) {
             for (const p of joined) {
               discordBot
                 .sendEventNotification("playerJoin", { player: p.name })
@@ -1572,6 +1657,9 @@ function startPlayerPolling() {
       log.debug(`Player polling error: ${error.message}`);
     }
   }, 5000);
+  // Matches perfPollingInterval/statusWatchdogInterval below \u2014 don't let this
+  // timer hold the event loop open on its own during graceful shutdown.
+  if (playerPollingInterval.unref) playerPollingInterval.unref();
 
   log.info("Server-side player polling started (5s interval)");
 }
@@ -1665,18 +1753,14 @@ async function getPzProcessMemory() {
 async function startPerfPolling() {
   if (perfPollingInterval) clearInterval(perfPollingInterval);
 
-  // Clear stale performance data from previous session so charts start fresh
-  try {
-    const { getDb, scheduleWrite } = await import("./database/init.js");
-    const db = await getDb();
-    if (db.data.performance_history && db.data.performance_history.length > 0) {
-      db.data.performance_history = [];
-      scheduleWrite();
-      log.info("Cleared stale performance history from previous session");
-    }
-  } catch (e) {
-    log.debug(`Could not clear perf history: ${e.message}`);
-  }
+  // NOTE: this used to wipe performance_history on every startup "so charts
+  // start fresh". That meant every restart (including every auto-restart
+  // and every update-apply) threw away all history, and a monitoring panel
+  // could never show data spanning a restart. RETENTION already caps this
+  // collection's size (see database/init.js), so the wipe wasn't needed to
+  // bound growth — history now persists across restarts. Use
+  // clearPerformanceHistory() from database/init.js for an explicit,
+  // user-triggered reset instead.
 
   // Seed CPU info on first call
   getCpuUsage();
@@ -1710,8 +1794,10 @@ async function startPerfPolling() {
 
       await recordPerformanceSnapshot(snapshot);
 
-      // Broadcast to any connected clients on the perf room
-      io.to("logs").emit("perf:snapshot", snapshot);
+      // Broadcast to clients subscribed to the perf room only. This used to
+      // also emit to "logs" — anyone subscribed to the log stream got perf
+      // spam they never asked for, for no reason (unrelated rooms, no
+      // shared subscribers by design).
       io.to("perf").emit("perf:snapshot", snapshot);
     } catch (err) {
       log.debug(`Perf snapshot failed: ${err.message}`);
@@ -2225,8 +2311,16 @@ async function start() {
         httpsServer = createHttpsServer(certs, app);
         // Add HTTPS origin to allowed list dynamically
         addAllowedOrigin(`https://localhost:${httpsPort}`);
-        // Attach Socket.IO to HTTPS server too
-        const httpsIo = new Server(httpsServer, {
+        // Attach the SAME Socket.IO instance to the HTTPS server too, instead
+        // of creating a second `Server`. A second instance would have its own
+        // auth middleware, rooms, and connection handlers — every `.emit()`
+        // in this app targets the module-level `io` (bound only to the HTTP
+        // server), so WSS clients would authenticate successfully and then
+        // receive NO events at all (no server:status, players:update,
+        // perf:snapshot, log:entry, chat:message, panelBridge:*, etc).
+        // `io.attach()` binds the existing engine (with its middleware and
+        // event handlers already registered) to this additional http.Server.
+        io.attach(httpsServer, {
           cors: {
             origin: (origin, callback) => {
               if (isAllowedOrigin(origin)) {
@@ -2238,24 +2332,6 @@ async function start() {
             methods: ["GET", "POST"],
             credentials: true,
           },
-        });
-        // Apply the same Socket.IO auth middleware on HTTPS
-        httpsIo.use(async (socket, next) => {
-          try {
-            const needsSetup = await authService.needsSetup();
-            if (needsSetup) return next();
-            const authEnabled = await authService.isAuthEnabled();
-            if (!authEnabled) return next();
-            const token =
-              socket.handshake.auth?.token || socket.handshake.query?.token;
-            if (!token) return next(new Error("Authentication required"));
-            const payload = await authService.authenticateAccessToken(token);
-            if (!payload) return next(new Error("Invalid or expired token"));
-            socket.user = payload;
-            next();
-          } catch (error) {
-            next(new Error("Authentication error"));
-          }
         });
 
         httpsServer.listen(httpsPort, () => {

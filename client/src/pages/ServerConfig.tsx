@@ -69,6 +69,7 @@ import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { useToast } from '@/components/ui/use-toast'
+import { useConfirm } from '@/contexts/ConfirmContext'
 import { Badge } from '@/components/ui/badge'
 import {
   Select,
@@ -792,6 +793,7 @@ export default function ServerConfig() {
   const [fileBrowserSelected, setFileBrowserSelected] = useState<string | null>(null)
 
   const { toast } = useToast()
+  const confirm = useConfirm()
 
   // Load initial data
   useEffect(() => {
@@ -1480,7 +1482,12 @@ export default function ServerConfig() {
 
   // Delete template
   const handleDeleteTemplate = async (id: string, name: string) => {
-    if (!confirm(`Delete template "${name}"? This cannot be undone.`)) return
+    const ok = await confirm({
+      title: 'Delete template?',
+      description: `Delete template "${name}"? This cannot be undone.`,
+      confirmLabel: 'Delete',
+    })
+    if (!ok) return
 
     try {
       await serverFilesApi.deleteTemplate(id)

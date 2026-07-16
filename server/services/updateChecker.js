@@ -1,9 +1,9 @@
-import { spawn } from 'child_process';
-import path from 'path';
-import fs from 'fs';
-import { createLogger } from '../utils/logger.js';
-const log = createLogger('Updates');
-import { getSetting, setSetting, getActiveServer } from '../database/init.js';
+import { spawn } from "child_process";
+import path from "path";
+import fs from "fs";
+import { createLogger } from "../utils/logger.js";
+const log = createLogger("Updates");
+import { getSetting, setSetting, getActiveServer } from "../database/init.js";
 
 /**
  * Service to check for PZ server updates via Steam
@@ -16,7 +16,7 @@ export class UpdateChecker {
     this.updateAvailable = null;
     this.gameVersion = null;
     this.isChecking = false;
-    
+
     // Default check interval: 30 minutes
     this.intervalMs = 30 * 60 * 1000;
   }
@@ -26,7 +26,7 @@ export class UpdateChecker {
    */
   async start() {
     // Load saved interval from settings
-    const interval = await getSetting('updateCheckInterval');
+    const interval = await getSetting("updateCheckInterval");
     if (interval && interval > 0) {
       this.intervalMs = interval * 60 * 1000; // Convert minutes to ms
     }
@@ -54,7 +54,7 @@ export class UpdateChecker {
       clearInterval(this.checkInterval);
       this.checkInterval = null;
     }
-    log.info('stopped');
+    log.info("stopped");
   }
 
   /**
@@ -63,10 +63,10 @@ export class UpdateChecker {
   async setInterval(minutes) {
     if (minutes < 5) minutes = 5; // Minimum 5 minutes
     if (minutes > 1440) minutes = 1440; // Maximum 24 hours
-    
+
     this.intervalMs = minutes * 60 * 1000;
-    await setSetting('updateCheckInterval', minutes);
-    
+    await setSetting("updateCheckInterval", minutes);
+
     // Restart the interval
     if (this.checkInterval) {
       clearInterval(this.checkInterval);
@@ -74,7 +74,7 @@ export class UpdateChecker {
         this.checkForUpdates();
       }, this.intervalMs);
     }
-    
+
     log.info(`interval set to ${minutes} minutes`);
   }
 
@@ -87,23 +87,26 @@ export class UpdateChecker {
     let consolePath = null;
     try {
       const activeServer = await getActiveServer();
-      const dataPath = activeServer?.zomboidDataPath || await getSetting('zomboidDataPath');
+      const dataPath =
+        activeServer?.zomboidDataPath || (await getSetting("zomboidDataPath"));
       if (!dataPath) return null;
 
-      consolePath = path.join(dataPath, 'server-console.txt');
+      consolePath = path.join(dataPath, "server-console.txt");
       await fs.promises.access(consolePath);
 
       // Read only the first 512 bytes — version is on the first line
-      const fd = await fs.promises.open(consolePath, 'r');
+      const fd = await fs.promises.open(consolePath, "r");
       const buf = Buffer.alloc(512);
       await fd.read(buf, 0, 512, 0);
       await fd.close();
 
-      const firstLine = buf.toString('utf8').split(/\r?\n/)[0];
+      const firstLine = buf.toString("utf8").split(/\r?\n/)[0];
       const match = firstLine.match(/version=(\d+\.\d+(?:\.\d+)?)/);
       return match ? match[1] : null;
     } catch (e) {
-      log.debug(`Failed to read PZ version from ${consolePath || '(unset)'}: ${e.message}`);
+      log.debug(
+        `Failed to read PZ version from ${consolePath || "(unset)"}: ${e.message}`,
+      );
       return null;
     }
   }
@@ -112,25 +115,31 @@ export class UpdateChecker {
    * Get the currently installed build info from appmanifest
    */
   async getInstalledBuildInfo(serverPath) {
-    const manifestPath = path.join(serverPath, 'steamapps', 'appmanifest_380870.acf');
-    
+    const manifestPath = path.join(
+      serverPath,
+      "steamapps",
+      "appmanifest_380870.acf",
+    );
+
     try {
-       await fs.promises.access(manifestPath);
+      await fs.promises.access(manifestPath);
     } catch (e) {
-       return null;
+      return null;
     }
 
     try {
-      const content = await fs.promises.readFile(manifestPath, 'utf8');
-      
+      const content = await fs.promises.readFile(manifestPath, "utf8");
+
       const buildIdMatch = content.match(/"buildid"\s+"(\d+)"/);
       const betaKeyMatch = content.match(/"BetaKey"\s+"([^"]+)"/);
       const lastUpdatedMatch = content.match(/"LastUpdated"\s+"(\d+)"/);
-      
+
       return {
         buildId: buildIdMatch ? buildIdMatch[1] : null,
-        branch: betaKeyMatch ? betaKeyMatch[1] : 'public',
-        lastUpdated: lastUpdatedMatch ? new Date(parseInt(lastUpdatedMatch[1]) * 1000).toISOString() : null
+        branch: betaKeyMatch ? betaKeyMatch[1] : "public",
+        lastUpdated: lastUpdatedMatch
+          ? new Date(parseInt(lastUpdatedMatch[1], 10) * 1000).toISOString()
+          : null,
       };
     } catch (err) {
       log.error(`Failed to read appmanifest: ${err.message}`);
@@ -141,81 +150,104 @@ export class UpdateChecker {
   /**
    * Get latest build info from Steam for a specific branch
    */
-  async getLatestBuildInfo(steamcmdPath, branch = 'public') {
+  async getLatestBuildInfo(steamcmdPath, branch = "public") {
     let steamcmdExe;
-    if (process.platform === 'win32') {
-      steamcmdExe = path.join(steamcmdPath, 'steamcmd.exe');
+    if (process.platform === "win32") {
+      steamcmdExe = path.join(steamcmdPath, "steamcmd.exe");
     } else {
       // Try steamcmd.sh first (tar.gz extract), then plain steamcmd (package-manager install),
       // then system-wide paths (CentOS/Ubuntu package manager installs to /usr/games/)
-      const shPath = path.join(steamcmdPath, 'steamcmd.sh');
-      const binPath = path.join(steamcmdPath, 'steamcmd');
-      try { await fs.promises.access(shPath); steamcmdExe = shPath; } catch (e1) {
+      const shPath = path.join(steamcmdPath, "steamcmd.sh");
+      const binPath = path.join(steamcmdPath, "steamcmd");
+      try {
+        await fs.promises.access(shPath);
+        steamcmdExe = shPath;
+      } catch (e1) {
         log.debug(`SteamCMD not at ${shPath}: ${e1.message}`);
-        try { await fs.promises.access(binPath); steamcmdExe = binPath; } catch (e2) {
+        try {
+          await fs.promises.access(binPath);
+          steamcmdExe = binPath;
+        } catch (e2) {
           log.debug(`SteamCMD not at ${binPath}: ${e2.message}`);
           // Try system-wide locations
-          for (const sysPath of ['/usr/games/steamcmd', '/usr/bin/steamcmd', '/usr/local/bin/steamcmd']) {
-            try { await fs.promises.access(sysPath); steamcmdExe = sysPath; break; } catch (e3) {
+          for (const sysPath of [
+            "/usr/games/steamcmd",
+            "/usr/bin/steamcmd",
+            "/usr/local/bin/steamcmd",
+          ]) {
+            try {
+              await fs.promises.access(sysPath);
+              steamcmdExe = sysPath;
+              break;
+            } catch (e3) {
               log.debug(`SteamCMD not at ${sysPath}: ${e3.message}`);
             }
           }
           if (!steamcmdExe) {
-            log.warn(`SteamCMD not found at: ${shPath}, ${binPath}, /usr/games/steamcmd`);
-            throw new Error('SteamCMD not found');
+            log.warn(
+              `SteamCMD not found at: ${shPath}, ${binPath}, /usr/games/steamcmd`,
+            );
+            throw new Error("SteamCMD not found");
           }
         }
       }
       log.debug(`Using SteamCMD executable: ${steamcmdExe}`);
     }
-      
+
     try {
-        await fs.promises.access(steamcmdExe);
-    } catch(e) {
-        throw new Error('SteamCMD not found');
+      await fs.promises.access(steamcmdExe);
+    } catch (e) {
+      throw new Error("SteamCMD not found");
     }
 
     return new Promise((resolve, reject) => {
       const args = [
-        '+login', 'anonymous',
-        '+app_info_update', '1',
-        '+app_info_print', '380870',
-        '+quit'
+        "+login",
+        "anonymous",
+        "+app_info_update",
+        "1",
+        "+app_info_print",
+        "380870",
+        "+quit",
       ];
 
       // On Linux, set LD_LIBRARY_PATH for SteamCMD's 32-bit libraries
       const spawnOpts = { cwd: steamcmdPath };
-      if (process.platform !== 'win32') {
+      if (process.platform !== "win32") {
         const ldPaths = [
-          path.join(steamcmdPath, 'linux32'),
-          path.join(steamcmdPath, 'linux64'),
+          path.join(steamcmdPath, "linux32"),
+          path.join(steamcmdPath, "linux64"),
           steamcmdPath,
-          '/usr/lib64',
-          process.env.LD_LIBRARY_PATH || ''
-        ].filter(Boolean).join(':');
+          "/usr/lib64",
+          process.env.LD_LIBRARY_PATH || "",
+        ]
+          .filter(Boolean)
+          .join(":");
         spawnOpts.env = { ...process.env, LD_LIBRARY_PATH: ldPaths };
-        log.debug(`SteamCMD spawn: exe=${steamcmdExe}, LD_LIBRARY_PATH=${ldPaths}`);
+        log.debug(
+          `SteamCMD spawn: exe=${steamcmdExe}, LD_LIBRARY_PATH=${ldPaths}`,
+        );
       }
 
       const steamcmd = spawn(steamcmdExe, args, spawnOpts);
 
-      let output = '';
+      let output = "";
       const timeout = setTimeout(() => {
         steamcmd.kill();
-        reject(new Error('SteamCMD timeout'));
+        reject(new Error("SteamCMD timeout"));
       }, 60000); // 60 second timeout
 
-      steamcmd.stdout.on('data', (data) => {
+      steamcmd.stdout.on("data", (data) => {
         output += data.toString();
       });
 
-      steamcmd.stderr.on('data', (data) => {
+      steamcmd.stderr.on("data", (data) => {
         output += data.toString();
       });
 
-      steamcmd.on('close', (code) => {
+      steamcmd.on("close", (code) => {
         clearTimeout(timeout);
-        
+
         if (code !== 0) {
           return reject(new Error(`SteamCMD exited with code ${code}`));
         }
@@ -225,7 +257,7 @@ export class UpdateChecker {
         resolve(branchInfo);
       });
 
-      steamcmd.on('error', (err) => {
+      steamcmd.on("error", (err) => {
         clearTimeout(timeout);
         reject(err);
       });
@@ -238,8 +270,8 @@ export class UpdateChecker {
   parseBranchFromOutput(output, targetBranch) {
     try {
       // Normalize branch name
-      const branch = targetBranch === 'stable' ? 'public' : targetBranch;
-      
+      const branch = targetBranch === "stable" ? "public" : targetBranch;
+
       // Find the branches section
       const branchesMatch = output.match(/"branches"\s*\{([^]*?)\n\t\t\}/);
       if (!branchesMatch) {
@@ -247,17 +279,20 @@ export class UpdateChecker {
       }
 
       const branchesSection = branchesMatch[1];
-      
+
       // Find the specific branch - improved regex
-      const branchRegex = new RegExp(`"${branch}"\\s*\\{([^{}]*(?:\\{[^{}]*\\}[^{}]*)*)\\}`, 'i');
+      const branchRegex = new RegExp(
+        `"${branch}"\\s*\\{([^{}]*(?:\\{[^{}]*\\}[^{}]*)*)\\}`,
+        "i",
+      );
       const branchMatch = branchesSection.match(branchRegex);
-      
+
       if (!branchMatch) {
         return null;
       }
 
       const branchContent = branchMatch[1];
-      
+
       const buildIdMatch = branchContent.match(/"buildid"\s+"(\d+)"/);
       const timeUpdatedMatch = branchContent.match(/"timeupdated"\s+"(\d+)"/);
       const descMatch = branchContent.match(/"description"\s+"([^"]+)"/);
@@ -265,8 +300,10 @@ export class UpdateChecker {
       return {
         branch: targetBranch,
         buildId: buildIdMatch ? buildIdMatch[1] : null,
-        timeUpdated: timeUpdatedMatch ? new Date(parseInt(timeUpdatedMatch[1]) * 1000).toISOString() : null,
-        description: descMatch ? descMatch[1] : null
+        timeUpdated: timeUpdatedMatch
+          ? new Date(parseInt(timeUpdatedMatch[1], 10) * 1000).toISOString()
+          : null,
+        description: descMatch ? descMatch[1] : null,
       };
     } catch (err) {
       log.error(`Failed to parse Steam output: ${err.message}`);
@@ -281,10 +318,12 @@ export class UpdateChecker {
     if (this.isChecking) {
       // Add staleness check - if check has been running for more than 2 minutes, reset
       if (this.checkStartTime && Date.now() - this.checkStartTime > 120000) {
-        log.warn('UpdateChecker: Previous update check appears stuck, resetting');
+        log.warn(
+          "UpdateChecker: Previous update check appears stuck, resetting",
+        );
         this.isChecking = false;
       } else {
-        log.debug('Update check already in progress, skipping');
+        log.debug("Update check already in progress, skipping");
         return this.updateAvailable;
       }
     }
@@ -294,11 +333,11 @@ export class UpdateChecker {
 
     try {
       // Get paths from settings
-      const steamcmdPath = await getSetting('steamcmdPath');
-      const serverPath = await getSetting('serverPath');
+      const steamcmdPath = await getSetting("steamcmdPath");
+      const serverPath = await getSetting("serverPath");
 
       if (!steamcmdPath || !serverPath) {
-        log.debug('UpdateChecker: steamcmdPath or serverPath not configured');
+        log.debug("UpdateChecker: steamcmdPath or serverPath not configured");
         this.isChecking = false;
         return null;
       }
@@ -306,7 +345,7 @@ export class UpdateChecker {
       // Get installed build info
       const installed = await this.getInstalledBuildInfo(serverPath);
       if (!installed || !installed.buildId) {
-        log.debug('UpdateChecker: Could not determine installed build');
+        log.debug("UpdateChecker: Could not determine installed build");
         this.isChecking = false;
         return null;
       }
@@ -315,9 +354,12 @@ export class UpdateChecker {
       this.gameVersion = await this.getGameVersion();
 
       // Get latest build info from Steam
-      const latest = await this.getLatestBuildInfo(steamcmdPath, installed.branch);
+      const latest = await this.getLatestBuildInfo(
+        steamcmdPath,
+        installed.branch,
+      );
       if (!latest || !latest.buildId) {
-        log.debug('UpdateChecker: Could not get latest build info from Steam');
+        log.debug("UpdateChecker: Could not get latest build info from Steam");
         this.isChecking = false;
         return null;
       }
@@ -327,10 +369,10 @@ export class UpdateChecker {
       // Compare build IDs (ensure base 10 parsing)
       const installedBuild = parseInt(installed.buildId, 10);
       const latestBuild = parseInt(latest.buildId, 10);
-      
+
       // Guard against NaN from invalid build IDs
       if (isNaN(installedBuild) || isNaN(latestBuild)) {
-        log.warn('UpdateChecker: Invalid build ID format');
+        log.warn("UpdateChecker: Invalid build ID format");
         this.isChecking = false;
         return null;
       }
@@ -340,15 +382,15 @@ export class UpdateChecker {
         installed: {
           buildId: installed.buildId,
           branch: installed.branch,
-          lastUpdated: installed.lastUpdated
+          lastUpdated: installed.lastUpdated,
         },
         latest: {
           buildId: latest.buildId,
           branch: latest.branch,
           timeUpdated: latest.timeUpdated,
-          description: latest.description
+          description: latest.description,
         },
-        lastCheck: this.lastCheck
+        lastCheck: this.lastCheck,
       };
 
       // Only emit if update status changed or force emit
@@ -356,22 +398,25 @@ export class UpdateChecker {
       this.updateAvailable = updateInfo;
 
       if (updateInfo.updateAvailable) {
-        log.info(`Server update available! Installed: ${installed.buildId}, Latest: ${latest.buildId} (${installed.branch} branch)`);
-        
+        log.info(
+          `Server update available! Installed: ${installed.buildId}, Latest: ${latest.buildId} (${installed.branch} branch)`,
+        );
+
         if (!wasAvailable || forceEmit) {
           // Emit to all connected clients
-          this.io.emit('server:updateAvailable', updateInfo);
+          this.io.emit("server:updateAvailable", updateInfo);
         }
       } else {
-        log.debug(`Server is up to date (build ${installed.buildId}, ${installed.branch} branch)`);
-        
+        log.debug(
+          `Server is up to date (build ${installed.buildId}, ${installed.branch} branch)`,
+        );
+
         if (forceEmit) {
-          this.io.emit('server:updateCheck', updateInfo);
+          this.io.emit("server:updateCheck", updateInfo);
         }
       }
 
       return updateInfo;
-
     } catch (err) {
       log.error(`Update check failed: ${err.message}`);
       this.isChecking = false;
@@ -390,7 +435,7 @@ export class UpdateChecker {
       gameVersion: this.gameVersion,
       lastCheck: this.lastCheck,
       intervalMinutes: this.intervalMs / 60000,
-      isChecking: this.isChecking
+      isChecking: this.isChecking,
     };
   }
 }

@@ -21,6 +21,9 @@ const VALID_SETTINGS_KEYS = [
   'panelBridgeAutoUpdate',
   'autoExportOnLogin',
   'autoExportMaxPerPlayer',
+  // Opt-in external public-IP lookup (api.ipify.org) shown on the dashboard/
+  // panel-info — off by default (see serverManager.fetchPublicIp).
+  'enablePublicIpLookup',
   // Workshop collection sync — mirrors tracked mods into a Steam collection.
   // steamSessionId / steamLoginSecure are cookie pairs; treated as secrets.
   'workshopCollectionId', 'workshopCollectionAutoSync',
@@ -225,7 +228,7 @@ router.put('/app-settings', async (req, res) => {
         }
       }
 
-      if (['corsAllowAll', 'corsAllowPrivateNetworks', 'corsDebug', 'panelBridgeAutoUpdate', 'autoExportOnLogin'].includes(key) && typeof value !== 'boolean') {
+      if (['corsAllowAll', 'corsAllowPrivateNetworks', 'corsDebug', 'panelBridgeAutoUpdate', 'autoExportOnLogin', 'enablePublicIpLookup'].includes(key) && typeof value !== 'boolean') {
         return res.status(400).json({ error: `${key} must be true or false` });
       }
 

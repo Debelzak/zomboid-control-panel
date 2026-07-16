@@ -5,21 +5,6 @@ export type ThemeName = 'survival' | 'light'
 const STORAGE_KEY = 'pz-panel-theme'
 const THEME_CLASSES: ThemeName[] = ['survival', 'light'] as const
 
-const SURVIVAL_FONT_STYLESHEET_ID = 'pz-survival-fonts'
-const SURVIVAL_FONT_STYLESHEET_HREF = 'https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Special+Elite&display=swap'
-
-function ensureSurvivalFontsLoaded() {
-  if (document.getElementById(SURVIVAL_FONT_STYLESHEET_ID)) return
-  const existing = document.querySelector(`link[href="${SURVIVAL_FONT_STYLESHEET_HREF}"]`)
-  if (existing) return
-
-  const link = document.createElement('link')
-  link.id = SURVIVAL_FONT_STYLESHEET_ID
-  link.rel = 'stylesheet'
-  link.href = SURVIVAL_FONT_STYLESHEET_HREF
-  document.head.appendChild(link)
-}
-
 function getStoredTheme(): ThemeName {
   try {
     const stored = localStorage.getItem(STORAGE_KEY)
@@ -62,7 +47,6 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
-    ensureSurvivalFontsLoaded()
     applyThemeClass(theme)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 

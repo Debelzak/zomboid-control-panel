@@ -1,10 +1,47 @@
 ---@diagnostic disable: undefined-global, deprecated
 --[[
     PanelBridge - Server-side mod for Zomboid Control Panel
-    Version: 1.2.2
+    Version: 1.7.4
 
     This mod enables external control panel communication with the PZ server.
     Communication happens via JSON files in the server save folder.
+
+    v1.7.4 Changes:
+    - restoreUtilities/shutOffUtilities no longer freeze the server: the
+      ~40k/~15k grid-square scans now run as a background job chunked across
+      ticks (1500 squares/tick) instead of all at once, when triggered via
+      the normal panel command queue. Direct/scripted calls are unchanged.
+    - Fixed importPlayerData silently draining the player's real unspent
+      skill points: perk-level restore now uses LevelPerk(perk, false)
+      instead of LevelPerk(perk), matching the "no skill point consumed"
+      semantics intended for an admin data restore.
+
+    v1.7.3 Changes:
+    - CRITICAL: Fixed VERSION constant regression. It had been hand-edited back
+      to "1.2.2" (and mod.info modversion along with it) despite the file
+      already containing features documented through v1.7.2 below. Since the
+      panel's auto-updater only overwrites the on-server file when its
+      embedded version is STRICTLY NEWER than what's installed, a server
+      already running real 1.7.x content was being permanently skipped by
+      future updates — the exact class of bug the panel binary itself hit
+      (v1.0.66 self-reporting v1.0.65). VERSION and mod.info modversion must
+      always be bumped together from now on.
+    - Fixed JSON decoder: null values inside arrays no longer silently vanish
+      and shift later elements' indices (e.g. [1,null,2] used to decode as
+      {1,2}). Nulls now decode to a `json.null` sentinel so array length and
+      positions are preserved; json.encode serializes the sentinel back to
+      `null`. Object keys with a null value are unaffected (still become an
+      absent key, which was already the intended/documented behaviour).
+    - Fixed processedIds cleanup: the "drop oldest half" trim iterated
+      `pairs()`, whose order is unspecified in Lua — so it was really
+      dropping an ARBITRARY half, not the oldest. Now tracks insertion order
+      explicitly (a small FIFO of ids) so the true oldest half is dropped.
+    - Added short TTL caching (5s) for the read-only catalog/enumeration
+      handlers that are either expensive to scan (getItemCatalog,
+      getVehicleCatalog, getAllSandboxOptions) or polled on a fixed schedule
+      by the panel (getVehiclesDetailed, getSafehouses, getAllPlayerDetails).
+      A panel view left open on the Items/Vehicles/Sandbox page no longer
+      re-triggers a full synchronous game-thread scan on every poll.
 
     v1.2.2 Changes:
     - Fixed JSON encoder: empty Lua tables now serialize as [] (array) instead of {} (object).
@@ -111,13 +148,14 @@
 local json
 
 local PanelBridge = {
-    VERSION = "1.2.2",
+    VERSION = "1.7.4",
     PROTOCOL_VERSION = "queue-v1",
     CHECK_INTERVAL = 250, -- milliseconds (fast command polling)
     lastCheck = 0,
     lastStatusUpdate = 0,
     STATUS_INTERVAL = 3000, -- status update every 3 seconds (faster for detection)
     processedIds = {},
+    processedIdOrder = {}, -- insertion-order list of ids, parallel to processedIds (see L10 fix)
     processedIdCount = 0,
     basePath = nil,
     initialized = false,
@@ -345,6 +383,18 @@ end
 -- ============================================
 json = {}
 
+-- Sentinel for JSON `null` encountered inside an ARRAY (see the array branch
+-- of json.decode's parse_value below). A plain Lua `nil` can't be stored at
+-- a specific array index without leaving an ambiguous hole (Lua's `#`/ipairs
+-- semantics over tables with nil holes are undefined), which used to make
+-- `[1, null, 2]` silently decode as `{1, 2}` — dropping the null AND
+-- shifting index 2's value down to index 2 from its real index 3. This is a
+-- unique, otherwise-inert table so `value == json.null` is a reliable
+-- identity check; json.encode() turns it back into `null` on the way out.
+-- Object keys with a null value are NOT affected — they still decode to an
+-- absent key, which is the existing/intended behavior for that case.
+json.null = setmetatable({}, { __tostring = function() return "null" end })
+
 local function kind_of(obj)
     if type(obj) ~= 'table' then return type(obj) end
     local i = 1
@@ -376,6 +426,9 @@ local function escape_str(s)
 end
 
 function json.encode(obj)
+    if obj == json.null then
+        return 'null'
+    end
     local t = type(obj)
     if t == 'nil' then
         return 'null'
@@ -488,13 +541,19 @@ function json.decode(str)
             -- Array
             pos = pos + 1
             local arr = {}
+            local idx = 0
             skip_whitespace()
             if str:sub(pos, pos) == ']' then
                 pos = pos + 1
                 return arr
             end
             while pos <= #str do
-                arr[#arr + 1] = parse_value()
+                idx = idx + 1
+                local value = parse_value()
+                -- See json.null above: preserve the slot (and every later
+                -- index) instead of silently dropping it.
+                if value == nil then value = json.null end
+                arr[idx] = value
                 skip_whitespace()
                 if pos > #str then break end
                 c = str:sub(pos, pos)
@@ -758,6 +817,15 @@ end
 function PanelBridge.flushResults()
     if #PanelBridge.pendingResults == 0 then return end
 
+    -- NOTE (audit L04): the numbered outbox/res-*.json writes below are the
+    -- safe path. The read-modify-write of legacy results.json further down
+    -- in this function re-introduces the exact race the numbered queue was
+    -- built to avoid, on every flush. It exists ONLY as a fallback for a
+    -- panel that hasn't yet negotiated protocolVersion=queue-v1. Do not add
+    -- new functionality to the legacy path — once all deployed panels are
+    -- confirmed on queue-v1, retire this block (and the matching legacy
+    -- commands.json handling in processCommands / the Node-side
+    -- pollLegacyResults + commands.json writer).
     local writtenCount = 0
     for idx, r in ipairs(PanelBridge.pendingResults) do
         local seq = tonumber(r.seq) or 0
@@ -818,6 +886,32 @@ end
 
 local handlers = {}
 
+-- TTL cache for expensive/polled read-only handlers (audit findings L02/L06).
+-- Catalogs of static script data (items/vehicles/sandbox options) only
+-- change when the server restarts (new mods added), so they get a long TTL;
+-- live game-state enumerations get a short TTL so a panel view left open on
+-- the Vehicles/Safehouses/Players page doesn't re-trigger a full synchronous
+-- game-thread scan on every single poll, while still staying reasonably
+-- fresh. Keyed by action name; only successful results are cached (a
+-- transient failure must not get "stuck" being replayed for the TTL window).
+local CACHEABLE_TTL_MS = {
+    getItemCatalog = 300000,       -- 5 min: static item scripts
+    getVehicleCatalog = 300000,    -- 5 min: static vehicle scripts
+    getAllSandboxOptions = 300000, -- 5 min: sandbox options rarely change mid-session
+    getVehiclesDetailed = 5000,    -- 5s: live vehicle state (panel polls every 15s)
+    getSafehouses = 5000,          -- 5s: live safehouse state (panel polls every 15s)
+    getAllPlayerDetails = 5000,    -- 5s: live player stats (panel polls every 15s)
+}
+local readOnlyCache = {}
+
+-- Marks a command id as processed, keeping processedIds (O(1) lookup) and
+-- processedIdOrder (insertion order, for the trim in processCommands) in sync.
+local function markProcessed(id)
+    PanelBridge.processedIds[id] = true
+    table.insert(PanelBridge.processedIdOrder, id)
+    PanelBridge.processedIdCount = PanelBridge.processedIdCount + 1
+end
+
 local function processSingleCommand(cmd)
     if type(cmd) ~= "table" then
         PanelBridge.stats.commandsFailed = PanelBridge.stats.commandsFailed + 1
@@ -849,8 +943,7 @@ local function processSingleCommand(cmd)
     if type(cmd.expiresAt) == "number" and cmd.expiresAt > 0 then
         local nowMs = getTimestampMs()
         if nowMs > cmd.expiresAt then
-            PanelBridge.processedIds[cmd.id] = true
-            PanelBridge.processedIdCount = PanelBridge.processedIdCount + 1
+            markProcessed(cmd.id)
             PanelBridge.stats.commandsFailed = PanelBridge.stats.commandsFailed + 1
             PanelBridge.warn("Skipping expired command", {
                 action = tostring(cmd.action),
@@ -862,8 +955,7 @@ local function processSingleCommand(cmd)
         end
     end
 
-    PanelBridge.processedIds[cmd.id] = true
-    PanelBridge.processedIdCount = PanelBridge.processedIdCount + 1
+    markProcessed(cmd.id)
     PanelBridge.stats.commandsProcessed = PanelBridge.stats.commandsProcessed + 1
 
     -- Frequent polling commands log at DEBUG to avoid spam
@@ -878,6 +970,19 @@ local function processSingleCommand(cmd)
 
     local handler = handlers[cmd.action]
     if handler then
+        -- Serve from cache if this action is cacheable and the cached entry
+        -- is still within its TTL — skips the expensive handler entirely.
+        local cacheTtl = CACHEABLE_TTL_MS[cmd.action]
+        if cacheTtl then
+            local cached = readOnlyCache[cmd.action]
+            if cached and (getTimestampMs() - cached.at) < cacheTtl then
+                PanelBridge.stats.commandsSucceeded = PanelBridge.stats.commandsSucceeded + 1
+                PanelBridge.debug("Command served from cache: " .. tostring(cmd.action), { id = cmd.id })
+                PanelBridge.sendResult(cmd.id, cached.ok, cached.data, cached.err)
+                return true
+            end
+        end
+
         local handlerArgs = {}
         if type(cmd.args) == "table" then
             handlerArgs = cmd.args
@@ -890,7 +995,7 @@ local function processSingleCommand(cmd)
         end
 
         local startTime = getTimestampMs()
-        local pcallOk, success, data, errorMsg = pcall(handler, handlerArgs)
+        local pcallOk, success, data, errorMsg = pcall(handler, handlerArgs, cmd.id)
         local duration = getTimestampMs() - startTime
 
         if not pcallOk then
@@ -901,11 +1006,22 @@ local function processSingleCommand(cmd)
                 duration = duration .. "ms"
             })
             PanelBridge.sendResult(cmd.id, false, nil, crashMsg)
+        elseif success == "DEFERRED" then
+            -- Handler started a background job (see L02) and will call
+            -- PanelBridge.sendResult itself once the job completes across
+            -- later ticks -- don't send (or count success/failure) yet.
+            PanelBridge.debug("Command deferred to background job: " .. tostring(cmd.action), {
+                id = cmd.id,
+                duration = duration .. "ms"
+            })
         elseif success then
             PanelBridge.stats.commandsSucceeded = PanelBridge.stats.commandsSucceeded + 1
             PanelBridge.debug("Command succeeded: " .. tostring(cmd.action), {
                 duration = duration .. "ms"
             })
+            if cacheTtl then
+                readOnlyCache[cmd.action] = { at = getTimestampMs(), ok = success, data = data, err = errorMsg }
+            end
             PanelBridge.sendResult(cmd.id, success, data, errorMsg)
         else
             PanelBridge.stats.commandsFailed = PanelBridge.stats.commandsFailed + 1
@@ -2822,11 +2938,21 @@ handlers.importPlayerData = function(args)
                 pcall(function()
                     -- Reset perk to 0 first
                     player:level0(perk)
-                    -- Level up to target
+                    -- Level up to target. Use LevelPerk(perk, false) -- the
+                    -- removePick=false overload -- so restoring a saved
+                    -- level doesn't silently consume the player's real
+                    -- unspent skill points (the single-arg LevelPerk(perk)
+                    -- removes a skill point per call per B42 JavaDocs:
+                    -- https://demiurgequantified.github.io/ProjectZomboidJavaDocs/zombie/characters/IsoGameCharacter.html#LevelPerk(zombie.characters.skills.PerkFactory.Perk)
+                    -- vs the 2-arg overload used for automatic/passive
+                    -- level-ups that shouldn't cost a point).
                     for lvl = 1, perkData.level do
-                        player:LevelPerk(perk)
+                        player:LevelPerk(perk, false)
                     end
-                    -- Set XP if available
+                    -- Set XP last -- level and xp are independently tracked
+                    -- fields (level isn't derived from xp or vice versa), so
+                    -- this authoritative final write is safe regardless of
+                    -- any xp side effects from the LevelPerk loop above.
                     if xp and perkData.xp then
                         xp:setXP(perk, perkData.xp)
                     end
@@ -3976,11 +4102,210 @@ local function deactivateLightSwitchesInLoadedChunks()
     return deactivatedCount, "success"
 end
 
+-- ============================================
+-- BACKGROUND JOBS (cross-tick chunked work) — see L02 audit finding
+-- ============================================
+-- restoreUtilities/shutOffUtilities can touch tens of thousands of grid
+-- squares (up to ~40k per online player for the electricity scan alone).
+-- Doing that synchronously inside a single tick freezes the ENTIRE server
+-- (every player) for the full duration. When invoked via the normal panel
+-- command queue (cmdId is non-nil), these two handlers now defer the
+-- square/light-switch scan to a background job that processes
+-- JOB_UNITS_PER_TICK squares per real game tick instead of all of them at
+-- once, and only send the command result once the scan is fully drained.
+--
+-- When called directly (e.g. from the scripted "sequence" step executor
+-- around line 6100, which calls handlers.restoreUtilities/shutOffUtilities
+-- as a plain Lua function and expects a synchronous (success, data, error)
+-- return), cmdId is nil and the ORIGINAL fully-synchronous behavior is used
+-- unchanged — this fix only applies to the interactive, panel-triggered
+-- path, since retrofitting the sequence executor to understand deferred
+-- jobs is a separate, larger change not attempted here.
+PanelBridge.activeJob = nil
+local JOB_UNITS_PER_TICK = 1500
+
+-- Runs one tick's worth of work on the active background job, if any.
+-- Called unconditionally from PanelBridge.onTick() every game tick.
+function PanelBridge.processActiveJob()
+    local job = PanelBridge.activeJob
+    if not job then return end
+
+    local phase = job.phases[job.phaseIdx]
+    if not phase then
+        -- Every phase is done — finalize and send the real command result.
+        PanelBridge.activeJob = nil
+        local ok, success, data, errMsg = pcall(job.onComplete)
+        if not ok then
+            PanelBridge.stats.commandsFailed = PanelBridge.stats.commandsFailed + 1
+            PanelBridge.error("Background job finalize failed", { error = tostring(success) })
+            PanelBridge.sendResult(job.cmdId, false, nil, "Background job finalize failed: " .. tostring(success))
+        else
+            if success then
+                PanelBridge.stats.commandsSucceeded = PanelBridge.stats.commandsSucceeded + 1
+            else
+                PanelBridge.stats.commandsFailed = PanelBridge.stats.commandsFailed + 1
+            end
+            PanelBridge.sendResult(job.cmdId, success, data, errMsg)
+        end
+        return
+    end
+
+    job.phaseDone = false
+    local ok, err = pcall(phase, job, JOB_UNITS_PER_TICK)
+    if not ok then
+        PanelBridge.activeJob = nil
+        PanelBridge.stats.commandsFailed = PanelBridge.stats.commandsFailed + 1
+        PanelBridge.error("Background job step failed", { error = tostring(err) })
+        PanelBridge.sendResult(job.cmdId, false, nil, "Background job step failed: " .. tostring(err))
+        return
+    end
+    if job.phaseDone then
+        job.phaseIdx = job.phaseIdx + 1
+    end
+end
+
+-- Starts a background job. `phases` is an ordered array of stepFn(job, budget)
+-- functions; each must set job.phaseDone = true once its own work is
+-- complete. `onComplete()` runs after every phase has finished and must
+-- return (success, data, errorMsg) exactly like a normal command handler.
+local function startBackgroundJob(cmdId, phases, onComplete)
+    PanelBridge.activeJob = {
+        cmdId = cmdId,
+        phases = phases,
+        phaseIdx = 1,
+        onComplete = onComplete,
+    }
+end
+
+-- Builds a resumable, cross-tick step function that walks the same
+-- player-centered square grid the synchronous helpers above scan (for each
+-- online player: x in [-radius,+radius], y in [-radius,+radius], z in
+-- [0,zMax]), but processes only `budget` squares per call instead of the
+-- whole grid at once. `applyFn(sq)` is called once per loaded square found;
+-- it's invoked inside a pcall here so one bad square/object can't abort the
+-- whole scan (matching the per-square pcall the original synchronous
+-- helpers already used).
+local function makeSquareScanStepFn(radius, zMax, applyFn)
+    local players = getOnlinePlayers()
+    local playerCoords = {}
+    if players then
+        for p = 0, players:size() - 1 do
+            local player = players:get(p)
+            if player then
+                table.insert(playerCoords, { x = math.floor(player:getX()), y = math.floor(player:getY()) })
+            end
+        end
+    end
+
+    local playerIdx = 1
+    local xOff, yOff, z = -radius, -radius, 0
+
+    return function(job, budget)
+        if #playerCoords == 0 then
+            job.phaseDone = true
+            return
+        end
+        local cell = getCell()
+        if not cell then
+            job.phaseDone = true
+            return
+        end
+        local remaining = budget
+        while remaining > 0 and playerIdx <= #playerCoords do
+            local pc = playerCoords[playerIdx]
+            local sq = cell:getGridSquare(pc.x + xOff, pc.y + yOff, z)
+            if sq then
+                pcall(applyFn, sq)
+            end
+            remaining = remaining - 1
+
+            z = z + 1
+            if z > zMax then
+                z = 0
+                yOff = yOff + 1
+                if yOff > radius then
+                    yOff = -radius
+                    xOff = xOff + 1
+                    if xOff > radius then
+                        xOff = -radius
+                        playerIdx = playerIdx + 1
+                    end
+                end
+            end
+        end
+        if playerIdx > #playerCoords then
+            job.phaseDone = true
+        end
+    end
+end
+
+-- Per-square operations used as the `applyFn` for makeSquareScanStepFn.
+-- Each takes a `counter` table ({ n = 0 }) so the caller can read the final
+-- tally after the job completes (mirrors the squareCount/switchesActivated/
+-- switchesDeactivated return values the synchronous helpers produce).
+local function makeElectricitySetter(enabled, counter)
+    return function(sq)
+        sq:setHaveElectricity(enabled)
+        counter.n = counter.n + 1
+    end
+end
+
+local function makeLightSwitchActivator(counter)
+    return function(sq)
+        local objects = sq:getObjects()
+        if not objects then return end
+        for i = 0, objects:size() - 1 do
+            local obj = objects:get(i)
+            if obj and instanceof(obj, "IsoLightSwitch") then
+                if obj.toggle then
+                    if obj:isActivated() then
+                        obj:toggle()
+                    end
+                    if not obj:isActivated() then
+                        obj:toggle()
+                        counter.n = counter.n + 1
+                    end
+                elseif obj.setActive then
+                    obj:setActive(true)
+                    counter.n = counter.n + 1
+                end
+            end
+        end
+    end
+end
+
+local function makeLightSwitchDeactivator(counter)
+    return function(sq)
+        if sq.switchLight then
+            pcall(function() sq:switchLight(false) end)
+        end
+        local objects = sq:getObjects()
+        if not objects then return end
+        for i = 0, objects:size() - 1 do
+            local obj = objects:get(i)
+            if obj and instanceof(obj, "IsoLightSwitch") then
+                if obj:isActivated() then
+                    if obj.toggle then
+                        obj:toggle()
+                    elseif obj.setActive then
+                        obj:setActive(false)
+                    end
+                    counter.n = counter.n + 1
+                end
+            end
+        end
+    end
+end
+
 -- Restore power and water (turn hydro power on and reset shutdown timers)
-handlers.restoreUtilities = function(args)
+handlers.restoreUtilities = function(args, cmdId)
     local world = getWorld()
     if not world then
         return false, nil, "World not available"
+    end
+
+    if cmdId and PanelBridge.activeJob then
+        return false, nil, "Another utilities operation is already in progress"
     end
     
     local restorePower = args.power ~= false -- default true
@@ -4086,23 +4411,16 @@ handlers.restoreUtilities = function(args)
             world:setHydroPowerOn(true)
             table.insert(debugInfo, "setHydroPowerOn(true)")
         end
-        
-        -- Step 4: Force electricity ON for all loaded squares around players
-        -- This makes IsoGridSquare.haveElectricity() return true, which is what
-        -- the game's actual power checks use (ISButtonPrompt OR condition,
-        -- ISVehicleMenu, ISWorldObjectContextMenu). This bypasses the
-        -- SandboxVars.ElecShutModifier client-side check entirely.
-        if restorePower then
-            local squareCount, sqMsg = setElectricityOnLoadedSquares(true)
-            table.insert(debugInfo, "setHaveElectricity(true) squares=" .. tostring(squareCount))
-        end
-        
-        -- Step 5: Activate light switches in loaded chunks
-        if restorePower then
-            local switchesActivated = activateLightSwitchesInLoadedChunks()
-            table.insert(debugInfo, "switches=" .. tostring(switchesActivated))
-        end
-        
+    end)
+    
+    if not success then
+        return false, nil, "Failed to restore utilities: " .. tostring(err)
+    end
+
+    -- Steps 6-7 (client sync) + final verification logging, shared by every
+    -- path below regardless of whether the grid scan ran synchronously,
+    -- was skipped (water-only), or ran as a background job.
+    local function finishRestoreUtilities()
         -- Step 6: /reloadoptions — the in-game admin panel uses this to push sandbox changes
         pcall(function()
             if executeCommand then
@@ -4127,28 +4445,60 @@ handlers.restoreUtilities = function(args)
         table.insert(debugInfo, "FINAL isHydroPowerOn=" .. tostring(world:isHydroPowerOn()))
         table.insert(debugInfo, "FINAL SandboxVars.ElecShutModifier=" .. tostring(SandboxVars.ElecShutModifier))
         table.insert(debugInfo, "FINAL SandboxVars.WaterShutModifier=" .. tostring(SandboxVars.WaterShutModifier))
-    end)
-    
-    if not success then
-        return false, nil, "Failed to restore utilities: " .. tostring(err)
+
+        print("[PanelBridge] restoreUtilities debug: " .. table.concat(debugInfo, " | "))
+
+        return true, {
+            message = "Utilities restored",
+            power = restorePower,
+            water = restoreWater,
+            hydroPowerOn = true,
+            debug = debugInfo
+        }
     end
-    
-    print("[PanelBridge] restoreUtilities debug: " .. table.concat(debugInfo, " | "))
-    
-    return true, { 
-        message = "Utilities restored",
-        power = restorePower,
-        water = restoreWater,
-        hydroPowerOn = true,
-        debug = debugInfo
-    }
+
+    if not restorePower then
+        -- Nothing to scan (water-only restore) — finish synchronously.
+        return finishRestoreUtilities()
+    end
+
+    if not cmdId then
+        -- Direct/synchronous call path (e.g. the scripted sequence executor,
+        -- which expects a normal synchronous return) — original behavior,
+        -- unchanged: scan every square in one shot before returning.
+        local squareCount = setElectricityOnLoadedSquares(true)
+        table.insert(debugInfo, "setHaveElectricity(true) squares=" .. tostring(squareCount))
+        local switchesActivated = activateLightSwitchesInLoadedChunks()
+        table.insert(debugInfo, "switches=" .. tostring(switchesActivated))
+        return finishRestoreUtilities()
+    end
+
+    -- Queue-triggered path: defer the grid scan to a background job so it
+    -- doesn't block the tick loop (see L02). The command result is sent
+    -- later, from the job's onComplete, once every phase has drained.
+    local elecCounter = { n = 0 }
+    local switchCounter = { n = 0 }
+    startBackgroundJob(cmdId, {
+        makeSquareScanStepFn(50, 3, makeElectricitySetter(true, elecCounter)),
+        makeSquareScanStepFn(30, 3, makeLightSwitchActivator(switchCounter)),
+    }, function()
+        table.insert(debugInfo, "setHaveElectricity(true) squares=" .. tostring(elecCounter.n))
+        table.insert(debugInfo, "switches=" .. tostring(switchCounter.n))
+        return finishRestoreUtilities()
+    end)
+
+    return "DEFERRED"
 end
 
 -- Shut off power and water
-handlers.shutOffUtilities = function(args)
+handlers.shutOffUtilities = function(args, cmdId)
     local world = getWorld()
     if not world then
         return false, nil, "World not available"
+    end
+
+    if cmdId and PanelBridge.activeJob then
+        return false, nil, "Another utilities operation is already in progress"
     end
     
     local shutPower = args.power ~= false -- default true
@@ -4209,19 +4559,16 @@ handlers.shutOffUtilities = function(args)
             world:setHydroPowerOn(false)
             table.insert(debugInfo, "setHydroPowerOn(false)")
         end
-        
-        -- Step 4: Force electricity OFF for all loaded squares
-        if shutPower then
-            local squareCount, sqMsg = setElectricityOnLoadedSquares(false)
-            table.insert(debugInfo, "setHaveElectricity(false) squares=" .. tostring(squareCount))
-        end
-        
-        -- Step 5: Deactivate light switches
-        if shutPower then
-            local switchesDeactivated = deactivateLightSwitchesInLoadedChunks()
-            table.insert(debugInfo, "switches deactivated=" .. tostring(switchesDeactivated))
-        end
-        
+    end)
+    
+    if not success then
+        return false, nil, "Failed to shut off utilities: " .. tostring(err)
+    end
+
+    -- Steps 6-7 (client sync) + final verification, shared by every path
+    -- below regardless of whether the grid scan ran synchronously, was
+    -- skipped (water-only), or ran as a background job.
+    local function finishShutOffUtilities()
         -- Step 6: /reloadoptions pushes sandbox changes to clients
         pcall(function()
             if executeCommand then
@@ -4243,21 +4590,45 @@ handlers.shutOffUtilities = function(args)
         -- Final verification
         table.insert(debugInfo, "FINAL isHydroPowerOn=" .. tostring(world:isHydroPowerOn()))
 
-    end)
-    
-    if not success then
-        return false, nil, "Failed to shut off utilities: " .. tostring(err)
+        print("[PanelBridge] shutOffUtilities debug: " .. table.concat(debugInfo, " | "))
+
+        return true, {
+            message = "Utilities shut off",
+            power = shutPower,
+            water = shutWater,
+            hydroPowerOn = false,
+            debug = debugInfo
+        }
     end
-    
-    print("[PanelBridge] shutOffUtilities debug: " .. table.concat(debugInfo, " | "))
-    
-    return true, { 
-        message = "Utilities shut off",
-        power = shutPower,
-        water = shutWater,
-        hydroPowerOn = false,
-        debug = debugInfo
-    }
+
+    if not shutPower then
+        -- Nothing to scan (water-only shutoff) — finish synchronously.
+        return finishShutOffUtilities()
+    end
+
+    if not cmdId then
+        -- Direct/synchronous call path (e.g. the scripted sequence executor)
+        -- — original behavior, unchanged.
+        local squareCount = setElectricityOnLoadedSquares(false)
+        table.insert(debugInfo, "setHaveElectricity(false) squares=" .. tostring(squareCount))
+        local switchesDeactivated = deactivateLightSwitchesInLoadedChunks()
+        table.insert(debugInfo, "switches deactivated=" .. tostring(switchesDeactivated))
+        return finishShutOffUtilities()
+    end
+
+    -- Queue-triggered path: defer the grid scan to a background job (L02).
+    local elecCounter = { n = 0 }
+    local switchCounter = { n = 0 }
+    startBackgroundJob(cmdId, {
+        makeSquareScanStepFn(50, 3, makeElectricitySetter(false, elecCounter)),
+        makeSquareScanStepFn(30, 3, makeLightSwitchDeactivator(switchCounter)),
+    }, function()
+        table.insert(debugInfo, "setHaveElectricity(false) squares=" .. tostring(elecCounter.n))
+        table.insert(debugInfo, "switches deactivated=" .. tostring(switchCounter.n))
+        return finishShutOffUtilities()
+    end)
+
+    return "DEFERRED"
 end
 
 -- ============================================
@@ -6408,6 +6779,14 @@ function PanelBridge.processCommands()
     local processedCount = 0
     processedCount = processedCount + processQueuedCommands(PanelBridge.MAX_COMMANDS_PER_TICK)
 
+    -- NOTE (audit L03): everything from here down is the LEGACY commands.json
+    -- intake path — a fallback for a panel that hasn't negotiated
+    -- protocolVersion=queue-v1, kept alongside the numbered queue above. It
+    -- has an inherent lossy read-then-clear race (a command Node writes in
+    -- the gap between our read and our clearFile() below is lost) that the
+    -- numbered queue exists specifically to avoid. Do not build new features
+    -- on this path; retire it (see the matching note in flushResults) once
+    -- all deployed panels are confirmed on queue-v1.
     local commands = PanelBridge.readJSON("commands.json")
     if not commands or not commands.commands then
         if processedCount > 0 then
@@ -6470,24 +6849,23 @@ function PanelBridge.processCommands()
     end
     
     -- Cleanup old processed IDs (sliding window: drop oldest half)
-    -- Using counter instead of O(n) pairs() iteration
+    -- Walks processedIdOrder (true insertion order) instead of pairs(), whose
+    -- iteration order over processedIds is unspecified in Lua \u2014 iterating
+    -- pairs() here used to drop an ARBITRARY half rather than the oldest half.
     if PanelBridge.processedIdCount > 500 then
-        -- Rebuild with only the newest ~250 IDs to avoid re-processing risk
         local oldCount = PanelBridge.processedIdCount
-        local keep = {}
-        local keepCount = 0
         local skip = math.floor(oldCount / 2)
-        local seen = 0
-        for id, _ in pairs(PanelBridge.processedIds) do
-            seen = seen + 1
-            if seen > skip then
-                keep[id] = true
-                keepCount = keepCount + 1
-            end
+        local newOrder = {}
+        local newSet = {}
+        for i = skip + 1, #PanelBridge.processedIdOrder do
+            local id = PanelBridge.processedIdOrder[i]
+            newOrder[#newOrder + 1] = id
+            newSet[id] = true
         end
-        PanelBridge.processedIds = keep
-        PanelBridge.processedIdCount = keepCount
-        PanelBridge.debug("Trimmed processed IDs", { previous = oldCount, kept = keepCount })
+        PanelBridge.processedIds = newSet
+        PanelBridge.processedIdOrder = newOrder
+        PanelBridge.processedIdCount = #newOrder
+        PanelBridge.debug("Trimmed processed IDs", { previous = oldCount, kept = PanelBridge.processedIdCount })
     end
 end
 
@@ -6537,6 +6915,15 @@ function PanelBridge.onTick()
     if not PanelBridge.initialized then return end
     
     local now = getTimestampMs()
+
+    -- Advance any active background job (see L02) by one tick's worth of
+    -- work. Runs every tick (not gated by CHECK_INTERVAL) so a chunked
+    -- restoreUtilities/shutOffUtilities scan drains as fast as the game
+    -- loop itself, not the 250ms command-poll cadence.
+    local jobOk, jobErr = pcall(PanelBridge.processActiveJob)
+    if not jobOk then
+        PanelBridge.error("Tick error in processActiveJob", { error = tostring(jobErr) })
+    end
     
     -- Check for commands
     if now - PanelBridge.lastCheck >= PanelBridge.CHECK_INTERVAL then

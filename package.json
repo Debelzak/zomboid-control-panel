@@ -1,6 +1,6 @@
 {
   "name": "pz-server-manager",
-  "version": "1.0.67",
+  "version": "1.0.68",
   "description": "Project Zomboid Server Manager - Web-based admin panel",
   "main": "server/index.js",
   "type": "module",
@@ -18,7 +18,8 @@
     "test": "vitest run --config vitest.config.js && cd client && npx vitest run",
     "test:watch": "vitest --config vitest.config.js",
     "test:server": "vitest run --config vitest.config.js",
-    "test:client": "cd client && npx vitest run"
+    "test:client": "cd client && npx vitest run",
+    "lint:server": "eslint server --max-warnings=0"
   },
   "dependencies": {
     "archiver": "^7.0.1",
@@ -28,24 +29,23 @@
     "cors": "^2.8.5",
     "discord.js": "^14.26.4",
     "dotenv": "^16.4.7",
-    "express": "^4.21.1",
+    "express": "^5.2.1",
     "express-rate-limit": "^8.2.1",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.3",
     "lowdb": "^7.0.1",
     "node-cron": "^4.5.0",
-    "rcon-srcds": "^2.0.1",
     "socket.io": "^4.8.1",
     "sql.js": "^1.14.1",
     "unzipper": "^0.12.3",
     "uuid": "^13.0.0",
-    "winston": "^3.17.0",
-    "ws": "^8.18.3"
+    "winston": "^3.17.0"
   },
   "devDependencies": {
     "@yao-pkg/pkg": "^6.19.0",
     "concurrently": "^9.1.0",
     "esbuild": "^0.28.1",
+    "eslint": "^9.39.5",
     "nodemon": "^3.1.7",
     "vitest": "^4.1.0"
   },

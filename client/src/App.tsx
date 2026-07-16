@@ -10,6 +10,7 @@ import { Toaster } from './components/ui/toaster'
 import { SocketContext, ConnectionStatus, ConnectionStatusContext } from './contexts/SocketContext'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
+import { ConfirmProvider } from './contexts/ConfirmContext'
 import { TooltipProvider } from './components/ui/tooltip'
 import { useToast } from './components/ui/use-toast'
 import { PageSkeleton } from './components/PageSkeleton'
@@ -188,9 +189,15 @@ function AuthScreenLoader() {
   const totalSteps = AUTH_BOOT_STEPS.length
 
   useEffect(() => {
+    // Advances every 350ms (was 650ms) so the full sequence takes ~1.75s
+    // instead of ~3.25s for 5 steps — this animation doesn't gate anything
+    // (the parent swaps it out the instant real auth resolves), but a
+    // shorter total duration means less of it is ever visibly cut off
+    // mid-step on a fast resolution, and less of a screen seen many times a
+    // day feels like padded theater.
     const stepTimer = window.setInterval(() => {
       setStepIndex((current) => Math.min(current + 1, totalSteps - 1))
-    }, 650)
+    }, 350)
     const tickTimer = window.setInterval(() => {
       setTick((current) => (current + 1) % 4)
     }, 500)
@@ -201,7 +208,9 @@ function AuthScreenLoader() {
   }, [totalSteps])
 
   const now = new Date()
-  const clock = now.toTimeString().slice(0, 8)
+  // Real UTC, not local time — this used to be toTimeString() (LOCAL time)
+  // mislabeled "UTC" below.
+  const clock = now.toISOString().slice(11, 19)
   const dots = '·'.repeat(tick) + ' '.repeat(3 - tick)
   const progress = Math.round(((stepIndex + 1) / totalSteps) * 100)
   const segments = 24
@@ -572,7 +581,9 @@ function App() {
       <ThemeProvider>
         <TooltipProvider>
           <AuthProvider>
-            <AppContent />
+            <ConfirmProvider>
+              <AppContent />
+            </ConfirmProvider>
           </AuthProvider>
         </TooltipProvider>
       </ThemeProvider>

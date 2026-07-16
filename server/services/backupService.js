@@ -1,19 +1,24 @@
-import path from 'path';
-import fs from 'fs';
-import { createWriteStream } from 'fs';
-import archiver from 'archiver';
-import { createReadStream } from 'fs';
-import { pipeline } from 'stream/promises';
-import { createLogger } from '../utils/logger.js';
-const log = createLogger('Backup');
-import { getActiveServer, getSetting, setSetting, logServerEvent } from '../database/init.js';
-import { sanitizeError } from '../utils/sanitize.js';
+import path from "path";
+import fs from "fs";
+import { createWriteStream } from "fs";
+import archiver from "archiver";
+import { createReadStream } from "fs";
+import { pipeline } from "stream/promises";
+import { createLogger } from "../utils/logger.js";
+const log = createLogger("Backup");
+import {
+  getActiveServer,
+  getSetting,
+  setSetting,
+  logServerEvent,
+} from "../database/init.js";
+import { sanitizeError } from "../utils/sanitize.js";
 
 // Dynamic import for unzipper (CommonJS module)
 let unzipper;
 async function getUnzipper() {
   if (!unzipper) {
-    unzipper = await import('unzipper');
+    unzipper = await import("unzipper");
   }
   return unzipper;
 }
@@ -24,65 +29,79 @@ export class BackupService {
     this.restoreInProgress = false;
     this.lastBackup = null;
     this.backupHistory = [];
-     this.discordBot = null;
+    this.discordBot = null;
   }
 
   /**
    * Get the saves folder path for the current server
-  */
+   */
 
   setDiscordBot(discordBot) {
     this.discordBot = discordBot;
   }
 
   /**
-  * Get the saves folder path for the current server
+   * Get the saves folder path for the current server
    */
   async getSavesPath() {
-   /**
-    * (getSavesPath starts here)
-    */
-   try {
-     const activeServer = await getActiveServer();
-      
+    /**
+     * (getSavesPath starts here)
+     */
+    try {
+      const activeServer = await getActiveServer();
+
       if (activeServer?.zomboidDataPath && activeServer?.serverName) {
-        const savesPath = path.join(activeServer.zomboidDataPath, 'Saves', 'Multiplayer', activeServer.serverName);
+        const savesPath = path.join(
+          activeServer.zomboidDataPath,
+          "Saves",
+          "Multiplayer",
+          activeServer.serverName,
+        );
         if (fs.existsSync(savesPath)) {
           return savesPath;
         }
         // Try without serverName subfolder - but only if the folder matches the expected name
-        const baseSavesPath = path.join(activeServer.zomboidDataPath, 'Saves', 'Multiplayer');
+        const baseSavesPath = path.join(
+          activeServer.zomboidDataPath,
+          "Saves",
+          "Multiplayer",
+        );
         if (fs.existsSync(baseSavesPath)) {
           // Look for a folder that matches the server name (case-insensitive)
-          const folders = fs.readdirSync(baseSavesPath, { withFileTypes: true })
-            .filter(d => d.isDirectory())
-            .map(d => d.name);
+          const folders = fs
+            .readdirSync(baseSavesPath, { withFileTypes: true })
+            .filter((d) => d.isDirectory())
+            .map((d) => d.name);
           // First try exact match
-          const exactMatch = folders.find(f => f === activeServer.serverName);
+          const exactMatch = folders.find((f) => f === activeServer.serverName);
           if (exactMatch) {
             return path.join(baseSavesPath, exactMatch);
           }
           // Then try case-insensitive match
-          const caseInsensitiveMatch = folders.find(f => f.toLowerCase() === activeServer.serverName.toLowerCase());
+          const caseInsensitiveMatch = folders.find(
+            (f) => f.toLowerCase() === activeServer.serverName.toLowerCase(),
+          );
           if (caseInsensitiveMatch) {
             return path.join(baseSavesPath, caseInsensitiveMatch);
           }
           // Only use first folder as last resort with a warning
           if (folders.length > 0) {
-            log.warn(`Could not find save folder matching "${activeServer.serverName}", using first available: ${folders[0]}`);
+            log.warn(
+              `Could not find save folder matching "${activeServer.serverName}", using first available: ${folders[0]}`,
+            );
             return path.join(baseSavesPath, folders[0]);
           }
         }
       }
-      
+
       // Fallback to legacy settings
-      const zomboidDataPath = await getSetting('zomboidDataPath');
-      const serverName = await getSetting('serverName');
-      
+      const zomboidDataPath = await getSetting("zomboidDataPath");
+      const serverName = await getSetting("serverName");
+
       if (zomboidDataPath && serverName) {
-        return path.join(zomboidDataPath, 'Saves', 'Multiplayer', serverName);
+        return path.join(zomboidDataPath, "Saves", "Multiplayer", serverName);
       }
-      
+
       return null;
     } catch (error) {
       log.error(`Failed to get saves path: ${error.message}`);
@@ -97,26 +116,26 @@ export class BackupService {
     try {
       const activeServer = await getActiveServer();
       let basePath;
-      
+
       if (activeServer?.zomboidDataPath) {
         basePath = activeServer.zomboidDataPath;
       } else {
-        basePath = await getSetting('zomboidDataPath');
+        basePath = await getSetting("zomboidDataPath");
       }
-      
+
       if (!basePath) {
         // Use local backups folder as fallback
-        const { getDataPaths } = await import('../utils/paths.js');
+        const { getDataPaths } = await import("../utils/paths.js");
         basePath = getDataPaths().dataDir;
       }
-      
-      const backupsPath = path.join(basePath, 'backups');
-      
+
+      const backupsPath = path.join(basePath, "backups");
+
       // Ensure backups folder exists
       if (!fs.existsSync(backupsPath)) {
         fs.mkdirSync(backupsPath, { recursive: true });
       }
-      
+
       return backupsPath;
     } catch (error) {
       log.error(`Failed to get backups path: ${error.message}`);
@@ -128,11 +147,11 @@ export class BackupService {
    * Get backup settings
    */
   async getSettings() {
-    const enabled = (await getSetting('backupEnabled')) ?? false;
-    const schedule = (await getSetting('backupSchedule')) ?? '0 */6 * * *'; // Every 6 hours
-    const maxBackups = (await getSetting('backupMaxCount')) ?? 10;
-    const includeDb = (await getSetting('backupIncludeDb')) ?? false;
-    
+    const enabled = (await getSetting("backupEnabled")) ?? false;
+    const schedule = (await getSetting("backupSchedule")) ?? "0 */6 * * *"; // Every 6 hours
+    const maxBackups = (await getSetting("backupMaxCount")) ?? 10;
+    const includeDb = (await getSetting("backupIncludeDb")) ?? false;
+
     return { enabled, schedule, maxBackups, includeDb };
   }
 
@@ -141,18 +160,18 @@ export class BackupService {
    */
   async updateSettings(settings) {
     if (settings.enabled !== undefined) {
-      await setSetting('backupEnabled', settings.enabled);
+      await setSetting("backupEnabled", settings.enabled);
     }
     if (settings.schedule !== undefined) {
-      await setSetting('backupSchedule', settings.schedule);
+      await setSetting("backupSchedule", settings.schedule);
     }
     if (settings.maxBackups !== undefined) {
-      await setSetting('backupMaxCount', settings.maxBackups);
+      await setSetting("backupMaxCount", settings.maxBackups);
     }
     if (settings.includeDb !== undefined) {
-      await setSetting('backupIncludeDb', settings.includeDb);
+      await setSetting("backupIncludeDb", settings.includeDb);
     }
-    
+
     return this.getSettings();
   }
 
@@ -161,7 +180,7 @@ export class BackupService {
    */
   async createBackup(options = {}) {
     if (this.backupInProgress) {
-      return { success: false, message: 'Backup already in progress' };
+      return { success: false, message: "Backup already in progress" };
     }
 
     this.backupInProgress = true;
@@ -171,7 +190,7 @@ export class BackupService {
     // Helper to emit progress
     const emitProgress = (phase, percent, message, extra = {}) => {
       if (io) {
-        io.emit('backup:progress', { phase, percent, message, ...extra });
+        io.emit("backup:progress", { phase, percent, message, ...extra });
       }
     };
 
@@ -180,7 +199,11 @@ export class BackupService {
       return await this._doCreateBackup(options, startTime, emitProgress);
     } catch (error) {
       log.error(`Backup failed: ${error.message}`);
-      emitProgress('error', 0, `Backup failed: ${sanitizeError(error.message)}`);
+      emitProgress(
+        "error",
+        0,
+        `Backup failed: ${sanitizeError(error.message)}`,
+      );
       return { success: false, message: sanitizeError(error.message) };
     } finally {
       this.backupInProgress = false;
@@ -191,163 +214,205 @@ export class BackupService {
    * Internal backup implementation
    */
   async _doCreateBackup(options, startTime, emitProgress) {
-    emitProgress('preparing', 5, 'Preparing backup...');
-    
+    emitProgress("preparing", 5, "Preparing backup...");
+
     const savesPath = await this.getSavesPath();
     const backupsPath = await this.getBackupsPath();
-      
-      if (!savesPath) {
-        throw new Error('Could not determine saves folder path. Please configure the server first.');
-      }
-      
-      if (!fs.existsSync(savesPath)) {
-        throw new Error(`Saves folder not found: ${savesPath}`);
-      }
-      
-      if (!backupsPath) {
-        throw new Error('Could not determine backups folder path');
-      }
 
-      // Generate backup filename with timestamp
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-      const activeServer = await getActiveServer();
-      const serverName = activeServer?.serverName || 'server';
-      const backupName = `${serverName}_${timestamp}.zip`;
-      const backupPath = path.join(backupsPath, backupName);
+    if (!savesPath) {
+      throw new Error(
+        "Could not determine saves folder path. Please configure the server first.",
+      );
+    }
 
-      log.info(`Starting backup: ${backupName}`);
-      log.info(`Source: ${savesPath}`);
-      log.info(`Destination: ${backupPath}`);
-      
-      emitProgress('preparing', 10, 'Scanning files...');
+    if (!fs.existsSync(savesPath)) {
+      throw new Error(`Saves folder not found: ${savesPath}`);
+    }
 
-      // Count total files for progress (asynchronously to avoid blocking)
-      let totalFiles = 0;
-      const countFiles = async (dir) => {
-        try {
-          const entries = await fs.promises.readdir(dir, { withFileTypes: true });
-          // Use Promise.all to process directories in parallel
-          const counts = await Promise.all(entries.map(async (entry) => {
+    if (!backupsPath) {
+      throw new Error("Could not determine backups folder path");
+    }
+
+    // Generate backup filename with timestamp
+    const timestamp = new Date()
+      .toISOString()
+      .replace(/[:.]/g, "-")
+      .slice(0, 19);
+    const activeServer = await getActiveServer();
+    const serverName = activeServer?.serverName || "server";
+    const backupName = `${serverName}_${timestamp}.zip`;
+    const backupPath = path.join(backupsPath, backupName);
+
+    log.info(`Starting backup: ${backupName}`);
+    log.info(`Source: ${savesPath}`);
+    log.info(`Destination: ${backupPath}`);
+
+    emitProgress("preparing", 10, "Scanning files...");
+
+    // Count total files for progress (asynchronously to avoid blocking)
+    //
+    // NOTE (B28 in the backend audit): a fix was attempted here to replace
+    // this pre-count with archiver's own 'progress' event, on the theory
+    // that archiver already walks the tree internally so this walk is
+    // redundant. Live-tested against a real save and reverted: archiver's
+    // `entries.total` for a directory() source is NOT a pre-computed final
+    // count -- it grows 1:1 with `entries.processed` via lazy on-demand
+    // discovery (confirmed via raw event dumps: total===processed on every
+    // single event, all the way to completion). Using it as a percentage
+    // denominator made the progress bar jump straight from 15% to 90%
+    // instead of updating smoothly, which is a regression, not a fix. A
+    // real upfront total requires a separate walk one way or another; this
+    // one uses parallel readdir to keep it as cheap as reasonably possible.
+    let totalFiles = 0;
+    const countFiles = async (dir) => {
+      try {
+        const entries = await fs.promises.readdir(dir, { withFileTypes: true });
+        // Use Promise.all to process directories in parallel
+        const counts = await Promise.all(
+          entries.map(async (entry) => {
             if (entry.isDirectory()) {
               return countFiles(path.join(dir, entry.name));
             } else {
               return 1;
             }
-          }));
-          return counts.reduce((a, b) => a + b, 0);
-        } catch (e) {
-          // Ignore errors during counting (e.g. permission denied)
-          return 0;
-        }
-      };
-      
-      try {
-          totalFiles = await countFiles(savesPath);
-      } catch (err) {
-          log.warn(`Failed to count files: ${err.message}`);
-          totalFiles = 1000; // Fallback estimate
+          }),
+        );
+        return counts.reduce((a, b) => a + b, 0);
+      } catch (e) {
+        // Ignore errors during counting (e.g. permission denied)
+        return 0;
       }
+    };
 
-      // Get database path if needed (before entering Promise callback)
-      let dbPathToInclude = null;
-      if (options.includeDb) {
-        const { getDataPaths } = await import('../utils/paths.js');
-        const dbPath = getDataPaths().dbPath;
-        if (fs.existsSync(dbPath)) {
-          dbPathToInclude = dbPath;
-          totalFiles++;
-        }
+    try {
+      totalFiles = await countFiles(savesPath);
+    } catch (err) {
+      log.warn(`Failed to count files: ${err.message}`);
+      totalFiles = 1000; // Fallback estimate
+    }
+
+    // Get database path if needed (before entering Promise callback)
+    let dbPathToInclude = null;
+    if (options.includeDb) {
+      const { getDataPaths } = await import("../utils/paths.js");
+      const dbPath = getDataPaths().dbPath;
+      if (fs.existsSync(dbPath)) {
+        dbPathToInclude = dbPath;
+        totalFiles++;
       }
+    }
 
-      emitProgress('archiving', 15, `Found ${totalFiles} files to backup...`, { totalFiles });
+    emitProgress("archiving", 15, `Found ${totalFiles} files to backup...`, {
+      totalFiles,
+    });
 
-      // Create zip archive
-      const output = createWriteStream(backupPath);
-      const archive = archiver('zip', {
-        zlib: { level: 6 } // Moderate compression
-      });
+    // Create zip archive
+    const output = createWriteStream(backupPath);
+    const archive = archiver("zip", {
+      zlib: { level: 6 }, // Moderate compression
+    });
 
-      let filesProcessed = 0;
+    let filesProcessed = 0;
 
-      return new Promise((resolve, reject) => {
-        // Track progress during archiving
-        archive.on('entry', (entry) => {
-          filesProcessed++;
-          const percent = Math.min(15 + Math.round((filesProcessed / totalFiles) * 75), 90);
-          if (filesProcessed % 50 === 0 || filesProcessed === totalFiles) {
-            emitProgress('archiving', percent, `Archiving files... (${filesProcessed}/${totalFiles})`, {
+    return new Promise((resolve, reject) => {
+      // Track progress during archiving
+      archive.on("entry", (entry) => {
+        filesProcessed++;
+        const percent = Math.min(
+          15 + Math.round((filesProcessed / totalFiles) * 75),
+          90,
+        );
+        if (filesProcessed % 50 === 0 || filesProcessed === totalFiles) {
+          emitProgress(
+            "archiving",
+            percent,
+            `Archiving files... (${filesProcessed}/${totalFiles})`,
+            {
               filesProcessed,
               totalFiles,
-              currentFile: entry.name
-            });
-          }
-        });
+              currentFile: entry.name,
+            },
+          );
+        }
+      });
 
-        output.on('close', async () => {
-          emitProgress('finalizing', 95, 'Finalizing backup...');
-          
-          const duration = ((Date.now() - startTime) / 1000).toFixed(1);
-          const sizeBytes = archive.pointer();
-          const sizeMB = (sizeBytes / (1024 * 1024)).toFixed(2);
-          
-          log.info(`Backup completed: ${backupName} (${sizeMB} MB) in ${duration}s`);
-          
-          this.lastBackup = {
-            name: backupName,
-            path: backupPath,
-            size: sizeBytes,
-            created: new Date().toISOString()
-          };
+      output.on("close", async () => {
+        emitProgress("finalizing", 95, "Finalizing backup...");
 
-          await logServerEvent('backup_created', `${backupName} (${sizeMB} MB)`);
-          
-          // Clean up old backups
-          await this.cleanupOldBackups();
-          
-          emitProgress('complete', 100, `Backup complete! (${sizeMB} MB in ${duration}s)`);
-          
-           // Notify Discord of completed backup
-           if (this.discordBot) {
-             this.discordBot.sendEventNotification('backupComplete', {}).catch(err => log.debug(`Discord backupComplete notification failed: ${err.message}`));
-           }
+        const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+        const sizeBytes = archive.pointer();
+        const sizeMB = (sizeBytes / (1024 * 1024)).toFixed(2);
 
-          resolve({
-            success: true,
-            backup: this.lastBackup,
-            duration: parseFloat(duration)
-          });
-        });
+        log.info(
+          `Backup completed: ${backupName} (${sizeMB} MB) in ${duration}s`,
+        );
 
-        output.on('error', (err) => {
-          emitProgress('error', 0, `Backup failed: ${err.message}`);
-          reject(err);
-        });
+        this.lastBackup = {
+          name: backupName,
+          path: backupPath,
+          size: sizeBytes,
+          created: new Date().toISOString(),
+        };
 
-        archive.on('error', (err) => {
-          emitProgress('error', 0, `Archive error: ${err.message}`);
-          reject(err);
-        });
+        await logServerEvent("backup_created", `${backupName} (${sizeMB} MB)`);
 
-        archive.on('warning', (err) => {
-          if (err.code === 'ENOENT') {
-            log.warn(`Backup warning: ${err.message}`);
-          } else {
-            reject(err);
-          }
-        });
+        // Clean up old backups
+        await this.cleanupOldBackups();
 
-        archive.pipe(output);
+        emitProgress(
+          "complete",
+          100,
+          `Backup complete! (${sizeMB} MB in ${duration}s)`,
+        );
 
-        // Add the saves folder to the archive
-        archive.directory(savesPath, path.basename(savesPath));
-
-        // Optionally include database
-        if (dbPathToInclude) {
-          archive.file(dbPathToInclude, { name: 'db.json' });
+        // Notify Discord of completed backup
+        if (this.discordBot) {
+          this.discordBot
+            .sendEventNotification("backupComplete", {})
+            .catch((err) =>
+              log.debug(
+                `Discord backupComplete notification failed: ${err.message}`,
+              ),
+            );
         }
 
-        archive.finalize();
+        resolve({
+          success: true,
+          backup: this.lastBackup,
+          duration: parseFloat(duration),
+        });
       });
+
+      output.on("error", (err) => {
+        emitProgress("error", 0, `Backup failed: ${err.message}`);
+        reject(err);
+      });
+
+      archive.on("error", (err) => {
+        emitProgress("error", 0, `Archive error: ${err.message}`);
+        reject(err);
+      });
+
+      archive.on("warning", (err) => {
+        if (err.code === "ENOENT") {
+          log.warn(`Backup warning: ${err.message}`);
+        } else {
+          reject(err);
+        }
+      });
+
+      archive.pipe(output);
+
+      // Add the saves folder to the archive
+      archive.directory(savesPath, path.basename(savesPath));
+
+      // Optionally include database
+      if (dbPathToInclude) {
+        archive.file(dbPathToInclude, { name: "db.json" });
+      }
+
+      archive.finalize();
+    });
   }
 
   /**
@@ -361,28 +426,29 @@ export class BackupService {
       }
 
       const files = await fs.promises.readdir(backupsPath);
-      
-      const backups = await Promise.all(files
-        .filter(f => f.endsWith('.zip'))
-        .map(async f => {
+
+      const backups = await Promise.all(
+        files
+          .filter((f) => f.endsWith(".zip"))
+          .map(async (f) => {
             try {
-                const filePath = path.join(backupsPath, f);
-                const stats = await fs.promises.stat(filePath);
-                return {
-                    name: f,
-                    path: filePath,
-                    size: stats.size,
-                    created: stats.birthtime.toISOString()
-                };
+              const filePath = path.join(backupsPath, f);
+              const stats = await fs.promises.stat(filePath);
+              return {
+                name: f,
+                path: filePath,
+                size: stats.size,
+                created: stats.birthtime.toISOString(),
+              };
             } catch (e) {
-                return null;
+              return null;
             }
-        }));
+          }),
+      );
 
       return backups
-        .filter(b => b !== null)
+        .filter((b) => b !== null)
         .sort((a, b) => new Date(b.created) - new Date(a.created)); // Newest first
-        
     } catch (error) {
       log.error(`Failed to list backups: ${error.message}`);
       return [];
@@ -396,25 +462,25 @@ export class BackupService {
     try {
       const backupsPath = await this.getBackupsPath();
       if (!backupsPath) {
-        throw new Error('Backups folder not found');
+        throw new Error("Backups folder not found");
       }
 
       // Sanitize filename to prevent path traversal
       const safeName = path.basename(backupName);
-      if (!safeName.endsWith('.zip')) {
-        throw new Error('Invalid backup file');
+      if (!safeName.endsWith(".zip")) {
+        throw new Error("Invalid backup file");
       }
 
       const backupPath = path.join(backupsPath, safeName);
-      
+
       if (!fs.existsSync(backupPath)) {
-        throw new Error('Backup not found');
+        throw new Error("Backup not found");
       }
 
       fs.unlinkSync(backupPath);
       log.info(`Deleted backup: ${safeName}`);
-      await logServerEvent('backup_deleted', safeName);
-      
+      await logServerEvent("backup_deleted", safeName);
+
       return { success: true };
     } catch (error) {
       log.error(`Failed to delete backup: ${error.message}`);
@@ -429,7 +495,7 @@ export class BackupService {
     try {
       const settings = await this.getSettings();
       const backups = await this.listBackups();
-      
+
       if (backups.length <= settings.maxBackups) {
         return;
       }
@@ -453,20 +519,24 @@ export class BackupService {
       const backups = await this.listBackups();
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - days);
-      
-      const toDelete = backups.filter(backup => {
+
+      const toDelete = backups.filter((backup) => {
         const backupDate = new Date(backup.created);
         return backupDate < cutoffDate;
       });
-      
+
       if (toDelete.length === 0) {
-        return { success: true, deleted: 0, message: `No backups older than ${days} days found` };
+        return {
+          success: true,
+          deleted: 0,
+          message: `No backups older than ${days} days found`,
+        };
       }
-      
+
       let deletedCount = 0;
       let failedCount = 0;
       const deletedNames = [];
-      
+
       for (const backup of toDelete) {
         const result = await this.deleteBackup(backup.name);
         if (result.success) {
@@ -476,15 +546,15 @@ export class BackupService {
           failedCount++;
         }
       }
-      
+
       log.info(`Deleted ${deletedCount} backups older than ${days} days`);
-      
-      return { 
-        success: true, 
-        deleted: deletedCount, 
+
+      return {
+        success: true,
+        deleted: deletedCount,
         failed: failedCount,
         deletedNames,
-        message: `Deleted ${deletedCount} backup${deletedCount !== 1 ? 's' : ''} older than ${days} days${failedCount > 0 ? ` (${failedCount} failed)` : ''}` 
+        message: `Deleted ${deletedCount} backup${deletedCount !== 1 ? "s" : ""} older than ${days} days${failedCount > 0 ? ` (${failedCount} failed)` : ""}`,
       };
     } catch (error) {
       log.error(`Failed to delete old backups: ${error.message}`);
@@ -500,7 +570,7 @@ export class BackupService {
     const backups = await this.listBackups();
     const savesPath = await this.getSavesPath();
     const backupsPath = await this.getBackupsPath();
-    
+
     return {
       ...settings,
       backupInProgress: this.backupInProgress,
@@ -509,7 +579,7 @@ export class BackupService {
       backupCount: backups.length,
       savesPath,
       backupsPath,
-      savesExists: savesPath ? fs.existsSync(savesPath) : false
+      savesExists: savesPath ? fs.existsSync(savesPath) : false,
     };
   }
 
@@ -518,19 +588,19 @@ export class BackupService {
    */
   getBackupContentsInfo() {
     return {
-      description: 'Server world save data',
+      description: "Server world save data",
       includes: [
-        'map_*.bin - World map chunk data',
-        'map_meta.bin - Map metadata',
-        'map_sand.bin - Sandbox settings snapshot',
-        'players/ - Player save files',
-        'vehicles.db - Vehicle data',
-        'reanimated.bin - Zombie data',
-        'worldstats.txt - World statistics',
-        'Other world-specific data files'
+        "map_*.bin - World map chunk data",
+        "map_meta.bin - Map metadata",
+        "map_sand.bin - Sandbox settings snapshot",
+        "players/ - Player save files",
+        "vehicles.db - Vehicle data",
+        "reanimated.bin - Zombie data",
+        "worldstats.txt - World statistics",
+        "Other world-specific data files",
       ],
-      location: 'Saves/Multiplayer/{ServerName}/',
-      note: 'Backups contain the entire world state. Server must be stopped before restoring.'
+      location: "Saves/Multiplayer/{ServerName}/",
+      note: "Backups contain the entire world state. Server must be stopped before restoring.",
     };
   }
 
@@ -540,11 +610,11 @@ export class BackupService {
    */
   async restoreBackup(backupName, options = {}) {
     if (this.restoreInProgress) {
-      return { success: false, message: 'Restore already in progress' };
+      return { success: false, message: "Restore already in progress" };
     }
 
     if (this.backupInProgress) {
-      return { success: false, message: 'Backup in progress, please wait' };
+      return { success: false, message: "Backup in progress, please wait" };
     }
 
     this.restoreInProgress = true;
@@ -553,23 +623,25 @@ export class BackupService {
     try {
       const backupsPath = await this.getBackupsPath();
       const savesPath = await this.getSavesPath();
-      
+
       if (!backupsPath) {
-        throw new Error('Could not determine backups folder path');
+        throw new Error("Could not determine backups folder path");
       }
-      
+
       if (!savesPath) {
-        throw new Error('Could not determine saves folder path. Please configure the server first.');
+        throw new Error(
+          "Could not determine saves folder path. Please configure the server first.",
+        );
       }
 
       // Sanitize backup name
       const safeName = path.basename(backupName);
-      if (!safeName.endsWith('.zip')) {
-        throw new Error('Invalid backup file');
+      if (!safeName.endsWith(".zip")) {
+        throw new Error("Invalid backup file");
       }
 
       const backupPath = path.join(backupsPath, safeName);
-      
+
       if (!fs.existsSync(backupPath)) {
         throw new Error(`Backup not found: ${safeName}`);
       }
@@ -579,11 +651,14 @@ export class BackupService {
 
       // Create a pre-restore backup if requested
       if (options.createPreRestoreBackup !== false) {
-        log.info('Creating pre-restore backup...');
+        log.info("Creating pre-restore backup...");
         const preBackupResult = await this.createBackup({ isPreRestore: true });
         if (!preBackupResult.success) {
           log.error(`Pre-restore backup failed: ${preBackupResult.message}`);
-          return { success: false, message: `Cannot restore: pre-restore backup failed (${preBackupResult.message}). Aborting to protect save data.` };
+          return {
+            success: false,
+            message: `Cannot restore: pre-restore backup failed (${preBackupResult.message}). Aborting to protect save data.`,
+          };
         }
       }
 
@@ -593,7 +668,7 @@ export class BackupService {
 
       // Clear the existing saves folder
       if (fs.existsSync(savesPath)) {
-        log.info('Removing existing saves folder...');
+        log.info("Removing existing saves folder...");
         fs.rmSync(savesPath, { recursive: true, force: true });
       }
 
@@ -603,7 +678,7 @@ export class BackupService {
       }
 
       // Extract the backup with zip-slip protection
-      log.info('Extracting backup...');
+      log.info("Extracting backup...");
       const unzip = await getUnzipper();
       const resolvedParent = path.resolve(savesParentPath) + path.sep;
 
@@ -617,15 +692,16 @@ export class BackupService {
         const settle = (err) => {
           if (settled) return;
           settled = true;
-          if (err) reject(err); else resolve();
+          if (err) reject(err);
+          else resolve();
         };
 
         const readStream = createReadStream(backupPath);
-        readStream.on('error', settle);
+        readStream.on("error", settle);
 
         readStream
           .pipe(unzip.Parse())
-          .on('entry', (entry) => {
+          .on("entry", (entry) => {
             try {
               const entryPath = path.join(savesParentPath, entry.path);
               const resolvedEntry = path.resolve(entryPath);
@@ -637,10 +713,12 @@ export class BackupService {
                 return;
               }
 
-              if (entry.type !== 'Directory' && entry.type !== 'File') {
-                log.warn(`Skipping unsupported backup entry type ${entry.type}: ${entry.path}`);
+              if (entry.type !== "Directory" && entry.type !== "File") {
+                log.warn(
+                  `Skipping unsupported backup entry type ${entry.type}: ${entry.path}`,
+                );
                 entry.autodrain();
-              } else if (entry.type === 'Directory') {
+              } else if (entry.type === "Directory") {
                 fs.mkdirSync(resolvedEntry, { recursive: true });
                 entry.autodrain();
               } else {
@@ -651,39 +729,53 @@ export class BackupService {
                 // Windows) surface as 'error' on the WriteStream and are NOT
                 // forwarded by pipe(). Without this listener the event is
                 // unhandled and crashes the process.
-                writeStream.on('error', (err) => {
-                  try { entry.unpipe(writeStream); } catch { /* ignore */ }
-                  try { entry.autodrain(); } catch { /* ignore */ }
+                writeStream.on("error", (err) => {
+                  try {
+                    entry.unpipe(writeStream);
+                  } catch {
+                    /* ignore */
+                  }
+                  try {
+                    entry.autodrain();
+                  } catch {
+                    /* ignore */
+                  }
                   settle(err);
                 });
-                entry.on('error', settle);
+                entry.on("error", settle);
                 entry.pipe(writeStream);
               }
             } catch (err) {
               settle(err);
             }
           })
-          .on('close', () => settle())
-          .on('error', settle);
+          .on("close", () => settle())
+          .on("error", settle);
       });
 
       // Verify the restore
       if (!fs.existsSync(savesPath)) {
         // Check if it extracted with a different folder name
-        const extracted = fs.readdirSync(savesParentPath).filter(f => 
-          fs.statSync(path.join(savesParentPath, f)).isDirectory()
-        );
-        
+        const extracted = fs
+          .readdirSync(savesParentPath)
+          .filter((f) =>
+            fs.statSync(path.join(savesParentPath, f)).isDirectory(),
+          );
+
         if (extracted.length > 0) {
           // Find the newly extracted folder (the one that matches the backup pattern)
           for (const folder of extracted) {
             const folderPath = path.join(savesParentPath, folder);
             // Check if this looks like a world save folder
-            if (fs.existsSync(path.join(folderPath, 'map_meta.bin')) || 
-                fs.existsSync(path.join(folderPath, 'map_t.bin'))) {
+            if (
+              fs.existsSync(path.join(folderPath, "map_meta.bin")) ||
+              fs.existsSync(path.join(folderPath, "map_t.bin"))
+            ) {
               // Rename to expected folder name if different
               if (folder !== expectedFolderName) {
-                log.info(`Renaming extracted folder from ${folder} to ${expectedFolderName}`);
+                log.info(
+                  `Renaming extracted folder from ${folder} to ${expectedFolderName}`,
+                );
                 fs.renameSync(folderPath, savesPath);
               }
               break;
@@ -693,26 +785,31 @@ export class BackupService {
       }
 
       if (!fs.existsSync(savesPath)) {
-        throw new Error('Restore may have failed - saves folder not found after extraction');
+        throw new Error(
+          "Restore may have failed - saves folder not found after extraction",
+        );
       }
 
       const duration = ((Date.now() - startTime) / 1000).toFixed(1);
       log.info(`Restore completed in ${duration}s`);
-      
-      await logServerEvent('backup_restored', `Restored from ${safeName}`);
 
-      this.restoreInProgress = false;
+      await logServerEvent("backup_restored", `Restored from ${safeName}`);
+
       return {
         success: true,
         message: `Restored from ${safeName}`,
-        duration: parseFloat(duration)
+        duration: parseFloat(duration),
       };
-
     } catch (error) {
-      this.restoreInProgress = false;
       log.error(`Restore failed: ${error.message}`);
-      await logServerEvent('restore_failed', error.message);
+      await logServerEvent("restore_failed", error.message);
       return { success: false, message: error.message };
+    } finally {
+      // try/finally (not manual resets at each return) so this always runs,
+      // including the early return above when the pre-restore backup fails —
+      // that path used to leak the flag permanently, locking out all future
+      // restores until the process was restarted.
+      this.restoreInProgress = false;
     }
   }
 }

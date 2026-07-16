@@ -66,6 +66,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { useToast } from '@/components/ui/use-toast'
+import { useConfirm } from '@/contexts/ConfirmContext'
 import { SocketContext } from '@/contexts/SocketContext'
 import { PageHeader } from '@/components/PageHeader'
 import { EmptyState } from '@/components/EmptyState'
@@ -593,6 +594,7 @@ export default function Debug() {
   const logsScrollAreaRef = useRef<HTMLDivElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
+  const confirm = useConfirm()
   const socket = useContext(SocketContext)
 
   const authFetch = useCallback((url: string, options: RequestInit = {}) => {
@@ -708,8 +710,8 @@ export default function Debug() {
 
       if (action.requiresConfirm) {
         const message = action.confirmMessage || `Apply ${action.label}?`
-        // eslint-disable-next-line no-alert
-        if (!window.confirm(message)) {
+        const ok = await confirm({ title: 'Apply fix?', description: message, confirmLabel: 'Apply' })
+        if (!ok) {
           return
         }
       }

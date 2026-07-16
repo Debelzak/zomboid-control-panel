@@ -3,56 +3,72 @@
  * Handles login, setup, token refresh, and auth status.
  */
 
-import { Router } from 'express';
-import rateLimit from 'express-rate-limit';
-import path from 'path';
-import fs from 'fs';
-import crypto from 'crypto';
-import os from 'os';
-import authService from '../services/auth.js';
-import { createLogger } from '../utils/logger.js';
-import { sanitizeError } from '../utils/sanitize.js';
-import { getDataPaths } from '../utils/paths.js';
+import { Router } from "express";
+import rateLimit from "express-rate-limit";
+import path from "path";
+import fs from "fs";
+import crypto from "crypto";
+import os from "os";
+import authService from "../services/auth.js";
+import { createLogger } from "../utils/logger.js";
+import { sanitizeError } from "../utils/sanitize.js";
+import { getDataPaths } from "../utils/paths.js";
 
-const log = createLogger('Auth');
+const log = createLogger("Auth");
 const router = Router();
 
-// Latched Secure flag: once we've seen HTTPS (env or runtime), always issue Secure cookies
-// to prevent downgrade attacks where a subsequent HTTP request re-sets the cookie insecurely.
-const forceSecureCookies = process.env.HTTPS === 'true' || process.env.FORCE_HSTS === 'true';
-let secureCookieLatch = forceSecureCookies;
+// Force all refresh cookies to be Secure when the operator has explicitly
+// declared this deployment is HTTPS-only (VPS behind TLS termination).
+const forceSecureCookies =
+  process.env.HTTPS === "true" || process.env.FORCE_HSTS === "true";
 
 function getRefreshCookieOptions(req, includeMaxAge = true) {
-  const requestIsSecure = req.secure || req.headers['x-forwarded-proto'] === 'https';
-  if (requestIsSecure) secureCookieLatch = true;
+  // Decide `secure` from THIS request's own protocol, not a shared global
+  // latch. The latch previously flipped on permanently the first time ANY
+  // client was seen over HTTPS, after which every plain-HTTP LAN client
+  // silently stopped receiving the refresh cookie (browsers drop `Secure`
+  // cookies set over HTTP) — with no error to explain why. In a mixed
+  // LAN(HTTP)+remote(HTTPS) deployment each request now gets the right flag
+  // for its own connection.
+  const requestIsSecure =
+    req.secure || req.headers["x-forwarded-proto"] === "https";
   return {
     httpOnly: true,
-    secure: secureCookieLatch,
-    sameSite: 'strict',
-    path: '/api/auth',
+    secure: forceSecureCookies || requestIsSecure,
+    sameSite: "strict",
+    path: "/api/auth",
     ...(includeMaxAge ? { maxAge: 30 * 24 * 60 * 60 * 1000 } : {}),
   };
 }
 
 function isNonEmptyString(value) {
-  return typeof value === 'string' && value.length > 0;
+  return typeof value === "string" && value.length > 0;
 }
 
 const RESET_TOKEN_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const RESET_TOKEN_MAX_BYTES = 1024;
-const LOOPBACK_REMOTE_ADDRESSES = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+const LOOPBACK_REMOTE_ADDRESSES = new Set([
+  "127.0.0.1",
+  "::1",
+  "::ffff:127.0.0.1",
+]);
 
 function normalizeIpAddress(address) {
-  if (typeof address !== 'string') return '';
-  const trimmed = address.trim().toLowerCase().replace(/^\[|\]$/g, '');
-  if (!trimmed) return '';
-  const withoutZone = trimmed.split('%')[0];
-  return withoutZone.startsWith('::ffff:') ? withoutZone.slice(7) : withoutZone;
+  if (typeof address !== "string") return "";
+  const trimmed = address
+    .trim()
+    .toLowerCase()
+    .replace(/^\[|\]$/g, "");
+  if (!trimmed) return "";
+  const withoutZone = trimmed.split("%")[0];
+  return withoutZone.startsWith("::ffff:") ? withoutZone.slice(7) : withoutZone;
 }
 
 function getLocalPanelAddresses() {
   const addresses = new Set(
-    [...LOOPBACK_REMOTE_ADDRESSES].map((address) => normalizeIpAddress(address)).filter(Boolean)
+    [...LOOPBACK_REMOTE_ADDRESSES]
+      .map((address) => normalizeIpAddress(address))
+      .filter(Boolean),
   );
 
   const interfaces = os.networkInterfaces();
@@ -70,7 +86,7 @@ function getLocalPanelAddresses() {
 
 function getResetTokenPath() {
   const { dataDir } = getDataPaths();
-  return path.join(dataDir, 'reset-token.txt');
+  return path.join(dataDir, "reset-token.txt");
 }
 
 export function isLocalPanelRequest(req) {
@@ -96,30 +112,48 @@ export function createLocalResetResponse(message) {
 function getResetTokenState() {
   const tokenPath = getResetTokenPath();
   if (!fs.existsSync(tokenPath)) {
-    return { tokenPath, available: false, reason: 'missing', token: null };
+    return { tokenPath, available: false, reason: "missing", token: null };
   }
 
   const stat = fs.statSync(tokenPath);
   if (stat.size > RESET_TOKEN_MAX_BYTES) {
-    return { tokenPath, available: false, reason: 'too-large', token: null, stat };
+    return {
+      tokenPath,
+      available: false,
+      reason: "too-large",
+      token: null,
+      stat,
+    };
   }
 
   const ageMs = Date.now() - stat.mtimeMs;
   if (ageMs > RESET_TOKEN_MAX_AGE_MS) {
-    return { tokenPath, available: false, reason: 'expired', token: null, stat };
+    return {
+      tokenPath,
+      available: false,
+      reason: "expired",
+      token: null,
+      stat,
+    };
   }
 
-  const token = fs.readFileSync(tokenPath, 'utf-8').trim();
+  const token = fs.readFileSync(tokenPath, "utf-8").trim();
   if (!token || token.length < 8) {
-    return { tokenPath, available: false, reason: 'too-short', token: null, stat };
+    return {
+      tokenPath,
+      available: false,
+      reason: "too-short",
+      token: null,
+      stat,
+    };
   }
 
-  return { tokenPath, available: true, reason: 'ok', token, stat, ageMs };
+  return { tokenPath, available: true, reason: "ok", token, stat, ageMs };
 }
 
 async function getAuthenticatedUser(req) {
   const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
     return null;
   }
 
@@ -132,7 +166,7 @@ const loginLimiter = rateLimit({
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'Too many login attempts. Please try again later.' },
+  message: { error: "Too many login attempts. Please try again later." },
 });
 
 /**
@@ -140,14 +174,14 @@ const loginLimiter = rateLimit({
  * Returns whether setup is needed and if auth is enabled.
  * This is always accessible (no auth required).
  */
-router.get('/status', async (req, res) => {
+router.get("/status", async (req, res) => {
   try {
     const needsSetup = await authService.needsSetup();
     const authEnabled = await authService.isAuthEnabled();
     res.json({ needsSetup, authEnabled });
   } catch (error) {
     log.error(`Failed to get auth status: ${error.message}`);
-    res.status(500).json({ error: 'Failed to get auth status' });
+    res.status(500).json({ error: "Failed to get auth status" });
   }
 });
 
@@ -157,32 +191,44 @@ const setupLimiter = rateLimit({
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'Too many setup attempts. Please try again later.' },
+  message: { error: "Too many setup attempts. Please try again later." },
 });
 
 /**
  * POST /api/auth/setup
  * First-run account creation. Only works if no users exist.
  */
-router.post('/setup', setupLimiter, async (req, res) => {
+router.post("/setup", setupLimiter, async (req, res) => {
   try {
     const needsSetup = await authService.needsSetup();
     if (!needsSetup) {
-      return res.status(400).json({ error: 'Setup already completed. Use login instead.' });
+      return res
+        .status(400)
+        .json({ error: "Setup already completed. Use login instead." });
     }
 
     const { username, password, rememberMe = false } = req.body || {};
     if (!isNonEmptyString(username) || !isNonEmptyString(password)) {
-      return res.status(400).json({ error: 'Username and password are required' });
+      return res
+        .status(400)
+        .json({ error: "Username and password are required" });
     }
     const user = await authService.createUser(username, password);
 
     // Auto-login after setup — generate tokens
-    const result = await authService.login(username, password, rememberMe === true);
+    const result = await authService.login(
+      username,
+      password,
+      rememberMe === true,
+    );
 
     // Set refresh token as httpOnly cookie
     if (result.refreshToken) {
-      res.cookie('refreshToken', result.refreshToken, getRefreshCookieOptions(req));
+      res.cookie(
+        "refreshToken",
+        result.refreshToken,
+        getRefreshCookieOptions(req),
+      );
     }
 
     log.info(`Setup complete — admin account created: ${username}`);
@@ -201,17 +247,27 @@ router.post('/setup', setupLimiter, async (req, res) => {
  * POST /api/auth/login
  * Authenticate and return access token. Sets refresh token cookie for auto-login.
  */
-router.post('/login', loginLimiter, async (req, res) => {
+router.post("/login", loginLimiter, async (req, res) => {
   try {
     const { username, password, rememberMe = false } = req.body || {};
     if (!isNonEmptyString(username) || !isNonEmptyString(password)) {
-      return res.status(400).json({ error: 'Username and password are required' });
+      return res
+        .status(400)
+        .json({ error: "Username and password are required" });
     }
-    const result = await authService.login(username, password, rememberMe === true);
+    const result = await authService.login(
+      username,
+      password,
+      rememberMe === true,
+    );
 
     // Set refresh token as httpOnly cookie for auto-login
     if (result.refreshToken) {
-      res.cookie('refreshToken', result.refreshToken, getRefreshCookieOptions(req));
+      res.cookie(
+        "refreshToken",
+        result.refreshToken,
+        getRefreshCookieOptions(req),
+      );
     }
 
     res.json({
@@ -227,26 +283,37 @@ router.post('/login', loginLimiter, async (req, res) => {
 
 /**
  * POST /api/auth/refresh
- * Refresh access token using refresh token cookie. 
+ * Refresh access token using refresh token cookie.
  * This is how auto-login works — the browser sends the httpOnly cookie automatically.
  */
-router.post('/refresh', async (req, res) => {
+router.post("/refresh", async (req, res) => {
   try {
     const refreshToken = req.cookies?.refreshToken;
     if (!refreshToken) {
-      return res.status(401).json({ error: 'No refresh token', code: 'NO_REFRESH_TOKEN' });
+      return res
+        .status(401)
+        .json({ error: "No refresh token", code: "NO_REFRESH_TOKEN" });
     }
 
     const result = await authService.refreshAccessToken(refreshToken);
     if (!result) {
       // Clear invalid cookie
-      res.clearCookie('refreshToken', getRefreshCookieOptions(req, false));
-      return res.status(401).json({ error: 'Invalid refresh token', code: 'INVALID_REFRESH_TOKEN' });
+      res.clearCookie("refreshToken", getRefreshCookieOptions(req, false));
+      return res
+        .status(401)
+        .json({
+          error: "Invalid refresh token",
+          code: "INVALID_REFRESH_TOKEN",
+        });
     }
 
     // Rotate the refresh token — set updated cookie
     if (result.refreshToken) {
-      res.cookie('refreshToken', result.refreshToken, getRefreshCookieOptions(req));
+      res.cookie(
+        "refreshToken",
+        result.refreshToken,
+        getRefreshCookieOptions(req),
+      );
     }
 
     res.json({
@@ -257,8 +324,10 @@ router.post('/refresh', async (req, res) => {
   } catch (error) {
     log.error(`Token refresh failed: ${error?.message || error}`);
     // Always clear stale cookie on any failure
-    try { res.clearCookie('refreshToken', getRefreshCookieOptions(req, false)); } catch {}
-    res.status(401).json({ error: 'Token refresh failed' });
+    try {
+      res.clearCookie("refreshToken", getRefreshCookieOptions(req, false));
+    } catch {}
+    res.status(401).json({ error: "Token refresh failed" });
   }
 });
 
@@ -266,9 +335,9 @@ router.post('/refresh', async (req, res) => {
  * POST /api/auth/logout
  * Clear refresh token cookie.
  */
-router.post('/logout', async (req, res) => {
+router.post("/logout", async (req, res) => {
   await authService.logout(req.cookies?.refreshToken);
-  res.clearCookie('refreshToken', getRefreshCookieOptions(req, false));
+  res.clearCookie("refreshToken", getRefreshCookieOptions(req, false));
   res.json({ success: true });
 });
 
@@ -276,16 +345,18 @@ router.post('/logout', async (req, res) => {
  * GET /api/auth/me
  * Get current user info (requires valid access token).
  */
-router.get('/me', async (req, res) => {
+router.get("/me", async (req, res) => {
   try {
     const user = await getAuthenticatedUser(req);
     if (!user) {
-      return res.status(401).json({ error: 'Not authenticated' });
+      return res.status(401).json({ error: "Not authenticated" });
     }
 
-    res.json({ user: { id: user.userId, username: user.username, role: user.role } });
+    res.json({
+      user: { id: user.userId, username: user.username, role: user.role },
+    });
   } catch (error) {
-    res.status(401).json({ error: 'Authentication error' });
+    res.status(401).json({ error: "Authentication error" });
   }
 });
 
@@ -293,21 +364,23 @@ router.get('/me', async (req, res) => {
  * POST /api/auth/change-password
  * Change password for the authenticated user.
  */
-router.post('/change-password', async (req, res) => {
+router.post("/change-password", async (req, res) => {
   try {
     const user = await getAuthenticatedUser(req);
     if (!user) {
-      return res.status(401).json({ error: 'Not authenticated' });
+      return res.status(401).json({ error: "Not authenticated" });
     }
 
     const { currentPassword, newPassword } = req.body || {};
     if (!isNonEmptyString(currentPassword) || !isNonEmptyString(newPassword)) {
-      return res.status(400).json({ error: 'Current and new password are required' });
+      return res
+        .status(400)
+        .json({ error: "Current and new password are required" });
     }
     await authService.changePassword(user.userId, currentPassword, newPassword);
-    res.clearCookie('refreshToken', getRefreshCookieOptions(req, false));
+    res.clearCookie("refreshToken", getRefreshCookieOptions(req, false));
 
-    res.json({ success: true, message: 'Password changed successfully' });
+    res.json({ success: true, message: "Password changed successfully" });
   } catch (error) {
     res.status(400).json({ error: sanitizeError(error.message) });
   }
@@ -319,7 +392,7 @@ const resetLimiter = rateLimit({
   max: 3,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'Too many reset attempts. Please try again later.' },
+  message: { error: "Too many reset attempts. Please try again later." },
 });
 
 /**
@@ -327,7 +400,7 @@ const resetLimiter = rateLimit({
  * Check if a password reset token file exists on disk.
  * This tells the frontend whether to show the "Reset Password" option.
  */
-router.get('/reset-status', async (req, res) => {
+router.get("/reset-status", async (req, res) => {
   try {
     const tokenState = getResetTokenState();
     res.json({
@@ -344,7 +417,9 @@ const localResetTokenLimiter = rateLimit({
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'Too many local recovery attempts. Please try again later.' },
+  message: {
+    error: "Too many local recovery attempts. Please try again later.",
+  },
 });
 
 /**
@@ -355,90 +430,144 @@ const localResetTokenLimiter = rateLimit({
  * (loopback or one of the machine's own assigned IP addresses). The response never
  * includes the token value; the caller must still read data/reset-token.txt on disk.
  */
-router.post('/reset-token/local', localResetTokenLimiter, async (req, res) => {
+router.post("/reset-token/local", localResetTokenLimiter, async (req, res) => {
   try {
     if (!isLocalPanelRequest(req)) {
       return res.status(403).json({
-        error: 'This recovery action is only available when the panel is opened from the server itself.',
+        error:
+          "This recovery action is only available when the panel is opened from the server itself.",
       });
     }
 
     const tokenState = getResetTokenState();
     if (tokenState.available && tokenState.token) {
-      return res.json(createLocalResetResponse('A recovery token is already available at data/reset-token.txt. Paste it below to continue.'));
+      return res.json(
+        createLocalResetResponse(
+          "A recovery token is already available at data/reset-token.txt. Paste it below to continue.",
+        ),
+      );
     }
 
-    if (tokenState.reason === 'expired' || tokenState.reason === 'too-large' || tokenState.reason === 'too-short') {
+    if (
+      tokenState.reason === "expired" ||
+      tokenState.reason === "too-large" ||
+      tokenState.reason === "too-short"
+    ) {
       try {
         fs.unlinkSync(tokenState.tokenPath);
       } catch {}
     }
 
-    const token = crypto.randomBytes(24).toString('hex');
-    fs.writeFileSync(tokenState.tokenPath, `${token}\n`, { encoding: 'utf-8', mode: 0o600 });
+    const token = crypto.randomBytes(24).toString("hex");
+    fs.writeFileSync(tokenState.tokenPath, `${token}\n`, {
+      encoding: "utf-8",
+      mode: 0o600,
+    });
 
-    log.info('Local recovery token created from a request originating on the server');
-    res.json(createLocalResetResponse('Recovery token created at data/reset-token.txt. Paste it below to continue.'));
+    log.info(
+      "Local recovery token created from a request originating on the server",
+    );
+    res.json(
+      createLocalResetResponse(
+        "Recovery token created at data/reset-token.txt. Paste it below to continue.",
+      ),
+    );
   } catch (error) {
     log.error(`Local recovery token creation failed: ${error.message}`);
-    res.status(500).json({ error: 'Could not create a recovery token on this server.' });
+    res
+      .status(500)
+      .json({ error: "Could not create a recovery token on this server." });
   }
 });
 
 /**
  * POST /api/auth/reset-password
  * Reset the admin password using a reset token file.
- * 
+ *
  * Security model: The caller must provide the exact token from data/reset-token.txt.
  * This proves they have filesystem access to the server machine.
  * The token file is deleted after a successful reset.
  */
-router.post('/reset-password', resetLimiter, async (req, res) => {
+router.post("/reset-password", resetLimiter, async (req, res) => {
   try {
     const { token, newPassword } = req.body;
-    if (!token || !newPassword || typeof token !== 'string' || typeof newPassword !== 'string') {
-      return res.status(400).json({ error: 'Token and new password are required' });
+    if (
+      !token ||
+      !newPassword ||
+      typeof token !== "string" ||
+      typeof newPassword !== "string"
+    ) {
+      return res
+        .status(400)
+        .json({ error: "Token and new password are required" });
     }
 
     if (newPassword.length > 128) {
-      return res.status(400).json({ error: 'Password must be 128 characters or fewer' });
+      return res
+        .status(400)
+        .json({ error: "Password must be 128 characters or fewer" });
     }
 
     const tokenPath = getResetTokenPath();
 
     if (!fs.existsSync(tokenPath)) {
-      log.warn('Password reset attempted but no reset-token.txt exists');
-      return res.status(403).json({ error: 'No reset token found. Create data/reset-token.txt on the server first.' });
+      log.warn("Password reset attempted but no reset-token.txt exists");
+      return res
+        .status(403)
+        .json({
+          error:
+            "No reset token found. Create data/reset-token.txt on the server first.",
+        });
     }
 
     // Guard against oversized token files
     const stat = fs.statSync(tokenPath);
     if (stat.size > RESET_TOKEN_MAX_BYTES) {
-      log.warn('Password reset token file is too large');
-      return res.status(403).json({ error: 'Reset token file is invalid (too large). Max 1KB.' });
+      log.warn("Password reset token file is too large");
+      return res
+        .status(403)
+        .json({ error: "Reset token file is invalid (too large). Max 1KB." });
     }
 
     // Token files older than 24h are rejected to prevent stale reset files from being abused.
     const ageMs = Date.now() - stat.mtimeMs;
     if (ageMs > RESET_TOKEN_MAX_AGE_MS) {
-      log.warn('Password reset attempted with expired token file (>24h old)');
-      try { fs.unlinkSync(tokenPath); } catch {}
-      return res.status(403).json({ error: 'Reset token file is older than 24 hours. Recreate it on the server.' });
+      log.warn("Password reset attempted with expired token file (>24h old)");
+      try {
+        fs.unlinkSync(tokenPath);
+      } catch {}
+      return res
+        .status(403)
+        .json({
+          error:
+            "Reset token file is older than 24 hours. Recreate it on the server.",
+        });
     }
 
-    const storedToken = fs.readFileSync(tokenPath, 'utf-8').trim();
+    const storedToken = fs.readFileSync(tokenPath, "utf-8").trim();
     if (!storedToken || storedToken.length < 8) {
-      log.warn('Password reset attempted with invalid token file (too short)');
-      return res.status(403).json({ error: 'Reset token file is invalid. It must contain at least 8 characters.' });
+      log.warn("Password reset attempted with invalid token file (too short)");
+      return res
+        .status(403)
+        .json({
+          error:
+            "Reset token file is invalid. It must contain at least 8 characters.",
+        });
     }
 
     // Hash both sides to a constant-length digest before timing-safe comparison.
     // This avoids leaking the token's length via the length-mismatch short-circuit.
-    const candidateDigest = crypto.createHash('sha256').update(token.trim(), 'utf8').digest();
-    const storedDigest = crypto.createHash('sha256').update(storedToken, 'utf8').digest();
+    const candidateDigest = crypto
+      .createHash("sha256")
+      .update(token.trim(), "utf8")
+      .digest();
+    const storedDigest = crypto
+      .createHash("sha256")
+      .update(storedToken, "utf8")
+      .digest();
     if (!crypto.timingSafeEqual(candidateDigest, storedDigest)) {
-      log.warn('Password reset attempted with incorrect token');
-      return res.status(403).json({ error: 'Invalid reset token' });
+      log.warn("Password reset attempted with incorrect token");
+      return res.status(403).json({ error: "Invalid reset token" });
     }
 
     const result = await authService.resetPassword(newPassword);
@@ -451,7 +580,10 @@ router.post('/reset-password', resetLimiter, async (req, res) => {
     }
 
     log.info(`Password reset successful for user: ${result.username}`);
-    res.json({ success: true, message: `Password reset for ${result.username}` });
+    res.json({
+      success: true,
+      message: `Password reset for ${result.username}`,
+    });
   } catch (error) {
     log.error(`Password reset failed: ${error.message}`);
     res.status(400).json({ error: sanitizeError(error.message) });

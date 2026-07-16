@@ -14,7 +14,7 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import { createLogger } from "../utils/logger.js";
-import { getSetting, setSetting, getDb } from "../database/init.js";
+import { getSetting, setSetting, getDb, commitNow } from "../database/init.js";
 
 const log = createLogger("Auth");
 
@@ -25,6 +25,13 @@ const REFRESH_TOKEN_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000;
 const MAX_REFRESH_SESSIONS = 5;
 const MAX_FAILED_LOGINS = 10;
 const LOCKOUT_DURATION_MS = 15 * 60 * 1000;
+// Fixed dummy hash used to keep the "user not found" branch of login() at the
+// same cost as the "user found, wrong password" branch (bcrypt.compare is the
+// expensive step, ~200-300ms at BCRYPT_ROUNDS). Without this, an attacker can
+// enumerate valid usernames by measuring response time. This hash matches no
+// real password — it's just a fixed bcrypt digest to compare against.
+const DUMMY_BCRYPT_HASH =
+  "$2a$12$CwTycUXWue0Thq9StjUM0uJ8u2H8ekjqOGWjF/9JMlSlL5C.tZgqe";
 
 class AuthService {
   constructor() {
@@ -225,7 +232,7 @@ class AuthService {
       };
 
       db.data.users.push(user);
-      await db.write();
+      await commitNow();
 
       log.info(`User created: ${username}`);
       return { id: user.id, username: user.username, role: user.role };
@@ -247,16 +254,21 @@ class AuthService {
     );
 
     if (!user) {
-      // Use generic error to prevent username enumeration
+      // Run a bcrypt compare against a fixed dummy hash so this branch costs
+      // about the same as the "wrong password" branch below — otherwise an
+      // attacker can enumerate valid usernames by measuring response time
+      // (missing user ~1ms vs. existing user ~200-300ms for bcrypt.compare).
+      await bcrypt.compare(password, DUMMY_BCRYPT_HASH);
       throw new Error("Invalid username or password");
     }
 
     // Account lockout: reject early if the account is currently locked.
-    // Generic error message keeps username enumeration impossible; the lockout
-    // does leak timing (~1ms vs ~250ms) but the attacker already knows their
-    // attempts are failing, so the practical info gain is zero.
+    // Generic error message keeps username enumeration impossible. Also run
+    // the dummy compare here so a locked account doesn't become a distinct,
+    // faster timing signature from a normal wrong-password attempt.
     const lockedUntil = user.lockedUntil ? Date.parse(user.lockedUntil) : 0;
     if (lockedUntil && lockedUntil > Date.now()) {
+      await bcrypt.compare(password, DUMMY_BCRYPT_HASH);
       throw new Error("Invalid username or password");
     }
 
@@ -273,7 +285,7 @@ class AuthService {
         );
       }
       try {
-        await db.write();
+        await commitNow();
       } catch {}
       throw new Error("Invalid username or password");
     }
@@ -287,7 +299,7 @@ class AuthService {
     // Update last login
     user.lastLogin = new Date().toISOString();
     const refreshSession = rememberMe ? this.createRefreshSession(user) : null;
-    await db.write();
+    await commitNow();
 
     // Generate tokens
     const accessToken = this.generateAccessToken(user);
@@ -388,7 +400,7 @@ class AuthService {
 
       this.revokeRefreshSession(user, payload.sessionId);
       const newSession = this.createRefreshSession(user);
-      await db.write();
+      await commitNow();
 
       const accessToken = this.generateAccessToken(user);
       const newRefreshToken = this.generateRefreshToken(user, newSession.id);
@@ -427,7 +439,7 @@ class AuthService {
     // Bump tokenGen to invalidate all existing refresh tokens
     user.tokenGen = (user.tokenGen || 0) + 1;
     user.refreshSessions = [];
-    await db.write();
+    await commitNow();
 
     log.info(`Password changed for user: ${user.username}`);
     return true;
@@ -474,7 +486,7 @@ class AuthService {
 
       const revoked = this.revokeRefreshSession(user, payload.sessionId);
       if (revoked) {
-        await db.write();
+        await commitNow();
       }
 
       return revoked;
@@ -510,7 +522,7 @@ class AuthService {
     user.password = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
     user.tokenGen = (user.tokenGen || 0) + 1;
     user.refreshSessions = [];
-    await db.write();
+    await commitNow();
 
     log.info(`Password reset for user: ${user.username}`);
     return { username: user.username };
@@ -599,3 +611,26 @@ class AuthService {
 // Singleton instance
 const authService = new AuthService();
 export default authService;
+
+/**
+ * Express middleware factory — requires req.user.role to be one of the
+ * given roles. Must run AFTER authService.middleware() so req.user is set.
+ *
+ * Currently every account is created with role 'admin' (see createUser()),
+ * so this is a no-op today — but every route handler in this app grants
+ * full power (RCON god-mode, file delete, server install/wipe, panel
+ * self-update) with zero authorization check beyond "is logged in". Wiring
+ * this in now on destructive/privileged routes makes that boundary explicit
+ * ahead of a non-admin role ever being introduced, instead of every future
+ * route inheriting full access by default.
+ */
+export function requireRole(...roles) {
+  return (req, res, next) => {
+    // No auth configured (setup pending / auth disabled) — middleware()
+    // already let the request through without setting req.user in that
+    // case, so there's nothing to check here.
+    if (!req.user) return next();
+    if (roles.includes(req.user.role)) return next();
+    return res.status(403).json({ error: "Insufficient permissions" });
+  };
+}

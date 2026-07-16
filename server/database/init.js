@@ -1,11 +1,12 @@
-import { Low } from 'lowdb';
-import { JSONFile } from 'lowdb/node';
-import path from 'path';
-import fs from 'fs';
-import { randomUUID } from 'crypto';
-import { getDataPaths } from '../utils/paths.js';
-import { createLogger } from '../utils/logger.js';
-const log = createLogger('DB');
+import { Low } from "lowdb";
+import { JSONFile } from "lowdb/node";
+import path from "path";
+import fs from "fs";
+import { randomUUID } from "crypto";
+import { getDataPaths } from "../utils/paths.js";
+import { createLogger } from "../utils/logger.js";
+import { normalizeMemoryGb } from "../utils/memory.js";
+const log = createLogger("DB");
 
 // ============================================
 // Database Configuration
@@ -16,12 +17,12 @@ const RETENTION = {
   player_logs: 1000,
   server_events: 500,
   schedule_history: 500,
-  performance_history: 5760,   // 24h at 15-sec intervals
-  player_sessions: 50,         // per player
+  performance_history: 5760, // 24h at 15-sec intervals
+  player_sessions: 50, // per player
   bridge_logs: 500,
 };
 
-const WRITE_DEBOUNCE_MS = 500;          // Coalesce rapid writes
+const WRITE_DEBOUNCE_MS = 500; // Coalesce rapid writes
 const BACKUP_INTERVAL_MS = 6 * 3600000; // Auto-backup every 6 hours
 const MAX_BACKUPS = 5;
 
@@ -32,13 +33,17 @@ const MAX_BACKUPS = 5;
 const paths = getDataPaths();
 const dataDir = paths.dataDir;
 const dbPath = paths.dbPath;
-const backupDir = path.join(dataDir, 'backups');
+const backupDir = path.join(dataDir, "backups");
 
 // Ensure directories exist with restrictive perms (POSIX). Mode is ignored on Windows.
 // 0o700 — these dirs hold db.json (RCON password + JWT secret) and rotating backups.
 for (const dir of [dataDir, backupDir]) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-  try { fs.chmodSync(dir, 0o700); } catch (_) { /* best-effort: Windows / network shares */ }
+  try {
+    fs.chmodSync(dir, 0o700);
+  } catch (_) {
+    /* best-effort: Windows / network shares */
+  }
 }
 
 // ============================================
@@ -64,7 +69,7 @@ const defaultData = {
   discord_webhooks: [],
   users: [],
   settings: {},
-  _schemaVersion: 1
+  _schemaVersion: 1,
 };
 
 // ============================================
@@ -127,9 +132,13 @@ function scheduleWrite() {
   if (_writeTimer) return;
 
   // Apply exponential backoff if we're currently retrying after failures.
-  const delay = _writeRetries > 0
-    ? Math.min(WRITE_BACKOFF_BASE_MS * Math.pow(2, _writeRetries - 1), WRITE_BACKOFF_MAX_MS)
-    : WRITE_DEBOUNCE_MS;
+  const delay =
+    _writeRetries > 0
+      ? Math.min(
+          WRITE_BACKOFF_BASE_MS * Math.pow(2, _writeRetries - 1),
+          WRITE_BACKOFF_MAX_MS,
+        )
+      : WRITE_DEBOUNCE_MS;
 
   _writeTimer = setTimeout(async () => {
     _writeTimer = null;
@@ -147,7 +156,11 @@ export async function flushWrites() {
 
   // If a write is already in progress, chain after it
   if (_writePromise) {
-    try { await _writePromise; } catch { /* swallow */ }
+    try {
+      await _writePromise;
+    } catch {
+      /* swallow */
+    }
   }
 
   _writePromise = (async () => {
@@ -163,25 +176,36 @@ export async function flushWrites() {
       // first instance consumed it. PID + random suffix isolates them.
       const tmpPath = `${dbPath}.${process.pid}.${Math.random().toString(36).slice(2, 8)}.tmp`;
       const data = JSON.stringify(db.data, null, 2);
-      fs.writeFileSync(tmpPath, data, { encoding: 'utf-8', mode: 0o600 });
-      try { fs.chmodSync(tmpPath, 0o600); } catch (_) { /* best-effort: Windows */ }
+      fs.writeFileSync(tmpPath, data, { encoding: "utf-8", mode: 0o600 });
+      try {
+        fs.chmodSync(tmpPath, 0o600);
+      } catch (_) {
+        /* best-effort: Windows */
+      }
       fs.renameSync(tmpPath, dbPath);
       _writeRetries = 0; // Reset on success
       log.debug(`DB flushed (${Math.round(data.length / 1024)}KB)`);
     } catch (err) {
       _writeRetries++;
       if (_writeRetries >= MAX_WRITE_RETRIES) {
-        log.error(`DB write failed ${_writeRetries} times, opening circuit breaker for ${CIRCUIT_OPEN_MS / 1000}s: ${err.message}`);
+        log.error(
+          `DB write failed ${_writeRetries} times, opening circuit breaker for ${CIRCUIT_OPEN_MS / 1000}s: ${err.message}`,
+        );
         // Open the circuit — stop scheduling writes for a cooldown so we don't pin the event loop.
         _writeCircuitOpenUntil = Date.now() + CIRCUIT_OPEN_MS;
         _writeRetries = 0;
         _dirty = true; // Keep dirty; next scheduleWrite after cooldown will retry.
       } else {
-        log.error(`Write error (attempt ${_writeRetries}/${MAX_WRITE_RETRIES}): ${err.message}`);
+        log.error(
+          `Write error (attempt ${_writeRetries}/${MAX_WRITE_RETRIES}): ${err.message}`,
+        );
         _dirty = true; // Re-mark dirty so next scheduleWrite retries (with backoff)
         // Proactively schedule a retry so we don't depend on external scheduleWrite calls.
         if (!_writeTimer) {
-          const delay = Math.min(WRITE_BACKOFF_BASE_MS * Math.pow(2, _writeRetries - 1), WRITE_BACKOFF_MAX_MS);
+          const delay = Math.min(
+            WRITE_BACKOFF_BASE_MS * Math.pow(2, _writeRetries - 1),
+            WRITE_BACKOFF_MAX_MS,
+          );
           _writeTimer = setTimeout(async () => {
             _writeTimer = null;
             await flushWrites();
@@ -195,21 +219,42 @@ export async function flushWrites() {
   _writePromise = null;
 }
 
+/**
+ * Immediately persist the in-memory DB to disk, bypassing the debounce timer.
+ *
+ * `db.write()` (lowdb's default) does a plain, non-atomic `writeFile` straight
+ * onto `db.json` — no temp-file+rename, no retry/circuit-breaker, and no
+ * coordination with the debounced `flushWrites()` above. Calling it directly
+ * (as some routes/services used to) risks corrupting `db.json` on a crash
+ * mid-write, and can race a concurrent debounced flush clobbering each other.
+ * Use this instead of `db.write()` anywhere a write needs to land on disk
+ * right away (e.g. auth: password/session changes, JWT secret) — it reuses
+ * the same atomic temp-file+rename path as the debounced writer.
+ */
+export async function commitNow() {
+  _dirty = true;
+  await flushWrites();
+}
+
 // ============================================
 // Backup System
 // ============================================
 
-function createBackup(label = '') {
+function createBackup(label = "") {
   try {
     if (!fs.existsSync(dbPath)) return null;
 
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const suffix = label ? `-${label}` : '';
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const suffix = label ? `-${label}` : "";
     const backupFile = path.join(backupDir, `db-${timestamp}${suffix}.json`);
 
     fs.copyFileSync(dbPath, backupFile);
     // Backups contain the same secrets as db.json — tighten perms.
-    try { fs.chmodSync(backupFile, 0o600); } catch (_) { /* best-effort: Windows */ }
+    try {
+      fs.chmodSync(backupFile, 0o600);
+    } catch (_) {
+      /* best-effort: Windows */
+    }
     pruneBackups();
     return backupFile;
   } catch (err) {
@@ -220,8 +265,9 @@ function createBackup(label = '') {
 
 function pruneBackups() {
   try {
-    const files = fs.readdirSync(backupDir)
-      .filter(f => f.startsWith('db-') && f.endsWith('.json'))
+    const files = fs
+      .readdirSync(backupDir)
+      .filter((f) => f.startsWith("db-") && f.endsWith(".json"))
       .sort()
       .reverse();
 
@@ -235,8 +281,9 @@ function pruneBackups() {
 
 function getLatestBackup() {
   try {
-    const files = fs.readdirSync(backupDir)
-      .filter(f => f.startsWith('db-') && f.endsWith('.json'))
+    const files = fs
+      .readdirSync(backupDir)
+      .filter((f) => f.startsWith("db-") && f.endsWith(".json"))
       .sort()
       .reverse();
     return files.length > 0 ? path.join(backupDir, files[0]) : null;
@@ -249,7 +296,7 @@ function getLatestBackup() {
 function startBackupSchedule() {
   if (_backupTimer) clearInterval(_backupTimer);
   _backupTimer = setInterval(() => {
-    createBackup('auto');
+    createBackup("auto");
   }, BACKUP_INTERVAL_MS);
   if (_backupTimer.unref) _backupTimer.unref();
 }
@@ -264,17 +311,23 @@ function registerShutdownHandlers() {
 
   const shutdown = async (signal) => {
     log.info(`${signal} received — flushing writes...`);
-    if (_writeTimer) { clearTimeout(_writeTimer); _writeTimer = null; }
-    if (_backupTimer) { clearInterval(_backupTimer); _backupTimer = null; }
+    if (_writeTimer) {
+      clearTimeout(_writeTimer);
+      _writeTimer = null;
+    }
+    if (_backupTimer) {
+      clearInterval(_backupTimer);
+      _backupTimer = null;
+    }
     await flushWrites();
-    createBackup('shutdown');
+    createBackup("shutdown");
   };
 
   // Only flush writes — do NOT call process.exit() here.
   // The main index.js gracefulShutdown handler manages the exit sequence.
-  process.on('SIGINT', () => shutdown('SIGINT'));
-  process.on('SIGTERM', () => shutdown('SIGTERM'));
-  process.on('beforeExit', () => shutdown('beforeExit'));
+  process.on("SIGINT", () => shutdown("SIGINT"));
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("beforeExit", () => shutdown("beforeExit"));
 }
 
 // ============================================
@@ -287,20 +340,87 @@ function registerShutdownHandlers() {
  */
 function validateData(data) {
   const repaired = { ...defaultData };
+  // Collections that existed but had the WRONG TYPE (not merely absent) get
+  // silently replaced with an empty default below. Since db.json is
+  // hand-editable and can be restored from an older backup, a subtly
+  // malformed file could otherwise quietly lose e.g. all `servers` or
+  // `users` with no warning. Track what got replaced so we can log loudly
+  // and snapshot the pre-repair file for forensics/recovery.
+  const replacedKeys = [];
 
   for (const [key, defaultValue] of Object.entries(defaultData)) {
     if (Array.isArray(defaultValue)) {
-      repaired[key] = Array.isArray(data?.[key]) ? data[key] : defaultValue;
-    } else if (typeof defaultValue === 'object' && defaultValue !== null) {
-      repaired[key] = (typeof data?.[key] === 'object' && !Array.isArray(data?.[key]) && data?.[key] !== null)
-        ? data[key]
-        : defaultValue;
+      if (Array.isArray(data?.[key])) {
+        repaired[key] = data[key];
+      } else {
+        repaired[key] = defaultValue;
+        if (data?.[key] !== undefined) replacedKeys.push(key);
+      }
+    } else if (typeof defaultValue === "object" && defaultValue !== null) {
+      if (
+        typeof data?.[key] === "object" &&
+        !Array.isArray(data?.[key]) &&
+        data?.[key] !== null
+      ) {
+        repaired[key] = data[key];
+      } else {
+        repaired[key] = defaultValue;
+        if (data?.[key] !== undefined) replacedKeys.push(key);
+      }
     } else {
       repaired[key] = data?.[key] ?? defaultValue;
     }
   }
 
+  if (replacedKeys.length > 0) {
+    log.error(
+      `DB validation found wrong-typed collection(s) and replaced them with empty defaults, discarding their contents: ${replacedKeys.join(", ")}`,
+    );
+    try {
+      const snapshotPath = path.join(
+        backupDir,
+        `pre-repair-${new Date().toISOString().replace(/[:.]/g, "-")}.json`,
+      );
+      fs.writeFileSync(snapshotPath, JSON.stringify(data, null, 2), {
+        encoding: "utf-8",
+        mode: 0o600,
+      });
+      log.warn(
+        `Saved a snapshot of the pre-repair file for recovery: ${snapshotPath}`,
+      );
+    } catch (snapErr) {
+      log.error(`Could not snapshot pre-repair data: ${snapErr.message}`);
+    }
+  }
+
   return repaired;
+}
+
+/**
+ * Append an item to a size-capped collection.
+ *
+ * This DB layer uses two conventions depending on how a collection is
+ * consumed: `newest: true` (default) unshifts the new item to the front and
+ * caps by dropping from the end — used by command_history, bridge_logs,
+ * player_logs, server_events, schedule_history, all of whose readers do
+ * `.slice(0, limit)` expecting newest-first order. `newest: false` pushes to
+ * the end and caps by dropping from the front — used by
+ * performance_history, whose reader does `.slice(-limit)` expecting
+ * chronological (oldest-first) order for charts. The two conventions aren't
+ * interchangeable (see B18 in the backend audit) — this single helper
+ * replaces what used to be hand-rolled unshift/push+slice at each call site,
+ * so any new capped collection has one obvious place to reach for instead of
+ * re-deriving the pattern.
+ */
+function appendCapped(arr, item, max, { newest = true } = {}) {
+  if (newest) {
+    arr.unshift(item);
+    if (arr.length > max) arr.length = max;
+  } else {
+    arr.push(item);
+    if (arr.length > max) arr.splice(0, arr.length - max);
+  }
+  return arr;
 }
 
 /**
@@ -316,16 +436,28 @@ function compactData(data) {
     return arr;
   };
 
-  data.command_history = trimArray(data.command_history, RETENTION.command_history);
+  data.command_history = trimArray(
+    data.command_history,
+    RETENTION.command_history,
+  );
   data.player_logs = trimArray(data.player_logs, RETENTION.player_logs);
   data.server_events = trimArray(data.server_events, RETENTION.server_events);
-  data.schedule_history = trimArray(data.schedule_history, RETENTION.schedule_history);
+  data.schedule_history = trimArray(
+    data.schedule_history,
+    RETENTION.schedule_history,
+  );
   data.bridge_logs = trimArray(data.bridge_logs || [], RETENTION.bridge_logs);
-  data.performance_history = trimArrayEnd(data.performance_history, RETENTION.performance_history);
+  data.performance_history = trimArrayEnd(
+    data.performance_history,
+    RETENTION.performance_history,
+  );
 
   if (Array.isArray(data.player_stats)) {
     for (const stat of data.player_stats) {
-      if (Array.isArray(stat.sessions) && stat.sessions.length > RETENTION.player_sessions) {
+      if (
+        Array.isArray(stat.sessions) &&
+        stat.sessions.length > RETENTION.player_sessions
+      ) {
         stat.sessions = stat.sessions.slice(0, RETENTION.player_sessions);
       }
     }
@@ -339,15 +471,25 @@ export async function getDb() {
     // Tighten permissions on existing files left behind by prior installs that
     // wrote with the default umask (typically 0o644 on Linux). Idempotent.
     if (fs.existsSync(dbPath)) {
-      try { fs.chmodSync(dbPath, 0o600); } catch (_) { /* best-effort: Windows */ }
+      try {
+        fs.chmodSync(dbPath, 0o600);
+      } catch (_) {
+        /* best-effort: Windows */
+      }
     }
     try {
       for (const f of fs.readdirSync(backupDir)) {
-        if (f.startsWith('db-') && f.endsWith('.json')) {
-          try { fs.chmodSync(path.join(backupDir, f), 0o600); } catch (_) { /* ignore */ }
+        if (f.startsWith("db-") && f.endsWith(".json")) {
+          try {
+            fs.chmodSync(path.join(backupDir, f), 0o600);
+          } catch (_) {
+            /* ignore */
+          }
         }
       }
-    } catch (_) { /* backupDir may not be readable yet on first run */ }
+    } catch (_) {
+      /* backupDir may not be readable yet on first run */
+    }
 
     const adapter = new JSONFile(dbPath);
     db = new Low(adapter, defaultData);
@@ -370,20 +512,29 @@ export async function getDb() {
           // Preserve the corrupt file for forensics, OUTSIDE the rotation ring
           // so pruneBackups never touches it.
           try {
-            const corruptPath = path.join(backupDir, `corrupt-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
+            const corruptPath = path.join(
+              backupDir,
+              `corrupt-${new Date().toISOString().replace(/[:.]/g, "-")}.json`,
+            );
             fs.copyFileSync(dbPath, corruptPath);
-            try { fs.chmodSync(corruptPath, 0o600); } catch (_) { /* best-effort */ }
-          } catch (_) { /* best-effort */ }
+            try {
+              fs.chmodSync(corruptPath, 0o600);
+            } catch (_) {
+              /* best-effort */
+            }
+          } catch (_) {
+            /* best-effort */
+          }
 
           fs.copyFileSync(backup, dbPath);
           await db.read();
-          log.info('Database recovery successful!');
+          log.info("Database recovery successful!");
         } catch (recoverErr) {
           log.error(`Recovery failed: ${recoverErr.message} — starting fresh`);
           db.data = { ...defaultData };
         }
       } else {
-        log.warn('No backup found, starting with fresh database.');
+        log.warn("No backup found, starting with fresh database.");
         db.data = { ...defaultData };
       }
     }
@@ -402,7 +553,7 @@ export async function getDb() {
     // Snapshot only AFTER the DB loaded and wrote successfully. This prevents
     // a corrupt file from being captured as a "good" backup at boot.
     if (loadedCleanly && fs.existsSync(dbPath)) {
-      createBackup('startup');
+      createBackup("startup");
     }
 
     // Start periodic backups and register shutdown handlers
@@ -410,7 +561,9 @@ export async function getDb() {
     registerShutdownHandlers();
 
     const stats = getDatabaseStatsSync();
-    log.info(`Loaded — ${stats.totalRecords} records, ${stats.fileSizeKB}KB, ${stats.backupCount} backups`);
+    log.info(
+      `Loaded — ${stats.totalRecords} records, ${stats.fileSizeKB}KB, ${stats.backupCount} backups`,
+    );
   }
   return db;
 }
@@ -427,20 +580,24 @@ export async function initDatabase() {
 function getDatabaseStatsSync() {
   const data = db?.data || defaultData;
   let fileSize = 0;
-  try { fileSize = fs.statSync(dbPath).size; } catch (e) {
+  try {
+    fileSize = fs.statSync(dbPath).size;
+  } catch (e) {
     log.debug(`DB file stat failed (may not exist yet): ${e.message}`);
   }
 
   let backupCount = 0;
   try {
-    backupCount = fs.readdirSync(backupDir).filter(f => f.startsWith('db-') && f.endsWith('.json')).length;
+    backupCount = fs
+      .readdirSync(backupDir)
+      .filter((f) => f.startsWith("db-") && f.endsWith(".json")).length;
   } catch (e) {
     log.debug(`Backup dir read failed: ${e.message}`);
   }
 
   return {
     fileSizeBytes: fileSize,
-    fileSizeKB: Math.round(fileSize / 1024 * 10) / 10,
+    fileSizeKB: Math.round((fileSize / 1024) * 10) / 10,
     backupCount,
     collections: {
       command_history: data.command_history?.length ?? 0,
@@ -455,10 +612,13 @@ function getDatabaseStatsSync() {
       mod_presets: data.mod_presets?.length ?? 0,
       performance_history: data.performance_history?.length ?? 0,
       bridge_logs: data.bridge_logs?.length ?? 0,
-      discord_webhooks: data.discord_webhooks?.length ?? 0
+      discord_webhooks: data.discord_webhooks?.length ?? 0,
     },
-    totalRecords: Object.values(data).reduce((sum, v) => sum + (Array.isArray(v) ? v.length : 0), 0),
-    settingsCount: Object.keys(data.settings || {}).length
+    totalRecords: Object.values(data).reduce(
+      (sum, v) => sum + (Array.isArray(v) ? v.length : 0),
+      0,
+    ),
+    settingsCount: Object.keys(data.settings || {}).length,
   };
 }
 
@@ -468,8 +628,10 @@ export async function getDatabaseStats() {
 }
 
 export async function createDatabaseBackup() {
-  const file = createBackup('manual');
-  return file ? { success: true, file: path.basename(file) } : { success: false };
+  const file = createBackup("manual");
+  return file
+    ? { success: true, file: path.basename(file) }
+    : { success: false };
 }
 
 export async function compactDatabase() {
@@ -482,7 +644,7 @@ export async function compactDatabase() {
   return {
     before: before.totalRecords,
     after: after.totalRecords,
-    removed: before.totalRecords - after.totalRecords
+    removed: before.totalRecords - after.totalRecords,
   };
 }
 
@@ -495,8 +657,20 @@ function generateId() {
 }
 
 function generateNumericId(collection) {
-  if (!Array.isArray(collection) || collection.length === 0) return 1;
-  return collection.reduce((max, item) => Math.max(max, typeof item.id === 'number' ? item.id : 0), 0) + 1;
+  const maxExisting = Array.isArray(collection)
+    ? collection.reduce(
+        (max, item) => Math.max(max, typeof item.id === "number" ? item.id : 0),
+        0,
+      )
+    : 0;
+  // Date.now() as a floor guarantees the new id is always higher than any id
+  // ever issued, even one that was later deleted. The old max(currentIds)+1
+  // scheme only looked at IDs currently present, so deleting the
+  // highest-numbered task and creating a new one reused that freed id —
+  // which could then collide with a dangling schedule_history.task_id
+  // reference to the deleted task. Date.now() is monotonic across process
+  // restarts too, unlike the in-memory max.
+  return Math.max(maxExisting + 1, Date.now());
 }
 
 // ============================================
@@ -505,22 +679,20 @@ function generateNumericId(collection) {
 
 export async function logCommand(command, response, success = true) {
   const db = await getDb();
-  const truncatedResponse = response && response.length > 4096
-    ? response.substring(0, 4096) + '... [truncated]'
-    : response;
+  const truncatedResponse =
+    response && response.length > 4096
+      ? response.substring(0, 4096) + "... [truncated]"
+      : response;
 
   const entry = {
     id: generateId(),
     command,
     response: truncatedResponse,
     success: success ? 1 : 0,
-    executed_at: new Date().toISOString()
+    executed_at: new Date().toISOString(),
   };
 
-  db.data.command_history.unshift(entry);
-  if (db.data.command_history.length > RETENTION.command_history) {
-    db.data.command_history = db.data.command_history.slice(0, RETENTION.command_history);
-  }
+  appendCapped(db.data.command_history, entry, RETENTION.command_history);
   scheduleWrite();
   return entry;
 }
@@ -534,15 +706,25 @@ export async function getCommandHistory(limit = 100) {
 // Bridge Logs (PanelBridge command history)
 // ============================================
 
-export async function logBridgeCommand(action, args, result, success = true, durationMs = 0) {
+export async function logBridgeCommand(
+  action,
+  args,
+  result,
+  success = true,
+  durationMs = 0,
+) {
   const db = await getDb();
   if (!db.data.bridge_logs) db.data.bridge_logs = [];
 
   const truncatedResult = (() => {
     try {
       const s = JSON.stringify(result);
-      return s && s.length > 4096 ? JSON.parse(s.substring(0, 4096) + '..."}}') : result;
-    } catch { return { truncated: true }; }
+      return s && s.length > 4096
+        ? JSON.parse(s.substring(0, 4096) + '..."}}')
+        : result;
+    } catch {
+      return { truncated: true };
+    }
   })();
 
   const entry = {
@@ -552,13 +734,10 @@ export async function logBridgeCommand(action, args, result, success = true, dur
     result: truncatedResult,
     success: success ? 1 : 0,
     duration_ms: durationMs,
-    executed_at: new Date().toISOString()
+    executed_at: new Date().toISOString(),
   };
 
-  db.data.bridge_logs.unshift(entry);
-  if (db.data.bridge_logs.length > RETENTION.bridge_logs) {
-    db.data.bridge_logs = db.data.bridge_logs.slice(0, RETENTION.bridge_logs);
-  }
+  appendCapped(db.data.bridge_logs, entry, RETENTION.bridge_logs);
   scheduleWrite();
   return entry;
 }
@@ -589,7 +768,7 @@ export async function createScheduledTask(name, cronExpression, command) {
     command,
     enabled: 1,
     last_run: null,
-    created_at: new Date().toISOString()
+    created_at: new Date().toISOString(),
   };
 
   db.data.scheduled_tasks.push(task);
@@ -597,9 +776,15 @@ export async function createScheduledTask(name, cronExpression, command) {
   return task;
 }
 
-export async function updateScheduledTask(id, name, cronExpression, command, enabled) {
+export async function updateScheduledTask(
+  id,
+  name,
+  cronExpression,
+  command,
+  enabled,
+) {
   const db = await getDb();
-  const index = db.data.scheduled_tasks.findIndex(t => t.id === id);
+  const index = db.data.scheduled_tasks.findIndex((t) => t.id === id);
   if (index === -1) return null;
 
   const task = db.data.scheduled_tasks[index];
@@ -613,7 +798,7 @@ export async function updateScheduledTask(id, name, cronExpression, command, ena
 
 export async function deleteScheduledTask(id) {
   const db = await getDb();
-  const index = db.data.scheduled_tasks.findIndex(t => t.id === id);
+  const index = db.data.scheduled_tasks.findIndex((t) => t.id === id);
   if (index === -1) return false;
 
   db.data.scheduled_tasks.splice(index, 1);
@@ -623,7 +808,7 @@ export async function deleteScheduledTask(id) {
 
 export async function updateTaskLastRun(id) {
   const db = await getDb();
-  const task = db.data.scheduled_tasks.find(t => t.id === id);
+  const task = db.data.scheduled_tasks.find((t) => t.id === id);
   if (task) {
     task.last_run = new Date().toISOString();
     scheduleWrite();
@@ -634,7 +819,14 @@ export async function updateTaskLastRun(id) {
 // Schedule History
 // ============================================
 
-export async function logScheduleExecution(taskId, taskName, command, success, message = null, duration = null) {
+export async function logScheduleExecution(
+  taskId,
+  taskName,
+  command,
+  success,
+  message = null,
+  duration = null,
+) {
   const db = await getDb();
   if (!db.data.schedule_history) db.data.schedule_history = [];
 
@@ -646,13 +838,10 @@ export async function logScheduleExecution(taskId, taskName, command, success, m
     success: success ? 1 : 0,
     message,
     duration,
-    executed_at: new Date().toISOString()
+    executed_at: new Date().toISOString(),
   };
 
-  db.data.schedule_history.unshift(entry);
-  if (db.data.schedule_history.length > RETENTION.schedule_history) {
-    db.data.schedule_history = db.data.schedule_history.slice(0, RETENTION.schedule_history);
-  }
+  appendCapped(db.data.schedule_history, entry, RETENTION.schedule_history);
   scheduleWrite();
   return entry;
 }
@@ -663,7 +852,7 @@ export async function getScheduleHistory(limit = 100, taskId = null) {
 
   let history = db.data.schedule_history;
   if (taskId !== null) {
-    history = history.filter(h => h.task_id === taskId);
+    history = history.filter((h) => h.task_id === taskId);
   }
   return history.slice(0, limit);
 }
@@ -685,13 +874,10 @@ export async function logPlayerAction(playerName, action, details = null) {
     player_name: playerName,
     action,
     details,
-    logged_at: new Date().toISOString()
+    logged_at: new Date().toISOString(),
   };
 
-  db.data.player_logs.unshift(entry);
-  if (db.data.player_logs.length > RETENTION.player_logs) {
-    db.data.player_logs = db.data.player_logs.slice(0, RETENTION.player_logs);
-  }
+  appendCapped(db.data.player_logs, entry, RETENTION.player_logs);
   scheduleWrite();
   return entry;
 }
@@ -700,7 +886,7 @@ export async function getPlayerLogs(playerName = null, limit = 100) {
   const db = await getDb();
   let logs = db.data.player_logs;
   if (playerName) {
-    logs = logs.filter(l => l.player_name === playerName);
+    logs = logs.filter((l) => l.player_name === playerName);
   }
   return logs.slice(0, limit);
 }
@@ -715,13 +901,10 @@ export async function logServerEvent(eventType, message = null) {
     id: generateId(),
     event_type: eventType,
     message,
-    created_at: new Date().toISOString()
+    created_at: new Date().toISOString(),
   };
 
-  db.data.server_events.unshift(entry);
-  if (db.data.server_events.length > RETENTION.server_events) {
-    db.data.server_events = db.data.server_events.slice(0, RETENTION.server_events);
-  }
+  appendCapped(db.data.server_events, entry, RETENTION.server_events);
   scheduleWrite();
   return entry;
 }
@@ -733,7 +916,7 @@ export async function logServerEvent(eventType, message = null) {
 /** Get the active server's ID for scoping tracked mods */
 async function getActiveServerId() {
   const db = await getDb();
-  const active = db.data.servers.find(s => s.isActive) || db.data.servers[0];
+  const active = db.data.servers.find((s) => s.isActive) || db.data.servers[0];
   return active ? String(active.id) : null;
 }
 
@@ -741,15 +924,17 @@ export async function getTrackedMods() {
   const db = await getDb();
   const serverId = await getActiveServerId();
   if (!serverId) return db.data.tracked_mods; // no servers yet → return all (legacy)
-  return db.data.tracked_mods.filter(m => m.server_id === serverId);
+  return db.data.tracked_mods.filter((m) => m.server_id === serverId);
 }
 
 export async function addTrackedMod(workshopId, name = null) {
   const db = await getDb();
   const serverId = await getActiveServerId();
   // Duplicate check scoped to active server
-  const existing = db.data.tracked_mods.find(m =>
-    m.workshop_id === workshopId && (m.server_id === serverId || !m.server_id)
+  const existing = db.data.tracked_mods.find(
+    (m) =>
+      m.workshop_id === workshopId &&
+      (m.server_id === serverId || !m.server_id),
   );
   if (existing) {
     existing.name = name || existing.name;
@@ -767,7 +952,7 @@ export async function addTrackedMod(workshopId, name = null) {
     last_checked: null,
     update_available: 0,
     preview_url: null,
-    created_at: new Date().toISOString()
+    created_at: new Date().toISOString(),
   };
   db.data.tracked_mods.push(mod);
   scheduleWrite();
@@ -777,8 +962,10 @@ export async function addTrackedMod(workshopId, name = null) {
 export async function setModPreviewUrl(workshopId, previewUrl) {
   const db = await getDb();
   const serverId = await getActiveServerId();
-  const mod = db.data.tracked_mods.find(m =>
-    m.workshop_id === workshopId && (m.server_id === serverId || !m.server_id)
+  const mod = db.data.tracked_mods.find(
+    (m) =>
+      m.workshop_id === workshopId &&
+      (m.server_id === serverId || !m.server_id),
   );
   if (mod && mod.preview_url !== previewUrl) {
     mod.preview_url = previewUrl || null;
@@ -789,8 +976,10 @@ export async function setModPreviewUrl(workshopId, previewUrl) {
 export async function updateModTimestamp(workshopId, lastUpdated) {
   const db = await getDb();
   const serverId = await getActiveServerId();
-  const mod = db.data.tracked_mods.find(m =>
-    m.workshop_id === workshopId && (m.server_id === serverId || !m.server_id)
+  const mod = db.data.tracked_mods.find(
+    (m) =>
+      m.workshop_id === workshopId &&
+      (m.server_id === serverId || !m.server_id),
   );
   if (mod) {
     mod.last_updated = lastUpdated;
@@ -803,8 +992,10 @@ export async function updateModTimestamp(workshopId, lastUpdated) {
 export async function setModUpdateAvailable(workshopId, available) {
   const db = await getDb();
   const serverId = await getActiveServerId();
-  const mod = db.data.tracked_mods.find(m =>
-    m.workshop_id === workshopId && (m.server_id === serverId || !m.server_id)
+  const mod = db.data.tracked_mods.find(
+    (m) =>
+      m.workshop_id === workshopId &&
+      (m.server_id === serverId || !m.server_id),
   );
   if (mod) {
     mod.update_available = available ? 1 : 0;
@@ -840,8 +1031,10 @@ export async function markModsChecked(checkedIds, updatesById = new Map()) {
 export async function removeTrackedMod(workshopId) {
   const db = await getDb();
   const serverId = await getActiveServerId();
-  const index = db.data.tracked_mods.findIndex(m =>
-    m.workshop_id === workshopId && (m.server_id === serverId || !m.server_id)
+  const index = db.data.tracked_mods.findIndex(
+    (m) =>
+      m.workshop_id === workshopId &&
+      (m.server_id === serverId || !m.server_id),
   );
   if (index === -1) return false;
 
@@ -853,7 +1046,7 @@ export async function removeTrackedMod(workshopId) {
 export async function clearModUpdates() {
   const db = await getDb();
   const serverId = await getActiveServerId();
-  db.data.tracked_mods.forEach(m => {
+  db.data.tracked_mods.forEach((m) => {
     if (m.server_id === serverId || !m.server_id) {
       m.update_available = 0;
     }
@@ -870,22 +1063,26 @@ export async function getIgnoredMods() {
   if (!db.data.ignored_mods) db.data.ignored_mods = [];
   const serverId = await getActiveServerId();
   if (!serverId) return db.data.ignored_mods;
-  return db.data.ignored_mods.filter(m => m.server_id === serverId || !m.server_id);
+  return db.data.ignored_mods.filter(
+    (m) => m.server_id === serverId || !m.server_id,
+  );
 }
 
 export async function addIgnoredMod(workshopId, name = null) {
   const db = await getDb();
   if (!db.data.ignored_mods) db.data.ignored_mods = [];
   const serverId = await getActiveServerId();
-  const existing = db.data.ignored_mods.find(m =>
-    m.workshop_id === workshopId && (m.server_id === serverId || !m.server_id)
+  const existing = db.data.ignored_mods.find(
+    (m) =>
+      m.workshop_id === workshopId &&
+      (m.server_id === serverId || !m.server_id),
   );
   if (existing) return existing;
   const entry = {
     workshop_id: workshopId,
     name,
     server_id: serverId,
-    ignored_at: new Date().toISOString()
+    ignored_at: new Date().toISOString(),
   };
   db.data.ignored_mods.push(entry);
   scheduleWrite();
@@ -896,8 +1093,10 @@ export async function removeIgnoredMod(workshopId) {
   const db = await getDb();
   if (!db.data.ignored_mods) db.data.ignored_mods = [];
   const serverId = await getActiveServerId();
-  const index = db.data.ignored_mods.findIndex(m =>
-    m.workshop_id === workshopId && (m.server_id === serverId || !m.server_id)
+  const index = db.data.ignored_mods.findIndex(
+    (m) =>
+      m.workshop_id === workshopId &&
+      (m.server_id === serverId || !m.server_id),
   );
   if (index === -1) return false;
   db.data.ignored_mods.splice(index, 1);
@@ -910,8 +1109,8 @@ export async function clearAllIgnoredMods() {
   if (!db.data.ignored_mods) db.data.ignored_mods = [];
   const serverId = await getActiveServerId();
   const before = db.data.ignored_mods.length;
-  db.data.ignored_mods = db.data.ignored_mods.filter(m =>
-    m.server_id && m.server_id !== serverId
+  db.data.ignored_mods = db.data.ignored_mods.filter(
+    (m) => m.server_id && m.server_id !== serverId,
   );
   const removed = before - db.data.ignored_mods.length;
   if (removed > 0) scheduleWrite();
@@ -922,8 +1121,10 @@ export async function isModIgnored(workshopId) {
   const db = await getDb();
   if (!db.data.ignored_mods) return false;
   const serverId = await getActiveServerId();
-  return db.data.ignored_mods.some(m =>
-    m.workshop_id === workshopId && (m.server_id === serverId || !m.server_id)
+  return db.data.ignored_mods.some(
+    (m) =>
+      m.workshop_id === workshopId &&
+      (m.server_id === serverId || !m.server_id),
   );
 }
 
@@ -934,8 +1135,8 @@ export async function isModIgnored(workshopId) {
 // ============================================
 
 function _normalizePair(modIdA, modIdB) {
-  const a = String(modIdA || '').trim();
-  const b = String(modIdB || '').trim();
+  const a = String(modIdA || "").trim();
+  const b = String(modIdB || "").trim();
   if (!a || !b || a === b) return null;
   return a < b ? [a, b] : [b, a];
 }
@@ -945,7 +1146,9 @@ export async function getIgnoredModPairs() {
   if (!db.data.ignored_mod_pairs) db.data.ignored_mod_pairs = [];
   const serverId = await getActiveServerId();
   if (!serverId) return db.data.ignored_mod_pairs;
-  return db.data.ignored_mod_pairs.filter(p => p.server_id === serverId || !p.server_id);
+  return db.data.ignored_mod_pairs.filter(
+    (p) => p.server_id === serverId || !p.server_id,
+  );
 }
 
 export async function addIgnoredModPair(modIdA, modIdB, reason = null) {
@@ -954,8 +1157,11 @@ export async function addIgnoredModPair(modIdA, modIdB, reason = null) {
   const db = await getDb();
   if (!db.data.ignored_mod_pairs) db.data.ignored_mod_pairs = [];
   const serverId = await getActiveServerId();
-  const existing = db.data.ignored_mod_pairs.find(p =>
-    p.mod_a === pair[0] && p.mod_b === pair[1] && (p.server_id === serverId || !p.server_id)
+  const existing = db.data.ignored_mod_pairs.find(
+    (p) =>
+      p.mod_a === pair[0] &&
+      p.mod_b === pair[1] &&
+      (p.server_id === serverId || !p.server_id),
   );
   if (existing) return existing;
   const entry = {
@@ -963,7 +1169,7 @@ export async function addIgnoredModPair(modIdA, modIdB, reason = null) {
     mod_b: pair[1],
     reason: reason || null,
     server_id: serverId,
-    ignored_at: new Date().toISOString()
+    ignored_at: new Date().toISOString(),
   };
   db.data.ignored_mod_pairs.push(entry);
   scheduleWrite();
@@ -977,8 +1183,13 @@ export async function removeIgnoredModPair(modIdA, modIdB) {
   if (!db.data.ignored_mod_pairs) db.data.ignored_mod_pairs = [];
   const serverId = await getActiveServerId();
   const before = db.data.ignored_mod_pairs.length;
-  db.data.ignored_mod_pairs = db.data.ignored_mod_pairs.filter(p =>
-    !(p.mod_a === pair[0] && p.mod_b === pair[1] && (p.server_id === serverId || !p.server_id))
+  db.data.ignored_mod_pairs = db.data.ignored_mod_pairs.filter(
+    (p) =>
+      !(
+        p.mod_a === pair[0] &&
+        p.mod_b === pair[1] &&
+        (p.server_id === serverId || !p.server_id)
+      ),
   );
   const removed = before - db.data.ignored_mod_pairs.length;
   if (removed > 0) scheduleWrite();
@@ -1009,21 +1220,12 @@ export async function getAllSettings() {
 // Server Configurations (Multi-server)
 // ============================================
 
-function normalizeMemoryGb(value, fallback) {
-  const parsed = parseInt(value, 10);
-  if (isNaN(parsed) || parsed <= 0) return fallback;
-  if (parsed > 2048) {
-    return Math.max(1, Math.round(parsed / 1024));
-  }
-  return parsed;
-}
-
 function normalizeServerMemory(server) {
   if (!server) return server;
   return {
     ...server,
     minMemory: normalizeMemoryGb(server.minMemory, 4),
-    maxMemory: normalizeMemoryGb(server.maxMemory, 8)
+    maxMemory: normalizeMemoryGb(server.maxMemory, 8),
   };
 }
 
@@ -1034,12 +1236,16 @@ export async function getServers() {
 
 export async function getServer(id) {
   const db = await getDb();
-  return normalizeServerMemory(db.data.servers.find(s => String(s.id) === String(id)) || null);
+  return normalizeServerMemory(
+    db.data.servers.find((s) => String(s.id) === String(id)) || null,
+  );
 }
 
 export async function getActiveServer() {
   const db = await getDb();
-  return normalizeServerMemory(db.data.servers.find(s => s.isActive) || db.data.servers[0] || null);
+  return normalizeServerMemory(
+    db.data.servers.find((s) => s.isActive) || db.data.servers[0] || null,
+  );
 }
 
 export async function createServer(serverConfig) {
@@ -1052,22 +1258,22 @@ export async function createServer(serverConfig) {
     id: generateId(),
     name: serverConfig.name || serverConfig.serverName,
     serverName: serverConfig.serverName,
-    installPath: serverConfig.installPath || '',
+    installPath: serverConfig.installPath || "",
     zomboidDataPath: serverConfig.zomboidDataPath || null,
     serverConfigPath: serverConfig.serverConfigPath || null,
-    branch: serverConfig.branch || 'stable',
-    rconHost: serverConfig.rconHost || '127.0.0.1',
+    branch: serverConfig.branch || "stable",
+    rconHost: serverConfig.rconHost || "127.0.0.1",
     rconPort: serverConfig.rconPort || 27015,
-    rconPassword: serverConfig.rconPassword || '',
+    rconPassword: serverConfig.rconPassword || "",
     serverPort: serverConfig.serverPort || 16261,
     minMemory: normalizeMemoryGb(serverConfig.minMemory, 4),
     maxMemory: normalizeMemoryGb(serverConfig.maxMemory, 8),
     useNoSteam: serverConfig.useNoSteam || false,
     useDebug: serverConfig.useDebug || false,
     isRemote: serverConfig.isRemote || false,
-    startCommand: serverConfig.startCommand || '',
+    startCommand: serverConfig.startCommand || "",
     isActive: isFirst,
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
   };
 
   db.data.servers.push(server);
@@ -1082,24 +1288,30 @@ export async function createServer(serverConfig) {
 
 export async function updateServer(id, updates) {
   const db = await getDb();
-  const index = db.data.servers.findIndex(s => String(s.id) === String(id));
+  const index = db.data.servers.findIndex((s) => String(s.id) === String(id));
   if (index === -1) return null;
 
   db.data.servers[index] = {
     ...db.data.servers[index],
     ...updates,
     id,
-    updatedAt: new Date().toISOString()
+    updatedAt: new Date().toISOString(),
   };
-  db.data.servers[index].minMemory = normalizeMemoryGb(db.data.servers[index].minMemory, 4);
-  db.data.servers[index].maxMemory = normalizeMemoryGb(db.data.servers[index].maxMemory, 8);
+  db.data.servers[index].minMemory = normalizeMemoryGb(
+    db.data.servers[index].minMemory,
+    4,
+  );
+  db.data.servers[index].maxMemory = normalizeMemoryGb(
+    db.data.servers[index].maxMemory,
+    8,
+  );
   scheduleWrite();
   return normalizeServerMemory(db.data.servers[index]);
 }
 
 export async function deleteServer(id) {
   const db = await getDb();
-  const index = db.data.servers.findIndex(s => String(s.id) === String(id));
+  const index = db.data.servers.findIndex((s) => String(s.id) === String(id));
   if (index === -1) return false;
 
   const wasActive = db.data.servers[index].isActive;
@@ -1107,7 +1319,9 @@ export async function deleteServer(id) {
   db.data.servers.splice(index, 1);
 
   // Clean up tracked mods for the deleted server
-  db.data.tracked_mods = db.data.tracked_mods.filter(m => m.server_id !== serverId);
+  db.data.tracked_mods = db.data.tracked_mods.filter(
+    (m) => m.server_id !== serverId,
+  );
 
   if (wasActive && db.data.servers.length > 0) {
     db.data.servers[0].isActive = true;
@@ -1119,10 +1333,10 @@ export async function deleteServer(id) {
 
 export async function setActiveServer(id) {
   const db = await getDb();
-  const server = db.data.servers.find(s => String(s.id) === String(id));
+  const server = db.data.servers.find((s) => String(s.id) === String(id));
   if (!server) return null;
 
-  db.data.servers.forEach(s => {
+  db.data.servers.forEach((s) => {
     s.isActive = String(s.id) === String(id);
   });
 
@@ -1159,7 +1373,11 @@ export async function getPlayerNotes() {
 export async function getPlayerNote(playerName) {
   const db = await getDb();
   if (!db.data.player_notes) db.data.player_notes = [];
-  return db.data.player_notes.find(p => p.player_name.toLowerCase() === playerName.toLowerCase()) || null;
+  return (
+    db.data.player_notes.find(
+      (p) => p.player_name.toLowerCase() === playerName.toLowerCase(),
+    ) || null
+  );
 }
 
 export async function upsertPlayerNote(playerName, note, tags = []) {
@@ -1167,20 +1385,20 @@ export async function upsertPlayerNote(playerName, note, tags = []) {
   if (!db.data.player_notes) db.data.player_notes = [];
 
   const existingIndex = db.data.player_notes.findIndex(
-    p => p.player_name.toLowerCase() === playerName.toLowerCase()
+    (p) => p.player_name.toLowerCase() === playerName.toLowerCase(),
   );
 
   const entry = {
     player_name: playerName,
-    note: note || '',
+    note: note || "",
     tags: tags || [],
-    updated_at: new Date().toISOString()
+    updated_at: new Date().toISOString(),
   };
 
   if (existingIndex !== -1) {
     db.data.player_notes[existingIndex] = {
       ...db.data.player_notes[existingIndex],
-      ...entry
+      ...entry,
     };
   } else {
     entry.id = generateId();
@@ -1197,7 +1415,7 @@ export async function deletePlayerNote(playerName) {
   if (!db.data.player_notes) return false;
 
   const index = db.data.player_notes.findIndex(
-    p => p.player_name.toLowerCase() === playerName.toLowerCase()
+    (p) => p.player_name.toLowerCase() === playerName.toLowerCase(),
   );
   if (index === -1) return false;
 
@@ -1219,7 +1437,11 @@ export async function getPlayerStats() {
 export async function getPlayerStat(playerName) {
   const db = await getDb();
   if (!db.data.player_stats) db.data.player_stats = [];
-  return db.data.player_stats.find(p => p.player_name.toLowerCase() === playerName.toLowerCase()) || null;
+  return (
+    db.data.player_stats.find(
+      (p) => p.player_name.toLowerCase() === playerName.toLowerCase(),
+    ) || null
+  );
 }
 
 export async function recordPlayerSession(playerName, action) {
@@ -1227,7 +1449,7 @@ export async function recordPlayerSession(playerName, action) {
   if (!db.data.player_stats) db.data.player_stats = [];
 
   let playerStat = db.data.player_stats.find(
-    p => p.player_name.toLowerCase() === playerName.toLowerCase()
+    (p) => p.player_name.toLowerCase() === playerName.toLowerCase(),
   );
 
   const now = new Date().toISOString();
@@ -1241,16 +1463,16 @@ export async function recordPlayerSession(playerName, action) {
       first_seen: now,
       last_seen: now,
       last_session_start: null,
-      sessions: []
+      sessions: [],
     };
     db.data.player_stats.push(playerStat);
   }
 
-  if (action === 'connect') {
+  if (action === "connect") {
     playerStat.last_session_start = now;
     playerStat.last_seen = now;
     playerStat.session_count++;
-  } else if (action === 'disconnect' && playerStat.last_session_start) {
+  } else if (action === "disconnect" && playerStat.last_session_start) {
     const sessionStart = new Date(playerStat.last_session_start);
     const sessionEnd = new Date(now);
     const sessionDuration = Math.floor((sessionEnd - sessionStart) / 1000);
@@ -1262,10 +1484,13 @@ export async function recordPlayerSession(playerName, action) {
     playerStat.sessions.unshift({
       start: playerStat.last_session_start,
       end: now,
-      duration_seconds: sessionDuration
+      duration_seconds: sessionDuration,
     });
     if (playerStat.sessions.length > RETENTION.player_sessions) {
-      playerStat.sessions = playerStat.sessions.slice(0, RETENTION.player_sessions);
+      playerStat.sessions = playerStat.sessions.slice(
+        0,
+        RETENTION.player_sessions,
+      );
     }
 
     playerStat.last_session_start = null;
@@ -1285,13 +1510,15 @@ export async function recordPerformanceSnapshot(snapshot) {
 
   const entry = {
     timestamp: new Date().toISOString(),
-    ...snapshot
+    ...snapshot,
   };
 
-  db.data.performance_history.push(entry);
-  if (db.data.performance_history.length > RETENTION.performance_history) {
-    db.data.performance_history = db.data.performance_history.slice(-RETENTION.performance_history);
-  }
+  appendCapped(
+    db.data.performance_history,
+    entry,
+    RETENTION.performance_history,
+    { newest: false },
+  );
 
   scheduleWrite();
   return entry;
@@ -1301,6 +1528,20 @@ export async function getPerformanceHistory(limit = 60) {
   const db = await getDb();
   if (!db.data.performance_history) return [];
   return db.data.performance_history.slice(-limit);
+}
+
+/**
+ * Explicitly clear all recorded performance history. NOT called
+ * automatically on startup (see index.js) — retention already caps this
+ * collection at RETENTION.performance_history entries, so a restart no
+ * longer needs to wipe it to bound its size, and keeping it means a
+ * monitoring chart can show data spanning a restart/update-apply. Exposed
+ * here for any explicit user-triggered "reset performance history" action.
+ */
+export async function clearPerformanceHistory() {
+  const db = await getDb();
+  db.data.performance_history = [];
+  scheduleWrite();
 }
 
 // ============================================
@@ -1313,18 +1554,24 @@ export async function getModPresets() {
   return db.data.mod_presets;
 }
 
-export async function createModPreset(name, description, mods, workshopIds, maps) {
+export async function createModPreset(
+  name,
+  description,
+  mods,
+  workshopIds,
+  maps,
+) {
   const db = await getDb();
   if (!db.data.mod_presets) db.data.mod_presets = [];
 
   const preset = {
     id: generateId(),
     name,
-    description: description || '',
+    description: description || "",
     mods: mods || [],
     workshop_ids: workshopIds || [],
     maps: maps || [],
-    created_at: new Date().toISOString()
+    created_at: new Date().toISOString(),
   };
 
   db.data.mod_presets.push(preset);
@@ -1336,13 +1583,13 @@ export async function updateModPreset(id, updates) {
   const db = await getDb();
   if (!db.data.mod_presets) return null;
 
-  const index = db.data.mod_presets.findIndex(p => p.id === id);
+  const index = db.data.mod_presets.findIndex((p) => p.id === id);
   if (index === -1) return null;
 
   db.data.mod_presets[index] = {
     ...db.data.mod_presets[index],
     ...updates,
-    updated_at: new Date().toISOString()
+    updated_at: new Date().toISOString(),
   };
   scheduleWrite();
   return db.data.mod_presets[index];
@@ -1352,7 +1599,7 @@ export async function deleteModPreset(id) {
   const db = await getDb();
   if (!db.data.mod_presets) return false;
 
-  const index = db.data.mod_presets.findIndex(p => p.id === id);
+  const index = db.data.mod_presets.findIndex((p) => p.id === id);
   if (index === -1) return false;
 
   db.data.mod_presets.splice(index, 1);
@@ -1375,12 +1622,12 @@ export async function addSteamIdBan(steamId, reason = null) {
   if (!db.data.steamid_bans) db.data.steamid_bans = [];
 
   // Don't add duplicates
-  if (db.data.steamid_bans.some(b => b.steamId === steamId)) return;
+  if (db.data.steamid_bans.some((b) => b.steamId === steamId)) return;
 
   db.data.steamid_bans.push({
     steamId,
     reason: reason || null,
-    banned_at: new Date().toISOString()
+    banned_at: new Date().toISOString(),
   });
   scheduleWrite();
 }
@@ -1389,7 +1636,7 @@ export async function removeSteamIdBan(steamId) {
   const db = await getDb();
   if (!db.data.steamid_bans) return false;
 
-  const index = db.data.steamid_bans.findIndex(b => b.steamId === steamId);
+  const index = db.data.steamid_bans.findIndex((b) => b.steamId === steamId);
   if (index === -1) return false;
 
   db.data.steamid_bans.splice(index, 1);

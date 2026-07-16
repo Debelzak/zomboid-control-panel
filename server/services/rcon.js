@@ -1,40 +1,36 @@
-import RconPackage from 'rcon-srcds';
-import { EventEmitter } from 'events';
-import net from 'net';
-import { createLogger } from '../utils/logger.js';
-const log = createLogger('RCON');
-import { logCommand, getSetting, getActiveServer } from '../database/init.js';
-
-// Handle the nested default export from rcon-srcds
-const Rcon = RconPackage.default || RconPackage;
+import { EventEmitter } from "events";
+import net from "net";
+import { createLogger } from "../utils/logger.js";
+const log = createLogger("RCON");
+import { logCommand, getSetting, getActiveServer } from "../database/init.js";
+import { SourceRconClient } from "../utils/sourceRcon.js";
 
 export class RconService extends EventEmitter {
   constructor() {
     super();
     // Increase max listeners to prevent warnings during rapid reconnection cycles
     this.setMaxListeners(20);
-    
+
     this.client = null;
     this.connected = false;
     this.connecting = false; // Mutex to prevent concurrent connection attempts
     this.connectPromise = null; // Store ongoing connection promise
     this.config = {
-      host: process.env.RCON_HOST || '127.0.0.1',
-      port: parseInt(process.env.RCON_PORT) || 27015,
-      password: process.env.RCON_PASSWORD || ''
+      host: process.env.RCON_HOST || "127.0.0.1",
+      port: parseInt(process.env.RCON_PORT, 10) || 27015,
+      password: process.env.RCON_PASSWORD || "",
     };
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 5;
     this.baseReconnectDelay = 2000; // Start at 2s
     this.maxReconnectDelay = 60000; // Max 60s
-    this.currentReconnectDelay = this.baseReconnectDelay;
-    
+
     // Throttle connection failure logging to avoid spam
     this.lastConnectionErrorLog = 0;
     this.connectionErrorLogCooldown = 60000; // Only log once per minute
     this.configLoaded = false;
     this.serverManager = null; // Reference to ServerManager for server status checks
-    
+
     // Periodic auto-reconnect when server is running but RCON disconnected
     this.autoReconnectInterval = null;
     this.autoReconnectDelay = 60000; // Try to reconnect every 60s if disconnected
@@ -44,18 +40,18 @@ export class RconService extends EventEmitter {
     this.connectionVersion = 0; // Version counter to invalidate stale connection attempts
     this.reconnecting = false; // Mutex to prevent concurrent reconnection attempts
     this.reconnectPromise = null; // Store ongoing reconnection promise
-    
+
     // Connection timeout - how long to wait for authenticate() before giving up
     this.connectionTimeout = 10000; // 10 seconds
     this.commandTimeout = 10000; // 10 seconds execution timeout for commands
-    
+
     // Periodic health check to detect stale connections
     this.healthCheckInterval = null;
     this.healthCheckDelay = 60000; // Check every 60s
     this.lastHealthCheck = null;
     this.consecutiveHealthFailures = 0;
     this.maxHealthFailures = 3; // Disconnect after 3 consecutive failures
-    
+
     // Track pending clients to ensure cleanup (prevents memory leaks)
     this.pendingClients = new Set();
   }
@@ -63,21 +59,26 @@ export class RconService extends EventEmitter {
   // Set serverStarting flag with automatic timeout failsafe
   setServerStarting(value) {
     this.serverStarting = value;
-    
+
     // Clear any existing timeout
     if (this.serverStartingTimeout) {
       clearTimeout(this.serverStartingTimeout);
       this.serverStartingTimeout = null;
     }
-    
+
     // If setting to true, set a failsafe timeout to clear it after 5 minutes
     if (value) {
-      this.serverStartingTimeout = setTimeout(() => {
-        if (this.serverStarting) {
-          log.warn('serverStarting flag was stuck for 5 minutes, clearing it');
-          this.serverStarting = false;
-        }
-      }, 5 * 60 * 1000); // 5 minutes
+      this.serverStartingTimeout = setTimeout(
+        () => {
+          if (this.serverStarting) {
+            log.warn(
+              "serverStarting flag was stuck for 5 minutes, clearing it",
+            );
+            this.serverStarting = false;
+          }
+        },
+        5 * 60 * 1000,
+      ); // 5 minutes
     }
   }
 
@@ -89,33 +90,35 @@ export class RconService extends EventEmitter {
   // Start periodic auto-reconnection attempts
   startAutoReconnect() {
     if (this.autoReconnectInterval) return;
-    
+
     this.autoReconnectInterval = setInterval(async () => {
       // Skip if server is starting - startup sequence handles connections
       if (this.serverStarting) {
-        log.debug('Skipping - server is starting');
+        log.debug("Skipping - server is starting");
         return;
       }
-      
+
       // Skip if already connected
       if (this.connected) {
         return;
       }
-      
+
       // Skip if any connection attempt is already in progress
       if (this.connecting || this.reconnecting) {
-        log.debug('Skipping - connection already in progress');
+        log.debug("Skipping - connection already in progress");
         return;
       }
-      
+
       try {
         if (this.serverManager) {
           try {
             const isRunning = await this.serverManager.checkServerRunning();
             if (isRunning) {
-              log.info('Server is running, attempting connection...');
+              log.info("Server is running, attempting connection...");
             } else {
-              log.debug('Process check did not confirm server; probing RCON port anyway');
+              log.debug(
+                "Process check did not confirm server; probing RCON port anyway",
+              );
             }
           } catch (e) {
             log.debug(`Server check error: ${e.message}`);
@@ -124,70 +127,83 @@ export class RconService extends EventEmitter {
 
         const result = await this.connect();
         if (result) {
-          log.info('Successfully connected!');
+          log.info("Successfully connected!");
         }
       } catch (e) {
         // During server startup, only log at debug level to reduce noise
         if (this.serverStarting) {
           log.debug(`Connection failed during startup, retrying: ${e.message}`);
         } else {
-          log.warn(`Connection failed, retrying in ${this.currentReconnectDelay}ms: ${e.message}`);
+          log.warn(
+            `Connection failed, retrying in ${this.autoReconnectDelay}ms: ${e.message}`,
+          );
         }
-        // Using updated backoff delay for the next interval would require complex restructuring of setInterval
-        // Instead, we trust the internal backoff of execute() retries and keep this loop simple
+        // This loop intentionally uses a fixed interval (autoReconnectDelay),
+        // not exponential backoff — the separate reconnect() method below
+        // implements real backoff (baseReconnectDelay * attempt, capped) for
+        // its own bounded retry sequence. A previous `currentReconnectDelay`
+        // field here was computed on every failure but never actually fed
+        // into this setInterval's delay, so it was pure dead weight that
+        // made the log message above lie about the real retry timing.
       }
     }, this.autoReconnectDelay);
-    
+    if (this.autoReconnectInterval.unref) this.autoReconnectInterval.unref();
+
     // Start health check interval to detect stale connections
     this.startHealthCheck();
-    
-    log.debug('auto-reconnect enabled (60s interval)');
+
+    log.debug("auto-reconnect enabled (60s interval)");
   }
 
   // Start periodic health checks to detect dead connections
   startHealthCheck() {
     if (this.healthCheckInterval) return;
-    
+
     this.healthCheckInterval = setInterval(async () => {
       // Only check if we think we're connected
       if (!this.connected || !this.client) {
         this.consecutiveHealthFailures = 0;
         return;
       }
-      
+
       // Skip during server startup
       if (this.serverStarting) {
         return;
       }
-      
+
       try {
         const result = await this.healthCheck();
         this.lastHealthCheck = Date.now();
-        
+
         if (result.healthy) {
           this.consecutiveHealthFailures = 0;
-          log.debug('health check: OK');
+          log.debug("health check: OK");
         } else {
           this.consecutiveHealthFailures++;
-          log.warn(`health check failed (${this.consecutiveHealthFailures}/${this.maxHealthFailures}): ${result.reason}`);
-          
+          log.warn(
+            `health check failed (${this.consecutiveHealthFailures}/${this.maxHealthFailures}): ${result.reason}`,
+          );
+
           if (this.consecutiveHealthFailures >= this.maxHealthFailures) {
-            log.error('health check: Too many failures, forcing disconnect');
+            log.error("health check: Too many failures, forcing disconnect");
             this.forceResetConnectionState();
           }
         }
       } catch (e) {
         this.consecutiveHealthFailures++;
-        log.warn(`health check error (${this.consecutiveHealthFailures}/${this.maxHealthFailures}): ${e.message}`);
-        
+        log.warn(
+          `health check error (${this.consecutiveHealthFailures}/${this.maxHealthFailures}): ${e.message}`,
+        );
+
         if (this.consecutiveHealthFailures >= this.maxHealthFailures) {
-          log.error('health check: Too many errors, forcing disconnect');
+          log.error("health check: Too many errors, forcing disconnect");
           this.forceResetConnectionState();
         }
       }
     }, this.healthCheckDelay);
-    
-    log.debug('health check enabled (60s interval)');
+    if (this.healthCheckInterval.unref) this.healthCheckInterval.unref();
+
+    log.debug("health check enabled (60s interval)");
   }
 
   // Stop periodic health checks
@@ -204,7 +220,7 @@ export class RconService extends EventEmitter {
     if (this.autoReconnectInterval) {
       clearInterval(this.autoReconnectInterval);
       this.autoReconnectInterval = null;
-      log.info('auto-reconnect disabled');
+      log.info("auto-reconnect disabled");
     }
     this.stopHealthCheck();
   }
@@ -217,24 +233,24 @@ export class RconService extends EventEmitter {
       const activeServer = await getActiveServer();
       if (activeServer?.rconPassword) {
         this.config.password = activeServer.rconPassword;
-        this.config.host = activeServer.rconHost || '127.0.0.1';
-        this.config.port = parseInt(activeServer.rconPort) || 27015;
-        log.info('config loaded from active server');
+        this.config.host = activeServer.rconHost || "127.0.0.1";
+        this.config.port = parseInt(activeServer.rconPort, 10) || 27015;
+        log.info("config loaded from active server");
         this.configLoaded = true;
         return;
       }
-      
+
       // Fallback to legacy settings
-      const dbHost = await getSetting('rconHost');
-      const dbPort = await getSetting('rconPort');
-      const dbPassword = await getSetting('rconPassword');
-      
+      const dbHost = await getSetting("rconHost");
+      const dbPort = await getSetting("rconPort");
+      const dbPassword = await getSetting("rconPassword");
+
       if (dbPassword) {
         this.config.password = dbPassword;
-        log.info('password loaded from legacy settings');
+        log.info("password loaded from legacy settings");
       }
       if (dbPort) {
-        this.config.port = parseInt(dbPort);
+        this.config.port = parseInt(dbPort, 10);
       }
       if (dbHost) {
         this.config.host = dbHost;
@@ -262,7 +278,7 @@ export class RconService extends EventEmitter {
     this.connectionVersion++;
     const version = this.connectionVersion;
     log.info(`Force resetting connection state (version ${version})`);
-    
+
     this.connecting = false;
     this.connectPromise = null;
     this.reconnecting = false;
@@ -270,77 +286,48 @@ export class RconService extends EventEmitter {
     this.reconnectAttempts = 0;
     this.connected = false;
     this.consecutiveHealthFailures = 0;
-    
+
     // Clear serverStarting timeout to prevent memory leak
     if (this.serverStartingTimeout) {
       clearTimeout(this.serverStartingTimeout);
       this.serverStartingTimeout = null;
     }
     this.serverStarting = false;
-    
+
     // Clean up all pending clients to prevent memory leaks
     this._cleanupAllPendingClients();
-    
+
     // Clean up main client
     this._cleanupClient();
-    
+
     log.info(`Connection state forcibly reset (ready for new attempt)`);
-    this.emit('disconnected');
+    this.emit("disconnected");
   }
 
-  // Helper to clean up the RCON client socket - more aggressive cleanup to prevent memory leaks
+  // Helper to clean up the RCON client socket - the new SourceRconClient owns
+  // its own socket lifecycle entirely (single persistent listener set,
+  // cleaned up inside its own disconnect()), so this no longer needs to
+  // reach into private internals (client.connection/.socket/._socket) the
+  // way the old rcon-srcds-based client required.
   _cleanupClient(clientToClean = null) {
     const client = clientToClean || this.client;
     if (!client) return;
-    
+
     // Remove from pending clients set
     this.pendingClients.delete(client);
-    
+
     try {
-      // Try multiple ways to access the underlying socket
-      const socket = client.connection || client.socket || client._socket;
-      if (socket) {
-        try {
-          // Remove all listeners first
-          socket.removeAllListeners('data');
-          socket.removeAllListeners('error');
-          socket.removeAllListeners('close');
-          socket.removeAllListeners('end');
-          socket.removeAllListeners('connect');
-          socket.removeAllListeners('timeout');
-          socket.removeAllListeners();
-          // End the connection gracefully first
-          socket.end();
-          // Then destroy immediately
-          socket.destroy();
-        } catch (e) {
-          // Ignore cleanup errors
-        }
-      }
-      
-      try {
-        client.disconnect();
-      } catch (e) {
-        // Ignore
-      }
-      
-      try {
-        if (typeof client.removeAllListeners === 'function') {
-          client.removeAllListeners();
-        }
-      } catch (e) {
-        // Ignore
-      }
+      client.disconnect();
     } catch (e) {
-      // Ignore all cleanup errors
+      // Ignore cleanup errors
     }
-    
+
     // Only null out main client if we're cleaning the main client
     if (client === this.client) {
       this.client = null;
     }
   }
-  
+
   // Clean up all pending clients (called during force reset)
   _cleanupAllPendingClients() {
     for (const client of this.pendingClients) {
@@ -354,16 +341,16 @@ export class RconService extends EventEmitter {
     if (this.connected && this.client) {
       return true;
     }
-    
+
     // If a connection attempt is already in progress, wait for it
     if (this.connecting && this.connectPromise) {
       return this.connectPromise;
     }
-    
+
     // Set mutex and create promise for concurrent callers to await
     this.connecting = true;
     this.connectPromise = this._doConnect();
-    
+
     try {
       const result = await this.connectPromise;
       return result;
@@ -378,21 +365,21 @@ export class RconService extends EventEmitter {
     return new Promise((resolve) => {
       const socket = new net.Socket();
       socket.setTimeout(2000); // 2s timeout
-      
+
       const onConnect = () => {
         socket.destroy();
         resolve(true);
       };
-      
+
       const onError = () => {
         socket.destroy();
         resolve(false);
       };
-      
-      socket.once('connect', onConnect);
-      socket.once('timeout', onError);
-      socket.once('error', onError);
-      
+
+      socket.once("connect", onConnect);
+      socket.once("timeout", onError);
+      socket.once("error", onError);
+
       try {
         socket.connect(port, host);
       } catch (e) {
@@ -404,20 +391,20 @@ export class RconService extends EventEmitter {
   async _doConnect() {
     // Capture current version at start - if it changes, this attempt is stale
     const startVersion = this.connectionVersion;
-    
+
     // Load config from database before connecting
     await this.loadConfig();
-    
+
     // Check if version changed (connection was force reset)
     if (this.connectionVersion !== startVersion) {
-      log.info('Connection attempt cancelled (force reset occurred)');
+      log.info("Connection attempt cancelled (force reset occurred)");
       return false;
     }
-    
+
     // Check if server is running before attempting connection (skip if disabled)
     // This check can be slow on some systems, so we allow bypassing it
-    const skipServerCheck = process.env.RCON_SKIP_SERVER_CHECK === 'true';
-    
+    const skipServerCheck = process.env.RCON_SKIP_SERVER_CHECK === "true";
+
     if (!skipServerCheck && this.serverManager) {
       // ... serverManager check code ...
       let timeoutId;
@@ -425,28 +412,43 @@ export class RconService extends EventEmitter {
         // Add a shorter timeout for the server check to avoid long waits
         const checkPromise = this.serverManager.checkServerRunning();
         const timeoutPromise = new Promise((_, reject) => {
-          timeoutId = setTimeout(() => reject(new Error('Server check timeout')), 5000);
+          timeoutId = setTimeout(
+            () => reject(new Error("Server check timeout")),
+            5000,
+          );
         });
-        
-        const isServerRunning = await Promise.race([checkPromise, timeoutPromise]);
+
+        const isServerRunning = await Promise.race([
+          checkPromise,
+          timeoutPromise,
+        ]);
         clearTimeout(timeoutId);
         if (!isServerRunning) {
-          log.debug('Process check did not detect the server; continuing with RCON port probe');
+          log.debug(
+            "Process check did not detect the server; continuing with RCON port probe",
+          );
           this.connected = false;
         }
       } catch (error) {
         clearTimeout(timeoutId);
         // On timeout or error, proceed with connection attempt anyway
-        log.debug(`Server check failed (${error.message}), attempting connection anyway...`);
+        log.debug(
+          `Server check failed (${error.message}), attempting connection anyway...`,
+        );
       }
     }
 
     // Check if RCON port is actually open/listening
     // This prevents premature connection attempts (e.g. while server is still booting)
     try {
-      const isOpen = await this.checkPortOpen(this.config.host, this.config.port);
+      const isOpen = await this.checkPortOpen(
+        this.config.host,
+        this.config.port,
+      );
       if (!isOpen) {
-        log.debug(`Skipping connection - Port ${this.config.host}:${this.config.port} is not listening yet`);
+        log.debug(
+          `Skipping connection - Port ${this.config.host}:${this.config.port} is not listening yet`,
+        );
         // We consider this a "soft" failure - don't increment failure counters too aggressively?
         // Actually, returning false here just means "try again later" in auto-reconnect loop
         return false;
@@ -455,13 +457,13 @@ export class RconService extends EventEmitter {
       log.debug(`Port check error: ${e.message}`);
       return false;
     }
-    
+
     // Check if version changed again
     if (this.connectionVersion !== startVersion) {
-      log.info('Connection attempt cancelled (force reset occurred)');
+      log.info("Connection attempt cancelled (force reset occurred)");
       return false;
     }
-    
+
     // Double-check in case connection completed while waiting
     if (this.connected && this.client) {
       return true;
@@ -471,89 +473,72 @@ export class RconService extends EventEmitter {
       // Clean up any existing client before creating new one
       if (this.client) {
         try {
-          const socket = this.client.connection || this.client.socket || this.client._socket;
-          if (socket) {
-            socket.removeAllListeners();
-            socket.destroy();
-          }
           this.client.disconnect();
         } catch (e) {
           // Ignore disconnect errors
         }
         this.client = null;
       }
-      
-      log.info(`Creating new client for ${this.config.host}:${this.config.port} (version ${startVersion})`);
-      
-      const newClient = new Rcon({
+
+      log.info(
+        `Creating new client for ${this.config.host}:${this.config.port} (version ${startVersion})`,
+      );
+
+      const newClient = new SourceRconClient({
         host: this.config.host,
         port: this.config.port,
-        timeout: 5000
+        timeout: 5000,
       });
-      
+
       // Track this client so it can be cleaned up if connection is force reset
       this.pendingClients.add(newClient);
       this.client = newClient;
 
-      log.info('Calling authenticate()...');
-      
+      log.info("Calling authenticate()...");
+
       // Wrap authenticate() with a timeout to prevent hanging forever
       let authTimeoutId;
       const authPromise = this.client.authenticate(this.config.password);
       const timeoutPromise = new Promise((_, reject) => {
         authTimeoutId = setTimeout(() => {
-          reject(new Error(`Authentication timed out after ${this.connectionTimeout}ms`));
+          reject(
+            new Error(
+              `Authentication timed out after ${this.connectionTimeout}ms`,
+            ),
+          );
         }, this.connectionTimeout);
       });
-      
+
       try {
         await Promise.race([authPromise, timeoutPromise]);
       } finally {
         clearTimeout(authTimeoutId);
       }
-      
+
       // Check if version changed during authenticate (which can hang)
       if (this.connectionVersion !== startVersion) {
-        log.info('Connection succeeded but version changed - discarding stale connection');
+        log.info(
+          "Connection succeeded but version changed - discarding stale connection",
+        );
         this._cleanupClient(newClient);
         return false;
       }
-      
+
       // Connection successful - remove from pending and keep as main client
       this.pendingClients.delete(newClient);
       this.connected = true;
       this.reconnectAttempts = 0;
       this.consecutiveHealthFailures = 0;
-      this.currentReconnectDelay = this.baseReconnectDelay; // Reset backoff on success
-
-      // Increase max listeners on the socket now that it exists post-authenticate
-      // rcon-srcds adds a data+error listener pair per execute() call, so concurrent commands stack up
-      try {
-        const socket = newClient.connection || newClient.socket || newClient._socket;
-        if (socket && typeof socket.setMaxListeners === 'function') {
-          socket.setMaxListeners(25);
-        }
-      } catch (e) {
-        // Non-critical — warning is cosmetic
-      }
 
       log.info(`connected to ${this.config.host}:${this.config.port}`);
       // Emit connected event for other services (like PanelBridge) to react
-      this.emit('connected');
+      this.emit("connected");
       return true;
     } catch (error) {
       this.connected = false;
       // Clean up failed client to prevent memory leak
       this._cleanupClient();
-      
-      // Calculate next backoff delay
-      if (this.reconnectAttempts > 0) {
-          this.currentReconnectDelay = Math.min(
-              this.currentReconnectDelay * 1.5, 
-              this.maxReconnectDelay
-          );
-      }
-      
+
       // Throttle connection failure logs to avoid spam when server is offline
       const now = Date.now();
       if (now - this.lastConnectionErrorLog > this.connectionErrorLogCooldown) {
@@ -561,8 +546,14 @@ export class RconService extends EventEmitter {
         // During server startup, suppress warnings to reduce noise
         if (this.serverStarting) {
           log.debug(`connection failed during startup: ${error.message}`);
-        } else if (error.message.includes('ECONNREFUSED') || error.message.includes('ETIMEDOUT') || error.message.includes('timed out')) {
-          log.warn(`connection failed (server may be offline): ${error.message}`);
+        } else if (
+          error.message.includes("ECONNREFUSED") ||
+          error.message.includes("ETIMEDOUT") ||
+          error.message.includes("timed out")
+        ) {
+          log.warn(
+            `connection failed (server may be offline): ${error.message}`,
+          );
         } else {
           log.error(`connection failed: ${error.message}`);
         }
@@ -573,54 +564,56 @@ export class RconService extends EventEmitter {
 
   async disconnect() {
     const wasConnected = this.connected;
-    
+
     if (this.client) {
       this._cleanupClient();
     }
-    
+
     this.connected = false;
     this.lastSuccessfulCommand = null;
-    
+
     if (wasConnected) {
-      log.info('disconnected');
+      log.info("disconnected");
       // Emit disconnected event
-      this.emit('disconnected');
+      this.emit("disconnected");
     }
   }
 
   async reconnect() {
     // Don't attempt reconnect during server startup - the startup sequence handles it
     if (this.serverStarting) {
-      log.debug('reconnect: Skipping - server is starting');
+      log.debug("reconnect: Skipping - server is starting");
       return false;
     }
-    
+
     // If already connected, no need to reconnect
     if (this.connected) {
-      log.debug('reconnect: Already connected');
+      log.debug("reconnect: Already connected");
       return true;
     }
-    
+
     // If a reconnection is already in progress, wait for it instead of starting a new one
     if (this.reconnecting && this.reconnectPromise) {
-      log.debug('reconnect: Already in progress, waiting for existing attempt...');
+      log.debug(
+        "reconnect: Already in progress, waiting for existing attempt...",
+      );
       return this.reconnectPromise;
     }
-    
+
     // If a connection is in progress, wait for it
     if (this.connecting && this.connectPromise) {
-      log.debug('reconnect: Connection in progress, waiting...');
+      log.debug("reconnect: Connection in progress, waiting...");
       try {
         return await this.connectPromise;
       } catch (e) {
         // Connection failed, continue to reconnect
       }
     }
-    
+
     // Set mutex and create promise for concurrent callers to await
     this.reconnecting = true;
     this.reconnectPromise = this._doReconnect();
-    
+
     try {
       const result = await this.reconnectPromise;
       return result;
@@ -633,65 +626,72 @@ export class RconService extends EventEmitter {
   async _doReconnect() {
     // Capture version at start - if it changes, we should abort
     const startVersion = this.connectionVersion;
-    
+
     await this.disconnect();
-    
+
     while (this.reconnectAttempts < this.maxReconnectAttempts) {
       // Check if force reset happened - abort immediately
       if (this.connectionVersion !== startVersion) {
-        log.debug('reconnect: Version changed (force reset), aborting');
+        log.debug("reconnect: Version changed (force reset), aborting");
         this.reconnectAttempts = 0;
         return false;
       }
-      
+
       this.reconnectAttempts++;
       log.info(`reconnecting... Attempt ${this.reconnectAttempts}`);
-      
+
       // Exponential backoff with cap: 5s, 10s, 15s, 20s, 25s, then stay at 30s
-      const delay = Math.min(this.baseReconnectDelay * this.reconnectAttempts, 30000);
-      await new Promise(resolve => setTimeout(resolve, delay));
-      
+      const delay = Math.min(
+        this.baseReconnectDelay * this.reconnectAttempts,
+        30000,
+      );
+      await new Promise((resolve) => setTimeout(resolve, delay));
+
       // Check again after delay
       if (this.connectionVersion !== startVersion) {
-        log.debug('reconnect: Version changed (force reset), aborting');
+        log.debug("reconnect: Version changed (force reset), aborting");
         this.reconnectAttempts = 0;
         return false;
       }
-      
+
       // Check if server startup began while we were waiting
       if (this.serverStarting) {
-        log.debug('reconnect: Server starting, aborting reconnect loop');
+        log.debug("reconnect: Server starting, aborting reconnect loop");
         this.reconnectAttempts = 0;
         return false;
       }
-      
+
       // If already connected (by another path), we're done
       if (this.connected) {
-        log.debug('reconnect: Already connected, stopping');
+        log.debug("reconnect: Already connected, stopping");
         this.reconnectAttempts = 0;
         return true;
       }
-      
+
       try {
         const result = await this.connect();
         if (result) {
           // Reset attempts on successful reconnection
           this.reconnectAttempts = 0;
-          log.info('reconnected successfully');
+          log.info("reconnected successfully");
           return true;
         }
         // If connect returns false (server not running), don't retry
-        log.debug('reconnect: Server not running, stopping attempts');
+        log.debug("reconnect: Server not running, stopping attempts");
         this.reconnectAttempts = 0;
         return false;
       } catch (error) {
         // Connection failed, will retry in next loop iteration
-        log.debug(`reconnect attempt ${this.reconnectAttempts} failed: ${error.message}`);
+        log.debug(
+          `reconnect attempt ${this.reconnectAttempts} failed: ${error.message}`,
+        );
       }
     }
-    
+
     // Max attempts reached
-    log.warn(`reconnect: Max attempts (${this.maxReconnectAttempts}) reached, giving up. Auto-reconnect will retry later.`);
+    log.warn(
+      `reconnect: Max attempts (${this.maxReconnectAttempts}) reached, giving up. Auto-reconnect will retry later.`,
+    );
     this.reconnectAttempts = 0;
     return false;
   }
@@ -701,76 +701,88 @@ export class RconService extends EventEmitter {
     try {
       // If server is starting, don't try to connect yet
       if (this.serverStarting) {
-        return { success: false, error: 'Server is starting, please wait...' };
+        return { success: false, error: "Server is starting, please wait..." };
       }
-      
+
       if (!this.connected) {
         const connectResult = await this.connect();
         // If connect returns false, server is not running
         if (connectResult === false) {
-          return { success: false, error: 'Server is not running' };
+          return { success: false, error: "Server is not running" };
         }
       }
 
       log.debug(`executing: ${command}`);
-      
+
       // Execute with timeout
       let timeoutId;
       const executePromise = this.client.execute(command);
       const timeoutPromise = new Promise((_, reject) => {
-        timeoutId = setTimeout(() => reject(new Error('Command execution timed out')), this.commandTimeout);
+        timeoutId = setTimeout(
+          () => reject(new Error("Command execution timed out")),
+          this.commandTimeout,
+        );
       });
-      
+
       const response = await Promise.race([executePromise, timeoutPromise]);
       clearTimeout(timeoutId);
-      
+
       // Track successful command for connection health monitoring
       this.lastSuccessfulCommand = Date.now();
       this.consecutiveHealthFailures = 0;
-      
+
       // Log to database (unless skipLog is set for automatic commands)
       if (!skipLog) {
         logCommand(command, response, true);
       }
-      
+
       log.debug(`response: ${response}`);
-      return { success: true, response: response || 'Command executed successfully' };
+      return {
+        success: true,
+        response: response || "Command executed successfully",
+      };
     } catch (error) {
-      const errorMsg = error.message || 'Unknown error';
-      
+      const errorMsg = error.message || "Unknown error";
+
       // Categorize errors for better handling
-      const isConnectionError = errorMsg.includes('ECONNREFUSED') || 
-                                 errorMsg.includes('ETIMEDOUT') || 
-                                 errorMsg.includes('ECONNRESET') ||
-                                 errorMsg.includes('EPIPE') ||
-                                 errorMsg.includes('not connected') || 
-                                 errorMsg.includes('timeout') ||
-                                 errorMsg.includes('timed out') ||
-                                 errorMsg.includes('socket');
-      
-      const isServerOffline = errorMsg.includes('Server is not running');
-      
+      const isConnectionError =
+        errorMsg.includes("ECONNREFUSED") ||
+        errorMsg.includes("ETIMEDOUT") ||
+        errorMsg.includes("ECONNRESET") ||
+        errorMsg.includes("EPIPE") ||
+        errorMsg.includes("not connected") ||
+        errorMsg.includes("timeout") ||
+        errorMsg.includes("timed out") ||
+        errorMsg.includes("socket");
+
+      const isServerOffline = errorMsg.includes("Server is not running");
+
       // Use debug for connection-related failures to avoid log spam
       if (isConnectionError || isServerOffline) {
-        log.debug(`command skipped (${isServerOffline ? 'server offline' : 'connection error'}): ${command}`);
+        log.debug(
+          `command skipped (${isServerOffline ? "server offline" : "connection error"}): ${command}`,
+        );
       } else {
         log.warn(`command failed: ${errorMsg}`);
       }
-      
+
       // Mark as disconnected on connection errors
       if (isConnectionError) {
         this.connected = false;
         this._cleanupClient();
-        
+
         // Don't try to reconnect during server startup - the startup sequence handles it
         if (this.serverStarting) {
           if (!skipLog) {
-            logCommand(command, 'Server is starting...', false);
+            logCommand(command, "Server is starting...", false);
           }
-          return { success: false, error: 'Server is starting, please wait...' };
+          return {
+            success: false,
+            error: "Server is starting, please wait...",
+          };
         }
-        
-            // Try to reconnect and retry the command
+
+        // Try to reconnect and retry the command
         try {
           await this.reconnect();
           // Retry the command after reconnection (if reconnect succeeded)
@@ -779,33 +791,44 @@ export class RconService extends EventEmitter {
             let retryTimeoutId;
             const retryExecutePromise = this.client.execute(command);
             const retryTimeoutPromise = new Promise((_, reject) => {
-              retryTimeoutId = setTimeout(() => reject(new Error('Command execution timed out')), this.commandTimeout);
+              retryTimeoutId = setTimeout(
+                () => reject(new Error("Command execution timed out")),
+                this.commandTimeout,
+              );
             });
-            
-            const response = await Promise.race([retryExecutePromise, retryTimeoutPromise]);
+
+            const response = await Promise.race([
+              retryExecutePromise,
+              retryTimeoutPromise,
+            ]);
             clearTimeout(retryTimeoutId);
 
             this.lastSuccessfulCommand = Date.now();
             if (!skipLog) {
               logCommand(command, response, true);
             }
-            return { success: true, response: response || 'Command executed successfully' };
+            return {
+              success: true,
+              response: response || "Command executed successfully",
+            };
           } else {
             // Reconnect returned false or didn't connect
             if (!skipLog) {
-              logCommand(command, 'Connection failed', false);
+              logCommand(command, "Connection failed", false);
             }
-            return { success: false, error: 'RCON reconnection failed' };
+            return { success: false, error: "RCON reconnection failed" };
           }
         } catch (reconnectError) {
-          const reconnectMsg = this.getUserFriendlyError(reconnectError.message);
+          const reconnectMsg = this.getUserFriendlyError(
+            reconnectError.message,
+          );
           if (!skipLog) {
             logCommand(command, reconnectMsg, false);
           }
           return { success: false, error: reconnectMsg };
         }
       }
-      
+
       const friendlyError = this.getUserFriendlyError(errorMsg);
       if (!skipLog) {
         logCommand(command, friendlyError, false);
@@ -816,41 +839,41 @@ export class RconService extends EventEmitter {
 
   // Convert technical errors to user-friendly messages
   getUserFriendlyError(errorMsg) {
-    if (!errorMsg) return 'Unknown error occurred';
-    
-    if (errorMsg.includes('ECONNREFUSED')) {
-      return 'Cannot connect to server. Is the game server running with RCON enabled?';
+    if (!errorMsg) return "Unknown error occurred";
+
+    if (errorMsg.includes("ECONNREFUSED")) {
+      return "Cannot connect to server. Is the game server running with RCON enabled?";
     }
-    if (errorMsg.includes('ETIMEDOUT') || errorMsg.includes('timed out')) {
-      return 'Connection timed out. Server may be unresponsive or firewall is blocking.';
+    if (errorMsg.includes("ETIMEDOUT") || errorMsg.includes("timed out")) {
+      return "Connection timed out. Server may be unresponsive or firewall is blocking.";
     }
-    if (errorMsg.includes('ECONNRESET') || errorMsg.includes('EPIPE')) {
-      return 'Connection was reset. Server may have restarted or crashed.';
+    if (errorMsg.includes("ECONNRESET") || errorMsg.includes("EPIPE")) {
+      return "Connection was reset. Server may have restarted or crashed.";
     }
-    if (errorMsg.includes('authentication') || errorMsg.includes('password')) {
-      return 'Authentication failed. Check RCON password in server settings.';
+    if (errorMsg.includes("authentication") || errorMsg.includes("password")) {
+      return "Authentication failed. Check RCON password in server settings.";
     }
-    if (errorMsg.includes('Max reconnection attempts')) {
-      return 'Could not reconnect after multiple attempts. Server may be offline.';
+    if (errorMsg.includes("Max reconnection attempts")) {
+      return "Could not reconnect after multiple attempts. Server may be offline.";
     }
-    if (errorMsg.includes('not connected')) {
-      return 'Not connected to server. Please check if server is running.';
+    if (errorMsg.includes("not connected")) {
+      return "Not connected to server. Please check if server is running.";
     }
-    if (errorMsg.includes('Server is not running')) {
-      return 'Game server is not running.';
+    if (errorMsg.includes("Server is not running")) {
+      return "Game server is not running.";
     }
-    
+
     return errorMsg;
   }
 
   // Sanitize input for RCON commands to prevent injection
   sanitize(input) {
-    if (input === null || input === undefined) return '';
+    if (input === null || input === undefined) return "";
     // Remove quotes, backslashes, AND control characters (newlines, tabs, etc)
-    return String(input).replace(/["\\]|[\x00-\x1F\x7F]/g, '');
+    return String(input).replace(/["\\]|[\x00-\x1F\x7F]/g, "");
   }
 
-  sanitizeQuotedArg(input, label = 'RCON argument', maxLength = 128) {
+  sanitizeQuotedArg(input, label = "RCON argument", maxLength = 128) {
     if (input === null || input === undefined) {
       throw new Error(`${label} is required`);
     }
@@ -869,14 +892,14 @@ export class RconService extends EventEmitter {
 
   // Server commands
   async save({ skipLog = false } = {}) {
-    return this.execute('save', { skipLog });
+    return this.execute("save", { skipLog });
   }
 
   async quit({ skipLog = false } = {}) {
     // The quit command will shutdown the server and close the connection
     // This may result in connection errors which are expected
     try {
-      const result = await this.execute('quit', { skipLog });
+      const result = await this.execute("quit", { skipLog });
       // Mark as disconnected since server is shutting down
       this.connected = false;
       this._cleanupClient();
@@ -884,14 +907,16 @@ export class RconService extends EventEmitter {
     } catch (error) {
       // Connection errors are expected when server shuts down
       // The server may close the connection before we receive a response
-      if (error.message.includes('ECONNRESET') || 
-          error.message.includes('EPIPE') ||
-          error.message.includes('ECONNREFUSED') ||
-          error.message.includes('socket') ||
-          error.message.includes('connection')) {
+      if (
+        error.message.includes("ECONNRESET") ||
+        error.message.includes("EPIPE") ||
+        error.message.includes("ECONNREFUSED") ||
+        error.message.includes("socket") ||
+        error.message.includes("connection")
+      ) {
         this.connected = false;
         this._cleanupClient();
-        return { success: true, response: 'Server shutting down' };
+        return { success: true, response: "Server shutting down" };
       }
       throw error;
     }
@@ -902,23 +927,32 @@ export class RconService extends EventEmitter {
     // reliably — it can return the help text instead of broadcasting. Strip to
     // a safe printable-ASCII subset before sending. We keep tabs/newlines out
     // (sanitize() already drops control chars).
-    const ascii = String(message ?? '')
-      .replace(/[\u2018\u2019]/g, "'")        // curly single quotes -> '
-      .replace(/[\u201C\u201D]/g, '"')        // curly double quotes -> "
-      .replace(/[\u2013\u2014]/g, '-')        // en/em dash -> -
-      .replace(/[\u2026]/g, '...')            // ellipsis
-      .replace(/[^\x20-\x7E]/g, '')           // drop everything else outside printable ASCII
-      .replace(/\s+/g, ' ')
+    const ascii = String(message ?? "")
+      .replace(/[\u2018\u2019]/g, "'") // curly single quotes -> '
+      .replace(/[\u201C\u201D]/g, '"') // curly double quotes -> "
+      .replace(/[\u2013\u2014]/g, "-") // en/em dash -> -
+      .replace(/[\u2026]/g, "...") // ellipsis
+      .replace(/[^\x20-\x7E]/g, "") // drop everything else outside printable ASCII
+      .replace(/\s+/g, " ")
       .trim();
     if (!ascii) {
-      log.warn('serverMessage: message reduced to empty after ASCII sanitization, skipping');
-      return { success: false, response: 'Empty message after sanitization' };
+      log.warn(
+        "serverMessage: message reduced to empty after ASCII sanitization, skipping",
+      );
+      return { success: false, response: "Empty message after sanitization" };
     }
-    const result = await this.execute(`servermsg "${this.sanitize(ascii)}"`, { skipLog });
+    const result = await this.execute(`servermsg "${this.sanitize(ascii)}"`, {
+      skipLog,
+    });
     // Detect the case where PZ returns the help text instead of broadcasting
-    if (result?.success && typeof result.response === 'string' &&
-        /Use:\s*\/servermsg/i.test(result.response)) {
-      log.warn(`servermsg appears to have been rejected by PZ (help text returned). Message was: ${ascii.substring(0, 80)}`);
+    if (
+      result?.success &&
+      typeof result.response === "string" &&
+      /Use:\s*\/servermsg/i.test(result.response)
+    ) {
+      log.warn(
+        `servermsg appears to have been rejected by PZ (help text returned). Message was: ${ascii.substring(0, 80)}`,
+      );
       return { success: false, response: result.response, rejected: true };
     }
     return result;
@@ -926,11 +960,11 @@ export class RconService extends EventEmitter {
 
   async getPlayers() {
     // Skip logging for automatic player polling to avoid cluttering command history
-    const result = await this.execute('players', { skipLog: true });
+    const result = await this.execute("players", { skipLog: true });
     if (result.success) {
-      return { 
-        success: true, 
-        players: this.parsePlayers(result.response) 
+      return {
+        success: true,
+        players: this.parsePlayers(result.response),
       };
     }
     return result;
@@ -941,14 +975,14 @@ export class RconService extends EventEmitter {
     // Format typically: "Players connected (X):\n-username\n-username2"
     const players = [];
     if (!response) return players;
-    
-    const lines = response.split('\n');
+
+    const lines = response.split("\n");
     for (const line of lines) {
       const trimmed = line.trim();
-      if (trimmed.startsWith('-')) {
+      if (trimmed.startsWith("-")) {
         players.push({
           name: trimmed.substring(1).trim(),
-          online: true
+          online: true,
         });
       }
     }
@@ -956,79 +990,99 @@ export class RconService extends EventEmitter {
   }
 
   // Player commands
-  async kickPlayer(username, reason = '') {
-    const safeUser = this.sanitizeQuotedArg(username, 'Username', 64);
+  async kickPlayer(username, reason = "") {
+    const safeUser = this.sanitizeQuotedArg(username, "Username", 64);
     // PZ RCON kick syntax: kickuser "username" — no reason flag supported
     return this.execute(`kickuser "${safeUser}"`);
   }
 
   sanitizeForBanReason(input) {
-    if (!input) return '';
+    if (!input) return "";
     // Only allow alphanumeric, spaces, and basic punctuation
-    return String(input).replace(/[^a-zA-Z0-9\s.,!?'-]/g, '').substring(0, 100);
+    return String(input)
+      .replace(/[^a-zA-Z0-9\s.,!?'-]/g, "")
+      .substring(0, 100);
   }
 
-  async banPlayer(username, banIp = false, reason = '') {
-    const safeUser = this.sanitizeQuotedArg(username, 'Username', 64);
+  async banPlayer(username, banIp = false, reason = "") {
+    const safeUser = this.sanitizeQuotedArg(username, "Username", 64);
     const safeReason = this.sanitizeForBanReason(reason);
     let cmd = `banuser "${safeUser}"`;
-    if (banIp) cmd += ' -ip';
+    if (banIp) cmd += " -ip";
     if (safeReason) cmd += ` -r "${safeReason}"`;
     return this.execute(cmd);
   }
 
   async unbanPlayer(username) {
-    return this.execute(`unbanuser "${this.sanitizeQuotedArg(username, 'Username', 64)}"`);
+    return this.execute(
+      `unbanuser "${this.sanitizeQuotedArg(username, "Username", 64)}"`,
+    );
   }
 
   async setAccessLevel(username, level) {
-    return this.execute(`setaccesslevel "${this.sanitizeQuotedArg(username, 'Username', 64)}" "${this.sanitizeQuotedArg(level, 'Access level', 32)}"`);
+    return this.execute(
+      `setaccesslevel "${this.sanitizeQuotedArg(username, "Username", 64)}" "${this.sanitizeQuotedArg(level, "Access level", 32)}"`,
+    );
   }
 
   async addToWhitelist(username) {
-    return this.execute(`addusertowhitelist "${this.sanitizeQuotedArg(username, 'Username', 64)}"`);
+    return this.execute(
+      `addusertowhitelist "${this.sanitizeQuotedArg(username, "Username", 64)}"`,
+    );
   }
 
   async removeFromWhitelist(username) {
-    return this.execute(`removeuserfromwhitelist "${this.sanitizeQuotedArg(username, 'Username', 64)}"`);
+    return this.execute(
+      `removeuserfromwhitelist "${this.sanitizeQuotedArg(username, "Username", 64)}"`,
+    );
   }
 
   async teleportPlayer(player1, player2 = null) {
-    const safeP1 = this.sanitizeQuotedArg(player1, 'Username', 64);
+    const safeP1 = this.sanitizeQuotedArg(player1, "Username", 64);
     if (player2) {
-      return this.execute(`teleport "${safeP1}" "${this.sanitizeQuotedArg(player2, 'Target username', 64)}"`);
+      return this.execute(
+        `teleport "${safeP1}" "${this.sanitizeQuotedArg(player2, "Target username", 64)}"`,
+      );
     }
     return this.execute(`teleport "${safeP1}"`);
   }
 
   async teleportTo(x, y, z) {
-    const nx = Number(x), ny = Number(y), nz = Number(z);
+    const nx = Number(x),
+      ny = Number(y),
+      nz = Number(z);
     if (!Number.isFinite(nx) || !Number.isFinite(ny) || !Number.isFinite(nz)) {
-      throw new Error('Coordinates must be valid numbers');
+      throw new Error("Coordinates must be valid numbers");
     }
     return this.execute(`teleportto ${nx},${ny},${nz}`);
   }
 
   // Items and XP
   async addItem(username, item, count = 1) {
-    const safeItem = this.sanitize(item);
+    const safeItem = this.sanitizeQuotedArg(item, "Item ID", 128);
     const n = Math.min(Math.max(Math.floor(Number(count)) || 1, 1), 100);
     if (username) {
-      return this.execute(`additem "${this.sanitizeQuotedArg(username, 'Username', 64)}" "${safeItem}" ${n}`);
+      return this.execute(
+        `additem "${this.sanitizeQuotedArg(username, "Username", 64)}" "${safeItem}" ${n}`,
+      );
     }
     return this.execute(`additem "${safeItem}" ${n}`);
   }
 
   async addXp(username, perk, amount) {
     const n = Number(amount);
-    if (!Number.isFinite(n)) throw new Error('amount must be a number');
-    return this.execute(`addxp "${this.sanitizeQuotedArg(username, 'Username', 64)}" "${this.sanitizeQuotedArg(perk, 'Perk', 64)}"=${n}`);
+    if (!Number.isFinite(n)) throw new Error("amount must be a number");
+    return this.execute(
+      `addxp "${this.sanitizeQuotedArg(username, "Username", 64)}" "${this.sanitizeQuotedArg(perk, "Perk", 64)}"=${n}`,
+    );
   }
 
   async addVehicle(vehicle, username = null) {
-    const safeVehicle = this.sanitize(vehicle);
+    const safeVehicle = this.sanitizeQuotedArg(vehicle, "Vehicle ID", 128);
     if (username) {
-      return this.execute(`addvehicle "${safeVehicle}" "${this.sanitizeQuotedArg(username, 'Username', 64)}"`);
+      return this.execute(
+        `addvehicle "${safeVehicle}" "${this.sanitizeQuotedArg(username, "Username", 64)}"`,
+      );
     }
     return this.execute(`addvehicle "${safeVehicle}"`);
   }
@@ -1037,131 +1091,163 @@ export class RconService extends EventEmitter {
   async startRain(intensity = null) {
     if (intensity !== null && intensity !== undefined) {
       const n = Number(intensity);
-      if (!Number.isFinite(n) || n < 0 || n > 1) throw new Error('intensity must be 0-1');
+      if (!Number.isFinite(n) || n < 0 || n > 1)
+        throw new Error("intensity must be 0-1");
       return this.execute(`startrain ${n}`);
     }
-    return this.execute('startrain');
+    return this.execute("startrain");
   }
 
   async stopRain() {
-    return this.execute('stoprain');
+    return this.execute("stoprain");
   }
 
   async startStorm(duration = null) {
     if (duration !== null && duration !== undefined) {
       const n = Number(duration);
-      if (!Number.isFinite(n) || n < 0 || n > 168) throw new Error('duration must be 0-168');
+      if (!Number.isFinite(n) || n < 0 || n > 168)
+        throw new Error("duration must be 0-168");
       return this.execute(`startstorm ${n}`);
     }
-    return this.execute('startstorm');
+    return this.execute("startstorm");
   }
 
   async stopWeather() {
-    return this.execute('stopweather');
+    return this.execute("stopweather");
   }
 
   // Events
   async triggerChopper() {
-    return this.execute('chopper');
+    return this.execute("chopper");
   }
 
   async triggerGunshot() {
-    return this.execute('gunshot');
+    return this.execute("gunshot");
   }
 
   async triggerLightning(username = null) {
     if (username) {
-      return this.execute(`lightning "${this.sanitizeQuotedArg(username, 'Username', 64)}"`);
+      return this.execute(
+        `lightning "${this.sanitizeQuotedArg(username, "Username", 64)}"`,
+      );
     }
-    return this.execute('lightning');
+    return this.execute("lightning");
   }
 
   async triggerThunder(username = null) {
     if (username) {
-      return this.execute(`thunder "${this.sanitizeQuotedArg(username, 'Username', 64)}"`);
+      return this.execute(
+        `thunder "${this.sanitizeQuotedArg(username, "Username", 64)}"`,
+      );
     }
-    return this.execute('thunder');
+    return this.execute("thunder");
   }
 
   async createHorde(count, username = null) {
     const n = Math.min(Math.max(Math.floor(Number(count)) || 50, 1), 500);
     if (username) {
-      return this.execute(`createhorde ${n} "${this.sanitizeQuotedArg(username, 'Username', 64)}"`);
+      return this.execute(
+        `createhorde ${n} "${this.sanitizeQuotedArg(username, "Username", 64)}"`,
+      );
     }
     return this.execute(`createhorde ${n}`);
   }
 
   // Admin modes
   async setGodMode(username, enabled) {
-    const value = enabled ? '-true' : '-false';
+    const value = enabled ? "-true" : "-false";
     if (username) {
-      return this.execute(`godmod "${this.sanitizeQuotedArg(username, 'Username', 64)}" ${value}`);
+      return this.execute(
+        `godmod "${this.sanitizeQuotedArg(username, "Username", 64)}" ${value}`,
+      );
     }
     return this.execute(`godmod ${value}`);
   }
 
   async setInvisible(username, enabled) {
-    const value = enabled ? '-true' : '-false';
+    const value = enabled ? "-true" : "-false";
     if (username) {
-      return this.execute(`invisible "${this.sanitizeQuotedArg(username, 'Username', 64)}" ${value}`);
+      return this.execute(
+        `invisible "${this.sanitizeQuotedArg(username, "Username", 64)}" ${value}`,
+      );
     }
     return this.execute(`invisible ${value}`);
   }
 
   async setNoclip(username, enabled) {
-    const value = enabled ? '-true' : '-false';
+    const value = enabled ? "-true" : "-false";
     if (username) {
-      return this.execute(`noclip "${this.sanitizeQuotedArg(username, 'Username', 64)}" ${value}`);
+      return this.execute(
+        `noclip "${this.sanitizeQuotedArg(username, "Username", 64)}" ${value}`,
+      );
     }
     return this.execute(`noclip ${value}`);
   }
 
   // Mod check
   async checkModsNeedUpdate() {
-    return this.execute('checkModsNeedUpdate');
+    return this.execute("checkModsNeedUpdate");
   }
 
   // Options
   async showOptions() {
-    return this.execute('showoptions');
+    return this.execute("showoptions");
   }
 
   async reloadOptions() {
-    return this.execute('reloadoptions');
+    return this.execute("reloadoptions");
   }
 
   async changeOption(optionName, newValue) {
-    // Options are pre-validated in routes, but sanitize anyway
-    return this.execute(`changeoption ${this.sanitize(optionName)} "${this.sanitize(newValue)}"`);
+    // Options are pre-validated in routes, but validate+quote here too
+    // (defense in depth) — optionName is a fixed, never-empty PZ option name
+    // so throw-on-bad-input is safe; newValue is left lenient (sanitize()
+    // strips rather than throws) since clearing an option to '' is valid.
+    const safeName = this.sanitizeQuotedArg(optionName, "Option name", 64);
+    return this.execute(
+      `changeoption "${safeName}" "${this.sanitize(newValue)}"`,
+    );
   }
 
   // Ban by SteamID
   async banSteamId(steamId) {
-    return this.execute(`banid ${this.sanitize(steamId)}`);
+    const safeId = String(steamId ?? "").trim();
+    if (!/^\d{17}$/.test(safeId)) {
+      throw new Error("Steam ID must be a 17-digit number");
+    }
+    return this.execute(`banid ${safeId}`);
   }
 
   async unbanSteamId(steamId) {
-    return this.execute(`unbanid ${this.sanitize(steamId)}`);
+    const safeId = String(steamId ?? "").trim();
+    if (!/^\d{17}$/.test(safeId)) {
+      throw new Error("Steam ID must be a 17-digit number");
+    }
+    return this.execute(`unbanid ${safeId}`);
   }
 
   // Voice ban
   async voiceBan(username, enabled) {
-    const value = enabled ? '-true' : '-false';
-    return this.execute(`voiceban "${this.sanitizeQuotedArg(username, 'Username', 64)}" ${value}`);
+    const value = enabled ? "-true" : "-false";
+    return this.execute(
+      `voiceban "${this.sanitizeQuotedArg(username, "Username", 64)}" ${value}`,
+    );
   }
 
   // Whitelist management
   async addUser(username, password) {
-    return this.execute(`adduser "${this.sanitizeQuotedArg(username, 'Username', 64)}" "${this.sanitizeQuotedArg(password, 'Password', 128)}"`);
+    return this.execute(
+      `adduser "${this.sanitizeQuotedArg(username, "Username", 64)}" "${this.sanitizeQuotedArg(password, "Password", 128)}"`,
+    );
   }
 
   async addAllToWhitelist() {
-    return this.execute('addalltowhitelist');
+    return this.execute("addalltowhitelist");
   }
 
   // Events
   async alarm() {
-    return this.execute('alarm');
+    return this.execute("alarm");
   }
 
   // Lua
@@ -1171,38 +1257,47 @@ export class RconService extends EventEmitter {
 
   // Logging
   async setLogLevel(type, level) {
-    return this.execute(`log "${this.sanitize(type)}" ${this.sanitize(level)}`);
+    const safeType = this.sanitizeQuotedArg(type, "Log type", 32);
+    const safeLevel = this.sanitizeQuotedArg(String(level), "Log level", 32);
+    return this.execute(`log "${safeType}" "${safeLevel}"`);
   }
 
   // Statistics
   async setStats(mode, period = null) {
-    if (period) {
-      return this.execute(`stats ${this.sanitize(mode)} ${period}`);
+    const safeMode = this.sanitizeQuotedArg(mode, "Stats mode", 32);
+    if (period !== null && period !== undefined && period !== "") {
+      const n = Number(period);
+      if (!Number.isFinite(n) || n < 0) {
+        throw new Error("period must be a non-negative number");
+      }
+      return this.execute(`stats "${safeMode}" ${n}`);
     }
-    return this.execute(`stats ${this.sanitize(mode)}`);
+    return this.execute(`stats "${safeMode}"`);
   }
 
   // Remove zombies
   async removeZombies() {
-    return this.execute('removezombies');
+    return this.execute("removezombies");
   }
 
   // Safehouse
   async releaseSafehouse() {
-    return this.execute('releasesafehouse');
+    return this.execute("releasesafehouse");
   }
 
   // Test if connection is actually alive by sending a simple command
   async healthCheck() {
     if (!this.connected || !this.client) {
-      return { healthy: false, reason: 'Not connected' };
+      return { healthy: false, reason: "Not connected" };
     }
-    
+
     try {
       // Use 'players' command as a lightweight health check (with timeout)
       const response = await Promise.race([
-        this.client.execute('players'),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Health check timed out')), 10000))
+        this.client.execute("players"),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("Health check timed out")), 10000),
+        ),
       ]);
       this.lastSuccessfulCommand = Date.now();
       return { healthy: true, lastCommand: this.lastSuccessfulCommand };
@@ -1211,7 +1306,7 @@ export class RconService extends EventEmitter {
       this.connected = false;
       this._cleanupClient();
       log.warn(`health check failed: ${error.message}`);
-      this.emit('disconnected');
+      this.emit("disconnected");
       return { healthy: false, reason: error.message };
     }
   }
@@ -1228,15 +1323,16 @@ export class RconService extends EventEmitter {
       connected: this.connected,
       lastSuccessfulCommand: this.lastSuccessfulCommand,
       reconnectAttempts: this.reconnectAttempts,
-      autoReconnectEnabled: !!this.autoReconnectInterval
+      autoReconnectEnabled: !!this.autoReconnectInterval,
     };
   }
 
   async updateConfig(host, port, password) {
     this.config.host = host !== undefined ? host : this.config.host;
     this.config.port = port !== undefined ? port : this.config.port;
-    this.config.password = password !== undefined ? password : this.config.password;
-    
+    this.config.password =
+      password !== undefined ? password : this.config.password;
+
     // Reconnect with new config
     if (this.connected) {
       await this.disconnect();

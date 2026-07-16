@@ -2,6 +2,19 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Self-hosted brand display font (was fetched from Google Fonts at runtime
+   in ThemeContext.tsx — broke offline/LAN-only deployments since this panel
+   very often runs on isolated server boxes with no outbound internet, and
+   added a render-blocking third-party request + font-swap layout shift even
+   when online). Latin-subset woff2 only; this UI is English-only. */
+@font-face {
+  font-family: 'Bebas Neue';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/bebas-neue-v16-latin.woff2') format('woff2');
+}
+
 /* Hide native browser password reveal toggle (Edge/Chrome) */
 input::-ms-reveal,
 input::-ms-clear {
@@ -927,6 +940,19 @@ input[type="number"] {
   input,
   select {
     min-height: 44px;
+  }
+
+  /* U13: bare <button>/<a> icon controls (sidebar collapse toggle, footer
+     logout/help/Ko-fi/GitHub icon links) weren't covered by the selector
+     above, so they rendered well under the 44px comfortable touch target
+     on coarse-pointer (touch) devices. The Button *component* was already
+     fine (mobile-first h-11); this only affects hand-rolled controls. Scoped
+     separately (not merged into the rule above) so we don't also force
+     min-width onto every input/select. */
+  button,
+  a[aria-label] {
+    min-height: 44px;
+    min-width: 44px;
   }
 }
 

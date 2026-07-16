@@ -56,6 +56,39 @@ async function getB42Dir() {
 // pool on a busy map view.
 const TILE_FETCH_TIMEOUT_MS = 10_000;
 
+// ─── Circuit breaker for the upstream tile hosts ─────────────────────────
+// Without this, a truly dead upstream (e.g. a Cloudflare outage on the map
+// host) makes EVERY tile request pay the full timeout+retry cost
+// (~10-20s each) with no backpressure, and the map view fires dozens of
+// tile requests per pan/zoom — piling up slow handlers. After enough
+// consecutive failures we fail fast for a cooldown instead of continuing to
+// hammer (and wait on) a host that's already down.
+const CIRCUIT_FAILURE_THRESHOLD = 8;
+const CIRCUIT_COOLDOWN_MS = 30_000;
+let circuitConsecutiveFailures = 0;
+let circuitOpenUntil = 0;
+
+function isCircuitOpen() {
+  return Date.now() < circuitOpenUntil;
+}
+
+function recordTileSuccess() {
+  circuitConsecutiveFailures = 0;
+}
+
+function recordTileFailure() {
+  circuitConsecutiveFailures++;
+  if (
+    circuitConsecutiveFailures >= CIRCUIT_FAILURE_THRESHOLD &&
+    !isCircuitOpen()
+  ) {
+    circuitOpenUntil = Date.now() + CIRCUIT_COOLDOWN_MS;
+    log.warn(
+      `Tile proxy circuit breaker OPEN for ${CIRCUIT_COOLDOWN_MS / 1000}s after ${circuitConsecutiveFailures} consecutive upstream failures`,
+    );
+  }
+}
+
 // In-memory cache for successfully fetched tiles. The map UI loads dozens of
 // tiles per pan/zoom and Cloudflare on the upstream domains will rate-limit
 // us if we re-fetch the same tile every refresh. Cached tiles are tiny
@@ -105,19 +138,40 @@ async function fetchTileWithTimeout(url) {
 // Fetch with one retry on transient upstream failures (502/503/504/network).
 // 404 is NOT retried — it just means the tile is outside the map bounds.
 async function fetchTileWithRetry(url) {
+  if (isCircuitOpen()) {
+    throw new Error(
+      "Tile proxy circuit breaker is open (upstream has been failing repeatedly)",
+    );
+  }
   try {
     const r = await fetchTileWithTimeout(url);
-    if (r.ok || r.status === 404) return r;
+    if (r.ok || r.status === 404) {
+      recordTileSuccess();
+      return r;
+    }
     if (r.status >= 500 && r.status < 600) {
       // Brief backoff before single retry — Cloudflare 503 on rate-limit
       // typically clears within a few hundred ms.
       await new Promise((res) => setTimeout(res, 250));
-      return await fetchTileWithTimeout(url);
+      const retried = await fetchTileWithTimeout(url);
+      if (retried.ok || retried.status === 404) recordTileSuccess();
+      else recordTileFailure();
+      return retried;
     }
+    // Other 4xx (not 404) isn't a "broken upstream" signal — don't count it
+    // toward the circuit breaker.
     return r;
   } catch (err) {
-    await new Promise((res) => setTimeout(res, 250));
-    return await fetchTileWithTimeout(url);
+    try {
+      await new Promise((res) => setTimeout(res, 250));
+      const retried = await fetchTileWithTimeout(url);
+      if (retried.ok || retried.status === 404) recordTileSuccess();
+      else recordTileFailure();
+      return retried;
+    } catch (retryErr) {
+      recordTileFailure();
+      throw retryErr;
+    }
   }
 }
 

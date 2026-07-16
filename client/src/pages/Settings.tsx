@@ -144,6 +144,9 @@ interface AppSettings {
   corsAllowAll: boolean
   corsAllowPrivateNetworks: boolean
   corsDebug: boolean
+
+  // Privacy
+  enablePublicIpLookup: boolean
 }
 
 interface CorsDiagnostics {
@@ -212,6 +215,7 @@ export default function Settings() {
     corsAllowAll: false,
     corsAllowPrivateNetworks: true,
     corsDebug: false,
+    enablePublicIpLookup: false,
   })
   const [originalSettings, setOriginalSettings] = useState<AppSettings | null>(null)
   const [loading, setLoading] = useState(false)
@@ -1661,6 +1665,20 @@ export default function Settings() {
                 checked={settings.corsAllowPrivateNetworks}
                 onCheckedChange={handleCorsLanToggle}
                 aria-label="Allow private and LAN origins"
+              />
+            </div>
+
+            <div className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/25 p-3">
+              <div>
+                <Label className="text-sm font-medium">Show Public IP Address</Label>
+                <p className="text-xs text-muted-foreground">
+                  Look up this machine's public IP (via api.ipify.org) to display on the dashboard. Off by default — an unnecessary external dependency and small privacy leak for LAN-only setups. The result is cached, so this calls out at most once per restart.
+                </p>
+              </div>
+              <Switch
+                checked={settings.enablePublicIpLookup}
+                onCheckedChange={(value) => updateSetting('enablePublicIpLookup', value)}
+                aria-label="Enable public IP lookup"
               />
             </div>
 
