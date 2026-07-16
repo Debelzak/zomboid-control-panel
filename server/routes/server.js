@@ -215,6 +215,38 @@ function validateInt(value, min, max, defaultVal) {
   return num;
 }
 
+// Build the Java classpath entries for launching the dedicated server.
+// PZ's required classpath varies significantly by build/version — Build 41
+// needs ~15 separate library jars listed individually under java/ (guava,
+// lwjgl, javacord, sqlite-jdbc, etc.), while Build 42's shaded jar only
+// needs projectzomboid.jar. Hardcoding either list breaks the other build
+// with a NoClassDefFoundError (see GitHub issue #14). Instead, scan the
+// java/ folder that SteamCMD actually downloaded and include every jar
+// present, so the classpath always matches the installed build.
+function buildClasspathEntries(installPath) {
+  const entries = ["java/."];
+  try {
+    const javaDir = path.join(installPath, "java");
+    if (fs.existsSync(javaDir)) {
+      const jars = fs
+        .readdirSync(javaDir)
+        .filter((f) => f.toLowerCase().endsWith(".jar"))
+        .sort();
+      for (const jar of jars) {
+        entries.push(`java/${jar}`);
+      }
+    }
+  } catch (e) {
+    log.warn(`Could not enumerate java/ jars for classpath: ${e.message}`);
+  }
+  // Fallback if the java/ folder wasn't found/readable (e.g. install not
+  // finished yet) — matches the previous hardcoded behavior.
+  if (entries.length === 1) {
+    entries.push("java/projectzomboid.jar");
+  }
+  return entries;
+}
+
 // Generate a custom startup script with configured options
 // Returns { bat: string, sh: string } with both Windows and Linux scripts
 function generateStartupScripts(options) {
@@ -278,6 +310,8 @@ function generateStartupScripts(options) {
 
   gameArgs.push("-statistic 0");
 
+  const classpathEntries = buildClasspathEntries(installPath);
+
   // Windows batch file
   const batchContent = `@echo off
 @setlocal enableextensions
@@ -290,7 +324,7 @@ REM Server Name: ${safeServerName}
 REM Memory: ${normalizedMinMemory}GB - ${normalizedMaxMemory}GB
 REM =====================================================
 
-SET PZ_CLASSPATH=java/;java/projectzomboid.jar
+SET PZ_CLASSPATH=${classpathEntries.join(";")}
 
 ".\\jre64\\bin\\java.exe" ${jvmArgs.join(" ")} -Djava.library.path=natives/;natives/win64/;. -cp %PZ_CLASSPATH% zombie.network.GameServer ${gameArgs.join(" ")}
 
@@ -308,7 +342,7 @@ cd "\$(dirname "\$0")"
 # Memory: ${normalizedMinMemory}GB - ${normalizedMaxMemory}GB
 # =====================================================
 
-PZ_CLASSPATH="java/:java/projectzomboid.jar"
+PZ_CLASSPATH="${classpathEntries.join(":")}"
 
 JAVA_CMD="./jre64/bin/java"
 if [ ! -f "$JAVA_CMD" ]; then
@@ -1288,6 +1322,33 @@ router.post("/install", async (req, res) => {
 
         await setSetting("serverConfigPath", serverConfigPath);
 
+        // Create the data folder (and its Server/ subdirectory) and verify
+        // the panel process can actually write to it *before* reporting
+        // success. On Linux, an isolated data path under a root-owned parent
+        // (e.g. /opt) will fail here with EACCES — better to surface that now
+        // than let it appear later as a cryptic "Failed to pre-create INI
+        // file" error after the user already believes install succeeded
+        // (see GitHub issue #14).
+        try {
+          fs.mkdirSync(serverConfigPath, { recursive: true });
+          fs.accessSync(zomboidPath, fs.constants.W_OK);
+        } catch (dirError) {
+          log.error(
+            `Data folder is not writable: ${zomboidPath} (${dirError.message})`,
+          );
+          io.emit("install:complete", {
+            success: false,
+            message:
+              `Server files installed, but the data folder is not writable: ${zomboidPath} (${dirError.code || dirError.message}). ` +
+              `Create it with the correct owner before starting the server, e.g. on Linux: ` +
+              `sudo install -d -m 0755 -o "$(whoami)" -g "$(whoami)" "${zomboidPath}", then retry.`,
+            installPath,
+            serverName,
+          });
+          activeSteamOperations.delete(normalizedPath);
+          return;
+        }
+
         // Save RCON settings for later use
         if (rconPassword) {
           await setSetting("rconPassword", rconPassword);
@@ -1565,6 +1626,24 @@ router.post("/quick-setup", async (req, res) => {
     }
 
     await setSetting("serverConfigPath", serverConfigPath);
+
+    // Create the data folder (and its Server/ subdirectory) and verify the
+    // panel process can actually write to it before reporting success (see
+    // GitHub issue #14 — isolated data paths under root-owned parents like
+    // /opt fail here with EACCES on Linux).
+    try {
+      fs.mkdirSync(serverConfigPath, { recursive: true });
+      fs.accessSync(zomboidPath, fs.constants.W_OK);
+    } catch (dirError) {
+      log.error(
+        `Data folder is not writable: ${zomboidPath} (${dirError.message})`,
+      );
+      throw new Error(
+        `Server files found, but the data folder is not writable: ${zomboidPath} (${dirError.code || dirError.message}). ` +
+          `Create it with the correct owner before starting the server, e.g. on Linux: ` +
+          `sudo install -d -m 0755 -o "$(whoami)" -g "$(whoami)" "${zomboidPath}", then retry.`,
+      );
+    }
 
     // Save RCON settings
     if (rconPassword) {

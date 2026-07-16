@@ -13,6 +13,7 @@ import {
 } from "../database/init.js";
 import { withFileLock, writeFileAtomic } from "../utils/fileWriteQueue.js";
 import { escapeRegExp } from "../utils/regex.js";
+import { getDataPaths } from "../utils/paths.js";
 
 const isWindows = process.platform === "win32";
 
@@ -517,11 +518,19 @@ export class ServerManager {
           `Using custom start command: ${resolvedCmd} ${args.join(" ")} (ext=${ext}, cwd=${cwd})`,
         );
 
+        // Redirect stdout/stderr to a log file (instead of discarding them)
+        // so an immediate startup failure can be captured and reported right
+        // away, rather than only surfacing as an opaque 30s "polling timed
+        // out" (see GitHub issue #14). A file descriptor keeps the child
+        // fully detached from this process's own stdio.
+        const launchLogPath = this._openLaunchLog();
+        const launchStdio = ["ignore", this._launchLogFd, this._launchLogFd];
+
         if (isWindows && (ext === ".bat" || ext === ".cmd")) {
           this.serverProcess = spawn("cmd.exe", ["/c", resolvedCmd, ...args], {
             cwd,
             detached: true,
-            stdio: "ignore",
+            stdio: launchStdio,
           });
         } else if (!isWindows && ext === ".sh") {
           try {
@@ -537,7 +546,7 @@ export class ServerManager {
           this.serverProcess = spawn("bash", [resolvedCmd, ...args], {
             cwd,
             detached: true,
-            stdio: "ignore",
+            stdio: launchStdio,
             env: { ...process.env, LD_LIBRARY_PATH: ldPath },
           });
         } else {
@@ -553,47 +562,77 @@ export class ServerManager {
           this.serverProcess = spawn(resolvedCmd, args, {
             cwd,
             detached: true,
-            stdio: "ignore",
+            stdio: launchStdio,
             env: spawnEnv,
           });
         }
-      } else {
-        const batPath = path.join(this.serverPath, this.serverBat);
+        this._closeLaunchLogFd();
 
-        if (!fs.existsSync(batPath)) {
-          throw new Error(`Server startup script not found: ${batPath}`);
-        }
+        // Handle spawn errors (e.g., invalid path, permissions)
+        this.serverProcess.on("error", (error) => {
+          log.error(`Server process error: ${error.message}`);
+          this.isRunning = false;
+          this.serverProcess = null;
+        });
 
-        if (isWindows) {
-          this.serverProcess = spawn("cmd.exe", ["/c", this.serverBat], {
-            cwd: this.serverPath,
-            detached: true,
-            stdio: "ignore",
-          });
-        } else {
-          // Ensure the script is executable
-          try {
-            fs.chmodSync(batPath, 0o750);
-          } catch (e) {
-            log.warn(`Could not chmod startup script: ${e.message}`);
-          }
-          // On Linux, ensure LD_LIBRARY_PATH includes the server's native library dirs
-          // so the JVM can find libsteam_api.so and its transitive dependencies.
-          // Without this, services/non-login shells won't have the paths set.
-          const serverAbsPath = path.resolve(this.serverPath);
-          const ldPath = buildLdLibraryPath(serverAbsPath);
-          log.debug(
-            `Spawning default .sh: bash ${this.serverBat} (cwd=${this.serverPath}, LD_LIBRARY_PATH=${ldPath})`,
+        this.serverProcess.unref();
+        this.isRunning = true;
+        this.startTime = new Date();
+
+        const crash = await this._waitForImmediateCrash(launchLogPath);
+        if (crash) {
+          this.isRunning = false;
+          this.serverProcess = null;
+          throw new Error(
+            `Server process exited immediately after starting (code=${crash.exitCode}, signal=${crash.signal || "none"}) — startup failed.${crash.tail ? `\n${crash.tail}` : ""}`,
           );
-
-          this.serverProcess = spawn("bash", [this.serverBat], {
-            cwd: this.serverPath,
-            detached: true,
-            stdio: "ignore",
-            env: { ...process.env, LD_LIBRARY_PATH: ldPath },
-          });
         }
+
+        await logServerEvent("server_start", "Server started via manager");
+        log.info("Server start command executed");
+
+        return { success: true, message: "Server start command executed" };
       }
+
+      const batPath = path.join(this.serverPath, this.serverBat);
+
+      if (!fs.existsSync(batPath)) {
+        throw new Error(`Server startup script not found: ${batPath}`);
+      }
+
+      const launchLogPath = this._openLaunchLog();
+      const launchStdio = ["ignore", this._launchLogFd, this._launchLogFd];
+
+      if (isWindows) {
+        this.serverProcess = spawn("cmd.exe", ["/c", this.serverBat], {
+          cwd: this.serverPath,
+          detached: true,
+          stdio: launchStdio,
+        });
+      } else {
+        // Ensure the script is executable
+        try {
+          fs.chmodSync(batPath, 0o750);
+        } catch (e) {
+          log.warn(`Could not chmod startup script: ${e.message}`);
+        }
+        // On Linux, ensure LD_LIBRARY_PATH includes the server's native library dirs
+        // so the JVM can find libsteam_api.so and its transitive dependencies.
+        // Without this, services/non-login shells won't have the paths set.
+        const serverAbsPath = path.resolve(this.serverPath);
+        const ldPath = buildLdLibraryPath(serverAbsPath);
+        log.debug(
+          `Spawning default .sh: bash ${this.serverBat} (cwd=${this.serverPath}, LD_LIBRARY_PATH=${ldPath})`,
+        );
+
+        this.serverProcess = spawn("bash", [this.serverBat], {
+          cwd: this.serverPath,
+          detached: true,
+          stdio: launchStdio,
+          env: { ...process.env, LD_LIBRARY_PATH: ldPath },
+        });
+      }
+      this._closeLaunchLogFd();
 
       // Handle spawn errors (e.g., invalid path, permissions)
       this.serverProcess.on("error", (error) => {
@@ -606,6 +645,22 @@ export class ServerManager {
       this.isRunning = true;
       this.startTime = new Date();
 
+      // Give the process a brief grace period to catch immediate startup
+      // failures (bad classpath, missing native libs, etc.) so we can report
+      // the real error instead of a generic 30s "polling timed out" (see
+      // GitHub issue #14). This also keeps `_starting` true for the duration,
+      // which naturally rejects duplicate start requests (e.g. auto-start
+      // racing a manual click) that would otherwise slip through before OS
+      // process-detection catches up.
+      const crash = await this._waitForImmediateCrash(launchLogPath);
+      if (crash) {
+        this.isRunning = false;
+        this.serverProcess = null;
+        throw new Error(
+          `Server process exited immediately after starting (code=${crash.exitCode}, signal=${crash.signal || "none"}) — startup failed.${crash.tail ? `\n${crash.tail}` : ""}`,
+        );
+      }
+
       await logServerEvent("server_start", "Server started via manager");
       log.info("Server start command executed");
 
@@ -613,6 +668,80 @@ export class ServerManager {
     } finally {
       this._starting = false;
     }
+  }
+
+  // Open a fresh launch log file and stash its fd on `this._launchLogFd` for
+  // use as spawn() stdio. Returns the log file path (or null if it couldn't
+  // be opened, in which case stdio falls back to "ignore" via the fd value).
+  _openLaunchLog() {
+    const launchLogPath = path.join(
+      getDataPaths().logsDir,
+      "server-launch.log",
+    );
+    try {
+      this._launchLogFd = fs.openSync(launchLogPath, "w");
+      return launchLogPath;
+    } catch (e) {
+      log.debug(`Could not open launch log file: ${e.message}`);
+      this._launchLogFd = "ignore";
+      return null;
+    }
+  }
+
+  // Close our copy of the launch-log fd. The child keeps its own duplicated
+  // handle to the file (passed via stdio), so this doesn't affect it.
+  _closeLaunchLogFd() {
+    if (typeof this._launchLogFd === "number") {
+      try {
+        fs.closeSync(this._launchLogFd);
+      } catch {
+        /* already closed */
+      }
+    }
+    this._launchLogFd = null;
+  }
+
+  // Wait briefly to see if the just-spawned process exits immediately
+  // (crash on startup). Resolves to `{ exitCode, signal, tail }` if it did,
+  // or `null` if it's still alive after the grace period.
+  _waitForImmediateCrash(launchLogPath) {
+    const proc = this.serverProcess;
+    if (!proc) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      let settled = false;
+      let graceTimer;
+      const readTail = () => {
+        try {
+          if (launchLogPath && fs.existsSync(launchLogPath)) {
+            return fs.readFileSync(launchLogPath, "utf-8").slice(-2000).trim();
+          }
+        } catch {
+          /* best effort */
+        }
+        return "";
+      };
+      const finish = (result) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(graceTimer);
+        proc.removeListener("exit", onExit);
+        proc.removeListener("error", onError);
+        resolve(result);
+      };
+      const onExit = (exitCode, signal) => {
+        finish({ exitCode, signal, tail: readTail() });
+      };
+      const onError = (error) => {
+        finish({
+          exitCode: null,
+          signal: null,
+          tail: `spawn error: ${error.message}`,
+        });
+      };
+      proc.once("exit", onExit);
+      proc.once("error", onError);
+      graceTimer = setTimeout(() => finish(null), 4000);
+    });
   }
 
   async stopServer(graceful = true) {
