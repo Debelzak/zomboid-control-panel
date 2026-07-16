@@ -5,9 +5,52 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.68] - 2026-07-16
+
+### Fixed
+
+- **PanelBridge mod (v1.7.4): server freeze on Restore/Shut Off Utilities**: restoring or shutting off power/water scanned tens of thousands of grid squares synchronously on the game tick, freezing the whole server for every player. The scan now runs as a background job chunked across ticks when triggered from the panel.
+- **PanelBridge mod (v1.7.4): character import drained real skill points**: restoring a saved character's perk levels called the skill-point-consuming `LevelPerk` variant, silently spending the live player's own unspent skill points on every restore. Now uses the no-cost restore path.
+
+## [1.0.65] - 2026-07-13
+
+### Fixed
+
+- **Discord bot crash on newer Node versions (full fix)**: the earlier fix only covered slash-command registration. The Discord client's internal REST — used for login, notifications, the "Send Test Message" button, chat relay, and command replies — still crashed on Node 22+/24+ with the `Symbol(sensitiveHeaders)` header error. All Discord API traffic now goes through the safe request path.
+
+### Security
+
+- **Discord mention injection**: player-controlled text (in-game chat relay and player join/leave/death notifications) could ping Discord roles or users via raw mention syntax like `<@&roleId>`. The bot now blocks all outbound mentions, so relayed chat and notifications can no longer ping anyone.
+
+### Changed
+
+- Replaced the deprecated Discord `ephemeral` reply option with the current `MessageFlags.Ephemeral` form.
+- Added a request timeout to the Discord token test so a stalled Discord API can no longer hang the check.
+
+## [1.0.64] - 2026-07-07
+
+### Fixed
+
+- **World map and chunk cleaner tile loading**: fixed the Project Zomboid map tile breakage after the B42 CDN migration from b42map.com to map.projectzomboid.com. The panel now proxies tiles through the backend and resolves the current B42 map directory dynamically from upstream metadata, so newer map builds continue to work without manual updates.
+- **Discord bot startup crash**: fixed a compatibility issue with newer Node/undici versions that caused the Discord bot to crash during REST requests. Discord API calls now use a safe request path that avoids the header constructor failure.
+- **Server names with spaces**: server creation and validation now accept names containing spaces while still rejecting unsafe path characters.
+
+### Changed
+
+- **Release pipeline**: removed the hard dependency on the old garage deployment share so packaging and release steps no longer block on that dead target.
+
+## [1.0.27] - 2026-05-13
+
+### Fixed
+
+- **Mod update restart loop for mods removed from INI**: if a previously subscribed mod was deleted from `WorkshopItems=` but still had a newer version on Steam, the panel kept flagging it as "Update available" and queued a `Restart Pending` cycle that could never resolve (a restart can't apply a mod the server isn't subscribed to). `modChecker.checkForUpdates()` now filters out updates for any workshop ID not present in the active server's INI before they reach the auto-restart pipeline.
+- **"Flags out of sync" false positive from phantom updates**: `getStatus().updatesAvailable` was counted directly from the Workshop ACF without consulting the server INI, so even after the filter above the UI still showed `1 mod update reported by Steam — flags out of sync` and prompted a re-check. The status count is now filtered against `WorkshopItems=` as well.
+- **Cancelling a pending mod-update restart silently disabled future auto-restarts for those mods**: `cancelPendingRestart()` left the `processedUpdates` dedup map populated, so the next poll cycle treated the same Steam timestamps as "already processed" and skipped them indefinitely. The map is now cleared on cancel, re-arming detection on the next check.
+
 ## [1.0.6] - 2026-04-16
 
 ### Fixed
+
 - **RCON detection with WinGSM and other wrappers**: the panel failed to detect servers launched through WinGSM because the wrapper's process arguments did not match the old strict regex. `isWindowsDedicatedServerCommandLine` now recognizes WinGSM-wrapped launches, native `ProjectZomboid64.exe` with `-server`/`-servername`, and generic Zomboid command lines.
 - **RCON startup port-probe fallback**: when Windows process detection returns a false negative (permissions, wrappers, unusual launchers), the panel now probes the RCON port directly at startup and connects immediately if it is listening, instead of waiting up to 60s for the auto-reconnect loop.
 - **Stale RCON credentials after editing active server**: previously, editing the active server's RCON host/port/password kept the running RconService using cached credentials until the panel was restarted. Editing the active server now reloads and reconnects RCON and refreshes ServerManager paths when relevant fields change.
@@ -15,14 +58,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Log download 401 errors**: "Download combined.log" and "Download error.log" in `/debug` used plain `<a href>` links that skipped the JWT bearer header. Replaced with authenticated `Blob` downloads.
 
 ### Added
+
 - **Support Bundle ZIP**: new "Download Support Bundle (.zip)" button on `/debug` aggregates panel logs (`combined.log`, `error.log`), Zomboid install logs (`connection_log`, `workshop_log`, `content_log`, etc.), server runtime logs (`server-console.txt`, chat/debug logs), and any matching crash dumps (`hs_err_pid*`) into a single zip stream for bug reports.
 
 ### Changed
+
 - **Safer Windows force stop**: `-server` / `startserver` in a command line alone no longer counts as a PZ server match. The native launcher or an explicit Zomboid path is now required, so unrelated Java processes on the same machine (for example a Minecraft server started with `java -server`) can never be falsely identified or killed by the panel.
 
 ## [1.0.1] - 2025-04-12
 
 ### Added
+
 - **World Map — Vehicle overlay**: see every vehicle on the map, color-coded by fuel level. Right-click for quick actions (repair, fill fuel, charge battery, remove).
 - **World Map — Safehouse overlay**: safehouses rendered as isometric diamonds with owner labels. Active safehouses glow brighter when a player is connected.
 - **World Map — Toggle buttons**: Car and Home icons in the toolbar to show/hide vehicles and safehouses independently.
@@ -34,6 +80,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **PanelBridge `removeVehiclesInArea` handler**: remove all vehicles within a coordinate bounding box.
 
 ### Fixed
+
 - "Ekron" label on both World Map and Chunk Cleaner corrected to "Fallas Lake".
 - Vehicle overlay coordinate validation in Lua now checks `nil` instead of `== 0` (0,0 is a valid PZ coordinate).
 - Safehouse label deduplication — owner name no longer shown twice when it matches the safehouse title.
@@ -41,12 +88,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Delete dialog "Remove vehicles" checkbox resets on each open (no stale state from cancelled dialogs).
 
 ### Changed
+
 - Vehicle fuel-level colors pre-resolved to canvas color refs instead of calling `getComputedStyle()` per frame per vehicle.
 - Safehouse owner list in delete dialog truncated to 5 entries with "+N more" overflow.
 
 ## [1.0.0] - 2025-04-10
 
 ### Added
+
 - Full-featured web admin panel for Project Zomboid dedicated servers.
 - Dashboard with real-time server status, player list, and quick actions.
 - Interactive World Map with DZI tile rendering, player position tracking, airdrops, and landmark labels.
