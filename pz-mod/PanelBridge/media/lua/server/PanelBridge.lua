@@ -1,20 +1,10 @@
 ---@diagnostic disable: undefined-global, deprecated
 --[[
     PanelBridge - Server-side mod for Zomboid Control Panel
-    Version: 1.7.4
+    Version: 1.7.3
 
     This mod enables external control panel communication with the PZ server.
     Communication happens via JSON files in the server save folder.
-
-    v1.7.4 Changes:
-    - restoreUtilities/shutOffUtilities no longer freeze the server: the
-      ~40k/~15k grid-square scans now run as a background job chunked across
-      ticks (1500 squares/tick) instead of all at once, when triggered via
-      the normal panel command queue. Direct/scripted calls are unchanged.
-    - Fixed importPlayerData silently draining the player's real unspent
-      skill points: perk-level restore now uses LevelPerk(perk, false)
-      instead of LevelPerk(perk), matching the "no skill point consumed"
-      semantics intended for an admin data restore.
 
     v1.7.3 Changes:
     - CRITICAL: Fixed VERSION constant regression. It had been hand-edited back
@@ -148,7 +138,7 @@
 local json
 
 local PanelBridge = {
-    VERSION = "1.7.4",
+    VERSION = "1.7.3",
     PROTOCOL_VERSION = "queue-v1",
     CHECK_INTERVAL = 250, -- milliseconds (fast command polling)
     lastCheck = 0,
