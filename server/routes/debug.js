@@ -24,6 +24,7 @@ import {
   getAllSettings,
 } from "../database/init.js";
 import { sanitizeError } from "../utils/sanitize.js";
+import { checkSandboxBraceBalance } from "./serverFiles.js";
 import panelBridgeService from "../services/panelBridge.js";
 import {
   getCandidateZomboidPaths,
@@ -2780,14 +2781,36 @@ router.get("/diagnostics", async (req, res) => {
             `${activeServer.serverName}_SandboxVars.lua`,
           );
           if (await safePathExists(sbxPath)) {
-            checks.push(
-              diagOk(
-                "server.sandboxVars",
-                "SandboxVars present",
-                `${activeServer.serverName}_SandboxVars.lua is in place.`,
-                { category: "server" },
-              ),
-            );
+            let braceCheck = null;
+            try {
+              const sbxContent = await fs.promises.readFile(sbxPath, "utf-8");
+              braceCheck = checkSandboxBraceBalance(sbxContent);
+            } catch {
+              braceCheck = null;
+            }
+
+            if (braceCheck && !braceCheck.balanced) {
+              checks.push(
+                diagFail(
+                  "server.sandboxCorrupt",
+                  "SandboxVars.lua is corrupt",
+                  `${activeServer.serverName}_SandboxVars.lua has mismatched braces and will fail to load — the dedicated server exits immediately on boot with a Lua syntax error.`,
+                  {
+                    category: "server",
+                    hint: "Use the automated repair below, or restore from a .bak backup in the same folder.",
+                  },
+                ),
+              );
+            } else {
+              checks.push(
+                diagOk(
+                  "server.sandboxVars",
+                  "SandboxVars present",
+                  `${activeServer.serverName}_SandboxVars.lua is in place.`,
+                  { category: "server" },
+                ),
+              );
+            }
           } else {
             checks.push(
               diagWarn(

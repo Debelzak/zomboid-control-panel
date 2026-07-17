@@ -268,8 +268,12 @@ function parseSandboxVars(content) {
       topLevelContent = topLevelContent.replace(blockPattern, "");
     }
 
-    // Parse simple key=value pairs (top-level settings only)
-    const simplePattern = /^\s*(\w+)\s*=\s*([^,{}\n]+),?\s*(?:--.*)?$/gm;
+    // Parse simple key=value pairs (top-level settings only).
+    // The value alternation tries a quoted string first so values like
+    // WorldItemRemovalList = "Base.Hat,Base.Glasses,..." aren't truncated
+    // at the first comma *inside* the quotes.
+    const simplePattern =
+      /^\s*(\w+)\s*=\s*("(?:[^"\\]|\\.)*"|[^,{}\n]+),?\s*(?:--.*)?$/gm;
     let match;
     while ((match = simplePattern.exec(topLevelContent)) !== null) {
       const key = match[1];
@@ -301,7 +305,7 @@ function parseSandboxVars(content) {
         // Strip Lua comment lines to avoid parsing comment text as keys
         // (e.g. "-- 1 = Sprinters" or "-- Default = Random")
         const strippedContent = blockContent.replace(/^\s*--.*$/gm, "");
-        const valuePattern = /(\w+)\s*=\s*([^,\n]+)/g;
+        const valuePattern = /(\w+)\s*=\s*("(?:[^"\\]|\\.)*"|[^,\n]+)/g;
         let valueMatch;
         while ((valueMatch = valuePattern.exec(strippedContent)) !== null) {
           let value = valueMatch[2].trim();
@@ -385,10 +389,13 @@ function modifySandboxValue(
         const before = content.substring(0, blockStart);
         const blockSection = content.substring(blockStart, blockEnd + 1);
         const after = content.substring(blockEnd + 1);
-        // Replace only on non-comment lines within the block
+        // Replace only on non-comment lines within the block.
+        // The value alternation matches a full quoted string first so
+        // values containing commas (e.g. comma-separated lists) aren't
+        // truncated mid-string, which would corrupt the Lua syntax.
         const updatedBlock = blockSection.replace(
           new RegExp(
-            `(^(?!\\s*--)[^\\n]*?)(${escapedKey})(\\s*=\\s*)([^,\\n}]+)(,?)`,
+            `(^(?!\\s*--)[^\\n]*?)(${escapedKey})(\\s*=\\s*)("(?:[^"\\\\]|\\\\.)*"|[^,\\n}]+)(,?)`,
             "m",
           ),
           (_, prefix, k, eq, oldVal, comma) =>
@@ -418,8 +425,12 @@ function modifySandboxValue(
       }
     }
 
+    // The value alternation matches a full quoted string first so values
+    // containing commas (e.g. comma-separated lists like
+    // WorldItemRemovalList) aren't truncated mid-string, which would
+    // corrupt the Lua syntax.
     const pattern = new RegExp(
-      `(^\\s*)(${escapedKey})(\\s*=\\s*)([^,\\n}]+)(,?)(\\s*(?:--.*)?$)`,
+      `(^\\s*)(${escapedKey})(\\s*=\\s*)("(?:[^"\\\\]|\\\\.)*"|[^,\\n}]+)(,?)(\\s*(?:--.*)?$)`,
       "gm",
     );
     content = content.replace(
@@ -435,6 +446,90 @@ function modifySandboxValue(
   }
 
   return content;
+}
+
+// Count { / } in a SandboxVars.lua content string. A healthy file always has
+// an equal number of each with the running depth never going negative. This
+// is the cheapest possible syntax sanity check we can do without a real Lua
+// parser, but it happens to catch the exact class of corruption PZ's own
+// dedicated server crashes on: an orphaned/dropped block header that leaves
+// a dangling closing brace (see "Exiting due to errors loading ..." crashes
+// with a KahluaException "'}' expected").
+export function checkSandboxBraceBalance(content) {
+  let depth = 0;
+  let wentNegative = false;
+  for (const ch of content) {
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth < 0) wentNegative = true;
+    }
+  }
+  return { balanced: depth === 0 && !wentNegative, depth };
+}
+
+// Attempt to auto-repair the most common SandboxVars.lua corruption pattern:
+// a nested block's "<Name> = {" header line (and the trailing comma on the
+// first entry) got dropped somewhere upstream (mod schema migration, manual
+// editing, etc.), leaving an orphaned scalar entry at a shallower indent
+// than its former siblings — with the original closing "}" still present
+// further down. That desyncs the whole file's brace count and makes PZ's
+// Lua loader refuse to parse the file at all.
+//
+// Repair strategy: whenever a scalar "key = value" line (no trailing comma)
+// is immediately followed by a more-deeply-indented entry line, treat it as
+// an orphaned block opener. Add the missing comma and synthesize a wrapper
+// table around it so the existing (now-dangling) closing brace has
+// something to match again. This is deliberately conservative — it never
+// deletes or reinterprets existing content, only restores brace balance —
+// and every attempt is re-validated for balance before anything is written.
+export function repairSandboxSyntax(content) {
+  const before = checkSandboxBraceBalance(content);
+  if (before.balanced) {
+    return { content, fixed: false, changes: [] };
+  }
+
+  const lines = content.split(/\r?\n/);
+  const changes = [];
+  const scalarLine =
+    /^(\s*)(\w+)\s*=\s*("(?:[^"\\]|\\.)*"|true|false|-?\d+(?:\.\d+)?)\s*(--.*)?$/;
+  const entryLine = /^(\s*)(\w+)\s*=\s*/;
+  let syntheticCounter = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(scalarLine);
+    if (!m) continue;
+    const indent = m[1];
+
+    // Find the next non-blank, non-comment line.
+    let j = i + 1;
+    while (
+      j < lines.length &&
+      (lines[j].trim() === "" || /^\s*--/.test(lines[j]))
+    ) {
+      j++;
+    }
+    if (j >= lines.length) continue;
+
+    const nextEntry = lines[j].match(entryLine);
+    if (!nextEntry) continue;
+    if (nextEntry[1].length <= indent.length) continue; // normal sibling/closing — not orphaned
+
+    syntheticCounter += 1;
+    changes.push(
+      `Line ${i + 1}: '${m[2]} = ${m[3]}' looked like an orphaned block entry (missing block header and comma) — wrapped it in a synthetic '_RepairedBlock${syntheticCounter}' table so the file parses again.`,
+    );
+    lines[i] =
+      `${indent}_RepairedBlock${syntheticCounter} = {\n${indent}    ${m[2]} = ${m[3]},`;
+  }
+
+  const repaired = lines.join("\n");
+  const after = checkSandboxBraceBalance(repaired);
+  return {
+    content: repaired,
+    fixed: after.balanced && changes.length > 0,
+    changes,
+  };
 }
 
 // Apply multiple sandbox changes to file content in-place
@@ -803,6 +898,95 @@ router.put("/sandbox", async (req, res) => {
     res.json({ success: true, message: "Sandbox settings saved" });
   } catch (error) {
     log.error("Failed to save SandboxVars:", error);
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
+// Check whether SandboxVars.lua is syntactically well-formed (brace balance
+// only — we don't have a real Lua parser). A corrupt file here is a classic
+// cause of "server won't boot, no obvious reason" reports.
+router.get("/sandbox/validate", async (req, res) => {
+  try {
+    const configPath = await getServerConfigPath();
+    const serverName = await getServerName();
+    const filePath = path.join(configPath, `${serverName}_SandboxVars.lua`);
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: "SandboxVars file not found" });
+    }
+
+    const content = fs.readFileSync(filePath, "utf-8");
+    const { balanced, depth } = checkSandboxBraceBalance(content);
+    res.json({ valid: balanced, braceDepth: depth });
+  } catch (error) {
+    log.error("Failed to validate SandboxVars:", error);
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
+// Attempt to auto-repair SandboxVars.lua. Always backs up the existing file
+// first, and refuses to write anything unless the repaired content is
+// verified brace-balanced — if the corruption doesn't match a known
+// pattern, nothing is written and the caller is told to fix it manually.
+router.post("/sandbox/repair", async (req, res) => {
+  try {
+    log.info("POST /sandbox/repair");
+    const configPath = await getServerConfigPath();
+    const serverName = await getServerName();
+    const filePath = path.join(configPath, `${serverName}_SandboxVars.lua`);
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: "SandboxVars file not found" });
+    }
+
+    const result = await withFileLock(filePath, async () => {
+      const originalContent = fs.readFileSync(filePath, "utf-8");
+      const before = checkSandboxBraceBalance(originalContent);
+      if (before.balanced) {
+        return { alreadyValid: true };
+      }
+
+      const {
+        content: repaired,
+        fixed,
+        changes,
+      } = repairSandboxSyntax(originalContent);
+      if (!fixed) {
+        return {
+          alreadyValid: false,
+          repaired: false,
+          error:
+            "Could not automatically repair this file — the corruption doesn't match a known pattern. Restore from a backup or fix it manually.",
+        };
+      }
+
+      await createBackup(`${serverName}_SandboxVars.lua`);
+      writeFileAtomic(filePath, repaired, "utf-8");
+      return { alreadyValid: false, repaired: true, changes };
+    });
+
+    if (result.alreadyValid) {
+      return res.json({
+        success: true,
+        alreadyValid: true,
+        message: "SandboxVars.lua is already valid — no repair needed.",
+      });
+    }
+    if (!result.repaired) {
+      return res.status(422).json({ success: false, error: result.error });
+    }
+
+    log.info(
+      `Repaired SandboxVars.lua: ${result.changes.length} fix(es) applied`,
+    );
+    res.json({
+      success: true,
+      repaired: true,
+      changes: result.changes,
+      message: `Repaired ${result.changes.length} issue${result.changes.length === 1 ? "" : "s"} in SandboxVars.lua. A backup of the broken file was saved first.`,
+    });
+  } catch (error) {
+    log.error("Failed to repair SandboxVars:", error);
     res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
