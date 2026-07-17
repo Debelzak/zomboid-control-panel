@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.70] - 2026-07-17
+
+### Added
+
+- **Sandbox diagnostics + auto-repair**: detects a corrupted `SandboxVars.lua` (mismatched braces) and surfaces it as a critical Debug finding, with a one-click automated repair action (backs up the original file first, refuses to write unless the repair is verified syntactically balanced).
+
+### Fixed
+
+- **SandboxVars.lua values containing commas inside quotes could get corrupted when edited through the Sandbox editor**: settings like `WorldItemRemovalList` and `LootItemRemovalList` were truncated at the first comma inside the quotes, corrupting the file and preventing the dedicated server from booting. Quoted string values are now treated as atomic when parsing/writing.
+
 ## [1.0.68] - 2026-07-16
 
 ### Fixed
