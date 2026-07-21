@@ -308,6 +308,54 @@ export class DiscordBot {
     await setSetting("discordChatRelayChannelId", channelId || "");
   }
 
+  async resetConfig() {
+    if (this.isRunning && this.client?.user && this.guildId) {
+      try {
+        const rest = new REST({
+          version: "10",
+          makeRequest: _safeDiscordMakeRequest,
+        }).setToken(this.token);
+        await rest.put(
+          Routes.applicationGuildCommands(this.client.user.id, this.guildId),
+          { body: [] },
+        );
+        log.info(`Cleared slash commands from guild ${this.guildId}`);
+      } catch (error) {
+        log.warn(
+          `Failed to clear slash commands during Discord reset: ${error.message}`,
+        );
+      }
+    }
+
+    if (this.isRunning) {
+      await this.stop();
+    }
+
+    await setSetting("discordBotToken", "");
+    await setSetting("discordGuildId", "");
+    await setSetting("discordAdminRoleId", "");
+    await setSetting("discordModRoleId", "");
+    await setSetting("discordChannelId", "");
+    await setSetting("discordAutoStart", true);
+    await setSetting("discordChatRelayEnabled", true);
+    await setSetting("discordChatRelayChannelId", "");
+    await setSetting(
+      "discordCommandPermissions",
+      JSON.stringify(DEFAULT_COMMAND_PERMISSIONS),
+    );
+    await setSetting("discordWebhookEvents", JSON.stringify({}));
+
+    this.token = null;
+    this.guildId = null;
+    this.adminRoleId = null;
+    this.modRoleId = null;
+    this.channelId = null;
+    this.webhookEvents = {};
+    this.commandPermissions = { ...DEFAULT_COMMAND_PERMISSIONS };
+    this.chatRelayEnabled = true;
+    this.chatRelayChannelId = null;
+  }
+
   async updateCommandPermissions(permissions) {
     // Validate: only allow known commands and valid levels
     const validLevels = ["everyone", "moderator", "admin"];

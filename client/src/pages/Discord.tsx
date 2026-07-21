@@ -9,6 +9,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { discordApi } from '@/lib/api'
+import { useConfirm } from '@/contexts/ConfirmContext'
 import { 
   MessageSquare, 
   Bot, 
@@ -37,7 +38,8 @@ import {
   UserPlus,
   MessagesSquare,
   Users,
-  Lock
+  Lock,
+  Trash2
 } from 'lucide-react'
 import { PageHeader } from '@/components/PageHeader'
 
@@ -127,6 +129,7 @@ const SETUP_STEPS = [
 ]
 
 export default function Discord() {
+  const confirm = useConfirm()
   const [status, setStatus] = useState<DiscordStatus | null>(null)
   const [config, setConfig] = useState<DiscordConfig | null>(null)
   const [loading, setLoading] = useState(true)
@@ -313,6 +316,7 @@ export default function Discord() {
   const [starting, setStarting] = useState(false)
   const [stopping, setStopping] = useState(false)
   const [sendingTest, setSendingTest] = useState(false)
+  const [resetting, setResetting] = useState(false)
 
   const handleStart = async () => {
     if (starting) return
@@ -358,6 +362,45 @@ export default function Discord() {
       setConfigMessage({ type: 'error', text: msg })
     } finally {
       setSendingTest(false)
+    }
+  }
+
+  const handleResetConfig = async () => {
+    if (resetting) return
+
+    const confirmed = await confirm({
+      title: 'Wipe Discord bot settings?',
+      description: 'This clears the saved bot token, guild and channel IDs, role IDs, chat relay settings, command permissions, and Discord event notification setup. The bot will stop and the page will return to first-time setup.',
+      confirmLabel: 'Wipe Discord Settings',
+      destructive: true,
+    })
+
+    if (!confirmed) return
+
+    try {
+      setResetting(true)
+      setConfigMessage(null)
+      await discordApi.resetConfig()
+      setToken('')
+      setGuildId('')
+      setAdminRoleId('')
+      setModRoleId('')
+      setChannelId('')
+      setChatRelayEnabled(true)
+      setChatRelayChannelId('')
+      setAutoStart(true)
+      setBotInfo(null)
+      setInviteUrl(null)
+      setWebhookEvents({})
+      setCommandPermissions({})
+      setSetupStep(0)
+      setConfigMessage({ type: 'success', text: 'Discord bot settings wiped. You can start setup from scratch.' })
+      await loadData()
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Failed to wipe Discord settings'
+      setConfigMessage({ type: 'error', text: msg })
+    } finally {
+      setResetting(false)
     }
   }
 
@@ -1316,11 +1359,21 @@ export default function Discord() {
             )}
           </div>
 
-          <div className="flex justify-end gap-2">
+          <div className="flex flex-col gap-3 border-t border-border/60 pt-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="rounded-lg border border-destructive/25 bg-destructive/[0.05] px-4 py-3 text-sm text-muted-foreground">
+              Moving the bot to a new Discord server?
+              {' '}
+              Use wipe to remove the stored Discord setup and restart the wizard cleanly.
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="destructive" onClick={handleResetConfig} disabled={resetting}>
+                {resetting ? <><RefreshCw className="w-4 h-4 mr-2 animate-spin" /> Wiping...</> : <><Trash2 className="w-4 h-4 mr-2" /> Wipe Discord Setup</>}
+              </Button>
             <Button variant="outline" onClick={loadData}>Cancel</Button>
             <Button onClick={() => handleSaveConfig(false)} disabled={saving || !canSaveConfig}>
               {saving ? <><RefreshCw className="w-4 h-4 mr-2 animate-spin" /> Saving...</> : 'Save Changes'}
             </Button>
+            </div>
           </div>
         </CardContent>
       </Card>

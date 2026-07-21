@@ -215,6 +215,25 @@ router.post("/stop", async (req, res) => {
   }
 });
 
+// Reset Discord bot configuration
+router.post("/reset", async (req, res) => {
+  try {
+    const discordBot = req.app.get("discordBot");
+    if (!discordBot) {
+      return res.status(500).json({ error: "Discord bot not initialized" });
+    }
+
+    await discordBot.resetConfig();
+    res.json({
+      success: true,
+      message: "Discord bot settings wiped. Setup can start from scratch.",
+    });
+  } catch (error) {
+    log.error(`Failed to reset Discord config: ${error.message}`);
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
 // Test Discord connection
 router.post("/test", async (req, res) => {
   try {

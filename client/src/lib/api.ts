@@ -1346,6 +1346,7 @@ export const discordApi = {
       chatRelayEnabled,
       chatRelayChannelId,
     }),
+  resetConfig: () => apiPost("/discord/reset"),
   start: () => apiPost("/discord/start"),
   stop: () => apiPost("/discord/stop"),
   testToken: (token: string) => apiPost("/discord/test", { token }),
