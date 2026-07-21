@@ -92,11 +92,9 @@ router.put("/config", async (req, res) => {
     // Validate Discord Snowflake format for IDs
     const SNOWFLAKE = /^\d{15,21}$/;
     if (!SNOWFLAKE.test(guildId)) {
-      return res
-        .status(400)
-        .json({
-          error: "Invalid Guild ID format (must be a Discord Snowflake)",
-        });
+      return res.status(400).json({
+        error: "Invalid Guild ID format (must be a Discord Snowflake)",
+      });
     }
     if (adminRoleId && !SNOWFLAKE.test(adminRoleId)) {
       return res.status(400).json({ error: "Invalid Admin Role ID format" });

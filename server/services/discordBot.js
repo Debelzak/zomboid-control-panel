@@ -62,6 +62,24 @@ async function _safeDiscordMakeRequest(url, init) {
   };
 }
 
+async function _resolveDiscordApplicationId(token) {
+  if (!token) return null;
+
+  const response = await fetch("https://discord.com/api/v10/users/@me", {
+    headers: {
+      Authorization: `Bot ${token}`,
+    },
+    signal: AbortSignal.timeout(10000),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Discord identity lookup failed (${response.status})`);
+  }
+
+  const user = await response.json();
+  return typeof user?.id === "string" && user.id ? user.id : null;
+}
+
 // Default permission levels for each command
 // 'everyone' = no role needed, 'moderator' = mod or admin role, 'admin' = admin role only
 const DEFAULT_COMMAND_PERMISSIONS = {
@@ -309,17 +327,25 @@ export class DiscordBot {
   }
 
   async resetConfig() {
-    if (this.isRunning && this.client?.user && this.guildId) {
+    const token = this.token;
+    const guildId = this.guildId;
+
+    if (token && guildId) {
       try {
-        const rest = new REST({
-          version: "10",
-          makeRequest: _safeDiscordMakeRequest,
-        }).setToken(this.token);
-        await rest.put(
-          Routes.applicationGuildCommands(this.client.user.id, this.guildId),
-          { body: [] },
-        );
-        log.info(`Cleared slash commands from guild ${this.guildId}`);
+        const applicationId =
+          this.client?.user?.id || (await _resolveDiscordApplicationId(token));
+
+        if (applicationId) {
+          const rest = new REST({
+            version: "10",
+            makeRequest: _safeDiscordMakeRequest,
+          }).setToken(token);
+          await rest.put(
+            Routes.applicationGuildCommands(applicationId, guildId),
+            { body: [] },
+          );
+          log.info(`Cleared slash commands from guild ${guildId}`);
+        }
       } catch (error) {
         log.warn(
           `Failed to clear slash commands during Discord reset: ${error.message}`,
