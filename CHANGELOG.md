@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.77] - 2026-07-22
+
+### Added
+
+- **SteamCMD discovery**: the server update dialog now detects and saves an installed SteamCMD path automatically, including the `/home/steam/steamcmd` location used by the all-in-one Docker image.
+- **Branch details**: the server update dialog now explains the selected Steam channel and displays its Steam build number and last-updated time when available.
+
 ## [1.0.76] - 2026-07-22
 
 ### Fixed

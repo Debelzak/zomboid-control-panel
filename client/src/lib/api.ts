@@ -521,6 +521,14 @@ export const serverApi = {
   install: (config: Record<string, unknown>) =>
     apiPost("/server/install", config),
 
+  detectSteamCmd: () =>
+    apiGet("/server/steamcmd/detect") as Promise<{
+      found: boolean;
+      path?: string;
+      executable?: string;
+      message: string;
+    }>,
+
   // Quick setup (create server config without SteamCMD)
   quickSetup: (config: Record<string, unknown>) =>
     apiPost("/server/quick-setup", config),

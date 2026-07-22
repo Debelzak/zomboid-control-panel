@@ -203,7 +203,7 @@ export default function Servers() {
   const [steamcmdPath, setSteamcmdPath] = useState('')
   const [updateInfo, setUpdateInfo] = useState<UpdateStatus | null>(null)
   const [gameVersion, setGameVersion] = useState<string | null>(null)
-  const [availableBranches, setAvailableBranches] = useState<Array<{name: string, description: string, buildId?: string | null}>>([
+  const [availableBranches, setAvailableBranches] = useState<Array<{name: string, description: string, buildId?: string | null, timeUpdated?: string | null}>>([
     { name: 'public', description: 'Public (Stable)' },
     { name: 'unstable', description: 'Unstable beta' }
   ])
@@ -297,7 +297,12 @@ export default function Servers() {
     const fetchBranches = async () => {
       setLoadingBranches(true)
       try {
-        const data = await serverApi.getBranches(steamcmdPath)
+        const detection = await serverApi.detectSteamCmd()
+        const resolvedSteamcmdPath = detection.found && detection.path ? detection.path : steamcmdPath
+        if (resolvedSteamcmdPath && resolvedSteamcmdPath !== steamcmdPath) {
+          setSteamcmdPath(resolvedSteamcmdPath)
+        }
+        const data = await serverApi.getBranches(resolvedSteamcmdPath)
         if (data.branches && Array.isArray(data.branches)) {
           setAvailableBranches(() => {
             const fetched = data.branches as Array<{ name: string; description: string; buildId?: string | null }>
@@ -314,7 +319,12 @@ export default function Servers() {
             ].filter(Boolean) as string[]
             for (const name of candidates) {
               if (!have.has(name)) {
-                extras.push({ name, description: 'Beta branch (manual)' })
+                const description = name === 'unstable'
+                  ? 'Build 42 testing branch. Back up saves and expect mod incompatibilities.'
+                  : name === 'iwbums'
+                    ? 'Experimental testing branch. Back up saves before switching.'
+                    : 'Beta branch selected for this server.'
+                extras.push({ name, description })
                 have.add(name)
               }
             }
@@ -1989,7 +1999,14 @@ export default function Servers() {
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                Select the Steam beta branch to download from
+                {(() => {
+                  const selected = availableBranches.find(b => b.name === steamOperation?.branch)
+                  if (!selected) return 'Select the Steam branch to download from'
+                  const details = [selected.description]
+                  if (selected.buildId) details.push(`Build ${selected.buildId}`)
+                  if (selected.timeUpdated) details.push(`Updated ${new Date(selected.timeUpdated).toLocaleString()}`)
+                  return details.join(' - ')
+                })()}
               </p>
             </div>
             

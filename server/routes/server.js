@@ -44,6 +44,23 @@ function getSteamCmdExe(steamcmdPath) {
   return primary; // Return primary path even if not found — let caller handle the error
 }
 
+async function findSteamCmdPath() {
+  const configuredPath = await getSetting("steamcmdPath");
+  const candidates = [
+    configuredPath,
+    process.env.STEAMCMD_PATH,
+    "/home/steam/steamcmd",
+    "/home/steam/Steam/steamcmd",
+    "/opt/steamcmd",
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(getSteamCmdExe(candidate))) return candidate;
+  }
+
+  return null;
+}
+
 // Track active Steam operations to prevent concurrent runs on the same path
 const activeSteamOperations = new Map();
 
@@ -897,11 +914,35 @@ router.post("/events/horde", async (req, res) => {
 // Fallback branches if dynamic fetch fails
 // These are the known valid Steam branches for PZ Dedicated Server (App ID 380870)
 const FALLBACK_BRANCHES = [
-  { name: "public", description: "Default stable branch (Build 41)" },
-  { name: "unstable", description: "Build 42 (including multiplayer)" },
-  { name: "iwbums", description: "I Will Backup My Save (testing)" },
-  { name: "legacy41", description: "Legacy Build 41" },
+  { name: "public", description: "Current stable release. Recommended for most servers." },
+  { name: "unstable", description: "Build 42 testing branch, including multiplayer. Back up saves and expect mod incompatibilities." },
+  { name: "iwbums", description: "Experimental testing branch. Back up saves before switching." },
+  { name: "legacy41", description: "Legacy Build 41 branch for older worlds and mods." },
 ];
+
+router.get("/steamcmd/detect", async (_req, res) => {
+  try {
+    const steamcmdPath = await findSteamCmdPath();
+    if (!steamcmdPath) {
+      return res.json({ found: false, message: "SteamCMD was not found automatically" });
+    }
+
+    const configuredPath = await getSetting("steamcmdPath");
+    if (configuredPath !== steamcmdPath) {
+      await setSetting("steamcmdPath", steamcmdPath);
+    }
+
+    res.json({
+      found: true,
+      path: steamcmdPath,
+      executable: getSteamCmdExe(steamcmdPath),
+      message: "SteamCMD found automatically",
+    });
+  } catch (error) {
+    log.warn(`Failed to detect SteamCMD: ${error.message}`);
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
 
 // Get available Steam branches for PZ Dedicated Server (App ID 380870)
 router.get("/branches", async (req, res) => {
