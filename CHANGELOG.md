@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.72] - 2026-07-22
+
+### Fixed
+
+- **Configurable Steam Workshop update frequency**: the Mod Update Settings interval now accepts whole-minute values from 1 to 120 and applies a saved change immediately, without restarting the panel.
+- **One-minute polling regression**: Settings stored values in minutes but startup treated them as milliseconds and clamped them to one minute. Existing millisecond values are migrated safely, and invalid values are rejected.
+- **Mod-check timer edge cases**: rescheduling clears stale delayed startup checks without interrupting a pending player-aware restart; unexpected scheduled-check failures are caught and logged.
+
 ## [1.0.70] - 2026-07-17
 
 ### Added

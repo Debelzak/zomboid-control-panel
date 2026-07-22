@@ -1,11 +1,11 @@
-import esbuild from 'esbuild';
-import { execSync } from 'child_process';
-import fs from 'fs';
-import path from 'path';
-import crypto from 'crypto';
+import esbuild from "esbuild";
+import { execSync } from "child_process";
+import fs from "fs";
+import path from "path";
+import crypto from "crypto";
 
-const distDir = './dist-exe';
-const releaseDir = './release';
+const distDir = "./dist-exe";
+const releaseDir = "./release";
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -15,13 +15,18 @@ async function cleanDir(dir, maxRetries = 3) {
   for (let i = 0; i < maxRetries; i++) {
     try {
       if (fs.existsSync(dir)) {
-        fs.rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 1000 });
+        fs.rmSync(dir, {
+          recursive: true,
+          force: true,
+          maxRetries: 3,
+          retryDelay: 1000,
+        });
       }
       return true;
     } catch (error) {
       if (i === maxRetries - 1) {
         console.warn(`Could not fully clean ${dir}: ${error.message}`);
-        console.warn('Attempting to continue anyway...');
+        console.warn("Attempting to continue anyway...");
         return false;
       }
       console.log(`Retry ${i + 1}/${maxRetries} for ${dir}...`);
@@ -32,41 +37,42 @@ async function cleanDir(dir, maxRetries = 3) {
 }
 
 function resolveTargets(args) {
-  const wantsAll = args.includes('--all');
-  const wantsWindows = args.includes('--windows');
-  const wantsLinux = args.includes('--linux');
+  const wantsAll = args.includes("--all");
+  const wantsWindows = args.includes("--windows");
+  const wantsLinux = args.includes("--linux");
 
   if (wantsAll || (wantsWindows && wantsLinux)) {
-    return ['win', 'linux'];
+    return ["win", "linux"];
   }
 
   if (wantsWindows) {
-    return ['win'];
+    return ["win"];
   }
 
   if (wantsLinux) {
-    return ['linux'];
+    return ["linux"];
   }
 
-  return [process.platform === 'win32' ? 'win' : 'linux'];
+  return [process.platform === "win32" ? "win" : "linux"];
 }
 
 function sha256File(filePath) {
-  const hash = crypto.createHash('sha256');
+  const hash = crypto.createHash("sha256");
   hash.update(fs.readFileSync(filePath));
-  return hash.digest('hex');
+  return hash.digest("hex");
 }
 
 function resolveBuiltBinaryPath(target) {
-  const candidates = target === 'linux'
-    ? [
-        './dist-exe/zomboid-control-panel',
-        './dist-exe/zomboid-control-panel-linux',
-      ]
-    : [
-        './dist-exe/zomboid-control-panel.exe',
-        './dist-exe/zomboid-control-panel-win.exe',
-      ];
+  const candidates =
+    target === "linux"
+      ? [
+          "./dist-exe/zomboid-control-panel",
+          "./dist-exe/zomboid-control-panel-linux",
+        ]
+      : [
+          "./dist-exe/zomboid-control-panel.exe",
+          "./dist-exe/zomboid-control-panel-win.exe",
+        ];
 
   return candidates.find((candidate) => fs.existsSync(candidate)) || null;
 }
@@ -157,7 +163,7 @@ server-side drop-in, NOT a Workshop mod — there is no client component.
   5 auto-snapshots and will restore from the newest on next startup.
 `;
 
-  fs.writeFileSync('./release/README.txt', readme);
+  fs.writeFileSync("./release/README.txt", readme);
 }
 
 async function main() {
@@ -174,19 +180,19 @@ async function main() {
     fs.mkdirSync(releaseDir, { recursive: true });
   }
 
-  console.log('Building client...');
+  console.log("Building client...");
   try {
-    execSync('npm run build', { cwd: './client', stdio: 'inherit' });
-    console.log('Client built successfully');
+    execSync("npm run build", { cwd: "./client", stdio: "inherit" });
+    console.log("Client built successfully");
   } catch (error) {
-    console.error('Client build failed:', error.message);
+    console.error("Client build failed:", error.message);
     process.exit(1);
   }
 
-  console.log('Building server bundle...');
+  console.log("Building server bundle...");
 
-  const rootPkg = JSON.parse(fs.readFileSync('./package.json', 'utf-8'));
-  const panelVersion = rootPkg.version || '0.0.0';
+  const rootPkg = JSON.parse(fs.readFileSync("./package.json", "utf-8"));
+  const panelVersion = rootPkg.version || "0.0.0";
   console.log(`Version: ${panelVersion}`);
 
   // Read PanelBridge.lua and inline it as a base64 define so it lives INSIDE
@@ -194,27 +200,33 @@ async function main() {
   // silently skipping the file, leaving the on-disk pz-mod/ folder as the only
   // source — which goes stale after a binary-only auto-update and is the root
   // cause of the "worldmap blank on Linux / mod version mismatch" bug.
-  const luaSourcePath = './pz-mod/PanelBridge/media/lua/server/PanelBridge.lua';
-  let panelBridgeLuaB64 = '';
+  const luaSourcePath = "./pz-mod/PanelBridge/media/lua/server/PanelBridge.lua";
+  let panelBridgeLuaB64 = "";
   if (fs.existsSync(luaSourcePath)) {
-    panelBridgeLuaB64 = fs.readFileSync(luaSourcePath).toString('base64');
-    const luaVerMatch = fs.readFileSync(luaSourcePath, 'utf8').match(/VERSION\s*=\s*"([^"]+)"/);
-    const luaVer = luaVerMatch ? luaVerMatch[1] : 'unknown';
-    console.log(`Embedding PanelBridge.lua v${luaVer} (${panelBridgeLuaB64.length} base64 chars)`);
+    panelBridgeLuaB64 = fs.readFileSync(luaSourcePath).toString("base64");
+    const luaVerMatch = fs
+      .readFileSync(luaSourcePath, "utf8")
+      .match(/VERSION\s*=\s*"([^"]+)"/);
+    const luaVer = luaVerMatch ? luaVerMatch[1] : "unknown";
+    console.log(
+      `Embedding PanelBridge.lua v${luaVer} (${panelBridgeLuaB64.length} base64 chars)`,
+    );
   } else {
-    console.warn(`WARNING: ${luaSourcePath} not found — binary will not be able to auto-update the Lua mod.`);
+    console.warn(
+      `WARNING: ${luaSourcePath} not found — binary will not be able to auto-update the Lua mod.`,
+    );
   }
 
   await esbuild.build({
-    entryPoints: ['./server/index.js'],
+    entryPoints: ["./server/index.js"],
     bundle: true,
-    platform: 'node',
-    target: 'node22',
-    format: 'cjs',
-    outfile: './dist-exe/server.cjs',
-    external: ['@aws-sdk/client-s3'],
+    platform: "node",
+    target: "node22",
+    format: "cjs",
+    outfile: "./dist-exe/server.cjs",
+    external: ["@aws-sdk/client-s3"],
     define: {
-      'import.meta.url': 'import_meta_url',
+      "import.meta.url": "import_meta_url",
       PANEL_VERSION: JSON.stringify(panelVersion),
       PANEL_BRIDGE_LUA_B64: JSON.stringify(panelBridgeLuaB64),
     },
@@ -223,22 +235,25 @@ async function main() {
     },
   });
 
-  console.log('Server bundled successfully');
+  console.log("Server bundled successfully");
 
   const pkgConfig = {
-    name: 'zomboid-control-panel',
+    name: "zomboid-control-panel",
     version: panelVersion,
-    bin: 'server.cjs',
+    bin: "server.cjs",
     pkg: {
-      scripts: 'server.cjs',
+      scripts: "server.cjs",
       targets: targets.map((target) => `node22-${target}-x64`),
-      outputPath: '.',
+      outputPath: ".",
     },
   };
 
-  fs.writeFileSync('./dist-exe/package.json', JSON.stringify(pkgConfig, null, 2));
+  fs.writeFileSync(
+    "./dist-exe/package.json",
+    JSON.stringify(pkgConfig, null, 2),
+  );
 
-  console.log(`Creating executables for: ${targets.join(', ')}`);
+  console.log(`Creating executables for: ${targets.join(", ")}`);
   try {
     // @yao-pkg/pkg is the actively maintained fork of vercel/pkg (which is
     // stuck on Node 18.5). Its CLI is also named `pkg`.
@@ -246,19 +261,20 @@ async function main() {
     // across Linux hosts and don't fail with "V8 rejected the bytecode cache".
     execSync('npx pkg . --compress GZip --public --public-packages "*"', {
       cwd: distDir,
-      stdio: 'inherit',
+      stdio: "inherit",
     });
   } catch (error) {
-    console.error('Failed to create executable(s):', error.message);
+    console.error("Failed to create executable(s):", error.message);
     process.exit(1);
   }
 
   const builtArtifacts = [];
   for (const target of targets) {
     const sourceBinary = resolveBuiltBinaryPath(target);
-    const targetBinary = target === 'linux'
-      ? './release/ZomboidControlPanel'
-      : './release/ZomboidControlPanel.exe';
+    const targetBinary =
+      target === "linux"
+        ? "./release/ZomboidControlPanel"
+        : "./release/ZomboidControlPanel.exe";
 
     if (!sourceBinary) {
       console.error(`Missing build output for target: ${target}`);
@@ -266,7 +282,7 @@ async function main() {
     }
 
     fs.copyFileSync(sourceBinary, targetBinary);
-    if (target === 'linux') {
+    if (target === "linux") {
       fs.chmodSync(targetBinary, 0o755);
     }
 
@@ -277,14 +293,16 @@ async function main() {
     });
   }
 
-  console.log('Creating release package...');
+  console.log("Creating release package...");
 
-  const clientDist = './client/dist';
-  const targetClientDist = './release/client/dist';
+  const clientDist = "./client/dist";
+  const targetClientDist = "./release/client/dist";
   if (fs.existsSync(clientDist)) {
     fs.cpSync(clientDist, targetClientDist, { recursive: true });
   } else {
-    console.error('Client dist not found. Run "npm run build" in client first.');
+    console.error(
+      'Client dist not found. Run "npm run build" in client first.',
+    );
     process.exit(1);
   }
 
@@ -300,33 +318,36 @@ async function main() {
   // `defaultData` (see server/database/init.js). We only ship a reference
   // example file and a README warning so users see what shape the file takes
   // without risking their real data.
-  fs.mkdirSync('./release/data', { recursive: true });
+  fs.mkdirSync("./release/data", { recursive: true });
 
-  const exampleDbSrc = './data/db.example.json';
+  const exampleDbSrc = "./data/db.example.json";
   if (fs.existsSync(exampleDbSrc)) {
-    fs.copyFileSync(exampleDbSrc, './release/data/db.example.json');
+    fs.copyFileSync(exampleDbSrc, "./release/data/db.example.json");
   } else {
     // Fallback if the example file isn't present in dev — write a minimal one.
     const defaultDb = {
       settings: {
-        serverPath: '',
-        serverExe: '',
-        rconPassword: '',
+        serverPath: "",
+        serverExe: "",
+        rconPassword: "",
         rconPort: 27015,
-        adminPassword: '',
+        adminPassword: "",
       },
       players: [],
       scheduledTasks: [],
       servers: [],
       discord: {
         enabled: false,
-        token: '',
-        guildId: '',
-        channelId: '',
-        adminRoleId: '',
+        token: "",
+        guildId: "",
+        channelId: "",
+        adminRoleId: "",
       },
     };
-    fs.writeFileSync('./release/data/db.example.json', JSON.stringify(defaultDb, null, 2));
+    fs.writeFileSync(
+      "./release/data/db.example.json",
+      JSON.stringify(defaultDb, null, 2),
+    );
   }
 
   // Drop a clear upgrade warning next to the example so anyone poking around
@@ -362,31 +383,33 @@ Recommended safe-upgrade commands:
   Linux:   tar xzf release.tar.gz --exclude='data/db.json' --exclude='data/backups'
   Windows: extract everything EXCEPT the data/ folder, or back up data/ first.
 `;
-  fs.writeFileSync('./release/data/README.txt', dataReadme);
+  fs.writeFileSync("./release/data/README.txt", dataReadme);
 
-  fs.mkdirSync('./release/logs', { recursive: true });
-  fs.writeFileSync('./release/logs/.gitkeep', '');
+  fs.mkdirSync("./release/logs", { recursive: true });
+  fs.writeFileSync("./release/logs/.gitkeep", "");
 
-  if (fs.existsSync('./pz-mod')) {
-    fs.cpSync('./pz-mod', './release/pz-mod', { recursive: true });
+  if (fs.existsSync("./pz-mod")) {
+    fs.cpSync("./pz-mod", "./release/pz-mod", { recursive: true });
   }
 
   // Ship the browser extension folder. Users can either "Load unpacked"
   // directly from this folder, or zip it themselves.
-  if (fs.existsSync('./browser-extension')) {
-    fs.cpSync('./browser-extension', './release/browser-extension', { recursive: true });
+  if (fs.existsSync("./browser-extension")) {
+    fs.cpSync("./browser-extension", "./release/browser-extension", {
+      recursive: true,
+    });
 
     // Best-effort standalone zip for the GitHub release asset. Skipped on
     // platforms without PowerShell (Linux build hosts), which is fine —
     // release.ps1 also builds it as part of step 4.
-    if (process.platform === 'win32') {
+    if (process.platform === "win32") {
       try {
         execSync(
           'powershell -NoProfile -ExecutionPolicy Bypass -Command "Compress-Archive -Path browser-extension/* -DestinationPath release/zomboid-panel-extension.zip -Force"',
-          { stdio: 'inherit' }
+          { stdio: "inherit" },
         );
       } catch (err) {
-        console.warn('Could not build browser-extension zip:', err.message);
+        console.warn("Could not build browser-extension zip:", err.message);
       }
     }
   }
@@ -395,15 +418,27 @@ Recommended safe-upgrade commands:
   // at runtime to delete rows from the save's vehicles.db. The file is tiny
   // (~660 KB) and pkg can't introspect sql.js's dynamic require, so we copy
   // it manually.
-  const wasmSrc = './node_modules/sql.js/dist/sql-wasm.wasm';
+  const wasmSrc = "./node_modules/sql.js/dist/sql-wasm.wasm";
   if (fs.existsSync(wasmSrc)) {
-    fs.copyFileSync(wasmSrc, './release/sql-wasm.wasm');
+    fs.copyFileSync(wasmSrc, "./release/sql-wasm.wasm");
   } else {
-    console.warn('sql-wasm.wasm not found in node_modules/sql.js/dist — vehicle cleanup will fail at runtime. Run `npm install` first.');
+    console.warn(
+      "sql-wasm.wasm not found in node_modules/sql.js/dist — vehicle cleanup will fail at runtime. Run `npm install` first.",
+    );
   }
 
-  if (fs.existsSync('./zomboid-panel.service')) {
-    fs.copyFileSync('./zomboid-panel.service', './release/zomboid-panel.service');
+  if (fs.existsSync("./zomboid-panel.service")) {
+    fs.copyFileSync(
+      "./zomboid-panel.service",
+      "./release/zomboid-panel.service",
+    );
+  }
+
+  if (fs.existsSync("./docker-compose.install.yml")) {
+    fs.copyFileSync(
+      "./docker-compose.install.yml",
+      "./release/docker-compose.install.yml",
+    );
   }
 
   // Start.bat v2 — supervisor + applier.
@@ -562,7 +597,7 @@ goto :eof
   >>"%LOG_FILE%" echo [!NOW!] %~1
 goto :eof
 `;
-  fs.writeFileSync('./release/Start.bat', startBat);
+  fs.writeFileSync("./release/Start.bat", startBat);
 
   const startSh = `#!/bin/bash
 # Zomboid Control Panel — Linux launcher
@@ -599,7 +634,9 @@ fi
 
 ./ZomboidControlPanel
 `;
-  fs.writeFileSync('./release/start.sh', startSh.replace(/\r\n/g, '\n'), { mode: 0o755 });
+  fs.writeFileSync("./release/start.sh", startSh.replace(/\r\n/g, "\n"), {
+    mode: 0o755,
+  });
 
   const checksumLines = [];
   const manifestArtifacts = [];
@@ -613,35 +650,42 @@ fi
     });
   }
 
-  fs.writeFileSync('./release/checksums.txt', `${checksumLines.join('\n')}\n`);
-  fs.writeFileSync('./release/release-manifest.json', JSON.stringify({
-    version: panelVersion,
-    builtAt: new Date().toISOString(),
-    hostPlatform: process.platform,
-    targets,
-    artifacts: manifestArtifacts,
-  }, null, 2));
+  fs.writeFileSync("./release/checksums.txt", `${checksumLines.join("\n")}\n`);
+  fs.writeFileSync(
+    "./release/release-manifest.json",
+    JSON.stringify(
+      {
+        version: panelVersion,
+        builtAt: new Date().toISOString(),
+        hostPlatform: process.platform,
+        targets,
+        artifacts: manifestArtifacts,
+      },
+      null,
+      2,
+    ),
+  );
 
   writeReleaseReadme();
 
-  console.log('Release package created successfully');
-  console.log('Location: ./release/');
-  console.log('Contents:');
+  console.log("Release package created successfully");
+  console.log("Location: ./release/");
+  console.log("Contents:");
   for (const artifact of builtArtifacts) {
     console.log(`  - ${artifact.fileName} (${artifact.platform})`);
   }
-  console.log('  - Start.bat');
-  console.log('  - start.sh');
-  console.log('  - checksums.txt');
-  console.log('  - release-manifest.json');
-  console.log('  - client/dist/');
-  console.log('  - data/');
-  console.log('  - logs/');
-  console.log('  - pz-mod/');
-  if (fs.existsSync('./release/zomboid-panel.service')) {
-    console.log('  - zomboid-panel.service');
+  console.log("  - Start.bat");
+  console.log("  - start.sh");
+  console.log("  - checksums.txt");
+  console.log("  - release-manifest.json");
+  console.log("  - client/dist/");
+  console.log("  - data/");
+  console.log("  - logs/");
+  console.log("  - pz-mod/");
+  if (fs.existsSync("./release/zomboid-panel.service")) {
+    console.log("  - zomboid-panel.service");
   }
-  console.log('  - README.txt');
+  console.log("  - README.txt");
 }
 
 await main();

@@ -1,35 +1,64 @@
-import express from 'express';
-import { createLogger } from '../utils/logger.js';
-const log = createLogger('API:Config');
-import { getAllSettings, setSetting } from '../database/init.js';
-import { sanitizeError } from '../utils/sanitize.js';
+import express from "express";
+import { createLogger } from "../utils/logger.js";
+const log = createLogger("API:Config");
+import { getAllSettings, setSetting } from "../database/init.js";
+import { sanitizeError } from "../utils/sanitize.js";
+import {
+  MOD_CHECK_INTERVAL_MINUTES_MAX,
+  MOD_CHECK_INTERVAL_MINUTES_MIN,
+  minutesToCheckIntervalMs,
+} from "../services/modChecker.js";
 
 const router = express.Router();
 
 // Validation helpers
 const VALID_SETTINGS_KEYS = [
-  'rconHost', 'rconPort', 'rconPassword',
-  'serverPath', 'serverConfigPath', 'zomboidDataPath',
-  'steamcmdPath', 'steamApiKey', 'serverName', 'minMemory', 'maxMemory', 'serverPort',
-  'modCheckInterval', 'modAutoRestart', 'modRestartDelay',
-  'darkMode', 'autoReconnect', 'reconnectInterval',
-  'discordEnabled', 'discordToken', 'discordGuildId', 'discordAdminRole',
-  'autoStartServer',
-  'panelPort',
-  'httpsEnabled', 'httpsPort', 'httpsKeyPath', 'httpsCertPath',
-  'corsAllowedOrigins', 'corsAllowAll', 'corsAllowPrivateNetworks', 'corsDebug',
-  'panelBridgeAutoUpdate',
-  'autoExportOnLogin',
-  'autoExportMaxPerPlayer',
+  "rconHost",
+  "rconPort",
+  "rconPassword",
+  "serverPath",
+  "serverConfigPath",
+  "zomboidDataPath",
+  "steamcmdPath",
+  "steamApiKey",
+  "serverName",
+  "minMemory",
+  "maxMemory",
+  "serverPort",
+  "modCheckInterval",
+  "modAutoRestart",
+  "modRestartDelay",
+  "darkMode",
+  "autoReconnect",
+  "reconnectInterval",
+  "discordEnabled",
+  "discordToken",
+  "discordGuildId",
+  "discordAdminRole",
+  "autoStartServer",
+  "panelPort",
+  "httpsEnabled",
+  "httpsPort",
+  "httpsKeyPath",
+  "httpsCertPath",
+  "corsAllowedOrigins",
+  "corsAllowAll",
+  "corsAllowPrivateNetworks",
+  "corsDebug",
+  "panelBridgeAutoUpdate",
+  "autoExportOnLogin",
+  "autoExportMaxPerPlayer",
   // Opt-in external public-IP lookup (api.ipify.org) shown on the dashboard/
   // panel-info — off by default (see serverManager.fetchPublicIp).
-  'enablePublicIpLookup',
+  "enablePublicIpLookup",
   // Workshop collection sync — mirrors tracked mods into a Steam collection.
   // steamSessionId / steamLoginSecure are cookie pairs; treated as secrets.
-  'workshopCollectionId', 'workshopCollectionAutoSync',
-  'steamSessionId', 'steamLoginSecure',
+  "workshopCollectionId",
+  "workshopCollectionAutoSync",
+  "steamSessionId",
+  "steamLoginSecure",
   // Chat page Quick Messages presets — array of strings.
-  'chatPresets'
+  "chatPresets",
 ];
 
 const OPTION_NAME_REGEX = /^[a-zA-Z0-9_]{1,64}$/;
@@ -40,7 +69,7 @@ const MAX_CORS_ALLOWED_ORIGINS = 100;
 const MAX_CORS_ORIGIN_LENGTH = 256;
 
 function isValidOptionName(name) {
-  return typeof name === 'string' && OPTION_NAME_REGEX.test(name);
+  return typeof name === "string" && OPTION_NAME_REGEX.test(name);
 }
 
 function isValidOptionValue(value) {
@@ -49,8 +78,8 @@ function isValidOptionValue(value) {
 }
 
 function validateCorsAllowedOrigins(value) {
-  if (typeof value !== 'string') {
-    return 'CORS allowed origins must be a string list';
+  if (typeof value !== "string") {
+    return "CORS allowed origins must be a string list";
   }
 
   if (value.length > MAX_CORS_ALLOWED_ORIGINS_LENGTH) {
@@ -72,7 +101,7 @@ function validateCorsAllowedOrigins(value) {
     }
     try {
       const url = new URL(origin);
-      if (!['http:', 'https:'].includes(url.protocol)) {
+      if (!["http:", "https:"].includes(url.protocol)) {
         return `Only http/https origins are allowed: ${origin}`;
       }
     } catch {
@@ -84,9 +113,9 @@ function validateCorsAllowedOrigins(value) {
 }
 
 // Get server configuration
-router.get('/', async (req, res) => {
+router.get("/", async (req, res) => {
   try {
-    const serverManager = req.app.get('serverManager');
+    const serverManager = req.app.get("serverManager");
     const config = await serverManager.getServerConfig();
     res.json({ config });
   } catch (error) {
@@ -96,18 +125,18 @@ router.get('/', async (req, res) => {
 });
 
 // Update server configuration
-router.put('/', async (req, res) => {
+router.put("/", async (req, res) => {
   try {
-    log.info('PUT /config — saving server config');
-    const serverManager = req.app.get('serverManager');
+    log.info("PUT /config — saving server config");
+    const serverManager = req.app.get("serverManager");
     const { config } = req.body;
-    
+
     if (!config) {
-      return res.status(400).json({ error: 'Config is required' });
+      return res.status(400).json({ error: "Config is required" });
     }
-    
+
     await serverManager.saveServerConfig(config);
-    res.json({ success: true, message: 'Configuration saved' });
+    res.json({ success: true, message: "Configuration saved" });
   } catch (error) {
     log.error(`Failed to save config: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });
@@ -115,9 +144,9 @@ router.put('/', async (req, res) => {
 });
 
 // Reload server options via RCON
-router.post('/reload', async (req, res) => {
+router.post("/reload", async (req, res) => {
   try {
-    const rconService = req.app.get('rconService');
+    const rconService = req.app.get("rconService");
     const result = await rconService.reloadOptions();
     res.json(result);
   } catch (error) {
@@ -127,9 +156,9 @@ router.post('/reload', async (req, res) => {
 });
 
 // Get server options via RCON
-router.get('/options', async (req, res) => {
+router.get("/options", async (req, res) => {
   try {
-    const rconService = req.app.get('rconService');
+    const rconService = req.app.get("rconService");
     const result = await rconService.showOptions();
     res.json(result);
   } catch (error) {
@@ -139,25 +168,27 @@ router.get('/options', async (req, res) => {
 });
 
 // Change a specific option via RCON
-router.post('/option', async (req, res) => {
+router.post("/option", async (req, res) => {
   try {
-    const rconService = req.app.get('rconService');
+    const rconService = req.app.get("rconService");
     const { name, value } = req.body;
     log.info(`POST /option: ${name}=${value}`);
-    
+
     if (!name || value === undefined) {
-      return res.status(400).json({ error: 'Option name and value are required' });
+      return res
+        .status(400)
+        .json({ error: "Option name and value are required" });
     }
-    
+
     // Validate option name and value to prevent command injection
     if (!isValidOptionName(name)) {
-      return res.status(400).json({ error: 'Invalid option name format' });
+      return res.status(400).json({ error: "Invalid option name format" });
     }
-    
+
     if (!isValidOptionValue(value)) {
-      return res.status(400).json({ error: 'Invalid option value format' });
+      return res.status(400).json({ error: "Invalid option value format" });
     }
-    
+
     const result = await rconService.changeOption(name, value);
     res.json(result);
   } catch (error) {
@@ -167,7 +198,13 @@ router.post('/option', async (req, res) => {
 });
 
 // Sensitive keys that should be masked in API responses
-const SENSITIVE_KEYS = ['rconPassword', 'discordToken', 'steamApiKey', 'steamSessionId', 'steamLoginSecure'];
+const SENSITIVE_KEYS = [
+  "rconPassword",
+  "discordToken",
+  "steamApiKey",
+  "steamSessionId",
+  "steamLoginSecure",
+];
 
 // Detect a value that is just the bullet-mask we send to the client.
 // If the user saves Settings without re-pasting a sensitive value, the
@@ -176,8 +213,8 @@ const SENSITIVE_KEYS = ['rconPassword', 'discordToken', 'steamApiKey', 'steamSes
 // as well as values that are entirely bullets / asterisks (defence in
 // depth in case the mask format changes).
 export function isMaskedSecret(value) {
-  if (typeof value !== 'string' || value.length === 0) return false;
-  if (value.startsWith('••••••••')) return true;
+  if (typeof value !== "string" || value.length === 0) return false;
+  if (value.startsWith("••••••••")) return true;
   if (/^[•*\u2022\u25CF\u25CB]+$/.test(value)) return true;
   return false;
 }
@@ -185,15 +222,19 @@ export function isMaskedSecret(value) {
 function maskSensitiveSettings(settings) {
   const masked = { ...settings };
   for (const key of SENSITIVE_KEYS) {
-    if (masked[key] && typeof masked[key] === 'string' && masked[key].length > 0) {
-      masked[key] = '••••••••' + masked[key].slice(-4);
+    if (
+      masked[key] &&
+      typeof masked[key] === "string" &&
+      masked[key].length > 0
+    ) {
+      masked[key] = "••••••••" + masked[key].slice(-4);
     }
   }
   return masked;
 }
 
 // Get application settings
-router.get('/app-settings', async (req, res) => {
+router.get("/app-settings", async (req, res) => {
   try {
     const settings = await getAllSettings();
     res.json({ settings: maskSensitiveSettings(settings) });
@@ -204,15 +245,17 @@ router.get('/app-settings', async (req, res) => {
 });
 
 // Update application settings
-router.put('/app-settings', async (req, res) => {
+router.put("/app-settings", async (req, res) => {
   try {
     const { settings } = req.body;
-    log.info(`PUT /app-settings — updating ${settings ? Object.keys(settings).length : 0} keys: [${settings ? Object.keys(settings).join(', ') : ''}]`);
-    
-    if (!settings || typeof settings !== 'object') {
-      return res.status(400).json({ error: 'Settings are required' });
+    log.info(
+      `PUT /app-settings — updating ${settings ? Object.keys(settings).length : 0} keys: [${settings ? Object.keys(settings).join(", ") : ""}]`,
+    );
+
+    if (!settings || typeof settings !== "object") {
+      return res.status(400).json({ error: "Settings are required" });
     }
-    
+
     // Only allow valid setting keys to prevent prototype pollution
     const validEntries = [];
     for (const [key, value] of Object.entries(settings)) {
@@ -221,27 +264,52 @@ router.put('/app-settings', async (req, res) => {
         continue;
       }
 
-      if (key === 'corsAllowedOrigins') {
+      if (key === "corsAllowedOrigins") {
         const corsValidationError = validateCorsAllowedOrigins(value);
         if (corsValidationError) {
           return res.status(400).json({ error: corsValidationError });
         }
       }
 
-      if (['corsAllowAll', 'corsAllowPrivateNetworks', 'corsDebug', 'panelBridgeAutoUpdate', 'autoExportOnLogin', 'enablePublicIpLookup'].includes(key) && typeof value !== 'boolean') {
+      if (
+        key === "modCheckInterval" &&
+        minutesToCheckIntervalMs(value) === null
+      ) {
+        return res.status(400).json({
+          error: `modCheckInterval must be a whole number of minutes from ${MOD_CHECK_INTERVAL_MINUTES_MIN} to ${MOD_CHECK_INTERVAL_MINUTES_MAX}`,
+        });
+      }
+
+      if (
+        [
+          "corsAllowAll",
+          "corsAllowPrivateNetworks",
+          "corsDebug",
+          "panelBridgeAutoUpdate",
+          "autoExportOnLogin",
+          "enablePublicIpLookup",
+        ].includes(key) &&
+        typeof value !== "boolean"
+      ) {
         return res.status(400).json({ error: `${key} must be true or false` });
       }
 
-      if (key === 'chatPresets') {
+      if (key === "chatPresets") {
         // Array of short strings, max 50 entries, each <=500 chars.
         if (!Array.isArray(value)) {
-          return res.status(400).json({ error: 'chatPresets must be an array' });
+          return res
+            .status(400)
+            .json({ error: "chatPresets must be an array" });
         }
         if (value.length > 50) {
-          return res.status(400).json({ error: 'chatPresets supports up to 50 entries' });
+          return res
+            .status(400)
+            .json({ error: "chatPresets supports up to 50 entries" });
         }
-        if (!value.every(v => typeof v === 'string' && v.length <= 500)) {
-          return res.status(400).json({ error: 'chatPresets entries must be strings up to 500 characters' });
+        if (!value.every((v) => typeof v === "string" && v.length <= 500)) {
+          return res.status(400).json({
+            error: "chatPresets entries must be strings up to 500 characters",
+          });
         }
       }
 
@@ -255,26 +323,46 @@ router.put('/app-settings', async (req, res) => {
     // collection "cookies not configured" bug for the symptom.
     const filtered = validEntries.filter(([key, value]) => {
       if (SENSITIVE_KEYS.includes(key) && isMaskedSecret(value)) {
-        log.info(`Preserving stored value for sensitive key "${key}" (masked input ignored)`);
+        log.info(
+          `Preserving stored value for sensitive key "${key}" (masked input ignored)`,
+        );
         return false;
       }
       return true;
     });
 
     for (const [key, value] of filtered) {
+      if (key === "modCheckInterval") continue;
       await setSetting(key, value);
     }
-    
+
+    const modCheckIntervalEntry = filtered.find(
+      ([key]) => key === "modCheckInterval",
+    );
+    if (modCheckIntervalEntry) {
+      const [, minutes] = modCheckIntervalEntry;
+      const modChecker = req.app.get("modChecker");
+      if (modChecker?.setCheckIntervalMinutes) {
+        await modChecker.setCheckIntervalMinutes(minutes);
+      } else {
+        await setSetting("modCheckInterval", Number(minutes));
+      }
+    }
+
     // Reload serverManager and rconService configs after settings change
-    const serverManager = req.app.get('serverManager');
-    const rconService = req.app.get('rconService');
+    const serverManager = req.app.get("serverManager");
+    const rconService = req.app.get("rconService");
     const reloadWarnings = [];
     if (serverManager?.reloadConfig) {
       try {
         await serverManager.reloadConfig();
       } catch (reloadErr) {
-        log.warn(`serverManager reload failed after settings save: ${reloadErr.message}`);
-        reloadWarnings.push('Server manager failed to reload — restart may be required');
+        log.warn(
+          `serverManager reload failed after settings save: ${reloadErr.message}`,
+        );
+        reloadWarnings.push(
+          "Server manager failed to reload — restart may be required",
+        );
       }
     }
     if (rconService?.loadConfig) {
@@ -282,21 +370,29 @@ router.put('/app-settings', async (req, res) => {
         rconService.configLoaded = false;
         await rconService.loadConfig();
       } catch (reloadErr) {
-        log.warn(`rconService reload failed after settings save: ${reloadErr.message}`);
-        reloadWarnings.push('RCON service failed to reload — reconnect may be required');
+        log.warn(
+          `rconService reload failed after settings save: ${reloadErr.message}`,
+        );
+        reloadWarnings.push(
+          "RCON service failed to reload — reconnect may be required",
+        );
       }
     }
-    const refreshCorsConfig = req.app.get('refreshCorsConfig');
-    if (typeof refreshCorsConfig === 'function') {
+    const refreshCorsConfig = req.app.get("refreshCorsConfig");
+    if (typeof refreshCorsConfig === "function") {
       try {
         await refreshCorsConfig();
       } catch (reloadErr) {
-        log.warn(`CORS config reload failed after settings save: ${reloadErr.message}`);
-        reloadWarnings.push('CORS settings could not be reloaded — panel restart may be required');
+        log.warn(
+          `CORS config reload failed after settings save: ${reloadErr.message}`,
+        );
+        reloadWarnings.push(
+          "CORS settings could not be reloaded — panel restart may be required",
+        );
       }
     }
-    
-    const response = { success: true, message: 'Settings saved' };
+
+    const response = { success: true, message: "Settings saved" };
     if (reloadWarnings.length) response.warnings = reloadWarnings;
     res.json(response);
   } catch (error) {
@@ -306,11 +402,13 @@ router.put('/app-settings', async (req, res) => {
 });
 
 // CORS diagnostics for remote access troubleshooting
-router.get('/cors-debug', async (req, res) => {
+router.get("/cors-debug", async (req, res) => {
   try {
-    const getCorsDebugSnapshot = req.app.get('getCorsDebugSnapshot');
-    if (typeof getCorsDebugSnapshot !== 'function') {
-      return res.status(500).json({ error: 'CORS diagnostics are not available' });
+    const getCorsDebugSnapshot = req.app.get("getCorsDebugSnapshot");
+    if (typeof getCorsDebugSnapshot !== "function") {
+      return res
+        .status(500)
+        .json({ error: "CORS diagnostics are not available" });
     }
     res.json({ diagnostics: getCorsDebugSnapshot() });
   } catch (error) {
@@ -319,11 +417,13 @@ router.get('/cors-debug', async (req, res) => {
   }
 });
 
-router.post('/cors-debug/reload', async (req, res) => {
+router.post("/cors-debug/reload", async (req, res) => {
   try {
-    const refreshCorsConfig = req.app.get('refreshCorsConfig');
-    if (typeof refreshCorsConfig !== 'function') {
-      return res.status(500).json({ error: 'CORS config reload is not available' });
+    const refreshCorsConfig = req.app.get("refreshCorsConfig");
+    if (typeof refreshCorsConfig !== "function") {
+      return res
+        .status(500)
+        .json({ error: "CORS config reload is not available" });
     }
     const diagnostics = await refreshCorsConfig();
     res.json({ success: true, diagnostics });
@@ -333,12 +433,17 @@ router.post('/cors-debug/reload', async (req, res) => {
   }
 });
 
-router.delete('/cors-debug/blocked', async (req, res) => {
+router.delete("/cors-debug/blocked", async (req, res) => {
   try {
-    const clearCorsBlockedOrigins = req.app.get('clearCorsBlockedOrigins');
-    const getCorsDebugSnapshot = req.app.get('getCorsDebugSnapshot');
-    if (typeof clearCorsBlockedOrigins !== 'function' || typeof getCorsDebugSnapshot !== 'function') {
-      return res.status(500).json({ error: 'CORS diagnostics are not available' });
+    const clearCorsBlockedOrigins = req.app.get("clearCorsBlockedOrigins");
+    const getCorsDebugSnapshot = req.app.get("getCorsDebugSnapshot");
+    if (
+      typeof clearCorsBlockedOrigins !== "function" ||
+      typeof getCorsDebugSnapshot !== "function"
+    ) {
+      return res
+        .status(500)
+        .json({ error: "CORS diagnostics are not available" });
     }
 
     clearCorsBlockedOrigins();
@@ -350,12 +455,16 @@ router.delete('/cors-debug/blocked', async (req, res) => {
 });
 
 // Get paths configuration
-router.get('/paths', async (req, res) => {
+router.get("/paths", async (req, res) => {
   try {
     res.json({
-      serverPath: process.env.PZ_SERVER_PATH || '',
-      savePath: process.env.PZ_SAVE_PATH || '',
-      serverBat: process.env.PZ_SERVER_BAT || (process.platform === 'win32' ? 'StartServer64.bat' : 'start-server.sh')
+      serverPath: process.env.PZ_SERVER_PATH || "",
+      savePath: process.env.PZ_SAVE_PATH || "",
+      serverBat:
+        process.env.PZ_SERVER_BAT ||
+        (process.platform === "win32"
+          ? "StartServer64.bat"
+          : "start-server.sh"),
     });
   } catch (error) {
     res.status(500).json({ error: sanitizeError(error.message) });
@@ -363,26 +472,34 @@ router.get('/paths', async (req, res) => {
 });
 
 // Update paths (runtime only - doesn't persist to .env)
-router.put('/paths', async (req, res) => {
+router.put("/paths", async (req, res) => {
   try {
-    const serverManager = req.app.get('serverManager');
+    const serverManager = req.app.get("serverManager");
     const { serverPath, savePath } = req.body;
-    
+
     // Validate paths
     if (serverPath !== undefined) {
-      if (typeof serverPath !== 'string' || serverPath.length > 500 || serverPath.includes('..')) {
-        return res.status(400).json({ error: 'Invalid server path' });
+      if (
+        typeof serverPath !== "string" ||
+        serverPath.length > 500 ||
+        serverPath.includes("..")
+      ) {
+        return res.status(400).json({ error: "Invalid server path" });
       }
     }
     if (savePath !== undefined) {
-      if (typeof savePath !== 'string' || savePath.length > 500 || savePath.includes('..')) {
-        return res.status(400).json({ error: 'Invalid save path' });
+      if (
+        typeof savePath !== "string" ||
+        savePath.length > 500 ||
+        savePath.includes("..")
+      ) {
+        return res.status(400).json({ error: "Invalid save path" });
       }
     }
-    
+
     serverManager.updatePaths(serverPath, savePath);
-    
-    res.json({ success: true, message: 'Paths updated' });
+
+    res.json({ success: true, message: "Paths updated" });
   } catch (error) {
     log.error(`Failed to update paths: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });
@@ -390,9 +507,9 @@ router.put('/paths', async (req, res) => {
 });
 
 // Get RCON configuration
-router.get('/rcon', async (req, res) => {
+router.get("/rcon", async (req, res) => {
   try {
-    const rconService = req.app.get('rconService');
+    const rconService = req.app.get("rconService");
     const config = rconService.getConfig();
     res.json(config);
   } catch (error) {
@@ -405,36 +522,41 @@ const RCON_HOST_REGEX = /^[a-zA-Z0-9.-]{1,255}$/;
 const RCON_PASSWORD_MAX_LENGTH = 256;
 
 // Update RCON configuration
-router.put('/rcon', async (req, res) => {
+router.put("/rcon", async (req, res) => {
   try {
-    const rconService = req.app.get('rconService');
+    const rconService = req.app.get("rconService");
     const { host, port, password } = req.body;
-    
+
     // Validate host (if provided)
     if (host !== undefined) {
-      if (typeof host !== 'string' || !RCON_HOST_REGEX.test(host)) {
-        return res.status(400).json({ error: 'Invalid host format' });
+      if (typeof host !== "string" || !RCON_HOST_REGEX.test(host)) {
+        return res.status(400).json({ error: "Invalid host format" });
       }
     }
-    
+
     // Validate port (if provided)
     if (port !== undefined) {
       const portNum = parseInt(port, 10);
       if (isNaN(portNum) || portNum < 1 || portNum > 65535) {
-        return res.status(400).json({ error: 'Invalid port number (must be 1-65535)' });
+        return res
+          .status(400)
+          .json({ error: "Invalid port number (must be 1-65535)" });
       }
     }
-    
+
     // Validate password length (if provided)
     if (password !== undefined) {
-      if (typeof password !== 'string' || password.length > RCON_PASSWORD_MAX_LENGTH) {
-        return res.status(400).json({ error: 'Invalid password format' });
+      if (
+        typeof password !== "string" ||
+        password.length > RCON_PASSWORD_MAX_LENGTH
+      ) {
+        return res.status(400).json({ error: "Invalid password format" });
       }
     }
-    
+
     rconService.updateConfig(host, port, password);
-    
-    res.json({ success: true, message: 'RCON configuration updated' });
+
+    res.json({ success: true, message: "RCON configuration updated" });
   } catch (error) {
     log.error(`Failed to update RCON config: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });
@@ -442,44 +564,45 @@ router.put('/rcon', async (req, res) => {
 });
 
 // Test RCON connection
-router.post('/test-rcon', async (req, res) => {
+router.post("/test-rcon", async (req, res) => {
   try {
-    const rconService = req.app.get('rconService');
-    
+    const rconService = req.app.get("rconService");
+
     // Try to connect
     const connected = await rconService.connect();
-    
+
     if (connected) {
       // Try a lightweight command to verify the connection is alive
       // Avoid 'help' — PZ dumps a huge response that can overflow RCON packets and hang
       try {
-        await rconService.execute('players', { skipLog: true });
-        res.json({ 
-          success: true, 
-          message: 'RCON connection successful',
-          connected: true 
+        await rconService.execute("players", { skipLog: true });
+        res.json({
+          success: true,
+          message: "RCON connection successful",
+          connected: true,
         });
       } catch (cmdError) {
-        res.json({ 
-          success: true, 
-          message: 'Connected but command failed: ' + sanitizeError(cmdError.message),
+        res.json({
+          success: true,
+          message:
+            "Connected but command failed: " + sanitizeError(cmdError.message),
           connected: true,
-          warning: true
+          warning: true,
         });
       }
     } else {
-      res.json({ 
-        success: false, 
-        message: 'Failed to connect to RCON',
-        connected: false 
+      res.json({
+        success: false,
+        message: "Failed to connect to RCON",
+        connected: false,
       });
     }
   } catch (error) {
     log.error(`RCON test failed: ${error.message}`);
-    res.status(500).json({ 
-      success: false, 
+    res.status(500).json({
+      success: false,
       error: sanitizeError(error.message),
-      connected: false 
+      connected: false,
     });
   }
 });

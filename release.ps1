@@ -437,7 +437,9 @@ if ($SkipGitHub) {
         "release.ps1",
         "Dockerfile",
         "docker-compose.yml",
+        "docker-compose.install.yml",
         "zomboid-panel.service",
+        "CHANGELOG.md",
         "README.md",
         "LICENSE"
     )

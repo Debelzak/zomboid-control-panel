@@ -17,6 +17,45 @@ import { EventEmitter } from "events";
 import { sanitizeError } from "../utils/sanitize.js";
 import panelBridge from "./panelBridge.js";
 
+export const MOD_CHECK_INTERVAL_MINUTES_MIN = 1;
+export const MOD_CHECK_INTERVAL_MINUTES_MAX = 120;
+const MOD_CHECK_INTERVAL_DEFAULT_MS = 5 * 60 * 1000;
+
+export function minutesToCheckIntervalMs(minutes) {
+  const value = Number(minutes);
+  if (
+    !Number.isInteger(value) ||
+    value < MOD_CHECK_INTERVAL_MINUTES_MIN ||
+    value > MOD_CHECK_INTERVAL_MINUTES_MAX
+  ) {
+    return null;
+  }
+  return value * 60 * 1000;
+}
+
+// Older API endpoints stored milliseconds while Settings stored minutes.
+// Accept both on startup, then rewrite legacy milliseconds as minutes.
+export function normalizeStoredCheckInterval(value) {
+  const minutesInterval = minutesToCheckIntervalMs(value);
+  if (minutesInterval !== null)
+    return {
+      intervalMs: minutesInterval,
+      minutes: Number(value),
+      legacy: false,
+    };
+
+  const intervalMs = Number(value);
+  if (
+    Number.isInteger(intervalMs) &&
+    intervalMs >= MOD_CHECK_INTERVAL_MINUTES_MIN * 60 * 1000 &&
+    intervalMs <= MOD_CHECK_INTERVAL_MINUTES_MAX * 60 * 1000 &&
+    intervalMs % (60 * 1000) === 0
+  ) {
+    return { intervalMs, minutes: intervalMs / (60 * 1000), legacy: true };
+  }
+  return null;
+}
+
 function parseModInfoVersionFolder(folderName) {
   if (!/^\d+(?:\.\d+)*$/.test(folderName)) return null;
   return folderName.split(".").map((part) => Number.parseInt(part, 10));
@@ -44,8 +83,11 @@ function compareModInfoCandidates(leftCandidate, rightCandidate) {
 export class ModChecker extends EventEmitter {
   constructor() {
     super();
-    this.checkInterval = parseInt(process.env.MOD_CHECK_INTERVAL, 10) || 300000; // 5 minutes default
+    this.checkInterval =
+      normalizeStoredCheckInterval(process.env.MOD_CHECK_INTERVAL)
+        ?.intervalMs || MOD_CHECK_INTERVAL_DEFAULT_MS;
     this.intervalId = null;
+    this.initialCheckTimeout = null;
     this.lastCheck = null;
     this.modsNeedingUpdate = [];
     this.onUpdateCallback = null;
@@ -105,8 +147,23 @@ export class ModChecker extends EventEmitter {
       if (savedDelayIfPlayers !== null)
         this.delayIfPlayersOnline = savedDelayIfPlayers;
       if (savedMaxDelay !== null) this.maxDelayMinutes = savedMaxDelay;
-      if (savedCheckInterval !== null)
-        this.checkInterval = Math.max(60000, savedCheckInterval);
+      if (savedCheckInterval !== null) {
+        const normalizedInterval =
+          normalizeStoredCheckInterval(savedCheckInterval);
+        if (normalizedInterval) {
+          this.checkInterval = normalizedInterval.intervalMs;
+          if (normalizedInterval.legacy) {
+            await setSetting("modCheckInterval", normalizedInterval.minutes);
+            log.info(
+              `Migrated legacy mod check interval to ${normalizedInterval.minutes} minute(s)`,
+            );
+          }
+        } else {
+          log.warn(
+            `Ignoring invalid saved mod check interval: ${savedCheckInterval}`,
+          );
+        }
+      }
 
       log.info(
         `Mod checker settings restored: autoRestart=${savedAutoRestart}, warning=${this.restartWarningMinutes}min, delayIfPlayers=${this.delayIfPlayersOnline}, maxDelay=${this.maxDelayMinutes}min, checkInterval=${this.checkInterval}ms`,
@@ -475,7 +532,7 @@ export class ModChecker extends EventEmitter {
     return !!this.intervalId;
   }
 
-  start() {
+  start({ resetGracePeriod = true } = {}) {
     // Check if we have the workshop ACF file
     if (!this.workshopAcfPath) {
       log.warn(
@@ -489,14 +546,17 @@ export class ModChecker extends EventEmitter {
       return false;
     }
 
-    // Clear existing interval to prevent double-start leaks
+    // Clear existing timers to prevent double-start leaks and stale delayed checks.
     if (this.intervalId) {
       clearInterval(this.intervalId);
     }
+    if (this.initialCheckTimeout) {
+      clearTimeout(this.initialCheckTimeout);
+    }
 
-    this.startedAt = Date.now();
+    if (resetGracePeriod || !this.startedAt) this.startedAt = Date.now();
     this.intervalId = setInterval(
-      () => this.checkForUpdates(),
+      () => this.runScheduledCheck(),
       this.checkInterval,
     );
     log.info(
@@ -505,8 +565,17 @@ export class ModChecker extends EventEmitter {
 
     // Run initial check after a short delay (30s) to let RCON connect first
     // The grace period still prevents auto-restart triggers during the first 2 minutes
-    setTimeout(() => this.checkForUpdates(), 30000);
+    this.initialCheckTimeout = setTimeout(() => {
+      this.initialCheckTimeout = null;
+      this.runScheduledCheck();
+    }, 30000);
     return true;
+  }
+
+  runScheduledCheck() {
+    this.checkForUpdates().catch((error) => {
+      log.error(`Scheduled mod update check failed: ${error.message}`);
+    });
   }
 
   stop() {
@@ -514,6 +583,10 @@ export class ModChecker extends EventEmitter {
       clearInterval(this.intervalId);
       this.intervalId = null;
       log.info("Mod checker stopped");
+    }
+    if (this.initialCheckTimeout) {
+      clearTimeout(this.initialCheckTimeout);
+      this.initialCheckTimeout = null;
     }
     if (this.playerCheckInterval) {
       clearInterval(this.playerCheckInterval);
@@ -554,17 +627,8 @@ export class ModChecker extends EventEmitter {
         await setSetting("modMaxDelayMinutes", this.maxDelayMinutes);
       }
     }
-    if (options.checkInterval !== undefined) {
-      const val = Number(options.checkInterval);
-      if (isNaN(val)) return;
-      this.checkInterval = Math.max(60000, val);
-      await setSetting("modCheckInterval", this.checkInterval);
-      // Restart with new interval
-      if (this.intervalId) {
-        this.stop();
-        this.start();
-      }
-    }
+    if (options.checkInterval !== undefined)
+      await this.setCheckInterval(options.checkInterval);
 
     log.info(
       `Mod restart options updated: warning=${this.restartWarningMinutes}min, delayIfPlayers=${this.delayIfPlayersOnline}, maxDelay=${this.maxDelayMinutes}min`,
@@ -1488,12 +1552,29 @@ export class ModChecker extends EventEmitter {
   }
 
   async setCheckInterval(intervalMs) {
-    this.checkInterval = Math.max(60000, intervalMs);
-    await setSetting("modCheckInterval", this.checkInterval);
-    if (this.intervalId) {
-      this.stop();
-      this.start();
+    const normalizedInterval = normalizeStoredCheckInterval(intervalMs);
+    if (!normalizedInterval || normalizedInterval.legacy === false) {
+      throw new RangeError(
+        `Check interval must be ${MOD_CHECK_INTERVAL_MINUTES_MIN}-${MOD_CHECK_INTERVAL_MINUTES_MAX} whole minutes in milliseconds`,
+      );
     }
+
+    this.checkInterval = normalizedInterval.intervalMs;
+    await setSetting("modCheckInterval", normalizedInterval.minutes);
+    if (this.intervalId) {
+      this.start({ resetGracePeriod: false });
+    }
+    return this.checkInterval;
+  }
+
+  async setCheckIntervalMinutes(minutes) {
+    const intervalMs = minutesToCheckIntervalMs(minutes);
+    if (intervalMs === null) {
+      throw new RangeError(
+        `Check interval must be ${MOD_CHECK_INTERVAL_MINUTES_MIN}-${MOD_CHECK_INTERVAL_MINUTES_MAX} whole minutes`,
+      );
+    }
+    return this.setCheckInterval(intervalMs);
   }
 
   // Cancel pending restart (if waiting for players)
