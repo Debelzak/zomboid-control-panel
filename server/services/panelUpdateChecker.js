@@ -16,6 +16,7 @@ import { spawn } from "child_process";
 import { createLogger } from "../utils/logger.js";
 import { getSetting, setSetting } from "../database/init.js";
 import { getDataPaths } from "../utils/paths.js";
+import { DockerUpdateProxy } from "./dockerUpdateProxy.js";
 
 const log = createLogger("PanelUpdater");
 
@@ -40,6 +41,7 @@ export class PanelUpdateChecker {
     this.downloadProgress = 0;
     this.lastCheck = null;
     this.lastError = null;
+    this.dockerUpdateProxy = new DockerUpdateProxy();
     // Set when a Windows apply helper has been spawned (or Linux apply has
     // started). Prevents a second concurrent /api/panel/restart from
     // spawning a second helper that would race for the staged file.
@@ -357,6 +359,19 @@ export class PanelUpdateChecker {
         error: pre.blockers[0] || "Preflight check failed",
         preflight: pre,
       };
+    }
+
+    if (this.dockerUpdateProxy.enabled) {
+      const version = this.latestRelease.version;
+      this.isDownloading = true;
+      try {
+        return await this.dockerUpdateProxy.apply(version);
+      } catch (error) {
+        this.lastError = error.message;
+        return { success: false, error: error.message };
+      } finally {
+        this.isDownloading = false;
+      }
     }
 
     const isWindows = process.platform === "win32";
@@ -1122,6 +1137,7 @@ export class PanelUpdateChecker {
       downloadProgress: this.downloadProgress,
       lastCheck: this.lastCheck,
       lastError: this.lastError,
+      updateMode: this.dockerUpdateProxy.mode,
       stagedUpdate: staged
         ? { version: staged.version, path: staged.stagedPath }
         : null,
@@ -1147,6 +1163,12 @@ export class PanelUpdateChecker {
     const isPackaged = typeof process.pkg !== "undefined";
     info.isPackaged = isPackaged;
     info.platform = process.platform;
+    info.updateMode = this.dockerUpdateProxy.mode;
+
+    if (this.dockerUpdateProxy.enabled) {
+      info.dockerUpdater = true;
+      return { ok: true, blockers, warnings, info };
+    }
 
     if (!isPackaged) {
       blockers.push(

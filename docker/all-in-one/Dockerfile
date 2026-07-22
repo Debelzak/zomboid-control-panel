@@ -1,0 +1,45 @@
+FROM node:22-bookworm-slim AS client-build
+
+WORKDIR /src
+COPY package.json ./
+COPY client/package.json client/package-lock.json* ./client/
+RUN cd client && npm install --no-audit --prefer-offline --include=optional
+COPY client/ ./client/
+RUN cd client && npm run build
+
+FROM cm2network/steamcmd:root
+
+USER root
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      curl ca-certificates gnupg lib32gcc-s1 lib32stdc++6 \
+    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY package.json package-lock.json* ./
+RUN npm install --no-audit --prefer-offline --omit=dev
+
+COPY server/ ./server/
+COPY --from=client-build /src/client/dist ./client/dist
+COPY pz-mod/ ./pz-mod/
+COPY docker/all-in-one/entrypoint.sh /entrypoint.sh
+
+RUN chmod +x /entrypoint.sh \
+    && mkdir -p /pz-server /zomboid /app/data /app/logs
+
+ENV NODE_ENV=production \
+    PZ_SERVER_PATH=/pz-server \
+    PZ_SAVE_PATH=/zomboid \
+    PZ_SERVER_BAT=start-server.sh \
+    RCON_HOST=127.0.0.1 \
+    RCON_PORT=27015
+
+EXPOSE 3001 16261/udp 16262/udp
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=3 \
+    CMD node -e "import('http').then(h => h.get('http://localhost:3001/api/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1)))"
+
+ENTRYPOINT ["/entrypoint.sh"]

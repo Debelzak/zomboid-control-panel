@@ -1360,6 +1360,36 @@ app.post(
         return res
           .status(500)
           .json({ error: "Panel update checker not available" });
+
+      if (checker.dockerUpdateProxy?.enabled) {
+        if (req.body?.confirm !== true) {
+          return res.status(400).json({
+            error:
+              "Confirm the Docker update before recreating the all-in-one container.",
+            code: "confirmation_required",
+          });
+        }
+
+        const isRunning = await serverManager.checkServerRunning();
+        if (isRunning) {
+          const rconService = req.app.get("rconService");
+          if (!rconService?.connected) {
+            return res.status(409).json({
+              error:
+                "Stop the Project Zomboid server before applying a Docker update. RCON is not connected, so the panel cannot safely stop it for you.",
+              code: "server_running",
+            });
+          }
+
+          await rconService.save();
+          await rconService.quit();
+          await logServerEvent(
+            "server_stop",
+            "Server stopped before Docker panel update",
+          );
+        }
+      }
+
       const result = await checker.downloadUpdate();
       if (!result.success) {
         if (result.code === "already_downloading")

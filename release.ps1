@@ -412,6 +412,7 @@ if ($SkipGitHub) {
     # Sync key files from Dev1 to GitHub (excluding node_modules, .env, db.json, dist, release)
     $syncItems = @(
         ".github",
+        "docker",
         "server",
         "pz-mod",
         "Screenshots",

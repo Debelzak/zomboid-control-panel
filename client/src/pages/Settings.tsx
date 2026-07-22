@@ -251,6 +251,7 @@ export default function Settings() {
   >(null);
   const [checkingPanelUpdate, setCheckingPanelUpdate] = useState(false);
   const [downloadingPanelUpdate, setDownloadingPanelUpdate] = useState(false);
+  const [dockerUpdateConfirmOpen, setDockerUpdateConfirmOpen] = useState(false);
   const [panelUpdateReady, setPanelUpdateReady] = useState(false);
   const [panelUpdatePreflight, setPanelUpdatePreflight] =
     useState<PanelUpdatePreflight | null>(null);
@@ -585,6 +586,7 @@ export default function Settings() {
   const hasActionablePanelUpdate = Boolean(
     panelUpdateStatus?.updateAvailable || panelUpdateStatus?.stagedUpdate,
   );
+  const isDockerPanelUpdate = panelUpdateStatus?.updateMode === "docker";
   const stagedPanelUpdatePath = panelUpdateStatus?.stagedUpdate?.path;
 
   // Run preflight once status tells us we're in a packaged build and there is
@@ -841,7 +843,7 @@ export default function Settings() {
         );
       }
 
-      const result = await panelUpdateApi.download();
+      const result = await panelUpdateApi.download(isDockerPanelUpdate);
       if (!result.success) {
         if (result.preflight) setPanelUpdatePreflight(result.preflight);
         throw new Error(
@@ -849,12 +851,14 @@ export default function Settings() {
         );
       }
 
-      setPanelUpdateReady(true);
+      if (!isDockerPanelUpdate) setPanelUpdateReady(true);
       toast({
-        title: "Update Downloaded",
+        title: isDockerPanelUpdate ? "Docker Update Started" : "Update Downloaded",
         description:
           result.message ||
-          "The update files are ready. Restart the panel to apply this version.",
+          isDockerPanelUpdate
+            ? "The panel container is rebuilding and will reconnect when the health check passes."
+            : "The update files are ready. Restart the panel to apply this version.",
         variant: "success" as const,
       });
       await fetchPanelUpdateStatus();
@@ -2608,28 +2612,79 @@ export default function Settings() {
                         : "Check for Updates"}
                     </Button>
 
-                    <Button
-                      onClick={handleDownloadPanelUpdate}
-                      disabled={
-                        !panelUpdateStatus?.updateAvailable ||
-                        checkingPanelUpdate ||
-                        downloadingPanelUpdate ||
-                        restarting ||
-                        panelUpdatePreflight?.ok === false
-                      }
-                      className="gap-2"
-                    >
-                      {downloadingPanelUpdate ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <Download className="w-4 h-4" />
-                      )}
-                      {downloadingPanelUpdate
-                        ? "Downloading..."
-                        : "Download Update"}
-                    </Button>
+                    {isDockerPanelUpdate ? (
+                      <AlertDialog
+                        open={dockerUpdateConfirmOpen}
+                        onOpenChange={setDockerUpdateConfirmOpen}
+                      >
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            disabled={
+                              !panelUpdateStatus?.updateAvailable ||
+                              checkingPanelUpdate ||
+                              downloadingPanelUpdate ||
+                              restarting ||
+                              panelUpdatePreflight?.ok === false
+                            }
+                            className="gap-2"
+                          >
+                            {downloadingPanelUpdate ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Download className="w-4 h-4" />
+                            )}
+                            {downloadingPanelUpdate
+                              ? "Applying Docker Update..."
+                              : "Apply Docker Update"}
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>
+                              Apply Docker update?
+                            </AlertDialogTitle>
+                            <AlertDialogDescription>
+                              The panel will save and stop Project Zomboid through
+                              RCON, then rebuild and recreate the all-in-one
+                              container. Players will be disconnected while the
+                              panel comes back online.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() => {
+                                setDockerUpdateConfirmOpen(false);
+                                handleDownloadPanelUpdate();
+                              }}
+                            >
+                              Stop server and update
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    ) : (
+                      <Button
+                        onClick={handleDownloadPanelUpdate}
+                        disabled={
+                          !panelUpdateStatus?.updateAvailable ||
+                          checkingPanelUpdate ||
+                          downloadingPanelUpdate ||
+                          restarting ||
+                          panelUpdatePreflight?.ok === false
+                        }
+                        className="gap-2"
+                      >
+                        {downloadingPanelUpdate ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Download className="w-4 h-4" />
+                        )}
+                        {downloadingPanelUpdate ? "Downloading..." : "Download Update"}
+                      </Button>
+                    )}
 
-                    <AlertDialog>
+                    {!isDockerPanelUpdate && <AlertDialog>
                       <AlertDialogTrigger asChild>
                         <Button
                           variant="warning"
@@ -2708,7 +2763,7 @@ export default function Settings() {
                           </AlertDialogAction>
                         </AlertDialogFooter>
                       </AlertDialogContent>
-                    </AlertDialog>
+                    </AlertDialog>}
 
                     {panelUpdateStatus?.releaseUrl && (
                       <Button asChild variant="ghost" className="gap-2">
@@ -2733,13 +2788,16 @@ export default function Settings() {
                       : panelUpdateReady
                         ? "Update files are ready. Restart to switch to the new version."
                         : panelUpdateStatus?.updateAvailable
-                          ? "Download the update, then restart to apply it."
+                          ? isDockerPanelUpdate
+                            ? "Applying this update saves and stops Project Zomboid, then rebuilds and recreates the all-in-one container."
+                            : "Download the update, then restart to apply it."
                           : "No update is ready to install."}
                   </p>
 
                   <p className="text-xs text-muted-foreground">
-                    Auto-update works in packaged builds only. In dev mode,
-                    update from git.
+                    {isDockerPanelUpdate
+                      ? "Docker updates are handled by the configured host controller."
+                      : "Auto-update works in packaged builds only. In dev mode, update from git."}
                   </p>
                 </div>
               </CardContent>
