@@ -112,7 +112,7 @@ async function update(version) {
 
     updateState.message = "Building and recreating panel container";
     await run("docker", ["tag", PANEL_IMAGE, rollbackImage]);
-    await run("docker", ["compose", "-f", COMPOSE_FILE, "up", "-d", "--build", "--no-deps", PANEL_SERVICE]);
+    await run("docker", ["compose", "--env-file", path.join(BUILD_ROOT, "ctx", ".env"), "-f", COMPOSE_FILE, "up", "-d", "--build", "--no-deps", PANEL_SERVICE]);
     updateState.message = "Waiting for panel health check";
     await waitForHealthy();
 
@@ -124,7 +124,7 @@ async function update(version) {
         await fs.rm(SOURCE_DIR, { recursive: true, force: true });
         await fs.rename(backupSource, SOURCE_DIR);
         await run("docker", ["tag", rollbackImage, PANEL_IMAGE]);
-        await run("docker", ["compose", "-f", COMPOSE_FILE, "up", "-d", "--no-build", "--no-deps", "--force-recreate", PANEL_SERVICE]);
+        await run("docker", ["compose", "--env-file", path.join(BUILD_ROOT, "ctx", ".env"), "-f", COMPOSE_FILE, "up", "-d", "--no-build", "--no-deps", "--force-recreate", PANEL_SERVICE]);
       } catch (rollbackError) {
         error.message = `${error.message}; rollback failed: ${rollbackError.message}`;
       }
