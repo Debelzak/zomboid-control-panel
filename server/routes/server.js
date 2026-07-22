@@ -205,6 +205,24 @@ function isValidPath(inputPath) {
   return true;
 }
 
+function resolveZomboidPaths(installPath, zomboidDataPath) {
+  const defaultZomboidDataPath =
+    process.env.PZ_SAVE_PATH || `${installPath}_Data`;
+  const zomboidPath = zomboidDataPath || defaultZomboidDataPath;
+
+  return {
+    zomboidPath,
+    serverConfigPath: path.join(zomboidPath, "Server"),
+    usesEnvironmentDataPath:
+      !zomboidDataPath && Boolean(process.env.PZ_SAVE_PATH),
+  };
+}
+
+function ensureWritableDirectory(directoryPath) {
+  fs.mkdirSync(directoryPath, { recursive: true });
+  fs.accessSync(directoryPath, fs.constants.W_OK);
+}
+
 // Security: INI sanitization imported from shared util
 // sanitizeIniValue strips \r\n;= to prevent injection
 
@@ -1156,6 +1174,25 @@ router.post("/install", async (req, res) => {
       return res.status(400).json({ error: "Invalid Zomboid data path" });
     }
 
+    const { zomboidPath, serverConfigPath, usesEnvironmentDataPath } =
+      resolveZomboidPaths(installPath, zomboidDataPath);
+
+    try {
+      ensureWritableDirectory(installPath);
+    } catch (directoryError) {
+      return res.status(400).json({
+        error: `Installation path is not writable: ${installPath}. Choose a folder writable by the panel process.`,
+      });
+    }
+
+    try {
+      ensureWritableDirectory(serverConfigPath);
+    } catch (directoryError) {
+      return res.status(400).json({
+        error: `The Zomboid data folder is not writable: ${zomboidPath}. Choose a writable data path.`,
+      });
+    }
+
     // Validate numeric inputs
     const safeMinMemory = validateInt(minMemory, 1, 64, 4);
     const safeMaxMemory = validateInt(maxMemory, 1, 128, 8);
@@ -1180,16 +1217,6 @@ router.post("/install", async (req, res) => {
         error:
           "A Steam operation is already in progress for this path. Please wait for it to complete.",
       });
-    }
-
-    // Create install directory if it doesn't exist
-    if (!fs.existsSync(installPath)) {
-      fs.mkdirSync(installPath, { recursive: true });
-    }
-
-    // Create custom zomboid data path if specified
-    if (zomboidDataPath && !fs.existsSync(zomboidDataPath)) {
-      fs.mkdirSync(zomboidDataPath, { recursive: true });
     }
 
     log.info(
@@ -1299,39 +1326,22 @@ router.post("/install", async (req, res) => {
         await setSetting("serverPort", serverPort);
         await setSetting("useUpnp", useUpnp);
 
-        // Determine config path
-        let zomboidPath;
-        let serverConfigPath;
-
         if (zomboidDataPath) {
-          // Use custom data path - zomboidDataPath IS the data folder (contains Server/, Saves/, etc.)
-          zomboidPath = zomboidDataPath;
-          serverConfigPath = path.join(zomboidDataPath, "Server");
           await setSetting("zomboidDataPath", zomboidDataPath);
         } else {
-          // Create server-specific data folder alongside install path for isolation
-          // e.g., E:\PZ\Server_Data\MyServer\ -> E:\PZ\Server_Data\MyServer_Data\
-          zomboidPath = `${installPath}_Data`;
-          serverConfigPath = path.join(zomboidPath, "Server");
           await setSetting("zomboidDataPath", zomboidPath);
           io.emit("install:log", {
             type: "stdout",
-            text: `Using isolated data folder: ${zomboidPath}`,
+            text: `Using ${usesEnvironmentDataPath ? "configured" : "isolated"} data folder: ${zomboidPath}`,
           });
         }
 
         await setSetting("serverConfigPath", serverConfigPath);
 
-        // Create the data folder (and its Server/ subdirectory) and verify
-        // the panel process can actually write to it *before* reporting
-        // success. On Linux, an isolated data path under a root-owned parent
-        // (e.g. /opt) will fail here with EACCES — better to surface that now
-        // than let it appear later as a cryptic "Failed to pre-create INI
-        // file" error after the user already believes install succeeded
-        // (see GitHub issue #14).
+        // Re-check after the download in case a mounted path changed while
+        // SteamCMD was running.
         try {
-          fs.mkdirSync(serverConfigPath, { recursive: true });
-          fs.accessSync(zomboidPath, fs.constants.W_OK);
+          ensureWritableDirectory(serverConfigPath);
         } catch (dirError) {
           log.error(
             `Data folder is not writable: ${zomboidPath} (${dirError.message})`,
@@ -1567,6 +1577,9 @@ router.post("/quick-setup", async (req, res) => {
       return res.status(400).json({ error: "Invalid Zomboid data path" });
     }
 
+    const { zomboidPath, serverConfigPath, usesEnvironmentDataPath } =
+      resolveZomboidPaths(installPath, zomboidDataPath);
+
     // Check if server files exist
     const startServerBat = path.join(installPath, "StartServer64.bat");
     const startServerSh = path.join(installPath, "start-server.sh");
@@ -1583,6 +1596,22 @@ router.post("/quick-setup", async (req, res) => {
       });
     }
 
+    try {
+      ensureWritableDirectory(installPath);
+    } catch (directoryError) {
+      return res.status(400).json({
+        error: `Installation path is not writable: ${installPath}. Choose a folder writable by the panel process.`,
+      });
+    }
+
+    try {
+      ensureWritableDirectory(serverConfigPath);
+    } catch (directoryError) {
+      return res.status(400).json({
+        error: `The Zomboid data folder is not writable: ${zomboidPath}. Choose a writable data path.`,
+      });
+    }
+
     // Validate numeric inputs
     const safeMinMemory = validateInt(minMemory, 1, 64, 4);
     const safeMaxMemory = validateInt(maxMemory, 1, 128, 8);
@@ -1594,11 +1623,6 @@ router.post("/quick-setup", async (req, res) => {
       `Quick setup: Creating server config for ${serverName} using files from ${installPath}`,
     );
 
-    // Create custom zomboid data path if specified
-    if (zomboidDataPath && !fs.existsSync(zomboidDataPath)) {
-      fs.mkdirSync(zomboidDataPath, { recursive: true });
-    }
-
     // Update settings
     await setSetting("serverPath", installPath);
     await setSetting("serverName", serverName);
@@ -1607,33 +1631,21 @@ router.post("/quick-setup", async (req, res) => {
     await setSetting("serverPort", safeServerPort);
     await setSetting("useUpnp", useUpnp);
 
-    // Determine config path
-    let zomboidPath;
-    let serverConfigPath;
-
     if (zomboidDataPath) {
-      // zomboidDataPath IS the data folder (contains Server/, Saves/, etc.)
-      zomboidPath = zomboidDataPath;
-      serverConfigPath = path.join(zomboidDataPath, "Server");
       await setSetting("zomboidDataPath", zomboidDataPath);
     } else {
-      // Create server-specific data folder alongside install path for isolation
-      // e.g., E:\PZ\Server_Data\MyServer\ -> E:\PZ\Server_Data\MyServer_Data\
-      zomboidPath = `${installPath}_Data`;
-      serverConfigPath = path.join(zomboidPath, "Server");
       await setSetting("zomboidDataPath", zomboidPath);
-      log.info(`Using isolated data folder: ${zomboidPath}`);
+      log.info(
+        `Using ${usesEnvironmentDataPath ? "configured" : "isolated"} data folder: ${zomboidPath}`,
+      );
     }
 
     await setSetting("serverConfigPath", serverConfigPath);
 
-    // Create the data folder (and its Server/ subdirectory) and verify the
-    // panel process can actually write to it before reporting success (see
-    // GitHub issue #14 — isolated data paths under root-owned parents like
-    // /opt fail here with EACCES on Linux).
+    // Re-check immediately before creating configuration files in case the
+    // selected mount changed during setup.
     try {
-      fs.mkdirSync(serverConfigPath, { recursive: true });
-      fs.accessSync(zomboidPath, fs.constants.W_OK);
+      ensureWritableDirectory(serverConfigPath);
     } catch (dirError) {
       log.error(
         `Data folder is not writable: ${zomboidPath} (${dirError.message})`,
