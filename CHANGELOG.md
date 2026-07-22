@@ -5,12 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.0.74] - 2026-07-22
+## [1.0.75] - 2026-07-22
 
 ### Added
 
 - **All-in-one Docker updater**: an opt-in, token-protected controller can download a tagged GitHub release, rebuild the all-in-one image, recreate the panel container, verify its health, and roll back the source and image if the rollout fails.
 - **Docker update workflow**: Settings now offers an explicit Docker update confirmation that saves and stops Project Zomboid through RCON before recreating the container.
+- **Host-independent bootstrap**: the all-in-one setup script runs Docker Compose inside the updater image, so Unraid hosts do not need a local Docker Compose installation.
 
 ## [1.0.72] - 2026-07-22
 
