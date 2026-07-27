@@ -49,7 +49,11 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          platforms: linux/amd64,linux/arm64
+          # amd64-only: the Debian runtime stage installs lib32gcc-s1 /
+          # lib32stdc++6 for steamcmd (32-bit binary), and neither package
+          # exists for arm64 in Debian's repos — steamcmd/PZ have no arm64
+          # build anyway, so there's nothing to gain from multi-arch here.
+          platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
