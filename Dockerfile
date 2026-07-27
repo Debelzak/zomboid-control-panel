@@ -1,14 +1,22 @@
 # Zomboid Control Panel - Docker
 # Multi-stage build: build client in stage 1, lean runtime in stage 2.
 #
-# Default base is Alpine (smallest image). On CentOS/RHEL hosts with SELinux,
-# use `:z` on bind-mount volumes (already set in docker-compose.yml).
+# Runtime base is Debian slim, NOT Alpine — the panel's Server Setup wizard
+# (/server-setup) downloads Valve's steamcmd_linux.tar.gz and runs
+# steamcmd.sh directly (see server/routes/server.js's /steamcmd/download and
+# /steamcmd/* routes) to self-install Project Zomboid. steamcmd.sh needs
+# bash + glibc + 32-bit compat libs — Alpine's musl libc breaks steamcmd's
+# prebuilt binaries, which is also why upstream's own all-in-one Dockerfile
+# (docker/all-in-one/Dockerfile) is Debian-based instead of Alpine. On
+# CentOS/RHEL hosts with SELinux, use `:z` on bind-mount volumes (already
+# set in docker-compose.yml).
 #
-# IMPORTANT: This image runs the *panel*, not the Project Zomboid server.
-# PZ runs separately (on the host or in another container). See docker-compose.yml
+# This image runs the *panel*; Project Zomboid can either be installed by
+# the panel itself (via /server-setup, into a bind-mounted PZ_SERVER_PATH)
+# or already exist on the host/another container — see docker-compose.yml
 # for realistic topology examples.
 
-# --- Build stage ---
+# --- Build stage --- (Alpine is fine here: just builds static client assets)
 FROM node:22-alpine AS builder
 
 WORKDIR /app
@@ -27,29 +35,44 @@ COPY client/ ./client/
 RUN cd client && npm run build
 
 # --- Runtime stage ---
-FROM node:22-alpine
+FROM node:22-bookworm-slim
+
+# steamcmd + serverManager.js runtime deps:
+#   bash                    steamcmd.sh's shebang requires it (missing bash
+#                            is exactly what causes "env: can't execute
+#                            'bash': No such file or directory", exit 127)
+#   curl, wget               download steamcmd_linux.tar.gz (curl first,
+#                            wget fallback — see /steamcmd/download route)
+#   ca-certificates          TLS for the download above
+#   lib32gcc-s1, lib32stdc++6  steamcmd's binary is 32-bit, needs these on
+#                            a 64-bit Debian host
+#   procps                   pgrep/ps — serverManager.js process detection
+#                            (Alpine's busybox bundles these; Debian slim
+#                            does not, so it's an explicit install here)
+# tar is already part of Debian's base image, no separate install needed.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        bash curl wget ca-certificates lib32gcc-s1 lib32stdc++6 procps \
+    && rm -rf /var/lib/apt/lists/*
 
 # Configurable UID/GID to match the host user — avoids bind-mount permission issues.
 # Override at build time:
 #   docker compose build --build-arg UID=$(id -u) --build-arg GID=$(id -g)
-# node:20-alpine already ships with a `node` user at 1000:1000, so we reuse that
-# user (just renamed/aliased) when the requested IDs are already taken.
+# node:22-bookworm-slim already ships a `node` user at 1000:1000, so the
+# default UID/GID just reuses it. Only numeric ids matter below (chown/USER
+# use ${UID}:${GID} directly), so we don't bother renaming existing accounts.
 ARG UID=1000
 ARG GID=1000
 RUN set -eux; \
     if getent group "$GID" >/dev/null 2>&1; then \
-        existing_group=$(getent group "$GID" | cut -d: -f1); \
-        [ "$existing_group" = "panel" ] || addgroup panel "$existing_group" 2>/dev/null || true; \
-        groupname="$existing_group"; \
+        groupname=$(getent group "$GID" | cut -d: -f1); \
     else \
-        addgroup -g "$GID" -S panel; \
+        groupadd -g "$GID" panel; \
         groupname="panel"; \
     fi; \
     if getent passwd "$UID" >/dev/null 2>&1; then \
-        existing_user=$(getent passwd "$UID" | cut -d: -f1); \
-        [ "$existing_user" = "panel" ] || ln -sf "/home/$existing_user" /home/panel 2>/dev/null || true; \
+        : already exists, reuse it; \
     else \
-        adduser -u "$UID" -S panel -G "$groupname"; \
+        useradd -u "$UID" -g "$groupname" -M -s /usr/sbin/nologin panel; \
     fi
 
 WORKDIR /app
