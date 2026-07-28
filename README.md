@@ -58,7 +58,7 @@ Roster with online / offline / banned tabs. Per-player dossier with moderation, 
 <td width="50%" valign="top">
 
 ### 🧩 Mod Manager
-Tracks every Workshop mod on your server. Detects updates via the Steam API and surfaces pending changes. Pull mod list straight from your server config — no manual entry.
+Tracks every Workshop mod on your server and flags updates through the Steam API. Import a Steam collection and drive server membership from it — adding a mod writes `WorkshopItems=`, resolves its internal mod ID into `Mods=`, and picks up map folders on its own.
 
 <img src="Screenshots/screenshot-mods-v2.png" alt="Mod Manager" />
 
@@ -67,8 +67,8 @@ Tracks every Workshop mod on your server. Detects updates via the Steam API and 
 <tr>
 <td width="50%" valign="top">
 
-### ⚠️ Mod Conflict Detection
-Scans your mod list for known incompatibilities, missing dependencies, and load-order issues. Severity-tinted findings so you see real problems before you boot the server.
+### ⚠️ Mod Conflicts & Load Order
+Scans your mod list for known incompatibilities, missing dependencies, and load-order issues. Severity-tinted findings so you see real problems before you boot the server. Load order can auto-sort from each mod's declared `require=`, with a preview of every move before anything is written.
 
 <img src="Screenshots/screenshot-mods-conflicts.png" alt="Mod Conflicts" />
 
@@ -124,6 +124,7 @@ Java crash dumps, error logs, support bundles. One-click `.zip` export for when 
 
 ## Contents
 
+- [New in 1.1](#new-in-11)
 - [What It Does](#what-it-does)
 - [Requirements](#requirements)
 - [Quick Start](#quick-start)
@@ -133,6 +134,20 @@ Java crash dumps, error logs, support bundles. One-click `.zip` export for when 
 - [Security](#security)
 - [Development](#development)
 - [Community](#community)
+
+---
+
+## New in 1.1
+
+**Collection-driven mod management.** The Collection tab tells you, for every mod, whether it is tracked, present in your Steam collection, and configured on the running server. Add a collection item to the server in one click, or remove server mods individually or in bulk after you change the collection. With auto-sync enabled, removing a mod from the server mirrors the change back to Steam.
+
+**Dependency-aware load order.** Auto-sort reads `require=` from each mod's `mod.info` and places dependencies ahead of the mods that need them. Mods that declare nothing keep the position you gave them, so a hand-built order survives. The proposed moves are shown before anything is staged, and the order reaches your INI only when you save it.
+
+**Safer collection sync.** Mods that live in your collection but not on the server are a normal state now rather than a mismatch. Sync adds tracked mods that are missing from Steam without deleting optional collection items.
+
+**Real mod names.** Workshop titles resolve automatically, so the mod list no longer falls back to `Workshop Mod 1234567890` placeholders.
+
+**Dashboard signals.** Host disk headroom, the next scheduled maintenance action, and the current console error count are shown alongside server status.
 
 ---
 
@@ -147,7 +162,7 @@ Java crash dumps, error logs, support bundles. One-click `.zip` export for when 
 ### Observe
 - **Players** — Online list, activity history, kick/ban/unban, access levels, notes and tags.
 - **World map** — Live player positions on Knox County with right-click actions.
-- **Mod manager** — Track Workshop mods, detect updates, sync from server config, conflict detection.
+- **Mod manager** — Track Workshop mods and detect updates, drive server membership from your Steam collection, auto-sort load order by declared dependencies, and scan for conflicts.
 - **Server config** — Full INI editor with structured and raw views. Sandbox, spawn points, mod settings — searchable and editable in-browser.
 
 ### Extend
