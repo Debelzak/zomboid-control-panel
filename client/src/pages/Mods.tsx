@@ -4,11 +4,11 @@ import { useSocket } from '@/contexts/SocketContext'
 import { useConfirm } from '@/contexts/ConfirmContext'
 import { usePageShortcut } from '../hooks/useKeyboardShortcuts'
 import { copyText } from '@/lib/utils'
-import { 
-  Package, 
-  RefreshCw, 
-  Plus, 
-  Trash2, 
+import {
+  Package,
+  RefreshCw,
+  Plus,
+  Trash2,
   ExternalLink,
   AlertTriangle,
   AlertCircle,
@@ -237,7 +237,7 @@ export default function Mods() {
     isAlreadyAdded?: boolean
   } | null>(null)
   const [selectedModIds, setSelectedModIds] = useState<Set<string>>(new Set())
-  
+
   // Collection import
   const [collectionUrl, setCollectionUrl] = useState('')
   const [collectionDialogOpen, setCollectionDialogOpen] = useState(false)
@@ -245,14 +245,14 @@ export default function Mods() {
   const [importingCollection, setImportingCollection] = useState(false)
   const [collectionImported, setCollectionImported] = useState(false)
   const [showCollectionAdvanced, setShowCollectionAdvanced] = useState(false)
-  
+
   // INI configuration
   const [iniConfig, setIniConfig] = useState<IniConfig | null>(null)
   const [modsToInstall, setModsToInstall] = useState<CollectionMod[]>([])
   const [orderedModIds, setOrderedModIds] = useState<string[]>([])
   const [selectedActiveWsId, setSelectedActiveWsId] = useState<string | null>(null)
   const [savingModOrder, setSavingModOrder] = useState(false)
-  const [draggedModIndex, setDraggedModIndex] = useState<number | null>(null)  
+  const [draggedModIndex, setDraggedModIndex] = useState<number | null>(null)
   // Expand/collapse states
   const [repairingMaps, setRepairingMaps] = useState(false)
   const [mapRepairResult, setMapRepairResult] = useState<{ removed: string[]; added?: string[]; remaining: string[]; message: string } | null>(null)
@@ -274,13 +274,13 @@ export default function Mods() {
   const savedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const busyRef = useRef(false) // Synchronous guard against double-submission
   const discoverAbortRef = useRef<AbortController | null>(null)
-  
+
   // Restart settings dialog
   const [restartSettingsOpen, setRestartSettingsOpen] = useState(false)
   const [restartWarningMinutes, setRestartWarningMinutes] = useState(5)
   const [delayIfPlayersOnline, setDelayIfPlayersOnline] = useState(false)
   const [maxDelayMinutes, setMaxDelayMinutes] = useState(30)
-  
+
   // Conflict scanner
   const [conflicts, setConflicts] = useState<ConflictScanResult | null>(null)
   const [conflictsLoading, setConflictsLoading] = useState(false)
@@ -368,11 +368,11 @@ export default function Mods() {
     })
     return currentSnapshot !== scanIniSnapshot
   }, [conflicts, scanIniSnapshot, iniConfig?.workshopIds, iniConfig?.modIds])
-  
+
   // Track if auto-discover is pending (moved here for cleanup)
   const autoDiscoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastAutoDiscoverIdRef = useRef<string | null>(null)
-  
+
   // Mod Presets
   interface ModPreset {
     id: number
@@ -393,7 +393,7 @@ export default function Mods() {
   const [applyingPreset, setApplyingPreset] = useState<number | null>(null)
   const [confirmApplyPreset, setConfirmApplyPreset] = useState<{ id: number; name: string; modCount: number } | null>(null)
   const [confirmDeletePreset, setConfirmDeletePreset] = useState<{ id: number; name: string } | null>(null)
-  
+
   // Mod conflict detection
   interface ModConflict {
     type: 'duplicate' | 'missing_modid' | 'outdated_dependency'
@@ -401,12 +401,12 @@ export default function Mods() {
     message: string
     modIds?: string[]
   }
-  
+
   // Detect conflicts in current configuration
   const detectedConflicts = useMemo((): ModConflict[] => {
     if (!iniConfig?.configured) return []
     const conflicts: ModConflict[] = []
-    
+
     // Check for duplicate mod IDs
     const modIdCounts: Record<string, number> = {}
     for (const modId of iniConfig.modIds) {
@@ -421,7 +421,7 @@ export default function Mods() {
         modIds: duplicates.map(([id]) => id)
       })
     }
-    
+
     // Check for workshop items without corresponding mod IDs
     // This is normal for mods not yet downloaded, so just info level
     const workshopCount = iniConfig.workshopIds?.length || 0
@@ -433,10 +433,10 @@ export default function Mods() {
         message: `${workshopCount} workshop items configured but no mod IDs. Run "Sync Mod IDs" after downloading mods.`,
       })
     }
-    
+
     return conflicts
   }, [iniConfig])
-  
+
   // Cleanup timeouts on unmount
   useEffect(() => {
     return () => {
@@ -483,7 +483,7 @@ export default function Mods() {
         modsApi.getIgnoredMods(),
         modsApi.getIgnoredModPairs()
       ])
-      
+
       // Extract successful results
       if (results[0].status === 'fulfilled') {
         setMods(results[0].value.mods || [])
@@ -511,7 +511,7 @@ export default function Mods() {
       if (results[4].status === 'fulfilled') {
         setIgnoredPairs(Array.isArray(results[4].value) ? results[4].value : [])
       }
-      
+
       // Check for failures and show persistent error
       const failures = results.filter(r => r.status === 'rejected')
       if (failures.length > 0) {
@@ -754,7 +754,7 @@ export default function Mods() {
       setPresetsLoading(false)
     }
   }, [])
-  
+
   // Initial data fetch + auto sync from server
   // Subscribe to Socket.IO mod events for real-time status updates
   const socket = useSocket()
@@ -806,7 +806,7 @@ export default function Mods() {
     initializeData()
     return () => { mounted = false }
   }, [fetchData, fetchPresets, fetchCollectionStatus])
-  
+
   const handleSavePreset = async () => {
     if (!presetName.trim()) return
     setSavingPreset(true)
@@ -831,7 +831,7 @@ export default function Mods() {
       setSavingPreset(false)
     }
   }
-  
+
   const handleApplyPreset = async (id: number, _name: string) => {
     setApplyingPreset(id)
     try {
@@ -852,7 +852,7 @@ export default function Mods() {
       fetchData() // Always resync state — preset may have partially applied
     }
   }
-  
+
   const handleDeletePreset = async (id: number, name: string) => {
     try {
       await modsApi.deletePreset(id)
@@ -874,19 +874,19 @@ export default function Mods() {
   // Filtered mods based on search and filters
   const filteredMods = useMemo(() => {
     let result = [...mods]
-    
+
     if (deferredSearchQuery) {
       const query = deferredSearchQuery.toLowerCase()
-      result = result.filter(m => 
-        m.name?.toLowerCase().includes(query) || 
+      result = result.filter(m =>
+        m.name?.toLowerCase().includes(query) ||
         m.workshop_id.includes(query)
       )
     }
-    
+
     if (showUpdatesOnly) {
       result = result.filter(m => m.update_available)
     }
-    
+
     return result.sort((a, b) => {
       if (a.update_available !== b.update_available) {
         return b.update_available - a.update_available
@@ -1000,12 +1000,12 @@ export default function Mods() {
   const discoverWorkshopMod = useCallback(async (workshopId: string) => {
     // Prevent double-triggering
     if (discoveringMod) return
-    
+
     // Abort any previous discovery request
     discoverAbortRef.current?.abort()
     const controller = new AbortController()
     discoverAbortRef.current = controller
-    
+
     // Check if already configured
     if (iniConfig?.workshopIds?.includes(workshopId)) {
       toast({
@@ -1015,14 +1015,14 @@ export default function Mods() {
       })
       return
     }
-    
+
     setDiscoveringMod(true)
     setDiscoveredMod(null)
     setSelectedModIds(new Set())
-    
+
     try {
       const result = await modsApi.discoverModIds(workshopId, undefined, { signal: controller.signal })
-      
+
       // Filter out duplicate mod IDs (case-insensitive)
       const seenIds = new Set<string>()
       const uniqueModIds = result.modIds.filter(id => {
@@ -1031,12 +1031,12 @@ export default function Mods() {
         seenIds.add(lower)
         return true
       })
-      
+
       // Check which mod IDs are already in config
-      const alreadyConfigured = uniqueModIds.filter(id => 
+      const alreadyConfigured = uniqueModIds.filter(id =>
         iniConfig?.modIds?.includes(id)
       )
-      
+
       const newResult = {
         ...result,
         modIds: uniqueModIds,
@@ -1044,17 +1044,17 @@ export default function Mods() {
         alreadyConfigured,
         isAlreadyAdded: iniConfig?.workshopIds?.includes(workshopId) || false,
       }
-      
+
       setDiscoveredMod(newResult)
-      
+
       // Pre-select only NEW mod IDs (not already configured)
       const newModIds = uniqueModIds.filter(id => !alreadyConfigured.includes(id))
       setSelectedModIds(new Set(newModIds))
-      
+
       if (uniqueModIds.length === 0) {
         toast({
           title: 'No Mod IDs Found',
-          description: result.isDownloaded 
+          description: result.isDownloaded
             ? 'Mod is downloaded but no mod.info files found'
             : 'Mod not yet downloaded. Add it anyway and sync after the server downloads it.',
           variant: 'default',
@@ -1086,15 +1086,15 @@ export default function Mods() {
   // Auto-discover on paste (debounced)
   const handleModInputChange = useCallback((value: string) => {
     setAdvancedModInput(value)
-    
+
     if (autoDiscoverTimeoutRef.current) {
       clearTimeout(autoDiscoverTimeoutRef.current)
       autoDiscoverTimeoutRef.current = null
     }
-    
+
     if (value.includes('steamcommunity.com') && value.includes('id=')) {
       const workshopId = parseWorkshopId(value)
-      
+
       if (workshopId && workshopId !== lastAutoDiscoverIdRef.current) {
         lastAutoDiscoverIdRef.current = workshopId
         autoDiscoverTimeoutRef.current = setTimeout(() => {
@@ -1107,7 +1107,7 @@ export default function Mods() {
   // Discover mod IDs from workshop URL/ID
   const handleDiscoverMod = async () => {
     const workshopId = parseWorkshopId(advancedModInput)
-    
+
     if (!workshopId) {
       toast({
         title: 'Invalid Workshop URL',
@@ -1119,31 +1119,31 @@ export default function Mods() {
 
     await discoverWorkshopMod(workshopId)
   }
-  
+
   // Add mod with selected mod IDs
   const handleAddModAdvanced = async () => {
     if (!discoveredMod || busyRef.current) return
     busyRef.current = true
-    
+
     setLoading(true)
     try {
       const modIdsArray = Array.from(selectedModIds)
-      
+
       // Track the mod first
       await modsApi.trackMod(discoveredMod.workshopId)
-      
+
       // Add with selected mod IDs
       const result = await modsApi.addModAdvanced(
         discoveredMod.workshopId,
         modIdsArray.length > 0 ? modIdsArray : undefined,
         modIdsArray.length === 0 // If no mod IDs selected, try to include all
       )
-      
+
       if (result.addedModIds.length > 0) {
         toast({
           title: 'Mod Added to Server Config',
-          description: `${result.addedModIds.join(', ')} written to INI.${result.mapFoldersAdded.length > 0 
-            ? ` Map${result.mapFoldersAdded.length !== 1 ? 's' : ''}: ${result.mapFoldersAdded.join(', ')}.` 
+          description: `${result.addedModIds.join(', ')} written to INI.${result.mapFoldersAdded.length > 0
+            ? ` Map${result.mapFoldersAdded.length !== 1 ? 's' : ''}: ${result.mapFoldersAdded.join(', ')}.`
             : ''} Restart the server to load it.`,
           variant: 'success' as const,
         })
@@ -1158,7 +1158,7 @@ export default function Mods() {
           description: 'Added to INI. Mod IDs will be discovered after the server downloads the files.',
         })
       }
-      
+
       // Reset and close
       setAdvancedModInput('')
       setDiscoveredMod(null)
@@ -1176,7 +1176,7 @@ export default function Mods() {
       busyRef.current = false
     }
   }
-  
+
   // Toggle mod ID selection
   const toggleModIdSelection = (modId: string) => {
     setSelectedModIds(prev => {
@@ -1302,9 +1302,9 @@ export default function Mods() {
     const workshopIds = workshopIdsOverride ?? Array.from(selectedMods)
     if (workshopIds.length === 0 || busyRef.current) return
     busyRef.current = true
-    
+
     setLoading(true)
-    
+
     try {
       const result = await modsApi.batchRemove(workshopIds) as { success?: boolean; total?: number; dbRemoved?: number; dbFailed?: number; iniRemoved?: number; error?: string }
 
@@ -1465,10 +1465,13 @@ export default function Mods() {
         ...m,
         selected: !existingWorkshopIds.has(m.workshopId),
         modId: '',
-        mapFolder: m.isMap ? m.name.replace(/\s+/g, '') : undefined
+        // Do not guess the folder from the Steam title: the real folder lives
+        // in the mod's media/maps directory and rarely matches. A wrong value
+        // written to Map= stops the world from loading.
+        mapFolder: undefined
       })))
       setCollectionImported(true)
-      
+
       if (mods.length === 0) {
         toast({
           title: 'No Mods Found',
@@ -1494,26 +1497,26 @@ export default function Mods() {
   }
 
   const toggleModSelection = (workshopId: string) => {
-    setCollectionMods(prev => prev.map(m => 
+    setCollectionMods(prev => prev.map(m =>
       m.workshopId === workshopId ? { ...m, selected: !m.selected } : m
     ))
   }
 
   const updateModId = (workshopId: string, modId: string) => {
-    setCollectionMods(prev => prev.map(m => 
+    setCollectionMods(prev => prev.map(m =>
       m.workshopId === workshopId ? { ...m, modId } : m
     ))
   }
 
   const updateMapFolder = (workshopId: string, mapFolder: string) => {
-    setCollectionMods(prev => prev.map(m => 
+    setCollectionMods(prev => prev.map(m =>
       m.workshopId === workshopId ? { ...m, mapFolder } : m
     ))
   }
 
   const handleAddCollectionMods = async () => {
     const selectedModsList = collectionMods.filter(m => m.selected)
-    
+
     if (selectedModsList.length === 0) {
       toast({
         title: 'No Mods Selected',
@@ -1532,7 +1535,9 @@ export default function Mods() {
           await modsApi.addModAdvanced(
             mod.workshopId,
             selectedModIds,
-            !selectedModIds // includeAllModIds when no explicit modId was set
+            !selectedModIds, // includeAllModIds when no explicit modId was set
+            mod.name,
+            mod.isMap ? mod.mapFolder : undefined,
           )
           return mod.workshopId
         })
@@ -1553,7 +1558,7 @@ export default function Mods() {
           : 'Restart the server to load the new mods.',
         variant: failed > 0 ? 'destructive' : 'success' as const,
       })
-      
+
       setCollectionDialogOpen(false)
       setCollectionMods([])
       setCollectionUrl('')
@@ -1585,18 +1590,18 @@ export default function Mods() {
         workshopId: m.workshopId,
         modId: m.modId || m.workshopId
       }))
-      
+
       const mapFolders = modsToInstall
         .filter(m => m.isMap && m.mapFolder)
         .map(m => m.mapFolder!)
-      
+
       const result = await modsApi.writeToIni(modsData, mapFolders)
-      
+
       toast({
         title: 'Configuration Saved',
         description: `${result.modsConfigured} mods configured. Restart server to apply.`,
       })
-      
+
       setModsToInstall([])
       fetchData()
     } catch (error) {
@@ -1615,10 +1620,10 @@ export default function Mods() {
     setSyncing(true)
     try {
       const result = await modsApi.syncModIds()
-      
+
       const synced = result.syncedMods?.filter((m: { status?: string }) => m.status?.startsWith('added')).length || 0
       const missing = result.missingMods?.length || 0
-      
+
       if (synced > 0 || missing > 0) {
         toast({
           title: 'Mod IDs Synced',
@@ -1630,7 +1635,7 @@ export default function Mods() {
           description: 'All downloaded mods are already in the Mods= configuration.',
         })
       }
-      
+
       // Refresh ini config display
       fetchData()
     } catch (error) {
@@ -1653,7 +1658,7 @@ export default function Mods() {
     e.preventDefault()
     if (draggedModIndex === null || draggedModIndex === index) return
     if (draggedModIndex < 0 || draggedModIndex >= orderedModIds.length) return
-    
+
     // Reorder the mods
     const newOrder = [...orderedModIds]
     const [draggedItem] = newOrder.splice(draggedModIndex, 1)
@@ -1758,7 +1763,7 @@ export default function Mods() {
   }
 
   const openWorkshopPage = (workshopId: string) => {
-    window.open(`https://steamcommunity.com/sharedfiles/filedetails/?id=${workshopId}`, '_blank')
+    window.open(`https://steamcommunity.com/sharedfiles/filedetails/?id=${workshopId}`, '_blank', 'noopener,noreferrer')
   }
 
   const toggleModSelect = useCallback((workshopId: string) => {
@@ -2335,7 +2340,7 @@ export default function Mods() {
     scanBatchRef.current = { progress: 0, modName: null, modsScanned: 0, dirty: false, raf: 0 }
 
     const token = getAccessToken()
-    // SSE doesn't support custom headers, so pass token as query param 
+    // SSE doesn't support custom headers, so pass token as query param
     const url = `/api/mods/conflicts/stream${token ? `?token=${encodeURIComponent(token)}` : ''}`
     const es = new EventSource(url)
     eventSourceRef.current = es
@@ -2536,7 +2541,7 @@ export default function Mods() {
               </div>
             </>
           )}
-          
+
           {/* Workshop ACF Status */}
           {!status?.workshopAcfConfigured && (
             <>
@@ -2734,7 +2739,7 @@ export default function Mods() {
                         </Button>
                       </div>
                     </div>
-                    
+
                     {collectionImported && collectionMods.length === 0 && !importingCollection && (
                       <div className="flex items-center gap-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2.5 text-sm text-warning">
                         <AlertTriangle className="w-4 h-4 shrink-0" />
@@ -2775,8 +2780,8 @@ export default function Mods() {
                             {collectionMods.map((mod) => {
                               const alreadyInstalled = iniConfig?.workshopIds?.includes(mod.workshopId)
                               return (
-                              <div 
-                                key={mod.workshopId} 
+                              <div
+                                key={mod.workshopId}
                                 className={`flex items-start gap-3 rounded-lg border p-3 transition-colors ${mod.selected ? 'border-primary/30 bg-primary/10' : 'bg-card/60 hover:bg-accent/20'}`}
                               >
                                 <Checkbox
@@ -2851,8 +2856,8 @@ export default function Mods() {
                     <Button variant="outline" onClick={() => setCollectionDialogOpen(false)}>
                       Cancel
                     </Button>
-                    <Button 
-                      onClick={handleAddCollectionMods} 
+                    <Button
+                      onClick={handleAddCollectionMods}
                       disabled={loading || selectedCollectionCount === 0}
                     >
                       {loading ? 'Adding...' : `Add ${selectedCollectionCount} Mods to Server`}
@@ -2904,9 +2909,9 @@ export default function Mods() {
                           className="font-mono text-sm"
                           maxLength={200}
                         />
-                        <Button 
+                        <Button
                           id="discover-mod-btn"
-                          onClick={handleDiscoverMod} 
+                          onClick={handleDiscoverMod}
                           disabled={discoveringMod || !advancedModInput.trim()}
                           variant="secondary"
                           className="w-full shrink-0 sm:w-auto"
@@ -2925,7 +2930,7 @@ export default function Mods() {
                         Example: https://steamcommunity.com/sharedfiles/filedetails/?id=3616536783
                       </p>
                     </div>
-                    
+
                     {/* Loading skeleton */}
                     {discoveringMod && (
                       <div className="space-y-3 p-4 border rounded-lg bg-muted/30 animate-pulse">
@@ -2942,7 +2947,7 @@ export default function Mods() {
                         </div>
                       </div>
                     )}
-                    
+
                     {/* Discovered mod info */}
                     {discoveredMod && !discoveringMod && (
                       <div className="space-y-3 p-3 border rounded-lg bg-muted/30">
@@ -2957,7 +2962,7 @@ export default function Mods() {
                                 {discoveredMod.workshopId}
                               </code>
                               <button
-                                onClick={() => window.open(`https://steamcommunity.com/sharedfiles/filedetails/?id=${discoveredMod.workshopId}`, '_blank')}
+                                onClick={() => window.open(`https://steamcommunity.com/sharedfiles/filedetails/?id=${discoveredMod.workshopId}`, '_blank', 'noopener,noreferrer')}
                                 className="text-xs text-primary hover:underline flex items-center gap-0.5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/50 rounded-sm"
                               >
                                 <ExternalLink className="w-3 h-3" />
@@ -2985,7 +2990,7 @@ export default function Mods() {
                             )}
                           </div>
                         </div>
-                        
+
                         {/* Already added warning */}
                         {discoveredMod.isAlreadyAdded && (
                           <div className="flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/10 p-2 text-xs text-foreground">
@@ -2993,7 +2998,7 @@ export default function Mods() {
                             <span>Workshop ID is already in your server config</span>
                           </div>
                         )}
-                        
+
                         {/* Mod IDs selection */}
                         {discoveredMod.modIds.length > 0 ? (
                           <div className="space-y-2.5">
@@ -3101,19 +3106,19 @@ export default function Mods() {
                             <AlertTriangle className="w-4 h-4 text-warning shrink-0" />
                             <div>
                               <p className="font-medium text-warning">
-                                {discoveredMod.isDownloaded 
+                                {discoveredMod.isDownloaded
                                   ? 'No mod.info files found'
                                   : 'Mod not yet downloaded'}
                               </p>
                               <p className="text-muted-foreground mt-0.5">
-                                {discoveredMod.isDownloaded 
+                                {discoveredMod.isDownloaded
                                   ? 'This mod may use an unconventional structure'
                                   : 'Add the Workshop ID and sync after server downloads it'}
                               </p>
                             </div>
                           </div>
                         )}
-                        
+
                         {/* Map folders info */}
                         {discoveredMod.mapFolders.length > 0 && (
                           <div className="flex items-start gap-2 text-xs">
@@ -3130,15 +3135,15 @@ export default function Mods() {
                     )}
                   </div>
                   <DialogFooter className="flex-col sm:flex-row gap-2">
-                    <Button 
-                      variant="outline" 
+                    <Button
+                      variant="outline"
                       onClick={() => setAdvancedAddOpen(false)}
                       className="w-full sm:order-1 sm:w-auto"
                     >
                       Cancel
                     </Button>
-                    <Button 
-                      onClick={handleAddModAdvanced} 
+                    <Button
+                      onClick={handleAddModAdvanced}
                       disabled={loading || !discoveredMod || discoveringMod}
                       className="w-full sm:order-2 sm:w-auto"
                     >
@@ -3148,7 +3153,7 @@ export default function Mods() {
                           Adding...
                         </>
                       ) : discoveredMod?.modIds.length ? (
-                        selectedModIds.size > 0 
+                        selectedModIds.size > 0
                           ? `Add ${selectedModIds.size} Mod ID${selectedModIds.size !== 1 ? 's' : ''}`
                           : 'Add Workshop ID Only'
                       ) : discoveredMod ? (
@@ -3185,7 +3190,7 @@ export default function Mods() {
                         How long to wait before restarting after detecting updates
                       </p>
                     </div>
-                    
+
                     <div className="flex items-center justify-between rounded-lg border border-border/70 bg-card/65 p-3">
                       <div className="space-y-1">
                         <Label>Delay if Players Online</Label>
@@ -3198,7 +3203,7 @@ export default function Mods() {
                         onCheckedChange={setDelayIfPlayersOnline}
                       />
                     </div>
-                    
+
                     {delayIfPlayersOnline && (
                       <div>
                         <Label htmlFor="restart-max-delay">Maximum Delay (minutes)</Label>
@@ -3215,7 +3220,7 @@ export default function Mods() {
                         </p>
                       </div>
                     )}
-                    
+
                     <div className="rounded-lg border border-border/70 bg-secondary/40 p-3">
                       <p className="text-sm font-medium mb-2">Current Settings</p>
                       <div className="text-xs text-muted-foreground space-y-1">
@@ -3254,7 +3259,7 @@ export default function Mods() {
                   aria-label="Search mods"
                 />
               </div>
-              
+
               <Button
                 variant={showUpdatesOnly ? "secondary" : "outline"}
                 size="sm"
@@ -4201,9 +4206,14 @@ export default function Mods() {
                                             Copy Workshop ID
                                           </DropdownMenuItem>
                                           <DropdownMenuSeparator />
-                                          <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => setConfirmRemoveWorkshop({ wsId: g.wsId, knownModIds: g.mods.map(m => m.id) })}>
+                                          <DropdownMenuItem className="text-destructive focus:text-destructive" title="Stops this mod loading by removing its workshop and mod IDs from the server INI. Keeps it in the panel's tracked list." onClick={() => setConfirmRemoveWorkshop({ wsId: g.wsId, knownModIds: g.mods.map(m => m.id) })}>
                                             <Trash2 className="mr-2 h-4 w-4" />
                                             Remove from server INI
+                                          </DropdownMenuItem>
+                                          <DropdownMenuSeparator />
+                                          <DropdownMenuItem className="text-destructive focus:text-destructive" title="Stops this mod loading and removes it from the panel's tracked list. Workshop files remain on disk." onClick={() => setConfirmRemoveMod(g.wsId)}>
+                                            <Trash2 className="mr-2 h-4 w-4" />
+                                            Remove from server
                                           </DropdownMenuItem>
                                         </DropdownMenuContent>
                                       </DropdownMenu>
@@ -4278,9 +4288,14 @@ export default function Mods() {
                                             Copy Workshop ID
                                           </DropdownMenuItem>
                                           <DropdownMenuSeparator />
-                                          <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => setConfirmRemoveWorkshop({ wsId: g.wsId, knownModIds: g.mods.map(m => m.id) })}>
+                                          <DropdownMenuItem className="text-destructive focus:text-destructive" title="Stops this mod loading by removing its workshop and mod IDs from the server INI. Keeps it in the panel's tracked list." onClick={() => setConfirmRemoveWorkshop({ wsId: g.wsId, knownModIds: g.mods.map(m => m.id) })}>
                                             <Trash2 className="mr-2 h-4 w-4" />
                                             Remove from server INI
+                                          </DropdownMenuItem>
+                                          <DropdownMenuSeparator />
+                                          <DropdownMenuItem className="text-destructive focus:text-destructive" title="Stops this mod loading and removes it from the panel's tracked list. Workshop files remain on disk." onClick={() => setConfirmRemoveMod(g.wsId)}>
+                                            <Trash2 className="mr-2 h-4 w-4" />
+                                            Remove from server
                                           </DropdownMenuItem>
                                         </DropdownMenuContent>
                                       </DropdownMenu>

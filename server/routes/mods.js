@@ -237,10 +237,13 @@ router.get("/tracked", async (req, res) => {
 
     const mods = await getTrackedMods();
 
-    // Enrich generic or stale display names with real names from disk.
+    // Enrich generic or stale display names with real names from disk, then
+    // Steam for mods that are not downloaded locally. A tracked mod should
+    // never stay a generic workshop-ID label just because it is deactivated.
     const modChecker = req.app.get("modChecker");
     if (modChecker) {
       let updated = 0;
+      const unresolvedIds = [];
       for (const mod of mods) {
         if (shouldRefreshTrackedModName(mod.name)) {
           const realName = modChecker.resolveModNameFromDisk(
@@ -252,11 +255,24 @@ router.get("/tracked", async (req, res) => {
             // Persist the resolved name in the database
             await addTrackedMod(mod.workshop_id, realName);
             updated++;
+          } else {
+            unresolvedIds.push(mod.workshop_id);
+          }
+        }
+      }
+      if (unresolvedIds.length > 0) {
+        const titles = await fetchPublishedFileTitles(unresolvedIds);
+        for (const mod of mods) {
+          const realName = titles.get(mod.workshop_id);
+          if (realName && shouldRefreshTrackedModName(mod.name)) {
+            mod.name = realName;
+            await addTrackedMod(mod.workshop_id, realName);
+            updated++;
           }
         }
       }
       if (updated > 0) {
-        log.debug(`Resolved ${updated} mod names from disk`);
+        log.debug(`Resolved ${updated} tracked mod names`);
       }
     }
 
@@ -922,6 +938,29 @@ router.get("/collection/diff", async (req, res) => {
     const tracked = await getTrackedMods();
     const ids = tracked.map((m) => String(m.workshop_id));
     const diff = await computeCollectionDiff(ids);
+    const configuredWorkshopIds = new Set();
+    try {
+      const serverConfigPath = await getServerConfigPath();
+      const serverName = await getServerName();
+      const sanitizedServerName = path.basename(serverName || "");
+      if (
+        serverConfigPath &&
+        sanitizedServerName === serverName &&
+        !serverName.includes("..")
+      ) {
+        const iniPath = path.join(serverConfigPath, `${serverName}.ini`);
+        if (fs.existsSync(iniPath)) {
+          const workshopMatch = readTextFile(iniPath).match(
+            /^WorkshopItems=(.*)$/m,
+          );
+          for (const id of workshopMatch?.[1]?.split(";") || []) {
+            if (id) configuredWorkshopIds.add(id);
+          }
+        }
+      }
+    } catch (error) {
+      log.debug(`Collection server membership check skipped: ${error.message}`);
+    }
 
     // Build a unified, name-enriched item list so the UI can show every
     // tracked + collection mod in one table with per-row actions. This is
@@ -929,7 +968,15 @@ router.get("/collection/diff", async (req, res) => {
     let items = [];
     if (diff.ok) {
       const trackedNames = new Map(
-        tracked.map((m) => [String(m.workshop_id), m.name || null]),
+        tracked.map((m) => {
+          const workshopId = String(m.workshop_id);
+          const name = typeof m.name === "string" ? m.name.trim() : "";
+          // Older tracking entries use this generated label until Steam has
+          // supplied a real title. Treat it as missing so collection search
+          // and the synced list show the same name as Steam.
+          const isPlaceholder = name === `Workshop Mod ${workshopId}`;
+          return [workshopId, isPlaceholder ? null : name || null];
+        }),
       );
       const inCollection = new Set(diff.inCollection.map(String));
       const allIds = new Set([...trackedNames.keys(), ...inCollection]);
@@ -946,17 +993,19 @@ router.get("/collection/diff", async (req, res) => {
         let status;
         if (inTracked && inColl) status = "synced";
         else if (inTracked && !inColl) status = "to-add";
-        else status = "to-remove"; // in collection, not tracked
+        else status = "collection-only";
         return {
           workshopId: id,
           name: trackedNames.get(id) || titleMap.get(id) || null,
           status,
           inTracked,
           inCollection: inColl,
+          inServer: configuredWorkshopIds.has(id),
         };
       });
-      // Sort: mismatches first (to-add then to-remove), then synced.
-      const order = { "to-add": 0, "to-remove": 1, synced: 2 };
+      // Tracked mods missing from Steam need attention. Collection-only mods
+      // are legitimate optional items, followed by fully synced entries.
+      const order = { "to-add": 0, "collection-only": 1, synced: 2 };
       items.sort((a, b) => {
         if (order[a.status] !== order[b.status])
           return order[a.status] - order[b.status];
@@ -1069,6 +1118,29 @@ router.delete("/collection/items/:workshopId", async (req, res) => {
   }
 });
 
+// Stop panel tracking for an optional collection item. Unlike DELETE /track,
+// this intentionally does not create an ignore rule or modify Steam.
+router.delete("/collection/tracking/:workshopId", async (req, res) => {
+  try {
+    const workshopId = String(req.params.workshopId || "").trim();
+    if (!/^\d{1,15}$/.test(workshopId)) {
+      return res.status(400).json({ error: "Invalid workshop ID" });
+    }
+    const removed = await removeTrackedMod(workshopId);
+    res.json({
+      ok: true,
+      workshopId,
+      removed,
+      message: removed
+        ? "Mod is no longer tracked; Steam collection and server configuration were unchanged"
+        : "Mod was not tracked",
+    });
+  } catch (error) {
+    log.error(`Collection tracking removal failed: ${error.message}`);
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
 router.post("/collection/sync", async (req, res) => {
   try {
     const collectionId = await getSetting("workshopCollectionId");
@@ -1085,7 +1157,6 @@ router.post("/collection/sync", async (req, res) => {
     }
 
     const added = [];
-    const removed = [];
     const errors = [];
     let staleSession = false;
 
@@ -1107,31 +1178,16 @@ router.post("/collection/sync", async (req, res) => {
       }
       await sleep(300);
     }
-    if (!staleSession) {
-      for (const id of diff.toRemove) {
-        const r = await removeItemFromCollection(collectionId, id);
-        if (r.ok) removed.push(id);
-        else {
-          errors.push({ action: "remove", id, error: r.error });
-          if (r.error && STALE_RE.test(r.error)) {
-            staleSession = true;
-            break;
-          }
-        }
-        await sleep(300);
-      }
-    }
-
     res.json({
       success: errors.length === 0,
       collectionId,
       added,
-      removed,
+      removed: [],
       errors,
       staleSession,
       message:
         errors.length === 0
-          ? `Synced \u2014 added ${added.length}, removed ${removed.length}`
+          ? `Synced \u2014 added ${added.length}`
           : staleSession
             ? "Steam session expired \u2014 paste fresh cookies and try again"
             : `Partial sync \u2014 ${errors.length} error${errors.length !== 1 ? "s" : ""}`,
@@ -3060,9 +3116,7 @@ router.post("/batch-remove", async (req, res) => {
       }
     }
 
-    // Best-effort: mirror these removes into the configured Steam Workshop
-    // collection if auto-sync is enabled. Sequential with a small delay so
-    // a 50-mod purge doesn't fire 50 simultaneous Steam requests.
+    // Mirror removals to the Workshop collection when auto-sync is enabled.
     if (validIds.length > 0) {
       (async () => {
         for (const wsId of validIds) {

@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-07-28
+
+### Added
+
+- **Collection-first Steam Workshop management**: the Collection tab now identifies whether each item is tracked, in the Steam collection, and configured on the active server. Add collection items directly to the server, or remove server mods individually or in bulk after changing the Steam collection.
+- **Complete server-enable action**: adding a mod from Collection updates `WorkshopItems=`, discovers and writes its internal mod ID to `Mods=`, includes map folders when available, and begins tracking the mod for update checks.
+- **Safer collection synchronization**: optional collection-only mods are now a first-class neutral state instead of a false mismatch. Sync adds tracked mods that are missing from Steam without silently deleting optional collection items.
+- **Operational dashboard signals**: added host disk headroom, next scheduled maintenance action, and current console error count to the dashboard.
+- **Clearer collection actions**: bulk actions are disabled when they cannot apply to the current selection, and every mod row states whether it is on the server.
+
+### Fixed
+
+- **Mod removal semantics**: Collection-tab untracking no longer creates an ignore rule or changes Steam membership. Server removal consistently removes the mod from the server INI and tracking state, then mirrors to Steam only when collection auto-sync is enabled.
+- **Workshop title resolution**: tracked and deactivated mods now resolve their real Steam titles automatically when local workshop files are unavailable; generic `Workshop Mod <id>` labels are repaired and persisted without manual intervention.
+- **Steam collection rate limiting**: collection mutations use a dedicated limiter so normal collection management no longer collides with sensitive-operation limits.
+- **Collection title accuracy**: placeholder tracked names no longer block Steam title lookups in the collection view.
+- **Mod configuration reliability**: server mod removal handles Workshop IDs, internal mod IDs, and map-folder cleanup together; collection-driven server actions follow the same safe path.
+- **Settings reliability**: browser-extension downloads are packaged in Docker images and clipboard copy falls back for browsers running on non-HTTPS local panel URLs.
+- **Dashboard polish**: telemetry rows retain fixed geometry, the removed trace mode no longer leaves stale controls, and duplicated oversized error verdicts were replaced by a compact errors work item.
+
+### Changed
+
+- **Steam collection workflow**: the Collection tab is now the practical place to reconcile Steam membership with server configuration. With auto-sync enabled, removing a mod from the server also removes it from Steam; with auto-sync disabled, Steam membership stays unchanged and the UI says so.
+- **Advanced mod actions**: `Remove from server INI` and `Remove from server` now have distinct names, shared destructive iconography, and hover explanations that make their tracking behavior explicit.
+
 ## [1.0.77] - 2026-07-22
 
 ### Added

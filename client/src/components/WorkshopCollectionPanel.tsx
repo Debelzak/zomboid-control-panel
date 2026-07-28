@@ -32,6 +32,7 @@ import {
   Loader2,
   Minus,
   Plus,
+  Server,
   RefreshCw,
   Search,
   Settings as SettingsIcon,
@@ -58,7 +59,7 @@ type DiffResponse = Awaited<ReturnType<typeof modsApi.collectionDiff>>
 type DiffItem = DiffResponse['items'][number]
 
 type FilterKey = 'mismatch' | 'all' | 'tracked' | 'collection' | 'synced'
-type RowAction = 'add' | 'remove' | 'track' | 'untrack'
+type RowAction = 'add' | 'remove' | 'track' | 'untrack' | 'add-server' | 'remove-server'
 
 // Friendly relative-time string for the "last refreshed" badge.
 function formatAgo(date: Date | null): string {
@@ -117,21 +118,21 @@ export function WorkshopCollectionPanel() {
   // Counts per filter category — drive both the pill labels and the
   // stat tiles so they always agree.
   const counts = useMemo(() => {
-    let synced = 0, toAdd = 0, toRemove = 0, tracked = 0, inColl = 0
+    let synced = 0, toAdd = 0, collectionOnly = 0, tracked = 0, inColl = 0
     for (const it of items) {
       if (it.status === 'synced') synced++
       else if (it.status === 'to-add') toAdd++
-      else if (it.status === 'to-remove') toRemove++
+      else if (it.status === 'collection-only') collectionOnly++
       if (it.inTracked) tracked++
       if (it.inCollection) inColl++
     }
-    return { synced, toAdd, toRemove, tracked, inColl, total: items.length, mismatch: toAdd + toRemove }
+    return { synced, toAdd, collectionOnly, tracked, inColl, total: items.length, mismatch: toAdd }
   }, [items])
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
     return items.filter((it) => {
-      if (filter === 'mismatch' && it.status === 'synced') return false
+      if (filter === 'mismatch' && it.status !== 'to-add') return false
       if (filter === 'synced' && it.status !== 'synced') return false
       if (filter === 'tracked' && !it.inTracked) return false
       if (filter === 'collection' && !it.inCollection) return false
@@ -149,6 +150,13 @@ export function WorkshopCollectionPanel() {
   const visibleIds = useMemo(() => filtered.map((i) => i.workshopId), [filtered])
   const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selected.has(id))
   const someVisibleSelected = visibleIds.some((id) => selected.has(id))
+  const selectedItems = useMemo(
+    () => filtered.filter((item) => selected.has(item.workshopId)),
+    [filtered, selected],
+  )
+  const canBulkTrack = selectedItems.some((item) => !item.inTracked)
+  const canBulkUntrack = selectedItems.some((item) => item.inTracked)
+  const canBulkRemoveServer = selectedItems.some((item) => item.inServer && !item.inCollection)
 
   const toggleSelectAllVisible = () => {
     setSelected((prev) => {
@@ -183,7 +191,22 @@ export function WorkshopCollectionPanel() {
       } else if (action === 'track') {
         await modsApi.trackMod(workshopId)
       } else if (action === 'untrack') {
-        await modsApi.untrackMod(workshopId)
+        await modsApi.collectionUntrack(workshopId)
+      } else if (action === 'add-server') {
+        await modsApi.addToIni(workshopId)
+        if (!items.find((item) => item.workshopId === workshopId)?.inTracked) {
+          await modsApi.trackMod(workshopId)
+        }
+        toast({
+          title: 'Added to server configuration',
+          description: 'Project Zomboid will download and load this mod on the next server restart.',
+        })
+      } else if (action === 'remove-server') {
+        await modsApi.batchRemove([workshopId])
+        toast({
+          title: 'Removed from server configuration',
+          description: autoSync ? 'It will also be removed from Steam collection.' : 'Steam collection was left unchanged because auto-sync is off.',
+        })
       }
       await refresh()
     } catch (err: any) {
@@ -209,6 +232,7 @@ export function WorkshopCollectionPanel() {
       if (action === 'remove') return it.inCollection
       if (action === 'track') return !it.inTracked
       if (action === 'untrack') return it.inTracked
+      if (action === 'remove-server') return it.inServer && !it.inCollection
       return false
     })
     if (targets.length === 0) {
@@ -223,6 +247,27 @@ export function WorkshopCollectionPanel() {
       toast({ variant: 'destructive', title: 'Steam session expired', description: 'Your Steam cookies have expired. Paste fresh ones in Settings → Workshop Collection Sync.' })
       return
     }
+    if (action === 'remove-server') {
+      setBulkBusy(action)
+      targets.forEach((item) => setRowBusy((prev) => ({ ...prev, [item.workshopId]: action })))
+      try {
+        await modsApi.batchRemove(targets.map((item) => item.workshopId))
+        toast({
+          title: 'Removed from server configuration',
+          description: autoSync
+            ? `${targets.length} mod${targets.length !== 1 ? 's' : ''} removed; Steam collection will follow.`
+            : `${targets.length} mod${targets.length !== 1 ? 's' : ''} removed. Steam collection was left unchanged because auto-sync is off.`,
+        })
+      } catch (err: any) {
+        toast({ variant: 'destructive', title: 'Server removal failed', description: err?.message || 'Unable to update the server configuration.' })
+      } finally {
+        setBulkBusy(null)
+        setRowBusy({})
+        await refresh()
+        clearSelection()
+      }
+      return
+    }
     setBulkBusy(action)
     let ok = 0
     const errors: Array<{ id: string; error: string }> = []
@@ -232,7 +277,7 @@ export function WorkshopCollectionPanel() {
         if (action === 'add') await modsApi.collectionAddItem(it.workshopId)
         else if (action === 'remove') await modsApi.collectionRemoveItem(it.workshopId)
         else if (action === 'track') await modsApi.trackMod(it.workshopId)
-        else if (action === 'untrack') await modsApi.untrackMod(it.workshopId)
+        else if (action === 'untrack') await modsApi.collectionUntrack(it.workshopId)
         ok++
       } catch (err: any) {
         errors.push({ id: it.workshopId, error: err?.message || 'failed' })
@@ -427,14 +472,14 @@ export function WorkshopCollectionPanel() {
                   {inSync ? 'Collection in sync' : `${counts.mismatch} mismatch${counts.mismatch !== 1 ? 'es' : ''} to review`}
                 </p>
                 <p className="mt-0.5 text-[11px] text-muted-foreground">
-                  {counts.synced} of {counts.total} Workshop item{counts.total !== 1 ? 's' : ''} aligned with tracked mods.
+                  {counts.synced} tracked mod{counts.synced !== 1 ? 's' : ''} in the collection; {counts.collectionOnly} optional collection-only.
                 </p>
               </div>
             </div>
             <div className="min-w-[12rem] space-y-1.5">
               <div className="flex items-center justify-between font-mono text-[10px] text-muted-foreground">
                 <span>{Math.round(syncedRatio)}%</span>
-                {!inSync && <span>{counts.toAdd} add · {counts.toRemove} remove</span>}
+                {!inSync && <span>{counts.toAdd} add</span>}
               </div>
               <div className="h-1.5 overflow-hidden rounded-full bg-border/40">
                 <div className={cn('h-full rounded-full transition-all duration-500 ease-out', inSync ? 'bg-success' : 'bg-warning')} style={{ width: `${syncedRatio}%` }} />
@@ -450,7 +495,7 @@ export function WorkshopCollectionPanel() {
               <StatTile label="Tracked locally" value={counts.tracked} icon={<Bookmark className="w-3.5 h-3.5" />} accent="primary" />
               <StatTile label="In Steam collection" value={counts.inColl} icon={<Library className="w-3.5 h-3.5" />} accent="primary" />
               <StatTile label="Missing from collection" value={counts.toAdd} icon={<Plus className="w-3.5 h-3.5" />} accent={counts.toAdd > 0 ? 'warning' : 'muted'} onClick={counts.toAdd > 0 ? () => setFilter('mismatch') : undefined} />
-              <StatTile label="Not tracked locally" value={counts.toRemove} icon={<AlertTriangle className="w-3.5 h-3.5" />} accent={counts.toRemove > 0 ? 'destructive' : 'muted'} onClick={counts.toRemove > 0 ? () => setFilter('mismatch') : undefined} />
+              <StatTile label="Collection-only" value={counts.collectionOnly} icon={<Library className="w-3.5 h-3.5" />} accent={counts.collectionOnly > 0 ? 'primary' : 'muted'} onClick={counts.collectionOnly > 0 ? () => setFilter('collection') : undefined} />
             </div>
           </details>
         </div>
@@ -536,7 +581,7 @@ export function WorkshopCollectionPanel() {
               variant="ghost"
               className="h-7 px-2 text-[11px]"
               onClick={() => runBulk('track')}
-              disabled={!!bulkBusy}
+              disabled={!!bulkBusy || !canBulkTrack}
             >
               {bulkBusy === 'track' ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <BookmarkPlus className="w-3 h-3 mr-1" />}
               Track locally
@@ -546,10 +591,21 @@ export function WorkshopCollectionPanel() {
               variant="ghost"
               className="h-7 px-2 text-[11px] text-muted-foreground"
               onClick={() => runBulk('untrack')}
-              disabled={!!bulkBusy}
+              disabled={!!bulkBusy || !canBulkUntrack}
             >
               {bulkBusy === 'untrack' ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Bookmark className="w-3 h-3 mr-1" />}
               Untrack
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2 text-[11px] text-destructive hover:text-destructive hover:bg-destructive/10"
+              onClick={() => runBulk('remove-server')}
+              disabled={!!bulkBusy || !canBulkRemoveServer}
+              title="Remove selected mods from the server after they were removed from Steam"
+            >
+              {bulkBusy === 'remove-server' ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Minus className="w-3 h-3 mr-1" />}
+              Remove from server
             </Button>
             <Button
               size="sm"
@@ -703,7 +759,7 @@ function Row({
       ? { label: 'In sync', cls: 'text-success border-success/40 bg-success/10', icon: <Check className="w-3 h-3" /> }
       : item.status === 'to-add'
         ? { label: 'Missing in collection', cls: 'text-warning border-warning/40 bg-warning/10', icon: <Plus className="w-3 h-3" /> }
-        : { label: 'Not tracked', cls: 'text-destructive border-destructive/40 bg-destructive/10', icon: <AlertTriangle className="w-3 h-3" /> }
+        : { label: 'Collection-only', cls: 'text-primary border-primary/40 bg-primary/10', icon: <Library className="w-3 h-3" /> }
 
   return (
     <tr className={cn(
@@ -741,6 +797,8 @@ function Row({
             <span className={item.inTracked ? '' : 'opacity-50'}>{item.inTracked ? 'tracked' : 'not tracked'}</span>
             <span>·</span>
             <span className={item.inCollection ? '' : 'opacity-50'}>{item.inCollection ? 'in collection' : 'not in collection'}</span>
+            <span>·</span>
+            <span className={item.inServer ? '' : 'opacity-50'}>{item.inServer ? 'on server' : 'not on server'}</span>
           </div>
         </div>
       </td>
@@ -794,6 +852,32 @@ function Row({
             >
               {busy === 'track' ? <Loader2 className="w-3 h-3 animate-spin" /> : <BookmarkPlus className="w-3 h-3" />}
               <span className="ml-1 hidden sm:inline">Track</span>
+            </Button>
+          )}
+          {!item.inServer && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2 text-[11px] text-success hover:text-success hover:bg-success/10"
+              onClick={() => onAction('add-server')}
+              disabled={!!busy}
+              title="Add this Workshop mod to the DoomerZ server configuration"
+            >
+              {busy === 'add-server' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Server className="w-3 h-3" />}
+              <span className="ml-1 hidden sm:inline">Add to server</span>
+            </Button>
+          )}
+          {item.inServer && !item.inCollection && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2 text-[11px] text-destructive hover:text-destructive hover:bg-destructive/10"
+              onClick={() => onAction('remove-server')}
+              disabled={!!busy}
+              title="Remove from DoomerZ after removing it from Steam"
+            >
+              {busy === 'remove-server' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Minus className="w-3 h-3" />}
+              <span className="ml-1 hidden sm:inline">Remove server</span>
             </Button>
           )}
           <DropdownMenu>

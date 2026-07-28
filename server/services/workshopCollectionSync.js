@@ -240,13 +240,17 @@ export async function computeDiff(trackedWorkshopIds) {
   const trackedSet = new Set(trackedWorkshopIds.map(String));
   const collectionSet = new Set(collection.items);
   const toAdd = [...trackedSet].filter((id) => !collectionSet.has(id));
-  const toRemove = [...collectionSet].filter((id) => !trackedSet.has(id));
+  // A Steam collection may intentionally contain optional mods that are not
+  // tracked by this server. Sync only adds missing tracked mods; it never
+  // prunes collection-only entries.
+  const collectionOnly = [...collectionSet].filter((id) => !trackedSet.has(id));
   return {
     ok: true,
     title: collection.title,
     inCollection: [...collectionSet],
     toAdd,
-    toRemove,
+    toRemove: [],
+    collectionOnly,
   };
 }
 

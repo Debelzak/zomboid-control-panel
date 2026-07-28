@@ -10,6 +10,8 @@ export interface IniSetting {
   min?: number
   max?: number
   default?: string | number | boolean
+  /** False when Project Zomboid generates a runtime value rather than using the template default. */
+  defaultComparable?: boolean
   category: string
   /** File extension filter for 'filepath' type, e.g. ['.png', '.jpg'] */
   fileExtensions?: string[]
@@ -943,6 +945,7 @@ export const INI_SCHEMA: IniSetting[] = [
     description: 'The worldgen seed used to generate the world. Changing this requires deleting map_worldgen.bin.',
     type: 'string',
     default: '',
+    defaultComparable: false,
     category: 'general'
   },
 
@@ -1840,6 +1843,15 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
   },
 
   // ==================== Loot & Resources ====================
+  {
+    key: 'LootItemRemovalList',
+    label: 'Loot Item Removal List',
+    description: 'Comma-separated item types removed from the world by the loot cleanup system.',
+    type: 'string',
+    default: '',
+    category: 'loot',
+    section: 'settings'
+  },
   {
     key: 'FoodLootNew',
     label: 'Food Loot',
