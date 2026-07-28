@@ -41,6 +41,7 @@ import {
   EyeOff,
   Eye,
   ArrowRight,
+  Wand2,
 } from 'lucide-react'
 import { ConflictScanResult, ScanStreamModScanned, ScanStreamConflictFound } from '@/types'
 import { FileDiffViewer } from '@/components/FileDiffViewer'
@@ -84,6 +85,7 @@ import {
 import { useToast } from '@/components/ui/use-toast'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 import { modsApi } from '@/lib/api'
+import { buildRequiresMap, computeAutoSortedOrder, type AutoSortResult } from '@/lib/modLoadOrder'
 import { EmptyState } from '@/components/EmptyState'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import {
@@ -252,6 +254,7 @@ export default function Mods() {
   const [orderedModIds, setOrderedModIds] = useState<string[]>([])
   const [selectedActiveWsId, setSelectedActiveWsId] = useState<string | null>(null)
   const [savingModOrder, setSavingModOrder] = useState(false)
+  const [autoSortPreview, setAutoSortPreview] = useState<AutoSortResult | null>(null)
   const [draggedModIndex, setDraggedModIndex] = useState<number | null>(null)
   // Expand/collapse states
   const [repairingMaps, setRepairingMaps] = useState(false)
@@ -1683,6 +1686,43 @@ export default function Mods() {
     const newOrder = [...orderedModIds]
     ;[newOrder[index], newOrder[index + 1]] = [newOrder[index + 1], newOrder[index]]
     setOrderedModIds(newOrder)
+  }
+
+  // Dependency-aware auto-sort. Computes a proposal only; nothing is written
+  // until the user applies it and then saves the order.
+  const handleAutoSort = () => {
+    const requiresByModId = buildRequiresMap(iniConfig?.workshopModMap)
+    const result = computeAutoSortedOrder(orderedModIds, requiresByModId)
+
+    if (result.appliedEdges === 0) {
+      toast({
+        title: 'No dependency data',
+        description:
+          'None of the enabled mods declare a "require" in their mod.info, so there is nothing to sort by.',
+      })
+      return
+    }
+
+    if (result.moved.length === 0) {
+      toast({
+        title: 'Load order already correct',
+        description: `All ${result.appliedEdges} declared dependencies already load before the mods that need them.`,
+      })
+      return
+    }
+
+    setAutoSortPreview(result)
+  }
+
+  const applyAutoSort = () => {
+    if (!autoSortPreview) return
+    setOrderedModIds(autoSortPreview.order)
+    const movedCount = autoSortPreview.moved.length
+    setAutoSortPreview(null)
+    toast({
+      title: 'Auto-sort applied',
+      description: `${movedCount} mod${movedCount === 1 ? '' : 's'} repositioned. Click Save Order to write it to the server INI.`,
+    })
   }
 
   const handleSaveModOrder = async () => {
@@ -4828,7 +4868,65 @@ export default function Mods() {
                       </div>
                     ) : (
                     <>
-                    <p className="text-xs text-muted-foreground">Drag to reorder. Changes are not saved until you click Save.</p>
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                      <p className="text-xs text-muted-foreground">Drag to reorder. Changes are not saved until you click Save.</p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-xs"
+                        onClick={handleAutoSort}
+                        disabled={savingModOrder || !!autoSortPreview}
+                      >
+                        <Wand2 className="w-3 h-3 mr-1" />
+                        Auto-sort by dependencies
+                      </Button>
+                    </div>
+
+                    {autoSortPreview && (
+                      <div className="rounded-lg border border-primary/40 bg-primary/5 p-3 space-y-2">
+                        <div className="flex items-center justify-between gap-3 flex-wrap">
+                          <div className="space-y-0.5">
+                            <p className="text-xs font-medium text-foreground">
+                              Proposed order: {autoSortPreview.moved.length} mod{autoSortPreview.moved.length === 1 ? '' : 's'} would move
+                            </p>
+                            <p className="text-[11px] text-muted-foreground">
+                              Based on {autoSortPreview.appliedEdges} dependenc{autoSortPreview.appliedEdges === 1 ? 'y' : 'ies'} declared in mod.info. Mods with no dependency keep your order.
+                            </p>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => setAutoSortPreview(null)}>Cancel</Button>
+                            <Button size="sm" className="h-8 text-xs" onClick={applyAutoSort}>Apply</Button>
+                          </div>
+                        </div>
+
+                        <ScrollArea className="max-h-40">
+                          <div className="space-y-0.5 pr-2">
+                            {autoSortPreview.moved.map((move) => (
+                              <div key={move.modId} className="flex items-center gap-2 text-[11px]">
+                                <span className="tabular-nums text-muted-foreground w-8 text-right shrink-0">#{move.from}</span>
+                                <ArrowRight className="w-3 h-3 text-muted-foreground/60 shrink-0" />
+                                <span className="tabular-nums text-primary w-8 text-right shrink-0">#{move.to}</span>
+                                <span className="font-mono truncate shrink-0">{move.modId}</span>
+                                {modIdNameMap.get(move.modId) && (
+                                  <span className="text-muted-foreground/60 truncate">{modIdNameMap.get(move.modId)}</span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </ScrollArea>
+
+                        {autoSortPreview.cycles.length > 0 && (
+                          <p className="text-[11px] text-warning">
+                            Circular dependency between {autoSortPreview.cycles.join(', ')}. These keep their current order.
+                          </p>
+                        )}
+                        {autoSortPreview.missing.length > 0 && (
+                          <p className="text-[11px] text-muted-foreground">
+                            {autoSortPreview.missing.length} required mod{autoSortPreview.missing.length === 1 ? ' is' : 's are'} not enabled and could not be ordered (see the Conflicts tab).
+                          </p>
+                        )}
+                      </div>
+                    )}
                     <div className="rounded-lg border border-border bg-muted/50 shadow-md overflow-hidden">
                       <ScrollArea className="h-[calc(100vh-320px)] min-h-[200px]">
                         <div className="divide-y divide-border/60 [&>*:nth-child(even)]:bg-card/70">
@@ -4876,7 +4974,7 @@ export default function Mods() {
                         <div className="px-3 py-2 border-t border-border/40 bg-muted/20 flex items-center justify-between">
                           <span className="text-[11px] text-warning">Unsaved order changes</span>
                           <div className="flex gap-2">
-                            <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => setOrderedModIds(iniConfig.modIds)}>Reset</Button>
+                            <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => { setAutoSortPreview(null); setOrderedModIds(iniConfig.modIds) }}>Reset</Button>
                             <Button size="sm" className="h-8 text-xs" onClick={handleSaveModOrder} disabled={savingModOrder}>
                               {savingModOrder ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Save className="w-3 h-3 mr-1" />}
                               Save Order

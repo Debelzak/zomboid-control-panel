@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2026-07-28
+
+### Added
+
+- **Dependency-aware load order auto-sort**: the Load Order tab can now propose an order that places every mod declaring `require=` in its `mod.info` after the mods it depends on. Mods without a declared dependency keep their existing position, so the arrangement you built by hand is preserved rather than replaced by an alphabetical list.
+- **Reviewable sort proposal**: auto-sort never writes on its own. It presents the mods that would move with their before and after positions, and the order is only staged when you apply it and saved when you confirm with Save Order.
+- **Sort diagnostics**: circular `require=` chains are reported by name and keep their current order instead of being reordered arbitrarily, and requirements that point at mods which are not enabled are counted and surfaced rather than silently discarded.
+
+### Changed
+
+- **Focused move reporting**: the proposal lists only the mods whose position genuinely had to change, instead of every mod whose index shifted because an entry above it moved.
+
 ## [1.1.0] - 2026-07-28
 
 ### Added
