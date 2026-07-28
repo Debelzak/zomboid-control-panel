@@ -23,7 +23,7 @@ One dark-mode control room instead of five different tools.
 
 ![Dashboard](Screenshots/screenshot-dashboard-v2.png)
 
-> **At a glance** — server status, RCON & PanelBridge connection state, live player activity, host telemetry, backup readiness, and quick actions. One screen covers 80% of routine admin work.
+> **At a glance** — server status, RCON & PanelBridge connection state, live player activity, host telemetry, disk headroom, the next scheduled maintenance action, console error count, backup readiness, and quick actions. One screen covers 80% of routine admin work.
 
 ## ✨ Feature tour
 
@@ -124,7 +124,6 @@ Java crash dumps, error logs, support bundles. One-click `.zip` export for when 
 
 ## Contents
 
-- [New in 1.1](#new-in-11)
 - [What It Does](#what-it-does)
 - [Requirements](#requirements)
 - [Quick Start](#quick-start)
@@ -134,20 +133,6 @@ Java crash dumps, error logs, support bundles. One-click `.zip` export for when 
 - [Security](#security)
 - [Development](#development)
 - [Community](#community)
-
----
-
-## New in 1.1
-
-**Collection-driven mod management.** The Collection tab tells you, for every mod, whether it is tracked, present in your Steam collection, and configured on the running server. Add a collection item to the server in one click, or remove server mods individually or in bulk after you change the collection. With auto-sync enabled, removing a mod from the server mirrors the change back to Steam.
-
-**Dependency-aware load order.** Auto-sort reads `require=` from each mod's `mod.info` and places dependencies ahead of the mods that need them. Mods that declare nothing keep the position you gave them, so a hand-built order survives. The proposed moves are shown before anything is staged, and the order reaches your INI only when you save it.
-
-**Safer collection sync.** Mods that live in your collection but not on the server are a normal state now rather than a mismatch. Sync adds tracked mods that are missing from Steam without deleting optional collection items.
-
-**Real mod names.** Workshop titles resolve automatically, so the mod list no longer falls back to `Workshop Mod 1234567890` placeholders.
-
-**Dashboard signals.** Host disk headroom, the next scheduled maintenance action, and the current console error count are shown alongside server status.
 
 ---
 
@@ -162,7 +147,7 @@ Java crash dumps, error logs, support bundles. One-click `.zip` export for when 
 ### Observe
 - **Players** — Online list, activity history, kick/ban/unban, access levels, notes and tags.
 - **World map** — Live player positions on Knox County with right-click actions.
-- **Mod manager** — Track Workshop mods and detect updates, drive server membership from your Steam collection, auto-sort load order by declared dependencies, and scan for conflicts.
+- **Mod manager** — Track Workshop mods and detect updates, decide server membership from your Steam collection, auto-sort load order by declared dependencies, and scan for conflicts. Collection sync adds what's missing without deleting the optional mods you keep on the side.
 - **Server config** — Full INI editor with structured and raw views. Sandbox, spawn points, mod settings — searchable and editable in-browser.
 
 ### Extend
