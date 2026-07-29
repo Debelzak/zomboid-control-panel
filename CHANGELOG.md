@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.5] - 2026-07-29
+
+### Fixed
+
+- **SteamCMD public-branch updates**: when a dedicated-server install is still mounted to a different Steam beta branch, the panel now backs up and clears only its stale app manifest before updating. This allows SteamCMD to rebuild Public branch metadata instead of failing with an opaque access-denied exit code. Save data, Workshop downloads, and game files remain in place.
+
 ## [1.1.4] - 2026-07-29
 
 ### Changed
