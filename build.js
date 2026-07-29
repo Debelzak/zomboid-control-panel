@@ -95,6 +95,21 @@ function writeReleaseReadme() {
 3. Open your browser to http://localhost:3001
 4. Configure your server paths in Settings
 
+### Installing a new PZ server from the panel
+When using the included Linux systemd service, enter this exact folder in the
+setup wizard:
+
+  /opt/zomboid-panel/data/pzserver
+
+Create it once before using the wizard:
+
+  sudo -u pzuser mkdir -p /opt/zomboid-panel/data/pzserver
+
+The panel creates /opt/zomboid-panel/data/pzserver_Data for PZ settings and
+save data. Leave Custom config location blank unless you need another location.
+Do not use /opt/pzserver unless you also add it and /opt/pzserver_Data to
+ReadWritePaths in zomboid-panel.service, then restart the service.
+
 ## Linux Troubleshooting
 - If you see "Permission denied": chmod +x ZomboidControlPanel start.sh
 - If launch fails with glibc errors: requires glibc 2.28+ (CentOS Stream 8+, Rocky 8+, Ubuntu 20.04+).
