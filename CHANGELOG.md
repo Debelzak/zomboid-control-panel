@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **SteamCMD public-branch updates**: when a dedicated-server install is still mounted to a different Steam beta branch, the panel now backs up and clears only its stale app manifest before updating. This allows SteamCMD to rebuild Public branch metadata instead of failing with an opaque access-denied exit code. Save data, Workshop downloads, and game files remain in place.
+- **Unstable-to-Stable server upgrades**: fixes a SteamCMD bug where a dedicated-server install previously mounted to the Unstable branch could not update to Public (Stable), failing with an opaque access-denied exit code. The panel now backs up and clears only the stale app manifest before rebuilding Stable branch metadata. Save data, Workshop downloads, and game files remain in place.
 
 ## [1.1.4] - 2026-07-29
 
