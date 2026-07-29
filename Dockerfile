@@ -10,7 +10,15 @@
 # for realistic topology examples.
 
 # --- Build stage ---
-FROM node:22-alpine AS builder
+# Pinned to $BUILDPLATFORM (the build host's native arch, not the target
+# one): this stage only produces static client assets (client/dist — plain
+# JS/CSS/HTML, no native binaries in the output), so there's nothing
+# architecture-specific to gain from building it per-target. Without this
+# pin, buildx runs `npm install`/`vite build` under QEMU for every non-native
+# target platform (e.g. arm64 on GitHub's amd64 runners) — esbuild/rollup's
+# native binaries under emulation are dramatically slower and can hang for
+# a very long time instead of the ~30s this takes natively.
+FROM --platform=$BUILDPLATFORM node:22-alpine AS builder
 
 WORKDIR /app
 
