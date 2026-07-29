@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.10] - 2026-07-29
+
+### Fixed
+
+- **Linux first-time server installation**: the setup wizard now offers the safe systemd service path, `/opt/zomboid-panel/data/pzserver`, and explains that the paired `_Data` folder is created automatically for settings and save data.
+- **Folder picker errors**: Linux directory browsing now reports the actual filesystem error code and the required service-account permissions instead of a generic “Access denied”.
+- **Release documentation**: the packaged Linux README and the main setup guide include a copy-paste command for creating the safe install folder. They also explain how to use a custom `/opt` path safely through `ReadWritePaths`.
+- **Clean dependency installs**: regenerated both lockfiles so `npm ci` no longer fails on a fresh checkout.
+
 ## [1.1.9] - 2026-07-29
 
 ### Fixed
