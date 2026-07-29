@@ -1877,10 +1877,10 @@ async function startPerfPolling() {
     } catch (err) {
       log.debug(`Perf snapshot failed: ${err.message}`);
     }
-  }, 15000); // every 15 seconds
+  }, 60000); // every 60 seconds
 
   if (perfPollingInterval.unref) perfPollingInterval.unref();
-  log.info("Performance polling started (15s interval)");
+  log.info("Performance polling started (60s interval)");
 }
 
 function stopPerfPolling() {

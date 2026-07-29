@@ -476,12 +476,31 @@ function generateStartupScripts(options) {
   const normalizedMinMemory = normalizeMemoryGb(minMemory, 4);
   const normalizedMaxMemory = normalizeMemoryGb(maxMemory, 8);
 
+  // ZGC grows the heap to -Xmx and is in no hurry to give it back, so a
+  // generous max quietly turns into the resident set. SoftMaxHeapSize is the
+  // pressure valve: GC aims to stay under it and only spends the rest of -Xmx
+  // on real spikes, which keeps PZ from crowding out everything else on the
+  // host. 60% of max leaves a wide burst margin.
+  const softMaxMemory = Math.max(1, Math.round(normalizedMaxMemory * 0.6));
+
   // Build JVM arguments (shared between both platforms)
+  // IgnoreUnrecognizedVMOptions first: the Linux script falls back to a system
+  // JVM when jre64/ is missing, and the newer flags below are fatal on older
+  // JVMs unless they're allowed to no-op.
   const jvmArgs = [
+    "-XX:+IgnoreUnrecognizedVMOptions",
     "-Djava.awt.headless=true",
     useNoSteam ? "-Dzomboid.steam=0" : "-Dzomboid.steam=1",
     "-Dzomboid.znetlog=1",
     "-XX:+UseZGC",
+    `-XX:SoftMaxHeapSize=${softMaxMemory}g`,
+    // Return freed heap to the OS in 2 minutes instead of the 5-minute default.
+    "-XX:ZUncommitDelay=120",
+    // JDK 25+: 8-byte object headers. PZ's heap is millions of small objects
+    // (grid squares, tile properties, items), so this is a real footprint win.
+    "-XX:+UseCompactObjectHeaders",
+    // Scripts/tiles/item names load a lot of duplicate strings.
+    "-XX:+UseStringDeduplication",
     "-XX:-CreateCoredumpOnCrash",
     "-XX:-OmitStackTraceInFastThrow",
     `-Xms${normalizedMinMemory}g`,
@@ -491,6 +510,15 @@ function generateStartupScripts(options) {
   if (useDebug) {
     jvmArgs.push("-Ddebug");
   }
+
+  // Linux-only additions. THP cuts TLB misses on ZGC's large heap; it needs the
+  // host's transparent_hugepage set to "madvise" or "always" to do anything, and
+  // just logs a notice otherwise. urandom keeps startup from blocking on entropy.
+  const linuxJvmArgs = [
+    ...jvmArgs,
+    "-XX:+UseTransparentHugePages",
+    "-Djava.security.egd=file:/dev/urandom",
+  ];
 
   // Build game arguments (shared)
   const gameArgs = [`-servername "${safeServerName}"`];
@@ -570,7 +598,7 @@ fi
 INSTDIR="$(dirname "$0")"
 export LD_LIBRARY_PATH="\${INSTDIR}/natives/:\${INSTDIR}/natives/linux64/:\${INSTDIR}/linux64/:\${INSTDIR}:\${INSTDIR}/jre64/lib/amd64:\${INSTDIR}/jre64/lib/x86_64:/usr/lib64:\${LD_LIBRARY_PATH}"
 
-"$JAVA_CMD" ${jvmArgs.join(" ")} -Djava.library.path=natives/:natives/linux64/:linux64/:. -cp "$PZ_CLASSPATH" zombie.network.GameServer ${gameArgs.join(" ")}
+"$JAVA_CMD" ${linuxJvmArgs.join(" ")} -Djava.library.path=natives/:natives/linux64/:linux64/:. -cp "$PZ_CLASSPATH" zombie.network.GameServer ${gameArgs.join(" ")}
 `;
 
   return { bat: batchContent, sh: shellContent };

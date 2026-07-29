@@ -17,7 +17,11 @@ const RETENTION = {
   player_logs: 1000,
   server_events: 500,
   schedule_history: 500,
-  performance_history: 5760, // 24h at 15-sec intervals
+  // 24h at 60-sec intervals. Keep this in sync with the perf polling interval
+  // in index.js: every snapshot rewrites the whole db.json, so this array's
+  // length is what sets the panel's steady-state disk write volume — and that
+  // disk is usually the one PZ is saving chunks to.
+  performance_history: 1440,
   player_sessions: 50, // per player
   bridge_logs: 500,
 };
