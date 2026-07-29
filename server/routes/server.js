@@ -216,6 +216,28 @@ async function findSteamCmdPath() {
 // Track active Steam operations to prevent concurrent runs on the same path
 const activeSteamOperations = new Map();
 
+function hasActiveSteamOperation(normalizedPath) {
+  const operation = activeSteamOperations.get(normalizedPath);
+  if (!operation) return false;
+
+  if (Number.isInteger(operation.pid)) {
+    try {
+      process.kill(operation.pid, 0);
+      return true;
+    } catch (error) {
+      if (error.code === "ESRCH") {
+        activeSteamOperations.delete(normalizedPath);
+        log.warn(
+          `Cleared stale Steam ${operation.type} operation for ${normalizedPath}`,
+        );
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
 // Helper to auto-configure RCON in the server's .ini file
 // Called BEFORE server starts to ensure PZ reads the correct RCON credentials on boot.
 // If the INI file doesn't exist yet (first run), creates the directory + a minimal INI
@@ -1436,7 +1458,7 @@ router.post("/install", async (req, res) => {
 
     // Prevent concurrent operations on the same install path
     const normalizedPath = path.normalize(installPath).toLowerCase();
-    if (activeSteamOperations.has(normalizedPath)) {
+    if (hasActiveSteamOperation(normalizedPath)) {
       return res.status(409).json({
         error:
           "A Steam operation is already in progress for this path. Please wait for it to complete.",
@@ -1487,6 +1509,7 @@ router.post("/install", async (req, res) => {
       spawnOpts.env = { ...process.env, LD_LIBRARY_PATH: ldPaths };
     }
     const steamcmd = spawn(steamcmdExe, steamcmdArgs, spawnOpts);
+    activeSteamOperations.get(normalizedPath).pid = steamcmd.pid;
 
     let output = "";
     let stdoutBuffer = "";
@@ -2360,7 +2383,7 @@ router.post("/steam-update", async (req, res) => {
 
     // Prevent concurrent operations on the same install path
     const normalizedPath = path.normalize(installPath).toLowerCase();
-    if (activeSteamOperations.has(normalizedPath)) {
+    if (hasActiveSteamOperation(normalizedPath)) {
       return res.status(409).json({
         error:
           "A Steam operation is already in progress for this server. Please wait for it to complete.",
@@ -2448,6 +2471,7 @@ router.post("/steam-update", async (req, res) => {
       updateSpawnOpts.env = { ...process.env, LD_LIBRARY_PATH: ldPaths };
     }
     const steamcmd = spawn(steamcmdExe, steamcmdArgs, updateSpawnOpts);
+    activeSteamOperations.get(normalizedPath).pid = steamcmd.pid;
 
     let output = "";
     let stdoutBuffer = "";
@@ -2974,7 +2998,13 @@ router.post("/list-directory", async (req, res) => {
     try {
       items = fs.readdirSync(normalized, { withFileTypes: true });
     } catch (e) {
-      return res.status(403).json({ error: "Access denied" });
+      const code = e && typeof e === "object" && "code" in e ? e.code : "UNKNOWN";
+      const guidance = isWindows
+        ? "Run the panel as an account that can read this folder."
+        : "The panel service account needs read and execute permission on this folder and every parent folder.";
+      return res.status(403).json({
+        error: `Cannot read ${normalized} (${code}). ${guidance}`,
+      });
     }
 
     const folders = [];
