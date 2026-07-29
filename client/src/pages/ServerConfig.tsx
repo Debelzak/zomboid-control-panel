@@ -98,6 +98,7 @@ import { PageHeader } from '@/components/PageHeader'
 // DropdownMenu imports available if needed
 import { serverFilesApi, panelBridgeApi, SpawnPointsByProfession, SpawnRegion, SandboxData, ConfigTemplate } from '@/lib/api'
 import { getUserErrorMessage } from '@/lib/errorMessage'
+import { formatModSettingDescription, formatModSettingLabel } from '@/lib/modSettingsLabels'
 import { EmptyState } from '@/components/EmptyState'
 import {
   INI_SCHEMA,
@@ -773,12 +774,13 @@ export default function ServerConfig() {
         let opts = modSettings[group.name] || []
         if (modSettingsModifiedOnly) opts = opts.filter(isOptModified)
         if (q) {
-          const groupMatches = group.name.toLowerCase().includes(q)
+          const groupMatches = formatModSettingLabel(group.name).toLowerCase().includes(q)
           if (!groupMatches) {
             opts = opts.filter(o =>
               (o.name || '').toLowerCase().includes(q) ||
               (o.shortName || '').toLowerCase().includes(q) ||
               (o.translatedName || '').toLowerCase().includes(q) ||
+              formatModSettingLabel(o.translatedName || o.shortName || o.name, group.name).toLowerCase().includes(q) ||
               (o.tooltip || '').toLowerCase().includes(q) ||
               (o.tooltipText || '').toLowerCase().includes(q)
             )
@@ -3115,7 +3117,7 @@ export default function ServerConfig() {
                                 <ChevronRight className="w-4 h-4" />
                               )}
                             </div>
-                            <span className={`font-medium truncate min-w-0 ${isExpanded ? 'text-primary' : ''}`} title={group.name}>{group.name}</span>
+                            <span className={`font-medium truncate min-w-0 ${isExpanded ? 'text-primary' : ''}`} title={formatModSettingLabel(group.name)}>{formatModSettingLabel(group.name)}</span>
                             {groupModifiedCount > 0 && (
                               <Badge variant="warning" className="h-5 px-1.5 py-0 text-[10px] font-mono shrink-0" title={`${groupModifiedCount} option${groupModifiedCount === 1 ? '' : 's'} differ from default`}>
                                 {groupModifiedCount} mod
@@ -3128,17 +3130,16 @@ export default function ServerConfig() {
                           {isExpanded && (
                             <div className="mt-3 ml-4 space-y-1 border-l-2 border-primary/30 pl-4">
                               {filteredOpts.map((opt, idx) => {
-                                // Build a clean display name: prefer translatedName, fall back to shortName with "Sandbox_" stripped
+                                // Mods often expose an internal sandbox key as their
+                                // "translated" name. Format it before displaying it.
                                 const rawDisplayName = opt.shortName || opt.name || `Option ${idx}`
-                                const displayName = (opt.translatedName && opt.translatedName !== rawDisplayName)
-                                  ? opt.translatedName
-                                  : rawDisplayName.replace(/^Sandbox_/i, '').replace(/_/g, ' ')
-                                // Parse description from tooltipText: strip trailing "\nDefault = ..." line
+                                const displayName = formatModSettingLabel(
+                                  opt.translatedName && opt.translatedName !== rawDisplayName ? opt.translatedName : rawDisplayName,
+                                  group.name,
+                                ) || `Option ${idx + 1}`
+                                // Keep player-facing help, but hide untranslated tooltip keys.
                                 const rawTooltip = opt.tooltipText || opt.tooltip || ''
-                                const description = rawTooltip
-                                  .replace(/\\n/g, '\n')
-                                  .replace(/\n?Default\s*=\s*.*/i, '')
-                                  .trim()
+                                const description = formatModSettingDescription(rawTooltip.replace(/\n?Default\s*=\s*.*/i, ''))
                                 const rawVal = opt.value
                                 let displayValue: string
                                 if (rawVal === undefined || rawVal === null) {
