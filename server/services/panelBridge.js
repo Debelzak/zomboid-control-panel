@@ -1,6 +1,6 @@
 /**
  * PanelBridge - Node.js Bridge Service
- * 
+ *
  * Provides communication between the panel and the PZ server mod.
  * Uses file-based communication with atomic operations.
  */
@@ -13,6 +13,11 @@ import { EventEmitter } from 'events';
 import { logPlayerAction, recordPlayerSession } from '../database/init.js';
 import { createLogger } from '../utils/logger.js';
 const log = createLogger('Bridge');
+
+// Build 42 (buildid 24449161) only lets Lua write files whose name ends in
+// .txt, so every file the mod owns carries this extra suffix from v1.7.7.
+const MOD_WRITE_SUFFIX = '.txt';
+const RESULT_FILE_PATTERN = /^res-(\d+)\.json(?:\.txt)?$/;
 
 // Format an age in milliseconds as a short human string ("38d", "2h", "45s").
 // Used for diagnostics messages so users don't read raw seconds-since-epoch.
@@ -88,13 +93,13 @@ class PanelBridge extends EventEmitter {
     } else {
       this.bridgePath = path.join(bridgeFolderPath, 'panelbridge');
     }
-    
+
     // Don't create the directory here — the PZ Lua mod creates it on startup.
     // Its existence serves as a signal that the mod has been installed and initialized.
 
     log.debug(`Configured path: ${this.bridgePath}`);
     this.emit('configured', { path: this.bridgePath });
-    
+
     return this.bridgePath;
   }
 
@@ -110,7 +115,7 @@ class PanelBridge extends EventEmitter {
     }
 
     // Default Zomboid folder locations (platform-aware)
-    const possibleBases = zomboidUserFolder 
+    const possibleBases = zomboidUserFolder
       ? [zomboidUserFolder]
       : process.platform === 'win32'
         ? [path.join(os.homedir(), 'Zomboid')]
@@ -135,16 +140,40 @@ class PanelBridge extends EventEmitter {
   /**
    * Get file paths
    */
+
+  /**
+   * Project Zomboid Build 42 (buildid 24449161) restricts getFileWriter to an
+   * extension whitelist - .json is rejected outright - so from mod v1.7.7 every
+   * file the Lua side owns is written with a .txt suffix appended:
+   * panelbridge/DoomerZ/outbox/res-1.json -> panelbridge/DoomerZ/outbox/res-1.json.txt
+   * Files the panel writes (commands.json, inbox/*) are unaffected.
+   */
+  getModWriteFile(relativeName) {
+    if (!this.bridgePath) return null;
+    return path.join(this.bridgePath, `${relativeName}${MOD_WRITE_SUFFIX}`);
+  }
+
+  /**
+   * Resolve a file written by the Lua mod, preferring the .txt-suffixed Build 42
+   * name and falling back to the unsuffixed one written by older mod versions.
+   */
+  resolveModFile(relativeName) {
+    if (!this.bridgePath) return null;
+    const suffixedFile = this.getModWriteFile(relativeName);
+    if (suffixedFile && fs.existsSync(suffixedFile)) return suffixedFile;
+    return path.join(this.bridgePath, relativeName);
+  }
+
   getCommandsFile() {
     return this.bridgePath ? path.join(this.bridgePath, 'commands.json') : null;
   }
 
   getResultsFile() {
-    return this.bridgePath ? path.join(this.bridgePath, 'results.json') : null;
+    return this.resolveModFile('results.json');
   }
 
   getStatusFile() {
-    return this.bridgePath ? path.join(this.bridgePath, 'status.json') : null;
+    return this.resolveModFile('status.json');
   }
 
   getInboxDir() {
@@ -160,7 +189,7 @@ class PanelBridge extends EventEmitter {
   }
 
   getInboxCursorFile() {
-    return this.bridgePath ? path.join(this.bridgePath, this.queue.inboxCursorFile) : null;
+    return this.resolveModFile(this.queue.inboxCursorFile);
   }
 
   formatSeq(seq) {
@@ -174,9 +203,8 @@ class PanelBridge extends EventEmitter {
   }
 
   getResultFileBySeq(seq) {
-    const outboxDir = this.getOutboxDir();
-    if (!outboxDir) return null;
-    return path.join(outboxDir, `res-${this.formatSeq(seq)}.json`);
+    if (!this.bridgePath) return null;
+    return this.resolveModFile(path.join(this.queue.outboxDir, `res-${this.formatSeq(seq)}.json`));
   }
 
   ensureQueueProtocol() {
@@ -381,7 +409,7 @@ class PanelBridge extends EventEmitter {
 
     // Start polling for results (fast poll)
     this.pollInterval = setInterval(() => this.pollResults(), this.config.pollIntervalMs);
-    
+
     // Start checking mod status
     this.statusInterval = setInterval(() => this.checkModStatus(), this.config.statusCheckMs);
 
@@ -449,7 +477,7 @@ class PanelBridge extends EventEmitter {
         } catch (e) { /* ignore */ }
         this.fileWatcher = null;
         this.watcherRetries++;
-        
+
         // Attempt to restart file watcher after delay
         setTimeout(() => {
           if (this.isRunning && !this.fileWatcher) {
@@ -465,7 +493,7 @@ class PanelBridge extends EventEmitter {
       // File watching is optional - polling will still work
       this.watcherRetries++;
       log.warn(`Could not setup file watcher: ${err.message}`);
-      
+
       // Retry initially a few times even if immediate setup fails
       if (this.watcherRetries < this.maxWatcherRetries) {
          setTimeout(() => {
@@ -550,7 +578,7 @@ class PanelBridge extends EventEmitter {
 
     // Serialize file access to prevent TOCTOU race conditions
     if (!this._writeQueue) this._writeQueue = Promise.resolve();
-    
+
     let writeError = null;
     this._writeQueue = this._writeQueue
       .then(() => this._enqueueCommand(id, action, args))
@@ -573,9 +601,9 @@ class PanelBridge extends EventEmitter {
         reject(new Error(`Command timeout: ${action} (no response from mod)`));
       }, this.config.commandTimeoutMs);
 
-      this.pendingCommands.set(id, { 
-        resolve, 
-        reject, 
+      this.pendingCommands.set(id, {
+        resolve,
+        reject,
         timeout,
         action,
         timestamp: Date.now()
@@ -744,7 +772,7 @@ class PanelBridge extends EventEmitter {
       if (!content.trim()) return;
 
       const data = JSON.parse(content);
-      
+
       if (data.results && Array.isArray(data.results)) {
         for (const result of data.results) {
           this.processResult(result);
@@ -880,7 +908,7 @@ class PanelBridge extends EventEmitter {
     const files = fs.readdirSync(outboxDir);
     let deleted = 0;
     for (const fileName of files) {
-      const seq = this.extractSeq(fileName, /^res-(\d+)\.json$/);
+      const seq = this.extractSeq(fileName, RESULT_FILE_PATTERN);
       if (seq !== null && seq <= deleteUpToSeq) {
         try {
           fs.unlinkSync(path.join(outboxDir, fileName));
@@ -936,13 +964,13 @@ class PanelBridge extends EventEmitter {
    */
   checkModStatus() {
     const statusFile = this.getStatusFile();
-    
+
     // Check if file exists
     if (!statusFile) {
       this.handleStatusFailure('No status file path configured');
       return;
     }
-    
+
     if (!fs.existsSync(statusFile)) {
       this.handleStatusFailure('Status file does not exist');
       return;
@@ -952,7 +980,7 @@ class PanelBridge extends EventEmitter {
       // Check file modification time first (faster than reading)
       const stats = fs.statSync(statusFile);
       const age = Date.now() - stats.mtimeMs;
-      
+
       // Use relaxed threshold when server is idle (0 players) — PZ stops Lua ticks with no players
       const staleThreshold = (this.modStatus?.playerCount === 0)
         ? this.config.statusStaleIdleMs
@@ -973,7 +1001,7 @@ class PanelBridge extends EventEmitter {
         }
         return;
       }
-      
+
       // Read and parse the file
       const content = fs.readFileSync(statusFile, 'utf-8');
       if (!content.trim()) {
@@ -982,11 +1010,11 @@ class PanelBridge extends EventEmitter {
       }
 
       const status = JSON.parse(content);
-      
+
       // Update tracking
       this.lastStatusFileCheck = stats.mtimeMs;
       this.consecutiveFailures = 0; // Reset failure counter on success
-      
+
       // Determine if status is stale
       // Use relaxed threshold when server is idle (0 players) — PZ stops Lua ticks with no players
       const fullReadStaleThreshold = (status.playerCount === 0)
@@ -1006,11 +1034,11 @@ class PanelBridge extends EventEmitter {
       const aliveChanged = this.modStatus?.alive !== status.alive;
       const isNewStatus = !this.modStatus;
       const dataChanged = JSON.stringify(status) !== JSON.stringify(this.modStatus);
-      
+
       if (aliveChanged || isNewStatus || dataChanged) {
         this.modStatus = status;
         this.emit('modStatus', status);
-        
+
         if (status.alive && (aliveChanged || isNewStatus)) {
           log.info(`Mod connected (age: ${Math.round(age / 1000)}s, players: ${status.playerCount})`);
         }
@@ -1025,19 +1053,19 @@ class PanelBridge extends EventEmitter {
    */
   handleStatusFailure(reason) {
     this.consecutiveFailures++;
-    
+
     // Only log occasionally to avoid spam
     if (this.consecutiveFailures === 1 || this.consecutiveFailures % 10 === 0) {
       log.debug(`Status check failed (${this.consecutiveFailures}x): ${reason}`);
     }
-    
+
     // Update mod status to disconnected after several failures
     if (this.modStatus?.alive && this.consecutiveFailures >= this.maxConsecutiveFailures) {
       // Preserve last known version, serverName, etc. when going offline
       // Don't set playerCount - undefined means unknown (offline), 0 means online with no players
-      this.modStatus = { 
+      this.modStatus = {
         ...this.modStatus,
-        alive: false, 
+        alive: false,
         error: reason,
         consecutiveFailures: this.consecutiveFailures,
         lastPath: this.bridgePath,
@@ -1059,7 +1087,7 @@ class PanelBridge extends EventEmitter {
     const playerList = Array.isArray(currentPlayers) ? currentPlayers : Object.keys(currentPlayers || {});
     const current = new Set(playerList);
     const previous = this.previousPlayers;
-    
+
     // Find players who joined (in current but not in previous)
     for (const player of current) {
       if (!previous.has(player)) {
@@ -1068,7 +1096,7 @@ class PanelBridge extends EventEmitter {
         this.emit('playerConnect', player);
       }
     }
-    
+
     // Find players who left (in previous but not in current)
     for (const player of previous) {
       if (!current.has(player)) {
@@ -1077,7 +1105,7 @@ class PanelBridge extends EventEmitter {
         this.emit('playerDisconnect', player);
       }
     }
-    
+
     // Update previous players set
     this.previousPlayers = current;
   }
@@ -1088,7 +1116,7 @@ class PanelBridge extends EventEmitter {
   getStatus() {
     const statusFile = this.getStatusFile();
     let fileInfo = null;
-    
+
     if (statusFile) {
       try {
         if (fs.existsSync(statusFile)) {
@@ -1108,7 +1136,7 @@ class PanelBridge extends EventEmitter {
         fileInfo = { exists: false, error: e.message };
       }
     }
-    
+
     return {
       configured: !!this.bridgePath,
       bridgePath: this.bridgePath,

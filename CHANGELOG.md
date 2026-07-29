@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.9] - 2026-07-29
+
+### Fixed
+
+- **PanelBridge on Build 42 build 24449161** — the Project Zomboid update released on 2026-07-29 restricted `getFileWriter` to an extension whitelist. Writing a `.json` file now returns `nil`, so the Lua mod silently failed on every file it owns and the heartbeat, queue state, and command results stopped reaching the panel. The server appeared permanently unresponsive.
+- **Bridge file naming** — PanelBridge `1.7.8` appends `.txt` to every file it writes (`status.json.txt`, `outbox/res-<seq>.json.txt`, and so on). The folder layout is unchanged. Files the panel writes — `commands.json` and `inbox/cmd-*.json` — keep their plain names, because the panel is not affected by the restriction.
+- **Backwards compatibility** — the panel prefers the new `.txt` files and falls back to the legacy names, so a server still running an older mod or an older game build keeps working without manual migration.
+- **PanelBridge 1.7.4 regression** — reverted the `.init` sentinel shortcut added in 1.1.7. It skipped the sentinel write whenever the file already existed, which was never the real cause of the Build 42 failures.
+
 ## [1.1.8] - 2026-07-29
 
 ### Fixed

@@ -1,10 +1,36 @@
 ---@diagnostic disable: undefined-global, deprecated
 --[[
     PanelBridge - Server-side mod for Zomboid Control Panel
-    Version: 1.7.4
+    Version: 1.7.8
 
     This mod enables external control panel communication with the PZ server.
     Communication happens via JSON files in the server save folder.
+
+    v1.7.8 Changes:
+    - CRITICAL: Build 42 buildid 24449161 (2026-07-29) restricted getFileWriter
+      to an extension whitelist. Writing a .json file now returns nil, so every
+      Lua-owned bridge file silently failed and the heartbeat, queue state and
+      command results stopped reaching the panel. getFileReader is unaffected.
+      Verified live with a write probe: .txt is accepted, while .json, .init and
+      extension-less names are rejected; nested paths themselves are still fine.
+      Every file the mod writes now carries a .txt suffix, e.g.
+      panelbridge/<server>/status.json.txt. Reads prefer the suffixed file and
+      fall back to the legacy name, and panel-owned files (commands.json and
+      inbox/cmd-*.json) keep their plain names because the panel writes them.
+      Directory creation is now solely the panel's responsibility.
+
+    v1.7.6 / v1.7.7 Changes:
+    - Superseded by v1.7.8. These builds worked around the same regression by
+      writing files flat in <cachedir>/Lua/, which was the wrong diagnosis: the
+      restriction is on the file extension, not on directory separators.
+
+    v1.7.5 Changes:
+    - CRITICAL: Reverted the v1.7.4 .init shortcut. Skipping the sentinel write
+      when the file already existed left the bridge directory uninitialized for
+      the running session, so Build 42 refused every subsequent write into it
+      ("Could not write to panelbridge/<server>/status.json" and friends) and
+      the heartbeat never reached the panel. The sentinel is written on every
+      startup again; the existing-file check is now only a non-fatal fallback.
 
         v1.7.4 Changes:
         - Fixed B42 startup when the PanelBridge .init sentinel already exists.
@@ -84,16 +110,16 @@
     - Added safe individual access to getSandboxOptions for B42 compatibility
     - Clamped giveItem count to 1-100 per call to prevent server freeze
     - Fixed indentation in shutOffUtilities Step 8
-    
+
     v1.4.2 Changes:
     - Fixed race condition in command processing (infinite command loops)
     - Improved type declaration safety for all Climate handlers (numeric parsing)
     - Fixed ambiguous inputs in generic climate float handler
     - Cleanup of unused reference code
-    
+
     v1.4.1 Changes:
     - Increased status update frequency from 5s to 3s for faster panel detection
-    
+
     v1.4.0 Changes:
     - Added comprehensive debug logging system with toggleable debug mode
     - Added API version detection (B41 vs B42)
@@ -106,11 +132,11 @@
     - Improved error messages with stack traces when available
     - Added performance timing to command execution
     - Added command statistics tracking
-    
+
     v1.3.1 Changes:
     - Fixed B42 compatibility for getPlayerTraits (traits now accessed via SurvivorDesc)
     - Improved trait extraction to handle both B41 and B42 API differences
-    
+
     v1.3.0 Changes:
     - Added comprehensive player export/import system
     - exportPlayerData: Full character data including inventory, perks, traits, recipes
@@ -120,7 +146,7 @@
     - sendToAdminChat: Messages visible only to admins
     - sendToGeneralChat: General chat with custom author name
     - getChatInfo: Query available chat types and server status
-    
+
     v1.2.0 Changes:
     - Added sound/noise control for zombie attraction
     - playWorldSound: Create sound at coordinates
@@ -128,7 +154,7 @@
     - triggerGunshot: High-radius gunshot sound
     - triggerAlarmSound: Medium-radius alarm sound
     - createNoise: Customizable noise creation
-    
+
     v1.1.0 Changes:
     - Added comprehensive climate controls (wind, temp, fog, clouds, precipitation)
     - Added rain/lightning control
@@ -143,7 +169,7 @@
 local json
 
 local PanelBridge = {
-    VERSION = "1.7.4",
+    VERSION = "1.7.8",
     PROTOCOL_VERSION = "queue-v1",
     CHECK_INTERVAL = 250, -- milliseconds (fast command polling)
     lastCheck = 0,
@@ -154,7 +180,7 @@ local PanelBridge = {
     processedIdCount = 0,
     basePath = nil,
     initialized = false,
-    
+
     -- Debug/Logging system
     -- Default OFF: polled commands (getServerInfo every 3s, getVehiclesDetailed/getSafehouses
     -- every 15s) would otherwise produce thousands of console.txt lines per hour. Use the
@@ -165,11 +191,11 @@ local PanelBridge = {
     MAX_PENDING_RESULTS = 500,
     MAX_COMMANDS_PER_TICK = 200,
     QUEUE_SEQUENCE_WIDTH = 10,
-    
+
     -- API detection
     detectedVersion = nil,
     apiCapabilities = {},
-    
+
     -- Statistics
     stats = {
         commandsProcessed = 0,
@@ -179,7 +205,7 @@ local PanelBridge = {
         lastError = nil,
         startTime = nil
     },
-    
+
     -- Pending results buffer (avoids read-modify-write race on results.json)
     pendingResults = {},
 
@@ -219,20 +245,20 @@ function PanelBridge.log(level, message, context)
     for name, val in pairs(LOG_LEVEL) do
         if val == level then levelName = name break end
     end
-    
+
     local entry = {
         timestamp = timestamp,
         level = levelName,
         message = tostring(message),
         context = context
     }
-    
+
     -- Add to ring buffer
     table.insert(PanelBridge.debugLog, entry)
     if #PanelBridge.debugLog > PanelBridge.MAX_DEBUG_ENTRIES then
         table.remove(PanelBridge.debugLog, 1)
     end
-    
+
     -- Print to console
     local prefix = "[PanelBridge][" .. levelName .. "] "
     if level >= LOG_LEVEL.WARN or PanelBridge.DEBUG_MODE then
@@ -241,7 +267,7 @@ function PanelBridge.log(level, message, context)
             print(prefix .. "  Context: " .. json.encode(context))
         end
     end
-    
+
     -- Track errors
     if level == LOG_LEVEL.ERROR then
         PanelBridge.stats.lastError = entry
@@ -285,16 +311,16 @@ function PanelBridge.safeCall(obj, methodName, ...)
     if not obj then
         return false, "Object is nil"
     end
-    
+
     if not PanelBridge.hasMethod(obj, methodName) then
         return false, "Method '" .. methodName .. "' not available"
     end
-    
+
     local args = {...}
     local success, result = pcall(function()
         return obj[methodName](obj, unpack(args))
     end)
-    
+
     if success then
         return true, result
     else
@@ -320,7 +346,7 @@ function PanelBridge.detectVersion()
         isB41 = false,
         features = {}
     }
-    
+
     -- Check for B42-specific APIs
     local climate = getClimateManager and getClimateManager()
     if climate then
@@ -332,7 +358,7 @@ function PanelBridge.detectVersion()
             version.features.tropical = true
         end
     end
-    
+
     -- Check player API differences (getOnlinePlayers may return nil at startup)
     local onlinePlayers = getOnlinePlayers and getOnlinePlayers()
     local testPlayer = onlinePlayers and onlinePlayers:size() > 0 and onlinePlayers:get(0) or nil
@@ -346,14 +372,14 @@ function PanelBridge.detectVersion()
             version.isB41 = true
         end
     end
-    
+
     -- Try to get build version
     pcall(function()
         if getCore and getCore() and getCore().getVersion then
             version.build = getCore():getVersion()
         end
     end)
-    
+
     -- Fallback: parse build string if player-based detection couldn't run
     if not version.isB42 and not version.isB41 and version.build ~= "unknown" then
         local major = version.build:match("^(%d+)%.")
@@ -366,10 +392,10 @@ function PanelBridge.detectVersion()
             end
         end
     end
-    
+
     PanelBridge.detectedVersion = version
     PanelBridge.info("Detected PZ version", version)
-    
+
     return version
 end
 
@@ -457,18 +483,18 @@ end
 
 function json.decode(str)
     if not str or str == "" then return nil end
-    
+
     local pos = 1
     local function skip_whitespace()
         while pos <= #str and str:sub(pos, pos):match('%s') do
             pos = pos + 1
         end
     end
-    
+
     local function parse_value()
         skip_whitespace()
         local c = str:sub(pos, pos)
-        
+
         if c == '"' then
             -- String
             pos = pos + 1
@@ -578,7 +604,7 @@ function json.decode(str)
             return tonumber(str:sub(start, pos - 1))
         end
     end
-    
+
     local success, result = pcall(parse_value)
     if success then
         return result
@@ -596,10 +622,10 @@ end
 -- The global getPlayerByUsername may not exist in all versions
 local function getPlayerByUsername(username)
     if not username then return nil end
-    
+
     local onlinePlayers = getOnlinePlayers()
     if not onlinePlayers then return nil end
-    
+
     local lowerUser = string.lower(username)
     for i = 0, onlinePlayers:size() - 1 do
         local player = onlinePlayers:get(i)
@@ -610,7 +636,7 @@ local function getPlayerByUsername(username)
             end
         end
     end
-    
+
     return nil
 end
 
@@ -622,7 +648,7 @@ function PanelBridge.getBasePath()
     if PanelBridge.basePath then
         return PanelBridge.basePath
     end
-    
+
     -- For dedicated servers, we write to the Lua folder itself
     -- Files will be created in: {ServerInstall}/Lua/panelbridge/{serverName}/
     -- This is within the allowed write path for getFileWriter
@@ -634,7 +660,7 @@ function PanelBridge.getBasePath()
         safeServerName = safeServerName:gsub("%s+", "_")
         if safeServerName == "" then safeServerName = nil end
     end
-    
+
     if safeServerName then
         -- Simple path within allowed Lua folder
         PanelBridge.basePath = "panelbridge/" .. safeServerName .. "/"
@@ -642,25 +668,46 @@ function PanelBridge.getBasePath()
         -- Fallback
         PanelBridge.basePath = "panelbridge/"
     end
-    
+
     print("[PanelBridge] Using path: " .. PanelBridge.basePath)
     return PanelBridge.basePath
 end
 
-function PanelBridge.ensureDirectory()
-    local path = PanelBridge.getBasePath()
-    -- Create directory by writing init file
-    local initPath = path .. ".init"
+-- Build 42 buildid 24449161 restricts getFileWriter to a small extension
+-- whitelist: .txt is accepted, while .json, .init and extension-less names are
+-- rejected outright (getFileWriter returns nil). Nested paths are still fine.
+-- Every Lua-written bridge file therefore keeps its usual path with a .txt
+-- suffix appended, e.g. panelbridge/DoomerZ/status.json.txt. The panel resolves
+-- both the suffixed name and the legacy one.
+PanelBridge.WRITE_SUFFIX = ".txt"
 
-    -- B42 can refuse to reopen an existing file through getFileWriter during
-    -- server startup. The sentinel already proves the directory was created,
-    -- so avoid treating that harmless refusal as a fatal bridge failure.
-    local existing = getFileReader(initPath, false)
-    if existing then
-        existing:close()
-        return true
+function PanelBridge.getWritePath(filename)
+    return PanelBridge.getBasePath() .. filename .. PanelBridge.WRITE_SUFFIX
+end
+
+-- commands.json and the inbox/cmd-*.json queue files are written by the panel,
+-- which is not subject to the Build 42 restriction and uses the plain names.
+function PanelBridge.isPanelOwnedFile(filename)
+    return filename == "commands.json" or filename:match("^inbox/cmd%-") ~= nil
+end
+
+-- Returns true when getFileWriter accepts the given path.
+function PanelBridge.canWritePath(path)
+    local ok, writer = pcall(function() return getFileWriter(path, true, false) end)
+    if not ok or not writer then
+        return false
     end
+    local wrote = pcall(function()
+        writer:write("PanelBridge probe")
+        writer:close()
+    end)
+    return wrote and true or false
+end
 
+function PanelBridge.ensureDirectory()
+    -- Build 42 no longer lets Lua create directories, so the panel owns the
+    -- bridge folder. What matters here is that the write root is usable.
+    local initPath = PanelBridge.getWritePath(".init")
     local writer = getFileWriter(initPath, true, false)
     if writer then
         local stamp = "unknown"
@@ -674,16 +721,19 @@ function PanelBridge.ensureDirectory()
         writer:close()
         return true
     end
-    return false
+
+    print("[PanelBridge] ERROR: could not write " .. initPath .. " in the Lua folder")
+    -- The marker is only a convenience; keep running as long as the real
+    -- state file can be written.
+    return PanelBridge.canWritePath(PanelBridge.getWritePath("status.json"))
 end
 
-function PanelBridge.readFile(filename)
-    local path = PanelBridge.getBasePath() .. filename
+function PanelBridge.readPath(path)
     local reader = getFileReader(path, false)
     if not reader then
         return nil
     end
-    
+
     local lines = {}
     local readOk, readErr = pcall(function()
         local line = reader:readLine()
@@ -694,13 +744,28 @@ function PanelBridge.readFile(filename)
     end)
     reader:close()
     if not readOk then return nil end
-    
+
     local content = table.concat(lines, "\n")
-    return content:gsub("^%s*(.-)%s*$", "%1") -- trim
+    return (content:gsub("^%s*(.-)%s*$", "%1")) -- trim
+end
+
+function PanelBridge.readFile(filename)
+    local nestedPath = PanelBridge.getBasePath() .. filename
+    if PanelBridge.isPanelOwnedFile(filename) then
+        return PanelBridge.readPath(nestedPath)
+    end
+
+    -- Prefer the .txt-suffixed file this build writes, then fall back to the
+    -- unsuffixed file left behind by a pre-Build-42-24449161 session.
+    local content = PanelBridge.readPath(nestedPath .. PanelBridge.WRITE_SUFFIX)
+    if content ~= nil then
+        return content
+    end
+    return PanelBridge.readPath(nestedPath)
 end
 
 function PanelBridge.writeFile(filename, content)
-    local path = PanelBridge.getBasePath() .. filename
+    local path = PanelBridge.getWritePath(filename)
     local writer = getFileWriter(path, true, false)
     if not writer then
         print("[PanelBridge] Error: Could not write to " .. path)
@@ -731,6 +796,12 @@ function PanelBridge.writeJSON(filename, data)
 end
 
 function PanelBridge.clearFile(filename)
+    if PanelBridge.isPanelOwnedFile(filename) then
+        -- Build 42 forbids writing into the nested bridge folder, and the panel
+        -- prunes its own inbox from its cursor file, so this is a no-op now.
+        -- Writing a flat copy would only litter the Lua folder.
+        return true
+    end
     return PanelBridge.writeFile(filename, "")
 end
 
@@ -856,22 +927,22 @@ function PanelBridge.flushResults()
     if writtenCount <= 0 then
         return
     end
-    
+
     -- Read existing results from disk (Node may not have consumed them yet)
     local results = PanelBridge.readJSON("results.json") or { results = {} }
     if not results.results then results.results = {} end
-    
+
     -- Append all buffered results at once
     for i = 1, writtenCount do
         local r = PanelBridge.pendingResults[i]
         table.insert(results.results, r)
     end
-    
+
     -- Keep only last 50 results
     while #results.results > 50 do
         table.remove(results.results, 1)
     end
-    
+
     -- Write BEFORE clearing the buffer so results aren't lost if write fails
     local ok = PanelBridge.writeJSON("results.json", results)
     if not ok then
@@ -1131,11 +1202,11 @@ handlers.getDebugLog = function(args)
 
     local minLevel = tostring(args.minLevel or "DEBUG")
     minLevel = string.upper(minLevel)
-    
+
     local entries = {}
     local levelMap = { DEBUG = 1, INFO = 2, WARN = 3, ERROR = 4 }
     local minLevelNum = levelMap[minLevel] or 1
-    
+
     local startIdx = math.max(1, #PanelBridge.debugLog - limit + 1)
     for i = startIdx, #PanelBridge.debugLog do
         local entry = PanelBridge.debugLog[i]
@@ -1143,7 +1214,7 @@ handlers.getDebugLog = function(args)
             table.insert(entries, entry)
         end
     end
-    
+
     return true, {
         entries = entries,
         totalEntries = #PanelBridge.debugLog,
@@ -1164,7 +1235,7 @@ handlers.getStats = function(args)
     if PanelBridge.stats.startTime then
         uptime = (getTimestampMs() - PanelBridge.stats.startTime) / 1000
     end
-    
+
     return true, {
         version = PanelBridge.VERSION,
         uptime = uptime,
@@ -1182,10 +1253,10 @@ end
 handlers.checkAPI = function(args)
     local objName = args.object or "ClimateManager"
     local methodName = args.method
-    
+
     local obj = nil
     local result = { object = objName, available = false }
-    
+
     -- Get the object
     if objName == "ClimateManager" then
         obj = getClimateManager and getClimateManager()
@@ -1199,11 +1270,11 @@ handlers.checkAPI = function(args)
     elseif objName == "SandboxOptions" then
         obj = getSandboxOptions and getSandboxOptions()
     end
-    
+
     if obj then
         result.available = true
         result.type = type(obj)
-        
+
         -- If method specified, check if it exists
         if methodName then
             result.method = methodName
@@ -1227,7 +1298,7 @@ handlers.checkAPI = function(args)
             end
         end
     end
-    
+
     return true, result
 end
 
@@ -1238,7 +1309,7 @@ handlers.getAvailableHandlers = function(args)
         table.insert(handlerList, name)
     end
     table.sort(handlerList)
-    return true, { 
+    return true, {
         handlers = handlerList,
         count = #handlerList,
         version = PanelBridge.VERSION
@@ -1269,7 +1340,7 @@ end
 handlers.getServerInfo = function(args)
     local players = {}
     local onlinePlayers = getOnlinePlayers()
-    
+
     if onlinePlayers then
         for i = 0, onlinePlayers:size() - 1 do
             local player = onlinePlayers:get(i)
@@ -1295,7 +1366,7 @@ handlers.getServerInfo = function(args)
             end
         end
     end
-    
+
     local gameTime = getGameTime()
     local gameTimeData = nil
     if gameTime then
@@ -1319,7 +1390,7 @@ handlers.getServerInfo = function(args)
             }
         end)
     end
-    
+
     return true, {
         players = players,
         playerCount = #players,
@@ -1333,12 +1404,12 @@ handlers.getWeather = function(args)
     if not climate then
         return false, nil, "ClimateManager not available"
     end
-    
+
     -- Get weather data with safe access for cross-version compatibility
     local success, data = pcall(function()
         local cloudIntensity = climate:getCloudIntensity()
         local precipIntensity = climate:getPrecipitationIntensity()
-        
+
         return {
             temperature = climate:getTemperature(),
             humidity = climate:getHumidity(),
@@ -1357,11 +1428,11 @@ handlers.getWeather = function(args)
             ambient = climate.getAmbient and climate:getAmbient() or 1.0
         }
     end)
-    
+
     if not success then
         return false, nil, "Failed to get weather data: " .. tostring(data)
     end
-    
+
     return true, data
 end
 
@@ -1371,10 +1442,10 @@ handlers.triggerBlizzard = function(args)
     if not climate then
         return false, nil, "ClimateManager not available"
     end
-    
+
     -- Duration is passed directly - the game adds its own minimum
     local duration = args.duration or 2.0
-    
+
     local success, err = pcall(function()
         if climate.triggerCustomWeatherStage and WeatherPeriod and WeatherPeriod.STAGE_BLIZZARD then
             print("PanelBridge: Triggering Blizzard via triggerCustomWeatherStage")
@@ -1386,11 +1457,11 @@ handlers.triggerBlizzard = function(args)
             error("No weather trigger method available")
         end
     end)
-    
+
     if not success then
         return false, nil, "Failed to trigger blizzard: " .. tostring(err)
     end
-    
+
     return true, { message = "Blizzard triggered", duration = duration }
 end
 
@@ -1400,9 +1471,9 @@ handlers.triggerTropicalStorm = function(args)
     if not climate then
         return false, nil, "ClimateManager not available"
     end
-    
+
     local duration = args.duration or 2.0
-    
+
     local success, err = pcall(function()
         if climate.triggerCustomWeatherStage and WeatherPeriod and WeatherPeriod.STAGE_TROPICAL_STORM then
              print("PanelBridge: Triggering Tropical Storm via triggerCustomWeatherStage")
@@ -1414,11 +1485,11 @@ handlers.triggerTropicalStorm = function(args)
             error("No weather trigger method available")
         end
     end)
-    
+
     if not success then
         return false, nil, "Failed to trigger tropical storm: " .. tostring(err)
     end
-    
+
     return true, { message = "Tropical storm triggered", duration = duration }
 end
 
@@ -1428,9 +1499,9 @@ handlers.triggerStorm = function(args)
     if not climate then
         return false, nil, "ClimateManager not available"
     end
-    
+
     local duration = args.duration or 2.0
-    
+
     local success, err = pcall(function()
         if climate.triggerCustomWeatherStage and WeatherPeriod and WeatherPeriod.STAGE_STORM then
             print("PanelBridge: Triggering Storm via triggerCustomWeatherStage")
@@ -1442,11 +1513,11 @@ handlers.triggerStorm = function(args)
             error("No weather trigger method available")
         end
     end)
-    
+
     if not success then
         return false, nil, "Failed to trigger storm: " .. tostring(err)
     end
-    
+
     return true, { message = "Storm triggered", duration = duration }
 end
 
@@ -1456,7 +1527,7 @@ handlers.stopWeather = function(args)
     if not climate then
         return false, nil, "ClimateManager not available"
     end
-    
+
     local success, err = pcall(function()
         if climate.stopWeatherAndThunder then
             print("PanelBridge: Stopping weather via stopWeatherAndThunder")
@@ -1471,11 +1542,11 @@ handlers.stopWeather = function(args)
             error("No stop weather method available")
         end
     end)
-    
+
     if not success then
         return false, nil, "Failed to stop weather: " .. tostring(err)
     end
-    
+
     return true, { message = "Weather stopped" }
 end
 
@@ -1485,15 +1556,15 @@ handlers.generateWeather = function(args)
     if not climate then
         return false, nil, "ClimateManager not available"
     end
-    
+
     local strength = args.strength or 0.5
     local frontType = args.frontType or 0 -- 0 = stationary, 1 = cold, 2 = warm
-    
+
     -- Map frontend frontType values to B42 Java constants:
     -- FRONT_COLD = -1, FRONT_STATIONARY = 0, FRONT_WARM = 1
     local javaFrontMap = { [0] = 0, [1] = -1, [2] = 1 }
     local javaFrontType = javaFrontMap[frontType] or 0
-    
+
     local success, err = pcall(function()
         if climate.transmitGenerateWeather then
             print("PanelBridge: Generating weather via transmitGenerateWeather")
@@ -1506,11 +1577,11 @@ handlers.generateWeather = function(args)
             error("No generate weather method available")
         end
     end)
-    
+
     if not success then
         return false, nil, "Failed to generate weather: " .. tostring(err)
     end
-    
+
     return true, { message = "Weather period generated", strength = strength, frontType = frontType }
 end
 
@@ -1520,10 +1591,10 @@ handlers.setSnow = function(args)
     if not climate then
         return false, nil, "ClimateManager not available"
     end
-    
+
     local enabled = args.enabled ~= false
     local success, err
-    
+
     -- If enabling snow and not currently raining, start rain first
     if enabled and climate.isRaining and not climate:isRaining() then
         local intensity = args.intensity or 0.5
@@ -1531,7 +1602,7 @@ handlers.setSnow = function(args)
             pcall(function() climate:transmitServerStartRain(intensity) end)
         end
     end
-    
+
     success, err = pcall(function()
         -- Try Admin Override (Robust method)
         local snowBool = climate:getClimateBool(0) -- BOOL_IS_SNOW = 0
@@ -1548,11 +1619,11 @@ handlers.setSnow = function(args)
             error("No method to set snow")
         end
     end)
-    
+
     if not success then
         return false, nil, "Failed to set snow: " .. tostring(err)
     end
-    
+
     return true, { message = "Snow " .. (enabled and "enabled (with precipitation)" or "disabled") }
 end
 
@@ -1562,20 +1633,20 @@ handlers.startRain = function(args)
     if not climate then
         return false, nil, "ClimateManager not available"
     end
-    
+
     local intensity = args.intensity or 0.5
-    
+
     local success, err
     if climate.transmitServerStartRain then
         success, err = pcall(function() climate:transmitServerStartRain(intensity) end)
     else
         return false, nil, "transmitServerStartRain method not available in this version"
     end
-    
+
     if not success then
         return false, nil, "Failed to start rain: " .. tostring(err)
     end
-    
+
     return true, { message = "Rain started", intensity = intensity }
 end
 
@@ -1585,18 +1656,18 @@ handlers.stopRain = function(args)
     if not climate then
         return false, nil, "ClimateManager not available"
     end
-    
+
     local success, err
     if climate.transmitServerStopRain then
         success, err = pcall(function() climate:transmitServerStopRain() end)
     else
         return false, nil, "transmitServerStopRain method not available in this version"
     end
-    
+
     if not success then
         return false, nil, "Failed to stop rain: " .. tostring(err)
     end
-    
+
     return true, { message = "Rain stopped" }
 end
 
@@ -1606,24 +1677,24 @@ handlers.triggerLightning = function(args)
     if not climate then
         return false, nil, "ClimateManager not available"
     end
-    
+
     local x = args.x or 0
     local y = args.y or 0
     local strike = args.strike ~= false  -- default to true
     local light = args.light ~= false     -- default to true
     local rumble = args.rumble ~= false   -- default to true
-    
+
     local success, err
     if climate.transmitServerTriggerLightning then
         success, err = pcall(function() climate:transmitServerTriggerLightning(x, y, strike, light, rumble) end)
     else
         return false, nil, "transmitServerTriggerLightning method not available in this version"
     end
-    
+
     if not success then
         return false, nil, "Failed to trigger lightning: " .. tostring(err)
     end
-    
+
     return true, { message = "Lightning triggered", x = x, y = y }
 end
 
@@ -1633,9 +1704,9 @@ handlers.setDayLight = function(args)
     if not climate then
         return false, nil, "ClimateManager not available"
     end
-    
+
     local value = tonumber(args.value) or 1.0
-    
+
     local success, err = pcall(function()
         local cf = climate:getClimateFloat(11) -- FLOAT_DAYLIGHT_STRENGTH = 11
         if cf then
@@ -1647,11 +1718,11 @@ handlers.setDayLight = function(args)
             error("No method to set daylight")
         end
     end)
-    
+
     if not success then
         return false, nil, "Failed to set daylight: " .. tostring(err)
     end
-    
+
     return true, { message = "Daylight set to " .. value }
 end
 
@@ -1661,9 +1732,9 @@ handlers.setNightStrength = function(args)
     if not climate then
         return false, nil, "ClimateManager not available"
     end
-    
+
     local value = tonumber(args.value) or 0.0
-    
+
     local success, err = pcall(function()
         local cf = climate:getClimateFloat(2) -- FLOAT_NIGHT_STRENGTH = 2
         if cf then
@@ -1675,11 +1746,11 @@ handlers.setNightStrength = function(args)
             error("No method to set night strength")
         end
     end)
-    
+
     if not success then
         return false, nil, "Failed to set night strength: " .. tostring(err)
     end
-    
+
     return true, { message = "Night strength set to " .. value }
 end
 
@@ -1689,9 +1760,9 @@ handlers.setDesaturation = function(args)
     if not climate then
         return false, nil, "ClimateManager not available"
     end
-    
+
     local value = tonumber(args.value) or 0.0
-    
+
     local success, err = pcall(function()
         local cf = climate:getClimateFloat(0) -- FLOAT_DESATURATION = 0
         if cf then
@@ -1703,11 +1774,11 @@ handlers.setDesaturation = function(args)
             error("No method to set desaturation")
         end
     end)
-    
+
     if not success then
         return false, nil, "Failed to set desaturation: " .. tostring(err)
     end
-    
+
     return true, { message = "Desaturation set to " .. value }
 end
 
@@ -1717,9 +1788,9 @@ handlers.setViewDistance = function(args)
     if not climate then
         return false, nil, "ClimateManager not available"
     end
-    
+
     local value = tonumber(args.value) or 1.0
-    
+
     local success, err = pcall(function()
         local cf = climate:getClimateFloat(10) -- FLOAT_VIEW_DISTANCE = 10
         if cf then
@@ -1731,11 +1802,11 @@ handlers.setViewDistance = function(args)
             error("No method to set view distance")
         end
     end)
-    
+
     if not success then
         return false, nil, "Failed to set view distance: " .. tostring(err)
     end
-    
+
     return true, { message = "View distance set to " .. value }
 end
 
@@ -1745,9 +1816,9 @@ handlers.setAmbient = function(args)
     if not climate then
         return false, nil, "ClimateManager not available"
     end
-    
+
     local value = tonumber(args.value) or 1.0
-    
+
     local success, err = pcall(function()
         local cf = climate:getClimateFloat(9) -- FLOAT_AMBIENT = 9
         if cf then
@@ -1759,11 +1830,11 @@ handlers.setAmbient = function(args)
             error("No method to set ambient")
         end
     end)
-    
+
     if not success then
         return false, nil, "Failed to set ambient: " .. tostring(err)
     end
-    
+
     return true, { message = "Ambient set to " .. value }
 end
 
@@ -1780,9 +1851,9 @@ handlers.setTemperature = function(args)
     if not climate then
         return false, nil, "ClimateManager not available"
     end
-    
+
     local value = tonumber(args.value) or 22.0 -- Default to 22C (Neutral)
-    
+
     -- API Safety Clamp: -50C to +50C
     -- Note: Project Zomboid does not simulate water bodies freezing solid (rivers/lakes).
     if value < -50 then value = -50 end
@@ -1797,11 +1868,11 @@ handlers.setTemperature = function(args)
             error("No method to set temperature")
         end
     end)
-    
+
     if not success then
         return false, nil, "Failed to set temperature: " .. tostring(err)
     end
-    
+
     return true, { message = "Temperature set to " .. value .. "C" }
 end
 
@@ -1809,9 +1880,9 @@ end
 handlers.setWind = function(args)
     local climate = getClimateManager()
     if not climate then return false, nil, "ClimateManager not available" end
-    
+
     local value = tonumber(args.value) or 0.5 -- 0 to 1
-    
+
     local success, err = pcall(function()
         local cf = climate:getClimateFloat(6) -- FLOAT_WIND_INTENSITY = 6
         if cf then
@@ -1821,7 +1892,7 @@ handlers.setWind = function(args)
              error("No method to set wind")
         end
     end)
-    
+
     if not success then return false, nil, "Failed to set wind: " .. tostring(err) end
     return true, { message = "Wind set to " .. value }
 end
@@ -1830,9 +1901,9 @@ end
 handlers.setFog = function(args)
     local climate = getClimateManager()
     if not climate then return false, nil, "ClimateManager not available" end
-    
+
     local value = tonumber(args.value) or 0.0 -- 0 (Clear) to 1 (Silent Hill)
-    
+
     local success, err = pcall(function()
         local cf = climate:getClimateFloat(5) -- FLOAT_FOG_INTENSITY = 5
         if cf then
@@ -1842,7 +1913,7 @@ handlers.setFog = function(args)
              error("No method to set fog")
         end
     end)
-    
+
     if not success then return false, nil, "Failed to set fog: " .. tostring(err) end
     return true, { message = "Fog set to " .. value }
 end
@@ -1851,9 +1922,9 @@ end
 handlers.setClouds = function(args)
     local climate = getClimateManager()
     if not climate then return false, nil, "ClimateManager not available" end
-    
+
     local value = tonumber(args.value) or 0.0 -- 0 to 1
-    
+
     local success, err = pcall(function()
         local cf = climate:getClimateFloat(8) -- FLOAT_CLOUD_INTENSITY = 8
         if cf then
@@ -1863,7 +1934,7 @@ handlers.setClouds = function(args)
              error("No method to set clouds")
         end
     end)
-    
+
     if not success then return false, nil, "Failed to set clouds: " .. tostring(err) end
     return true, { message = "Clouds set to " .. value }
 end
@@ -1875,35 +1946,35 @@ handlers.setClimateFloat = function(args)
     if not climate then
         return false, nil, "ClimateManager not available"
     end
-    
+
     local floatId = tonumber(args.floatId)
     local value = tonumber(args.value)
     local enable = args.enable ~= false
-    
+
     if floatId == nil or value == nil then
         return false, nil, "floatId and value are required numbers"
     end
-    
+
     local climateFloat = climate:getClimateFloat(floatId)
     if not climateFloat then
         return false, nil, "Invalid float ID: " .. floatId
     end
-    
+
     local success, err = pcall(function()
         climateFloat:setEnableAdmin(enable)
         if enable then
             climateFloat:setAdminValue(value)
         end
     end)
-    
+
     if not success then
         return false, nil, "Failed to set climate float: " .. tostring(err)
     end
-    
-    return true, { 
-        message = "Climate float set", 
-        floatId = floatId, 
-        value = value, 
+
+    return true, {
+        message = "Climate float set",
+        floatId = floatId,
+        value = value,
         enabled = enable,
         name = climateFloat:getName()
     }
@@ -1915,13 +1986,13 @@ handlers.resetClimateOverrides = function(args)
     if not climate then
         return false, nil, "ClimateManager not available"
     end
-    
+
     -- B42: use resetAdmin() which resets all float + bool admin overrides in one call
     if climate.resetAdmin then
         pcall(function() climate:resetAdmin() end)
         return true, { message = "Climate overrides reset via resetAdmin()", floatsReset = 13, boolsReset = 1 }
     end
-    
+
     -- Fallback: disable admin override on all known float IDs (0-12)
     local resetCount = 0
     for floatId = 0, 12 do
@@ -1931,7 +2002,7 @@ handlers.resetClimateOverrides = function(args)
             resetCount = resetCount + 1
         end
     end
-    
+
     -- Also reset ClimateBool overrides (e.g. BOOL_IS_SNOW = 0 set by setSnow)
     local boolsReset = 0
     pcall(function()
@@ -1941,7 +2012,7 @@ handlers.resetClimateOverrides = function(args)
             boolsReset = boolsReset + 1
         end
     end)
-    
+
     return true, { message = "Climate overrides reset", floatsReset = resetCount, boolsReset = boolsReset }
 end
 
@@ -1951,7 +2022,7 @@ handlers.getClimateFloats = function(args)
     if not climate then
         return false, nil, "ClimateManager not available"
     end
-    
+
     -- Known ClimateFloat IDs from the API
     local floatIds = {
         { id = 0, name = "FLOAT_DESATURATION" },
@@ -1968,7 +2039,7 @@ handlers.getClimateFloats = function(args)
         { id = 11, name = "FLOAT_DAYLIGHT_STRENGTH" },
         { id = 12, name = "FLOAT_HUMIDITY" }
     }
-    
+
     local floats = {}
     for _, info in ipairs(floatIds) do
         local cf = climate:getClimateFloat(info.id)
@@ -1984,7 +2055,7 @@ handlers.getClimateFloats = function(args)
             })
         end
     end
-    
+
     return true, { floats = floats }
 end
 
@@ -2029,24 +2100,24 @@ handlers.playWorldSound = function(args)
     local z = tonumber(args.z) or 0
     local radius = tonumber(args.radius) or 50
     local volume = tonumber(args.volume) or 100
-    
+
     if not x or not y then
         return false, nil, "x and y coordinates are required"
     end
-    
+
     -- AddWorldSound creates a noise that zombies can hear
     -- Parameters: player (can be nil), x, y, z, radius, volume
     local ok, methodOrErr = emitWorldSound(nil, x, y, z, radius, volume)
     if not ok then
         return false, nil, methodOrErr
     end
-    
-    return true, { 
-        message = "World sound created", 
-        x = x, 
-        y = y, 
-        z = z, 
-        radius = radius, 
+
+    return true, {
+        message = "World sound created",
+        x = x,
+        y = y,
+        z = z,
+        radius = radius,
         volume = volume,
         method = methodOrErr
     }
@@ -2057,33 +2128,33 @@ handlers.playSoundNearPlayer = function(args)
     local username = args.username
     local radius = tonumber(args.radius) or 50
     local volume = tonumber(args.volume) or 100
-    
+
     if not username then
         return false, nil, "username is required"
     end
-    
+
     local player = getPlayerByUsername(username)
     if not player then
         return false, nil, "Player not found: " .. username
     end
-    
+
     local x = player:getX()
     local y = player:getY()
     local z = player:getZ()
-    
+
     -- Create sound at player's location
     local ok, methodOrErr = emitWorldSound(player, x, y, z, radius, volume)
     if not ok then
         return false, nil, methodOrErr
     end
-    
-    return true, { 
-        message = "Sound created near player", 
+
+    return true, {
+        message = "Sound created near player",
         username = username,
-        x = x, 
-        y = y, 
-        z = z, 
-        radius = radius, 
+        x = x,
+        y = y,
+        z = z,
+        radius = radius,
         volume = volume,
         method = methodOrErr
     }
@@ -2095,7 +2166,7 @@ handlers.triggerGunshot = function(args)
     local y = tonumber(args.y)
     local z = tonumber(args.z) or 0
     local username = args.username
-    
+
     -- If username provided, use player's location
     if username then
         local player = getPlayerByUsername(username)
@@ -2107,25 +2178,25 @@ handlers.triggerGunshot = function(args)
             return false, nil, "Player not found: " .. username
         end
     end
-    
+
     if not x or not y then
         return false, nil, "Either coordinates (x, y) or username is required"
     end
-    
+
     -- Gunshots have large radius and high volume to attract zombies from far away
     local gunshotRadius = 150
     local gunshotVolume = 200
-    
+
     local ok, methodOrErr = emitWorldSound(nil, x, y, z, gunshotRadius, gunshotVolume)
     if not ok then
         return false, nil, methodOrErr
     end
-    
-    return true, { 
-        message = "Gunshot sound triggered", 
-        x = x, 
-        y = y, 
-        z = z, 
+
+    return true, {
+        message = "Gunshot sound triggered",
+        x = x,
+        y = y,
+        z = z,
         radius = gunshotRadius,
         method = methodOrErr
     }
@@ -2137,7 +2208,7 @@ handlers.triggerAlarmSound = function(args)
     local y = tonumber(args.y)
     local z = tonumber(args.z) or 0
     local username = args.username
-    
+
     -- If username provided, use player's location
     if username then
         local player = getPlayerByUsername(username)
@@ -2149,25 +2220,25 @@ handlers.triggerAlarmSound = function(args)
             return false, nil, "Player not found: " .. username
         end
     end
-    
+
     if not x or not y then
         return false, nil, "Either coordinates (x, y) or username is required"
     end
-    
+
     -- Alarm has moderate radius
     local alarmRadius = 80
     local alarmVolume = 100
-    
+
     local ok, methodOrErr = emitWorldSound(nil, x, y, z, alarmRadius, alarmVolume)
     if not ok then
         return false, nil, methodOrErr
     end
-    
-    return true, { 
-        message = "Alarm sound triggered", 
-        x = x, 
-        y = y, 
-        z = z, 
+
+    return true, {
+        message = "Alarm sound triggered",
+        x = x,
+        y = y,
+        z = z,
         radius = alarmRadius,
         method = methodOrErr
     }
@@ -2181,7 +2252,7 @@ handlers.createNoise = function(args)
     local radius = tonumber(args.radius) or 100
     local volume = tonumber(args.volume) or 100
     local username = args.username
-    
+
     -- If username provided, use player's location
     if username then
         local player = getPlayerByUsername(username)
@@ -2193,11 +2264,11 @@ handlers.createNoise = function(args)
             return false, nil, "Player not found: " .. username
         end
     end
-    
+
     if not x or not y then
         return false, nil, "Either coordinates (x, y) or username is required"
     end
-    
+
     -- Clamp values
     radius = math.min(math.max(radius, 10), 500)
     volume = math.min(math.max(volume, 1), 500)
@@ -2239,7 +2310,7 @@ handlers.getGameTime = function(args)
     if not gameTime then
         return false, nil, "GameTime not available"
     end
-    
+
     -- Use safeGetValue for methods that may not exist in all PZ versions
     return true, {
         year = safeGetValue(gameTime, "getYear", 1993),
@@ -2261,9 +2332,9 @@ handlers.setGameTime = function(args)
     if not gameTime then
         return false, nil, "GameTime not available"
     end
-    
+
     local updated = {}
-    
+
     if args.hour ~= nil then
         local hour = tonumber(args.hour) or 12
         -- Set updated before pcall — B42 transmitSetTimeOfDay applies the change
@@ -2277,7 +2348,7 @@ handlers.setGameTime = function(args)
             end
         end)
     end
-    
+
     if args.day ~= nil then
         local day = tonumber(args.day)
         if day then
@@ -2285,7 +2356,7 @@ handlers.setGameTime = function(args)
             pcall(function() gameTime:setDay(day) end)
         end
     end
-    
+
     if args.month ~= nil then
         local month = tonumber(args.month)
         if month then
@@ -2294,7 +2365,7 @@ handlers.setGameTime = function(args)
             pcall(function() gameTime:setMonth(month - 1) end)
         end
     end
-    
+
     if args.year ~= nil then
         local year = tonumber(args.year)
         if year then
@@ -2302,7 +2373,7 @@ handlers.setGameTime = function(args)
             pcall(function() gameTime:setYear(year) end)
         end
     end
-    
+
     return true, { message = "Game time updated", updated = updated }
 end
 
@@ -2312,7 +2383,7 @@ handlers.getWorldStats = function(args)
     if not world then
         return false, nil, "World not available"
     end
-    
+
     local cell = world:getCell()
     local zombieCount = 0
     if cell and cell.getZombieList then
@@ -2323,7 +2394,7 @@ handlers.getWorldStats = function(args)
             end
         end)
     end
-    
+
     return true, {
         serverName = getServerName(),
         map = world:getMap() or "Unknown",
@@ -2440,16 +2511,16 @@ handlers.getPlayerDetails = function(args)
     if not username then
         return false, nil, "Username required"
     end
-    
+
     local player = getPlayerByUsername(username)
     if not player then
         return false, nil, "Player not found: " .. username
     end
-    
+
     local ok, playerData = pcall(function()
         local stats = player:getStats()
         local bodyDamage = player:getBodyDamage()
-        
+
         local pd = {
             username = player:getUsername(),
             displayName = player:getDisplayName(),
@@ -2464,7 +2535,7 @@ handlers.getPlayerDetails = function(args)
             stats = {},
             health = {}
         }
-        
+
         -- Get stats if available
         if stats then
             pd.stats = {
@@ -2478,7 +2549,7 @@ handlers.getPlayerDetails = function(args)
                 endurance = stats:getEndurance()
             }
         end
-        
+
         -- Get health if available
         if bodyDamage then
             pd.health = {
@@ -2490,14 +2561,14 @@ handlers.getPlayerDetails = function(args)
                 wetness = bodyDamage:getWetness()
             }
         end
-        
+
         return pd
     end)
-    
+
     if not ok then
         return false, nil, "Error reading player details: " .. tostring(playerData)
     end
-    
+
     return true, playerData
 end
 
@@ -2505,18 +2576,18 @@ end
 handlers.getAllPlayerDetails = function(args)
     local onlinePlayers = getOnlinePlayers()
     local players = {}
-    
+
     if not onlinePlayers then
         return true, { players = {} }
     end
-    
+
     for i = 0, onlinePlayers:size() - 1 do
         local player = onlinePlayers:get(i)
         if player then
             local ok, playerData = pcall(function()
                 local stats = player:getStats()
                 local bodyDamage = player:getBodyDamage()
-                
+
                 local pd = {
                     username = player:getUsername(),
                     displayName = player:getDisplayName(),
@@ -2526,21 +2597,21 @@ handlers.getAllPlayerDetails = function(args)
                     accessLevel = player:getAccessLevel(),
                     isAlive = player:isAlive()
                 }
-                
+
                 if stats then
                     pd.hunger = stats:getHunger()
                     pd.thirst = stats:getThirst()
                     pd.fatigue = stats:getFatigue()
                 end
-                
+
                 if bodyDamage then
                     pd.health = bodyDamage:getOverallBodyHealth()
                     pd.isInfected = bodyDamage:IsInfected()
                 end
-                
+
                 return pd
             end)
-            
+
             if ok and playerData then
                 table.insert(players, playerData)
             else
@@ -2553,7 +2624,7 @@ handlers.getAllPlayerDetails = function(args)
             end
         end
     end
-    
+
     return true, { players = players }
 end
 
@@ -2566,16 +2637,16 @@ local function serializeInventory(container, depth, maxItems, currentCount)
     depth = depth or 1
     maxItems = maxItems or 1000
     currentCount = currentCount or { n = 0 }
-    
+
     if not container then return {}, "container is nil" end
     if depth > 4 then return {}, "max depth exceeded" end
-    
+
     local items = {}
-    
+
     -- B42: try getItems() first, then fall back to other methods
     local itemList = nil
     local method = "none"
-    
+
     if container.getItems then
         local ok, result = pcall(function() return container:getItems() end)
         if ok and result then
@@ -2583,7 +2654,7 @@ local function serializeInventory(container, depth, maxItems, currentCount)
             method = "getItems"
         end
     end
-    
+
     -- B42 fallback: some containers use getAllItems() or Items
     if not itemList and container.getAllItems then
         local ok, result = pcall(function() return container:getAllItems() end)
@@ -2592,17 +2663,17 @@ local function serializeInventory(container, depth, maxItems, currentCount)
             method = "getAllItems"
         end
     end
-    
+
     if not itemList then return {}, "no items method (tried: getItems, getAllItems)" end
-    
+
     local listSize = 0
     if itemList.size then
         local ok, sz = pcall(function() return itemList:size() end)
         if ok then listSize = sz end
     end
-    
+
     if listSize == 0 then return {}, method .. " returned size 0" end
-    
+
     for i = 0, listSize - 1 do
         if currentCount.n >= maxItems then break end
         local item = itemList:get(i)
@@ -2616,15 +2687,15 @@ local function serializeInventory(container, depth, maxItems, currentCount)
                     isFavorite = item.isFavorite and item:isFavorite() or false,
                     isEquipped = item.isEquipped and item:isEquipped() or false
                 }
-                
+
                 if item.getCondition then
                     data.condition = item:getCondition()
                 end
-                
+
                 if item.getCurrentUses then
                     data.uses = item:getCurrentUses()
                 end
-                
+
                 -- Handle containers (bags, etc.)
                 if item.IsInventoryContainer and item:IsInventoryContainer() then
                     local subContainer = item:getItemContainer()
@@ -2632,32 +2703,32 @@ local function serializeInventory(container, depth, maxItems, currentCount)
                         data.contents = serializeInventory(subContainer, depth + 1, maxItems, currentCount)
                     end
                 end
-                
+
                 if item.getDelta then
                     data.delta = item:getDelta()
                 end
-                
+
                 return data
             end)
-            
+
             if ok and itemData then
                 table.insert(items, itemData)
                 currentCount.n = currentCount.n + 1
             end
         end
     end
-    
+
     return items
 end
 
 -- Helper to get all perk levels
 local function getPlayerPerks(player)
     local perks = {}
-    
+
     -- Get XP object
     local xp = player:getXp()
     if not xp then return perks end
-    
+
     -- Known perks from PerkFactory
     local perkNames = {
         "Fitness", "Strength",
@@ -2667,7 +2738,7 @@ local function getPlayerPerks(player)
         "Mechanics", "Tailoring", "Aiming", "Reloading",
         "Fishing", "Trapping", "PlantScavenging"
     }
-    
+
     for _, perkName in ipairs(perkNames) do
         local perk = Perks[perkName]
         if perk then
@@ -2679,7 +2750,7 @@ local function getPlayerPerks(player)
             }
         end
     end
-    
+
     return perks
 end
 
@@ -2688,14 +2759,14 @@ local function getPlayerTraits(player)
     local traits = {}
     local traitList = nil
     local method = "none"
-    
+
     -- B42: Traits are accessed through SurvivorDesc
     local desc = nil
     if player.getDescriptor then
         local ok, d = pcall(function() return player:getDescriptor() end)
         if ok and d then desc = d end
     end
-    
+
     if desc then
         -- B42 primary: getTraitList()
         if not traitList and desc.getTraitList then
@@ -2708,24 +2779,24 @@ local function getPlayerTraits(player)
             if ok and result then traitList = result; method = "desc:getTraits" end
         end
     end
-    
+
     -- B41 fallback: player:getTraits()
     if not traitList and player.getTraits then
         local ok, result = pcall(function() return player:getTraits() end)
         if ok and result then traitList = result; method = "player:getTraits" end
     end
-    
+
     if not traitList then return {}, "no trait method worked (tried: desc:getTraitList, desc:getTraits, player:getTraits)" end
-    
+
     -- Get size safely
     local listSize = 0
     if traitList.size then
         local ok, sz = pcall(function() return traitList:size() end)
         if ok then listSize = sz end
     end
-    
+
     if listSize == 0 then return {}, method .. " returned size 0" end
-    
+
     for i = 0, listSize - 1 do
         local ok, trait = pcall(function() return traitList:get(i) end)
         if ok and trait then
@@ -2742,7 +2813,7 @@ local function getPlayerTraits(player)
             end
         end
     end
-    
+
     return traits, method .. " found " .. #traits
 end
 
@@ -2750,13 +2821,13 @@ end
 local function getKnownRecipes(player)
     local recipes = {}
     local recipeList = player:getKnownRecipes()
-    
+
     if recipeList then
         for i = 0, recipeList:size() - 1 do
             table.insert(recipes, recipeList:get(i))
         end
     end
-    
+
     return recipes
 end
 
@@ -2765,22 +2836,22 @@ local function getWornItems(player)
     local worn = {}
     local wornItems = nil
     local method = "none"
-    
+
     if player.getWornItems then
         local ok, result = pcall(function() return player:getWornItems() end)
         if ok and result then wornItems = result; method = "getWornItems" end
     end
-    
+
     if not wornItems then return {}, "getWornItems returned nil or failed" end
-    
+
     local listSize = 0
     if wornItems.size then
         local ok, sz = pcall(function() return wornItems:size() end)
         if ok then listSize = sz end
     end
-    
+
     if listSize == 0 then return {}, method .. " returned size 0" end
-    
+
     for i = 0, listSize - 1 do
         local ok, wornData = pcall(function()
             local item = wornItems:get(i)
@@ -2797,7 +2868,7 @@ local function getWornItems(player)
             table.insert(worn, wornData)
         end
     end
-    
+
     return worn, method .. " found " .. #worn
 end
 
@@ -2807,23 +2878,23 @@ handlers.exportPlayerData = function(args)
     if not username then
         return false, nil, "Username required"
     end
-    
+
     local player = getPlayerByUsername(username)
     if not player then
         return false, nil, "Player not found: " .. username
     end
-    
+
     -- Collect diagnostics
     local diag = {}
-    
+
     -- Traits
     local traits, traitDiag = getPlayerTraits(player)
     diag.traits = traitDiag or "ok"
-    
+
     -- Worn items
     local wornItems, wornDiag = getWornItems(player)
     diag.wornItems = wornDiag or "ok"
-    
+
     -- Main inventory
     local mainInv = nil
     local invDiag = "not attempted"
@@ -2838,7 +2909,7 @@ handlers.exportPlayerData = function(args)
         invDiag = "player has no getInventory method"
     end
     diag.inventory = invDiag
-    
+
     -- Also try to get items from worn containers (backpacks, bags on body)
     local bagItems = {}
     local bagCount = 0
@@ -2870,43 +2941,43 @@ handlers.exportPlayerData = function(args)
         end
     end
     diag.bagItems = bagCount .. " items in " .. (function() local c = 0; for _ in pairs(bagItems) do c = c + 1 end; return c end)() .. " bags"
-    
+
     local exportData = {
         version = "1.3",
         exportTime = getTimestampMs(),
         serverName = getServerName(),
-        
+
         -- Basic info
         username = player:getUsername(),
         displayName = player:getDisplayName(),
-        
+
         -- Skills/Perks with XP (this is what we need for restore)
         perks = getPlayerPerks(player),
-        
+
         -- Traits
         traits = traits,
-        
+
         -- Known recipes
         recipes = getKnownRecipes(player),
-        
+
         -- Worn items
         wornItems = wornItems,
-        
+
         -- Kill stats
         kills = {
             zombies = player:getZombieKills()
         },
-        
+
         -- Main inventory
         inventory = mainInv or {},
-        
+
         -- Items in worn bags/containers
         bagInventory = bagItems,
-        
+
         -- Diagnostics for debugging
         _diagnostics = diag
     }
-    
+
     return true, exportData
 end
 
@@ -2915,24 +2986,24 @@ handlers.importPlayerData = function(args)
     local username = args.username
     local data = args.data
     local options = args.options or {}
-    
+
     if not username then
         return false, nil, "Username required"
     end
     if not data then
         return false, nil, "Import data required"
     end
-    
+
     local player = getPlayerByUsername(username)
     if not player then
         return false, nil, "Player not found: " .. username
     end
-    
+
     local restored = {
         perks = 0,
         items = 0
     }
-    
+
     -- Restore perks/skills
     if data.perks and options.restorePerks ~= false then
         local xp = player:getXp()
@@ -2966,7 +3037,7 @@ handlers.importPlayerData = function(args)
             end
         end
     end
-    
+
     -- Restore inventory items
     if data.inventory and options.restoreInventory ~= false then
         local inventory = player:getInventory()
@@ -3017,16 +3088,16 @@ handlers.importPlayerData = function(args)
                     end
                 end
             end
-            
+
             addItems(inventory, data.inventory, 1)
-            
+
             -- Network sync
             pcall(function()
                 if sendPlayerExtraInfo then sendPlayerExtraInfo(player) end
             end)
         end
     end
-    
+
     return true, {
         message = "Player data imported",
         restored = restored
@@ -3039,22 +3110,22 @@ handlers.teleportPlayer = function(args)
     local x = tonumber(args.x)
     local y = tonumber(args.y)
     local z = tonumber(args.z) or 0
-    
+
     if not username or not x or not y then
         return false, nil, "Username, x, y required"
     end
-    
+
     -- Validate coordinates (B42 vanilla map extends past 16800; cap generously for modded maps)
     if x < 0 or x > 24000 or y < 0 or y > 24000 then
         return false, nil, "Coordinates out of range (x/y: 0-24000)"
     end
     z = math.max(0, math.min(math.floor(z), 8))
-    
+
     local player = getPlayerByUsername(username)
     if not player then
         return false, nil, "Player not found: " .. username
     end
-    
+
     local oldX = player:getX()
     local oldY = player:getY()
     local oldZ = player:getZ()
@@ -3150,12 +3221,12 @@ handlers.teleportPlayer = function(args)
     local verifyY = player:getY()
     local verifyZ = player:getZ()
     table.insert(debugInfo, "verify pos: " .. verifyX .. "," .. verifyY .. "," .. verifyZ)
-    
+
     local debugStr = table.concat(debugInfo, " | ")
     PanelBridge.debug("teleportPlayer: " .. username .. " from " .. oldX .. "," .. oldY .. "," .. oldZ
         .. " to " .. x .. "," .. y .. "," .. z .. " — " .. debugStr)
-    
-    return true, { 
+
+    return true, {
         message = "Player teleported",
         oldPosition = { x = oldX, y = oldY, z = oldZ },
         newPosition = { x = x, y = y, z = z },
@@ -3170,14 +3241,14 @@ handlers.getSandboxOptions = function(args)
     if not sandbox then
         return false, nil, "SandboxOptions not available"
     end
-    
+
     -- Get commonly used sandbox settings with safe access
     local options = {}
     local function safeOpt(name, getter)
         local ok, val = pcall(getter)
         if ok then options[name] = val end
     end
-    
+
     safeOpt("zombieCount", function() return sandbox:getZombieCount() end)
     safeOpt("zombieSpeed", function() return sandbox:getZombieSpeed() end)
     safeOpt("dayLength", function() return sandbox:getDayLength() end)
@@ -3189,7 +3260,7 @@ handlers.getSandboxOptions = function(args)
     safeOpt("charactersPerPlayer", function() return sandbox:getCharactersPerPlayer() end)
     safeOpt("sleepAllowed", function() return sandbox:getSleepAllowed() end)
     safeOpt("sleepNeeded", function() return sandbox:getSleepNeeded() end)
-    
+
     return true, { options = options }
 end
 
@@ -3846,7 +3917,7 @@ handlers.saveWorld = function(args)
             return false, nil, "World save failed: " .. tostring(err)
         end
     end
-    
+
     return false, nil, "Cannot trigger world save from Lua"
 end
 
@@ -3860,23 +3931,23 @@ handlers.getUtilitiesStatus = function(args)
     if not world then
         return false, nil, "World not available"
     end
-    
+
     local hydroPowerOn = false
     local success, err = pcall(function()
         hydroPowerOn = world:isHydroPowerOn()
     end)
-    
+
     if not success then
         return false, nil, "Failed to get utilities status: " .. tostring(err)
     end
-    
+
     -- Also get sandbox shutdown times
     local sandbox = getSandboxOptions()
     local elecShut = "unknown"
     local waterShut = "unknown"
     local elecModifier = 0
     local waterModifier = 0
-    
+
     -- Read sandbox settings and game time for diagnostics
     local currentHour = 0
     local currentDay = 0
@@ -3889,7 +3960,7 @@ handlers.getUtilitiesStatus = function(args)
     -- isHydroPowerOn() is NOT used by the game's Lua gameplay code.
     local powerActuallyOn = false
     local waterActuallyOn = false
-    
+
     pcall(function()
         if sandbox then
             local elecOpt = sandbox:getOptionByName("ElecShut")
@@ -3906,7 +3977,7 @@ handlers.getUtilitiesStatus = function(args)
                 timeSinceApo = sandbox:getTimeSinceApo()
             end
         end
-        
+
         local gameTime = GameTime.getInstance()
         if gameTime then
             currentHour = gameTime:getWorldAgeHours()
@@ -3923,18 +3994,18 @@ handlers.getUtilitiesStatus = function(args)
         -- Use the same formula as power (matches game's internal check).
         -- Modifier > -1 AND worldAgeDays < modifier = water still on
         local worldAgeDays = currentHour / 24 + (timeSinceApo - 1) * 30
-        
+
         -- Power check: same formula as ISButtonPrompt.lua line 421
         if elecModifier > -1 and worldAgeDays < elecModifier then
             powerActuallyOn = true
         end
-        
+
         -- Water check: same formula
         if waterModifier > -1 and worldAgeDays < waterModifier then
             waterActuallyOn = true
         end
     end)
-    
+
     return true, {
         hydroPowerOn = hydroPowerOn,
         powerOn = powerActuallyOn,
@@ -3961,19 +4032,19 @@ local function setElectricityOnLoadedSquares(enabled)
     if not cell then
         return 0, "No cell available"
     end
-    
+
     local players = getOnlinePlayers()
     if not players or players:size() == 0 then
         return 0, "No players online"
     end
-    
+
     local squareCount = 0
-    
+
     for p = 0, players:size() - 1 do
         local player = players:get(p)
         if player then
             local px, py = math.floor(player:getX()), math.floor(player:getY())
-            
+
             -- 50-square radius covers the playable area around each player
             for x = px - 50, px + 50 do
                 for y = py - 50, py + 50 do
@@ -3990,7 +4061,7 @@ local function setElectricityOnLoadedSquares(enabled)
             end
         end
     end
-    
+
     return squareCount, "success"
 end
 
@@ -4000,19 +4071,19 @@ local function activateLightSwitchesInLoadedChunks()
     if not cell then
         return 0, "No cell available"
     end
-    
+
     local activatedCount = 0
-    
+
     local players = getOnlinePlayers()
     if not players or players:size() == 0 then
         return 0, "No players online"
     end
-    
+
     for p = 0, players:size() - 1 do
         local player = players:get(p)
         if player then
             local px, py = math.floor(player:getX()), math.floor(player:getY())
-            
+
             for x = px - 30, px + 30 do
                 for y = py - 30, py + 30 do
                     for z = 0, 3 do
@@ -4046,7 +4117,7 @@ local function activateLightSwitchesInLoadedChunks()
             end
         end
     end
-    
+
     return activatedCount, "success"
 end
 
@@ -4312,12 +4383,12 @@ handlers.restoreUtilities = function(args, cmdId)
     if cmdId and PanelBridge.activeJob then
         return false, nil, "Another utilities operation is already in progress"
     end
-    
+
     local restorePower = args.power ~= false -- default true
     local restoreWater = args.water ~= false -- default true
-    
+
     local debugInfo = {}
-    
+
     local success, err = pcall(function()
         local gameTime = GameTime.getInstance()
         local nightsSurvived = 0
@@ -4325,9 +4396,9 @@ handlers.restoreUtilities = function(args, cmdId)
             nightsSurvived = gameTime:getNightsSurvived()
         end
         table.insert(debugInfo, "nightsSurvived=" .. tostring(nightsSurvived))
-        
+
         local sandboxOptions = getSandboxOptions()
-        
+
         -- Step 1: Set Lua SandboxVars FIRST (the authoritative source for updateFromLua)
         -- The game's actual power check (ISButtonPrompt.lua line 421) is:
         --   if (ElecShutModifier > -1 AND worldAgeDays < ElecShutModifier) OR square:haveElectricity()
@@ -4339,7 +4410,7 @@ handlers.restoreUtilities = function(args, cmdId)
             SandboxVars.ElecShut = 9        -- 9 = Disabled (sandbox UI label)
             SandboxVars.ElecShutModifier = restoreDays
             table.insert(debugInfo, "Lua ElecShut=9(Disabled) ElecShutModifier=" .. tostring(restoreDays))
-            
+
             -- Clear ElecShutStart in GameTime modData
             local gameTimeModData = gameTime and gameTime:getModData() or nil
             if gameTimeModData then
@@ -4348,12 +4419,12 @@ handlers.restoreUtilities = function(args, cmdId)
                 table.insert(debugInfo, "ElecShutStart: " .. tostring(oldVal) .. " -> -1")
             end
         end
-        
+
         if restoreWater then
             SandboxVars.WaterShut = 9       -- 9 = Disabled (sandbox UI label)
             SandboxVars.WaterShutModifier = restoreDays
             table.insert(debugInfo, "Lua WaterShut=9(Disabled) WaterShutModifier=" .. tostring(restoreDays))
-            
+
             -- Clear WaterShutStart in GameTime modData
             local gameTimeModData = gameTime and gameTime:getModData() or nil
             if gameTimeModData then
@@ -4362,7 +4433,7 @@ handlers.restoreUtilities = function(args, cmdId)
                 table.insert(debugInfo, "WaterShutStart: " .. tostring(oldVal) .. " -> -1")
             end
         end
-        
+
         -- Step 2: Sync Lua -> Java via updateFromLua, then apply
         if sandboxOptions then
             pcall(function()
@@ -4410,14 +4481,14 @@ handlers.restoreUtilities = function(args, cmdId)
                 end
             end)
         end
-        
+
         -- Step 3: Set hydro power ON *after* applySettings so it can't be overwritten
         if restorePower then
             world:setHydroPowerOn(true)
             table.insert(debugInfo, "setHydroPowerOn(true)")
         end
     end)
-    
+
     if not success then
         return false, nil, "Failed to restore utilities: " .. tostring(err)
     end
@@ -4505,12 +4576,12 @@ handlers.shutOffUtilities = function(args, cmdId)
     if cmdId and PanelBridge.activeJob then
         return false, nil, "Another utilities operation is already in progress"
     end
-    
+
     local shutPower = args.power ~= false -- default true
     local shutWater = args.water ~= false -- default true
-    
+
     local debugInfo = {}
-    
+
     local success, err = pcall(function()
         local gameTime = GameTime.getInstance()
         local nightsSurvived = 0
@@ -4518,32 +4589,32 @@ handlers.shutOffUtilities = function(args, cmdId)
             nightsSurvived = gameTime:getNightsSurvived()
         end
         table.insert(debugInfo, "nightsSurvived=" .. tostring(nightsSurvived))
-        
+
         -- Step 1: Set Lua SandboxVars to instant shutoff
         if shutPower then
             SandboxVars.ElecShut = 1        -- 1 = Instant
             SandboxVars.ElecShutModifier = 0   -- 0 = shut off at day 0
             table.insert(debugInfo, "Lua ElecShut=1(Instant) ElecShutModifier=0")
-            
+
             local gameTimeModData = gameTime and gameTime:getModData() or nil
             if gameTimeModData then
                 gameTimeModData.ElecShutStart = nightsSurvived * 24
                 table.insert(debugInfo, "ElecShutStart=" .. tostring(nightsSurvived * 24))
             end
         end
-        
+
         if shutWater then
             SandboxVars.WaterShut = 1       -- 1 = Instant
             SandboxVars.WaterShutModifier = 0  -- 0 = shut off at day 0
             table.insert(debugInfo, "Lua WaterShut=1(Instant) WaterShutModifier=0")
-            
+
             local gameTimeModData = gameTime and gameTime:getModData() or nil
             if gameTimeModData then
                 gameTimeModData.WaterShutStart = nightsSurvived * 24
                 table.insert(debugInfo, "WaterShutStart=" .. tostring(nightsSurvived * 24))
             end
         end
-        
+
         -- Step 2: Sync Lua -> Java and apply
         local sandboxOptions = getSandboxOptions()
         if sandboxOptions then
@@ -4558,14 +4629,14 @@ handlers.shutOffUtilities = function(args, cmdId)
             end)
             table.insert(debugInfo, "sandbox sync OK")
         end
-        
+
         -- Step 3: Set hydro power OFF *after* applySettings
         if shutPower then
             world:setHydroPowerOn(false)
             table.insert(debugInfo, "setHydroPowerOn(false)")
         end
     end)
-    
+
     if not success then
         return false, nil, "Failed to shut off utilities: " .. tostring(err)
     end
@@ -4646,15 +4717,15 @@ handlers.healPlayer = function(args)
     if not username then
         return false, nil, "Username required"
     end
-    
+
     local player = getPlayerByUsername(username)
     if not player then
         return false, nil, "Player not found: " .. username
     end
-    
+
     local healed = {}
     local errors = {}
-    
+
     -- Heal body damage
     local bodyDamage = player:getBodyDamage()
     if bodyDamage then
@@ -4717,7 +4788,7 @@ handlers.healPlayer = function(args)
         end)
         if not ok1 then table.insert(errors, "bodyDamage: " .. tostring(err1)) end
     end
-    
+
     -- Restore stats
     local stats = player:getStats()
     if stats then
@@ -4739,7 +4810,7 @@ handlers.healPlayer = function(args)
         end)
         if not ok2 then table.insert(errors, "stats: " .. tostring(err2)) end
     end
-    
+
     -- Clear moodles/effects if possible
     local ok3, err3 = pcall(function()
         local moodles = player:getMoodles()
@@ -4751,7 +4822,7 @@ handlers.healPlayer = function(args)
         end
     end)
     if not ok3 then table.insert(errors, "moodles: " .. tostring(err3)) end
-    
+
     -- CRITICAL: Network sync — transmit changes to client
     -- Without this, the server has the healed state but the player client doesn't see it
     local ok4, err4 = pcall(function()
@@ -4771,11 +4842,11 @@ handlers.healPlayer = function(args)
         healed.networkSync = synced
     end)
     if not ok4 then table.insert(errors, "sync: " .. tostring(err4)) end
-    
+
     if #errors > 0 then
         healed.errors = errors
     end
-    
+
     PanelBridge.info("Healed player", { username = username, healed = healed })
     return true, { message = "Player healed", username = username, healed = healed }
 end
@@ -4870,16 +4941,16 @@ end
 handlers.setGodMode = function(args)
     local username = args.username
     local enabled = args.enabled == true
-    
+
     if not username then
         return false, nil, "Username required"
     end
-    
+
     local player = getPlayerByUsername(username)
     if not player then
         return false, nil, "Player not found: " .. username
     end
-    
+
     -- B42/B41: setGodMod is the actual PZ method name (not a typo)
     local method = nil
     local success, err = pcall(function()
@@ -4893,11 +4964,11 @@ handlers.setGodMode = function(args)
             error("No godmode method available on player object")
         end
     end)
-    
+
     if not success then
         return false, nil, "Failed to set godmode: " .. tostring(err)
     end
-    
+
     -- Verify it took effect
     local verified = nil
     pcall(function()
@@ -4905,10 +4976,10 @@ handlers.setGodMode = function(args)
             verified = player:isGodMod() == enabled
         end
     end)
-    
+
     PanelBridge.info("Set godmode", { username = username, enabled = enabled, method = method, verified = verified })
-    return true, { 
-        message = "Godmode " .. (enabled and "enabled" or "disabled"), 
+    return true, {
+        message = "Godmode " .. (enabled and "enabled" or "disabled"),
         username = username,
         verified = verified
     }
@@ -4918,28 +4989,28 @@ end
 handlers.setInvisible = function(args)
     local username = args.username
     local enabled = args.enabled == true
-    
+
     if not username then
         return false, nil, "Username required"
     end
-    
+
     local player = getPlayerByUsername(username)
     if not player then
         return false, nil, "Player not found: " .. username
     end
-    
+
     if not player.setInvisible then
         return false, nil, "setInvisible method not available in this PZ version"
     end
-    
+
     local success, err = pcall(function()
         player:setInvisible(enabled)
     end)
-    
+
     if not success then
         return false, nil, "Failed to set invisible: " .. tostring(err)
     end
-    
+
     -- Verify
     local verified = nil
     pcall(function()
@@ -4947,10 +5018,10 @@ handlers.setInvisible = function(args)
             verified = player:isInvisible() == enabled
         end
     end)
-    
+
     PanelBridge.info("Set invisible", { username = username, enabled = enabled, verified = verified })
-    return true, { 
-        message = "Invisibility " .. (enabled and "enabled" or "disabled"), 
+    return true, {
+        message = "Invisibility " .. (enabled and "enabled" or "disabled"),
         username = username,
         verified = verified
     }
@@ -4960,28 +5031,28 @@ end
 handlers.setNoclip = function(args)
     local username = args.username
     local enabled = args.enabled == true
-    
+
     if not username then
         return false, nil, "Username required"
     end
-    
+
     local player = getPlayerByUsername(username)
     if not player then
         return false, nil, "Player not found: " .. username
     end
-    
+
     if not player.setNoClip then
         return false, nil, "setNoClip method not available in this PZ version"
     end
-    
+
     local success, err = pcall(function()
         player:setNoClip(enabled)
     end)
-    
+
     if not success then
         return false, nil, "Failed to set noclip: " .. tostring(err)
     end
-    
+
     PanelBridge.info("Set noclip", { username = username, enabled = enabled })
     return true, { message = "Noclip " .. (enabled and "enabled" or "disabled"), username = username }
 end
@@ -4991,7 +5062,7 @@ handlers.giveItem = function(args)
     local username = args.username
     local itemType = args.itemType
     local count = math.min(math.max(tonumber(args.count) or 1, 1), 100) -- Clamp 1-100 per call
-    
+
     if not username then
         return false, nil, "Username required"
     end
@@ -5002,17 +5073,17 @@ handlers.giveItem = function(args)
     if not itemType:match("^%a[%w_]*%.[%w_]+$") then
         return false, nil, "Invalid item type format (expected Module.ItemName): " .. tostring(itemType)
     end
-    
+
     local player = getPlayerByUsername(username)
     if not player then
         return false, nil, "Player not found: " .. username
     end
-    
+
     local inventory = player:getInventory()
     if not inventory then
         return false, nil, "Could not access player inventory"
     end
-    
+
     local added = 0
     local lastError = nil
     for i = 1, count do
@@ -5025,11 +5096,11 @@ handlers.giveItem = function(args)
             lastError = tostring(item)
         end
     end
-    
+
     if added == 0 then
         return false, nil, "Failed to add item '" .. itemType .. "'" .. (lastError and (": " .. lastError) or ". Item type may not exist.")
     end
-    
+
     -- Network sync so client sees the new items
     pcall(function()
         -- Force inventory sync to client
@@ -5041,9 +5112,9 @@ handlers.giveItem = function(args)
             sendPlayerExtraInfo(player)
         end
     end)
-    
+
     PanelBridge.info("Gave items", { username = username, itemType = itemType, count = added })
-    return true, { 
+    return true, {
         message = "Gave " .. added .. "x " .. itemType,
         username = username,
         itemType = itemType,
@@ -5249,22 +5320,22 @@ handlers.getZombieCount = function(args)
     if not world then
         return false, nil, "World not available"
     end
-    
+
     local cell = world:getCell()
     if not cell then
         return false, nil, "Cell not available"
     end
-    
+
     local zombieCount = 0
     local ok, list = pcall(function()
         return cell:getZombieList()
     end)
-    
+
     if ok and list then
         zombieCount = list:size()
     end
-    
-    return true, { 
+
+    return true, {
         zombieCount = zombieCount,
         note = "Count is for currently loaded cells only"
     }
@@ -5274,24 +5345,24 @@ end
 handlers.clearZombiesNearPlayer = function(args)
     local username = args.username
     local radius = tonumber(args.radius) or 50
-    
+
     if not username then
         return false, nil, "Username required"
     end
-    
+
     local player = getPlayerByUsername(username)
     if not player then
         return false, nil, "Player not found: " .. username
     end
-    
+
     local px, py, pz = player:getX(), player:getY(), player:getZ()
     local world = getWorld()
     local cell = world and world:getCell()
-    
+
     if not cell then
         return false, nil, "Could not access world cell"
     end
-    
+
     local removed = 0
     local ok, err = pcall(function()
         local zombies = cell:getZombieList()
@@ -5315,13 +5386,13 @@ handlers.clearZombiesNearPlayer = function(args)
             end
         end
     end)
-    
+
     if not ok then
         PanelBridge.warn("Error clearing zombies", { error = tostring(err) })
     end
-    
+
     PanelBridge.info("Cleared zombies", { username = username, radius = radius, removed = removed })
-    return true, { 
+    return true, {
         message = "Removed " .. removed .. " zombies",
         radius = radius,
         removed = removed
@@ -6801,13 +6872,13 @@ function PanelBridge.processCommands()
     end
 
     local deferredCommands = nil
-    
+
     -- Clear commands file immediately after reading to minimise the race window
     -- where Node writes a new command between our read and our (old) post-loop clear.
     -- processedIds dedup ensures commands are never processed twice even if the Lua
     -- mod re-reads a file that Node repopulated in the gap.
     PanelBridge.clearFile("commands.json")
-    
+
     for idx, cmd in ipairs(commands.commands) do
         if processedCount >= PanelBridge.MAX_COMMANDS_PER_TICK then
             deferredCommands = {}
@@ -6827,7 +6898,7 @@ function PanelBridge.processCommands()
             processedCount = processedCount + 1
         end
     end
-    
+
     if processedCount > 0 then
         PanelBridge.debug("Processed " .. processedCount .. " commands")
     end
@@ -6852,7 +6923,7 @@ function PanelBridge.processCommands()
             PanelBridge.error("Failed to requeue deferred commands", { count = #deferredCommands })
         end
     end
-    
+
     -- Cleanup old processed IDs (sliding window: drop oldest half)
     -- Walks processedIdOrder (true insertion order) instead of pairs(), whose
     -- iteration order over processedIds is unspecified in Lua \u2014 iterating
@@ -6886,7 +6957,7 @@ function PanelBridge.updateStatus()
                 end
             end
         end
-        
+
         local status = {
             alive = true,
             version = PanelBridge.VERSION,
@@ -6907,10 +6978,10 @@ function PanelBridge.updateStatus()
                 nextResultSeq = PanelBridge.queueState.nextResultSeq
             }
         }
-        
+
         PanelBridge.writeJSON("status.json", status)
     end)
-    
+
     if not ok then
         PanelBridge.error("Failed to update status", { error = tostring(err) })
     end
@@ -6918,7 +6989,7 @@ end
 
 function PanelBridge.onTick()
     if not PanelBridge.initialized then return end
-    
+
     local now = getTimestampMs()
 
     -- Advance any active background job (see L02) by one tick's worth of
@@ -6929,7 +7000,7 @@ function PanelBridge.onTick()
     if not jobOk then
         PanelBridge.error("Tick error in processActiveJob", { error = tostring(jobErr) })
     end
-    
+
     -- Check for commands
     if now - PanelBridge.lastCheck >= PanelBridge.CHECK_INTERVAL then
         PanelBridge.lastCheck = now
@@ -6943,7 +7014,7 @@ function PanelBridge.onTick()
             PanelBridge.error("Tick error in flushResults", { error = tostring(flushErr) })
         end
     end
-    
+
     -- Update status periodically
     if now - PanelBridge.lastStatusUpdate >= PanelBridge.STATUS_INTERVAL then
         PanelBridge.lastStatusUpdate = now
@@ -6954,43 +7025,42 @@ end
 function PanelBridge.onServerStarted()
     print("[PanelBridge] ========================================")
     print("[PanelBridge] Initializing v" .. PanelBridge.VERSION)
-    
+
     if not isServer() then
         print("[PanelBridge] Not running on server, disabling")
         return
     end
-    
+
     -- Initialize stats
     PanelBridge.stats.startTime = getTimestampMs()
     PanelBridge.stats.commandsProcessed = 0
     PanelBridge.stats.commandsSucceeded = 0
     PanelBridge.stats.commandsFailed = 0
     PanelBridge.stats.errors = {}
-    
+
     if not PanelBridge.ensureDirectory() then
         PanelBridge.error("Could not create directory")
         print("[PanelBridge] ERROR: Could not create directory")
         return
     end
 
-    -- Ensure queue folders exist.
-    PanelBridge.writeFile("inbox/.init", "PanelBridge inbox")
-    PanelBridge.writeFile("outbox/.init", "PanelBridge outbox")
+    -- The panel creates the inbox/outbox folders. Build 42 no longer lets Lua
+    -- create a directory, and results are written flat, so nothing to do here.
 
     -- Restore queue state from previous run.
     PanelBridge.readQueueState()
     PanelBridge.writeQueueState()
     PanelBridge.writeInboxCursor(PanelBridge.queueState.lastCommandSeq)
-    
+
     -- Detect version and available APIs
     PanelBridge.detectVersion()
-    
+
     -- Write initial status
     PanelBridge.updateStatus()
-    
+
     -- Clear old commands and results
     PanelBridge.clearFile("commands.json")
-    
+
     -- Write a startup log entry
     PanelBridge.writeJSON("startup.json", {
         version = PanelBridge.VERSION,
@@ -6999,7 +7069,7 @@ function PanelBridge.onServerStarted()
         detectedVersion = PanelBridge.detectedVersion,
         serverName = getServerName()
     })
-    
+
     -- Reset time speed to 1x so fast-forward doesn't persist across reboots
     pcall(function()
         local gt = getGameTime()
@@ -7014,7 +7084,7 @@ function PanelBridge.onServerStarted()
     PanelBridge.info("PanelBridge ready", { path = PanelBridge.getBasePath() })
     print("[PanelBridge] Ready at: " .. PanelBridge.getBasePath())
     print("[PanelBridge] Debug mode: " .. (PanelBridge.DEBUG_MODE and "ON" or "OFF"))
-    
+
     -- Probe chat system availability for diagnostics
     -- NOTE: On B42 dedicated servers, ChatServer is NOT exposed to Lua (the Java class exists
     -- but PZ doesn't register it as a Lua global). This is normal — chat messages are sent
@@ -7026,7 +7096,7 @@ function PanelBridge.onServerStarted()
     else
         print("[PanelBridge] ChatServer: not exposed to Lua (normal on B42 — chat uses RCON servermsg)")
     end
-    
+
     print("[PanelBridge] ========================================")
 end
 
