@@ -186,6 +186,18 @@ tar xzf ZomboidControlPanel-linux.tar.gz
 ```
 Works on Ubuntu 20.04+, Debian 10+, CentOS Stream 8+, Rocky 8+, or anything with glibc 2.28+.
 
+### Docker
+
+Download [docker-compose.install.yml](docker-compose.install.yml), then run:
+
+```bash
+docker compose -f docker-compose.install.yml up -d
+```
+
+Open `http://localhost:3001`. This starts the panel with persistent Docker
+volumes. For a panel that manages a PZ server on the same host, use the fully
+documented [docker-compose.yml](docker-compose.yml) and configure its bind mounts.
+
 ### Linux: installing a new PZ server through the panel
 
 If you installed the panel as the bundled `zomboid-panel.service`, use this install folder in the setup wizard:

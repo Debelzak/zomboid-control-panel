@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.11] - 2026-07-29
+
+### Docker
+
+- **Compose installer**: documented `docker-compose.install.yml` for starting the published panel image with persistent Docker volumes.
+- **Release package**: made the included Compose installer and its exact command visible in the generated release README.
+
+### Fixed
+
+- **Stale Steam operations**: install and update locks now track the SteamCMD process and clear automatically when that process has exited, preventing a dead operation from permanently blocking its install path.
+
 ## [1.1.10] - 2026-07-29
 
 ### Fixed
