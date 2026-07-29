@@ -1,10 +1,22 @@
 ---@diagnostic disable: undefined-global, deprecated
 --[[
     PanelBridge - Server-side mod for Zomboid Control Panel
-    Version: 1.7.8
+    Version: 1.7.9
 
     This mod enables external control panel communication with the PZ server.
     Communication happens via JSON files in the server save folder.
+
+    v1.7.9 Changes:
+    - writeFile() now resolves panel-owned filenames (commands.json,
+      inbox/cmd-*.json) to their plain path itself, matching readFile's
+      existing logic, instead of relying solely on clearFile's guard.
+      Nothing currently calls writeFile with those names, but the previous
+      version would have silently written a wrong "commands.json.txt" had
+      it ever been called that way.
+    - ensureDirectory()'s write-capability fallback now probes a dedicated
+      ".write-check" file instead of the real status.json — canWritePath
+      actually writes its probe text, so probing the production file could
+      briefly hand a reader "PanelBridge probe" instead of valid JSON.
 
     v1.7.8 Changes:
     - CRITICAL: Build 42 buildid 24449161 (2026-07-29) restricted getFileWriter
@@ -169,7 +181,7 @@
 local json
 
 local PanelBridge = {
-    VERSION = "1.7.8",
+    VERSION = "1.7.9",
     PROTOCOL_VERSION = "queue-v1",
     CHECK_INTERVAL = 250, -- milliseconds (fast command polling)
     lastCheck = 0,
@@ -723,9 +735,12 @@ function PanelBridge.ensureDirectory()
     end
 
     print("[PanelBridge] ERROR: could not write " .. initPath .. " in the Lua folder")
-    -- The marker is only a convenience; keep running as long as the real
-    -- state file can be written.
-    return PanelBridge.canWritePath(PanelBridge.getWritePath("status.json"))
+    -- The marker is only a convenience; keep running as long as writes work
+    -- in general. Probe a dedicated throwaway name — NOT a real bridge file
+    -- like status.json — since canWritePath actually writes its probe text,
+    -- and doing that on a production file would briefly clobber real state
+    -- with garbage for any reader unlucky enough to catch it mid-window.
+    return PanelBridge.canWritePath(PanelBridge.getWritePath(".write-check"))
 end
 
 function PanelBridge.readPath(path)
@@ -765,7 +780,18 @@ function PanelBridge.readFile(filename)
 end
 
 function PanelBridge.writeFile(filename, content)
-    local path = PanelBridge.getWritePath(filename)
+    -- Mirror readFile's path resolution: panel-owned files (commands.json,
+    -- inbox/cmd-*) live at their plain path — the panel writes/reads them
+    -- directly and isn't subject to the Build 42 .txt restriction. Nothing
+    -- currently calls writeFile with those names (clearFile short-circuits
+    -- before reaching here), but resolving the wrong path silently here
+    -- would be an easy trap for future callers.
+    local path
+    if PanelBridge.isPanelOwnedFile(filename) then
+        path = PanelBridge.getBasePath() .. filename
+    else
+        path = PanelBridge.getWritePath(filename)
+    end
     local writer = getFileWriter(path, true, false)
     if not writer then
         print("[PanelBridge] Error: Could not write to " .. path)
