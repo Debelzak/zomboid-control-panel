@@ -24,7 +24,7 @@ interface AuthContextType extends AuthState {
 
 const AuthContext = createContext<AuthContextType | null>(null)
 
-const CORS_LOGIN_MESSAGE = 'Connection blocked by browser origin policy. Open the panel from a local/LAN address or add this URL in Settings > Remote Access.'
+const CORS_LOGIN_MESSAGE = 'Connection blocked by browser origin policy. For first-time reverse-proxy setup, set CORS_ORIGINS to this URL in the panel environment and restart it. Otherwise open the panel from a local/LAN address; after setup, manage origins in Settings > Remote Access.'
 
 async function getErrorPayload(response: Response): Promise<{ error?: string } | null> {
   try {

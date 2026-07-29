@@ -61,9 +61,9 @@ services:
 
       # --- Topology 1: PZ server on the host ---
       # Uncomment and adjust the host paths to where your PZ install lives.
-      # `:ro` is fine for the install folder; the Zomboid user data must be writable
-      # because PanelBridge writes commands/results JSON in there.
-      # - /opt/pzserver:/pz-server:ro
+      # Both mounts must be writable when the panel installs, updates, or starts PZ.
+      # Use `:ro` for the install mount only with an externally managed PZ server.
+      # - /opt/pzserver:/pz-server:z
       # - /home/pzuser/Zomboid:/zomboid:z
 
       # --- Topology 2: Remote PZ server over NFS/SMB ---
@@ -78,5 +78,6 @@ services:
       # - PZ_SERVER_PATH=/pz-server
       # - PZ_SAVE_PATH=/zomboid
       # - PZ_SERVER_BAT=start-server.sh
+      # Before first setup through a reverse proxy, set its exact public origin:
       # - CORS_ORIGINS=https://panel.example.com
       # - HTTPS=true

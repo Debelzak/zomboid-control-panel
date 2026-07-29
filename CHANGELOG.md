@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.8] - 2026-07-29
+
+### Fixed
+
+- **First-time reverse-proxy setup**: CORS block messages now explain how to set `CORS_ORIGINS` before an administrator account exists, without relaxing the origin policy.
+- **Docker path permissions**: install and data-path validation now identifies missing writable bind mounts and container UID/GID ownership. The shipped Compose example correctly marks the PZ install mount writable for panel-managed install, update, and start workflows.
+
 ## [1.1.7] - 2026-07-29
 
 ### Fixed
