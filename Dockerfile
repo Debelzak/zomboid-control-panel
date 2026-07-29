@@ -91,9 +91,16 @@ COPY --from=builder /app/client/dist ./client/dist
 # Copy PanelBridge mod so users can extract it (docker cp)
 COPY pz-mod/ ./pz-mod/
 
-# The Settings page serves this bundle directly to browsers. Keep it next to
-# the panel executable/source in every image, not only in release archives.
-COPY release/zomboid-panel-extension.zip ./zomboid-panel-extension.zip
+# Upstream also COPYs release/zomboid-panel-extension.zip here, but that's
+# broken as of the fpsacha/main merge: the browser-extension/ source that
+# build.js zips was never committed to the repo, AND .dockerignore excludes
+# release/ from the build context regardless — so the file can never exist
+# at build time on Linux/CI (build.js only runs Compress-Archive on Windows;
+# see build.js's win32-only guard and the "release.ps1 also builds it" note).
+# Skipping the COPY is safe: server/routes/mods.js's /collection/
+# extension-bundle route already 404s gracefully with a clear message when
+# the zip is missing, instead of crashing. Re-add this COPY once upstream
+# actually ships the browser-extension/ source and fixes .dockerignore.
 
 # Create runtime directories owned by the panel user (numeric IDs survive
 # the case where we're reusing the base image's existing user).
