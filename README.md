@@ -186,6 +186,24 @@ tar xzf ZomboidControlPanel-linux.tar.gz
 ```
 Works on Ubuntu 20.04+, Debian 10+, CentOS Stream 8+, Rocky 8+, or anything with glibc 2.28+.
 
+### Linux: installing a new PZ server through the panel
+
+If you installed the panel as the bundled `zomboid-panel.service`, use this install folder in the setup wizard:
+
+```text
+/opt/zomboid-panel/data/pzserver
+```
+
+Create it once before opening the wizard:
+
+```bash
+sudo -u pzuser mkdir -p /opt/zomboid-panel/data/pzserver
+```
+
+The panel also creates `/opt/zomboid-panel/data/pzserver_Data` for server settings and save data. Leave **Custom config location** blank unless you have a specific reason to store it elsewhere.
+
+Do not use `/opt/pzserver` with the bundled service unless you add both `/opt/pzserver` and `/opt/pzserver_Data` to `ReadWritePaths` in `zomboid-panel.service`, then run `sudo systemctl daemon-reload` and `sudo systemctl restart zomboid-panel`.
+
 ### Docker
 
 The image runs **the panel only** — Project Zomboid itself still has to run somewhere (on the host, in another container, or on a separate machine). The panel reaches it via RCON and via shared filesystem (for PanelBridge).

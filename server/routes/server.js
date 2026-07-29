@@ -2820,7 +2820,13 @@ router.post("/list-directory", async (req, res) => {
     try {
       items = fs.readdirSync(normalized, { withFileTypes: true });
     } catch (e) {
-      return res.status(403).json({ error: "Access denied" });
+      const code = e && typeof e === "object" && "code" in e ? e.code : "UNKNOWN";
+      const guidance = isWindows
+        ? "Run the panel as an account that can read this folder."
+        : "The panel service account needs read and execute permission on this folder and every parent folder.";
+      return res.status(403).json({
+        error: `Cannot read ${normalized} (${code}). ${guidance}`,
+      });
     }
 
     const folders = [];
