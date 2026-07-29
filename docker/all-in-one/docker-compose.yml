@@ -19,6 +19,8 @@ services:
       RCON_PORT: 27015
       CORS_ORIGINS: ${CORS_ORIGINS:?Set CORS_ORIGINS in .env}
       TRUST_PROXY: "1"
+      PANEL_LAN_IP: ${PANEL_LAN_IP:-}
+      PANEL_WAN_IP: ${PANEL_WAN_IP:-}
       PANEL_DOCKER_UPDATER_URL: http://zomboid-panel-updater:3100
       PANEL_DOCKER_UPDATER_TOKEN: ${PANEL_DOCKER_UPDATER_TOKEN:?Set PANEL_DOCKER_UPDATER_TOKEN in .env}
     volumes:

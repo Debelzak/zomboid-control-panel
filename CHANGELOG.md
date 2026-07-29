@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.2] - 2026-07-29
+
+### Added
+
+- **Docker in-panel updates**: all-in-one deployments can now update from Settings. The token-protected updater saves and stops Project Zomboid through RCON, downloads the chosen GitHub release, rebuilds and health-checks the container, and restores the prior source and image if the rollout fails.
+
+### Fixed
+
+- **All-in-one Docker paths**: Workshop scanning and B42 log discovery now use the configured `PZ_SERVER_PATH` and `PZ_SAVE_PATH` when no panel server record exists yet.
+- **All-in-one server status**: the Docker image includes `procps`, so the panel can use `pgrep` and `ps` to detect the running Java server accurately.
+
+### Changed
+
+- **Docker network addresses**: all-in-one deployments can set the LAN and WAN addresses in `.env`, preserving correct join and panel links after an in-panel update.
+
 ## [1.1.1] - 2026-07-28
 
 ### Added

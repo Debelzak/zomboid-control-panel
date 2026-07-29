@@ -31,7 +31,7 @@ export class LogTailer extends EventEmitter {
     try {
         const activeServer = await getActiveServer();
         const homeDir = os.homedir();
-        let basePath = homeDir ? path.join(homeDir, 'Zomboid') : '';
+        let basePath = process.env.PZ_SAVE_PATH || (homeDir ? path.join(homeDir, 'Zomboid') : '');
         
         if (activeServer?.zomboidDataPath) {
             basePath = activeServer.zomboidDataPath;
