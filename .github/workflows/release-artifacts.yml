@@ -80,6 +80,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout release files
+        uses: actions/checkout@v4
+
       - name: Download Windows archive
         uses: actions/download-artifact@v4
         with:
@@ -110,7 +113,8 @@ jobs:
             ZomboidControlPanel.exe \
             ZomboidControlPanel \
             ZomboidControlPanel-windows.zip \
-            ZomboidControlPanel-linux.tar.gz > checksums.txt
+            ZomboidControlPanel-linux.tar.gz \
+            docker-compose.install.yml > checksums.txt
 
       - name: Create release manifest
         run: |
@@ -127,7 +131,8 @@ jobs:
                 artifact('win', 'ZomboidControlPanel.exe', 'binary'),
                 artifact('linux', 'ZomboidControlPanel', 'binary'),
                 artifact('win', 'ZomboidControlPanel-windows.zip', 'archive'),
-                artifact('linux', 'ZomboidControlPanel-linux.tar.gz', 'archive')
+                artifact('linux', 'ZomboidControlPanel-linux.tar.gz', 'archive'),
+                artifact('docker', 'docker-compose.install.yml', 'compose')
               ]
             };
             fs.writeFileSync('release-manifest.json', JSON.stringify(manifest, null, 2));
@@ -162,6 +167,7 @@ jobs:
               ZomboidControlPanel \
               ZomboidControlPanel-windows.zip \
               ZomboidControlPanel-linux.tar.gz \
+              docker-compose.install.yml \
               checksums.txt \
               release-manifest.json; then
               exit 0
