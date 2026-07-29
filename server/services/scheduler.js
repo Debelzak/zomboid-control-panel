@@ -41,6 +41,7 @@ export class Scheduler {
     this.backupService = null;
     this.discordBot = null;
     this.jobs = new Map();
+    this.jobLabels = new Map(); // task id -> human label, for reporting next run
     this.autoRestartJob = null;
     this.backupJob = null;
     this.modUpdateRestartPending = false;
@@ -154,8 +155,43 @@ export class Scheduler {
     });
 
     this.jobs.set(task.id, job);
+    this.jobLabels.set(task.id, task.name || task.command || "task");
     log.info(`Scheduled task: ${task.name} (${task.cron_expression})`);
     return true;
+  }
+
+  /**
+   * Soonest upcoming run across user tasks, auto-restart and scheduled backup.
+   * "3 tasks" is not actionable; "restart in 2h 14m" is, so the dashboard asks
+   * for a time rather than a count.
+   * @returns {{ label: string, at: string } | null}
+   */
+  getNextRun() {
+    const candidates = [];
+    const push = (job, label) => {
+      if (!job || typeof job.getNextRun !== "function") return;
+      try {
+        const at = job.getNextRun();
+        if (at instanceof Date && Number.isFinite(at.getTime())) {
+          candidates.push({ label, at });
+        }
+      } catch {
+        /* a job with no computable next run simply does not compete */
+      }
+    };
+
+    for (const [id, job] of this.jobs) {
+      push(job, this.jobLabels.get(id) || "task");
+    }
+    push(this.autoRestartJob, "auto restart");
+    push(this.backupJob, "backup");
+
+    if (candidates.length === 0) return null;
+    candidates.sort((a, b) => a.at - b.at);
+    return {
+      label: candidates[0].label,
+      at: candidates[0].at.toISOString(),
+    };
   }
 
   async executeTask(task) {
@@ -226,6 +262,7 @@ export class Scheduler {
     if (this.jobs.has(taskId)) {
       this.jobs.get(taskId).stop();
       this.jobs.delete(taskId);
+      this.jobLabels.delete(taskId);
       log.info(`Cancelled scheduled task: ${taskId}`);
       return true;
     }
@@ -254,6 +291,7 @@ export class Scheduler {
       log.debug(`Stopped scheduled task: ${taskId}`);
     }
     this.jobs.clear();
+    this.jobLabels.clear();
 
     // Stop auto-restart job
     if (this.autoRestartJob) {
@@ -870,6 +908,7 @@ export class Scheduler {
       autoRestartEnabled: !!this.autoRestartJob,
       backupScheduleEnabled: !!this.backupJob,
       modUpdateRestartPending: this.modUpdateRestartPending,
+      nextRun: this.getNextRun(),
     };
   }
 

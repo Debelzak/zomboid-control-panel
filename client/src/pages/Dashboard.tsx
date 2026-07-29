@@ -4,8 +4,7 @@ import { usePageShortcut } from '../hooks/useKeyboardShortcuts'
 import {
   Play, Square, RotateCcw, Save, Server, Wifi, Loader2, AlertTriangle, RefreshCw, AlertCircle,
   LogIn, LogOut, Activity, Archive, Skull, Sword, ShieldAlert, Copy, Gamepad2, Globe, FolderOpen,
-  X, MoreHorizontal, Zap, Trash2, Download, Sparkles, CalendarClock,
-  ChevronRight, Monitor,
+  X, MoreHorizontal, Zap, Trash2, Download, Sparkles, CalendarClock, Monitor, ScrollText,
 } from 'lucide-react'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { useToast } from '@/components/ui/use-toast'
@@ -26,6 +25,8 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { cn, copyText } from '@/lib/utils'
 import { getUserErrorMessage } from '@/lib/errorMessage'
+import { VerdictBand, WorkList } from '@/components/dashboard/DashboardVerdict'
+import type { Verdict, WorkItem } from '@/components/dashboard/DashboardVerdict'
 
 /* -------------------------------------------------------------------------- */
 /*  Types                                                                     */
@@ -53,6 +54,7 @@ interface Player { name: string; online: boolean }
 interface PerformancePoint {
   time: string; timestamp?: string; playerCount: number; memoryMB: number
   pzMemMB?: number; cpuPercent?: number; hostMemUsedGB?: number; hostMemTotalGB?: number
+  hostDiskUsedGB?: number; hostDiskTotalGB?: number
 }
 
 const DashboardPerformanceCharts = lazy(() => import('@/components/DashboardPerformanceCharts'))
@@ -92,15 +94,29 @@ function formatAge(iso: string): string {
   return `${Math.floor(hrs / 24)}d ago`
 }
 
+/** Countdown to a future moment. Returns null once the moment has passed. */
+function formatEta(iso: string): string | null {
+  const ms = new Date(iso).getTime() - Date.now()
+  if (!Number.isFinite(ms) || ms < 0) return null
+  const mins = Math.round(ms / 60000)
+  if (mins < 1) return 'any moment'
+  if (mins < 60) return `in ${mins}m`
+  const hrs = Math.floor(mins / 60)
+  const rem = mins % 60
+  if (hrs < 24) return rem ? `in ${hrs}h ${rem}m` : `in ${hrs}h`
+  return `in ${Math.floor(hrs / 24)}d`
+}
+
 function eventStyle(action: string) {
   switch (action) {
-    case 'connect':    return { icon: <LogIn       className="h-3.5 w-3.5" />, tone: 'text-success',         verb: 'joined' }
-    case 'disconnect': return { icon: <LogOut      className="h-3.5 w-3.5" />, tone: 'text-destructive/85',  verb: 'left' }
-    case 'death':      return { icon: <Skull       className="h-3.5 w-3.5" />, tone: 'text-warning',         verb: 'died' }
-    case 'pvp_kill':   return { icon: <Sword       className="h-3.5 w-3.5" />, tone: 'text-warning',         verb: 'killed' }
-    case 'ban':        return { icon: <ShieldAlert className="h-3.5 w-3.5" />, tone: 'text-destructive',     verb: 'banned' }
-    case 'kick':       return { icon: <AlertCircle className="h-3.5 w-3.5" />, tone: 'text-warning',         verb: 'kicked' }
-    default:           return { icon: <Activity    className="h-3.5 w-3.5" />, tone: 'text-muted-foreground', verb: action }
+    case 'connect':    return { icon: <LogIn       className="h-3 w-3" />, tone: 'text-success',         verb: 'joined' }
+    case 'disconnect': return { icon: <LogOut      className="h-3 w-3" />, tone: 'text-destructive/85',  verb: 'left' }
+    case 'death':      return { icon: <Skull       className="h-3 w-3" />, tone: 'text-warning',         verb: 'died' }
+    case 'pvp_kill':   return { icon: <Sword       className="h-3 w-3" />, tone: 'text-warning',         verb: 'killed' }
+    case 'ban':        return { icon: <ShieldAlert className="h-3 w-3" />, tone: 'text-destructive',     verb: 'banned' }
+    case 'kick':       return { icon: <AlertCircle className="h-3 w-3" />, tone: 'text-warning',         verb: 'kicked' }
+    // Raw log actions read as SCREAMING_SNAKE. Say them like words.
+    default:           return { icon: <Activity    className="h-3 w-3" />, tone: 'text-muted-foreground', verb: action.replace(/_/g, ' ').toLowerCase() }
   }
 }
 
@@ -113,15 +129,19 @@ function ConnLine({
   const dot =
     state === 'on'   ? 'bg-success'
   : state === 'wait' ? 'bg-warning'
-                     : 'bg-destructive/55'
+                     : 'bg-destructive/70'
+  const valueTone =
+    state === 'on'   ? 'text-success/75'
+  : state === 'wait' ? 'text-warning/80'
+                     : 'text-destructive/80'
   return (
-    <div className="flex items-center gap-2.5 py-1.5">
+    <div className="flex min-w-0 items-center gap-2.5 py-1.5">
       <span className={cn('h-1.5 w-1.5 rounded-full shrink-0', dot)} aria-hidden="true" />
-      <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/70">{label}</span>
-      <span className="ml-auto font-mono text-[11px] tabular-nums text-muted-foreground truncate">
+      <span className="shrink-0 font-mono text-[11px] font-medium text-foreground/70">{label}</span>
+      <span className={cn('min-w-0 flex-1 truncate text-right font-mono text-[11px] tabular-nums', valueTone)}>
         {value ?? (state === 'on' ? 'connected' : state === 'wait' ? 'pending' : 'offline')}
       </span>
-      {hint && <span className="font-mono text-[10px] text-muted-foreground/50">{hint}</span>}
+      {hint && <span className="shrink-0 font-mono text-[10px] text-muted-foreground/50">{hint}</span>}
     </div>
   )
 }
@@ -159,10 +179,12 @@ export default function Dashboard() {
     modUpdatesAvailable: number
     modsTracked: number
     scheduledTasksCount: number
+    nextRun: { label: string; at: string } | null
+    errorCount: number | null
     schedulerLoaded: boolean
   }>({
     lastBackup: null, backupCount: 0, modUpdatesAvailable: 0, modsTracked: 0,
-    scheduledTasksCount: 0, schedulerLoaded: false,
+    scheduledTasksCount: 0, nextRun: null, errorCount: null, schedulerLoaded: false,
   })
 
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -263,6 +285,8 @@ export default function Dashboard() {
           cpuPercent: h.cpuUsage != null ? Math.round(h.cpuUsage as number) : undefined,
           hostMemUsedGB: h.hostMemUsed ? +((h.hostMemUsed as number) / (1024 * 1024 * 1024)).toFixed(1) : undefined,
           hostMemTotalGB: h.hostMemTotal ? +((h.hostMemTotal as number) / (1024 * 1024 * 1024)).toFixed(1) : undefined,
+          hostDiskUsedGB: h.hostDiskUsed ? +((h.hostDiskUsed as number) / (1024 * 1024 * 1024)).toFixed(1) : undefined,
+          hostDiskTotalGB: h.hostDiskTotal ? +((h.hostDiskTotal as number) / (1024 * 1024 * 1024)).toFixed(1) : undefined,
         })))
       }
     } catch {
@@ -283,10 +307,12 @@ export default function Dashboard() {
     try { const d = await serversApi.getResolvedActive(); setActiveServer(d.server ?? null) } catch { setActiveServer(null) }
   }, [])
   const fetchMaintenance = useCallback(async () => {
-    const [backupRes, modsRes, tasksRes] = await Promise.allSettled([
+    const [backupRes, modsRes, tasksRes, schedRes, errorRes] = await Promise.allSettled([
       backupApi.getStatus(),
       modsApi.getStatus(),
       schedulerApi.getTasks() as Promise<{ tasks: Array<{ enabled?: number | boolean }> }>,
+      schedulerApi.getStatus() as Promise<{ nextRun?: { label: string; at: string } | null }>,
+      serverApi.getConsoleErrorCount(),
     ])
     setMaintenance(prev => ({
       lastBackup: backupRes.status === 'fulfilled' ? backupRes.value.lastBackup : prev.lastBackup,
@@ -296,6 +322,10 @@ export default function Dashboard() {
       scheduledTasksCount: tasksRes.status === 'fulfilled'
         ? (tasksRes.value.tasks ?? []).filter(t => t.enabled === 1 || t.enabled === true).length
         : prev.scheduledTasksCount,
+      nextRun: schedRes.status === 'fulfilled' ? (schedRes.value.nextRun ?? null) : prev.nextRun,
+      errorCount: errorRes.status === 'fulfilled' && errorRes.value.exists
+        ? errorRes.value.count
+        : errorRes.status === 'fulfilled' ? null : prev.errorCount,
       schedulerLoaded: true,
     }))
   }, [])
@@ -342,6 +372,8 @@ export default function Dashboard() {
 
     const interval = setInterval(() => {
       if (document.visibilityState === 'hidden') return
+      fetchStatus()
+      fetchPlayers()
       fetchPlayerActivity()
     }, 15000)
     const maintenanceInterval = setInterval(() => {
@@ -366,6 +398,7 @@ export default function Dashboard() {
         if ('running' in data && 'configured' in data) return data as ServerStatus
         return prev
       })
+      setLastUpdated(new Date())
     }
     const onPlayers = (d: Player[]) => setPlayers(d)
     const onActiveServer = (d?: { server?: ServerInstance | null }) => {
@@ -427,6 +460,8 @@ export default function Dashboard() {
         cpuPercent: snap.cpuUsage != null ? Math.round(snap.cpuUsage as number) : undefined,
         hostMemUsedGB: snap.hostMemUsed ? +((snap.hostMemUsed as number) / (1024 * 1024 * 1024)).toFixed(1) : undefined,
         hostMemTotalGB: snap.hostMemTotal ? +((snap.hostMemTotal as number) / (1024 * 1024 * 1024)).toFixed(1) : undefined,
+        hostDiskUsedGB: snap.hostDiskUsed ? +((snap.hostDiskUsed as number) / (1024 * 1024 * 1024)).toFixed(1) : undefined,
+        hostDiskTotalGB: snap.hostDiskTotal ? +((snap.hostDiskTotal as number) / (1024 * 1024 * 1024)).toFixed(1) : undefined,
       }
       setPerformanceHistory(prev => {
         const next = [...prev, point]
@@ -501,12 +536,201 @@ export default function Dashboard() {
   const hasServer = !!activeServer
   const online = hasServer && !!status?.running
   const modsPending = maintenance.modUpdatesAvailable > 0
-  const stateLabel = !hasServer
-    ? 'Not configured'
-    : online
-    ? 'Online'
-    : status?.configured ? 'Offline' : 'Not configured'
-  void stateLabel
+  const staleLink = !lastUpdated || Date.now() - lastUpdated.getTime() > 60_000
+
+  /* Thresholds drive the verdict. Colour follows a crossed threshold, never a palette slot. */
+  const latestPerf = performanceHistory[performanceHistory.length - 1]
+  const maxMemoryGB = activeServer?.maxMemory
+  const pzMemoryGB = latestPerf ? (latestPerf.pzMemMB ?? latestPerf.memoryMB) / 1024 : null
+  const pzMemoryRatio = pzMemoryGB != null && maxMemoryGB ? pzMemoryGB / maxMemoryGB : null
+  const hostMemoryRatio = latestPerf?.hostMemUsedGB != null && latestPerf?.hostMemTotalGB
+    ? latestPerf.hostMemUsedGB / latestPerf.hostMemTotalGB
+    : null
+  const hostCpu = latestPerf?.cpuPercent ?? null
+  const diskFreeGB = latestPerf?.hostDiskUsedGB != null && latestPerf?.hostDiskTotalGB
+    ? latestPerf.hostDiskTotalGB - latestPerf.hostDiskUsedGB
+    : null
+  const diskRatio = latestPerf?.hostDiskUsedGB != null && latestPerf?.hostDiskTotalGB
+    ? latestPerf.hostDiskUsedGB / latestPerf.hostDiskTotalGB
+    : null
+
+  /* Who is online, with a join age only where a real connect event exists. */
+  const joinedAt = new Map<string, string>()
+  for (const event of playerActivity) {
+    if (event.action === 'connect' && !joinedAt.has(event.player_name)) joinedAt.set(event.player_name, event.logged_at)
+  }
+  const presence = players.map(player => {
+    const joined = joinedAt.get(player.name)
+    if (!joined) return { name: player.name }
+    const age = formatAge(joined)
+    return { name: player.name, since: age === 'just now' ? 'just joined' : `for ${age.replace(' ago', '')}` }
+  })
+
+  /* One verdict at a time, highest severity wins. Calm states say nothing at all. */
+  const verdict: Verdict = (() => {
+    if (!hasServer || (status && !status.configured)) {
+      return {
+        level: 'warning',
+        headline: 'No server configured',
+        action: { label: 'Open setup', to: '/server-setup' },
+      }
+    }
+    if (fetchError) {
+      return {
+        level: 'critical',
+        headline: 'Panel cannot reach the server',
+        detail: fetchError,
+        action: { label: 'Retry', onClick: () => { void fetchStatus() } },
+      }
+    }
+    if (!online) {
+      return {
+        level: 'critical',
+        headline: 'Server stopped',
+        action: activeServer?.isRemote
+          ? undefined
+          : {
+              label: 'Start server',
+              onClick: () => { void handleAction('Start server', serverApi.start) },
+              busy: loading === 'Start server',
+              disabled: loading !== null,
+            },
+      }
+    }
+    if (!status?.rcon?.connected) {
+      return {
+        level: 'warning',
+        headline: 'RCON disconnected',
+        action: {
+          label: 'Connect RCON',
+          onClick: () => { void handleConnect() },
+          busy: loading === 'Connect RCON',
+          disabled: loading !== null,
+        },
+      }
+    }
+    if (pzMemoryRatio != null && pzMemoryRatio >= 0.9 && pzMemoryGB != null) {
+      return {
+        level: 'critical',
+        headline: `PZ memory ${pzMemoryGB.toFixed(1)} / ${maxMemoryGB} GB`,
+        action: {
+          label: 'Restart',
+          onClick: () => setConfirmAction({
+            title: 'Restart server',
+            description: 'This will send a 5-minute warning to all players, then restart the server.',
+            action: () => serverApi.restart(5),
+            variant: 'warning',
+          }),
+        },
+      }
+    }
+    if (hostMemoryRatio != null && hostMemoryRatio >= 0.9) {
+      return {
+        level: 'critical',
+        headline: `Host memory ${Math.round(hostMemoryRatio * 100)}%`,
+      }
+    }
+    /* A full disk corrupts saves and fails backups, so it outranks a busy CPU. */
+    if (diskRatio != null && diskFreeGB != null && diskRatio >= 0.95) {
+      return {
+        level: 'critical',
+        headline: `Disk almost full, ${diskFreeGB.toFixed(0)} GB left`,
+      }
+    }
+    if (diskRatio != null && diskFreeGB != null && diskRatio >= 0.9) {
+      return {
+        level: 'warning',
+        headline: `Disk ${Math.round(diskRatio * 100)}%, ${diskFreeGB.toFixed(0)} GB left`,
+      }
+    }
+    if (hostCpu != null && hostCpu >= 90) {
+      return {
+        level: 'warning',
+        headline: `Host CPU ${hostCpu}%`,
+      }
+    }
+    if (bridgeStatus?.configured && !bridgeStatus.modConnected) {
+      return {
+        level: 'warning',
+        headline: 'PanelBridge offline',
+        action: { label: 'Bridge settings', to: '/settings' },
+      }
+    }
+    if (modsPending) {
+      return {
+        level: 'warning',
+        headline: `${maintenance.modUpdatesAvailable} mod update${maintenance.modUpdatesAvailable === 1 ? '' : 's'} waiting`,
+        action: { label: 'Review mods', to: '/mods' },
+      }
+    }
+    /* Game errors are reported by the Errors row, which is already coloured by
+       severity. Repeating the count here would say the same thing twice. */
+    if (maintenance.schedulerLoaded && maintenance.backupCount === 0 && !activeServer?.isRemote) {
+      return {
+        level: 'warning',
+        headline: 'No backups',
+        action: {
+          label: 'Create backup',
+          onClick: () => { void handleAction('Create backup', () => backupApi.createBackup({ includeDb: true }).then(() => fetchMaintenance())) },
+          busy: loading === 'Create backup',
+          disabled: loading !== null,
+        },
+      }
+    }
+    return { level: 'calm' }
+  })()
+
+  /* Readiness numbers live on the thing you act on, not in a read-only panel. */
+  const backupState = maintenance.lastBackup
+    ? `${maintenance.backupCount} stored, last ${formatAge(maintenance.lastBackup.created)}`
+    : maintenance.backupCount > 0
+      ? `${maintenance.backupCount} stored`
+      : 'none yet'
+
+  /* A count of tasks is trivia. The next time something will happen is the
+     thing that decides whether you can walk away from the server. */
+  const nextRunEta = maintenance.nextRun ? formatEta(maintenance.nextRun.at) : null
+  const scheduleState = nextRunEta && maintenance.nextRun
+    ? `${maintenance.nextRun.label} ${nextRunEta}`
+    : maintenance.scheduledTasksCount > 0
+      ? `${maintenance.scheduledTasksCount} active`
+      : 'none active'
+
+  const errorCount = maintenance.errorCount
+
+  const workItems: WorkItem[] = [
+    {
+      to: '/players', icon: Activity, label: 'Players',
+      state: online ? String(players.length) : 'offline',
+      tone: !online ? 'bad' : players.length > 0 ? 'good' : 'default',
+    },
+    {
+      to: '/console', icon: Wifi, label: 'Console',
+      state: status?.rcon?.connected ? 'rcon ready' : 'rcon offline',
+      tone: status?.rcon?.connected ? 'good' : 'warning',
+    },
+    {
+      to: '/mods', icon: Gamepad2, label: 'Mods',
+      state: modsPending ? `${maintenance.modUpdatesAvailable} to update` : `${maintenance.modsTracked} tracked`,
+      tone: modsPending ? 'warning' : 'default',
+    },
+    {
+      to: '/scheduler', icon: CalendarClock, label: 'Schedule',
+      state: scheduleState,
+      tone: nextRunEta ? 'good' : maintenance.scheduledTasksCount > 0 ? 'good' : 'default',
+    },
+    ...(errorCount != null ? [{
+      to: '/console', icon: ScrollText, label: 'Errors',
+      state: errorCount === 0 ? 'none' : `${errorCount} logged`,
+      tone: errorCount === 0 ? 'good' : errorCount >= 50 ? 'warning' : 'default',
+    } as WorkItem] : []),
+    {
+      to: '/backups', icon: Archive, label: 'Backups',
+      state: backupState,
+      tone: maintenance.backupCount === 0 ? 'warning' : 'good',
+    },
+    { to: '/server-config', icon: Server, label: 'Config' },
+  ]
 
   /* ====================================================================== */
   /*  RENDER                                                                  */
@@ -516,38 +740,37 @@ export default function Dashboard() {
       {/* ─── TOP STATUS BAR ───────────────────────────────────────── */}
       <header
         aria-label="Server status"
-        className="overflow-hidden rounded-lg border border-border/50 bg-card/30"
+        className="overflow-hidden rounded-lg border border-border/55 bg-card/45 shadow-sm"
       >
         {/* Main row */}
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-3.5 py-2.5">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-3 px-4 py-3">
           {/* Identity cluster: status + name + uptime */}
           <div className="flex min-w-0 items-center gap-3">
-            {/* Status badge */}
+            {/* One light for the whole page: green calm, amber attention, red broken. */}
             <span
-              className={cn(
-                'inline-flex items-center gap-1.5 rounded-sm px-2 py-0.5 font-mono text-[10px] font-bold uppercase tracking-[0.2em]',
-                online
-                  ? 'bg-success/12 text-success ring-1 ring-inset ring-success/25'
-                  : status?.configured
-                    ? 'bg-destructive/12 text-destructive ring-1 ring-inset ring-destructive/25'
-                    : 'bg-warning/12 text-warning ring-1 ring-inset ring-warning/25'
-              )}
+              className="relative flex h-2.5 w-2.5 shrink-0 items-center justify-center"
+              title={verdict.headline ?? 'Everything nominal'}
             >
               <span
                 className={cn(
-                  'h-1.5 w-1.5 rounded-full',
-                  online ? 'bg-success shadow-[0_0_4px] shadow-success/60' : status?.configured ? 'bg-destructive' : 'bg-warning'
+                  'absolute inline-flex h-2.5 w-2.5 rounded-full opacity-25',
+                  verdict.level === 'critical' ? 'bg-destructive'
+                    : verdict.level === 'warning' ? 'bg-warning'
+                    : 'bg-success',
                 )}
-                aria-hidden="true"
               />
-              <span role="status" aria-live="polite">{stateLabel}</span>
+              <span
+                className={cn(
+                  'relative inline-flex h-1.5 w-1.5 rounded-full',
+                  verdict.level === 'critical' ? 'bg-destructive'
+                    : verdict.level === 'warning' ? 'bg-warning'
+                    : 'bg-success',
+                )}
+              />
+              <span className="sr-only">{verdict.headline ?? 'Everything nominal'}</span>
             </span>
 
-            {/* Separator */}
-            <span className="h-4 w-px bg-border/40" aria-hidden="true" />
-
-            {/* Server name */}
-            <h1 className="min-w-0 truncate font-mono text-sm font-semibold tracking-wide text-foreground" title={activeServer?.serverName ?? 'No active server'}>
+            <h1 className="min-w-0 truncate font-mono text-base font-semibold text-foreground" title={activeServer?.serverName ?? 'No active server'}>
               {activeServer?.serverName ?? 'No active server'}
             </h1>
 
@@ -563,104 +786,116 @@ export default function Dashboard() {
           </div>
 
           {/* Address cluster — grouped, distinct background */}
-          <div className="flex flex-wrap items-center gap-px rounded-md bg-muted/25 p-0.5 ring-1 ring-inset ring-border/30">
-            {status?.publicIp && (
-              <button
-                onClick={() => copyToClipboard(`${status.publicIp}${status.port ? `:${status.port}` : ''}`, 'Public address')}
-                className="group inline-flex items-center gap-1.5 rounded-sm px-2 py-1 text-muted-foreground transition-colors hover:bg-background/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
-                aria-label={`Copy public address: ${status.publicIp}${status.port ? `:${status.port}` : ''}`}
-              >
-                <Globe className="h-3 w-3 text-amber-500/70" />
-                <span className="font-mono text-[11px] tabular-nums">{status.publicIp}{status.port ? `:${status.port}` : ''}</span>
-                <Copy className="h-2.5 w-2.5 opacity-0 transition-opacity group-hover:opacity-60" />
-              </button>
-            )}
+          <div className="order-3 -mx-4 -mb-3 flex w-[calc(100%+2rem)] flex-wrap items-center gap-1 border-t border-border/30 bg-background/20 px-3 py-1.5">
             {status?.localIp && (
               <button
-                onClick={() => copyToClipboard(`${status.localIp}${status.port ? `:${status.port}` : ''}`, 'Local address')}
+                onClick={() => copyToClipboard(`${status.localIp}${status.port ? `:${status.port}` : ''}`, 'LAN address')}
                 className="group inline-flex items-center gap-1.5 rounded-sm px-2 py-1 text-muted-foreground transition-colors hover:bg-background/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
-                aria-label={`Copy local address: ${status.localIp}${status.port ? `:${status.port}` : ''}`}
+                aria-label={`Copy LAN address: ${status.localIp}${status.port ? `:${status.port}` : ''}`}
+                title="Connect from your home network"
               >
                 <Wifi className="h-3 w-3 text-emerald-500/70" />
+                <span className="font-mono text-[9px] font-semibold uppercase tracking-[0.12em] text-foreground/45">LAN</span>
                 <span className="font-mono text-[11px] tabular-nums">{status.localIp}{status.port ? `:${status.port}` : ''}</span>
-                <Copy className="h-2.5 w-2.5 opacity-0 transition-opacity group-hover:opacity-60" />
+                <Copy className="h-2.5 w-2.5 shrink-0 opacity-35 transition-opacity group-hover:opacity-70" />
               </button>
             )}
-            {status?.publicIp && status?.port && (
-              <a
-                href={`steam://connect/${status.publicIp}:${status.port}`}
-                className="inline-flex items-center gap-1.5 rounded-sm px-2 py-1 text-muted-foreground transition-colors hover:bg-background/60 hover:text-foreground"
-                title="Connect with Steam"
+            {status?.publicIp && (
+              <button
+                onClick={() => copyToClipboard(`${status.publicIp}${status.port ? `:${status.port}` : ''}`, 'WAN address')}
+                className="group inline-flex items-center gap-1.5 rounded-sm px-2 py-1 text-muted-foreground transition-colors hover:bg-background/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
+                aria-label={`Copy WAN address: ${status.publicIp}${status.port ? `:${status.port}` : ''}`}
+                title="Share this address with internet players"
               >
-                <Gamepad2 className="h-3 w-3 text-blue-400/70" />
-                <span className="font-mono text-[11px]">steam</span>
-              </a>
+                <Globe className="h-3 w-3 text-amber-500/70" />
+                <span className="font-mono text-[9px] font-semibold uppercase tracking-[0.12em] text-foreground/45">WAN</span>
+                <span className="font-mono text-[11px] tabular-nums">{status.publicIp}{status.port ? `:${status.port}` : ''}</span>
+                <Copy className="h-2.5 w-2.5 shrink-0 opacity-35 transition-opacity group-hover:opacity-70" />
+              </button>
             )}
             {panelInfo && (
               <button
                 onClick={() => copyToClipboard(panelInfo.url, 'Panel address')}
                 className="group inline-flex items-center gap-1.5 rounded-sm px-2 py-1 text-muted-foreground transition-colors hover:bg-background/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
                 aria-label={`Copy panel address: ${panelInfo.url}`}
+                title="Open or copy the control panel address"
               >
                 <Monitor className="h-3 w-3 text-primary/70" />
+                <span className="font-mono text-[9px] font-semibold uppercase tracking-[0.12em] text-foreground/45">Panel</span>
                 <span className="font-mono text-[11px] tabular-nums">{panelInfo.localIp}:{panelInfo.port}</span>
-                <Copy className="h-2.5 w-2.5 opacity-0 transition-opacity group-hover:opacity-60" />
+                <Copy className="h-2.5 w-2.5 shrink-0 opacity-35 transition-opacity group-hover:opacity-70" />
               </button>
+            )}
+            {status?.publicIp && status?.port && (
+              <a
+                href={`steam://connect/${status.publicIp}:${status.port}`}
+                className="inline-flex items-center gap-1.5 rounded-sm px-2 py-1 text-muted-foreground transition-colors hover:bg-background/60 hover:text-foreground"
+                aria-label={`Join with Steam at ${status.publicIp}:${status.port}`}
+                title="Connect with Steam"
+              >
+                <Gamepad2 className="h-3 w-3 text-blue-400/70" />
+                <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.1em]">Join</span>
+              </a>
             )}
           </div>
 
           {/* primary controls — right-aligned */}
-          <div className="ml-auto flex items-center gap-1">
-          <Button
-            onClick={() => handleAction('Start server', serverApi.start)}
-            disabled={!hasServer || online || loading !== null || activeServer?.isRemote}
-            variant="ghost"
-            size="sm"
-            className="h-8 gap-1.5 rounded-md border border-emerald-500/30 px-2.5 text-xs text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300 disabled:border-border/50 disabled:text-muted-foreground"
-            title={!hasServer ? 'Add or select a server first' : activeServer?.isRemote ? 'Not available for remote (RCON-only) servers' : undefined}
-          >
-            {loading === 'Start server' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
-            Start
-          </Button>
-          <Button
-            onClick={() => setConfirmAction({
-              title: 'Stop server',
-              description: 'Are you sure you want to stop the server? All connected players will be disconnected.',
-              action: serverApi.stop,
-              variant: 'destructive',
-            })}
-            disabled={!hasServer || !online || loading !== null}
-            variant="ghost"
-            size="sm"
-            className="h-8 gap-1.5 rounded-md border border-red-500/30 px-2.5 text-xs text-red-400 hover:bg-red-500/10 hover:text-red-300 disabled:border-border/50 disabled:text-muted-foreground"
-          >
-            {loading === 'Stop server' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Square className="h-3.5 w-3.5" />}
-            Stop
-          </Button>
-          <Button
-            onClick={() => setConfirmAction({
-              title: 'Restart server',
-              description: 'This will send a 5-minute warning to all players, then restart the server.',
-              action: () => serverApi.restart(5),
-              variant: 'warning',
-            })}
-            disabled={!hasServer || !online || loading !== null || activeServer?.isRemote}
-            variant="ghost"
-            size="sm"
-            className="h-8 gap-1.5 rounded-md border border-amber-500/30 px-2.5 text-xs text-amber-400 hover:bg-amber-500/10 hover:text-amber-300 disabled:border-border/50 disabled:text-muted-foreground"
-            title={!hasServer ? 'Add or select a server first' : activeServer?.isRemote ? 'Not available for remote (RCON-only) servers' : undefined}
-          >
-            <RotateCcw className="h-3.5 w-3.5" /> Restart
-          </Button>
-          <Button
-            onClick={() => handleAction('Save world', serverApi.save)}
-            disabled={!hasServer || !online || loading !== null}
-            variant="ghost"
-            size="sm"
-            className="h-8 gap-1.5 rounded-md border border-sky-500/30 px-2.5 text-xs text-sky-400 hover:bg-sky-500/10 hover:text-sky-300 disabled:border-border/50 disabled:text-muted-foreground"
-          >
-            <Save className="h-3.5 w-3.5" /> Save
-          </Button>
+          <div className="order-2 ml-auto flex flex-wrap justify-end gap-1">
+          {!online ? (
+            <Button
+              onClick={() => handleAction('Start server', serverApi.start)}
+              disabled={!hasServer || loading !== null || activeServer?.isRemote}
+              variant="ghost"
+              size="sm"
+              className="h-8 gap-1.5 rounded-md border border-emerald-500/30 px-2.5 text-xs text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300 disabled:border-border/50 disabled:text-muted-foreground"
+              title={!hasServer ? 'Add or select a server first' : activeServer?.isRemote ? 'Not available for remote (RCON-only) servers' : undefined}
+            >
+              {loading === 'Start server' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+              Start
+            </Button>
+          ) : (
+            <>
+              <Button
+                onClick={() => setConfirmAction({
+                  title: 'Stop server',
+                  description: 'Are you sure you want to stop the server? All connected players will be disconnected.',
+                  action: serverApi.stop,
+                  variant: 'destructive',
+                })}
+                disabled={loading !== null}
+                variant="ghost"
+                size="sm"
+                className="h-8 gap-1.5 rounded-md border border-red-500/30 px-2.5 text-xs text-red-400 hover:bg-red-500/10 hover:text-red-300 disabled:border-border/50 disabled:text-muted-foreground"
+              >
+                {loading === 'Stop server' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Square className="h-3.5 w-3.5" />}
+                Stop
+              </Button>
+              <Button
+                onClick={() => setConfirmAction({
+                  title: 'Restart server',
+                  description: 'This will send a 5-minute warning to all players, then restart the server.',
+                  action: () => serverApi.restart(5),
+                  variant: 'warning',
+                })}
+                disabled={loading !== null || activeServer?.isRemote}
+                variant="ghost"
+                size="sm"
+                className="h-8 gap-1.5 rounded-md border border-amber-500/30 px-2.5 text-xs text-amber-400 hover:bg-amber-500/10 hover:text-amber-300 disabled:border-border/50 disabled:text-muted-foreground"
+                title={activeServer?.isRemote ? 'Not available for remote (RCON-only) servers' : undefined}
+              >
+                <RotateCcw className="h-3.5 w-3.5" /> Restart
+              </Button>
+              <Button
+                onClick={() => handleAction('Save world', serverApi.save)}
+                disabled={loading !== null}
+                variant="ghost"
+                size="sm"
+                className="h-8 gap-1.5 rounded-md border border-sky-500/30 px-2.5 text-xs text-sky-400 hover:bg-sky-500/10 hover:text-sky-300 disabled:border-border/50 disabled:text-muted-foreground"
+              >
+                <Save className="h-3.5 w-3.5" /> Save
+              </Button>
+            </>
+          )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="icon" className="h-8 w-8 border-border/60 text-muted-foreground hover:text-foreground" aria-label="More server actions">
@@ -865,156 +1100,57 @@ export default function Dashboard() {
         </section>
       )}
 
-      {/* ─── COCKPIT GRID ───────────────────────────────────────────────── */}
-      <div className="mt-3 grid gap-3 lg:grid-cols-[15rem_minmax(0,1fr)_19rem] lg:items-start">
+      {/* ─── VERDICT ────────────────────────────────────────────────────── */}
+      <VerdictBand
+        verdict={verdict}
+        players={presence}
+        showPresence={online}
+        lastUpdated={lastUpdated}
+        stale={staleLink}
+      />
 
-        {/* ════ LEFT RAIL ════ */}
-        <div className="grid gap-3 content-start">
-
-          {/* PLAYERS */}
-          <section className="rounded-lg border border-border/55 bg-card/40">
-            <header className="flex items-center justify-between border-b border-border/30 px-3 py-1.5">
-              <h3 className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/60">Players</h3>
-              <span className="font-mono text-[10px] tabular-nums text-muted-foreground/70">{players.length}</span>
-            </header>
-            {players.length === 0 ? (
-              <p className="px-3 py-3 text-xs text-muted-foreground/75">
-                {online ? 'No one in the world.' : status?.configured ? 'Server offline.' : 'Not configured.'}
-              </p>
-            ) : (
-              <ul className="divide-y divide-border/20">
-                {players.slice(0, 9).map(p => (
-                  <li key={p.name} className="flex items-center gap-2 px-3 py-1.5">
-                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-success" aria-hidden="true" />
-                    <span className="min-w-0 truncate text-xs font-medium text-foreground" title={p.name} dir="auto">{p.name}</span>
-                  </li>
-                ))}
-                {players.length > 9 && (
-                  <li className="px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground/65">
-                    +{players.length - 9} more
-                  </li>
-                )}
-              </ul>
-            )}
-            <Link
-              to="/players"
-              className="flex items-center justify-between border-t border-border/30 px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/30 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
-            >
-              view all <ChevronRight className="h-3 w-3" />
-            </Link>
-          </section>
-
-          {/* CONNECTIONS */}
-          <section className="rounded-lg border border-border/55 bg-card/40">
-            <header className="border-b border-border/30 px-3 py-1.5">
-              <h3 className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/60">Connections</h3>
-            </header>
-            <div className="px-3 py-1">
-              <ConnLine
-                label="RCON"
-                state={status?.rcon?.connected ? 'on' : 'off'}
-                value={status?.rcon ? `${status.rcon.host}:${status.rcon.port}` : undefined}
-              />
-              <ConnLine
-                label="Bridge"
-                state={bridgeStatus?.modConnected ? 'on' : bridgeStatus?.isRunning ? 'wait' : 'off'}
-                value={
-                  bridgeStatus?.modConnected && bridgeStatus.modStatus?.version
-                    ? `v${bridgeStatus.modStatus.version.replace(/^v/, '')}`
-                    : bridgeStatus?.isRunning ? 'pending' : 'offline'
-                }
-              />
-              {panelInfo?.url && (
-                <ConnLine label="Panel" state="on" value={panelInfo.url.replace(/^https?:\/\//, '')} />
-              )}
-            </div>
-            {!status?.rcon?.connected && hasServer && status?.configured && (
-              <div className="border-t border-border/30 p-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-7 w-full gap-1.5 text-xs"
-                  onClick={handleConnect}
-                  disabled={!hasServer || loading !== null}
-                >
-                  {loading === 'Connect RCON' ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wifi className="h-3 w-3" />}
-                  Connect RCON
-                </Button>
-              </div>
-            )}
-          </section>
-
-          {/* SHORTCUTS */}
-          <section className="rounded-lg border border-border/55 bg-card/40">
-            <header className="border-b border-border/30 px-3 py-1.5">
-              <h3 className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/60">Shortcuts</h3>
-            </header>
-            <div className="grid grid-cols-2 gap-px bg-border/30">
-              {[
-                { to: '/players',       icon: Activity,  label: 'Players' },
-                { to: '/console',       icon: Wifi,      label: 'Console' },
-                { to: '/mods',          icon: Gamepad2,  label: 'Mods' },
-                { to: '/scheduler',     icon: CalendarClock, label: 'Schedule' },
-                { to: '/backups',       icon: Archive,   label: 'Backups' },
-                { to: '/server-config', icon: Server,    label: 'Config' },
-              ].map(({ to, icon: Icon, label }) => (
-                <Link
-                  key={to}
-                  to={to}
-                  className="group flex items-center gap-1.5 bg-card/40 px-2.5 py-2 text-xs text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
-                >
-                  <Icon className="h-3 w-3 opacity-70 transition-opacity group-hover:opacity-100" />
-                  <span className="truncate">{label}</span>
-                </Link>
-              ))}
-            </div>
-          </section>
-        </div>
+      {/* ─── EVIDENCE AND WORK ──────────────────────────────────────────── */}
+      <div className="mt-6 grid content-start gap-6 xl:grid-cols-[minmax(0,1fr)_19rem] xl:items-start">
 
         {/* ════ CENTER ════ */}
-        <div className="grid gap-3 content-start min-w-0">
+        <main className="grid min-w-0 content-start gap-4 2xl:grid-cols-2 2xl:items-start">
 
           {/* LIVE ACTIVITY */}
-          <section className="rounded-lg border border-border/55 bg-card/40 lg:min-h-[26rem] flex flex-col">
+          <section className={cn(
+            'order-2 flex flex-col overflow-hidden rounded-lg border border-border/45 bg-card/25',
+            playerActivity.length > 0 && 'max-h-[15rem]',
+          )}>
             <header className="flex items-center justify-between border-b border-border/30 px-3 py-1.5">
-              <h3 className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/60">Live activity</h3>
-              <span className="flex items-center gap-1.5">
-                <span
-                  className={cn(
-                    'h-1.5 w-1.5 rounded-full',
-                    online ? 'bg-success' : 'bg-muted-foreground/40'
-                  )}
-                  aria-hidden="true"
-                />
-                <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground/70">
-                  {playerActivity.length > 0 ? `${playerActivity.length} events` : online ? 'idle' : 'offline'}
-                </span>
+              <h3 className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-primary/75">Live activity</h3>
+              {/* No status dot. Whether the server is up is answered by the verdict band, not repeated here. */}
+              <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground/70">
+                {playerActivity.length > 0 ? `${playerActivity.length} events` : online ? 'idle' : 'offline'}
               </span>
             </header>
             {playerActivity.length === 0 ? (
-              <div className="flex-1 grid place-items-center px-6 py-10">
-                <p className="text-center text-sm text-muted-foreground/80">
+              <div className="flex items-center px-3 py-3">
+                <p className="text-xs text-muted-foreground/75">
                   {online
-                    ? 'Player join, leave, death, and moderation events will appear here in real time.'
+                    ? 'Listening for player joins, departures, deaths, and moderation events.'
                     : status?.configured
                       ? 'Start the server to begin tracking player activity.'
                       : 'Configure a server to start tracking activity.'}
                 </p>
               </div>
             ) : (
-              <ol className="flex-1 divide-y divide-border/20 overflow-y-auto">
+              <ol className="min-h-0 divide-y divide-border/15 overflow-y-auto">
                 {playerActivity.map(a => {
                   const s = eventStyle(a.action)
                   return (
-                    <li key={a.id} className="group flex items-center gap-2.5 px-3 py-1.5 transition-colors hover:bg-muted/20">
-                      <time className="w-14 shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground/65">
-                        {new Date(a.logged_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                    <li key={a.id} className="group grid grid-cols-[3.25rem_1rem_minmax(0,8rem)_minmax(0,1fr)] items-center gap-2 px-3 py-[3px] transition-colors hover:bg-muted/20">
+                      <time className="font-mono text-[10px] tabular-nums text-muted-foreground/50">
+                        {new Date(a.logged_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
                       </time>
-                      <span className={cn('shrink-0', s.tone)} aria-hidden="true">{s.icon}</span>
-                      <span className="min-w-0 flex-1 truncate text-xs font-medium" dir="auto" title={a.player_name}>
+                      <span className={cn('flex justify-center', s.tone)} aria-hidden="true">{s.icon}</span>
+                      <span className="truncate text-[11px] font-medium text-foreground/85" dir="auto" title={a.player_name}>
                         {a.player_name}
                       </span>
-                      <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground/75">
+                      <span className="truncate text-[11px] text-muted-foreground/55">
                         {s.verb}
                       </span>
                     </li>
@@ -1025,10 +1161,10 @@ export default function Dashboard() {
           </section>
 
           {/* TELEMETRY */}
-          <section className="rounded-lg border border-border/55 bg-card/40">
-            <header className="flex items-center justify-between border-b border-border/30 px-3 py-1.5">
-              <h3 className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/60">Telemetry</h3>
-              <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground/70">
+          <section className="order-1 overflow-hidden rounded-lg border border-border/65 bg-card/50 shadow-sm">
+            <header className="flex items-center justify-between gap-3 border-b border-border/35 px-4 py-2">
+              <h2 className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-primary/75">Server telemetry</h2>
+              <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground/60">
                 {(() => {
                   if (performanceHistory.length === 0) return online ? 'sampling' : 'standby'
                   if (performanceHistory.length < 2) return 'live'
@@ -1058,7 +1194,11 @@ export default function Dashboard() {
                 }
               >
                 {showPerformanceCharts ? (
-                  <DashboardPerformanceCharts performanceHistory={performanceHistory} serverRunning={online} />
+                  <DashboardPerformanceCharts
+                    performanceHistory={performanceHistory}
+                    serverRunning={online}
+                    maxMemoryGB={maxMemoryGB}
+                  />
                 ) : null}
               </Suspense>
             ) : (
@@ -1069,78 +1209,37 @@ export default function Dashboard() {
               </p>
             )}
           </section>
-        </div>
+        </main>
 
-        {/* ════ RIGHT RAIL ════ */}
-        <div className="grid gap-3 content-start">
+        {/* ════ WORK ════ */}
+        <aside className="grid content-start gap-6">
 
-          {/* READINESS */}
-          {maintenance.schedulerLoaded && (
-            <section className="rounded-lg border border-border/55 bg-card/40">
-              <header className="border-b border-border/30 px-3 py-1.5">
-                <h3 className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/60">Readiness</h3>
-              </header>
-              <dl className="divide-y divide-border/20 text-xs">
-                <div className="flex items-center justify-between px-3 py-2">
-                  <dt className="text-muted-foreground">Last backup</dt>
-                  <dd className="font-mono tabular-nums text-foreground/90">
-                    {maintenance.lastBackup ? formatAge(maintenance.lastBackup.created) : '—'}
-                  </dd>
-                </div>
-                <div className="flex items-center justify-between px-3 py-2">
-                  <dt className="text-muted-foreground">Backups stored</dt>
-                  <dd className="font-mono tabular-nums text-foreground/90">{maintenance.backupCount}</dd>
-                </div>
-                <div className="flex items-center justify-between px-3 py-2">
-                  <dt className="text-muted-foreground">Mods tracked</dt>
-                  <dd className="font-mono tabular-nums text-foreground/90">{maintenance.modsTracked}</dd>
-                </div>
-                <div className="flex items-center justify-between px-3 py-2">
-                  <dt className="text-muted-foreground">Mod updates</dt>
-                  <dd className={cn('font-mono tabular-nums', modsPending ? 'font-semibold text-warning' : 'text-foreground/90')}>
-                    {maintenance.modUpdatesAvailable}{modsPending ? ' pending' : ''}
-                  </dd>
-                </div>
-                <div className="flex items-center justify-between px-3 py-2">
-                  <dt className="text-muted-foreground">Active tasks</dt>
-                  <dd className="font-mono tabular-nums text-foreground/90">{maintenance.scheduledTasksCount}</dd>
-                </div>
-              </dl>
-              {modsPending && (
-                <div className="border-t border-border/30 p-2">
-                  <Link
-                    to="/mods"
-                    className={cn(buttonVariants({ size: 'sm', variant: 'warning' }), 'h-7 w-full gap-1.5 text-xs font-semibold')}
-                  >
-                    <Download className="h-3 w-3" />
-                    Review {maintenance.modUpdatesAvailable} update{maintenance.modUpdatesAvailable === 1 ? '' : 's'}
-                  </Link>
-                </div>
-              )}
-              {!maintenance.lastBackup && (
-                <div className="border-t border-border/30 p-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-7 w-full gap-1.5 text-xs"
-                    disabled={!hasServer || loading !== null || activeServer?.isRemote}
-                    onClick={() => handleAction('Create backup', () => backupApi.createBackup({ includeDb: true }).then(() => fetchMaintenance()))}
-                  >
-                    {loading === 'Create backup' ? <Loader2 className="h-3 w-3 animate-spin" /> : <Archive className="h-3 w-3" />}
-                    Create first backup
-                  </Button>
-                </div>
-              )}
-            </section>
-          )}
+          {/* DESTINATIONS — each one carries its own live state */}
+          <section>
+            <WorkList items={workItems} />
+            <div className="mt-2 border-t border-border/25 px-1 pt-1">
+              <ConnLine
+                label="RCON"
+                state={status?.rcon?.connected ? 'on' : 'off'}
+                value={status?.rcon ? `${status.rcon.host}:${status.rcon.port}` : undefined}
+              />
+              <ConnLine
+                label="Bridge"
+                state={bridgeStatus?.modConnected ? 'on' : bridgeStatus?.isRunning ? 'wait' : 'off'}
+                value={
+                  bridgeStatus?.modConnected && bridgeStatus.modStatus?.version
+                    ? `v${bridgeStatus.modStatus.version.replace(/^v/, '')}`
+                    : bridgeStatus?.isRunning ? 'pending' : 'offline'
+                }
+              />
+            </div>
+          </section>
 
           {/* MAINTENANCE */}
           {!activeServer?.isRemote && (
-            <section className="rounded-lg border border-border/55 bg-card/40">
-              <header className="border-b border-border/30 px-3 py-1.5">
-                <h3 className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/60">Maintenance</h3>
-              </header>
-              <div className="space-y-1.5 p-2">
+            <section>
+              <h3 className="px-1 pb-2 font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-primary/75">Maintenance</h3>
+              <div className="space-y-1.5">
                 <Button
                   size="sm"
                   variant="outline"
@@ -1190,7 +1289,7 @@ export default function Dashboard() {
           )}
 
           {bridgeStatus && !bridgeStatus.configured && (
-            <section className="rounded-lg border border-warning/35 bg-warning/[0.04] p-3">
+            <section className="rounded-md border border-warning/25 bg-warning/[0.04] p-3">
               <p className="text-xs font-medium text-warning/85">Bridge offline</p>
               <p className="mt-1 text-xs text-muted-foreground">
                 Advanced world controls require PanelBridge.{' '}
@@ -1198,7 +1297,7 @@ export default function Dashboard() {
               </p>
             </section>
           )}
-        </div>
+        </aside>
       </div>
 
       {/* ─── Confirm dialog ──────────────────────────────────────────────── */}

@@ -91,6 +91,10 @@ COPY --from=builder /app/client/dist ./client/dist
 # Copy PanelBridge mod so users can extract it (docker cp)
 COPY pz-mod/ ./pz-mod/
 
+# The Settings page serves this bundle directly to browsers. Keep it next to
+# the panel executable/source in every image, not only in release archives.
+COPY release/zomboid-panel-extension.zip ./zomboid-panel-extension.zip
+
 # Create runtime directories owned by the panel user (numeric IDs survive
 # the case where we're reusing the base image's existing user).
 RUN mkdir -p data logs && chown -R ${UID}:${GID} /app

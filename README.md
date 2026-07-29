@@ -9,8 +9,7 @@
 [![Discord](https://img.shields.io/badge/discord-join-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/jHsWJDNmSg)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg?style=for-the-badge)](LICENSE)
 
-**Server control · RCON · live world map · mods · scheduler · backups · Discord bot · Lua bridge**
-One dark-mode control room instead of five different tools.
+Manage your Project Zomboid dedicated server from one place: server controls, RCON, a live world map, Workshop mods, scheduled restarts, backups, and Discord integration.
 
 [**🚀 Download**](https://github.com/fpsacha/zomboid-control-panel/releases/latest) ·
 [**👁️ Live demo**](https://fpsacha.github.io/zomboid-control-panel/) ·
@@ -23,7 +22,7 @@ One dark-mode control room instead of five different tools.
 
 ![Dashboard](Screenshots/screenshot-dashboard-v2.png)
 
-> **At a glance** — server status, RCON & PanelBridge connection state, live player activity, host telemetry, backup readiness, and quick actions. One screen covers 80% of routine admin work.
+> **At a glance** — server status, RCON & PanelBridge connection state, live player activity, host telemetry, disk headroom, the next scheduled maintenance action, console error count, backup readiness, and quick actions. One screen covers 80% of routine admin work.
 
 ## ✨ Feature tour
 
@@ -58,7 +57,7 @@ Roster with online / offline / banned tabs. Per-player dossier with moderation, 
 <td width="50%" valign="top">
 
 ### 🧩 Mod Manager
-Tracks every Workshop mod on your server. Detects updates via the Steam API and surfaces pending changes. Pull mod list straight from your server config — no manual entry.
+Tracks every Workshop mod on your server and flags updates through the Steam API. Import a Steam collection and drive server membership from it — adding a mod writes `WorkshopItems=`, resolves its internal mod ID into `Mods=`, and picks up map folders on its own.
 
 <img src="Screenshots/screenshot-mods-v2.png" alt="Mod Manager" />
 
@@ -67,8 +66,8 @@ Tracks every Workshop mod on your server. Detects updates via the Steam API and 
 <tr>
 <td width="50%" valign="top">
 
-### ⚠️ Mod Conflict Detection
-Scans your mod list for known incompatibilities, missing dependencies, and load-order issues. Severity-tinted findings so you see real problems before you boot the server.
+### ⚠️ Mod Conflicts & Load Order
+Scans your mod list for known incompatibilities, missing dependencies, and load-order issues. Severity-tinted findings so you see real problems before you boot the server. Load order can auto-sort from each mod's declared `require=`, with a preview of every move before anything is written.
 
 <img src="Screenshots/screenshot-mods-conflicts.png" alt="Mod Conflicts" />
 
@@ -147,7 +146,7 @@ Java crash dumps, error logs, support bundles. One-click `.zip` export for when 
 ### Observe
 - **Players** — Online list, activity history, kick/ban/unban, access levels, notes and tags.
 - **World map** — Live player positions on Knox County with right-click actions.
-- **Mod manager** — Track Workshop mods, detect updates, sync from server config, conflict detection.
+- **Mod manager** — Track Workshop mods and detect updates, decide server membership from your Steam collection, auto-sort load order by declared dependencies, and scan for conflicts. Collection sync adds what's missing without deleting the optional mods you keep on the side.
 - **Server config** — Full INI editor with structured and raw views. Sandbox, spawn points, mod settings — searchable and editable in-browser.
 
 ### Extend

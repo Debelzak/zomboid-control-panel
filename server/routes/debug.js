@@ -4423,4 +4423,4 @@ router.get("/activity", async (req, res) => {
 });
 
 export default router;
-export { logBuffer };
+export { logBuffer, getDiskFree };

@@ -17,6 +17,11 @@ import { getDataPaths } from "../utils/paths.js";
 
 const isWindows = process.platform === "win32";
 
+function getConfiguredIpv4Address(variableName) {
+  const address = process.env[variableName]?.trim();
+  return address && net.isIP(address) === 4 ? address : null;
+}
+
 // Build LD_LIBRARY_PATH from server directory, filtering to only existing paths
 function buildLdLibraryPath(serverDir) {
   log.debug(
@@ -414,6 +419,23 @@ export class ServerManager {
           },
         );
       }
+    });
+  }
+
+  async getProcessUptimeSeconds(pid) {
+    if (isWindows || !/^\d+$/.test(String(pid || ""))) return null;
+
+    return new Promise((resolve) => {
+      execFile(
+        "ps",
+        ["-o", "etimes=", "-p", String(pid)],
+        { timeout: 3000 },
+        (error, stdout) => {
+          if (error) return resolve(null);
+          const seconds = Number.parseInt(stdout.trim(), 10);
+          resolve(Number.isFinite(seconds) && seconds >= 0 ? seconds : null);
+        },
+      );
     });
   }
 
@@ -1021,7 +1043,10 @@ export class ServerManager {
         log.debug(`Failed to load game port: ${err.message}`),
       );
     }
-    if (!this.publicIp && !this.fetchingIp) {
+    const configuredWanIp = getConfiguredIpv4Address("PANEL_WAN_IP");
+    if (configuredWanIp) {
+      this.publicIp = configuredWanIp;
+    } else if (!this.publicIp && !this.fetchingIp) {
       // Opt-in only: this used to unconditionally call out to a third party
       // (api.ipify.org) on every status check for a LAN-only panel, which is
       // an unnecessary external dependency and a small privacy leak
@@ -1045,7 +1070,16 @@ export class ServerManager {
       }
     }
 
-    const isRunning = await this.checkServerRunning();
+    const processDetails = await this.getServerProcessDetails();
+    const isRunning = processDetails.running;
+    if (isRunning && !this.startTime) {
+      const detectedUptime = await this.getProcessUptimeSeconds(
+        processDetails.matched[0]?.pid,
+      );
+      if (detectedUptime != null) {
+        this.startTime = new Date(Date.now() - detectedUptime * 1000);
+      }
+    }
 
     // Calculate uptime in seconds (not milliseconds)
     const uptimeMs = this.startTime ? Date.now() - this.startTime.getTime() : 0;
@@ -1064,6 +1098,9 @@ export class ServerManager {
   }
 
   getLocalIp() {
+    const configuredLanIp = getConfiguredIpv4Address("PANEL_LAN_IP");
+    if (configuredLanIp) return configuredLanIp;
+
     const interfaces = os.networkInterfaces();
     for (const name of Object.keys(interfaces)) {
       for (const iface of interfaces[name]) {

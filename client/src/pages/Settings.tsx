@@ -5064,7 +5064,27 @@ function WorkshopCollectionSyncCard({
 
   const copyToClipboard = async (text: string, label: string) => {
     try {
-      await navigator.clipboard.writeText(text);
+      let copiedToClipboard = false;
+      if (navigator.clipboard?.writeText) {
+        try {
+          await navigator.clipboard.writeText(text);
+          copiedToClipboard = true;
+        } catch {
+          // Firefox on an HTTP panel exposes this API but rejects the write.
+          // Fall through to the user-gesture-compatible legacy command.
+        }
+      }
+      if (!copiedToClipboard) {
+        const input = document.createElement("textarea");
+        input.value = text;
+        input.setAttribute("readonly", "");
+        input.style.cssText = "position:fixed;opacity:0;pointer-events:none";
+        document.body.appendChild(input);
+        input.select();
+        const copied = document.execCommand("copy");
+        input.remove();
+        if (!copied) throw new Error("Clipboard access denied");
+      }
       setCopied(label);
       window.setTimeout(() => setCopied((c) => (c === label ? null : c)), 1800);
     } catch {

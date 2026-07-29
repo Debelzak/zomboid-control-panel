@@ -218,7 +218,7 @@ import schedulerRoutes from "./routes/scheduler.js";
 import modsRoutes from "./routes/mods.js";
 import chunksRoutes from "./routes/chunks.js";
 import discordRoutes from "./routes/discord.js";
-import debugRoutes, { addLogToBuffer } from "./routes/debug.js";
+import debugRoutes, { addLogToBuffer, getDiskFree } from "./routes/debug.js";
 import serverFinderRoutes from "./routes/serverFinder.js";
 import panelBridgeRoutes from "./routes/panelBridge.js";
 import backupRoutes from "./routes/backup.js";
@@ -596,10 +596,19 @@ app.use("/api/panel/restart", strictLimiter);
 // Browser cookie extraction spawns PowerShell for DPAPI unwrap — expensive
 // and platform-sensitive, so keep it under the destructive limiter too.
 app.use("/api/mods/collection/extract-cookies", strictLimiter);
-// Per-item collection mutations hit Steam and need cookies — same tier
-// as bulk sync. The unified UI fires one request per row click, so cap
-// the rate to keep us friendly with Steam.
-app.use("/api/mods/collection/items", strictLimiter);
+
+// Per-item collection mutations are cheap to the panel, but each one writes
+// to Steam. Do not share their bucket with cookie extraction: a normal sync
+// flow can legitimately issue more than ten row actions in a minute. Steam
+// writes remain serialized by the collection endpoints themselves.
+const collectionMutationLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many collection changes. Please wait a minute and try again." },
+});
+app.use("/api/mods/collection/items", collectionMutationLimiter);
 
 // Mid-tier rate limit for RCON commands (higher than strict, lower than general)
 const rconLimiter = rateLimit({
@@ -1730,6 +1739,38 @@ function getCpuUsage() {
   return totalDiff > 0 ? Math.round((1 - idleDiff / totalDiff) * 100) : 0;
 }
 
+// Disk headroom for the drive holding the world saves. A PZ server that runs
+// out of space corrupts saves and silently fails backups, so this belongs on
+// the dashboard next to memory. Sampled far less often than memory because it
+// moves slowly and statfs can block on a dead mount.
+let lastDiskSample = { at: 0, value: null };
+const DISK_SAMPLE_INTERVAL_MS = 60000;
+
+async function getDiskSnapshot() {
+  const now = Date.now();
+  if (now - lastDiskSample.at < DISK_SAMPLE_INTERVAL_MS) {
+    return lastDiskSample.value;
+  }
+  lastDiskSample.at = now;
+  try {
+    // Measure where the saves actually live, not where the panel happens to
+    // be installed. They are usually the same mount, but not always.
+    const activeServer = await getActiveServer();
+    const target =
+      activeServer?.zomboidDataPath ||
+      activeServer?.installPath ||
+      getDataPaths().dataDir;
+    const disk = await getDiskFree(target);
+    lastDiskSample.value =
+      disk && disk.total > 0
+        ? { total: disk.total, used: disk.total - disk.free }
+        : null;
+  } catch {
+    lastDiskSample.value = null;
+  }
+  return lastDiskSample.value;
+}
+
 async function getPzProcessMemory() {
   // Get PZ server Java process memory from OS
   return new Promise((resolve) => {
@@ -1803,12 +1844,16 @@ async function startPerfPolling() {
       const panelMem = process.memoryUsage();
 
       const pzMemBytes = await getPzProcessMemory();
+      const disk = await getDiskSnapshot();
 
       const snapshot = {
         // Host machine
         hostMemTotal: hostMem,
         hostMemUsed: hostMem - hostMemFree,
         cpuUsage,
+        // Storage on the drive holding the world saves (null if unreadable)
+        hostDiskTotal: disk?.total ?? null,
+        hostDiskUsed: disk?.used ?? null,
         // Panel process
         panelMemHeap: panelMem.heapUsed,
         panelMemRss: panelMem.rss,
@@ -2388,17 +2433,13 @@ async function start() {
           });
         }
 
-        // Show machine's network IPs so VPS users know their remote URL
-        const nets = os.networkInterfaces();
-        for (const [, addrs] of Object.entries(nets)) {
-          for (const addr of addrs) {
-            if (!addr.internal && addr.family === "IPv4") {
-              urls.push({
-                label: "Network:",
-                url: `http://${addr.address}:${PORT}`,
-              });
-            }
-          }
+        // Use the configured host address in Docker rather than its bridge IP.
+        const localIp = serverManager.getLocalIp();
+        if (localIp !== "127.0.0.1") {
+          urls.push({
+            label: "Network:",
+            url: `http://${localIp}:${PORT}`,
+          });
         }
         logReady(urls);
 

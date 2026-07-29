@@ -603,6 +603,12 @@ export const serverApi = {
     apiGet(`/server/console-log${lines ? `?lines=${lines}` : ""}`),
   streamConsoleLog: (lastSize: number) =>
     apiGet(`/server/console-log/stream?lastSize=${lastSize}`),
+  getConsoleErrorCount: (): Promise<{
+    exists: boolean
+    count: number
+    sinceStart: boolean
+    truncated?: boolean
+  }> => apiGet("/server/console-log/error-count"),
   clearConsoleLog: () => apiPost("/server/console-log/clear"),
 };
 
@@ -1020,12 +1026,14 @@ export const modsApi = {
       inCollection: string[];
       toAdd: string[];
       toRemove: string[];
+      collectionOnly?: string[];
       items: Array<{
         workshopId: string;
         name: string | null;
-        status: "synced" | "to-add" | "to-remove";
+        status: "synced" | "to-add" | "collection-only";
         inTracked: boolean;
         inCollection: boolean;
+        inServer: boolean;
       }>;
       collectionId: string | null;
       autoSync: boolean;
@@ -1045,6 +1053,13 @@ export const modsApi = {
       ok: true;
       workshopId: string;
       action: "remove";
+    }>,
+  collectionUntrack: (workshopId: string) =>
+    apiDelete(`/mods/collection/tracking/${workshopId}`) as Promise<{
+      ok: true;
+      workshopId: string;
+      removed: boolean;
+      message: string;
     }>,
   collectionSync: () =>
     apiPost("/mods/collection/sync", {}) as Promise<{
@@ -1117,11 +1132,15 @@ export const modsApi = {
     workshopId: string,
     selectedModIds?: string[],
     includeAllModIds?: boolean,
+    displayName?: string,
+    mapFolder?: string,
   ) =>
     apiPost("/mods/add-mod-advanced", {
       workshopId,
       selectedModIds,
       includeAllModIds,
+      displayName,
+      mapFolder,
     }) as Promise<{
       success: boolean;
       workshopId: string;

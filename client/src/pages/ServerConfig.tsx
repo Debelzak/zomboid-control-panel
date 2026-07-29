@@ -98,6 +98,7 @@ import { PageHeader } from '@/components/PageHeader'
 // DropdownMenu imports available if needed
 import { serverFilesApi, panelBridgeApi, SpawnPointsByProfession, SpawnRegion, SandboxData, ConfigTemplate } from '@/lib/api'
 import { getUserErrorMessage } from '@/lib/errorMessage'
+import { formatModSettingDescription, formatModSettingLabel } from '@/lib/modSettingsLabels'
 import { EmptyState } from '@/components/EmptyState'
 import {
   INI_SCHEMA,
@@ -115,6 +116,17 @@ type EditorMode = 'structured' | 'raw'
 type FilterMode = 'all' | 'modified' | 'nondefault'
 type SandboxScalar = string | number | boolean | null | undefined
 type SandboxRecord = Record<string, SandboxScalar>
+
+// PanelBridge enumerates every sandbox option. These are Project Zomboid's
+// built-in groups, which belong in the Sandbox editor rather than Mod Settings.
+const VANILLA_SANDBOX_GROUPS = new Set([
+  'Vanilla',
+  'Map',
+  'ZombieLore',
+  'ZombieConfig',
+  'MultiplierConfig',
+  'Basement',
+])
 
 /** Merge schema defaults into parsed INI settings so schema-defined keys always exist.
  *  Also warns to the console when a stored value doesn't parse for the schema type — helps
@@ -623,10 +635,13 @@ export default function ServerConfig() {
   // synchronously — keeps the input snappy on slower machines.
   const deferredSearchQuery = useDeferredValue(searchQuery)
   const [editorMode, setEditorMode] = useState<EditorMode>('structured')
-  // Filter mode: 'all' = every schema setting, 'modified' = only dirty rows, 'nondefault' = anything not matching schema default
+  // Filter mode: 'all' = every schema setting, 'modified' = differs from the PZ default,
+  // 'nondefault' = local edits not yet saved.
   const [filterMode, setFilterMode] = useState<FilterMode>(() => {
     try {
       const stored = localStorage.getItem('serverconfig-filter-mode')
+      // Before this migration, "nondefault" represented settings changed from PZ defaults.
+      if (stored === 'nondefault') return 'modified'
       if (stored === 'modified' || stored === 'nondefault' || stored === 'all') return stored
     } catch { /* ignore */ }
     return 'all'
@@ -759,12 +774,13 @@ export default function ServerConfig() {
         let opts = modSettings[group.name] || []
         if (modSettingsModifiedOnly) opts = opts.filter(isOptModified)
         if (q) {
-          const groupMatches = group.name.toLowerCase().includes(q)
+          const groupMatches = formatModSettingLabel(group.name).toLowerCase().includes(q)
           if (!groupMatches) {
             opts = opts.filter(o =>
               (o.name || '').toLowerCase().includes(q) ||
               (o.shortName || '').toLowerCase().includes(q) ||
               (o.translatedName || '').toLowerCase().includes(q) ||
+              formatModSettingLabel(o.translatedName || o.shortName || o.name, group.name).toLowerCase().includes(q) ||
               (o.tooltip || '').toLowerCase().includes(q) ||
               (o.tooltipText || '').toLowerCase().includes(q)
             )
@@ -966,8 +982,12 @@ export default function ServerConfig() {
         error?: string
       }
       if (response?.success && response.data) {
-        setModSettings(response.data.options)
-        setModSettingsGroups(response.data.groups)
+        const options = Object.fromEntries(
+          Object.entries(response.data.options).filter(([groupName]) => !VANILLA_SANDBOX_GROUPS.has(groupName))
+        )
+        const groups = response.data.groups.filter(group => !VANILLA_SANDBOX_GROUPS.has(group.name))
+        setModSettings(options)
+        setModSettingsGroups(groups)
         setModSettingsLastLoaded(new Date())
         setModSettingsError(null)
       } else {
@@ -1267,6 +1287,7 @@ export default function ServerConfig() {
   }, [iniSettings, originalIniSettings])
 
   const isIniNonDefault = useCallback((s: IniSetting) => {
+    if (s.defaultComparable === false) return false
     const curr = iniSettings[s.key]
     if (curr === undefined) return false
     return String(curr) !== String(s.default ?? '')
@@ -1297,8 +1318,8 @@ export default function ServerConfig() {
         s.label.toLowerCase().includes(lower) ||
         s.description.toLowerCase().includes(lower)
       )) return false
-      if (filterMode === 'modified' && !isIniModified(s)) return false
-      if (filterMode === 'nondefault' && !isIniNonDefault(s)) return false
+      if (filterMode === 'modified' && !isIniNonDefault(s)) return false
+      if (filterMode === 'nondefault' && !isIniModified(s)) return false
       return true
     })
     return groupByCategory(filtered)
@@ -1312,8 +1333,8 @@ export default function ServerConfig() {
         s.label.toLowerCase().includes(lower) ||
         s.description.toLowerCase().includes(lower)
       )) return false
-      if (filterMode === 'modified' && !isSandboxModified(s)) return false
-      if (filterMode === 'nondefault' && !isSandboxNonDefault(s)) return false
+      if (filterMode === 'modified' && !isSandboxNonDefault(s)) return false
+      if (filterMode === 'nondefault' && !isSandboxModified(s)) return false
       return true
     })
     return groupByCategory(filtered)
@@ -1946,7 +1967,7 @@ export default function ServerConfig() {
                                 : 'text-muted-foreground hover:text-foreground'
                             }`}
                           >
-                            {mode === 'nondefault' ? 'non-default' : mode}
+                            {mode === 'nondefault' ? 'unsaved' : mode}
                           </button>
                         ))}
                       </div>
@@ -2161,8 +2182,8 @@ export default function ServerConfig() {
                           if (settings.length === 0) {
                             return (
                               <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
-                                {filterMode === 'modified' ? 'No modified settings in this category.' :
-                                 filterMode === 'nondefault' ? 'All settings in this category are at defaults.' :
+                                {filterMode === 'modified' ? 'No settings in this category differ from Project Zomboid defaults.' :
+                                 filterMode === 'nondefault' ? 'No unsaved settings in this category.' :
                                  'No settings in this category.'}
                               </div>
                             )
@@ -2350,7 +2371,7 @@ export default function ServerConfig() {
                                 : 'text-muted-foreground hover:text-foreground'
                             }`}
                           >
-                            {mode === 'nondefault' ? 'non-default' : mode}
+                            {mode === 'nondefault' ? 'unsaved' : mode}
                           </button>
                         ))}
                       </div>
@@ -2492,9 +2513,9 @@ export default function ServerConfig() {
                                   ? 'border-l-amber-500 bg-amber-500/10 text-amber-500'
                                   : 'border-l-transparent text-muted-foreground hover:border-l-amber-500/30 hover:bg-amber-500/5 hover:text-amber-500/80'
                               }`}
-                              title="Settings from mods or keys not recognized by the schema"
+                              title="Sandbox settings not yet grouped by the editor"
                             >
-                              <span className="min-w-0 flex-1 truncate font-medium">Uncategorized / Mods</span>
+                              <span className="min-w-0 flex-1 truncate font-medium">Additional Settings</span>
                               <span className={`shrink-0 min-w-[1.5rem] rounded text-center px-1 py-0.5 text-[10px] font-mono tabular-nums ${
                                 isActive ? 'text-amber-500/80' : 'bg-muted text-muted-foreground'
                               }`}>
@@ -2518,14 +2539,14 @@ export default function ServerConfig() {
                               <div>
                                 <div className="sticky top-0 z-10 -mx-1 mb-3 flex items-baseline justify-between border-b border-amber-500/30 bg-card/95 px-1 pb-2 pt-1 backdrop-blur">
                                   <h3 className="text-sm font-semibold uppercase tracking-wider text-amber-500">
-                                    Uncategorized / Mod Settings
+                                    Additional Sandbox Settings
                                   </h3>
                                   <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
                                     {uncategorizedSandboxKeys.length} key{uncategorizedSandboxKeys.length === 1 ? '' : 's'}
                                   </span>
                                 </div>
                                 <p className="mb-3 text-xs text-muted-foreground">
-                                  Keys from installed mods or sandbox options not recognized by the schema. Edit with care.
+                                  Sandbox settings not yet grouped by the editor. This can include newer vanilla options and mod-added keys. Edit with care.
                                 </p>
                                 <div className="space-y-1">
                                   {uncategorizedSandboxKeys.map(({ section, key, value }) => {
@@ -2588,8 +2609,8 @@ export default function ServerConfig() {
                           if (settings.length === 0) {
                             return (
                               <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
-                                {filterMode === 'modified' ? 'No modified settings in this category.' :
-                                 filterMode === 'nondefault' ? 'All settings in this category are at defaults.' :
+                                {filterMode === 'modified' ? 'No settings in this category differ from Project Zomboid defaults.' :
+                                 filterMode === 'nondefault' ? 'No unsaved settings in this category.' :
                                  'No settings in this category.'}
                               </div>
                             )
@@ -3096,7 +3117,7 @@ export default function ServerConfig() {
                                 <ChevronRight className="w-4 h-4" />
                               )}
                             </div>
-                            <span className={`font-medium truncate min-w-0 ${isExpanded ? 'text-primary' : ''}`} title={group.name}>{group.name}</span>
+                            <span className={`font-medium truncate min-w-0 ${isExpanded ? 'text-primary' : ''}`} title={formatModSettingLabel(group.name)}>{formatModSettingLabel(group.name)}</span>
                             {groupModifiedCount > 0 && (
                               <Badge variant="warning" className="h-5 px-1.5 py-0 text-[10px] font-mono shrink-0" title={`${groupModifiedCount} option${groupModifiedCount === 1 ? '' : 's'} differ from default`}>
                                 {groupModifiedCount} mod
@@ -3109,17 +3130,16 @@ export default function ServerConfig() {
                           {isExpanded && (
                             <div className="mt-3 ml-4 space-y-1 border-l-2 border-primary/30 pl-4">
                               {filteredOpts.map((opt, idx) => {
-                                // Build a clean display name: prefer translatedName, fall back to shortName with "Sandbox_" stripped
+                                // Mods often expose an internal sandbox key as their
+                                // "translated" name. Format it before displaying it.
                                 const rawDisplayName = opt.shortName || opt.name || `Option ${idx}`
-                                const displayName = (opt.translatedName && opt.translatedName !== rawDisplayName)
-                                  ? opt.translatedName
-                                  : rawDisplayName.replace(/^Sandbox_/i, '').replace(/_/g, ' ')
-                                // Parse description from tooltipText: strip trailing "\nDefault = ..." line
+                                const displayName = formatModSettingLabel(
+                                  opt.translatedName && opt.translatedName !== rawDisplayName ? opt.translatedName : rawDisplayName,
+                                  group.name,
+                                ) || `Option ${idx + 1}`
+                                // Keep player-facing help, but hide untranslated tooltip keys.
                                 const rawTooltip = opt.tooltipText || opt.tooltip || ''
-                                const description = rawTooltip
-                                  .replace(/\\n/g, '\n')
-                                  .replace(/\n?Default\s*=\s*.*/i, '')
-                                  .trim()
+                                const description = formatModSettingDescription(rawTooltip.replace(/\n?Default\s*=\s*.*/i, ''))
                                 const rawVal = opt.value
                                 let displayValue: string
                                 if (rawVal === undefined || rawVal === null) {
