@@ -268,7 +268,7 @@ const MAX_CORS_BLOCK_EVENTS = 50;
 const MAX_CORS_CUSTOM_ORIGINS = 100;
 const MAX_CORS_ORIGIN_LENGTH = 256;
 const CORS_DENY_MESSAGE =
-  "Origin blocked by panel CORS policy. Open the panel from a local/LAN host or add this origin in Settings > Remote Access.";
+  "Origin blocked by panel CORS policy. Open the panel from a local/LAN host, or for first-time reverse-proxy setup set CORS_ORIGINS=https://your-panel-host in the panel environment and restart it. After setup, this origin can be managed in Settings > Remote Access.";
 const corsState = {
   allowAll: false,
   allowPrivateNetworks: true,

@@ -1,22 +1,15 @@
 # Zomboid Control Panel - Docker
 # Multi-stage build: build client in stage 1, lean runtime in stage 2.
 #
-# Runtime base is Debian slim, NOT Alpine — the panel's Server Setup wizard
-# (/server-setup) downloads Valve's steamcmd_linux.tar.gz and runs
-# steamcmd.sh directly (see server/routes/server.js's /steamcmd/download and
-# /steamcmd/* routes) to self-install Project Zomboid. steamcmd.sh needs
-# bash + glibc + 32-bit compat libs — Alpine's musl libc breaks steamcmd's
-# prebuilt binaries, which is also why upstream's own all-in-one Dockerfile
-# (docker/all-in-one/Dockerfile) is Debian-based instead of Alpine. On
-# CentOS/RHEL hosts with SELinux, use `:z` on bind-mount volumes (already
-# set in docker-compose.yml).
+# Runtime uses Debian slim because SteamCMD requires glibc, Bash, and 32-bit
+# libraries on amd64. On CentOS/RHEL hosts with SELinux, use `:z` on
+# bind-mount volumes (already set in docker-compose.yml).
 #
-# This image runs the *panel*; Project Zomboid can either be installed by
-# the panel itself (via /server-setup, into a bind-mounted PZ_SERVER_PATH)
-# or already exist on the host/another container — see docker-compose.yml
+# IMPORTANT: This image runs the *panel*, not the Project Zomboid server.
+# PZ runs separately (on the host or in another container). See docker-compose.yml
 # for realistic topology examples.
 
-# --- Build stage --- (Alpine is fine here: just builds static client assets)
+# --- Build stage ---
 FROM node:22-alpine AS builder
 
 WORKDIR /app
@@ -37,29 +30,21 @@ RUN cd client && npm run build
 # --- Runtime stage ---
 FROM node:22-bookworm-slim
 
-# steamcmd + serverManager.js runtime deps:
-#   bash                    steamcmd.sh's shebang requires it (missing bash
-#                            is exactly what causes "env: can't execute
-#                            'bash': No such file or directory", exit 127)
-#   curl, wget               download steamcmd_linux.tar.gz (curl first,
-#                            wget fallback — see /steamcmd/download route)
-#   ca-certificates          TLS for the download above
-#   lib32gcc-s1, lib32stdc++6  steamcmd's binary is 32-bit, needs these on
-#                            a 64-bit Debian host
-#   procps                   pgrep/ps — serverManager.js process detection
-#                            (Alpine's busybox bundles these; Debian slim
-#                            does not, so it's an explicit install here)
-# tar is already part of Debian's base image, no separate install needed.
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        bash curl wget ca-certificates lib32gcc-s1 lib32stdc++6 procps \
-    && rm -rf /var/lib/apt/lists/*
+# The panel supports arm64 for remote-server administration. SteamCMD itself
+# is only usable on amd64, where its 32-bit runtime libraries are installed.
+RUN set -eux; \
+        apt-get update; \
+        apt-get install -y --no-install-recommends bash ca-certificates curl procps tar wget; \
+        if [ "$(dpkg --print-architecture)" = "amd64" ]; then \
+            apt-get install -y --no-install-recommends lib32gcc-s1 lib32stdc++6; \
+        fi; \
+        rm -rf /var/lib/apt/lists/*
 
 # Configurable UID/GID to match the host user — avoids bind-mount permission issues.
 # Override at build time:
 #   docker compose build --build-arg UID=$(id -u) --build-arg GID=$(id -g)
-# node:22-bookworm-slim already ships a `node` user at 1000:1000, so the
-# default UID/GID just reuses it. Only numeric ids matter below (chown/USER
-# use ${UID}:${GID} directly), so we don't bother renaming existing accounts.
+# node:22-bookworm-slim already ships with a `node` user at 1000:1000, so we
+# reuse existing numeric IDs when possible.
 ARG UID=1000
 ARG GID=1000
 RUN set -eux; \
@@ -70,7 +55,7 @@ RUN set -eux; \
         groupname="panel"; \
     fi; \
     if getent passwd "$UID" >/dev/null 2>&1; then \
-        : already exists, reuse it; \
+        :; \
     else \
         useradd -u "$UID" -g "$groupname" -M -s /usr/sbin/nologin panel; \
     fi
@@ -91,16 +76,9 @@ COPY --from=builder /app/client/dist ./client/dist
 # Copy PanelBridge mod so users can extract it (docker cp)
 COPY pz-mod/ ./pz-mod/
 
-# Upstream also COPYs release/zomboid-panel-extension.zip here, but that's
-# broken as of the fpsacha/main merge: the browser-extension/ source that
-# build.js zips was never committed to the repo, AND .dockerignore excludes
-# release/ from the build context regardless — so the file can never exist
-# at build time on Linux/CI (build.js only runs Compress-Archive on Windows;
-# see build.js's win32-only guard and the "release.ps1 also builds it" note).
-# Skipping the COPY is safe: server/routes/mods.js's /collection/
-# extension-bundle route already 404s gracefully with a clear message when
-# the zip is missing, instead of crashing. Re-add this COPY once upstream
-# actually ships the browser-extension/ source and fixes .dockerignore.
+# The extension bundle is served when present, but its source is not currently
+# tracked in Git and `release/` is intentionally excluded from Docker builds.
+# Do not COPY a generated local ZIP here: that breaks clean GitHub/CI builds.
 
 # Create runtime directories owned by the panel user (numeric IDs survive
 # the case where we're reusing the base image's existing user).

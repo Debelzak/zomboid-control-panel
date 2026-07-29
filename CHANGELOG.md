@@ -5,11 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.9] - 2026-07-29
+
+### Fixed
+
+- **PanelBridge on Build 42 build 24449161** — the Project Zomboid update released on 2026-07-29 restricted `getFileWriter` to an extension whitelist. Writing a `.json` file now returns `nil`, so the Lua mod silently failed on every file it owns and the heartbeat, queue state, and command results stopped reaching the panel. The server appeared permanently unresponsive.
+- **Bridge file naming** — PanelBridge `1.7.8` appends `.txt` to every file it writes (`status.json.txt`, `outbox/res-<seq>.json.txt`, and so on). The folder layout is unchanged. Files the panel writes — `commands.json` and `inbox/cmd-*.json` — keep their plain names, because the panel is not affected by the restriction.
+- **Backwards compatibility** — the panel prefers the new `.txt` files and falls back to the legacy names, so a server still running an older mod or an older game build keeps working without manual migration.
+- **PanelBridge 1.7.4 regression** — reverted the `.init` sentinel shortcut added in 1.1.7. It skipped the sentinel write whenever the file already existed, which was never the real cause of the Build 42 failures.
+
+## [1.1.8] - 2026-07-29
+
+### Fixed
+
+- **First-time reverse-proxy setup**: CORS block messages now explain how to set `CORS_ORIGINS` before an administrator account exists, without relaxing the origin policy.
+- **Docker path permissions**: install and data-path validation now identifies missing writable bind mounts and container UID/GID ownership. The shipped Compose example correctly marks the PZ install mount writable for panel-managed install, update, and start workflows.
+
+## [1.1.7] - 2026-07-29
+
+### Fixed
+
+- **PanelBridge on Build 42**: startup now accepts its existing `.init` sentinel instead of failing when Build 42 refuses to reopen it with `getFileWriter`. This restores PanelBridge initialization and its `status.json` heartbeat after a server restart.
+- **PanelBridge version reporting**: the Lua runtime now reports `1.7.4`, matching the existing mod metadata so version-based deployment can recognize the fixed mod.
+
+## [1.1.6] - 2026-07-29
+
+### Fixed
+
+- **Docker SteamCMD support**: the standard amd64 Docker image now uses a glibc-based runtime with Bash and the required 32-bit SteamCMD libraries, so Linux Docker installations can use the panel's SteamCMD setup and update workflows. The image remains multi-architecture for arm64 remote-server administration. Thanks to @Lynkes for identifying the Docker compatibility issue in [#16](https://github.com/fpsacha/zomboid-control-panel/pull/16).
+- **Clean Docker builds**: the image no longer requires an untracked generated browser-extension ZIP that is excluded from the Docker build context. The extension download endpoint continues to report clearly when a bundle is unavailable.
+
 ## [1.1.5] - 2026-07-29
 
 ### Fixed
 
-- **SteamCMD public-branch updates**: when a dedicated-server install is still mounted to a different Steam beta branch, the panel now backs up and clears only its stale app manifest before updating. This allows SteamCMD to rebuild Public branch metadata instead of failing with an opaque access-denied exit code. Save data, Workshop downloads, and game files remain in place.
+- **Unstable-to-Stable server upgrades**: fixes a SteamCMD bug where a dedicated-server install previously mounted to the Unstable branch could not update to Public (Stable), failing with an opaque access-denied exit code. The panel now backs up and clears only the stale app manifest before rebuilding Stable branch metadata. Save data, Workshop downloads, and game files remain in place.
 
 ## [1.1.4] - 2026-07-29
 

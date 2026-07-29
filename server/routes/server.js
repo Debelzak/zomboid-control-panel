@@ -392,6 +392,22 @@ function ensureWritableDirectory(directoryPath) {
   fs.accessSync(directoryPath, fs.constants.W_OK);
 }
 
+function formatWritablePathError(label, directoryPath) {
+  const isContainer =
+    !isWindows &&
+    (fs.existsSync("/.dockerenv") || fs.existsSync("/run/.containerenv"));
+  const baseMessage = `${label} is not writable: ${directoryPath}.`;
+
+  if (isContainer) {
+    return (
+      `${baseMessage} In Docker, bind-mount a writable host folder at this path ` +
+      `and make it owned by the panel container UID/GID.`
+    );
+  }
+
+  return `${baseMessage} Choose a folder writable by the panel process.`;
+}
+
 // Security: INI sanitization imported from shared util
 // sanitizeIniValue strips \r\n;= to prevent injection
 
@@ -1374,7 +1390,7 @@ router.post("/install", async (req, res) => {
       ensureWritableDirectory(installPath);
     } catch (directoryError) {
       return res.status(400).json({
-        error: `Installation path is not writable: ${installPath}. Choose a folder writable by the panel process.`,
+        error: formatWritablePathError("Installation path", installPath),
       });
     }
 
@@ -1382,7 +1398,7 @@ router.post("/install", async (req, res) => {
       ensureWritableDirectory(serverConfigPath);
     } catch (directoryError) {
       return res.status(400).json({
-        error: `The Zomboid data folder is not writable: ${zomboidPath}. Choose a writable data path.`,
+        error: formatWritablePathError("Zomboid data folder", zomboidPath),
       });
     }
 
@@ -1808,7 +1824,7 @@ router.post("/quick-setup", async (req, res) => {
       ensureWritableDirectory(installPath);
     } catch (directoryError) {
       return res.status(400).json({
-        error: `Installation path is not writable: ${installPath}. Choose a folder writable by the panel process.`,
+        error: formatWritablePathError("Installation path", installPath),
       });
     }
 
@@ -1816,7 +1832,7 @@ router.post("/quick-setup", async (req, res) => {
       ensureWritableDirectory(serverConfigPath);
     } catch (directoryError) {
       return res.status(400).json({
-        error: `The Zomboid data folder is not writable: ${zomboidPath}. Choose a writable data path.`,
+        error: formatWritablePathError("Zomboid data folder", zomboidPath),
       });
     }
 
