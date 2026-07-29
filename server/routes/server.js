@@ -539,8 +539,6 @@ function generateStartupScripts(options) {
     gameArgs.push("-nosteam");
   }
 
-  gameArgs.push("-statistic 0");
-
   const classpathEntries = buildClasspathEntries(installPath);
 
   // Windows batch file
