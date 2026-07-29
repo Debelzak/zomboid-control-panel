@@ -1,8 +1,9 @@
 # Zomboid Control Panel - Docker
 # Multi-stage build: build client in stage 1, lean runtime in stage 2.
 #
-# Default base is Alpine (smallest image). On CentOS/RHEL hosts with SELinux,
-# use `:z` on bind-mount volumes (already set in docker-compose.yml).
+# Runtime uses Debian slim because SteamCMD requires glibc, Bash, and 32-bit
+# libraries on amd64. On CentOS/RHEL hosts with SELinux, use `:z` on
+# bind-mount volumes (already set in docker-compose.yml).
 #
 # IMPORTANT: This image runs the *panel*, not the Project Zomboid server.
 # PZ runs separately (on the host or in another container). See docker-compose.yml
@@ -27,29 +28,36 @@ COPY client/ ./client/
 RUN cd client && npm run build
 
 # --- Runtime stage ---
-FROM node:22-alpine
+FROM node:22-bookworm-slim
+
+# The panel supports arm64 for remote-server administration. SteamCMD itself
+# is only usable on amd64, where its 32-bit runtime libraries are installed.
+RUN set -eux; \
+        apt-get update; \
+        apt-get install -y --no-install-recommends bash ca-certificates curl procps tar wget; \
+        if [ "$(dpkg --print-architecture)" = "amd64" ]; then \
+            apt-get install -y --no-install-recommends lib32gcc-s1 lib32stdc++6; \
+        fi; \
+        rm -rf /var/lib/apt/lists/*
 
 # Configurable UID/GID to match the host user — avoids bind-mount permission issues.
 # Override at build time:
 #   docker compose build --build-arg UID=$(id -u) --build-arg GID=$(id -g)
-# node:20-alpine already ships with a `node` user at 1000:1000, so we reuse that
-# user (just renamed/aliased) when the requested IDs are already taken.
+# node:22-bookworm-slim already ships with a `node` user at 1000:1000, so we
+# reuse existing numeric IDs when possible.
 ARG UID=1000
 ARG GID=1000
 RUN set -eux; \
     if getent group "$GID" >/dev/null 2>&1; then \
-        existing_group=$(getent group "$GID" | cut -d: -f1); \
-        [ "$existing_group" = "panel" ] || addgroup panel "$existing_group" 2>/dev/null || true; \
-        groupname="$existing_group"; \
+        groupname=$(getent group "$GID" | cut -d: -f1); \
     else \
-        addgroup -g "$GID" -S panel; \
+        groupadd -g "$GID" panel; \
         groupname="panel"; \
     fi; \
     if getent passwd "$UID" >/dev/null 2>&1; then \
-        existing_user=$(getent passwd "$UID" | cut -d: -f1); \
-        [ "$existing_user" = "panel" ] || ln -sf "/home/$existing_user" /home/panel 2>/dev/null || true; \
+        :; \
     else \
-        adduser -u "$UID" -S panel -G "$groupname"; \
+        useradd -u "$UID" -g "$groupname" -M -s /usr/sbin/nologin panel; \
     fi
 
 WORKDIR /app
@@ -68,9 +76,9 @@ COPY --from=builder /app/client/dist ./client/dist
 # Copy PanelBridge mod so users can extract it (docker cp)
 COPY pz-mod/ ./pz-mod/
 
-# The Settings page serves this bundle directly to browsers. Keep it next to
-# the panel executable/source in every image, not only in release archives.
-COPY release/zomboid-panel-extension.zip ./zomboid-panel-extension.zip
+# The extension bundle is served when present, but its source is not currently
+# tracked in Git and `release/` is intentionally excluded from Docker builds.
+# Do not COPY a generated local ZIP here: that breaks clean GitHub/CI builds.
 
 # Create runtime directories owned by the panel user (numeric IDs survive
 # the case where we're reusing the base image's existing user).
