@@ -55,9 +55,10 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      # Panel state (database, JWT secret, backups). KEEP THIS PERSISTENT.
-      - ./data:/app/data:z
-      - ./logs:/app/logs:z
+      # Panel state (database, JWT secret, backups). Docker manages ownership,
+      # so first launch does not fail when the image runs as UID 1000.
+      - panel-data:/app/data
+      - panel-logs:/app/logs
 
       # --- Topology 1: PZ server on the host ---
       # Uncomment and adjust the host paths to where your PZ install lives.
@@ -81,3 +82,7 @@ services:
       # Before first setup through a reverse proxy, set its exact public origin:
       # - CORS_ORIGINS=https://panel.example.com
       # - HTTPS=true
+
+volumes:
+  panel-data:
+  panel-logs:

@@ -197,6 +197,9 @@ docker compose -f docker-compose.install.yml up -d
 Open `http://localhost:3001`. This starts the panel with persistent Docker
 volumes. For a panel that manages a PZ server on the same host, use the fully
 documented [docker-compose.yml](docker-compose.yml) and configure its bind mounts.
+The Compose files use named volumes for panel state, so do not replace them with
+host `./panel-data` or `./data` mounts unless those directories are owned by
+UID/GID `1000:1000`.
 
 ### Linux: installing a new PZ server through the panel
 
