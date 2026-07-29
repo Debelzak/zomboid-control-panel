@@ -49,11 +49,13 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          # amd64-only: the Debian runtime stage installs lib32gcc-s1 /
-          # lib32stdc++6 for steamcmd (32-bit binary), and neither package
-          # exists for arm64 in Debian's repos — steamcmd/PZ have no arm64
-          # build anyway, so there's nothing to gain from multi-arch here.
-          platforms: linux/amd64
+          # Multi-arch again: the Dockerfile now only installs lib32gcc-s1/
+          # lib32stdc++6 (steamcmd's 32-bit deps, unavailable for arm64) when
+          # dpkg --print-architecture = amd64, so arm64 no longer fails
+          # apt-get install — it just can't self-install/run a PZ server via
+          # SteamCMD (no arm64 build of that either). The panel itself still
+          # works there for remote-administering an amd64 PZ server elsewhere.
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
