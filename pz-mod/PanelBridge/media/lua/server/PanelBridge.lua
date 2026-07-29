@@ -1,12 +1,17 @@
 ---@diagnostic disable: undefined-global, deprecated
 --[[
     PanelBridge - Server-side mod for Zomboid Control Panel
-    Version: 1.7.3
+    Version: 1.7.4
 
     This mod enables external control panel communication with the PZ server.
     Communication happens via JSON files in the server save folder.
 
-    v1.7.3 Changes:
+        v1.7.4 Changes:
+        - Fixed B42 startup when the PanelBridge .init sentinel already exists.
+            Reusing the existing sentinel avoids a getFileWriter refusal that
+            prevented the heartbeat event from being initialized.
+
+        v1.7.3 Changes:
     - CRITICAL: Fixed VERSION constant regression. It had been hand-edited back
       to "1.2.2" (and mod.info modversion along with it) despite the file
       already containing features documented through v1.7.2 below. Since the
@@ -138,7 +143,7 @@
 local json
 
 local PanelBridge = {
-    VERSION = "1.7.3",
+    VERSION = "1.7.4",
     PROTOCOL_VERSION = "queue-v1",
     CHECK_INTERVAL = 250, -- milliseconds (fast command polling)
     lastCheck = 0,
@@ -646,6 +651,16 @@ function PanelBridge.ensureDirectory()
     local path = PanelBridge.getBasePath()
     -- Create directory by writing init file
     local initPath = path .. ".init"
+
+    -- B42 can refuse to reopen an existing file through getFileWriter during
+    -- server startup. The sentinel already proves the directory was created,
+    -- so avoid treating that harmless refusal as a fatal bridge failure.
+    local existing = getFileReader(initPath, false)
+    if existing then
+        existing:close()
+        return true
+    end
+
     local writer = getFileWriter(initPath, true, false)
     if writer then
         local stamp = "unknown"
