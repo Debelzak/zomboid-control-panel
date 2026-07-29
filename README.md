@@ -9,8 +9,7 @@
 [![Discord](https://img.shields.io/badge/discord-join-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/jHsWJDNmSg)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg?style=for-the-badge)](LICENSE)
 
-**Server control · RCON · live world map · mods · scheduler · backups · Discord bot · Lua bridge**
-One dark-mode control room instead of five different tools.
+Manage your Project Zomboid dedicated server from one place: server controls, RCON, a live world map, Workshop mods, scheduled restarts, backups, and Discord integration.
 
 [**🚀 Download**](https://github.com/fpsacha/zomboid-control-panel/releases/latest) ·
 [**👁️ Live demo**](https://fpsacha.github.io/zomboid-control-panel/) ·
