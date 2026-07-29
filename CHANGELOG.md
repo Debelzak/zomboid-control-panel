@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.4] - 2026-07-29
+
+### Changed
+
+- **Portable all-in-one Docker setup**: the public installer now resolves the latest release, stores its build state in a normal per-user directory by default, and uses Docker named volumes for panel data, logs, the PZ installation, and world saves. It no longer assumes an Unraid filesystem layout or a `zomboid.tower` hostname.
+- **Portable network configuration**: new installs default to `http://localhost:3001`; remote-access, LAN address, and WAN address values are explicit optional configuration rather than values copied from a specific deployment.
+
 ## [1.1.3] - 2026-07-29
 
 ### Fixed
