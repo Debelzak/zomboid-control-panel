@@ -1,5 +1,6 @@
 import express from "express";
 import { spawn, exec } from "child_process";
+import { promisify } from "util";
 import https from "https";
 import path from "path";
 import fs from "fs";
@@ -20,6 +21,7 @@ import { requireRole } from "../services/auth.js";
 const router = express.Router();
 
 const isWindows = process.platform === "win32";
+const execAsync = promisify(exec);
 
 // Get the SteamCMD executable name for the current platform
 function getSteamCmdExe(steamcmdPath) {
@@ -42,6 +44,129 @@ function getSteamCmdExe(steamcmdPath) {
     }
   }
   return primary; // Return primary path even if not found — let caller handle the error
+}
+
+// Self-heal "SteamCMD not found": downloads, extracts and first-time
+// initializes SteamCMD into `installPath` on Linux, mirroring the same
+// steps as POST /steamcmd/download. Called from /install and /update when
+// the configured steamcmdPath is empty — e.g. a fresh volume, or a
+// previous install attempt that never finished (permission error, network
+// blip, container restarted mid-download, etc.) instead of hard-failing
+// with a 400 and making the user manually re-run the setup wizard.
+// Windows is intentionally out of scope here (existing callers already
+// keep their own hard-fail for isWindows before calling this).
+async function ensureSteamCmdLinux(installPath, io) {
+  const steamcmdExe = getSteamCmdExe(installPath);
+  if (fs.existsSync(steamcmdExe)) return steamcmdExe;
+
+  const emit = (event, payload) => {
+    try {
+      io?.emit(event, payload);
+    } catch {
+      /* best effort */
+    }
+  };
+
+  log.warn(
+    `SteamCMD not found at ${steamcmdExe}; auto-downloading to ${installPath}...`,
+  );
+  emit("steamcmd:status", {
+    status: "downloading",
+    message: "SteamCMD missing — downloading it now...",
+  });
+
+  if (!fs.existsSync(installPath)) {
+    fs.mkdirSync(installPath, { recursive: true });
+  }
+
+  const tarUrl =
+    "https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz";
+  const tarPath = path.join(installPath, "steamcmd_linux.tar.gz");
+  const safeTarPath = tarPath.replace(/'/g, "'\\''");
+  const safeTarUrl = tarUrl.replace(/'/g, "'\\''");
+  const safeInstallPath = installPath.replace(/'/g, "'\\''");
+
+  try {
+    await execAsync(`curl -sSL -o '${safeTarPath}' '${safeTarUrl}'`, {
+      timeout: 120000,
+    });
+  } catch (curlErr) {
+    log.warn(`curl download failed (${curlErr.message}), trying wget...`);
+    await execAsync(`wget -q -O '${safeTarPath}' '${safeTarUrl}'`, {
+      timeout: 120000,
+    });
+  }
+
+  emit("steamcmd:status", {
+    status: "extracting",
+    message: "Extracting SteamCMD...",
+  });
+  await execAsync(`tar -xzf '${safeTarPath}' -C '${safeInstallPath}'`, {
+    timeout: 30000,
+  });
+  try {
+    fs.unlinkSync(tarPath);
+  } catch {
+    /* ignore */
+  }
+  try {
+    fs.chmodSync(path.join(installPath, "steamcmd.sh"), 0o755);
+  } catch {
+    /* ignore */
+  }
+  try {
+    fs.chmodSync(path.join(installPath, "steamcmd"), 0o755);
+  } catch {
+    /* ignore */
+  }
+
+  emit("steamcmd:status", {
+    status: "initializing",
+    message: "Initializing SteamCMD (first run)...",
+  });
+  const ldPaths = [
+    path.join(installPath, "linux32"),
+    path.join(installPath, "linux64"),
+    installPath,
+    process.env.LD_LIBRARY_PATH || "",
+  ]
+    .filter(Boolean)
+    .join(":");
+
+  await new Promise((resolve, reject) => {
+    const proc = spawn(steamcmdExe, ["+quit"], {
+      cwd: installPath,
+      env: { ...process.env, LD_LIBRARY_PATH: ldPaths },
+    });
+    proc.stdout.on("data", (d) =>
+      emit("steamcmd:log", { type: "stdout", text: d.toString() }),
+    );
+    proc.stderr.on("data", (d) =>
+      emit("steamcmd:log", { type: "stderr", text: d.toString() }),
+    );
+    proc.on("close", (code) => {
+      if (code === 0 || code === 7) {
+        resolve();
+      } else {
+        reject(new Error(`SteamCMD first-run setup exited with code ${code}`));
+      }
+    });
+    proc.on("error", reject);
+  });
+
+  if (!fs.existsSync(steamcmdExe)) {
+    throw new Error(
+      `SteamCMD download completed but ${steamcmdExe} still missing`,
+    );
+  }
+
+  emit("steamcmd:status", {
+    status: "complete",
+    message: "SteamCMD installed successfully!",
+    path: installPath,
+  });
+  log.info(`SteamCMD auto-installed to ${installPath}`);
+  return steamcmdExe;
 }
 
 function normalizeSteamBranch(branch) {
@@ -1270,12 +1395,27 @@ router.post("/install", async (req, res) => {
     // Sanitize string inputs for batch file
     const safeAdminPassword = sanitizeForBatch(adminPassword);
 
-    // Check if steamcmd exists
-    const steamcmdExe = getSteamCmdExe(steamcmdPath);
+    // Check if steamcmd exists — auto-download it on Linux instead of
+    // hard-failing (see ensureSteamCmdLinux for why: fresh volumes, or a
+    // previous install that never finished, shouldn't force a manual
+    // re-run of the setup wizard).
+    let steamcmdExe = getSteamCmdExe(steamcmdPath);
     if (!fs.existsSync(steamcmdExe)) {
-      return res
-        .status(400)
-        .json({ error: `SteamCMD not found at: ${steamcmdExe}` });
+      if (isWindows) {
+        return res
+          .status(400)
+          .json({ error: `SteamCMD not found at: ${steamcmdExe}` });
+      }
+      try {
+        steamcmdExe = await ensureSteamCmdLinux(
+          steamcmdPath,
+          req.app.get("io"),
+        );
+      } catch (dlErr) {
+        return res.status(500).json({
+          error: `SteamCMD not found and auto-download failed: ${sanitizeError(dlErr.message)}`,
+        });
+      }
     }
 
     // Prevent concurrent operations on the same install path
@@ -2211,11 +2351,25 @@ router.post("/steam-update", async (req, res) => {
       });
     }
 
-    const steamcmdExe = getSteamCmdExe(steamcmdPath);
+    // Auto-download SteamCMD on Linux instead of hard-failing — see
+    // ensureSteamCmdLinux.
+    let steamcmdExe = getSteamCmdExe(steamcmdPath);
     if (!fs.existsSync(steamcmdExe)) {
-      return res
-        .status(400)
-        .json({ error: `SteamCMD not found at: ${steamcmdExe}` });
+      if (isWindows) {
+        return res
+          .status(400)
+          .json({ error: `SteamCMD not found at: ${steamcmdExe}` });
+      }
+      try {
+        steamcmdExe = await ensureSteamCmdLinux(
+          steamcmdPath,
+          req.app.get("io"),
+        );
+      } catch (dlErr) {
+        return res.status(500).json({
+          error: `SteamCMD not found and auto-download failed: ${sanitizeError(dlErr.message)}`,
+        });
+      }
     }
 
     try {
