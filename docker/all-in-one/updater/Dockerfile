@@ -6,4 +6,5 @@ WORKDIR /controller
 COPY docker/all-in-one/updater/server.js ./server.js
 
 EXPOSE 3100
+ENTRYPOINT []
 CMD ["node", "server.js"]

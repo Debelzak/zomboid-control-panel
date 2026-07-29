@@ -204,6 +204,12 @@ export class ModChecker extends EventEmitter {
         installPath = await getSetting("serverPath");
       }
 
+      // The all-in-one Docker image has a fixed server path before the
+      // first panel server record is created.
+      if (!installPath) {
+        installPath = process.env.PZ_SERVER_PATH;
+      }
+
       if (!installPath) {
         log.debug("Server install path not configured");
         return null;

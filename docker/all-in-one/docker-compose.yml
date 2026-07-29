@@ -19,13 +19,15 @@ services:
       RCON_PORT: 27015
       CORS_ORIGINS: ${CORS_ORIGINS:?Set CORS_ORIGINS in .env}
       TRUST_PROXY: "1"
+      PANEL_LAN_IP: ${PANEL_LAN_IP:-}
+      PANEL_WAN_IP: ${PANEL_WAN_IP:-}
       PANEL_DOCKER_UPDATER_URL: http://zomboid-panel-updater:3100
       PANEL_DOCKER_UPDATER_TOKEN: ${PANEL_DOCKER_UPDATER_TOKEN:?Set PANEL_DOCKER_UPDATER_TOKEN in .env}
     volumes:
-      - /mnt/cache/appdata/zomboid-panel/data:/app/data
-      - /mnt/cache/appdata/zomboid-panel/logs:/app/logs
-      - /mnt/cache/appdata/zomboid-panel/pzserver:/pz-server
-      - /mnt/cache/appdata/zomboid-panel/zomboid:/zomboid
+      - panel-data:/app/data
+      - panel-logs:/app/logs
+      - pz-server:/pz-server
+      - zomboid-data:/zomboid
     depends_on:
       updater:
         condition: service_healthy
@@ -46,9 +48,15 @@ services:
       GITHUB_REPOSITORY: fpsacha/zomboid-control-panel
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - /mnt/cache/appdata/zomboid-panel/build:/build
+      - ${PANEL_BUILD_DIR:?Set PANEL_BUILD_DIR in .env}:/build
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:3100/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
       interval: 30s
       timeout: 5s
       retries: 3
+
+volumes:
+  panel-data:
+  panel-logs:
+  pz-server:
+  zomboid-data:

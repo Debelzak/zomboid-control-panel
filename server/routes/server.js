@@ -44,6 +44,33 @@ function getSteamCmdExe(steamcmdPath) {
   return primary; // Return primary path even if not found — let caller handle the error
 }
 
+function normalizeSteamBranch(branch) {
+  return !branch || branch === "stable" || branch === "public"
+    ? "public"
+    : branch;
+}
+
+function recoverMismatchedSteamBranchManifest(installPath, selectedBranch) {
+  const manifestPath = path.join(
+    installPath,
+    "steamapps",
+    "appmanifest_380870.acf",
+  );
+  if (!fs.existsSync(manifestPath)) return null;
+
+  const manifest = fs.readFileSync(manifestPath, "utf-8");
+  const mountedBranch = manifest.match(
+    /"MountedConfig"\s*\{[\s\S]*?"BetaKey"\s*"([^"]+)"/,
+  )?.[1];
+  const targetBranch = normalizeSteamBranch(selectedBranch);
+  if (!mountedBranch || mountedBranch === targetBranch) return null;
+
+  const backupPath = `${manifestPath}.bak-${Date.now()}`;
+  fs.copyFileSync(manifestPath, backupPath);
+  fs.unlinkSync(manifestPath);
+  return { mountedBranch, targetBranch, backupPath };
+}
+
 async function findSteamCmdPath() {
   const configuredPath = await getSetting("steamcmdPath");
   const candidates = [
@@ -2189,6 +2216,20 @@ router.post("/steam-update", async (req, res) => {
       return res
         .status(400)
         .json({ error: `SteamCMD not found at: ${steamcmdExe}` });
+    }
+
+    try {
+      const recovery = recoverMismatchedSteamBranchManifest(
+        installPath,
+        selectedBranch,
+      );
+      if (recovery) {
+        log.warn(
+          `Reset stale SteamCMD branch manifest (${recovery.mountedBranch} -> ${recovery.targetBranch}); backup: ${recovery.backupPath}`,
+        );
+      }
+    } catch (error) {
+      log.warn(`Could not inspect SteamCMD branch manifest: ${error.message}`);
     }
 
     const operation = validateFiles ? "verification" : "update";

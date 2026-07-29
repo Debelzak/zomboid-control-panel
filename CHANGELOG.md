@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.5] - 2026-07-29
+
+### Fixed
+
+- **SteamCMD public-branch updates**: when a dedicated-server install is still mounted to a different Steam beta branch, the panel now backs up and clears only its stale app manifest before updating. This allows SteamCMD to rebuild Public branch metadata instead of failing with an opaque access-denied exit code. Save data, Workshop downloads, and game files remain in place.
+
+## [1.1.4] - 2026-07-29
+
+### Changed
+
+- **Portable all-in-one Docker setup**: the public installer now resolves the latest release, stores its build state in a normal per-user directory by default, and uses Docker named volumes for panel data, logs, the PZ installation, and world saves. It no longer assumes an Unraid filesystem layout or a `zomboid.tower` hostname.
+- **Portable network configuration**: new installs default to `http://localhost:3001`; remote-access, LAN address, and WAN address values are explicit optional configuration rather than values copied from a specific deployment.
+
+## [1.1.3] - 2026-07-29
+
+### Fixed
+
+- **Docker update controller startup**: the updater image now clears the Docker CLI base image entrypoint before starting Node, preventing `node server.js` from being interpreted as a Docker subcommand and allowing the panel update controller to become healthy.
+
+## [1.1.2] - 2026-07-29
+
+### Added
+
+- **Docker in-panel updates**: all-in-one deployments can now update from Settings. The token-protected updater saves and stops Project Zomboid through RCON, downloads the chosen GitHub release, rebuilds and health-checks the container, and restores the prior source and image if the rollout fails.
+
+### Fixed
+
+- **All-in-one Docker paths**: Workshop scanning and B42 log discovery now use the configured `PZ_SERVER_PATH` and `PZ_SAVE_PATH` when no panel server record exists yet.
+- **All-in-one server status**: the Docker image includes `procps`, so the panel can use `pgrep` and `ps` to detect the running Java server accurately.
+
+### Changed
+
+- **Docker network addresses**: all-in-one deployments can set the LAN and WAN addresses in `.env`, preserving correct join and panel links after an in-panel update.
+
 ## [1.1.1] - 2026-07-28
 
 ### Added

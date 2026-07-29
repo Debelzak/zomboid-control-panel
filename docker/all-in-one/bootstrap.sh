@@ -1,22 +1,37 @@
 #!/bin/sh
 set -eu
 
-VERSION="${1:-1.0.75}"
-BUILD_ROOT="${BUILD_ROOT:-/mnt/cache/appdata/zomboid-panel/build}"
+REPOSITORY="fpsacha/zomboid-control-panel"
+VERSION="${1:-}"
+if [ -z "$VERSION" ]; then
+  VERSION="$(curl --fail --location --silent --show-error \
+    "https://api.github.com/repos/$REPOSITORY/releases/latest" \
+    | sed -n 's/.*"tag_name": "v\([^"]*\)".*/\1/p' | head -n 1)"
+fi
+case "$VERSION" in
+  ''|*[!0-9.]*) echo "Could not determine a valid release version. Pass it explicitly, for example: ./bootstrap.sh 1.1.4" >&2; exit 1 ;;
+esac
+
+PANEL_HOME="${PANEL_HOME:-${XDG_STATE_HOME:-$HOME/.local/state}/zomboid-panel}"
+BUILD_ROOT="${BUILD_ROOT:-$PANEL_HOME/build}"
 CONTEXT_DIR="$BUILD_ROOT/ctx"
 SOURCE_DIR="$BUILD_ROOT/source"
-REPOSITORY="fpsacha/zomboid-control-panel"
 
 mkdir -p "$CONTEXT_DIR"
 
 if [ ! -f "$CONTEXT_DIR/.env" ]; then
   TOKEN="$(head -c 32 /dev/urandom | base64 | tr -d '\n')"
   cat > "$CONTEXT_DIR/.env" <<EOF
-CORS_ORIGINS=http://zomboid.tower
+CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3001}
 PANEL_DOCKER_UPDATER_TOKEN=$TOKEN
+PANEL_BUILD_DIR=$BUILD_ROOT
+PANEL_LAN_IP=${PANEL_LAN_IP:-}
+PANEL_WAN_IP=${PANEL_WAN_IP:-}
 EOF
   chmod 600 "$CONTEXT_DIR/.env"
-  echo "Created $CONTEXT_DIR/.env. Update CORS_ORIGINS before exposing the panel elsewhere."
+  echo "Created $CONTEXT_DIR/.env. Set CORS_ORIGINS to the URL you will use before accessing the panel remotely."
+elif ! grep -q '^PANEL_BUILD_DIR=' "$CONTEXT_DIR/.env"; then
+  printf '\nPANEL_BUILD_DIR=%s\n' "$BUILD_ROOT" >> "$CONTEXT_DIR/.env"
 fi
 
 WORK_DIR="$(mktemp -d)"
@@ -47,4 +62,4 @@ docker run --rm \
   zomboid-panel-updater:latest \
   docker compose --env-file .env -f docker-compose.yml up -d --build
 
-echo "All-in-one panel is starting. Open http://zomboid.tower:3001 after its health check passes."
+echo "All-in-one panel is starting. Open the URL configured in $CONTEXT_DIR/.env after its health check passes."
