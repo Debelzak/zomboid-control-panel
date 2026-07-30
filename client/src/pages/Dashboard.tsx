@@ -196,7 +196,7 @@ export default function Dashboard() {
     variant?: 'destructive' | 'warning'
   } | null>(null)
   const [wipeDialog, setWipeDialog] = useState(false)
-  const [wipeTargets, setWipeTargets] = useState<Record<string, boolean>>({ map: true, players: true, world: true })
+  const [wipeTargets, setWipeTargets] = useState<Record<string, boolean>>({ map: true, players: true, world: true, accounts: false })
   const [wipePreview, setWipePreview] = useState<{
     totalFiles: number; totalSize: number
     preview: Record<string, { files: number; size: number }>
@@ -1336,9 +1336,10 @@ export default function Dashboard() {
 
           <div className="space-y-3 py-2">
             {([
-              ['map',     'Map & terrain',       'Chunks, terrain, buildings, zombie population, iso regions.'],
-              ['players', 'Players & vehicles',  'Player saves, inventories, positions, vehicle data.'],
-              ['world',   'World state',         'World dictionary, metadata, erosion, game object states, radio.'],
+              ['map',      'Map & terrain',       'Chunks, terrain, buildings, zombie population, iso regions.'],
+              ['players',  'Players & vehicles',  'Player saves, inventories, positions, vehicle data.'],
+              ['world',    'World state',         'World dictionary, metadata, erosion, game object states, radio.'],
+              ['accounts', 'Accounts & bans',     'User accounts, passwords, roles, whitelist and ban lists. Everyone re-registers on next join.'],
             ] as const).map(([key, label, desc]) => (
               <label key={key} className="flex cursor-pointer items-start gap-3 rounded-md border border-border/50 p-3 hover:bg-muted/30">
                 <Checkbox
@@ -1352,7 +1353,7 @@ export default function Dashboard() {
                 </div>
               </label>
             ))}
-            <div className="px-3 pb-1 text-xs text-muted-foreground">Server .ini and sandbox settings are stored separately and will not be affected.</div>
+            <div className="px-3 pb-1 text-xs text-muted-foreground">Selecting map, players and world empties the save folder completely, including anything mods left behind. Server .ini and sandbox settings are stored separately and will not be affected.</div>
           </div>
 
           {wipePreview && (
@@ -1362,10 +1363,15 @@ export default function Dashboard() {
               ) : (
                 <>
                   <div className="font-medium text-destructive">This will permanently delete:</div>
-                  {(['map', 'players', 'world'] as const).map(key => {
+                  {(['map', 'players', 'world', 'leftovers', 'accounts'] as const).map(key => {
                     const data = wipePreview.preview?.[key]
                     if (!data) return null
-                    const labels = { map: 'map/terrain', players: 'player/vehicle', world: 'world state' }
+                    const labels = { map: 'map/terrain', players: 'player/vehicle', world: 'world state', leftovers: 'other leftover', accounts: 'account database' }
+                    if (key === 'leftovers') {
+                      return data.files > 0
+                        ? <div key={key}>{data.files.toLocaleString()} {labels[key]} files ({(data.size / 1024 / 1024).toFixed(1)} MB)</div>
+                        : null
+                    }
                     return data.files > 0
                       ? <div key={key}>{data.files.toLocaleString()} {labels[key]} files ({(data.size / 1024 / 1024).toFixed(1)} MB)</div>
                       : <div key={key} className="text-muted-foreground">No {labels[key]} files found</div>
