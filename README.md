@@ -188,6 +188,39 @@ Works on Ubuntu 20.04+, Debian 10+, CentOS Stream 8+, Rocky 8+, or anything with
 
 ### Docker
 
+Download [docker-compose.install.yml](docker-compose.install.yml), then run:
+
+```bash
+docker compose -f docker-compose.install.yml up -d
+```
+
+Open `http://localhost:3001`. This starts the panel with persistent Docker
+volumes. For a panel that manages a PZ server on the same host, use the fully
+documented [docker-compose.yml](docker-compose.yml) and configure its bind mounts.
+The Compose files use named volumes for panel state, so do not replace them with
+host `./panel-data` or `./data` mounts unless those directories are owned by
+UID/GID `1000:1000`.
+
+### Linux: installing a new PZ server through the panel
+
+If you installed the panel as the bundled `zomboid-panel.service`, use this install folder in the setup wizard:
+
+```text
+/opt/zomboid-panel/data/pzserver
+```
+
+Create it once before opening the wizard:
+
+```bash
+sudo -u pzuser mkdir -p /opt/zomboid-panel/data/pzserver
+```
+
+The panel also creates `/opt/zomboid-panel/data/pzserver_Data` for server settings and save data. Leave **Custom config location** blank unless you have a specific reason to store it elsewhere.
+
+Do not use `/opt/pzserver` with the bundled service unless you add both `/opt/pzserver` and `/opt/pzserver_Data` to `ReadWritePaths` in `zomboid-panel.service`, then run `sudo systemctl daemon-reload` and `sudo systemctl restart zomboid-panel`.
+
+### Docker
+
 The image runs **the panel only** — Project Zomboid itself still has to run somewhere (on the host, in another container, or on a separate machine). The panel reaches it via RCON and via shared filesystem (for PanelBridge).
 
 Pull the prebuilt image:

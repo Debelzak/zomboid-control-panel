@@ -1,12 +1,15 @@
 ---@diagnostic disable: undefined-global, deprecated
 --[[
     PanelBridge - Server-side mod for Zomboid Control Panel
-    Version: 1.7.9
+    Version: 1.7.10
 
     This mod enables external control panel communication with the PZ server.
     Communication happens via JSON files in the server save folder.
 
-    v1.7.9 Changes:
+    v1.7.10 Changes:
+    - Merge of two independent 1.7.9 fixes (fork and upstream landed on the
+      same version number for different changes; bumped to keep the
+      auto-updater's strictly-newer check unambiguous):
     - writeFile() now resolves panel-owned filenames (commands.json,
       inbox/cmd-*.json) to their plain path itself, matching readFile's
       existing logic, instead of relying solely on clearFile's guard.
@@ -17,6 +20,14 @@
       ".write-check" file instead of the real status.json — canWritePath
       actually writes its probe text, so probing the production file could
       briefly hand a reader "PanelBridge probe" instead of valid JSON.
+    - Stopped logging the chat-to-RCON handoff as a failure. sendToServerChat
+      returns "useRCON" when neither ChatServer nor an online player is
+      available, which tells the panel to deliver the message over RCON — the
+      documented primary path. The dispatcher counted that as a failed command
+      and logged it at WARN, so every scheduled broadcast sent while the server
+      was empty printed "Command failed: sendToServerChat" in the console. The
+      sentinel now logs at debug and no longer inflates commandsFailed. The
+      result still goes back as unsuccessful, so the RCON fallback is unchanged.
 
     v1.7.8 Changes:
     - CRITICAL: Build 42 buildid 24449161 (2026-07-29) restricted getFileWriter
@@ -181,7 +192,7 @@
 local json
 
 local PanelBridge = {
-    VERSION = "1.7.9",
+    VERSION = "1.7.10",
     PROTOCOL_VERSION = "queue-v1",
     CHECK_INTERVAL = 250, -- milliseconds (fast command polling)
     lastCheck = 0,
@@ -1124,6 +1135,12 @@ local function processSingleCommand(cmd)
             if cacheTtl then
                 readOnlyCache[cmd.action] = { at = getTimestampMs(), ok = success, data = data, err = errorMsg }
             end
+            PanelBridge.sendResult(cmd.id, success, data, errorMsg)
+        elseif errorMsg == "useRCON" then
+            -- Routing signal, not a failure: the backend delivers this over RCON instead.
+            PanelBridge.debug("Command routed to RCON: " .. tostring(cmd.action), {
+                duration = duration .. "ms"
+            })
             PanelBridge.sendResult(cmd.id, success, data, errorMsg)
         else
             PanelBridge.stats.commandsFailed = PanelBridge.stats.commandsFailed + 1

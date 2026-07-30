@@ -95,6 +95,21 @@ function writeReleaseReadme() {
 3. Open your browser to http://localhost:3001
 4. Configure your server paths in Settings
 
+### Installing a new PZ server from the panel
+When using the included Linux systemd service, enter this exact folder in the
+setup wizard:
+
+  /opt/zomboid-panel/data/pzserver
+
+Create it once before using the wizard:
+
+  sudo -u pzuser mkdir -p /opt/zomboid-panel/data/pzserver
+
+The panel creates /opt/zomboid-panel/data/pzserver_Data for PZ settings and
+save data. Leave Custom config location blank unless you need another location.
+Do not use /opt/pzserver unless you also add it and /opt/pzserver_Data to
+ReadWritePaths in zomboid-panel.service, then restart the service.
+
 ## Linux Troubleshooting
 - If you see "Permission denied": chmod +x ZomboidControlPanel start.sh
 - If launch fails with glibc errors: requires glibc 2.28+ (CentOS Stream 8+, Rocky 8+, Ubuntu 20.04+).
@@ -121,8 +136,15 @@ Edit the service file to match your install path and user.
 See the service file comments for SELinux and firewall setup.
 
 ## Docker
-  docker compose up -d
-See docker-compose.yml comments for volume mount and UID configuration.
+The included docker-compose.install.yml starts the panel using the published
+Docker image and persistent Docker volumes:
+
+  docker compose -f docker-compose.install.yml up -d
+
+Open http://localhost:3001 after it starts. This installer is for remote PZ
+servers or panel-first setup. For a panel that manages a host PZ installation,
+download docker-compose.yml from the GitHub repository and configure its bind
+mounts before running Docker Compose.
 
 ## Folder Structure
 - ZomboidControlPanel.exe - Windows standalone binary
@@ -130,6 +152,7 @@ See docker-compose.yml comments for volume mount and UID configuration.
 - Start.bat                - Windows launch script
 - start.sh                 - Linux launch script
 - zomboid-panel.service    - systemd unit file (Linux)
+- docker-compose.install.yml - Docker Compose installer (published panel image)
 - client/dist/             - Web interface (required, must stay alongside binary)
 - data/db.json             - Configuration database (created on first run; NEVER overwrite when upgrading — see data/README.txt)
 - data/db.example.json     - Reference db structure (safe to delete)
@@ -684,6 +707,9 @@ fi
   console.log("  - pz-mod/");
   if (fs.existsSync("./release/zomboid-panel.service")) {
     console.log("  - zomboid-panel.service");
+  }
+  if (fs.existsSync("./release/docker-compose.install.yml")) {
+    console.log("  - docker-compose.install.yml");
   }
   console.log("  - README.txt");
 }

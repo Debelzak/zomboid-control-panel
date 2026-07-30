@@ -1381,6 +1381,7 @@ export default function ServerConfig() {
       const sectionData = sandboxData[sectionName as keyof SandboxData]
       if (typeof sectionData !== 'object' || sectionData === null) continue
       for (const [key, value] of Object.entries(sectionData as Record<string, string | number | boolean>)) {
+        if (key === 'VERSION') continue // file-format marker, not an editable setting
         if (!schemaKeys.has(`${sectionName}.${key}`)) {
           const lower = deferredSearchQuery?.toLowerCase() || ''
           if (!deferredSearchQuery || key.toLowerCase().includes(lower) || String(value).toLowerCase().includes(lower)) {
@@ -1394,6 +1395,15 @@ export default function ServerConfig() {
       return a.key.localeCompare(b.key)
     })
   }, [sandboxData, deferredSearchQuery])
+
+  const uncategorizedGroups = useMemo(() => {
+    const groups: Record<string, typeof uncategorizedSandboxKeys> = {}
+    for (const entry of uncategorizedSandboxKeys) {
+      const list = groups[entry.section] || (groups[entry.section] = [])
+      list.push(entry)
+    }
+    return groups
+  }, [uncategorizedSandboxKeys])
 
   // Load backups
   const loadBackups = async () => {
@@ -2546,10 +2556,19 @@ export default function ServerConfig() {
                                   </span>
                                 </div>
                                 <p className="mb-3 text-xs text-muted-foreground">
-                                  Sandbox settings not yet grouped by the editor. This can include newer vanilla options and mod-added keys. Edit with care.
+                                  Settings the editor has no schema for, grouped by the section that owns them. Mostly mod-added keys. Edit with care.
                                 </p>
-                                <div className="space-y-1">
-                                  {uncategorizedSandboxKeys.map(({ section, key, value }) => {
+                                <div className="space-y-5">
+                                  {Object.entries(uncategorizedGroups).map(([groupName, groupEntries]) => (
+                                    <div key={groupName}>
+                                      <div className="mb-1.5 flex items-baseline justify-between border-b border-border/40 pb-1">
+                                        <h4 className="font-mono text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                                          {groupName === 'settings' ? 'Main section' : groupName}
+                                        </h4>
+                                        <span className="font-mono text-[10px] tabular-nums text-muted-foreground">{groupEntries.length}</span>
+                                      </div>
+                                      <div className="space-y-1">
+                                        {groupEntries.map(({ section, key, value }) => {
                                     const origSection = originalSandboxData?.[section as keyof SandboxData]
                                     const origValue = typeof origSection === 'object' ? (origSection as Record<string, unknown>)?.[key] : undefined
                                     const isModified = value !== origValue
@@ -2558,9 +2577,6 @@ export default function ServerConfig() {
                                         <div className="flex-1 min-w-0 mr-4">
                                           <div className="flex items-center gap-2 min-w-0">
                                             <span className="text-sm font-medium truncate" title={key}>{key}</span>
-                                            {section !== 'settings' && (
-                                              <code className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground flex-shrink-0">{section}</code>
-                                            )}
                                             {isModified && (
                                               <button
                                                 onClick={() => {
@@ -2599,7 +2615,10 @@ export default function ServerConfig() {
                                         />
                                       </div>
                                     )
-                                  })}
+                                        })}
+                                      </div>
+                                    </div>
+                                  ))}
                                 </div>
                               </div>
                             )

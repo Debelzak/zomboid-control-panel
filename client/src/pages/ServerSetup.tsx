@@ -105,6 +105,16 @@ function formatBytes(bytes: number): string {
   return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
 }
 
+const LINUX_SERVICE_INSTALL_PATH = "/opt/zomboid-panel/data/pzserver";
+
+function installationErrorGuidance(message: string) {
+  if (!message.startsWith("Installation path is not writable:")) {
+    return message;
+  }
+
+  return `${message} On Linux, use ${LINUX_SERVICE_INSTALL_PATH}, or add both your install folder and its _Data folder to ReadWritePaths in zomboid-panel.service, then restart the service.`;
+}
+
 export default function ServerSetup() {
   const [setupMode, setSetupMode] = useState<SetupMode>("select");
   const [currentStep, setCurrentStep] = useState(1);
@@ -637,7 +647,8 @@ export default function ServerSetup() {
         rconPort,
       });
     } catch (error) {
-      const msg = error instanceof Error ? error.message : "Unknown error";
+      const rawMessage = error instanceof Error ? error.message : "Unknown error";
+      const msg = installationErrorGuidance(rawMessage);
       addLog("error", msg);
       setInstalling(false);
       toast({
@@ -1194,7 +1205,18 @@ export default function ServerSetup() {
       <div className="grid gap-6">
         {/* Installation Path */}
         <div className="space-y-2">
-          <Label className="text-base">Install Folder</Label>
+          <div className="flex items-center justify-between gap-3">
+            <Label className="text-base">Install Folder</Label>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-auto px-0 text-xs"
+              onClick={() => setInstallPath(LINUX_SERVICE_INSTALL_PATH)}
+            >
+              Use Linux service path
+            </Button>
+          </div>
           <div className="flex gap-2">
             <Input
               value={installPath}
@@ -1226,7 +1248,26 @@ export default function ServerSetup() {
             </TooltipProvider>
           </div>
           <p className="text-xs text-muted-foreground">
-            SteamCMD downloads approximately 3 GB to this folder.
+            SteamCMD downloads approximately 3 GB here. The panel service must
+            be allowed to write to this folder.
+          </p>
+        </div>
+
+        <div className="border border-border/60 bg-muted/40 rounded-lg p-4 text-sm space-y-2">
+          <p className="font-medium flex items-center gap-2">
+            <Info className="w-4 h-4 text-primary" />
+            Linux service installs
+          </p>
+          <p className="text-muted-foreground">
+            If the panel runs through the bundled systemd service, use{" "}
+            <code className="bg-muted px-1 rounded">{LINUX_SERVICE_INSTALL_PATH}</code>.
+            Other folders require a systemd permission change.
+          </p>
+          <p className="text-muted-foreground">
+            The server data folder is created beside the install folder: {" "}
+            <code className="bg-muted px-1 rounded break-all">
+              {installPath.trim() ? `${installPath.trim()}_Data` : "your-install-folder_Data"}
+            </code>. Both folders must be writable.
           </p>
         </div>
 
@@ -1302,8 +1343,9 @@ export default function ServerSetup() {
             <AccordionContent className="px-4 pb-4">
               <div className="space-y-3">
                 <p className="text-sm text-muted-foreground">
-                  Leave this blank to use the panel default. In Docker, choose a
-                  bind-mounted folder when overriding it.
+                  Leave this blank to create a data folder beside the install
+                  folder. In Docker, choose a bind-mounted folder when
+                  overriding it.
                 </p>
                 <div className="flex items-center gap-3">
                   <Switch

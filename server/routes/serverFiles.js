@@ -45,6 +45,35 @@ function escapeLuaString(str) {
   });
 }
 
+const LUA_UNESCAPES = {
+  "\\": "\\",
+  '"': '"',
+  "'": "'",
+  n: "\n",
+  r: "\r",
+  t: "\t",
+  0: "\0",
+  "[": "[",
+  "]": "]",
+};
+
+// Inverse of escapeLuaString. Parsing must undo what writing escaped, otherwise
+// every save re-escapes the same backslashes and doubles them until the file is
+// corrupt (seen in the wild: StreetlightGen.ExcludeSprites grew to 16k slashes).
+function unescapeLuaString(value) {
+  const str = String(value);
+  if (!/^"[\s\S]*"$|^'[\s\S]*'$/.test(str)) {
+    return str.replace(/^["']|["']$/g, "");
+  }
+  return str
+    .slice(1, -1)
+    .replace(/\\([\s\S])/g, (match, c) =>
+      Object.prototype.hasOwnProperty.call(LUA_UNESCAPES, c)
+        ? LUA_UNESCAPES[c]
+        : match,
+    );
+}
+
 // Get the server config directory path
 async function getServerConfigPath() {
   const activeServer = await getActiveServer();
@@ -286,7 +315,7 @@ function parseSandboxVars(content) {
       if (value === "true") value = true;
       else if (value === "false") value = false;
       else if (!isNaN(parseFloat(value))) value = parseFloat(value);
-      else value = value.replace(/^["']|["']$/g, "");
+      else value = unescapeLuaString(value);
 
       result.settings[key] = value;
     }
@@ -315,7 +344,7 @@ function parseSandboxVars(content) {
           if (value === "true") value = true;
           else if (value === "false") value = false;
           else if (!isNaN(parseFloat(value))) value = parseFloat(value);
-          else value = value.replace(/^["']|["']$/g, "");
+          else value = unescapeLuaString(value);
 
           result[blockName][valueMatch[1]] = value;
         }

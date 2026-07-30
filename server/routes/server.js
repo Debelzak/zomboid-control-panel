@@ -216,6 +216,28 @@ async function findSteamCmdPath() {
 // Track active Steam operations to prevent concurrent runs on the same path
 const activeSteamOperations = new Map();
 
+function hasActiveSteamOperation(normalizedPath) {
+  const operation = activeSteamOperations.get(normalizedPath);
+  if (!operation) return false;
+
+  if (Number.isInteger(operation.pid)) {
+    try {
+      process.kill(operation.pid, 0);
+      return true;
+    } catch (error) {
+      if (error.code === "ESRCH") {
+        activeSteamOperations.delete(normalizedPath);
+        log.warn(
+          `Cleared stale Steam ${operation.type} operation for ${normalizedPath}`,
+        );
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
 // Helper to auto-configure RCON in the server's .ini file
 // Called BEFORE server starts to ensure PZ reads the correct RCON credentials on boot.
 // If the INI file doesn't exist yet (first run), creates the directory + a minimal INI
@@ -1436,7 +1458,7 @@ router.post("/install", async (req, res) => {
 
     // Prevent concurrent operations on the same install path
     const normalizedPath = path.normalize(installPath).toLowerCase();
-    if (activeSteamOperations.has(normalizedPath)) {
+    if (hasActiveSteamOperation(normalizedPath)) {
       return res.status(409).json({
         error:
           "A Steam operation is already in progress for this path. Please wait for it to complete.",
@@ -1487,6 +1509,7 @@ router.post("/install", async (req, res) => {
       spawnOpts.env = { ...process.env, LD_LIBRARY_PATH: ldPaths };
     }
     const steamcmd = spawn(steamcmdExe, steamcmdArgs, spawnOpts);
+    activeSteamOperations.get(normalizedPath).pid = steamcmd.pid;
 
     let output = "";
     let stdoutBuffer = "";
@@ -2360,7 +2383,7 @@ router.post("/steam-update", async (req, res) => {
 
     // Prevent concurrent operations on the same install path
     const normalizedPath = path.normalize(installPath).toLowerCase();
-    if (activeSteamOperations.has(normalizedPath)) {
+    if (hasActiveSteamOperation(normalizedPath)) {
       return res.status(409).json({
         error:
           "A Steam operation is already in progress for this server. Please wait for it to complete.",
@@ -2448,6 +2471,7 @@ router.post("/steam-update", async (req, res) => {
       updateSpawnOpts.env = { ...process.env, LD_LIBRARY_PATH: ldPaths };
     }
     const steamcmd = spawn(steamcmdExe, steamcmdArgs, updateSpawnOpts);
+    activeSteamOperations.get(normalizedPath).pid = steamcmd.pid;
 
     let output = "";
     let stdoutBuffer = "";
@@ -2974,7 +2998,13 @@ router.post("/list-directory", async (req, res) => {
     try {
       items = fs.readdirSync(normalized, { withFileTypes: true });
     } catch (e) {
-      return res.status(403).json({ error: "Access denied" });
+      const code = e && typeof e === "object" && "code" in e ? e.code : "UNKNOWN";
+      const guidance = isWindows
+        ? "Run the panel as an account that can read this folder."
+        : "The panel service account needs read and execute permission on this folder and every parent folder.";
+      return res.status(403).json({
+        error: `Cannot read ${normalized} (${code}). ${guidance}`,
+      });
     }
 
     const folders = [];
@@ -3573,11 +3603,14 @@ router.post("/wipe/preview", async (req, res) => {
     const { targets } = req.body; // e.g. ["map", "players", "world"]
     if (!Array.isArray(targets) || targets.length === 0) {
       return res.status(400).json({
-        error: "targets must be a non-empty array of: map, players, world",
+        error:
+          "targets must be a non-empty array of: map, players, world, accounts",
       });
     }
 
-    const allowedTargets = ["map", "players", "world"];
+    // "accounts" lives outside the save folder, so it is not part of the sweep
+    const SAVE_TARGETS = ["map", "players", "world"];
+    const allowedTargets = [...SAVE_TARGETS, "accounts"];
     const invalid = targets.filter((t) => !allowedTargets.includes(t));
     if (invalid.length > 0) {
       return res.status(400).json({
@@ -3641,6 +3674,7 @@ router.post("/wipe/preview", async (req, res) => {
       "zpop",
       "apop",
       "metagrid",
+      "map_visited_server",
     ];
     const WORLD_DIRS = ["radio"];
     // Player files in save root
@@ -3651,7 +3685,7 @@ router.post("/wipe/preview", async (req, res) => {
     // global_mod_data.bin, reanimated.bin, iTrack.bin, gos_*.bin, map_*.bin (except map_zone/map_p),
     // z_outfits.bin, recorded_media.bin, erosion.ini, WorldDictionary*.lua, etc.
     const WORLD_ROOT_FILES =
-      /^(WorldDictionary.*|map_meta\.bin|map_t\.bin|map_worldgen\.bin|map_animals\.bin|map_basements\.bin|entity_data\.bin|global_mod_data\.bin|reanimated\.bin|iTrack\.bin|gos_.*\.bin|id_manager_data\.bin|important_area_data\.bin|z_outfits\.bin|recorded_media\.bin|servermap_symbols\.bin|map_sand\.bin|erosion\.ini)$/i;
+      /^(WorldDictionary.*|map_meta\.bin|map_t\.bin|map_worldgen\.bin|map_animals\.bin|map_basements\.bin|entity_data\.bin|global_mod_data\.bin|reanimated\.bin|iTrack\.bin|gos_.*\.bin|id_manager_data\.bin|important_area_data\.bin|z_outfits\.bin|recorded_media\.bin|servermap_symbols\.bin|map_sand\.bin|hidden_authors\.ini|erosion\.ini)$/i;
 
     if (targets.includes("map")) {
       let mapFiles = 0;
@@ -3729,6 +3763,63 @@ router.post("/wipe/preview", async (req, res) => {
       totalSize += worldSize;
     }
 
+    // Selecting every target means a total wipe, so account for anything the
+    // per-target lists don't recognise (mod files, stale backups, new formats).
+    if (SAVE_TARGETS.every((t) => targets.includes(t))) {
+      const claimed = new Set([...MAP_DIRS, ...WORLD_DIRS]);
+      let extraFiles = 0;
+      let extraSize = 0;
+      try {
+        for (const entry of fs.readdirSync(saveDir, { withFileTypes: true })) {
+          if (claimed.has(entry.name)) continue;
+          if (
+            !entry.isDirectory() &&
+            (PLAYER_ROOT_FILES.test(entry.name) ||
+              WORLD_ROOT_FILES.test(entry.name))
+          ) {
+            continue;
+          }
+          const fullPath = path.join(saveDir, entry.name);
+          if (entry.isDirectory()) {
+            const sub = countDir(fullPath);
+            extraFiles += sub.files;
+            extraSize += sub.size;
+          } else {
+            extraFiles++;
+            try {
+              extraSize += fs.statSync(fullPath).size;
+            } catch (e) {
+              log.debug(`Stat failed for ${entry.name}: ${e.message}`);
+            }
+          }
+        }
+      } catch (e) {
+        log.debug(`Leftover scan failed: ${e.message}`);
+      }
+      preview.leftovers = { files: extraFiles, size: extraSize };
+      totalFiles += extraFiles;
+      totalSize += extraSize;
+    }
+
+    if (targets.includes("accounts")) {
+      let accountFiles = 0;
+      let accountSize = 0;
+      for (const suffix of ["", "-journal", "-wal", "-shm"]) {
+        const dbFile = path.join(savePath, "db", `${serverName}.db${suffix}`);
+        if (fs.existsSync(dbFile)) {
+          accountFiles++;
+          try {
+            accountSize += fs.statSync(dbFile).size;
+          } catch (e) {
+            log.debug(`Stat failed for ${dbFile}: ${e.message}`);
+          }
+        }
+      }
+      preview.accounts = { files: accountFiles, size: accountSize };
+      totalFiles += accountFiles;
+      totalSize += accountSize;
+    }
+
     res.json({
       success: true,
       serverName,
@@ -3771,11 +3862,14 @@ router.post("/wipe", requireRole("admin"), async (req, res) => {
     }
     if (!Array.isArray(targets) || targets.length === 0) {
       return res.status(400).json({
-        error: "targets must be a non-empty array of: map, players, world",
+        error:
+          "targets must be a non-empty array of: map, players, world, accounts",
       });
     }
 
-    const allowedTargets = ["map", "players", "world"];
+    // "accounts" lives outside the save folder, so it is not part of the sweep
+    const SAVE_TARGETS = ["map", "players", "world"];
+    const allowedTargets = [...SAVE_TARGETS, "accounts"];
     const invalid = targets.filter((t) => !allowedTargets.includes(t));
     if (invalid.length > 0) {
       return res
@@ -3816,12 +3910,13 @@ router.post("/wipe", requireRole("admin"), async (req, res) => {
       "zpop",
       "apop",
       "metagrid",
+      "map_visited_server",
     ];
     const WORLD_DIRS = ["radio"];
     const PLAYER_ROOT_FILES =
       /^(players\.db|players\.db-journal|vehicles\.db|vehicles\.db-journal|map_p\.bin|map_zone\.bin)$/i;
     const WORLD_ROOT_FILES =
-      /^(WorldDictionary.*|map_meta\.bin|map_t\.bin|map_worldgen\.bin|map_animals\.bin|map_basements\.bin|entity_data\.bin|global_mod_data\.bin|reanimated\.bin|iTrack\.bin|gos_.*\.bin|id_manager_data\.bin|important_area_data\.bin|z_outfits\.bin|recorded_media\.bin|servermap_symbols\.bin|map_sand\.bin|erosion\.ini)$/i;
+      /^(WorldDictionary.*|map_meta\.bin|map_t\.bin|map_worldgen\.bin|map_animals\.bin|map_basements\.bin|entity_data\.bin|global_mod_data\.bin|reanimated\.bin|iTrack\.bin|gos_.*\.bin|id_manager_data\.bin|important_area_data\.bin|z_outfits\.bin|recorded_media\.bin|servermap_symbols\.bin|map_sand\.bin|hidden_authors\.ini|erosion\.ini)$/i;
 
     try {
       if (targets.includes("map")) {
@@ -3884,6 +3979,36 @@ router.post("/wipe", requireRole("admin"), async (req, res) => {
         }
         results.world =
           deletedCount > 0 ? `deleted ${deletedCount} items` : "not found";
+      }
+
+      // Selecting every target means a total wipe: remove whatever the
+      // per-target lists don't recognise so nothing from the old world survives.
+      if (SAVE_TARGETS.every((t) => targets.includes(t))) {
+        let leftovers = 0;
+        for (const entry of fs.readdirSync(saveDir, { withFileTypes: true })) {
+          log.warn(`WIPE: Deleting leftover ${entry.name}`);
+          fs.rmSync(path.join(saveDir, entry.name), {
+            recursive: true,
+            force: true,
+          });
+          leftovers++;
+        }
+        results.leftovers =
+          leftovers > 0 ? `deleted ${leftovers} remaining items` : "none";
+      }
+
+      if (targets.includes("accounts")) {
+        let deletedCount = 0;
+        for (const suffix of ["", "-journal", "-wal", "-shm"]) {
+          const dbFile = path.join(savePath, "db", `${serverName}.db${suffix}`);
+          if (fs.existsSync(dbFile)) {
+            log.warn(`WIPE: Deleting account database ${dbFile}`);
+            fs.rmSync(dbFile, { force: true });
+            deletedCount++;
+          }
+        }
+        results.accounts =
+          deletedCount > 0 ? `deleted ${deletedCount} files` : "not found";
       }
     } finally {
       wipeInProgress = false;
