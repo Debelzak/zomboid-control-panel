@@ -53,7 +53,7 @@ import {
 } from '@/components/ui/select'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { useToast } from '@/components/ui/use-toast'
-import { schedulerApi, rconApi, serverApi, ScheduleHistoryEntry } from '@/lib/api'
+import { schedulerApi, rconApi, serverApi, serversApi, ScheduleHistoryEntry, ServerInstance } from '@/lib/api'
 import { EmptyState } from '@/components/EmptyState'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 
@@ -62,6 +62,7 @@ interface ScheduledTask {
   name: string
   cron_expression: string
   command: string
+  server_id: string | number | null
   enabled: number
   last_run: string | null
   created_at: string
@@ -95,6 +96,7 @@ export default function Scheduler() {
   const [tasks, setTasks] = useState<ScheduledTask[]>([])
   const [history, setHistory] = useState<ScheduleHistoryEntry[]>([])
   const [presets, setPresets] = useState<CronPreset[]>([])
+  const [servers, setServers] = useState<ServerInstance[]>([])
   const [status, setStatus] = useState<{
     activeTasks: number
     autoRestartEnabled: boolean
@@ -110,6 +112,7 @@ export default function Scheduler() {
   const [newTaskName, setNewTaskName] = useState('')
   const [newTaskCron, setNewTaskCron] = useState('')
   const [newTaskCommand, setNewTaskCommand] = useState('')
+  const [newTaskServerId, setNewTaskServerId] = useState<string>('')
   const [dialogOpen, setDialogOpen] = useState(false)
   
   // Simple Scheduler State
@@ -126,16 +129,26 @@ export default function Scheduler() {
   const fetchData = useCallback(async () => {
     setFetchError(null)
     try {
-      const [tasksData, presetsData, statusData, historyData] = await Promise.all([
+      const [tasksData, presetsData, statusData, historyData, serversData] = await Promise.all([
         schedulerApi.getTasks(),
         schedulerApi.getCronPresets(),
         schedulerApi.getStatus(),
-        schedulerApi.getHistory(50)
+        schedulerApi.getHistory(50),
+        serversApi.getAll().catch(() => ({ servers: [] as ServerInstance[] })),
       ])
       setTasks(tasksData.tasks || [])
       setPresets(presetsData.presets || [])
       setStatus(statusData)
       setHistory(historyData.history || [])
+      const serverList: ServerInstance[] = serversData.servers || []
+      setServers(serverList)
+      // Default the create-task dialog's target server to the active one,
+      // but only on first load — don't clobber an in-progress selection.
+      setNewTaskServerId((prev) => {
+        if (prev) return prev
+        const active = serverList.find((s) => s.isActive)
+        return active ? String(active.id) : (serverList[0] ? String(serverList[0].id) : '')
+      })
     } catch (error) {
       reportClientError('Failed to fetch scheduler data.', error)
       setFetchError('Failed to load scheduler data. The backend may be unreachable.')
@@ -165,6 +178,16 @@ export default function Scheduler() {
     const id = setInterval(pull, 15000)
     return () => { cancelled = true; clearInterval(id) }
   }, [])
+
+  // Resolve a task's target server name for display — "Unknown server" if
+  // it was deleted since the task was created, "This server" (no badge
+  // shown, just falls back cleanly) if server_id is unset (legacy/no
+  // multi-server setup yet).
+  const getServerLabel = (serverId: string | number | null): string | null => {
+    if (!serverId) return null
+    const match = servers.find((s) => String(s.id) === String(serverId))
+    return match ? (match.name || match.serverName || `Server ${serverId}`) : 'Unknown server'
+  }
 
   // Simple cron validation
   const isValidCron = (cron: string): boolean => {
@@ -209,7 +232,7 @@ export default function Scheduler() {
 
     setLoading(true)
     try {
-      await schedulerApi.createTask(newTaskName, cronToUse, newTaskCommand)
+      await schedulerApi.createTask(newTaskName, cronToUse, newTaskCommand, newTaskServerId || undefined)
       toast({
         title: 'Success',
         description: 'Task created successfully',
@@ -218,6 +241,7 @@ export default function Scheduler() {
       setNewTaskName('')
       setNewTaskCron('')
       setNewTaskCommand('')
+      setNewTaskServerId('')
       setDialogOpen(false)
       fetchData()
     } catch (error) {
@@ -585,6 +609,26 @@ export default function Scheduler() {
                   </p>
                 )}
               </div>
+              <div>
+                <Label>Target Server</Label>
+                <Select value={newTaskServerId} onValueChange={setNewTaskServerId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a server..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {servers.map((server) => (
+                      <SelectItem key={server.id} value={String(server.id)}>
+                        {server.name || server.serverName}
+                        {server.isActive ? ' (Active)' : ''}
+                        {server.isRemote ? ' — Remote' : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  This task always runs against this server, even if a different one is active when it fires.
+                </p>
+              </div>
             </div>
             <DialogFooter>
               <Button onClick={handleCreateTask} disabled={loading}>
@@ -869,6 +913,14 @@ export default function Scheduler() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 min-w-0">
                           <h3 className="font-medium truncate text-foreground">{task.name}</h3>
+                          {getServerLabel(task.server_id) && (
+                            <span
+                              className="shrink-0 text-[11px] font-medium bg-primary/10 border border-primary/30 px-1.5 py-0.5 rounded text-primary truncate max-w-[140px]"
+                              title={`Target server: ${getServerLabel(task.server_id)}`}
+                            >
+                              {getServerLabel(task.server_id)}
+                            </span>
+                          )}
                           <code className="shrink-0 text-[11px] font-mono bg-muted/70 border border-border/50 px-1.5 py-0.5 rounded text-muted-foreground truncate max-w-[180px]" title={task.cron_expression}>
                             {task.cron_expression}
                           </code>

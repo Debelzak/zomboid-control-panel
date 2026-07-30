@@ -727,20 +727,27 @@ export interface ScheduleHistoryEntry {
 export const schedulerApi = {
   getStatus: () => apiGet("/scheduler/status"),
   getTasks: () => apiGet("/scheduler/tasks"),
-  createTask: (name: string, cronExpression: string, command: string) =>
-    apiPost("/scheduler/tasks", { name, cronExpression, command }),
+  createTask: (
+    name: string,
+    cronExpression: string,
+    command: string,
+    serverId?: string | number,
+  ) =>
+    apiPost("/scheduler/tasks", { name, cronExpression, command, serverId }),
   updateTask: (
     id: number,
     name: string,
     cronExpression: string,
     command: string,
     enabled: boolean,
+    serverId?: string | number,
   ) =>
     apiPut(`/scheduler/tasks/${id}`, {
       name,
       cronExpression,
       command,
       enabled,
+      serverId,
     }),
   deleteTask: (id: number) => apiDelete(`/scheduler/tasks/${id}`),
   restartNow: (warningMinutes?: number) =>

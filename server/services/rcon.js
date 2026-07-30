@@ -2,7 +2,12 @@ import { EventEmitter } from "events";
 import net from "net";
 import { createLogger } from "../utils/logger.js";
 const log = createLogger("RCON");
-import { logCommand, getSetting, getActiveServer } from "../database/init.js";
+import {
+  logCommand,
+  getSetting,
+  getActiveServer,
+  getServer,
+} from "../database/init.js";
 import { SourceRconClient } from "../utils/sourceRcon.js";
 
 export class RconService extends EventEmitter {
@@ -226,34 +231,51 @@ export class RconService extends EventEmitter {
   }
 
   // Load RCON settings from active server first, then fallback to legacy settings
-  async loadConfig() {
+  // `serverId`: load config for a SPECIFIC server instead of "whichever is
+  // active". Used by the Scheduler to run a task against a server that
+  // isn't the currently-active one, via a throwaway RconService instance —
+  // the shared singleton (called with no args, as always) keeps following
+  // the active server exactly as before.
+  async loadConfig(serverId = null) {
     if (this.configLoaded) return;
     try {
-      // First try to get from active server
-      const activeServer = await getActiveServer();
-      if (activeServer?.rconPassword) {
-        this.config.password = activeServer.rconPassword;
-        this.config.host = activeServer.rconHost || "127.0.0.1";
-        this.config.port = parseInt(activeServer.rconPort, 10) || 27015;
-        log.info("config loaded from active server");
+      const targetServer = serverId
+        ? await getServer(serverId)
+        : await getActiveServer();
+      if (targetServer?.rconPassword) {
+        this.config.password = targetServer.rconPassword;
+        this.config.host = targetServer.rconHost || "127.0.0.1";
+        this.config.port = parseInt(targetServer.rconPort, 10) || 27015;
+        log.info(
+          serverId
+            ? `config loaded for server ${serverId}`
+            : "config loaded from active server",
+        );
         this.configLoaded = true;
         return;
       }
 
-      // Fallback to legacy settings
-      const dbHost = await getSetting("rconHost");
-      const dbPort = await getSetting("rconPort");
-      const dbPassword = await getSetting("rconPassword");
+      // Fallback to legacy (global) settings — only meaningful when no
+      // specific serverId was requested. Falling back to the global/active
+      // settings for a targeted serverId lookup would silently connect to
+      // the wrong server instead of failing loudly on a misconfigured one.
+      if (!serverId) {
+        const dbHost = await getSetting("rconHost");
+        const dbPort = await getSetting("rconPort");
+        const dbPassword = await getSetting("rconPassword");
 
-      if (dbPassword) {
-        this.config.password = dbPassword;
-        log.info("password loaded from legacy settings");
-      }
-      if (dbPort) {
-        this.config.port = parseInt(dbPort, 10);
-      }
-      if (dbHost) {
-        this.config.host = dbHost;
+        if (dbPassword) {
+          this.config.password = dbPassword;
+          log.info("password loaded from legacy settings");
+        }
+        if (dbPort) {
+          this.config.port = parseInt(dbPort, 10);
+        }
+        if (dbHost) {
+          this.config.host = dbHost;
+        }
+      } else {
+        log.warn(`No RCON config found for server ${serverId}`);
       }
       this.configLoaded = true;
     } catch (error) {
@@ -262,13 +284,13 @@ export class RconService extends EventEmitter {
   }
 
   // Force reload config (called when active server changes)
-  async reloadConfig() {
+  async reloadConfig(serverId = null) {
     this.configLoaded = false;
     // Disconnect if connected since credentials may have changed
     if (this.connected) {
       await this.disconnect();
     }
-    await this.loadConfig();
+    await this.loadConfig(serverId);
   }
 
   // Force reset connection state (called when a connection attempt times out)
