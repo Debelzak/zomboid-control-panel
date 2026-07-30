@@ -1,10 +1,19 @@
 ---@diagnostic disable: undefined-global, deprecated
 --[[
     PanelBridge - Server-side mod for Zomboid Control Panel
-    Version: 1.7.10
+    Version: 1.7.11
 
     This mod enables external control panel communication with the PZ server.
     Communication happens via JSON files in the server save folder.
+
+    v1.7.11 Changes:
+    - Perf: flushResults() no longer does a read-modify-write of a legacy
+      results.json on every flush. That path only existed for a panel that
+      hadn't negotiated protocolVersion=queue-v1, but panel and mod are
+      always shipped/auto-updated together in this fork, so it was dead
+      weight — doubling the I/O cost of every result flush for zero real
+      consumers. onServerStarted() now also clears any stale results.json
+      left behind by a pre-retirement mod version.
 
     v1.7.10 Changes:
     - Merge of two independent 1.7.9 fixes (fork and upstream landed on the
@@ -192,7 +201,7 @@
 local json
 
 local PanelBridge = {
-    VERSION = "1.7.10",
+    VERSION = "1.7.11",
     PROTOCOL_VERSION = "queue-v1",
     CHECK_INTERVAL = 250, -- milliseconds (fast command polling)
     lastCheck = 0,
@@ -930,15 +939,16 @@ end
 function PanelBridge.flushResults()
     if #PanelBridge.pendingResults == 0 then return end
 
-    -- NOTE (audit L04): the numbered outbox/res-*.json writes below are the
-    -- safe path. The read-modify-write of legacy results.json further down
-    -- in this function re-introduces the exact race the numbered queue was
-    -- built to avoid, on every flush. It exists ONLY as a fallback for a
-    -- panel that hasn't yet negotiated protocolVersion=queue-v1. Do not add
-    -- new functionality to the legacy path — once all deployed panels are
-    -- confirmed on queue-v1, retire this block (and the matching legacy
-    -- commands.json handling in processCommands / the Node-side
-    -- pollLegacyResults + commands.json writer).
+    -- NOTE (audit L04, retired): this used to also do a read-modify-write of
+    -- a legacy results.json on every flush, for panels that hadn't
+    -- negotiated protocolVersion=queue-v1. Panel and mod are always shipped
+    -- and auto-updated together in this fork (see server/index.js's
+    -- tryStartPanelBridge), so a panel old enough to need that fallback can
+    -- never actually be paired with this mod version — the read-modify-write
+    -- was dead weight (double the I/O of every flush) with zero real
+    -- consumers. The numbered outbox/res-*.json.txt writes below are the
+    -- only path now; onServerStarted() clears any stale results.json left
+    -- behind by a pre-retirement mod version.
     local writtenCount = 0
     for idx, r in ipairs(PanelBridge.pendingResults) do
         local seq = tonumber(r.seq) or 0
@@ -963,27 +973,6 @@ function PanelBridge.flushResults()
 
     if writtenCount <= 0 then
         return
-    end
-
-    -- Read existing results from disk (Node may not have consumed them yet)
-    local results = PanelBridge.readJSON("results.json") or { results = {} }
-    if not results.results then results.results = {} end
-
-    -- Append all buffered results at once
-    for i = 1, writtenCount do
-        local r = PanelBridge.pendingResults[i]
-        table.insert(results.results, r)
-    end
-
-    -- Keep only last 50 results
-    while #results.results > 50 do
-        table.remove(results.results, 1)
-    end
-
-    -- Write BEFORE clearing the buffer so results aren't lost if write fails
-    local ok = PanelBridge.writeJSON("results.json", results)
-    if not ok then
-        PanelBridge.warn("Legacy results.json write failed (queue files still written)")
     end
 
     local remaining = {}
@@ -7103,6 +7092,10 @@ function PanelBridge.onServerStarted()
 
     -- Clear old commands and results
     PanelBridge.clearFile("commands.json")
+    -- Retired in v1.7.10 (see flushResults): wipe any results.json left
+    -- behind by a pre-retirement mod version so it doesn't linger forever
+    -- as stale, endlessly-reprocessed (though harmlessly deduped) content.
+    PanelBridge.clearFile("results.json")
 
     -- Write a startup log entry
     PanelBridge.writeJSON("startup.json", {
