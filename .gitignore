@@ -9,6 +9,9 @@ client/node_modules/
 data/db.json
 *.db
 
+# Persistent map tile cache (grows large, regenerable from upstream)
+data/map-tiles-cache/
+
 # Build outputs
 client/dist/
 dist-exe/

@@ -1,8 +1,68 @@
 import express from "express";
+import fs from "fs";
+import path from "path";
 import { createLogger } from "../utils/logger.js";
+import { getDataPaths } from "../utils/paths.js";
 const log = createLogger("API:MapProxy");
 
 const router = express.Router();
+
+// ─── Persistent disk-backed tile cache ───────────────────────────────────
+// A given PZ map build's tiles never change once published, so unlike a
+// typical HTTP cache these never need to expire — once a tile has been
+// fetched from map.projectzomboid.com it's cached on disk indefinitely.
+// Over time this turns the proxy into a self-hosted mirror of whatever
+// parts of the map players have actually looked at, with zero upfront
+// download and no dependency on the upstream host for anything already
+// cached. A small in-memory LRU sits in front of disk to avoid a
+// filesystem read on every request for hot tiles.
+const TILE_CACHE_DIR = path.join(getDataPaths().dataDir, "map-tiles-cache");
+const MEM_CACHE_MAX = 500;
+const memCache = new Map(); // relPath -> { buffer, contentType }
+
+function memCacheGet(relPath) {
+  const entry = memCache.get(relPath);
+  if (!entry) return null;
+  // Refresh LRU position
+  memCache.delete(relPath);
+  memCache.set(relPath, entry);
+  return entry;
+}
+
+function memCachePut(relPath, buffer, contentType) {
+  if (memCache.size >= MEM_CACHE_MAX) {
+    const oldestKey = memCache.keys().next().value;
+    if (oldestKey !== undefined) memCache.delete(oldestKey);
+  }
+  memCache.set(relPath, { buffer, contentType });
+}
+
+function diskPathFor(relPath) {
+  return path.join(TILE_CACHE_DIR, relPath);
+}
+
+async function readDiskCache(relPath) {
+  try {
+    return await fs.promises.readFile(diskPathFor(relPath));
+  } catch {
+    return null;
+  }
+}
+
+// Fire-and-forget: a disk cache write failing (permissions, full disk) just
+// means we re-fetch from upstream next time — never block the response on it.
+function writeDiskCacheAsync(relPath, buffer) {
+  const dest = diskPathFor(relPath);
+  const tmp = `${dest}.${process.pid}.${Date.now()}.tmp`;
+  fs.promises
+    .mkdir(path.dirname(dest), { recursive: true })
+    .then(() => fs.promises.writeFile(tmp, buffer))
+    .then(() => fs.promises.rename(tmp, dest))
+    .catch((err) => {
+      log.debug(`Disk tile cache write failed for ${relPath}: ${err.message}`);
+      fs.promises.unlink(tmp).catch(() => {});
+    });
+}
 
 // ─── B42 map version resolution ──────────────────────────────────────────────
 // b42map.com has migrated to map.projectzomboid.com. Tiles are now served at
@@ -31,9 +91,12 @@ async function getB42Dir() {
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const list = await resp.json();
     // Entries are ordered newest-first. Find the first B42+ entry.
+    // The full string (not just a prefix) must match a plain version
+    // pattern — this now also becomes a disk cache path segment, so a
+    // malformed/adversarial value from upstream must never reach fs calls.
     const entry =
       Array.isArray(list) &&
-      list.find((e) => /^4[2-9]\./.test(e.directory || ""));
+      list.find((e) => /^4[2-9][\w.\-]*$/.test(e.directory || ""));
     if (entry?.directory) {
       if (_b42Dir !== entry.directory) {
         log.info(`B42 map directory resolved: ${entry.directory}`);
@@ -87,36 +150,6 @@ function recordTileFailure() {
       `Tile proxy circuit breaker OPEN for ${CIRCUIT_COOLDOWN_MS / 1000}s after ${circuitConsecutiveFailures} consecutive upstream failures`,
     );
   }
-}
-
-// In-memory cache for successfully fetched tiles. The map UI loads dozens of
-// tiles per pan/zoom and Cloudflare on the upstream domains will rate-limit
-// us if we re-fetch the same tile every refresh. Cached tiles are tiny
-// (~5–40 KB each) so even a 500-entry cache stays under ~20 MB.
-const TILE_CACHE_MAX = 500;
-const TILE_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24h
-const tileCache = new Map(); // url -> { buffer, contentType, cachedAt }
-
-function getCachedTile(url) {
-  const entry = tileCache.get(url);
-  if (!entry) return null;
-  if (Date.now() - entry.cachedAt > TILE_CACHE_TTL_MS) {
-    tileCache.delete(url);
-    return null;
-  }
-  // Refresh LRU position
-  tileCache.delete(url);
-  tileCache.set(url, entry);
-  return entry;
-}
-
-function putCachedTile(url, buffer, contentType) {
-  if (tileCache.size >= TILE_CACHE_MAX) {
-    // Drop oldest entry (Map iterates in insertion order)
-    const oldestKey = tileCache.keys().next().value;
-    if (oldestKey !== undefined) tileCache.delete(oldestKey);
-  }
-  tileCache.set(url, { buffer, contentType, cachedAt: Date.now() });
 }
 
 async function fetchTileWithTimeout(url) {
@@ -175,16 +208,29 @@ async function fetchTileWithRetry(url) {
   }
 }
 
-async function serveTile(req, res, url, contentType) {
-  // Cache hit — serve from memory, no upstream call.
-  const cached = getCachedTile(url);
-  if (cached) {
-    res.set("Content-Type", cached.contentType);
+async function serveTile(req, res, url, contentType, relPath) {
+  // Tier 1: in-memory LRU — fastest, no I/O at all.
+  const hot = memCacheGet(relPath);
+  if (hot) {
+    res.set("Content-Type", hot.contentType);
     res.set("Cache-Control", "public, max-age=604800"); // 7 days
-    res.set("X-Tile-Cache", "hit");
-    res.send(cached.buffer);
+    res.set("X-Tile-Cache", "hit-mem");
+    res.send(hot.buffer);
     return;
   }
+
+  // Tier 2: disk — this PZ map version's tiles are immutable, so a disk hit
+  // means we never have to touch map.projectzomboid.com for this tile again.
+  const onDisk = await readDiskCache(relPath);
+  if (onDisk) {
+    memCachePut(relPath, onDisk, contentType);
+    res.set("Content-Type", contentType);
+    res.set("Cache-Control", "public, max-age=604800");
+    res.set("X-Tile-Cache", "hit-disk");
+    res.send(onDisk);
+    return;
+  }
+
   try {
     const response = await fetchTileWithRetry(url);
     if (!response.ok) {
@@ -199,7 +245,8 @@ async function serveTile(req, res, url, contentType) {
       return res.status(status).end();
     }
     const buffer = Buffer.from(await response.arrayBuffer());
-    putCachedTile(url, buffer, contentType);
+    memCachePut(relPath, buffer, contentType);
+    writeDiskCacheAsync(relPath, buffer);
     res.set("Content-Type", contentType);
     res.set("Cache-Control", "public, max-age=604800");
     res.set("X-Tile-Cache", "miss");
@@ -240,7 +287,8 @@ router.get("/tiles/:level/:tile", async (req, res) => {
   const dir = await getB42Dir();
   const url = `${PZ_MAP_ROOT}/maps/${dir}/base/layer${floor}_files/${level}/${tile}`;
   const contentType = floor === 0 ? "image/jpeg" : "image/webp";
-  await serveTile(req, res, url, contentType);
+  const relPath = path.join("b42", dir, `layer${floor}`, String(level), tile);
+  await serveTile(req, res, url, contentType, relPath);
 });
 
 // Proxy B42 top-down DZI tiles (used by ChunkCleaner for overhead map view).
@@ -259,7 +307,8 @@ router.get("/toptiles/:level/:tile", async (req, res) => {
 
   const dir = await getB42Dir();
   const url = `${PZ_MAP_ROOT}/maps/${dir}/base_top/layer0_files/${level}/${tile}`;
-  await serveTile(req, res, url, "image/webp");
+  const relPath = path.join("b42-top", dir, String(level), tile);
+  await serveTile(req, res, url, "image/webp", relPath);
 });
 
 // Proxy B41 DZI tiles from map.projectzomboid.com
@@ -275,7 +324,8 @@ router.get("/b41tiles/:level/:tile", async (req, res) => {
   }
 
   const url = `https://map.projectzomboid.com/maps/SurvivalB417812L0/map_files/${level}/${tile}`;
-  await serveTile(req, res, url, "image/jpeg");
+  const relPath = path.join("b41", String(level), tile);
+  await serveTile(req, res, url, "image/jpeg", relPath);
 });
 
 export default router;

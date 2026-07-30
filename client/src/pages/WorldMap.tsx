@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTheme } from '@/contexts/ThemeContext'
+import { useSocket } from '@/contexts/SocketContext'
 import {
   Map as MapIcon,
   Crosshair,
@@ -454,6 +455,7 @@ const PZ_LANDMARKS = [
 // ─── Component ────────────────────────────────────────────
 export default function WorldMap() {
   const { theme } = useTheme()
+  const socket = useSocket()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const mapWrapperRef = useRef<HTMLDivElement>(null)
@@ -481,6 +483,7 @@ export default function WorldMap() {
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const actionLoadingRef = useRef<string | null>(null)
   const mountedRef = useRef(true)
+  const hasFittedRef = useRef(false)
   const [airdropMarkers, setAirdropMarkers] = useState<AirdropMarker[]>([])
   const [vehicles, setVehicles] = useState<MapVehicle[]>([])
   const [safehouses, setSafehouses] = useState<MapSafehouse[]>([])
@@ -571,63 +574,96 @@ export default function WorldMap() {
     }
   }, [])
 
-  // Detect B41 vs B42 on mount — check gameVersion + branch
-  useEffect(() => {
-    let cancelled = false
-    async function detect() {
-      try {
-        const [statusRes, serverRes] = await Promise.allSettled([
-          updateApi.getStatus(),
-          serversApi.getResolvedActive(),
-        ])
-        if (cancelled) return
+  // Detect B41 vs B42 — check gameVersion + branch. Re-run whenever the
+  // active server changes (not just on mount): a panel managing multiple
+  // servers can have the active one switched while this page stays
+  // mounted, and B41/B42 use entirely different tile endpoints and
+  // isometric projection constants — staying on the old config would
+  // silently misplace every marker instead of just failing loudly.
+  const detectServerVersion = useCallback(async (cancelledRef: { current: boolean }) => {
+    try {
+      const [statusRes, serverRes] = await Promise.allSettled([
+        updateApi.getStatus(),
+        serversApi.getResolvedActive(),
+      ])
+      if (cancelledRef.current) return
 
-        let isB41 = false
-        if (serverRes.status === 'fulfilled') {
-          setHasActiveServer(!!serverRes.value.server)
-        } else {
-          setHasActiveServer(false)
-        }
-        if (statusRes.status === 'fulfilled' && statusRes.value.gameVersion) {
-          isB41 = statusRes.value.gameVersion.startsWith('41.')
-        }
-        if (!isB41 && serverRes.status === 'fulfilled') {
-          const branch = serverRes.value.server?.branch
-          if (branch && /b41/i.test(branch)) isB41 = true
-        }
+      let isB41 = false
+      if (serverRes.status === 'fulfilled') {
+        setHasActiveServer(!!serverRes.value.server)
+      } else {
+        setHasActiveServer(false)
+      }
+      if (statusRes.status === 'fulfilled' && statusRes.value.gameVersion) {
+        isB41 = statusRes.value.gameVersion.startsWith('41.')
+      }
+      if (!isB41 && serverRes.status === 'fulfilled') {
+        const branch = serverRes.value.server?.branch
+        if (branch && /b41/i.test(branch)) isB41 = true
+      }
 
-        if (isB41) {
-          setMapCfg(MAP_B41)
-          mapCfgRef.current = MAP_B41
-          // B41 has no multi-floor tiles — force floor back to 0 so we don't
-          // request `.webp` URLs the B41 backend regex rejects (which would
-          // 400 every tile and trigger the "tiles not loading" banner with
-          // no way for the user to recover, since the floor selector is
-          // hidden on B41).
-          setFloor(0)
-          floorRef.current = 0
-          // Clear tile cache and failure state when switching maps — tile
-          // URLs differ entirely so old backoff entries are meaningless.
-          tileCacheRef.current = {}
-          tileFailRef.current = {}
-          tileFailureCountRef.current = 0
-          setTileLoadFailing(false)
-          // Re-center on B41 default center
-          const el = containerRef.current
-          if (el) {
-            const s = 0.001
-            const c = MAP_B41.defaultCenter
-            setOffset({
-              x: el.clientWidth / 2 - c.x * s,
-              y: el.clientHeight / 2 - c.y * s,
-            })
-          }
-        }
-      } catch { /* best-effort */ }
-    }
-    detect()
-    return () => { cancelled = true }
+      const targetCfg = isB41 ? MAP_B41 : MAP_B42
+      if (mapCfgRef.current === targetCfg) return // already on the right config
+
+      setMapCfg(targetCfg)
+      mapCfgRef.current = targetCfg
+      // B41 has no multi-floor tiles — force floor back to 0 so we don't
+      // request `.webp` URLs the B41 backend regex rejects (which would
+      // 400 every tile and trigger the "tiles not loading" banner with
+      // no way for the user to recover, since the floor selector is
+      // hidden on B41).
+      if (isB41) {
+        setFloor(0)
+        floorRef.current = 0
+      }
+      // Clear tile cache and failure state when switching maps — tile
+      // URLs and coordinate systems differ entirely so old entries are
+      // meaningless (and stale ones would misplace markers).
+      tileCacheRef.current = {}
+      tileFailRef.current = {}
+      tileFailureCountRef.current = 0
+      setTileLoadFailing(false)
+      // Re-center on the new config's default center
+      const el = containerRef.current
+      if (el) {
+        const s = 0.001
+        const c = targetCfg.defaultCenter
+        setOffset({
+          x: el.clientWidth / 2 - c.x * s,
+          y: el.clientHeight / 2 - c.y * s,
+        })
+      }
+    } catch { /* best-effort */ }
   }, [])
+
+  useEffect(() => {
+    const cancelledRef = { current: false }
+    detectServerVersion(cancelledRef)
+    return () => { cancelledRef.current = true }
+  }, [detectServerVersion])
+
+  // Re-detect on active server switch, and drop the previous server's
+  // player/vehicle/safehouse data so stale markers don't linger under the
+  // new server's identity — mirrors the pattern used by Dashboard/Servers/
+  // Layout/Settings for this same socket event.
+  useEffect(() => {
+    if (!socket) return
+    const cancelledRef = { current: false }
+    const handleActiveServerChanged = () => {
+      setPlayers([])
+      setVehicles([])
+      setSafehouses([])
+      setSelectedPlayer(null)
+      setContextMenu(null)
+      hasFittedRef.current = false
+      detectServerVersion(cancelledRef)
+    }
+    socket.on('activeServerChanged', handleActiveServerChanged)
+    return () => {
+      cancelledRef.current = true
+      socket.off('activeServerChanged', handleActiveServerChanged)
+    }
+  }, [socket, detectServerVersion])
 
   useEffect(() => {
     if (hasActiveServer) return
@@ -1503,14 +1539,21 @@ export default function WorldMap() {
     let running = true
     const animate = () => {
       if (!running) return
-      setPlayers((prev) =>
-        prev.map((p) => {
+      // Only produce a new array (and thus trigger a re-render) when a
+      // player is actually mid-animation — otherwise .map() would return a
+      // fresh array every frame forever, re-rendering the whole page at
+      // 60fps even while fully idle with no players moving.
+      setPlayers((prev) => {
+        let changed = false
+        const next = prev.map((p) => {
           if (p.animProgress !== undefined && p.animProgress < 1) {
+            changed = true
             return { ...p, animProgress: Math.min(1, p.animProgress + 0.06) }
           }
           return p
         })
-      )
+        return changed ? next : prev
+      })
       drawMap()
       animFrameRef.current = requestAnimationFrame(animate)
     }
@@ -1597,7 +1640,6 @@ export default function WorldMap() {
   }, [players, canvasSize])
 
   // Auto-fit on first player data
-  const hasFittedRef = useRef(false)
   useEffect(() => {
     if (players.length > 0 && !hasFittedRef.current) {
       hasFittedRef.current = true
