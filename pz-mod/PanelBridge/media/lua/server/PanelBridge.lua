@@ -1,10 +1,28 @@
 ---@diagnostic disable: undefined-global, deprecated
 --[[
     PanelBridge - Server-side mod for Zomboid Control Panel
-    Version: 1.7.12
+    Version: 1.7.13
 
     This mod enables external control panel communication with the PZ server.
     Communication happens via JSON files in the server save folder.
+
+    v1.7.13 Changes:
+    - Merge of two independent fixes that landed under different version
+      numbers on diverging branches (this fork's v1.7.12 queue-resync fix
+      and an upstream v1.7.10 vehicle-list guard fix; bumped past both to
+      keep the auto-updater's strictly-newer check unambiguous):
+    - [upstream] Fixed "Object tried to call nil in pcall" spamming the
+      console every tick from getVehiclesDetailed / findVehicleById. Both
+      called vehicles:get(i) unconditionally, but unlike the .size lookup
+      just above it (already guarded with `vehicles.size and
+      vehicles:size()`), .get was never guarded — so on servers where the
+      vehicle-list object doesn't expose .get, EVERY vehicle lookup threw
+      and vehicle data never reached the panel (World Map's vehicle layer
+      was stuck at "0 loaded"). Now guarded the same way: `vehicles.get
+      and vehicles:get(i) or nil`.
+    - Applied the same vehicles:get(i) guard to the area-vehicle-removal
+      handler, which had the identical unguarded call site the upstream
+      fix above didn't reach.
 
     v1.7.12 Changes:
     - Fix: the inbox (commands) and outbox (results) queues each require an
@@ -46,6 +64,8 @@
       ".write-check" file instead of the real status.json — canWritePath
       actually writes its probe text, so probing the production file could
       briefly hand a reader "PanelBridge probe" instead of valid JSON.
+
+    v1.7.9 Changes:
     - Stopped logging the chat-to-RCON handoff as a failure. sendToServerChat
       returns "useRCON" when neither ChatServer nor an online player is
       available, which tells the panel to deliver the message over RCON — the
@@ -218,7 +238,7 @@
 local json
 
 local PanelBridge = {
-    VERSION = "1.7.12",
+    VERSION = "1.7.13",
     PROTOCOL_VERSION = "queue-v1",
     CHECK_INTERVAL = 250, -- milliseconds (fast command polling)
     lastCheck = 0,
@@ -6106,7 +6126,7 @@ local function findVehicleById(vehicleId)
     if not targetId then return nil end
 
     for i = 0, vehicles:size() - 1 do
-        local v = vehicles:get(i)
+        local v = vehicles.get and vehicles:get(i) or nil
         if v and v.getId and tonumber(v:getId()) == targetId then
             return v
         end
@@ -6140,7 +6160,11 @@ handlers.getVehiclesDetailed = function(args)
         -- must not bring down the whole detail query, otherwise the panel
         -- loses visibility of every vehicle on the server.
         local ok, entry = pcall(function()
-            local v = vehicles:get(i)
+            -- .get isn't guaranteed to exist on every vehicle-list
+            -- implementation (varies by PZ build/API) — guard it the same
+            -- way .size is guarded above, or this throws "call nil" on
+            -- every single vehicle, every tick.
+            local v = vehicles.get and vehicles:get(i) or nil
             if not v then return nil end
             -- Each getter is independently guarded so one broken accessor
             -- (e.g. a missing battery part on a modded vehicle) doesn't
@@ -6364,7 +6388,7 @@ handlers.removeVehiclesInArea = function(args)
     local removed = 0
     local removedList = {}
     for i = vehicles:size() - 1, 0, -1 do
-        local v = vehicles:get(i)
+        local v = vehicles.get and vehicles:get(i) or nil
         if v then
             local vx = v.getX and v:getX() or 0
             local vy = v.getY and v:getY() or 0
