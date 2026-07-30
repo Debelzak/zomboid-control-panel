@@ -61,3 +61,9 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          # docker/build-push-action defaults to generating a provenance
+          # attestation, which GHCR lists as a bogus extra "unknown/unknown"
+          # platform manifest alongside the real amd64/arm64 ones. Disabling
+          # it drops that phantom entry; we don't consume SLSA provenance
+          # data anywhere, so there's nothing lost.
+          provenance: false
