@@ -2337,7 +2337,7 @@ export default function WorldMap() {
               <div className="px-3 py-2 text-xs leading-snug">
                 <div className="font-semibold text-foreground">Map tiles aren't loading</div>
                 <div className="text-muted-foreground mt-0.5">
-                  Panel can't reach <span className="font-mono text-warning/90">{mapCfg.label === 'B41' ? 'map.projectzomboid.com' : 'b42map.com'}</span>.
+                  Panel can't reach <span className="font-mono text-warning/90">map.projectzomboid.com</span>.
                   Check outbound HTTPS access and try Refresh.
                 </div>
               </div>
