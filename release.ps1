@@ -75,7 +75,6 @@ $LinuxBinPath     = "release\ZomboidControlPanel"
 $WinZipPath       = "release\ZomboidControlPanel-windows.zip"
 $LinuxTarPath     = "release\ZomboidControlPanel-linux.tar.gz"
 $ChecksumsPath    = "release\checksums.txt"
-$ManifestPath     = "release\release-manifest.json"
 
 # ============================================
 # HELPERS
@@ -207,12 +206,10 @@ if ($SkipBuild) {
         $winExe = Join-Path $RepoDir $WinExePath
         $linuxBin = Join-Path $RepoDir $LinuxBinPath
         $checksums = Join-Path $RepoDir $ChecksumsPath
-        $manifest = Join-Path $RepoDir $ManifestPath
 
         if (-not (Test-Path $winExe)) { throw "Windows binary not found at $winExe" }
         if (-not (Test-Path $linuxBin)) { throw "Linux binary not found at $linuxBin" }
         if (-not (Test-Path $checksums)) { throw "Checksums file not found at $checksums" }
-        if (-not (Test-Path $manifest)) { throw "Release manifest not found at $manifest" }
 
         $winSize = [math]::Round((Get-Item $winExe).Length / 1MB, 1)
         $linuxSize = [math]::Round((Get-Item $linuxBin).Length / 1MB, 1)
@@ -254,32 +251,19 @@ if ($SkipBuild) {
             @{ platform = "win";   kind = "binary"; file = "ZomboidControlPanel.exe";          path = $winExe },
             @{ platform = "linux"; kind = "binary"; file = "ZomboidControlPanel";              path = $linuxBin },
             @{ platform = "win";   kind = "archive"; file = "ZomboidControlPanel-windows.zip"; path = $zipPath },
-            @{ platform = "linux"; kind = "archive"; file = "ZomboidControlPanel-linux.tar.gz"; path = $tarPath }
+            @{ platform = "linux"; kind = "archive"; file = "ZomboidControlPanel-linux.tar.gz"; path = $tarPath },
+            @{ platform = "docker"; kind = "compose"; file = "docker-compose.install.yml";     path = (Join-Path $RepoDir "docker-compose.install.yml") },
+            @{ platform = "docker"; kind = "dockerfile"; file = "Dockerfile";                  path = (Join-Path $RepoDir "Dockerfile") }
         )
 
         $checksumLines = @()
-        $manifestArtifacts = @()
         foreach ($artifact in $releaseArtifacts) {
             $hash = (Get-FileHash -Algorithm SHA256 -Path $artifact.path).Hash.ToLowerInvariant()
             $checksumLines += "$hash  $($artifact.file)"
-            $manifestArtifacts += [pscustomobject]@{
-                platform = $artifact.platform
-                kind = $artifact.kind
-                file = $artifact.file
-                sha256 = $hash
-            }
         }
         Set-Content -Path $checksums -Value ($checksumLines -join "`n") -NoNewline
         Add-Content -Path $checksums -Value ""
-        $manifestObject = [pscustomobject]@{
-            version = $Version
-            builtAt = (Get-Date).ToUniversalTime().ToString("o")
-            hostPlatform = "win32"
-            targets = @("win", "linux")
-            artifacts = $manifestArtifacts
-        }
-        $manifestObject | ConvertTo-Json -Depth 5 | Set-Content -Path $manifest -NoNewline
-        Write-Ok "Checksums and manifest updated for binaries + archives"
+        Write-Ok "Checksums updated for binaries + archives + Docker files"
     } finally {
         Pop-Location
     }
@@ -361,13 +345,16 @@ if ($SkipGitHub) {
 } else {
     # Both raw binaries (.exe and the Linux ELF) are uploaded separately so the
     # in-app auto-updater can pull them directly — it refuses archives by design.
+    # release-manifest.json is intentionally NOT published: nothing reads it at
+    # runtime, it was pure noise for anyone doing a manual install.
     $assetPaths = @(
         (Join-Path $RepoDir $WinZipPath),
         (Join-Path $RepoDir $LinuxTarPath),
         (Join-Path $RepoDir $WinExePath),
         (Join-Path $RepoDir $LinuxBinPath),
         (Join-Path $RepoDir $ChecksumsPath),
-        (Join-Path $RepoDir $ManifestPath)
+        (Join-Path $RepoDir "docker-compose.install.yml"),
+        (Join-Path $RepoDir "Dockerfile")
     )
 
     foreach ($asset in $assetPaths) {

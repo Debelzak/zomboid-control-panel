@@ -114,29 +114,8 @@ jobs:
             ZomboidControlPanel \
             ZomboidControlPanel-windows.zip \
             ZomboidControlPanel-linux.tar.gz \
-            docker-compose.install.yml > checksums.txt
-
-      - name: Create release manifest
-        run: |
-          node -e "
-            const fs = require('fs');
-            const crypto = require('crypto');
-            const sha256 = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
-            const artifact = (platform, file, kind) => ({ platform, file, kind, sha256: sha256(file) });
-            const manifest = {
-              version: process.env.GITHUB_REF_NAME,
-              builtAt: new Date().toISOString(),
-              platform: 'ci',
-              artifacts: [
-                artifact('win', 'ZomboidControlPanel.exe', 'binary'),
-                artifact('linux', 'ZomboidControlPanel', 'binary'),
-                artifact('win', 'ZomboidControlPanel-windows.zip', 'archive'),
-                artifact('linux', 'ZomboidControlPanel-linux.tar.gz', 'archive'),
-                artifact('docker', 'docker-compose.install.yml', 'compose')
-              ]
-            };
-            fs.writeFileSync('release-manifest.json', JSON.stringify(manifest, null, 2));
-          "
+            docker-compose.install.yml \
+            Dockerfile > checksums.txt
 
       - name: Create or update GitHub release
         env:
@@ -153,6 +132,13 @@ jobs:
               --generate-notes
           fi
 
+      - name: Remove obsolete release-manifest.json from prior releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          release_tag="${GITHUB_REF_NAME}"
+          gh release delete-asset "$release_tag" release-manifest.json --repo "${GITHUB_REPOSITORY}" --yes 2>/dev/null || true
+
       - name: Upload release assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -168,8 +154,8 @@ jobs:
               ZomboidControlPanel-windows.zip \
               ZomboidControlPanel-linux.tar.gz \
               docker-compose.install.yml \
-              checksums.txt \
-              release-manifest.json; then
+              Dockerfile \
+              checksums.txt; then
               exit 0
             fi
             echo "Upload attempt $attempt failed; retrying in 5s..."
