@@ -3016,6 +3016,12 @@ router.post("/batch-remove", async (req, res) => {
     const serverName = await getServerName();
 
     let iniResult = { removed: 0, skipped: 0 };
+    // Tracks whether the INI edit block below actually ran. Ignore-listing
+    // must never happen unless this is true, or a mod can be marked
+    // "removed" while still silently loading from the live Mods=/
+    // WorkshopItems= lines (root cause of mods getting stuck in the ignore
+    // list without ever leaving the server config).
+    let iniEditApplied = false;
 
     if (serverConfigPath && serverName) {
       const sanitizedServerName = path.basename(serverName);
@@ -3030,6 +3036,7 @@ router.post("/batch-remove", async (req, res) => {
         );
 
         if (fs.existsSync(iniPath)) {
+          iniEditApplied = true;
           iniResult = await withIniLock(iniPath, () => {
             let content = readTextFile(iniPath);
             const removeSet = new Set(validIds);
@@ -3104,20 +3111,29 @@ router.post("/batch-remove", async (req, res) => {
 
     // Step 3: Remove all from database and add to ignore list. This happens
     // after the INI operation so a locked-write failure aborts before any
-    // tracking state is changed.
-    for (const wsId of validIds) {
-      try {
-        await removeTrackedMod(wsId);
-        await addIgnoredMod(wsId, modNameMap.get(wsId) || null);
-        dbResults.removed++;
-      } catch (e) {
-        dbResults.failed++;
-        log.debug(`DB removal failed for ${wsId}: ${e.message}`);
+    // tracking state is changed. Gated on iniEditApplied: if the INI edit
+    // never ran (bad config path, missing ini file, etc.), the mod is still
+    // live in Mods=/WorkshopItems= and must NOT be ignore-listed as if it
+    // had been removed.
+    if (iniEditApplied) {
+      for (const wsId of validIds) {
+        try {
+          await removeTrackedMod(wsId);
+          await addIgnoredMod(wsId, modNameMap.get(wsId) || null);
+          dbResults.removed++;
+        } catch (e) {
+          dbResults.failed++;
+          log.debug(`DB removal failed for ${wsId}: ${e.message}`);
+        }
       }
+    } else {
+      log.error(
+        `Batch removal aborted before any INI edit (serverConfigPath=${serverConfigPath}, serverName=${serverName}, validIds=${validIds.join(",")}) — nothing was removed or ignore-listed`,
+      );
     }
 
     // Mirror removals to the Workshop collection when auto-sync is enabled.
-    if (validIds.length > 0) {
+    if (iniEditApplied && validIds.length > 0) {
       (async () => {
         for (const wsId of validIds) {
           try {
@@ -3131,12 +3147,18 @@ router.post("/batch-remove", async (req, res) => {
     }
 
     res.json({
-      success: true,
+      success: iniEditApplied,
       total: validIds.length,
       dbRemoved: dbResults.removed,
       dbFailed: dbResults.failed,
       iniRemoved: iniResult.removed,
       iniSkipped: iniResult.skipped,
+      ...(iniEditApplied
+        ? {}
+        : {
+            error:
+              "Server config file was not found or not accessible — no mods were removed.",
+          }),
     });
   } catch (error) {
     log.error(`Batch removal failed: ${error.message}`);
@@ -7046,7 +7068,9 @@ router.post("/delete-disk-mod", async (req, res) => {
     }
 
     // Strip from INI (workshop ID + its mod IDs).
+    let iniEditApplied = false;
     if (iniPath && fs.existsSync(iniPath)) {
+      iniEditApplied = true;
       await withIniLock(iniPath, () => {
         let content = readTextFile(iniPath);
         const wsMatch = content.match(/^WorkshopItems=(.*)$/m);
@@ -7077,7 +7101,10 @@ router.post("/delete-disk-mod", async (req, res) => {
 
     // Drop from tracking, then ADD to the ignore list so auto-sync won't
     // re-track the mod next time Steam re-downloads it. Delete is meant to
-    // be a "gone forever" action, not a temporary cleanup.
+    // be a "gone forever" action, not a temporary cleanup. Gated on
+    // iniEditApplied — if the INI was never actually reached, the mod ID
+    // may still be sitting in Mods=/WorkshopItems= and must not be
+    // ignore-listed as if it had been removed from the server config.
     let priorName = null;
     try {
       const tracked = await getTrackedMods();
@@ -7088,15 +7115,21 @@ router.post("/delete-disk-mod", async (req, res) => {
     }
     if (!priorName && req.body?.modName)
       priorName = String(req.body.modName).slice(0, 200);
-    try {
-      await removeTrackedMod(wsId);
-    } catch {
-      /* ignore */
-    }
-    try {
-      await addIgnoredMod(wsId, priorName);
-    } catch {
-      /* ignore */
+    if (iniEditApplied) {
+      try {
+        await removeTrackedMod(wsId);
+      } catch {
+        /* ignore */
+      }
+      try {
+        await addIgnoredMod(wsId, priorName);
+      } catch {
+        /* ignore */
+      }
+    } else {
+      log.error(
+        `delete-disk-mod ${wsId}: INI edit was never applied (missing server config path or ini file) — not ignore-listing`,
+      );
     }
 
     log.info(
