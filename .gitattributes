@@ -1,0 +1,6 @@
+# Scripts that run inside Linux containers must keep LF endings. Without this,
+# a checkout or `git archive` on Windows (core.autocrlf=true) rewrites the
+# shebang to "#!/bin/bash\r" and the container fails with
+# "exec /entrypoint.sh: no such file or directory".
+*.sh text eol=lf
+entrypoint.sh text eol=lf
