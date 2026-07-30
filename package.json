@@ -15,9 +15,9 @@
     "build:exe:all": "node build.js --all",
     "start": "node server/index.js",
     "install:all": "npm install && cd client && npm install",
-    "test": "vitest run --config vitest.config.js && cd client && npx vitest run",
-    "test:watch": "vitest --config vitest.config.js",
-    "test:server": "vitest run --config vitest.config.js",
+    "test": "vitest run server/tests && cd client && npx vitest run",
+    "test:watch": "vitest server/tests",
+    "test:server": "vitest run server/tests",
     "test:client": "cd client && npx vitest run",
     "lint:server": "eslint server --max-warnings=0"
   },
