@@ -1,19 +1,19 @@
 <#
 .SYNOPSIS
-    Full build, deploy, and GitHub release pipeline for Zomboid Control Panel.
+    Build and GitHub release pipeline for Zomboid Control Panel.
 
 .DESCRIPTION
-    This script automates the entire release process:
-    0. Pre-flight checks (uncommitted changes, network reachability)
-    1. Bumps version in package.json (Dev1 + GitHub) — auto-increments if no -Version given
+    This script automates the release process, self-contained in this repo
+    (no external Dev1/ working copy, no \\garage SMB deploy — that
+    infrastructure is retired; live deployment now happens separately via
+    Docker on the production host):
+    0. Pre-flight checks (uncommitted changes)
+    1. Bumps version in package.json — auto-increments if no -Version given
     2. Builds the client (Vite/React)
-    3. Builds Windows + Linux binaries (esbuild + pkg)
+    3. Builds Windows + Linux binaries (esbuild + pkg) and packages archives
     4. Builds Docker image
-    5. Deploys PanelBridge.lua to the live PZ server
-    6. Deploys the full release to \\garage\PZ\Admin_panel
-    7. Syncs files to the GitHub working copy
-    8. Commits and pushes to GitHub
-    9. Creates a GitHub Release with Keep a Changelog format notes
+    5. Commits and pushes to GitHub
+    6. Creates a GitHub Release with Keep a Changelog format notes
 
 .PARAMETER Version
     Explicit version string (e.g., "0.9.0"). If omitted, auto-increments based on -Bump.
@@ -29,9 +29,6 @@
 
 .PARAMETER SkipBuild
     Skip the client and exe build steps (use existing release/ folder).
-
-.PARAMETER SkipDeploy
-    Skip deploying to the live server.
 
 .PARAMETER SkipGitHub
     Skip git commit/push and GitHub release creation.
@@ -61,7 +58,6 @@ param(
     [string]$ReleaseNotes = "",
 
     [switch]$SkipBuild,
-    [switch]$SkipDeploy,
     [switch]$SkipGitHub,
     [switch]$SkipDocker,
     [switch]$DryRun
@@ -70,18 +66,9 @@ param(
 # ============================================
 # CONFIGURATION - Edit these paths as needed
 # ============================================
-$Dev1Dir          = "D:\Zomboid_dev_panel\Dev1"
-$GitHubDir        = "D:\Zomboid_dev_panel\GitHub"
-# PanelBridge.lua is a server-side drop-in, not a Workshop mod. PZ loads it
-# directly from the base install's media/lua/server/ folder. There is NO
-# client-side component (all handlers run server-side only).
-$LivePanelBridgeDir = "\\garage\pz\LiveB42\Install\media\lua\server"
-$LiveAdminPanel   = "\\garage\PZ\Admin_panel"
+$RepoDir          = $PSScriptRoot
 $GitHubRepo       = "fpsacha/zomboid-control-panel"
 
-# Source paths (relative to Dev1Dir)
-$PanelBridgeModDir = "pz-mod\PanelBridge"
-$PanelBridgeSrc    = "pz-mod\PanelBridge\media\lua\server\PanelBridge.lua"
 $ReleaseDir       = "release"
 $WinExePath       = "release\ZomboidControlPanel.exe"
 $LinuxBinPath     = "release\ZomboidControlPanel"
@@ -110,7 +97,7 @@ function Write-Warn($msg) { Write-Host "  WARN: $msg" -ForegroundColor Yellow }
 # AUTO-VERSION: Increment from current package.json if no -Version given
 # ============================================
 if (-not $Version) {
-    $pkgContent = Get-Content (Join-Path $Dev1Dir "package.json") -Raw | ConvertFrom-Json
+    $pkgContent = Get-Content (Join-Path $RepoDir "package.json") -Raw | ConvertFrom-Json
     $currentVersion = $pkgContent.version
     # Strip any pre-release suffix for numeric parsing
     $numericPart = ($currentVersion -split '-')[0]
@@ -144,14 +131,13 @@ Write-Host ""
 # ============================================
 # STEP 0: Pre-flight checks
 # ============================================
-Write-Step "0/9" "Pre-flight checks"
+Write-Step "0/6" "Pre-flight checks"
 
-# Check for uncommitted changes in Dev1/
-Push-Location $Dev1Dir
+Push-Location $RepoDir
 try { $gitStatus = git status --porcelain 2>$null } catch { $gitStatus = $null }
 Pop-Location
 if ($gitStatus) {
-    Write-Warn "Uncommitted changes detected in Dev1/:"
+    Write-Warn "Uncommitted changes detected:"
     $gitStatus | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkYellow }
     $confirm = Read-Host "  Continue with uncommitted changes? (y/N)"
     if ($confirm -ne 'y') {
@@ -159,60 +145,41 @@ if ($gitStatus) {
         exit 1
     }
 } else {
-    Write-Ok "No uncommitted changes in Dev1/"
-}
-
-# Verify \\garage is reachable (unless skipping deploy)
-if (-not $SkipDeploy) {
-    # Test-Path on a bare \\host (no share) can fail even when shares are reachable.
-    # Check a known share path instead. Use single-backslash form (double-escaped
-    # form "\\\\garage\\PZ" doesn't parse as a valid UNC on some PowerShell versions).
-    if (Test-Path '\\garage\PZ' -ErrorAction SilentlyContinue) {
-        Write-Ok "\\garage is reachable"
-    } else {
-        Write-Host "  ERROR: \\garage\PZ is not reachable. Use -SkipDeploy to skip deployment." -ForegroundColor Red
-        exit 1
-    }
+    Write-Ok "No uncommitted changes"
 }
 
 # ============================================
-# STEP 1: Bump version in package.json files
+# STEP 1: Bump version in package.json
 # ============================================
-Write-Step "1/9" "Bumping version to $Version"
+Write-Step "1/6" "Bumping version to $Version"
 
-$packageFiles = @(
-    (Join-Path $Dev1Dir "package.json"),
-    (Join-Path $GitHubDir "package.json")
-)
-
-foreach ($pkgFile in $packageFiles) {
-    if (Test-Path $pkgFile) {
-        $content = Get-Content $pkgFile -Raw
-        $newContent = $content -replace '"version":\s*"[^"]*"', "`"version`": `"$Version`""
-        if ($DryRun) {
-            Write-Dry "Would update $pkgFile"
-        } else {
-            # Set-Content intermittently throws "Stream was not readable" in some
-            # shells even when the file is writable; direct file I/O is reliable.
-            [System.IO.File]::WriteAllText($pkgFile, $newContent, [System.Text.UTF8Encoding]::new($false))
-            Write-Ok "Updated $pkgFile"
-        }
+$pkgFile = Join-Path $RepoDir "package.json"
+if (Test-Path $pkgFile) {
+    $content = Get-Content $pkgFile -Raw
+    $newContent = $content -replace '"version":\s*"[^"]*"', "`"version`": `"$Version`""
+    if ($DryRun) {
+        Write-Dry "Would update $pkgFile"
     } else {
-        Write-Warning "Package file not found: $pkgFile"
+        # Set-Content intermittently throws "Stream was not readable" in some
+        # shells even when the file is writable; direct file I/O is reliable.
+        [System.IO.File]::WriteAllText($pkgFile, $newContent, [System.Text.UTF8Encoding]::new($false))
+        Write-Ok "Updated $pkgFile"
     }
+} else {
+    Write-Warning "Package file not found: $pkgFile"
 }
 
 # ============================================
 # STEP 2: Build client
 # ============================================
-Write-Step "2/9" "Building client (Vite/React)"
+Write-Step "2/6" "Building client (Vite/React)"
 
 if ($SkipBuild) {
     Write-Skip "Build skipped (-SkipBuild)"
 } elseif ($DryRun) {
     Write-Dry "Would run: cd client && npm run build"
 } else {
-    Push-Location (Join-Path $Dev1Dir "client")
+    Push-Location (Join-Path $RepoDir "client")
     try {
         npm run build
         if ($LASTEXITCODE -ne 0) { throw "Client build failed" }
@@ -225,23 +192,23 @@ if ($SkipBuild) {
 # ============================================
 # STEP 3: Build binaries
 # ============================================
-Write-Step "3/9" "Building Windows + Linux binaries (esbuild + pkg)"
+Write-Step "3/6" "Building Windows + Linux binaries (esbuild + pkg)"
 
 if ($SkipBuild) {
     Write-Skip "Build skipped (-SkipBuild)"
 } elseif ($DryRun) {
     Write-Dry "Would run: npm run build:exe:all, then create ZomboidControlPanel-windows.zip"
 } else {
-    Push-Location $Dev1Dir
+    Push-Location $RepoDir
     try {
         npm run build:exe:all
         if ($LASTEXITCODE -ne 0) { throw "Binary build failed" }
-        
-        $winExe = Join-Path $Dev1Dir $WinExePath
-        $linuxBin = Join-Path $Dev1Dir $LinuxBinPath
-        $checksums = Join-Path $Dev1Dir $ChecksumsPath
-        $manifest = Join-Path $Dev1Dir $ManifestPath
-        
+
+        $winExe = Join-Path $RepoDir $WinExePath
+        $linuxBin = Join-Path $RepoDir $LinuxBinPath
+        $checksums = Join-Path $RepoDir $ChecksumsPath
+        $manifest = Join-Path $RepoDir $ManifestPath
+
         if (-not (Test-Path $winExe)) { throw "Windows binary not found at $winExe" }
         if (-not (Test-Path $linuxBin)) { throw "Linux binary not found at $linuxBin" }
         if (-not (Test-Path $checksums)) { throw "Checksums file not found at $checksums" }
@@ -257,9 +224,9 @@ if ($SkipBuild) {
         # Belt-and-braces: explicitly exclude data/db.json and data/backups so a stray
         # runtime database from local testing can never end up in a public release
         # (issue #5: clobbering users' admin/server config on extract).
-        $zipPath = Join-Path $Dev1Dir $WinZipPath
+        $zipPath = Join-Path $RepoDir $WinZipPath
         if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
-        $releaseFolder = Join-Path $Dev1Dir $ReleaseDir
+        $releaseFolder = Join-Path $RepoDir $ReleaseDir
         $strayDb = Join-Path $releaseFolder "data\db.json"
         if (Test-Path $strayDb) {
             Write-Warn "Removing stray data\db.json from release\ before archiving"
@@ -275,7 +242,7 @@ if ($SkipBuild) {
         Write-Ok "Windows archive created: ZomboidControlPanel-windows.zip ($zipSize MB)"
 
         # Package Linux release archive (tar.gz to preserve +x permissions)
-        $tarPath = Join-Path $Dev1Dir $LinuxTarPath
+        $tarPath = Join-Path $RepoDir $LinuxTarPath
         if (Test-Path $tarPath) { Remove-Item $tarPath -Force }
         Push-Location $releaseFolder
         tar -czf $tarPath --exclude="ZomboidControlPanel.exe" --exclude="ZomboidControlPanel-windows.zip" --exclude="ZomboidControlPanel-linux.tar.gz" --exclude="Start.bat" --exclude="data/db.json" --exclude="data/backups" *
@@ -318,7 +285,7 @@ if ($SkipBuild) {
     }
 
     # Post-build verification
-    $clientDist = Join-Path $Dev1Dir "client\dist"
+    $clientDist = Join-Path $RepoDir "client\dist"
     if (-not (Test-Path $clientDist) -or (Get-ChildItem $clientDist -Recurse -File).Count -eq 0) {
         throw "Build verification failed: client/dist/ is empty or missing"
     }
@@ -328,7 +295,7 @@ if ($SkipBuild) {
 # ============================================
 # STEP 4: Build Docker image
 # ============================================
-Write-Step "4/9" "Building Docker image"
+Write-Step "4/6" "Building Docker image"
 
 if ($SkipDocker) {
     Write-Skip "Docker build skipped (-SkipDocker)"
@@ -337,7 +304,7 @@ if ($SkipDocker) {
 } else {
     $dockerAvailable = Get-Command docker -ErrorAction SilentlyContinue
     if ($dockerAvailable) {
-        Push-Location $Dev1Dir
+        Push-Location $RepoDir
         try {
             docker build -t "zomboid-panel:$TagName" -t "zomboid-panel:latest" .
             if ($LASTEXITCODE -ne 0) { throw "Docker build failed" }
@@ -351,152 +318,28 @@ if ($SkipDocker) {
 }
 
 # ============================================
-# STEP 5: Deploy PanelBridge.lua (server-side drop-in) to live PZ server
+# STEP 5: Git commit and push
 # ============================================
-Write-Step "5/9" "Deploying PanelBridge.lua to live server"
-
-if ($SkipDeploy) {
-    Write-Skip "Deploy skipped (-SkipDeploy)"
-} elseif ($DryRun) {
-    Write-Dry "Would copy PanelBridge.lua to $LivePanelBridgeDir"
-} else {
-    $bridgeSrc = Join-Path $Dev1Dir $PanelBridgeSrc
-    # Ensure target dir exists (Install/media/lua/server)
-    New-Item -Path $LivePanelBridgeDir -ItemType Directory -Force | Out-Null
-    # Server-side drop-in: one Lua file, no mod.info, no client file
-    Copy-Item $bridgeSrc "$LivePanelBridgeDir\PanelBridge.lua" -Force
-    Write-Ok "PanelBridge.lua deployed to $LivePanelBridgeDir"
-}
-
-# ============================================
-# STEP 6: Deploy full release to Admin Panel
-# ============================================
-Write-Step "6/9" "Deploying release to $LiveAdminPanel"
-
-if ($SkipDeploy) {
-    Write-Skip "Deploy skipped (-SkipDeploy)"
-} elseif ($DryRun) {
-    Write-Dry "Would run deploy.ps1 and restart local backend"
-} else {
-    Push-Location $Dev1Dir
-    try {
-        & ".\deploy.ps1"
-        Write-Ok "Release deployed to $LiveAdminPanel"
-    } finally {
-        Pop-Location
-    }
-
-    # Restart local dev backend so the UI version badge updates immediately
-    $port3001 = Get-NetTCPConnection -LocalPort 3001 -State Listen -ErrorAction SilentlyContinue |
-                Select-Object -First 1 -ExpandProperty OwningProcess
-    if ($port3001 -and $port3001 -ne 0) {
-        Stop-Process -Id $port3001 -Force -ErrorAction SilentlyContinue
-        Start-Sleep -Seconds 1
-        Start-Process -FilePath "node" -ArgumentList "server/index.js" -WorkingDirectory $Dev1Dir -WindowStyle Hidden
-        Write-Ok "Local backend restarted (PID $port3001 stopped, new instance launched)"
-    } else {
-        Write-Ok "No local backend running on port 3001 — skipping restart"
-    }
-}
-
-# ============================================
-# STEP 7: Sync files to GitHub working copy
-# ============================================
-Write-Step "7/9" "Syncing files to GitHub folder"
-
-if ($SkipGitHub) {
-    Write-Skip "GitHub sync skipped (-SkipGitHub)"
-} elseif ($DryRun) {
-    Write-Dry "Would sync Dev1 files to GitHub folder"
-} else {
-    # Sync key files from Dev1 to GitHub (excluding node_modules, .env, db.json, dist, release)
-    $syncItems = @(
-        ".github",
-        "docker",
-        "server",
-        "pz-mod",
-        "Screenshots",
-        "client\src",
-        "client\public",
-        "client\index.html",
-        "client\package.json",
-        "client\tsconfig.json",
-        "client\vite.config.ts",
-        "client\tailwind.config.js",
-        "client\postcss.config.js",
-        "client\components.json",
-        "package.json",
-        "package-lock.json",
-        "build.js",
-        "server.cjs",
-        "nodemon.json",
-        "client\package-lock.json",
-        "Start.bat",
-        "deploy.ps1",
-        "deploy-safe.ps1",
-        "deploy-remote.ps1",
-        "release.ps1",
-        "Dockerfile",
-        "docker-compose.yml",
-        "docker-compose.install.yml",
-        "zomboid-panel.service",
-        "CHANGELOG.md",
-        "README.md",
-        "LICENSE"
-    )
-    
-    foreach ($item in $syncItems) {
-        $srcPath = Join-Path $Dev1Dir $item
-        $dstPath = Join-Path $GitHubDir $item
-        
-        if (Test-Path $srcPath) {
-            $dstDir = Split-Path $dstPath -Parent
-            if (-not (Test-Path $dstDir)) {
-                New-Item -ItemType Directory -Path $dstDir -Force | Out-Null
-            }
-            
-            if ((Get-Item $srcPath).PSIsContainer) {
-                # It's a directory - use robocopy for mirror
-                robocopy $srcPath $dstPath /MIR /NFL /NDL /NJH /NJS /NP | Out-Null
-            } else {
-                Copy-Item $srcPath $dstPath -Force
-            }
-        }
-    }
-    
-    # Always sync PanelBridge.lua specifically
-    $pbSrc = Join-Path $Dev1Dir $PanelBridgeSrc
-    $pbDst = Join-Path $GitHubDir $PanelBridgeSrc
-    $pbDstDir = Split-Path $pbDst -Parent
-    if (-not (Test-Path $pbDstDir)) { New-Item -ItemType Directory -Path $pbDstDir -Force | Out-Null }
-    Copy-Item $pbSrc $pbDst -Force
-    
-    Write-Ok "Files synced to GitHub folder"
-}
-
-# ============================================
-# STEP 8: Git commit and push
-# ============================================
-Write-Step "8/9" "Committing and pushing to GitHub"
+Write-Step "5/6" "Committing and pushing to GitHub"
 
 if ($SkipGitHub) {
     Write-Skip "GitHub push skipped (-SkipGitHub)"
 } elseif ($DryRun) {
     Write-Dry "Would commit and push to $GitHubRepo"
 } else {
-    Push-Location $GitHubDir
+    Push-Location $RepoDir
     try {
         git add -A
-        
+
         # Check if there are changes to commit
         $status = git status --porcelain
         if ($status) {
             git commit -m "Release $TagName"
             if ($LASTEXITCODE -ne 0) { throw "Git commit failed" }
-            
+
             git push
             if ($LASTEXITCODE -ne 0) { throw "Git push failed" }
-            
+
             Write-Ok "Committed and pushed to GitHub"
         } else {
             Write-Ok "No changes to commit (already up to date)"
@@ -507,25 +350,24 @@ if ($SkipGitHub) {
 }
 
 # ============================================
-# STEP 9: Create GitHub Release with archives
+# STEP 6: Create GitHub Release with archives
 # ============================================
-Write-Step "9/9" "Creating GitHub Release $TagName"
+Write-Step "6/6" "Creating GitHub Release $TagName"
 
 if ($SkipGitHub) {
     Write-Skip "GitHub release skipped (-SkipGitHub)"
 } elseif ($DryRun) {
-    Write-Dry "Would create release $TagName on $GitHubRepo with Windows archive (Linux archive added by CI)"
+    Write-Dry "Would create release $TagName on $GitHubRepo with all build artifacts"
 } else {
-    # Windows archive is built locally; Linux tar.gz (with +x) is produced by CI on tag push.
     # Both raw binaries (.exe and the Linux ELF) are uploaded separately so the
     # in-app auto-updater can pull them directly — it refuses archives by design.
     $assetPaths = @(
-        (Join-Path $Dev1Dir $WinZipPath),
-        (Join-Path $Dev1Dir $LinuxTarPath),
-        (Join-Path $Dev1Dir $WinExePath),
-        (Join-Path $Dev1Dir $LinuxBinPath),
-        (Join-Path $Dev1Dir $ChecksumsPath),
-        (Join-Path $Dev1Dir $ManifestPath)
+        (Join-Path $RepoDir $WinZipPath),
+        (Join-Path $RepoDir $LinuxTarPath),
+        (Join-Path $RepoDir $WinExePath),
+        (Join-Path $RepoDir $LinuxBinPath),
+        (Join-Path $RepoDir $ChecksumsPath),
+        (Join-Path $RepoDir $ManifestPath)
     )
 
     foreach ($asset in $assetPaths) {
@@ -533,7 +375,7 @@ if ($SkipGitHub) {
             throw "Required release asset missing: $asset"
         }
     }
-    
+
     # Build gh release command
     $ghArgs = @(
         "release", "create", $TagName,
@@ -541,16 +383,16 @@ if ($SkipGitHub) {
         "--title", $ReleaseTitle,
         "--latest"
     )
-    
+
     # Add release notes
     if ($ReleaseNotes -and (Test-Path $ReleaseNotes)) {
         $ghArgs += "--notes-file"
         $ghArgs += $ReleaseNotes
     } else {
         # Auto-generate Keep a Changelog format from commit messages
-        $lastTag = git -C $GitHubDir tag --sort=-creatordate | Select-Object -First 1
+        $lastTag = git -C $RepoDir tag --sort=-creatordate | Select-Object -First 1
         if ($lastTag -and $lastTag -ne $TagName) {
-            $log = git -C $GitHubDir log "$lastTag..HEAD" --format="%s" --no-merges 2>$null
+            $log = git -C $RepoDir log "$lastTag..HEAD" --format="%s" --no-merges 2>$null
 
             # Categorize commits by prefix
             $added = @()
@@ -631,9 +473,9 @@ if ($SkipGitHub) {
 
     # Add release assets
     $ghArgs += $assetPaths
-    
+
     & gh @ghArgs
-    
+
     if ($LASTEXITCODE -ne 0) {
         Write-Warning "GitHub release creation failed. You can retry with:"
         Write-Host "  gh release create $TagName --repo $GitHubRepo --title `"$ReleaseTitle`" --prerelease <asset paths>" -ForegroundColor Yellow
@@ -656,8 +498,9 @@ if (-not $SkipBuild)  { Write-Host "   [x] Client built" -ForegroundColor Green 
 if (-not $SkipBuild)  { Write-Host "   [x] Windows + Linux binaries created" -ForegroundColor Green }
 if (-not $SkipBuild)  { Write-Host "   [x] Windows + Linux archives packaged" -ForegroundColor Green }
 if (-not $SkipDocker) { Write-Host "   [x] Docker image built" -ForegroundColor Green }
-if (-not $SkipDeploy) { Write-Host "   [x] PanelBridge mod deployed to PZ server" -ForegroundColor Green }
-if (-not $SkipDeploy) { Write-Host "   [x] Release deployed to Admin Panel" -ForegroundColor Green }
 if (-not $SkipGitHub) { Write-Host "   [x] Pushed to GitHub" -ForegroundColor Green }
 if (-not $SkipGitHub) { Write-Host "   [x] GitHub Release created (Keep a Changelog format)" -ForegroundColor Green }
+Write-Host ""
+Write-Host " Note: live deployment to production (Docker on the game host) is" -ForegroundColor DarkGray
+Write-Host " a separate manual step, not part of this script." -ForegroundColor DarkGray
 Write-Host ""
