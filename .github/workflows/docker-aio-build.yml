@@ -59,9 +59,16 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Short SHA
+      # github.repository_owner preserves actual case ("Lynkes"), but GHCR
+      # (like all Docker registries) requires a lowercase repository name --
+      # docker-publish.yml never hits this because it goes through
+      # docker/metadata-action, which lowercases automatically; this
+      # workflow builds tags directly, so it needs to do that itself.
+      - name: Compute tag vars
         id: vars
-        run: echo "short_sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "short_sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          echo "owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
 
       # Only log in / push outside pull_request — a PR from a fork gets a
       # read-only GITHUB_TOKEN, and even a same-repo PR shouldn't publish an
@@ -82,8 +89,8 @@ jobs:
           platforms: linux/amd64
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
-            ghcr.io/${{ github.repository_owner }}/zomboid-panel:aio
-            ghcr.io/${{ github.repository_owner }}/zomboid-panel:aio-${{ steps.vars.outputs.short_sha }}
+            ghcr.io/${{ steps.vars.outputs.owner }}/zomboid-panel:aio
+            ghcr.io/${{ steps.vars.outputs.owner }}/zomboid-panel:aio-${{ steps.vars.outputs.short_sha }}
           cache-from: type=gha,scope=aio
           cache-to: type=gha,mode=max,scope=aio
           # Same reasoning as docker-publish.yml: avoid the phantom
