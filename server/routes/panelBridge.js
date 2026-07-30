@@ -19,6 +19,7 @@ import {
   logBridgeCommand,
 } from "../database/init.js";
 import { sanitizeError } from "../utils/sanitize.js";
+import { requireRole } from "../services/auth.js";
 import {
   getEmbeddedPanelBridgeLua,
   compareModVersions,
@@ -907,8 +908,14 @@ router.get("/ping", async (req, res) => {
   }
 });
 
-// Send a command to the game
-router.post("/command", async (req, res) => {
+// Send a command to the game. Admin-gated for consistency with the other
+// powerful/destructive routes (backup restore, chunk deletion, server wipe)
+// — this is the generic passthrough for ANY PanelBridge handler (teleport,
+// giveItem, character import/export, horde spawning, etc.), not just the
+// curated preset buttons in the Events UI. Every account is currently
+// created as 'admin' (see auth.js), so this has no effect today, but keeps
+// the route safe if a lower-privilege role is ever introduced.
+router.post("/command", requireRole("admin"), async (req, res) => {
   const activeServer = await getActiveServer();
   if (activeServer?.isRemote) {
     return res.status(400).json({
