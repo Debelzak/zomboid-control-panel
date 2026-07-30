@@ -938,10 +938,13 @@ export default function WorldMap() {
         loadDziTile(level, col, row)
         const img = tileCacheRef.current[`${floorRef.current}/${level}/${col}_${row}`]
         if (img) {
-          const dx = col * DZI_TILE_SIZE * levelScale * s + off.x
-          const dy = row * DZI_TILE_SIZE * levelScale * s + off.y
-          const dw = img.naturalWidth * levelScale * s
-          const dh = img.naturalHeight * levelScale * s
+          // Floor the origin and pad the size by 1px so adjacent tiles
+          // slightly overlap instead of leaving a sub-pixel seam (visible as
+          // a dark line since tiles draw at globalAlpha 0.9 over a dark bg).
+          const dx = Math.floor(col * DZI_TILE_SIZE * levelScale * s + off.x)
+          const dy = Math.floor(row * DZI_TILE_SIZE * levelScale * s + off.y)
+          const dw = Math.ceil(img.naturalWidth * levelScale * s) + 1
+          const dh = Math.ceil(img.naturalHeight * levelScale * s) + 1
           ctx.drawImage(img, dx, dy, dw, dh)
         }
       }
