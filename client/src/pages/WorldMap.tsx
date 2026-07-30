@@ -183,9 +183,23 @@ interface MapConfig {
 
 const MAP_B42: MapConfig = {
   tileUrl: '/api/map/tiles',
-  tileSize: 1024,
-  fullWidth: 2314432,
-  fullHeight: 1019072,
+  // Verified directly against the live layer0.dzi descriptor
+  // (map.projectzomboid.com/maps/<version>/base/layer0.dzi), which reports
+  // TileSize="2048" — this was previously hardcoded to 1024 (correct for
+  // B41, wrong for B42), which computed up to 2x too many tile
+  // columns/rows per level. That mismatch only became visible once a
+  // level's viewport genuinely spans more than one tile (mid-to-high
+  // zoom): the extra requested tiles legitimately don't exist upstream
+  // (404), and the ones that do exist were drawn at the wrong on-screen
+  // position — together producing the reported "tiles offline" banner
+  // and visible view jump/snap on zoom.
+  tileSize: 2048,
+  // Also refreshed from the same live descriptor (Size Width/Height) —
+  // these drift slightly release to release as the underlying map image
+  // is regenerated; this is a point-in-time snapshot, not resolved
+  // dynamically like the server already does for the version directory.
+  fullWidth: 2318656,
+  fullHeight: 1019040,
   maxLevel: 22,
   isoX0: 1036288,
   isoY0: -139296,
@@ -210,8 +224,6 @@ const MAP_B41: MapConfig = {
   defaultCenter: { x: 1100000, y: 400000 },
   label: 'B41',
 }
-
-const DZI_TILE_SIZE = 1024      // shared between both configs
 
 const MIN_SCALE = 0.0003        // canvas px per DZI px (zoomed way out)
 const MAX_SCALE = 1.0           // canvas px per DZI px (zoomed way in)
@@ -702,7 +714,14 @@ export default function WorldMap() {
   useEffect(() => { safehousesRef.current = safehouses }, [safehouses])
 
   // ─── Map tile cache ─────────────────────────────────────
-  const tileCacheRef = useRef<Record<string, HTMLImageElement | null>>({})
+  // 'empty' marks a tile the upstream server confirmed doesn't exist (a
+  // real HTTP 404, not a network/proxy failure) — e.g. a sparse/edge tile
+  // near the map boundary. map.projectzomboid.com's own OpenSeadragon
+  // viewer just renders these blank; treating them as errors caused a
+  // false "tiles offline" banner and visible view jumps on zoom. See the
+  // status-aware fetch() below — an <img> tag alone can't distinguish a
+  // 404 from any other failure.
+  const tileCacheRef = useRef<Record<string, HTMLImageElement | null | 'empty'>>({})
 
   // Cap concurrent tile loads to avoid flooding the network
   const pendingTileLoadsRef = useRef(0)
@@ -727,16 +746,27 @@ export default function WorldMap() {
     if (fail && Date.now() < fail.nextAt) return
     tileCacheRef.current[key] = null
     pendingTileLoadsRef.current++
-    const img = new window.Image()
-    img.onload = () => {
-      pendingTileLoadsRef.current--
-      // Discard if floor changed while loading (key belongs to old floor)
+
+    const markFailed = () => {
       if (floorRef.current !== f) return
-      tileCacheRef.current[key] = img
-      // Tile recovered — clear failure state. Only decrement the global
-      // counter when *this* tile was actually in the failure set, otherwise
-      // unrelated successful loads would prematurely hide the banner while
-      // the originally-failing tiles are still in backoff.
+      // Drop the pending entry so the per-tile backoff guard above is what
+      // gates the next retry (rather than the "key in cache" check).
+      delete tileCacheRef.current[key]
+      const prev = tileFailRef.current[key]
+      const count = (prev?.count ?? 0) + 1
+      const delay = TILE_RETRY_MS[Math.min(count - 1, TILE_RETRY_MS.length - 1)]
+      tileFailRef.current[key] = { count, nextAt: Date.now() + delay }
+      // Surface a user-visible warning if many distinct tiles are failing.
+      if (count === 1) {
+        tileFailureCountRef.current++
+        if (tileFailureCountRef.current >= 6) setTileLoadFailing(true)
+      }
+    }
+
+    const markRecovered = () => {
+      // Only decrement the global counter when *this* tile was actually in
+      // the failure set, otherwise unrelated successful loads would
+      // prematurely hide the banner while other tiles are still failing.
       if (tileFailRef.current[key]) {
         delete tileFailRef.current[key]
         if (tileFailureCountRef.current > 0) {
@@ -744,30 +774,59 @@ export default function WorldMap() {
           if (tileFailureCountRef.current === 0) setTileLoadFailing(false)
         }
       }
-      if (drawRequestRef.current === 0) {
-        drawRequestRef.current = requestAnimationFrame(() => { drawRequestRef.current = 0 })
-      }
     }
-    img.onerror = () => {
-      pendingTileLoadsRef.current--
-      if (floorRef.current === f) {
-        // Drop the pending entry so the per-tile backoff guard above is what
-        // gates the next retry (rather than the "key in cache" check).
-        delete tileCacheRef.current[key]
-        const prev = tileFailRef.current[key]
-        const count = (prev?.count ?? 0) + 1
-        const delay = TILE_RETRY_MS[Math.min(count - 1, TILE_RETRY_MS.length - 1)]
-        tileFailRef.current[key] = { count, nextAt: Date.now() + delay }
-        // Surface a user-visible warning if many distinct tiles are failing.
-        if (count === 1) {
-          tileFailureCountRef.current++
-          if (tileFailureCountRef.current >= 6) setTileLoadFailing(true)
-        }
-      }
-    }
+
     const ext = f === 0 ? 'jpg' : 'webp'
     const floorParam = f !== 0 ? `?floor=${f}` : ''
-    img.src = `${mapCfgRef.current.tileUrl}/${level}/${col}_${row}.${ext}${floorParam}`
+    const url = `${mapCfgRef.current.tileUrl}/${level}/${col}_${row}.${ext}${floorParam}`
+
+    // fetch() rather than a plain <img src> so we can see the actual HTTP
+    // status: a 404 means the upstream confirmed this tile doesn't exist
+    // (render blank, like the reference viewer does), while anything else
+    // is a real failure that should count toward the backoff/banner logic.
+    // An <img> tag's onerror alone can't tell these apart.
+    //
+    // pendingTileLoadsRef is decremented at each actual terminal point below
+    // (not in a blanket .finally()) so the concurrency cap holds the slot
+    // for the full lifecycle including image decode, same as before.
+    fetch(url)
+      .then((res) => {
+        if (floorRef.current !== f) { pendingTileLoadsRef.current--; return null } // stale — floor changed mid-flight
+        if (res.status === 404) {
+          pendingTileLoadsRef.current--
+          tileCacheRef.current[key] = 'empty'
+          markRecovered()
+          return null
+        }
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        return res.blob()
+      })
+      .then((blob) => {
+        if (!blob) return // already handled (stale or 404) above
+        if (floorRef.current !== f) { pendingTileLoadsRef.current--; return }
+        const objectUrl = URL.createObjectURL(blob)
+        const img = new window.Image()
+        img.onload = () => {
+          URL.revokeObjectURL(objectUrl)
+          pendingTileLoadsRef.current--
+          if (floorRef.current !== f) return
+          tileCacheRef.current[key] = img
+          markRecovered()
+          if (drawRequestRef.current === 0) {
+            drawRequestRef.current = requestAnimationFrame(() => { drawRequestRef.current = 0 })
+          }
+        }
+        img.onerror = () => {
+          URL.revokeObjectURL(objectUrl)
+          pendingTileLoadsRef.current--
+          markFailed()
+        }
+        img.src = objectUrl
+      })
+      .catch(() => {
+        pendingTileLoadsRef.current--
+        markFailed()
+      })
   }, [])
 
   // ─── Coordinate transforms (DZI pixel ↔ canvas, game-tile ↔ DZI) ─
@@ -961,11 +1020,19 @@ export default function WorldMap() {
     const visMinDziY = -off.y / s
     const visMaxDziY = (H - off.y) / s
 
-    // Convert to level-pixel tile indices
-    const minCol = Math.max(0, Math.floor(visMinDziX / levelScale / DZI_TILE_SIZE))
-    const maxCol = Math.min(Math.ceil(levelW / DZI_TILE_SIZE) - 1, Math.floor(visMaxDziX / levelScale / DZI_TILE_SIZE))
-    const minRow = Math.max(0, Math.floor(visMinDziY / levelScale / DZI_TILE_SIZE))
-    const maxRow = Math.min(Math.ceil(levelH / DZI_TILE_SIZE) - 1, Math.floor(visMaxDziY / levelScale / DZI_TILE_SIZE))
+    // Convert to level-pixel tile indices. Tile size is per-map-config, not
+    // a shared constant — B42's actual DZI TileSize (2048, per the live
+    // layer0.dzi descriptor) differs from B41's (1024). Using the wrong
+    // value here doesn't just misplace tiles, it computes an entirely wrong
+    // column/row count — e.g. assuming 1024 against a real 2048 tile grid
+    // requests up to 2x as many columns/rows as actually exist, hitting
+    // real 404s past the true edge and drawing the ones that do exist at
+    // the wrong position (visible as tiles jumping/snapping on zoom).
+    const tileSize = mc.tileSize
+    const minCol = Math.max(0, Math.floor(visMinDziX / levelScale / tileSize))
+    const maxCol = Math.min(Math.ceil(levelW / tileSize) - 1, Math.floor(visMaxDziX / levelScale / tileSize))
+    const minRow = Math.max(0, Math.floor(visMinDziY / levelScale / tileSize))
+    const maxRow = Math.min(Math.ceil(levelH / tileSize) - 1, Math.floor(visMaxDziY / levelScale / tileSize))
 
     ctx.save()
     ctx.globalAlpha = 0.9
@@ -973,12 +1040,12 @@ export default function WorldMap() {
       for (let col = minCol; col <= maxCol; col++) {
         loadDziTile(level, col, row)
         const img = tileCacheRef.current[`${floorRef.current}/${level}/${col}_${row}`]
-        if (img) {
+        if (img && img !== 'empty') {
           // Floor the origin and pad the size by 1px so adjacent tiles
           // slightly overlap instead of leaving a sub-pixel seam (visible as
           // a dark line since tiles draw at globalAlpha 0.9 over a dark bg).
-          const dx = Math.floor(col * DZI_TILE_SIZE * levelScale * s + off.x)
-          const dy = Math.floor(row * DZI_TILE_SIZE * levelScale * s + off.y)
+          const dx = Math.floor(col * tileSize * levelScale * s + off.x)
+          const dy = Math.floor(row * tileSize * levelScale * s + off.y)
           const dw = Math.ceil(img.naturalWidth * levelScale * s) + 1
           const dh = Math.ceil(img.naturalHeight * levelScale * s) + 1
           ctx.drawImage(img, dx, dy, dw, dh)
@@ -2365,10 +2432,12 @@ export default function WorldMap() {
           </div>
         </div>
 
-        {/* Tile-load failure banner — appears when many tiles fail (network
-            outage, firewall blocking b42map.com / map.projectzomboid.com,
-            or upstream tile server down). Without this the user just sees an
-            indefinite empty map. See issue #6. */}
+        {/* Tile-load failure banner — appears when many *distinct* tiles fail
+            with a real error (network outage, firewall blocking
+            map.projectzomboid.com, upstream tile server down). A genuine
+            HTTP 404 (sparse/edge tile, out of map bounds) does NOT count
+            toward this — see loadDziTile's 'empty' handling. Without this
+            banner the user just sees an indefinite empty map. See issue #6. */}
         {tileLoadFailing && (
           <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 max-w-md w-[min(28rem,calc(100%-7rem))]" role="alert">
             <div className="rounded-md border border-warning/60 bg-warning/15 backdrop-blur-md shadow-lg overflow-hidden">
