@@ -17,6 +17,10 @@ import { escapeRegExp } from "../utils/regex.js";
 import { getDataPaths } from "../utils/paths.js";
 
 const isWindows = process.platform === "win32";
+// How long a live-looked-up public IP is trusted before re-checking.
+// Residential ISPs rotate dynamic WAN IPs periodically; without a TTL the
+// dashboard would show a stale, no-longer-yours address indefinitely.
+const PUBLIC_IP_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 
 function getConfiguredIpv4Address(variableName) {
   const address = process.env[variableName]?.trim();
@@ -1073,18 +1077,24 @@ export class ServerManager {
     const configuredWanIp = getConfiguredIpv4Address("PANEL_WAN_IP");
     if (configuredWanIp) {
       this.publicIp = configuredWanIp;
-    } else if (!this.publicIp && !this.fetchingIp) {
+    } else if (!this.fetchingIp) {
       // Opt-in only: this used to unconditionally call out to a third party
       // (api.ipify.org) on every status check for a LAN-only panel, which is
       // an unnecessary external dependency and a small privacy leak
       // (announces the panel to ipify) for installs that never display or
       // need their public IP. Requires `enablePublicIpLookup` to be set to
       // true (e.g. via a future Settings toggle, or directly in the DB).
+      //
+      // The cache has a TTL (PUBLIC_IP_CACHE_TTL_MS) so a residential ISP
+      // rotating the WAN IP gets picked up automatically instead of the
+      // dashboard silently showing a stale, no-longer-yours address forever.
       try {
         const enabled = await getSetting("enablePublicIpLookup");
         if (enabled === true || enabled === "true") {
           const cached = await getSetting("cachedPublicIp");
-          if (cached) {
+          const cachedAt = Number(await getSetting("cachedPublicIpAt")) || 0;
+          const isStale = Date.now() - cachedAt > PUBLIC_IP_CACHE_TTL_MS;
+          if (cached && !isStale) {
             this.publicIp = cached;
           } else {
             this.fetchPublicIp().catch((err) =>
@@ -1167,9 +1177,11 @@ export class ServerManager {
         const data = await response.json();
         this.publicIp = data.ip;
         // Cache to DB so we don't need to call out to ipify again on every
-        // restart — only when the cached value is missing (see getServerStatus).
+        // restart — only when the cached value is missing or stale (see
+        // getServerStatus's PUBLIC_IP_CACHE_TTL_MS check).
         try {
           await setSetting("cachedPublicIp", data.ip);
+          await setSetting("cachedPublicIpAt", String(Date.now()));
         } catch (_) {
           /* best effort */
         }
