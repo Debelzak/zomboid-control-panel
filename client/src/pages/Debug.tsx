@@ -130,6 +130,7 @@ interface HealthStatus {
   memory: {
     heapUsed: number;
     heapTotal: number;
+    heapLimit?: number;
     rss: number;
     external: number;
   };
@@ -5228,11 +5229,16 @@ export default function Debug() {
               <CardContent className="space-y-3">
                 {healthStatus?.memory &&
                   (() => {
+                    // heapTotal is just the currently-allocated V8 segment
+                    // size, not a ceiling — it grows on demand, so
+                    // heapUsed/heapTotal routinely sits at 80-95% under
+                    // completely normal operation. The number that actually
+                    // means something is heapUsed against heapLimit (the
+                    // real V8 ceiling, what --max-old-space-size controls).
+                    const heapLimit = healthStatus.memory.heapLimit;
                     const heapPct =
-                      healthStatus.memory.heapTotal > 0
-                        ? (healthStatus.memory.heapUsed /
-                            healthStatus.memory.heapTotal) *
-                          100
+                      heapLimit && heapLimit > 0
+                        ? (healthStatus.memory.heapUsed / heapLimit) * 100
                         : 0;
                     const tone =
                       heapPct >= 90
@@ -5252,43 +5258,57 @@ export default function Debug() {
                         </div>
                         <div className="flex justify-between">
                           <span className="text-muted-foreground">
-                            Heap Total
+                            Heap Allocated
                           </span>
                           <span className="font-mono">
                             {formatMemory(healthStatus.memory.heapTotal)}
                           </span>
                         </div>
+                        {heapLimit !== undefined && (
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">
+                              Heap Limit
+                            </span>
+                            <span className="font-mono">
+                              {formatMemory(heapLimit)}
+                            </span>
+                          </div>
+                        )}
                         <div className="flex justify-between">
                           <span className="text-muted-foreground">RSS</span>
                           <span className="font-mono">
                             {formatMemory(healthStatus.memory.rss)}
                           </span>
                         </div>
-                        <div className="flex justify-between text-xs">
-                          <span className="text-muted-foreground">
-                            Heap usage
-                          </span>
-                          <span
-                            className={cn(
-                              "font-mono",
-                              tone === "destructive" && "text-destructive",
-                              tone === "warning" && "text-warning",
-                            )}
-                          >
-                            {heapPct.toFixed(1)}%
-                          </span>
-                        </div>
-                        <div className="w-full bg-muted rounded-full h-2 mt-2 overflow-hidden">
-                          <div
-                            className={cn(
-                              "h-2 rounded-full transition-all",
-                              tone === "destructive" && "bg-destructive",
-                              tone === "warning" && "bg-warning",
-                              tone === "primary" && "bg-primary",
-                            )}
-                            style={{ width: `${Math.min(100, heapPct)}%` }}
-                          />
-                        </div>
+                        {heapLimit !== undefined && (
+                          <>
+                            <div className="flex justify-between text-xs">
+                              <span className="text-muted-foreground">
+                                Heap usage (of limit)
+                              </span>
+                              <span
+                                className={cn(
+                                  "font-mono",
+                                  tone === "destructive" && "text-destructive",
+                                  tone === "warning" && "text-warning",
+                                )}
+                              >
+                                {heapPct.toFixed(1)}%
+                              </span>
+                            </div>
+                            <div className="w-full bg-muted rounded-full h-2 mt-2 overflow-hidden">
+                              <div
+                                className={cn(
+                                  "h-2 rounded-full transition-all",
+                                  tone === "destructive" && "bg-destructive",
+                                  tone === "warning" && "bg-warning",
+                                  tone === "primary" && "bg-primary",
+                                )}
+                                style={{ width: `${Math.min(100, heapPct)}%` }}
+                              />
+                            </div>
+                          </>
+                        )}
                       </>
                     );
                   })()}

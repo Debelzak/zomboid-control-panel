@@ -727,20 +727,27 @@ export interface ScheduleHistoryEntry {
 export const schedulerApi = {
   getStatus: () => apiGet("/scheduler/status"),
   getTasks: () => apiGet("/scheduler/tasks"),
-  createTask: (name: string, cronExpression: string, command: string) =>
-    apiPost("/scheduler/tasks", { name, cronExpression, command }),
+  createTask: (
+    name: string,
+    cronExpression: string,
+    command: string,
+    serverId?: string | number,
+  ) =>
+    apiPost("/scheduler/tasks", { name, cronExpression, command, serverId }),
   updateTask: (
     id: number,
     name: string,
     cronExpression: string,
     command: string,
     enabled: boolean,
+    serverId?: string | number,
   ) =>
     apiPut(`/scheduler/tasks/${id}`, {
       name,
       cronExpression,
       command,
       enabled,
+      serverId,
     }),
   deleteTask: (id: number) => apiDelete(`/scheduler/tasks/${id}`),
   restartNow: (warningMinutes?: number) =>
@@ -2513,17 +2520,6 @@ export interface PanelUpdateActionResult {
   preflight?: PanelUpdatePreflight;
 }
 
-export const mapApi = {
-  // Geometry of the B42 map build the backend is currently proxying.
-  getInfo: (): Promise<{
-    directory: string;
-    tileSize: number;
-    width: number;
-    height: number;
-    maxLevel: number;
-  }> => apiGet("/map/info"),
-};
-
 export const updateApi = {
   // Check for updates (force = true to refresh from Steam)
   check: (
@@ -2540,6 +2536,22 @@ export const updateApi = {
     minutes: number,
   ): Promise<{ success: boolean; intervalMinutes: number }> =>
     apiPost("/server/update-check/interval", { minutes }),
+};
+
+export const mapApi = {
+  // The B42 map build the backend resolved: its geometry, which the client
+  // needs to address tiles at all, plus enough to build direct-to-upstream
+  // tile URLs and load them from the browser instead of through this
+  // server's proxy — see the /api/map/resolve route for why.
+  resolve: (): Promise<{
+    root: string;
+    b42Dir: string;
+    b41Path: string;
+    tileSize: number;
+    width: number;
+    height: number;
+    maxLevel: number;
+  }> => apiGet("/map/resolve"),
 };
 
 export const panelUpdateApi = {

@@ -1,20 +1,69 @@
 ---@diagnostic disable: undefined-global, deprecated
 --[[
     PanelBridge - Server-side mod for Zomboid Control Panel
-    Version: 1.7.10
+    Version: 1.7.13
 
     This mod enables external control panel communication with the PZ server.
     Communication happens via JSON files in the server save folder.
 
+    v1.7.13 Changes:
+    - Merge of two independent fixes that landed under different version
+      numbers on diverging branches (this fork's v1.7.12 queue-resync fix
+      and an upstream v1.7.10 vehicle-list guard fix; bumped past both to
+      keep the auto-updater's strictly-newer check unambiguous):
+    - [upstream] Fixed "Object tried to call nil in pcall" spamming the
+      console every tick from getVehiclesDetailed / findVehicleById. Both
+      called vehicles:get(i) unconditionally, but unlike the .size lookup
+      just above it (already guarded with `vehicles.size and
+      vehicles:size()`), .get was never guarded — so on servers where the
+      vehicle-list object doesn't expose .get, EVERY vehicle lookup threw
+      and vehicle data never reached the panel (World Map's vehicle layer
+      was stuck at "0 loaded"). Now guarded the same way: `vehicles.get
+      and vehicles:get(i) or nil`.
+    - Applied the same vehicles:get(i) guard to the area-vehicle-removal
+      handler, which had the identical unguarded call site the upstream
+      fix above didn't reach.
+
+    v1.7.12 Changes:
+    - Fix: the inbox (commands) and outbox (results) queues each require an
+      exact sequential file match on both sides, but neither side could ever
+      recover if the two independently-persisted sequence counters
+      (.queue-state-node.json on the panel side, queue-state-lua.json.txt on
+      the mod side) drifted apart — e.g. the panel's queue state file getting
+      reset by a container redeploy while this mod's counter kept climbing
+      across an uninterrupted game server uptime. A drift left every command
+      (including ping) waiting forever/for a very long time on a sequence
+      number the other side would never (or not soon) produce, while status
+      polling kept reporting healthy since it doesn't go through the
+      sequential queue. processQueuedCommands() now detects a sustained
+      (20s+) stall waiting on a missing inbox file, peeks at the panel's own
+      declared write position in .queue-state-node.json, and resyncs
+      lastCommandSeq to match it instead of waiting indefinitely. See the
+      matching fix in panelBridge.js for the outbox/results direction.
+
+    v1.7.11 Changes:
+    - Perf: flushResults() no longer does a read-modify-write of a legacy
+      results.json on every flush. That path only existed for a panel that
+      hadn't negotiated protocolVersion=queue-v1, but panel and mod are
+      always shipped/auto-updated together in this fork, so it was dead
+      weight — doubling the I/O cost of every result flush for zero real
+      consumers. onServerStarted() now also clears any stale results.json
+      left behind by a pre-retirement mod version.
+
     v1.7.10 Changes:
-    - Fixed "Object tried to call nil in pcall" spamming the console every
-      tick from getVehiclesDetailed / findVehicleById. Both called
-      vehicles:get(i) unconditionally, but unlike the .size lookup just above
-      it (already guarded with `vehicles.size and vehicles:size()`), .get was
-      never guarded — so on servers where the vehicle-list object doesn't
-      expose .get, EVERY vehicle lookup threw and vehicle data never reached
-      the panel (World Map's vehicle layer was stuck at "0 loaded"). Now
-      guarded the same way: `vehicles.get and vehicles:get(i) or nil`.
+    - Merge of two independent 1.7.9 fixes (fork and upstream landed on the
+      same version number for different changes; bumped to keep the
+      auto-updater's strictly-newer check unambiguous):
+    - writeFile() now resolves panel-owned filenames (commands.json,
+      inbox/cmd-*.json) to their plain path itself, matching readFile's
+      existing logic, instead of relying solely on clearFile's guard.
+      Nothing currently calls writeFile with those names, but the previous
+      version would have silently written a wrong "commands.json.txt" had
+      it ever been called that way.
+    - ensureDirectory()'s write-capability fallback now probes a dedicated
+      ".write-check" file instead of the real status.json — canWritePath
+      actually writes its probe text, so probing the production file could
+      briefly hand a reader "PanelBridge probe" instead of valid JSON.
 
     v1.7.9 Changes:
     - Stopped logging the chat-to-RCON handoff as a failure. sendToServerChat
@@ -189,7 +238,7 @@
 local json
 
 local PanelBridge = {
-    VERSION = "1.7.10",
+    VERSION = "1.7.13",
     PROTOCOL_VERSION = "queue-v1",
     CHECK_INTERVAL = 250, -- milliseconds (fast command polling)
     lastCheck = 0,
@@ -233,6 +282,15 @@ local PanelBridge = {
     queueState = {
         lastCommandSeq = 0,
         nextResultSeq = 1,
+    },
+
+    -- Tracks how long the inbox reader has been stalled waiting on a single
+    -- missing sequence number, so a genuine counter desync (see v1.7.12) can
+    -- be detected and resynced instead of stalling forever.
+    inboxStuckState = {
+        seq = nil,
+        since = 0,
+        nextCheckAt = 0,
     },
 }
 
@@ -705,10 +763,12 @@ function PanelBridge.getWritePath(filename)
     return PanelBridge.getBasePath() .. filename .. PanelBridge.WRITE_SUFFIX
 end
 
--- commands.json and the inbox/cmd-*.json queue files are written by the panel,
--- which is not subject to the Build 42 restriction and uses the plain names.
+-- commands.json, inbox/cmd-*.json and .queue-state-node.json are written by
+-- the panel, which is not subject to the Build 42 restriction and uses the
+-- plain names.
 function PanelBridge.isPanelOwnedFile(filename)
-    return filename == "commands.json" or filename:match("^inbox/cmd%-") ~= nil
+    return filename == "commands.json" or filename == ".queue-state-node.json"
+        or filename:match("^inbox/cmd%-") ~= nil
 end
 
 -- Returns true when getFileWriter accepts the given path.
@@ -743,9 +803,12 @@ function PanelBridge.ensureDirectory()
     end
 
     print("[PanelBridge] ERROR: could not write " .. initPath .. " in the Lua folder")
-    -- The marker is only a convenience; keep running as long as the real
-    -- state file can be written.
-    return PanelBridge.canWritePath(PanelBridge.getWritePath("status.json"))
+    -- The marker is only a convenience; keep running as long as writes work
+    -- in general. Probe a dedicated throwaway name — NOT a real bridge file
+    -- like status.json — since canWritePath actually writes its probe text,
+    -- and doing that on a production file would briefly clobber real state
+    -- with garbage for any reader unlucky enough to catch it mid-window.
+    return PanelBridge.canWritePath(PanelBridge.getWritePath(".write-check"))
 end
 
 function PanelBridge.readPath(path)
@@ -785,7 +848,18 @@ function PanelBridge.readFile(filename)
 end
 
 function PanelBridge.writeFile(filename, content)
-    local path = PanelBridge.getWritePath(filename)
+    -- Mirror readFile's path resolution: panel-owned files (commands.json,
+    -- inbox/cmd-*) live at their plain path — the panel writes/reads them
+    -- directly and isn't subject to the Build 42 .txt restriction. Nothing
+    -- currently calls writeFile with those names (clearFile short-circuits
+    -- before reaching here), but resolving the wrong path silently here
+    -- would be an easy trap for future callers.
+    local path
+    if PanelBridge.isPanelOwnedFile(filename) then
+        path = PanelBridge.getBasePath() .. filename
+    else
+        path = PanelBridge.getWritePath(filename)
+    end
     local writer = getFileWriter(path, true, false)
     if not writer then
         print("[PanelBridge] Error: Could not write to " .. path)
@@ -913,15 +987,16 @@ end
 function PanelBridge.flushResults()
     if #PanelBridge.pendingResults == 0 then return end
 
-    -- NOTE (audit L04): the numbered outbox/res-*.json writes below are the
-    -- safe path. The read-modify-write of legacy results.json further down
-    -- in this function re-introduces the exact race the numbered queue was
-    -- built to avoid, on every flush. It exists ONLY as a fallback for a
-    -- panel that hasn't yet negotiated protocolVersion=queue-v1. Do not add
-    -- new functionality to the legacy path — once all deployed panels are
-    -- confirmed on queue-v1, retire this block (and the matching legacy
-    -- commands.json handling in processCommands / the Node-side
-    -- pollLegacyResults + commands.json writer).
+    -- NOTE (audit L04, retired): this used to also do a read-modify-write of
+    -- a legacy results.json on every flush, for panels that hadn't
+    -- negotiated protocolVersion=queue-v1. Panel and mod are always shipped
+    -- and auto-updated together in this fork (see server/index.js's
+    -- tryStartPanelBridge), so a panel old enough to need that fallback can
+    -- never actually be paired with this mod version — the read-modify-write
+    -- was dead weight (double the I/O of every flush) with zero real
+    -- consumers. The numbered outbox/res-*.json.txt writes below are the
+    -- only path now; onServerStarted() clears any stale results.json left
+    -- behind by a pre-retirement mod version.
     local writtenCount = 0
     for idx, r in ipairs(PanelBridge.pendingResults) do
         local seq = tonumber(r.seq) or 0
@@ -946,27 +1021,6 @@ function PanelBridge.flushResults()
 
     if writtenCount <= 0 then
         return
-    end
-
-    -- Read existing results from disk (Node may not have consumed them yet)
-    local results = PanelBridge.readJSON("results.json") or { results = {} }
-    if not results.results then results.results = {} end
-
-    -- Append all buffered results at once
-    for i = 1, writtenCount do
-        local r = PanelBridge.pendingResults[i]
-        table.insert(results.results, r)
-    end
-
-    -- Keep only last 50 results
-    while #results.results > 50 do
-        table.remove(results.results, 1)
-    end
-
-    -- Write BEFORE clearing the buffer so results aren't lost if write fails
-    local ok = PanelBridge.writeJSON("results.json", results)
-    if not ok then
-        PanelBridge.warn("Legacy results.json write failed (queue files still written)")
     end
 
     local remaining = {}
@@ -1143,6 +1197,57 @@ local function processSingleCommand(cmd)
     return true
 end
 
+-- How long the inbox reader tolerates a missing next-sequence file before
+-- suspecting a genuine counter desync (rather than the panel simply not
+-- having sent a new command yet).
+local INBOX_RESYNC_STUCK_MS = 20000
+-- Once stuck, how often to re-probe the panel's state file (avoids reading
+-- it every tick while legitimately idle waiting for the next real command).
+local INBOX_RESYNC_CHECK_INTERVAL_MS = 5000
+
+-- Detects a stalled inbox cursor (missing file at the expected sequence for
+-- a sustained period) and, if the panel's own persisted write position
+-- (.queue-state-node.json) disagrees with what we're waiting for, resyncs
+-- lastCommandSeq to match it instead of waiting forever. See v1.7.12.
+local function tryResyncInboxCursor(nextSeq)
+    local now = getTimestampMs()
+    local stuck = PanelBridge.inboxStuckState
+
+    if stuck.seq ~= nextSeq then
+        stuck.seq = nextSeq
+        stuck.since = now
+        stuck.nextCheckAt = now + INBOX_RESYNC_STUCK_MS
+        return false
+    end
+    if now < stuck.nextCheckAt then
+        return false
+    end
+    stuck.nextCheckAt = now + INBOX_RESYNC_CHECK_INTERVAL_MS
+
+    local nodeState = PanelBridge.readJSON(".queue-state-node.json")
+    local panelNextSeq = nodeState and tonumber(nodeState.nextCommandSeq)
+    if not panelNextSeq or panelNextSeq < 1 then
+        return false
+    end
+
+    local panelHighWater = panelNextSeq - 1
+    if panelHighWater == PanelBridge.queueState.lastCommandSeq then
+        -- Genuinely idle and in sync — nothing to resync.
+        return false
+    end
+
+    PanelBridge.warn("Inbox sequence desync detected, resyncing to panel position", {
+        expectedSeq = nextSeq,
+        panelHighWater = panelHighWater,
+        previousLastCommandSeq = PanelBridge.queueState.lastCommandSeq
+    })
+    PanelBridge.queueState.lastCommandSeq = panelHighWater
+    PanelBridge.writeQueueState()
+    PanelBridge.writeInboxCursor(panelHighWater)
+    stuck.seq = nil
+    return true
+end
+
 local function processQueuedCommands(budget)
     local processed = 0
     if budget <= 0 then return processed end
@@ -1153,47 +1258,55 @@ local function processQueuedCommands(budget)
     while processed < budget do
         local fileName = "inbox/cmd-" .. PanelBridge.formatSeq(nextSeq) .. ".json"
         local raw = PanelBridge.readFile(fileName)
-        if raw == nil then
-            break
-        end
-        local shouldAdvance = false
 
-        if raw == "" then
-            shouldAdvance = true
+        if raw == nil then
+            if tryResyncInboxCursor(nextSeq) then
+                -- Resynced to the panel's actual write position; loop back
+                -- around and retry immediately at the new nextSeq.
+                nextSeq = PanelBridge.queueState.lastCommandSeq + 1
+            else
+                break
+            end
         else
-            -- pcall-protect json.decode so a malformed file can't throw and
-            -- leave the cursor unmoved (which would cause an infinite re-parse loop).
-            local decodeOk, decoded = pcall(json.decode, raw)
-            local queued = decodeOk and decoded or nil
-            if not queued then
-                PanelBridge.warn("Skipping malformed queued command file", {
-                    file = fileName,
-                    seq = nextSeq,
-                    parseError = (not decodeOk) and tostring(decoded) or "decode returned nil"
-                })
-                PanelBridge.clearFile(fileName)
+            local shouldAdvance = false
+
+            if raw == "" then
                 shouldAdvance = true
             else
+                -- pcall-protect json.decode so a malformed file can't throw and
+                -- leave the cursor unmoved (which would cause an infinite re-parse loop).
+                local decodeOk, decoded = pcall(json.decode, raw)
+                local queued = decodeOk and decoded or nil
+                if not queued then
+                    PanelBridge.warn("Skipping malformed queued command file", {
+                        file = fileName,
+                        seq = nextSeq,
+                        parseError = (not decodeOk) and tostring(decoded) or "decode returned nil"
+                    })
+                    PanelBridge.clearFile(fileName)
+                    shouldAdvance = true
+                else
+                    PanelBridge.queueState.lastCommandSeq = nextSeq
+                    PanelBridge.writeInboxCursor(nextSeq)
+                    advanced = true
+
+                    local cmd = queued.command or queued
+                    if processSingleCommand(cmd) then
+                        processed = processed + 1
+                    end
+
+                    -- Keep files compact after consumption.
+                    PanelBridge.clearFile(fileName)
+                    shouldAdvance = true
+                end
+            end
+
+            if shouldAdvance then
                 PanelBridge.queueState.lastCommandSeq = nextSeq
                 PanelBridge.writeInboxCursor(nextSeq)
                 advanced = true
-
-                local cmd = queued.command or queued
-                if processSingleCommand(cmd) then
-                    processed = processed + 1
-                end
-
-                -- Keep files compact after consumption.
-                PanelBridge.clearFile(fileName)
-                shouldAdvance = true
+                nextSeq = nextSeq + 1
             end
-        end
-
-        if shouldAdvance then
-            PanelBridge.queueState.lastCommandSeq = nextSeq
-            PanelBridge.writeInboxCursor(nextSeq)
-            advanced = true
-            nextSeq = nextSeq + 1
         end
     end
 
@@ -6275,7 +6388,7 @@ handlers.removeVehiclesInArea = function(args)
     local removed = 0
     local removedList = {}
     for i = vehicles:size() - 1, 0, -1 do
-        local v = vehicles:get(i)
+        local v = vehicles.get and vehicles:get(i) or nil
         if v then
             local vx = v.getX and v:getX() or 0
             local vy = v.getY and v:getY() or 0
@@ -7090,6 +7203,10 @@ function PanelBridge.onServerStarted()
 
     -- Clear old commands and results
     PanelBridge.clearFile("commands.json")
+    -- Retired in v1.7.10 (see flushResults): wipe any results.json left
+    -- behind by a pre-retirement mod version so it doesn't linger forever
+    -- as stale, endlessly-reprocessed (though harmlessly deduped) content.
+    PanelBridge.clearFile("results.json")
 
     -- Write a startup log entry
     PanelBridge.writeJSON("startup.json", {

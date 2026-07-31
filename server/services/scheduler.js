@@ -2,6 +2,8 @@ import cron from "node-cron";
 import { createLogger } from "../utils/logger.js";
 const log = createLogger("Scheduler");
 import panelBridge from "./panelBridge.js";
+import { RconService } from "./rcon.js";
+import { ServerManager } from "./serverManager.js";
 import {
   getScheduledTasks,
   updateTaskLastRun,
@@ -9,6 +11,7 @@ import {
   logScheduleExecution,
   getSetting,
   setSetting,
+  getActiveServer,
 } from "../database/init.js";
 
 // Built-in PanelBridge actions exposed to the scheduler via the
@@ -197,28 +200,112 @@ export class Scheduler {
   async executeTask(task) {
     const commandLower = task.command.toLowerCase();
 
-    // Handle special commands - skip logging for automated scheduled tasks
-    if (commandLower === "restart") {
-      const result = await this.performRestart();
-      // If restart was skipped (already in progress), throw to mark task as failed
-      if (!result.success && result.message === "Restart already in progress") {
-        throw new Error("Restart skipped - already in progress");
+    // Resolve which RconService/ServerManager to run this task against.
+    // Tasks targeting the currently-active server reuse the shared
+    // singletons (unchanged behaviour, zero overhead — the only case that
+    // exists for a single-server panel). Tasks targeting a DIFFERENT server
+    // get their own throwaway instances instead: RconService.reloadConfig()
+    // disconnects before reconnecting, so reusing the shared instance would
+    // hijack the whole panel's live RCON/dashboard/UI for this task's
+    // entire run — several minutes for a `restart` with warning countdown.
+    const { rconService, serverManager, cleanup } =
+      await this._resolveServicesForTask(task);
+
+    try {
+      // Handle special commands - skip logging for automated scheduled tasks
+      if (commandLower === "restart") {
+        const result = await this.performRestart(null, {
+          rconService,
+          serverManager,
+        });
+        // If restart was skipped (already in progress), throw to mark task as failed
+        if (
+          !result.success &&
+          result.message === "Restart already in progress"
+        ) {
+          throw new Error("Restart skipped - already in progress");
+        }
+      } else if (commandLower === "save") {
+        await rconService.save({ skipLog: true });
+      } else if (commandLower.startsWith("servermsg ")) {
+        // Preserve original casing for the message text
+        const message = task.command.substring(10);
+        await rconService.serverMessage(message, { skipLog: true });
+      } else if (commandLower.startsWith("bridge:")) {
+        // PanelBridge action: `bridge:<action>` optionally followed by a
+        // JSON args object. Validates against the SCHEDULABLE_BRIDGE_ACTIONS
+        // allow list so we don't accidentally let admins schedule god-mode
+        // toggles. PanelBridge is a single module-level singleton tied to
+        // whatever server is currently active (its file-based bridge path
+        // follows PZ_SAVE_PATH) — unlike RconService/ServerManager it can't
+        // be spun up as a throwaway instance, so a bridge: task targeting a
+        // non-active server fails loudly instead of silently running
+        // against the wrong server.
+        if (cleanup) {
+          throw new Error(
+            "bridge: actions only support the currently active server " +
+              "(PanelBridge has no per-server instancing yet) — reassign " +
+              "this task or switch the active server before it fires",
+          );
+        }
+        await this.executeBridgeAction(task.command);
+      } else {
+        // Execute as raw RCON command - skip logging for scheduled tasks
+        await rconService.execute(task.command, { skipLog: true });
       }
-    } else if (commandLower === "save") {
-      await this.rconService.save({ skipLog: true });
-    } else if (commandLower.startsWith("servermsg ")) {
-      // Preserve original casing for the message text
-      const message = task.command.substring(10);
-      await this.rconService.serverMessage(message, { skipLog: true });
-    } else if (commandLower.startsWith("bridge:")) {
-      // PanelBridge action: `bridge:<action>` optionally followed by a JSON
-      // args object. Validates against the SCHEDULABLE_BRIDGE_ACTIONS allow
-      // list so we don't accidentally let admins schedule god-mode toggles.
-      await this.executeBridgeAction(task.command);
-    } else {
-      // Execute as raw RCON command - skip logging for scheduled tasks
-      await this.rconService.execute(task.command, { skipLog: true });
+    } finally {
+      if (cleanup) await cleanup();
     }
+  }
+
+  // Picks the RconService/ServerManager pair a task should run against.
+  // Returns the shared singletons (cleanup: null) for a task with no
+  // server_id (legacy) or one that targets the currently-active server.
+  // Otherwise builds throwaway instances scoped to that specific server via
+  // loadConfig(serverId), leaving the shared singletons — and therefore the
+  // live admin UI — completely untouched.
+  async _resolveServicesForTask(task) {
+    const shared = {
+      rconService: this.rconService,
+      serverManager: this.serverManager,
+      cleanup: null,
+    };
+
+    if (!task.server_id) return shared;
+
+    let active;
+    try {
+      active = await getActiveServer();
+    } catch (error) {
+      log.warn(
+        `Could not resolve active server for task ${task.name}, using shared connection: ${error.message}`,
+      );
+      return shared;
+    }
+
+    if (active && String(active.id) === String(task.server_id)) {
+      return shared;
+    }
+
+    log.info(
+      `Task "${task.name}" targets server ${task.server_id}, which isn't active — using a temporary connection`,
+    );
+    const tempRcon = new RconService();
+    const tempManager = new ServerManager();
+    await tempRcon.loadConfig(task.server_id);
+    await tempManager.loadConfig(task.server_id);
+
+    return {
+      rconService: tempRcon,
+      serverManager: tempManager,
+      cleanup: async () => {
+        try {
+          if (tempRcon.connected) await tempRcon.disconnect();
+        } catch (error) {
+          log.debug(`Cleanup: failed to disconnect temp RCON: ${error.message}`);
+        }
+      },
+    };
   }
 
   async executeBridgeAction(rawCommand) {
@@ -431,10 +518,14 @@ export class Scheduler {
    * pipeline too (belt-and-braces — version-agnostic on the Lua side). Both
    * paths are best-effort and never throw.
    */
-  async _broadcastRestartMessage(text) {
+  // `rconService` defaults to the shared singleton (unchanged behaviour for
+  // restart-now / the AUTO_RESTART_CRON job). performRestart() passes its
+  // resolved target explicitly so a non-active-server restart's countdown
+  // broadcasts to the RIGHT server, not whatever the admin UI is showing.
+  async _broadcastRestartMessage(text, rconService = this.rconService) {
     // RCON `servermsg` — primary path, works on B41 + B42 without the mod.
     try {
-      const r = await this.rconService.serverMessage(text, { skipLog: true });
+      const r = await rconService.serverMessage(text, { skipLog: true });
       if (!r?.success) {
         log.warn(
           `Restart broadcast (RCON) failed: ${r?.error || r?.response || "unknown"}`,
@@ -448,6 +539,12 @@ export class Scheduler {
     // the mod is currently connected; fire-and-forget so we don't add latency
     // to the countdown cadence. isAlert=true triggers PZ's server alert
     // notification (red banner / alert sound) on both B41 and B42.
+    // PanelBridge is a single module-level singleton tied to whichever
+    // server is currently active — skip this secondary boost entirely when
+    // targeting a non-active server, since it has no per-server instancing
+    // (same limitation as the `bridge:` scheduled-command guard) and firing
+    // it here would send the message into the WRONG server's chat.
+    if (rconService !== this.rconService) return;
     try {
       if (
         panelBridge &&
@@ -465,7 +562,16 @@ export class Scheduler {
     }
   }
 
-  async performRestart(warningMinutesParam = null) {
+  // `rconService`/`serverManager` default to the shared singletons
+  // (unchanged behaviour for restart-now and the AUTO_RESTART_CRON job —
+  // both always target "the active server" by design). The Scheduler passes
+  // an explicit pair for a task whose server_id isn't the active server, so
+  // the whole sequence below runs against a throwaway connection instead of
+  // hijacking the shared singleton the live admin UI reads from.
+  async performRestart(
+    warningMinutesParam = null,
+    { rconService = this.rconService, serverManager = this.serverManager } = {},
+  ) {
     // Prevent concurrent restarts
     if (this.restartInProgress) {
       log.info("Restart already in progress, ignoring duplicate request");
@@ -481,12 +587,12 @@ export class Scheduler {
 
     try {
       // Check if server is actually running - use multiple methods
-      let wasRunning = await this.serverManager.checkServerRunning();
+      let wasRunning = await serverManager.checkServerRunning();
       log.info(`Auto-restart: Process check returned: ${wasRunning}`);
 
       // If process check says not running, also try RCON as a fallback
       // RCON connection success is a reliable indicator the server is running
-      if (!wasRunning && this.rconService.connected) {
+      if (!wasRunning && rconService.connected) {
         log.info(
           "Auto-restart: Process check failed but RCON is connected - server IS running",
         );
@@ -496,7 +602,7 @@ export class Scheduler {
       // Also try a quick RCON command if we think server might be running
       if (!wasRunning) {
         try {
-          const testResult = await this.rconService.execute("players", {
+          const testResult = await rconService.execute("players", {
             skipLog: true,
           });
           if (testResult.success) {
@@ -516,11 +622,11 @@ export class Scheduler {
         log.info(
           "Auto-restart triggered but server was not running - starting server",
         );
-        await this.serverManager.startServer();
+        await serverManager.startServer();
 
         // Wait a bit and verify it started
         await this.sleep(10000);
-        const isNowRunning = await this.serverManager.checkServerRunning();
+        const isNowRunning = await serverManager.checkServerRunning();
 
         const restartDuration = Date.now() - restartStartTime;
         if (isNowRunning) {
@@ -557,17 +663,17 @@ export class Scheduler {
 
       // Server is running - perform full restart with warnings
       // First, verify RCON is connected and working
-      if (!this.rconService.connected) {
+      if (!rconService.connected) {
         log.info("Auto-restart: RCON not connected, attempting to connect...");
         try {
-          await this.rconService.connect();
+          await rconService.connect();
         } catch (e) {
           log.error(`Auto-restart: Failed to connect RCON: ${e.message}`);
         }
       }
 
       // Test RCON with a simple command before proceeding
-      const testResult = await this.rconService.execute("players", {
+      const testResult = await rconService.execute("players", {
         skipLog: true,
       });
       if (!testResult.success) {
@@ -609,12 +715,16 @@ export class Scheduler {
         for (let i = warningMinutes; i > 0; i--) {
           if (this.restartCancelled) {
             log.info("Auto-restart: Cancelled during countdown");
-            await this._broadcastRestartMessage("[SERVER] Restart CANCELLED.");
+            await this._broadcastRestartMessage(
+              "[SERVER] Restart CANCELLED.",
+              rconService,
+            );
             return { success: false, message: "Restart cancelled" };
           }
           const minuteWord = i === 1 ? "MINUTE" : "MINUTES";
           await this._broadcastRestartMessage(
             `[SERVER] *** RESTART IN ${i} ${minuteWord} ***`,
+            rconService,
           );
 
           if (i > 1) {
@@ -640,27 +750,34 @@ export class Scheduler {
           await this.sleep(tick.wait);
           if (this.restartCancelled) {
             log.info("Auto-restart: Cancelled during final countdown");
-            await this._broadcastRestartMessage("[SERVER] Restart CANCELLED.");
+            await this._broadcastRestartMessage(
+              "[SERVER] Restart CANCELLED.",
+              rconService,
+            );
             return { success: false, message: "Restart cancelled" };
           }
-          await this._broadcastRestartMessage(tick.msg);
+          await this._broadcastRestartMessage(tick.msg, rconService);
         }
 
         // One last second, then go.
         await this.sleep(1000);
         await this._broadcastRestartMessage(
           "[SERVER] *** RESTARTING NOW - please reconnect in a few minutes ***",
+          rconService,
         );
         await this.sleep(2000);
       } else {
         // Immediate restart - just a brief message
-        await this._broadcastRestartMessage("[SERVER] *** RESTARTING NOW ***");
+        await this._broadcastRestartMessage(
+          "[SERVER] *** RESTARTING NOW ***",
+          rconService,
+        );
         await this.sleep(2000);
       }
 
       // Save world - skip logging for automated save
       log.info("Auto-restart: Saving world...");
-      const saveResult = await this.rconService.save({ skipLog: true });
+      const saveResult = await rconService.save({ skipLog: true });
       if (!saveResult.success) {
         log.warn(
           `Auto-restart: Save command may have failed: ${saveResult.error}`,
@@ -670,19 +787,19 @@ export class Scheduler {
 
       // Quit server - skip logging for automated quit
       log.info("Auto-restart: Sending quit command...");
-      await this.rconService.quit({ skipLog: true });
+      await rconService.quit({ skipLog: true });
       await this.sleep(10000);
 
       // Wait for server to stop
       let attempts = 0;
-      while ((await this.serverManager.checkServerRunning()) && attempts < 60) {
+      while ((await serverManager.checkServerRunning()) && attempts < 60) {
         await this.sleep(1000);
         attempts++;
       }
 
       // Force stop if needed
-      if (await this.serverManager.checkServerRunning()) {
-        await this.serverManager.stopServer(false);
+      if (await serverManager.checkServerRunning()) {
+        await serverManager.stopServer(false);
         await this.sleep(5000);
       }
 
@@ -692,21 +809,21 @@ export class Scheduler {
 
       // Set flag to prevent RCON auto-reconnect from interfering during startup
       // Use setServerStarting which has a 5-minute failsafe timeout
-      if (this.rconService.setServerStarting) {
-        this.rconService.setServerStarting(true);
+      if (rconService.setServerStarting) {
+        rconService.setServerStarting(true);
       } else {
-        this.rconService.serverStarting = true;
+        rconService.serverStarting = true;
       }
 
       // Start server — skip the running check since we just confirmed the server stopped
       log.info("Auto-restart: Starting server...");
-      await this.serverManager.startServer({ skipRunningCheck: true });
+      await serverManager.startServer({ skipRunningCheck: true });
 
       // Wait for server process to be running (up to 60 seconds)
       let serverStarted = false;
       for (let i = 0; i < 60; i++) {
         await this.sleep(1000);
-        if (await this.serverManager.checkServerRunning()) {
+        if (await serverManager.checkServerRunning()) {
           serverStarted = true;
           log.info("Auto-restart: Server process detected as running");
           break;
@@ -714,10 +831,10 @@ export class Scheduler {
       }
 
       if (!serverStarted) {
-        if (this.rconService.setServerStarting) {
-          this.rconService.setServerStarting(false);
+        if (rconService.setServerStarting) {
+          rconService.setServerStarting(false);
         } else {
-          this.rconService.serverStarting = false;
+          rconService.serverStarting = false;
         }
         const restartDuration = Date.now() - restartStartTime;
         await logScheduleExecution(
@@ -750,15 +867,15 @@ export class Scheduler {
         await this.sleep(rconDelays[i]);
 
         // If RCON connected during the wait (via auto-reconnect), we're done
-        if (this.rconService.connected) {
+        if (rconService.connected) {
           rconConnected = true;
           log.info("Auto-restart: RCON connected during wait period");
           break;
         }
 
         // Reset connection state before each attempt to clear any stalled state
-        if (this.rconService.forceResetConnectionState) {
-          this.rconService.forceResetConnectionState();
+        if (rconService.forceResetConnectionState) {
+          rconService.forceResetConnectionState();
         }
 
         // Attempt connection with a 15s timeout to prevent hanging
@@ -766,7 +883,7 @@ export class Scheduler {
           log.info(
             `Auto-restart: RCON attempting connection ${i + 1}/${rconDelays.length}...`,
           );
-          const connectPromise = this.rconService.connect();
+          const connectPromise = rconService.connect();
           const timeoutPromise = new Promise((_, reject) =>
             setTimeout(
               () => reject(new Error("Connection attempt timed out after 15s")),
@@ -779,7 +896,7 @@ export class Scheduler {
             timeoutPromise,
           ]);
 
-          if (this.rconService.connected) {
+          if (rconService.connected) {
             rconConnected = true;
             log.info("Auto-restart: RCON connected after server startup");
             break;
@@ -791,8 +908,8 @@ export class Scheduler {
         } catch (e) {
           log.info(`Auto-restart: RCON attempt ${i + 1} failed: ${e.message}`);
           // Reset state on failure/timeout so next attempt starts fresh
-          if (this.rconService.forceResetConnectionState) {
-            this.rconService.forceResetConnectionState();
+          if (rconService.forceResetConnectionState) {
+            rconService.forceResetConnectionState();
           }
         }
         // Don't toggle serverStarting - keep it true to block auto-reconnect
@@ -808,10 +925,10 @@ export class Scheduler {
       }
 
       // Clear the flag when done
-      if (this.rconService.setServerStarting) {
-        this.rconService.setServerStarting(false);
+      if (rconService.setServerStarting) {
+        rconService.setServerStarting(false);
       } else {
-        this.rconService.serverStarting = false;
+        rconService.serverStarting = false;
       }
 
       const restartDuration = Date.now() - restartStartTime;
@@ -865,10 +982,10 @@ export class Scheduler {
       );
       logServerEvent("auto_restart_error", error.message);
       // Clear serverStarting flag on error so auto-reconnect can resume
-      if (this.rconService.setServerStarting) {
-        this.rconService.setServerStarting(false);
+      if (rconService.setServerStarting) {
+        rconService.setServerStarting(false);
       } else {
-        this.rconService.serverStarting = false;
+        rconService.serverStarting = false;
       }
       throw error;
     } finally {

@@ -1,5 +1,6 @@
 import express from "express";
 import os from "os";
+import v8 from "v8";
 import fs from "fs";
 import path from "path";
 import { execFile } from "child_process";
@@ -1096,7 +1097,14 @@ router.get("/health", async (req, res) => {
           interval: modChecker?.checkInterval || 0,
         },
       },
-      memory: process.memoryUsage(),
+      // heapLimit is the real V8 ceiling (what --max-old-space-size controls);
+      // heapTotal is just the currently-allocated segment size, which grows
+      // on demand and is not a meaningful "how close to OOM" signal on its
+      // own — see the runtime.heap diagnostic check for why.
+      memory: {
+        ...process.memoryUsage(),
+        heapLimit: v8.getHeapStatistics().heap_size_limit,
+      },
       uptime: process.uptime(),
     });
   } catch (error) {
@@ -3302,14 +3310,27 @@ router.get("/diagnostics", async (req, res) => {
     try {
       {
         const mem = process.memoryUsage();
-        const heapPct =
-          mem.heapTotal > 0 ? (mem.heapUsed / mem.heapTotal) * 100 : 0;
+        // heapTotal is just the size of the V8 segment currently allocated —
+        // it grows on demand (in chunks) as heapUsed approaches it, so
+        // heapUsed/heapTotal routinely sits at 80-95% under completely
+        // normal, healthy operation (most visible right after startup or
+        // under light load, before V8 has needed to grow the segment much).
+        // That ratio was previously used directly as the health-check
+        // percentage, which fired constant false "heap usage high/critical"
+        // warnings unrelated to actual memory pressure. The only ratio that
+        // means anything is heapUsed against the real ceiling — V8's actual
+        // configured heap_size_limit (what --max-old-space-size controls,
+        // several GB by default) — since that's the number that matters for
+        // "is this process actually at risk of an out-of-memory crash".
+        const heapLimit = v8.getHeapStatistics().heap_size_limit;
+        const heapPct = heapLimit > 0 ? (mem.heapUsed / heapLimit) * 100 : 0;
+        const detail = `${fmtMB(mem.heapUsed)} used of ${fmtMB(heapLimit)} limit (${fmtMB(mem.heapTotal)} currently allocated).`;
         if (heapPct >= 90) {
           checks.push(
             diagFail(
               "runtime.heap",
               "Heap usage critical",
-              `Heap at ${heapPct.toFixed(0)}% (${fmtMB(mem.heapUsed)} / ${fmtMB(mem.heapTotal)}). Restart recommended.`,
+              `Heap at ${heapPct.toFixed(0)}% of its limit. ${detail} Restart recommended.`,
               { category: "runtime" },
             ),
           );
@@ -3318,7 +3339,7 @@ router.get("/diagnostics", async (req, res) => {
             diagWarn(
               "runtime.heap",
               "Heap usage high",
-              `Heap at ${heapPct.toFixed(0)}% (${fmtMB(mem.heapUsed)} / ${fmtMB(mem.heapTotal)}).`,
+              `Heap at ${heapPct.toFixed(0)}% of its limit. ${detail}`,
               { category: "runtime" },
             ),
           );
@@ -3327,7 +3348,7 @@ router.get("/diagnostics", async (req, res) => {
             diagOk(
               "runtime.heap",
               "Heap usage healthy",
-              `${heapPct.toFixed(0)}% (${fmtMB(mem.heapUsed)} / ${fmtMB(mem.heapTotal)}).`,
+              `${heapPct.toFixed(0)}% of limit. ${detail}`,
               { category: "runtime" },
             ),
           );

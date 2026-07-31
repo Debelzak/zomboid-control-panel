@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTheme } from '@/contexts/ThemeContext'
+import { useSocket } from '@/contexts/SocketContext'
 import {
   Map as MapIcon,
   Crosshair,
@@ -484,6 +485,7 @@ const PZ_LANDMARKS = [
 // ─── Component ────────────────────────────────────────────
 export default function WorldMap() {
   const { theme } = useTheme()
+  const socket = useSocket()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const mapWrapperRef = useRef<HTMLDivElement>(null)
@@ -511,6 +513,7 @@ export default function WorldMap() {
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const actionLoadingRef = useRef<string | null>(null)
   const mountedRef = useRef(true)
+  const hasFittedRef = useRef(false)
   const [airdropMarkers, setAirdropMarkers] = useState<AirdropMarker[]>([])
   const [vehicles, setVehicles] = useState<MapVehicle[]>([])
   const [safehouses, setSafehouses] = useState<MapSafehouse[]>([])
@@ -601,84 +604,108 @@ export default function WorldMap() {
     }
   }, [])
 
-  // Detect B41 vs B42 on mount — check gameVersion + branch
-  useEffect(() => {
-    let cancelled = false
-    async function detect() {
-      try {
-        const [statusRes, serverRes] = await Promise.allSettled([
-          updateApi.getStatus(),
-          serversApi.getResolvedActive(),
-        ])
-        if (cancelled) return
+  // Detect B41 vs B42 — check gameVersion + branch. Re-run whenever the
+  // active server changes (not just on mount): a panel managing multiple
+  // servers can have the active one switched while this page stays
+  // mounted, and B41/B42 use entirely different tile endpoints and
+  // isometric projection constants — staying on the old config would
+  // silently misplace every marker instead of just failing loudly.
+  const detectServerVersion = useCallback(async (cancelledRef: { current: boolean }) => {
+    try {
+      const [statusRes, serverRes] = await Promise.allSettled([
+        updateApi.getStatus(),
+        serversApi.getResolvedActive(),
+      ])
+      if (cancelledRef.current) return
 
-        let isB41 = false
-        if (serverRes.status === 'fulfilled') {
-          setHasActiveServer(!!serverRes.value.server)
-        } else {
-          setHasActiveServer(false)
-        }
-        if (statusRes.status === 'fulfilled' && statusRes.value.gameVersion) {
-          isB41 = statusRes.value.gameVersion.startsWith('41.')
-        }
-        if (!isB41 && serverRes.status === 'fulfilled') {
-          const branch = serverRes.value.server?.branch
-          if (branch && /b41/i.test(branch)) isB41 = true
-        }
+      let isB41 = false
+      if (serverRes.status === 'fulfilled') {
+        setHasActiveServer(!!serverRes.value.server)
+      } else {
+        setHasActiveServer(false)
+      }
+      if (statusRes.status === 'fulfilled' && statusRes.value.gameVersion) {
+        isB41 = statusRes.value.gameVersion.startsWith('41.')
+      }
+      if (!isB41 && serverRes.status === 'fulfilled') {
+        const branch = serverRes.value.server?.branch
+        if (branch && /b41/i.test(branch)) isB41 = true
+      }
 
-        if (isB41) {
-          setMapCfg(MAP_B41)
-          mapCfgRef.current = MAP_B41
-          // B41 has no multi-floor tiles — force floor back to 0 so we don't
-          // request `.webp` URLs the B41 backend regex rejects (which would
-          // 400 every tile and trigger the "tiles not loading" banner with
-          // no way for the user to recover, since the floor selector is
-          // hidden on B41).
-          setFloor(0)
-          floorRef.current = 0
-          // Clear tile cache and failure state when switching maps — tile
-          // URLs differ entirely so old backoff entries are meaningless.
-          tileCacheRef.current = {}
-          tileFailRef.current = {}
-          tileFailureCountRef.current = 0
-          setTileLoadFailing(false)
-          // Re-center on B41 default center
-          const el = containerRef.current
-          if (el) {
-            const s = MAP_B41.defaultScale
-            const c = MAP_B41.defaultCenter
-            setScale(s)
-            setOffset({
-              x: el.clientWidth / 2 - c.x * s,
-              y: el.clientHeight / 2 - c.y * s,
-            })
-          }
-        } else {
-          const info = await mapApi.getInfo()
-          if (cancelled) return
-          const cfg = b42ConfigFor(info)
-          setMapCfg(cfg)
-          mapCfgRef.current = cfg
-          tileCacheRef.current = {}
-          tileFailRef.current = {}
-          tileFailureCountRef.current = 0
-          setTileLoadFailing(false)
-          const el = containerRef.current
-          if (el) {
-            const s = cfg.defaultScale
-            const c = cfg.defaultCenter
-            setScale(s)
-            setOffset({
-              x: el.clientWidth / 2 - c.x * s,
-              y: el.clientHeight / 2 - c.y * s,
-            })
-          }
-        }
-      } catch { /* best-effort */ }
-    }
-    detect()
-    return () => { cancelled = true }
+      // B42 geometry depends on which map build the backend resolved, so it
+      // can only be built once that's known.
+      const targetCfg = isB41 ? MAP_B41 : b42ConfigFor(await mapApi.resolve())
+      if (cancelledRef.current) return
+      // Compare geometry, not just B41/B42: the initial state is a B42
+      // placeholder, so a label check alone would skip applying the
+      // resolved build's real dimensions.
+      const cur = mapCfgRef.current
+      if (
+        cur.label === targetCfg.label &&
+        cur.tileSize === targetCfg.tileSize &&
+        cur.fullWidth === targetCfg.fullWidth
+      ) return
+
+      setMapCfg(targetCfg)
+      mapCfgRef.current = targetCfg
+      // B41 has no multi-floor tiles — force floor back to 0 so we don't
+      // request `.webp` URLs the B41 backend regex rejects (which would
+      // 400 every tile and trigger the "tiles not loading" banner with
+      // no way for the user to recover, since the floor selector is
+      // hidden on B41).
+      if (isB41) {
+        setFloor(0)
+        floorRef.current = 0
+      }
+      // Clear tile cache and failure state when switching maps — tile
+      // URLs and coordinate systems differ entirely so old entries are
+      // meaningless (and stale ones would misplace markers).
+      tileCacheRef.current = {}
+      tileFailRef.current = {}
+      tileFailureCountRef.current = 0
+      setTileLoadFailing(false)
+      // Re-center on the new config's default center
+      const el = containerRef.current
+      if (el) {
+        const s = targetCfg.defaultScale
+        const c = targetCfg.defaultCenter
+        setScale(s)
+        setOffset({
+          x: el.clientWidth / 2 - c.x * s,
+          y: el.clientHeight / 2 - c.y * s,
+        })
+      }
+    } catch { /* best-effort */ }
   }, [])
+
+  useEffect(() => {
+    const cancelledRef = { current: false }
+    detectServerVersion(cancelledRef)
+    return () => { cancelledRef.current = true }
+  }, [detectServerVersion])
+
+  // Re-detect on active server switch, and drop the previous server's
+  // player/vehicle/safehouse data so stale markers don't linger under the
+  // new server's identity — mirrors the pattern used by Dashboard/Servers/
+  // Layout/Settings for this same socket event.
+  useEffect(() => {
+    if (!socket) return
+    const cancelledRef = { current: false }
+    const handleActiveServerChanged = () => {
+      setPlayers([])
+      setVehicles([])
+      setSafehouses([])
+      setSelectedPlayer(null)
+      setContextMenu(null)
+      hasFittedRef.current = false
+      detectServerVersion(cancelledRef)
+    }
+    socket.on('activeServerChanged', handleActiveServerChanged)
+    return () => {
+      cancelledRef.current = true
+      socket.off('activeServerChanged', handleActiveServerChanged)
+    }
+  }, [socket, detectServerVersion])
 
   useEffect(() => {
     if (hasActiveServer) return
@@ -717,7 +744,45 @@ export default function WorldMap() {
   useEffect(() => { safehousesRef.current = safehouses }, [safehouses])
 
   // ─── Map tile cache ─────────────────────────────────────
-  const tileCacheRef = useRef<Record<string, HTMLImageElement | null>>({})
+  // 'empty' marks a tile the upstream server confirmed doesn't exist (a
+  // real HTTP 404, not a network/proxy failure) — e.g. a sparse/edge tile
+  // near the map boundary. map.projectzomboid.com's own OpenSeadragon
+  // viewer just renders these blank; treating them as errors caused a
+  // false "tiles offline" banner and visible view jumps on zoom. See the
+  // status-aware fetch() below — an <img> tag alone can't distinguish a
+  // 404 from any other failure.
+  const tileCacheRef = useRef<Record<string, HTMLImageElement | null | 'empty'>>({})
+
+  // Resolved once per session: lets the browser build direct-to-upstream
+  // tile URLs (https://map.projectzomboid.com/maps/<dir>/...) instead of
+  // always routing through this server's proxy. Some deployments (e.g. a
+  // Kubernetes cluster with a restrictive Gateway API egress policy) block
+  // outbound access to map.projectzomboid.com for the panel's own pod while
+  // the admin's browser has no such restriction. /api/map/resolve has its
+  // own cache + hardcoded fallback server-side, so it responds instantly
+  // even when the backend itself can't reach map.projectzomboid.com.
+  const mapSourceRef = useRef<{ root: string; b42Dir: string; b41Path: string } | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    mapApi.resolve()
+      .then((info) => { if (!cancelled) mapSourceRef.current = info })
+      .catch(() => { /* direct loading just won't be attempted; proxy fallback still works */ })
+    return () => { cancelled = true }
+  }, [])
+
+  // Builds the real map.projectzomboid.com URL for a tile, or null if we
+  // haven't resolved enough info yet (falls back to the backend proxy).
+  const buildDirectTileUrl = useCallback((level: number, col: number, row: number, floor: number, ext: string) => {
+    const src = mapSourceRef.current
+    if (!src) return null
+    if (mapCfgRef.current === MAP_B41) {
+      return `${src.root}/${src.b41Path}/${level}/${col}_${row}.${ext}`
+    }
+    // Floor is a path segment on the real upstream, not a query param —
+    // the ?floor= convention only exists on our own proxy route, which
+    // encodes it that way because /tiles/:level/:tile has no :floor segment.
+    return `${src.root}/maps/${src.b42Dir}/base/layer${floor}_files/${level}/${col}_${row}.${ext}`
+  }, [])
 
   // Cap concurrent tile loads to avoid flooding the network
   const pendingTileLoadsRef = useRef(0)
@@ -742,16 +807,27 @@ export default function WorldMap() {
     if (fail && Date.now() < fail.nextAt) return
     tileCacheRef.current[key] = null
     pendingTileLoadsRef.current++
-    const img = new window.Image()
-    img.onload = () => {
-      pendingTileLoadsRef.current--
-      // Discard if floor changed while loading (key belongs to old floor)
+
+    const markFailed = () => {
       if (floorRef.current !== f) return
-      tileCacheRef.current[key] = img
-      // Tile recovered — clear failure state. Only decrement the global
-      // counter when *this* tile was actually in the failure set, otherwise
-      // unrelated successful loads would prematurely hide the banner while
-      // the originally-failing tiles are still in backoff.
+      // Drop the pending entry so the per-tile backoff guard above is what
+      // gates the next retry (rather than the "key in cache" check).
+      delete tileCacheRef.current[key]
+      const prev = tileFailRef.current[key]
+      const count = (prev?.count ?? 0) + 1
+      const delay = TILE_RETRY_MS[Math.min(count - 1, TILE_RETRY_MS.length - 1)]
+      tileFailRef.current[key] = { count, nextAt: Date.now() + delay }
+      // Surface a user-visible warning if many distinct tiles are failing.
+      if (count === 1) {
+        tileFailureCountRef.current++
+        if (tileFailureCountRef.current >= 6) setTileLoadFailing(true)
+      }
+    }
+
+    const markRecovered = () => {
+      // Only decrement the global counter when *this* tile was actually in
+      // the failure set, otherwise unrelated successful loads would
+      // prematurely hide the banner while other tiles are still failing.
       if (tileFailRef.current[key]) {
         delete tileFailRef.current[key]
         if (tileFailureCountRef.current > 0) {
@@ -759,31 +835,94 @@ export default function WorldMap() {
           if (tileFailureCountRef.current === 0) setTileLoadFailing(false)
         }
       }
+    }
+
+    const ext = f === 0 ? 'jpg' : 'webp'
+    const proxyFloorParam = f !== 0 ? `?floor=${f}` : ''
+    const proxyUrl = `${mapCfgRef.current.tileUrl}/${level}/${col}_${row}.${ext}${proxyFloorParam}`
+
+    // Loads through this server's proxy — the "smart" path that can tell a
+    // real 404 (tile genuinely absent; the reference OpenSeadragon viewer
+    // on map.projectzomboid.com just renders these blank) apart from an
+    // actual connectivity failure, since an <img> tag alone can't see HTTP
+    // status codes. Used directly when we haven't resolved a direct
+    // upstream URL yet, and as the fallback when a direct browser load
+    // fails for an ambiguous reason (which itself might just be a real
+    // 404 — routing it through here resolves that ambiguity).
+    //
+    // pendingTileLoadsRef is decremented at each actual terminal point
+    // (not in a blanket .finally()) so the concurrency cap holds the slot
+    // for the full lifecycle including image decode.
+    const loadViaProxy = () => {
+      fetch(proxyUrl)
+        .then((res) => {
+          if (floorRef.current !== f) { pendingTileLoadsRef.current--; return null } // stale — floor changed mid-flight
+          if (res.status === 404) {
+            pendingTileLoadsRef.current--
+            tileCacheRef.current[key] = 'empty'
+            markRecovered()
+            return null
+          }
+          if (!res.ok) throw new Error(`HTTP ${res.status}`)
+          return res.blob()
+        })
+        .then((blob) => {
+          if (!blob) return // already handled (stale or 404) above
+          if (floorRef.current !== f) { pendingTileLoadsRef.current--; return }
+          const objectUrl = URL.createObjectURL(blob)
+          const img = new window.Image()
+          img.onload = () => {
+            URL.revokeObjectURL(objectUrl)
+            pendingTileLoadsRef.current--
+            if (floorRef.current !== f) return
+            tileCacheRef.current[key] = img
+            markRecovered()
+            if (drawRequestRef.current === 0) {
+              drawRequestRef.current = requestAnimationFrame(() => { drawRequestRef.current = 0 })
+            }
+          }
+          img.onerror = () => {
+            URL.revokeObjectURL(objectUrl)
+            pendingTileLoadsRef.current--
+            markFailed()
+          }
+          img.src = objectUrl
+        })
+        .catch(() => {
+          pendingTileLoadsRef.current--
+          markFailed()
+        })
+    }
+
+    const directUrl = buildDirectTileUrl(level, col, row, f, ext)
+    if (!directUrl) {
+      loadViaProxy()
+      return
+    }
+
+    // Fast path: load straight from map.projectzomboid.com in the browser,
+    // bypassing this server entirely. Some deployments' backend can't reach
+    // that host (e.g. a restrictive Kubernetes egress policy) even though
+    // the admin's own browser has no such restriction. An <img> tag can't
+    // tell a real 404 apart from any other failure, so any failure here
+    // just falls back to the proxy path above, which can — still using the
+    // same pending-load slot from the increment above (not a new one).
+    const directImg = new window.Image()
+    directImg.onload = () => {
+      if (floorRef.current !== f) { pendingTileLoadsRef.current--; return }
+      tileCacheRef.current[key] = directImg
+      markRecovered()
+      pendingTileLoadsRef.current--
       if (drawRequestRef.current === 0) {
         drawRequestRef.current = requestAnimationFrame(() => { drawRequestRef.current = 0 })
       }
     }
-    img.onerror = () => {
-      pendingTileLoadsRef.current--
-      if (floorRef.current === f) {
-        // Drop the pending entry so the per-tile backoff guard above is what
-        // gates the next retry (rather than the "key in cache" check).
-        delete tileCacheRef.current[key]
-        const prev = tileFailRef.current[key]
-        const count = (prev?.count ?? 0) + 1
-        const delay = TILE_RETRY_MS[Math.min(count - 1, TILE_RETRY_MS.length - 1)]
-        tileFailRef.current[key] = { count, nextAt: Date.now() + delay }
-        // Surface a user-visible warning if many distinct tiles are failing.
-        if (count === 1) {
-          tileFailureCountRef.current++
-          if (tileFailureCountRef.current >= 6) setTileLoadFailing(true)
-        }
-      }
+    directImg.onerror = () => {
+      if (floorRef.current !== f) { pendingTileLoadsRef.current--; return } // stale, no need to fall back
+      loadViaProxy()
     }
-    const ext = f === 0 ? 'jpg' : 'webp'
-    const floorParam = f !== 0 ? `?floor=${f}` : ''
-    img.src = `${mapCfgRef.current.tileUrl}/${level}/${col}_${row}.${ext}${floorParam}`
-  }, [])
+    directImg.src = directUrl
+  }, [buildDirectTileUrl])
 
   // ─── Coordinate transforms (DZI pixel ↔ canvas, game-tile ↔ DZI) ─
   const dziToCanvas = useCallback(
@@ -976,11 +1115,18 @@ export default function WorldMap() {
     const visMinDziY = -off.y / s
     const visMaxDziY = (H - off.y) / s
 
-    // Convert to level-pixel tile indices
-    const minCol = Math.max(0, Math.floor(visMinDziX / levelScale / mc.tileSize))
-    const maxCol = Math.min(Math.ceil(levelW / mc.tileSize) - 1, Math.floor(visMaxDziX / levelScale / mc.tileSize))
-    const minRow = Math.max(0, Math.floor(visMinDziY / levelScale / mc.tileSize))
-    const maxRow = Math.min(Math.ceil(levelH / mc.tileSize) - 1, Math.floor(visMaxDziY / levelScale / mc.tileSize))
+    // Convert to level-pixel tile indices. Tile size is per-map-config, not
+    // a shared constant — it varies by map build (42.19.0 is 1024, 42.20.0
+    // is 2048) as well as between B41 and B42. Using the wrong value here
+    // doesn't just misplace tiles, it computes an entirely wrong column/row
+    // count — assuming 1024 against a real 2048 tile grid requests up to 2x
+    // as many columns/rows as exist, hitting real 404s past the true edge
+    // and drawing the ones that do exist at the wrong position.
+    const tileSize = mc.tileSize
+    const minCol = Math.max(0, Math.floor(visMinDziX / levelScale / tileSize))
+    const maxCol = Math.min(Math.ceil(levelW / tileSize) - 1, Math.floor(visMaxDziX / levelScale / tileSize))
+    const minRow = Math.max(0, Math.floor(visMinDziY / levelScale / tileSize))
+    const maxRow = Math.min(Math.ceil(levelH / tileSize) - 1, Math.floor(visMaxDziY / levelScale / tileSize))
 
     ctx.save()
     ctx.globalAlpha = 0.9
@@ -988,12 +1134,12 @@ export default function WorldMap() {
       for (let col = minCol; col <= maxCol; col++) {
         loadDziTile(level, col, row)
         const img = tileCacheRef.current[`${floorRef.current}/${level}/${col}_${row}`]
-        if (img) {
+        if (img && img !== 'empty') {
           // Floor the origin and pad the size by 1px so adjacent tiles
           // slightly overlap instead of leaving a sub-pixel seam (visible as
           // a dark line since tiles draw at globalAlpha 0.9 over a dark bg).
-          const dx = Math.floor(col * mc.tileSize * levelScale * s + off.x)
-          const dy = Math.floor(row * mc.tileSize * levelScale * s + off.y)
+          const dx = Math.floor(col * tileSize * levelScale * s + off.x)
+          const dy = Math.floor(row * tileSize * levelScale * s + off.y)
           const dw = Math.ceil(img.naturalWidth * levelScale * s) + 1
           const dh = Math.ceil(img.naturalHeight * levelScale * s) + 1
           ctx.drawImage(img, dx, dy, dw, dh)
@@ -1557,14 +1703,21 @@ export default function WorldMap() {
     let running = true
     const animate = () => {
       if (!running) return
-      setPlayers((prev) =>
-        prev.map((p) => {
+      // Only produce a new array (and thus trigger a re-render) when a
+      // player is actually mid-animation — otherwise .map() would return a
+      // fresh array every frame forever, re-rendering the whole page at
+      // 60fps even while fully idle with no players moving.
+      setPlayers((prev) => {
+        let changed = false
+        const next = prev.map((p) => {
           if (p.animProgress !== undefined && p.animProgress < 1) {
+            changed = true
             return { ...p, animProgress: Math.min(1, p.animProgress + 0.06) }
           }
           return p
         })
-      )
+        return changed ? next : prev
+      })
       drawMap()
       animFrameRef.current = requestAnimationFrame(animate)
     }
@@ -1651,7 +1804,6 @@ export default function WorldMap() {
   }, [players, canvasSize])
 
   // Auto-fit on first player data
-  const hasFittedRef = useRef(false)
   useEffect(() => {
     if (players.length > 0 && !hasFittedRef.current) {
       hasFittedRef.current = true
@@ -2374,10 +2526,12 @@ export default function WorldMap() {
           </div>
         </div>
 
-        {/* Tile-load failure banner — appears when many tiles fail (network
-            outage, firewall blocking b42map.com / map.projectzomboid.com,
-            or upstream tile server down). Without this the user just sees an
-            indefinite empty map. See issue #6. */}
+        {/* Tile-load failure banner — appears when many *distinct* tiles fail
+            with a real error (network outage, firewall blocking
+            map.projectzomboid.com, upstream tile server down). A genuine
+            HTTP 404 (sparse/edge tile, out of map bounds) does NOT count
+            toward this — see loadDziTile's 'empty' handling. Without this
+            banner the user just sees an indefinite empty map. See issue #6. */}
         {tileLoadFailing && (
           <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 max-w-md w-[min(28rem,calc(100%-7rem))]" role="alert">
             <div className="rounded-md border border-warning/60 bg-warning/15 backdrop-blur-md shadow-lg overflow-hidden">

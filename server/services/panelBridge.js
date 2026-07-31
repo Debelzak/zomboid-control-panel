@@ -51,13 +51,21 @@ class PanelBridge extends EventEmitter {
       sequenceWidth: 10,
       maxResultsPerPoll: 100,
       retainRecentFiles: 200,
-      cleanupIntervalMs: 60000
+      cleanupIntervalMs: 60000,
+      // How long to wait on a missing next-sequence result file before
+      // suspecting the two sides' counters have desynced (e.g. this file
+      // getting reset by a redeploy while the mod's counter kept climbing).
+      resyncStuckMs: 20000,
+      // Once stuck, how often to re-probe the mod's own state file (avoids
+      // reading it every 150ms poll while legitimately idle).
+      resyncCheckIntervalMs: 5000
     };
     this.queueState = {
       initialized: false,
       nextCommandSeq: 1,
       lastConsumedResultSeq: 0
     };
+    this.outboxStuckState = { seq: null, since: 0, nextCheckAt: 0 };
     this.lastQueueCleanupAt = 0;
     this.modStatus = null;
     this.previousPlayers = new Set(); // Track previous player list for connect/disconnect detection
@@ -690,6 +698,57 @@ class PanelBridge extends EventEmitter {
     this.cleanupQueueFilesIfNeeded();
   }
 
+  /**
+   * Detects a stalled outbox cursor (missing result file at the expected
+   * sequence for a sustained period) and, if the mod's own persisted write
+   * position (queue-state-lua.json) disagrees with what we're waiting for,
+   * resyncs lastConsumedResultSeq to match it instead of waiting forever
+   * (or, if the mod is far ahead and already rotated the old file away,
+   * effectively forever). Mirrors the equivalent fix in PanelBridge.lua
+   * for the inbox/commands direction.
+   */
+  tryResyncOutboxCursor(seq) {
+    const now = Date.now();
+    if (this.outboxStuckState.seq !== seq) {
+      this.outboxStuckState = { seq, since: now, nextCheckAt: now + this.queue.resyncStuckMs };
+      return false;
+    }
+    if (now < this.outboxStuckState.nextCheckAt) {
+      return false;
+    }
+    this.outboxStuckState.nextCheckAt = now + this.queue.resyncCheckIntervalMs;
+
+    const luaStateFile = this.resolveModFile('queue-state-lua.json');
+    if (!luaStateFile || !fs.existsSync(luaStateFile)) {
+      return false;
+    }
+
+    let luaState;
+    try {
+      luaState = JSON.parse(fs.readFileSync(luaStateFile, 'utf-8') || '{}');
+    } catch (error) {
+      log.debug(`Could not parse mod queue state during resync check: ${error.message}`);
+      return false;
+    }
+
+    const luaNextResultSeq = Number(luaState.nextResultSeq);
+    if (!Number.isFinite(luaNextResultSeq) || luaNextResultSeq < 1) {
+      return false;
+    }
+
+    const luaHighWater = luaNextResultSeq - 1;
+    if (luaHighWater === this.queueState.lastConsumedResultSeq) {
+      // Genuinely idle and in sync — nothing to resync.
+      return false;
+    }
+
+    log.warn(`Outbox sequence desync detected, resyncing to mod position (expected seq ${seq}, mod high-water ${luaHighWater})`);
+    this.queueState.lastConsumedResultSeq = luaHighWater;
+    this.persistQueueState();
+    this.outboxStuckState.seq = null;
+    return true;
+  }
+
   pollQueueResults() {
     if (!this.queueState.initialized) {
       try {
@@ -706,6 +765,11 @@ class PanelBridge extends EventEmitter {
       const seq = this.queueState.lastConsumedResultSeq + 1;
       const resultFile = this.getResultFileBySeq(seq);
       if (!resultFile || !fs.existsSync(resultFile)) {
+        if (this.tryResyncOutboxCursor(seq)) {
+          // Resynced to the mod's actual write position; loop back around
+          // and retry immediately at the new expected sequence.
+          continue;
+        }
         break;
       }
 

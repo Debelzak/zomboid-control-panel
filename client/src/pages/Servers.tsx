@@ -200,6 +200,8 @@ export default function Servers() {
   const [steamLogs, setSteamLogs] = useState<string[]>([])
   const [steamRunning, setSteamRunning] = useState(false)
   const [steamCompleted, setSteamCompleted] = useState<'success' | 'error' | null>(null)
+  const [clearingInstall, setClearingInstall] = useState(false)
+  const [confirmClearInstall, setConfirmClearInstall] = useState(false)
   const [steamcmdPath, setSteamcmdPath] = useState('')
   const [updateInfo, setUpdateInfo] = useState<UpdateStatus | null>(null)
   const [gameVersion, setGameVersion] = useState<string | null>(null)
@@ -748,14 +750,53 @@ export default function Servers() {
       }
     } catch (error) {
       setSteamRunning(false)
-      toast({ 
-        title: 'Error', 
+      toast({
+        title: 'Error',
         description: error instanceof Error ? error.message : 'Failed to start operation',
         variant: 'destructive'
       })
     }
   }
-  
+
+  // Wipe the install folder so a stuck/corrupted SteamCMD state (partial
+  // download, mismatched appmanifest, "Missing configuration" etc.) can be
+  // fixed by reinstalling from scratch, without needing shell access.
+  // Reuses the same guarded /delete-files endpoint the "Remove Server ->
+  // Delete Everything" flow uses (requires PZ marker files to be present,
+  // refuses to delete folders it doesn't recognize as a PZ install).
+  const handleClearInstallFolder = async () => {
+    if (!steamOperation) return
+    const installFolder = getInstallFolder(steamOperation.server.installPath)
+    if (!installFolder) {
+      toast({ title: 'Error', description: 'Server install path not configured', variant: 'destructive' })
+      return
+    }
+
+    setClearingInstall(true)
+    try {
+      const result = await serversDetectApi.deleteFiles(installFolder) as { error?: string }
+      if (result?.error) {
+        toast({ title: 'Could Not Clear Folder', description: result.error, variant: 'destructive' })
+        return
+      }
+      setSteamLogs([])
+      setSteamCompleted(null)
+      toast({
+        title: 'Installation Folder Cleared',
+        description: 'The folder was wiped. Click Start Update to reinstall from scratch.',
+      })
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to clear installation folder',
+        variant: 'destructive',
+      })
+    } finally {
+      setClearingInstall(false)
+      setConfirmClearInstall(false)
+    }
+  }
+
   // Open steam operation dialog
   const openSteamOperation = async (server: ServerInstance, type: 'update' | 'verify') => {
     // Prefer the branch that's actually installed on disk (from steamcmd appmanifest),
@@ -1958,8 +1999,23 @@ export default function Servers() {
                 disabled
                 className="font-mono text-sm bg-muted"
               />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="text-destructive hover:text-destructive"
+                disabled={steamRunning || clearingInstall}
+                onClick={() => setConfirmClearInstall(true)}
+              >
+                <Trash2 className="w-3.5 h-3.5 mr-2" /> Clear Installation Folder
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                Deletes everything in the install path so you can reinstall from
+                scratch. Use this if SteamCMD updates keep failing (stuck or
+                corrupted download state) instead of fixing it manually.
+              </p>
             </div>
-            
+
             <div className="space-y-2">
               <Label>Steam Branch {loadingBranches && <Loader2 className="inline-block w-3 h-3 ml-1 animate-spin" />}</Label>
               <Select 
@@ -2063,6 +2119,40 @@ export default function Servers() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Clear Installation Folder confirmation */}
+      <AlertDialog open={confirmClearInstall} onOpenChange={(open) => !open && !clearingInstall && setConfirmClearInstall(false)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Clear Installation Folder?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently deletes everything in{' '}
+              <code className="text-xs bg-background px-1 rounded">
+                {getInstallFolder(steamOperation?.server.installPath)}
+              </code>
+              {' '}— including the game files, SteamCMD's download state, and any
+              mods installed there. Use this to recover from a SteamCMD update
+              that keeps failing (corrupted or stuck installation). You'll need
+              to run Start Update again afterward to reinstall from scratch.
+              This does not affect your save data.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={clearingInstall}>Cancel</AlertDialogCancel>
+            <Button
+              onClick={handleClearInstallFolder}
+              disabled={clearingInstall}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {clearingInstall ? (
+                <><Loader2 className="w-4 h-4 animate-spin mr-2" />Clearing...</>
+              ) : (
+                <><Trash2 className="w-4 h-4 mr-2" />Clear Folder</>
+              )}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

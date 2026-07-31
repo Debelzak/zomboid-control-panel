@@ -10,6 +10,7 @@ import {
   getSetting,
   setSetting,
   getActiveServer,
+  getServer,
 } from "../database/init.js";
 import { withFileLock, writeFileAtomic } from "../utils/fileWriteQueue.js";
 import { escapeRegExp } from "../utils/regex.js";
@@ -129,13 +130,19 @@ export class ServerManager {
     this.isRunning = false;
     this.startTime = null;
     this.configLoaded = false;
+    // Which server this instance's currently-loaded config belongs to (null
+    // = "the active server", the shared-singleton default). Recorded so
+    // internal reload points (e.g. startServer()'s "settings may have
+    // changed" refresh) reload the SAME target instead of silently
+    // snapping a throwaway instance back to whatever is active.
+    this._serverId = null;
     this.publicIp = null;
     this.gamePort = null;
     this.fetchingIp = false;
   }
 
   // Reload config (called when active server changes)
-  async reloadConfig() {
+  async reloadConfig(serverId = null) {
     // Reset all config to defaults before reloading
     this.serverPath = process.env.PZ_SERVER_PATH || "";
     this.serverBat = process.env.PZ_SERVER_BAT || getDefaultStartupScript();
@@ -143,15 +150,24 @@ export class ServerManager {
     this.serverName = "servertest";
     this.startCommand = "";
     this.configLoaded = false;
-    await this.loadConfig();
+    await this.loadConfig(serverId);
   }
 
-  // Load settings from active server or legacy database settings
-  async loadConfig() {
+  // Load settings from a specific server (serverId), the active server, or
+  // legacy database settings. `serverId` lets the Scheduler point a
+  // throwaway ServerManager instance at a server that isn't the
+  // currently-active one — the shared singleton (called with no args, as
+  // everywhere else in the app) keeps following the active server exactly
+  // as before.
+  async loadConfig(serverId = null) {
     if (this.configLoaded) return;
+    this._serverId = serverId;
     try {
-      // First, try to load from active server (multi-server support)
-      const activeServer = await getActiveServer();
+      // First, try to load from a specific server or the active server
+      // (multi-server support)
+      const activeServer = serverId
+        ? await getServer(serverId)
+        : await getActiveServer();
       if (activeServer) {
         // Use serverPath if available, otherwise extract from installPath
         let serverDir = activeServer.serverPath || activeServer.installPath;
@@ -217,26 +233,33 @@ export class ServerManager {
         return;
       }
 
-      // Fallback: load from legacy settings
-      const dbServerPath = await getSetting("serverPath");
-      const dbServerName = await getSetting("serverName");
-      const dbZomboidPath = await getSetting("zomboidDataPath");
+      // Fallback: load from legacy (global) settings — only meaningful when
+      // no specific serverId was requested. Falling back to the global
+      // settings for a targeted serverId lookup would silently point at
+      // the wrong server instead of failing loudly on a bad/deleted id.
+      if (!serverId) {
+        const dbServerPath = await getSetting("serverPath");
+        const dbServerName = await getSetting("serverName");
+        const dbZomboidPath = await getSetting("zomboidDataPath");
 
-      if (dbServerPath) {
-        this.serverPath = dbServerPath;
-        log.debug(`Loaded serverPath from database: ${dbServerPath}`);
-      }
-      if (dbServerName) {
-        this.serverName = dbServerName;
-        // Use custom startup script if server was set up through the app
-        if (isWindows) {
-          this.serverBat = `StartServer_${dbServerName}.bat`;
-        } else {
-          this.serverBat = `start-server_${dbServerName}.sh`;
+        if (dbServerPath) {
+          this.serverPath = dbServerPath;
+          log.debug(`Loaded serverPath from database: ${dbServerPath}`);
         }
-      }
-      if (dbZomboidPath) {
-        this.savePath = dbZomboidPath;
+        if (dbServerName) {
+          this.serverName = dbServerName;
+          // Use custom startup script if server was set up through the app
+          if (isWindows) {
+            this.serverBat = `StartServer_${dbServerName}.bat`;
+          } else {
+            this.serverBat = `start-server_${dbServerName}.sh`;
+          }
+        }
+        if (dbZomboidPath) {
+          this.savePath = dbZomboidPath;
+        }
+      } else {
+        log.warn(`No server config found for server ${serverId}`);
       }
       this.configLoaded = true;
     } catch (error) {
@@ -458,9 +481,13 @@ export class ServerManager {
     this._starting = true;
 
     try {
-      // Force reload config from database before starting (settings may have changed)
+      // Force reload config from database before starting (settings may have
+      // changed). Reload the SAME server this instance was scoped to
+      // (this._serverId — null means "the active server", unchanged from
+      // before) instead of always snapping back to whichever server is
+      // active, which would break a throwaway instance mid-restart.
       this.configLoaded = false;
-      await this.loadConfig();
+      await this.loadConfig(this._serverId);
 
       if (!this.startCommand && !this.serverPath) {
         throw new Error("Server path not configured");

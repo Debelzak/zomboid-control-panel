@@ -3,14 +3,15 @@ import cron from 'node-cron';
 import { createLogger } from '../utils/logger.js';
 const log = createLogger('API:Scheduler');
 import { sanitizeError } from '../utils/sanitize.js';
-import { 
-  getScheduledTasks, 
-  createScheduledTask, 
-  updateScheduledTask, 
+import {
+  getScheduledTasks,
+  createScheduledTask,
+  updateScheduledTask,
   deleteScheduledTask,
   getScheduleHistory,
   clearScheduleHistory,
-  getActiveServer
+  getActiveServer,
+  getServer
 } from '../database/init.js';
 
 const router = express.Router();
@@ -107,13 +108,13 @@ router.post('/validate-cron', async (req, res) => {
 router.post('/tasks', async (req, res) => {
   try {
     const scheduler = req.app.get('scheduler');
-    const { name, cronExpression, command } = req.body;
-    log.info(`POST /tasks: name=${name}, cron=${cronExpression}, command=${(command || '').substring(0, 80)}`);
-    
+    const { name, cronExpression, command, serverId } = req.body;
+    log.info(`POST /tasks: name=${name}, cron=${cronExpression}, command=${(command || '').substring(0, 80)}, serverId=${serverId}`);
+
     if (!name || !cronExpression || !command) {
       return res.status(400).json({ error: 'Name, cronExpression, and command are required' });
     }
-    
+
     // Validate input types and lengths
     if (typeof name !== 'string' || name.length > 100) {
       return res.status(400).json({ error: 'Invalid task name (max 100 chars)' });
@@ -124,23 +125,37 @@ router.post('/tasks', async (req, res) => {
     if (typeof cronExpression !== 'string' || cronExpression.length > 100) {
       return res.status(400).json({ error: 'Invalid cron expression format' });
     }
-    
+
     // Validate cron expression before saving
     if (!cron.validate(cronExpression)) {
       return res.status(400).json({ error: 'Invalid cron expression. Use format: minute hour day month weekday (e.g., "0 */6 * * *" for every 6 hours)' });
     }
-    
+
     // Security: Reject tasks that run more frequently than every 5 minutes to prevent DoS
     if (isCronTooFrequent(cronExpression)) {
       return res.status(400).json({ error: 'Tasks cannot run more frequently than every 5 minutes' });
     }
-    
-    const result = await createScheduledTask(name, cronExpression, command);
+
+    // Validate the target server exists, if one was explicitly given —
+    // createScheduledTask() falls back to the active server when omitted.
+    let resolvedServerId = serverId ?? null;
+    if (resolvedServerId) {
+      const target = await getServer(resolvedServerId);
+      if (!target) {
+        return res.status(400).json({ error: 'Target server not found' });
+      }
+    } else {
+      const active = await getActiveServer();
+      resolvedServerId = active ? active.id : null;
+    }
+
+    const result = await createScheduledTask(name, cronExpression, command, resolvedServerId);
     const task = {
       id: result.id,
       name,
       cron_expression: cronExpression,
       command,
+      server_id: resolvedServerId,
       enabled: 1
     };
     
@@ -165,14 +180,14 @@ router.put('/tasks/:id', async (req, res) => {
   try {
     const scheduler = req.app.get('scheduler');
     const { id } = req.params;
-    const { name, cronExpression, command, enabled } = req.body;
-    log.info(`PUT /tasks/${id}: name=${name}, cron=${cronExpression}, enabled=${enabled}`);
-    
+    const { name, cronExpression, command, enabled, serverId } = req.body;
+    log.info(`PUT /tasks/${id}: name=${name}, cron=${cronExpression}, enabled=${enabled}, serverId=${serverId}`);
+
     const taskId = parseInt(id, 10);
     if (isNaN(taskId)) {
       return res.status(400).json({ error: 'Invalid task ID' });
     }
-    
+
     // Validate name and command length
     if (name !== undefined && (typeof name !== 'string' || name.length > 100)) {
       return res.status(400).json({ error: 'Invalid task name (max 100 characters)' });
@@ -180,19 +195,27 @@ router.put('/tasks/:id', async (req, res) => {
     if (command !== undefined && (typeof command !== 'string' || command.length > 2000)) {
       return res.status(400).json({ error: 'Invalid command (max 2000 characters)' });
     }
-    
+
     // Validate cron expression before saving to prevent DB/scheduler inconsistency
     if (cronExpression && !cron.validate(cronExpression)) {
       return res.status(400).json({ error: 'Invalid cron expression. Use format: minute hour day month weekday (e.g., "0 */6 * * *" for every 6 hours)' });
     }
-    
+
     // Security: Reject tasks that run more frequently than every 5 minutes to prevent DoS
     if (cronExpression && isCronTooFrequent(cronExpression)) {
       return res.status(400).json({ error: 'Tasks cannot run more frequently than every 5 minutes' });
     }
-    
-    await updateScheduledTask(taskId, name, cronExpression, command, enabled);
-    
+
+    // Validate the target server, if reassignment was requested
+    if (serverId !== undefined && serverId !== null) {
+      const target = await getServer(serverId);
+      if (!target) {
+        return res.status(400).json({ error: 'Target server not found' });
+      }
+    }
+
+    await updateScheduledTask(taskId, name, cronExpression, command, enabled, serverId);
+
     // Reschedule or cancel the task — rollback DB entry if scheduling fails
     if (enabled) {
       try {
@@ -201,6 +224,7 @@ router.put('/tasks/:id', async (req, res) => {
           name,
           cron_expression: cronExpression,
           command,
+          server_id: serverId,
           enabled: 1
         });
       } catch (schedErr) {

@@ -17,7 +17,11 @@ const RETENTION = {
   player_logs: 1000,
   server_events: 500,
   schedule_history: 500,
-  performance_history: 5760, // 24h at 15-sec intervals
+  // 24h at 60-sec intervals. Keep this in sync with the perf polling interval
+  // in index.js: every snapshot rewrites the whole db.json, so this array's
+  // length is what sets the panel's steady-state disk write volume — and that
+  // disk is usually the one PZ is saving chunks to.
+  performance_history: 1440,
   player_sessions: 50, // per player
   bridge_logs: 500,
 };
@@ -752,20 +756,50 @@ export async function getBridgeLogs(limit = 100) {
 // Scheduled Tasks
 // ============================================
 
+// Returns ALL scheduled tasks across every server, unfiltered — the
+// Scheduler needs to register a cron job for every task on startup
+// regardless of which server is currently active in the UI. Callers that
+// want to display/scope by server (the Scheduler UI) filter client-side
+// using each task's server_id.
 export async function getScheduledTasks() {
   const db = await getDb();
-  return db.data.scheduled_tasks || [];
+  const tasks = db.data.scheduled_tasks || [];
+
+  // Legacy migration: a task saved before server_id existed gets the
+  // currently-active server as a best guess (matches how it already
+  // behaved — it always ran against whatever was active).
+  const activeServerId = await getActiveServerId();
+  if (activeServerId) {
+    let migrated = false;
+    for (const task of tasks) {
+      if (!task.server_id) {
+        task.server_id = activeServerId;
+        migrated = true;
+      }
+    }
+    if (migrated) scheduleWrite();
+  }
+
+  return tasks;
 }
 
-export async function createScheduledTask(name, cronExpression, command) {
+export async function createScheduledTask(
+  name,
+  cronExpression,
+  command,
+  serverId = null,
+) {
   const db = await getDb();
   if (!Array.isArray(db.data.scheduled_tasks)) db.data.scheduled_tasks = [];
+
+  const resolvedServerId = serverId || (await getActiveServerId());
 
   const task = {
     id: generateNumericId(db.data.scheduled_tasks),
     name,
     cron_expression: cronExpression,
     command,
+    server_id: resolvedServerId,
     enabled: 1,
     last_run: null,
     created_at: new Date().toISOString(),
@@ -782,6 +816,7 @@ export async function updateScheduledTask(
   cronExpression,
   command,
   enabled,
+  serverId,
 ) {
   const db = await getDb();
   const index = db.data.scheduled_tasks.findIndex((t) => t.id === id);
@@ -792,6 +827,7 @@ export async function updateScheduledTask(
   if (cronExpression !== undefined) task.cron_expression = cronExpression;
   if (command !== undefined) task.command = command;
   if (enabled !== undefined) task.enabled = enabled ? 1 : 0;
+  if (serverId !== undefined) task.server_id = serverId;
   scheduleWrite();
   return task;
 }
