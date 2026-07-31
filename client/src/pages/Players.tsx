@@ -46,7 +46,9 @@ import { Badge } from '@/components/ui/badge'
 import { 
   Select, 
   SelectContent, 
+  SelectGroup,
   SelectItem, 
+  SelectLabel,
   SelectTrigger, 
   SelectValue 
 } from '@/components/ui/select'
@@ -85,6 +87,12 @@ import { SpawnBrowser } from '@/components/SpawnBrowser'
 import { playersApi, panelBridgeApi, configApi } from '@/lib/api'
 import { PageHeader } from '@/components/PageHeader'
 import { cn, copyText } from '@/lib/utils'
+
+interface PerkChoice {
+  id: string
+  label: string
+  category: string
+}
 
 interface Player {
   name: string
@@ -242,7 +250,7 @@ function ActionTile({
 
 export default function Players() {
   const [players, setPlayers] = useState<Player[]>([])
-  const [perks, setPerks] = useState<string[]>([])
+  const [perks, setPerks] = useState<PerkChoice[]>([])
   const [selectedPlayer, setSelectedPlayer] = useState<string>('')
   const [loading, setLoading] = useState(false)
   const [initialLoading, setInitialLoading] = useState(true)
@@ -566,10 +574,24 @@ export default function Players() {
     return `${minutes}m`
   }
 
+  const perkGroups = useMemo(() => {
+    const byCategory = new Map<string, PerkChoice[]>()
+    for (const perk of perks) {
+      const group = byCategory.get(perk.category)
+      if (group) group.push(perk)
+      else byCategory.set(perk.category, [perk])
+    }
+    return [...byCategory.entries()]
+  }, [perks])
+
   const fetchData = useCallback(async () => {
     try {
       const perksData = await playersApi.getPerks()
-      setPerks(perksData.perks || [])
+      // `catalog` carries the in-game skill names; older backends only send ids.
+      setPerks(
+        perksData.catalog ??
+          (perksData.perks || []).map((id: string) => ({ id, label: id, category: 'Skills' })),
+      )
       setToolsLoadError(null)
     } catch (error) {
       reportClientError('Failed to fetch player data.', error)
@@ -2091,10 +2113,15 @@ export default function Players() {
                           <SelectValue placeholder="Select perk..." />
                         </SelectTrigger>
                         <SelectContent>
-                          {perks.map((perk) => (
-                            <SelectItem key={perk} value={perk}>
-                              {perk}
-                            </SelectItem>
+                          {perkGroups.map(([category, items]) => (
+                            <SelectGroup key={category}>
+                              <SelectLabel>{category}</SelectLabel>
+                              {items.map((perk) => (
+                                <SelectItem key={perk.id} value={perk.id}>
+                                  {perk.label}
+                                </SelectItem>
+                              ))}
+                            </SelectGroup>
                           ))}
                         </SelectContent>
                       </Select>

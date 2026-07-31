@@ -1,8 +1,8 @@
 import express from 'express';
 import { createLogger } from '../utils/logger.js';
 const log = createLogger('API:Players');
-import { 
-  logPlayerAction, 
+import {
+  logPlayerAction,
   getPlayerLogs,
   getPlayerNotes,
   getPlayerNote,
@@ -14,7 +14,7 @@ import {
   addSteamIdBan,
   removeSteamIdBan
 } from '../database/init.js';
-import { VEHICLES, PERKS, ACCESS_LEVELS } from '../utils/commands.js';
+import { VEHICLES, PERKS, PERK_CATALOG, ACCESS_LEVELS } from '../utils/commands.js';
 import { sanitizeError } from '../utils/sanitize.js';
 import bridge from '../services/panelBridge.js';
 
@@ -79,12 +79,12 @@ router.get('/', async (req, res) => {
   try {
     const rconService = req.app.get('rconService');
     const result = await rconService.getPlayers();
-    
+
     const io = req.app.get('io');
     if (io && result.success) {
       io.to('players').emit('players:update', result.players);
     }
-    
+
     res.json(result);
   } catch (error) {
     log.error(`Failed to get players: ${error.message}`);
@@ -97,23 +97,23 @@ router.post('/kick', async (req, res) => {
   try {
     const rconService = req.app.get('rconService');
     const { username, reason } = req.body;
-    
+
     if (!username) {
       return res.status(400).json({ error: 'Username is required' });
     }
-    
+
     if (!isValidUsername(username)) {
       return res.status(400).json({ error: 'Invalid username format' });
     }
-    
+
     if (reason && !isValidText(reason)) {
       return res.status(400).json({ error: 'Invalid reason format' });
     }
-    
+
     const result = await rconService.kickPlayer(username, reason);
     log.info(`POST /kick: ${username} (reason=${reason || 'none'})`);
     await logPlayerAction(username, 'kick', reason);
-    
+
     res.json(result);
   } catch (error) {
     log.error(`Failed to kick player: ${error.message}`);
@@ -126,23 +126,23 @@ router.post('/ban', async (req, res) => {
   try {
     const rconService = req.app.get('rconService');
     const { username, banIp, reason } = req.body;
-    
+
     if (!username) {
       return res.status(400).json({ error: 'Username is required' });
     }
-    
+
     if (!isValidUsername(username)) {
       return res.status(400).json({ error: 'Invalid username format' });
     }
-    
+
     if (reason && !isValidText(reason)) {
       return res.status(400).json({ error: 'Invalid reason format' });
     }
-    
+
     const result = await rconService.banPlayer(username, banIp, reason);
     log.info(`POST /ban: ${username} (banIp=${banIp}, reason=${reason || 'none'})`);
     await logPlayerAction(username, 'ban', `IP: ${banIp}, Reason: ${reason}`);
-    
+
     res.json(result);
   } catch (error) {
     log.error(`Failed to ban player: ${error.message}`);
@@ -155,19 +155,19 @@ router.post('/unban', async (req, res) => {
   try {
     const rconService = req.app.get('rconService');
     const { username } = req.body;
-    
+
     if (!username) {
       return res.status(400).json({ error: 'Username is required' });
     }
-    
+
     if (!isValidUsername(username)) {
       return res.status(400).json({ error: 'Invalid username format' });
     }
-    
+
     const result = await rconService.unbanPlayer(username);
     log.info(`POST /unban: ${username}`);
     await logPlayerAction(username, 'unban', null);
-    
+
     res.json(result);
   } catch (error) {
     log.error(`Failed to unban player: ${error.message}`);
@@ -180,23 +180,23 @@ router.post('/access-level', async (req, res) => {
   try {
     const rconService = req.app.get('rconService');
     const { username, level } = req.body;
-    
+
     if (!username || !level) {
       return res.status(400).json({ error: 'Username and level are required' });
     }
-    
+
     if (!isValidUsername(username)) {
       return res.status(400).json({ error: 'Invalid username format' });
     }
-    
+
     if (!ACCESS_LEVELS.includes(level.toLowerCase())) {
       return res.status(400).json({ error: `Invalid access level. Valid: ${ACCESS_LEVELS.join(', ')}` });
     }
-    
+
     const result = await rconService.setAccessLevel(username, level);
     log.info(`POST /access-level: ${username} → ${level}`);
     await logPlayerAction(username, 'access_level', level);
-    
+
     res.json(result);
   } catch (error) {
     log.error(`Failed to set access level: ${error.message}`);
@@ -209,19 +209,19 @@ router.post('/whitelist/add', async (req, res) => {
   try {
     const rconService = req.app.get('rconService');
     const { username } = req.body;
-    
+
     if (!username) {
       return res.status(400).json({ error: 'Username is required' });
     }
-    
+
     if (!isValidUsername(username)) {
       return res.status(400).json({ error: 'Invalid username format' });
     }
-    
+
     const result = await rconService.addToWhitelist(username);
     log.info(`POST /whitelist/add: ${username}`);
     await logPlayerAction(username, 'whitelist_add', null);
-    
+
     res.json(result);
   } catch (error) {
     log.error(`Failed to add to whitelist: ${error.message}`);
@@ -234,19 +234,19 @@ router.post('/whitelist/remove', async (req, res) => {
   try {
     const rconService = req.app.get('rconService');
     const { username } = req.body;
-    
+
     if (!username) {
       return res.status(400).json({ error: 'Username is required' });
     }
-    
+
     if (!isValidUsername(username)) {
       return res.status(400).json({ error: 'Invalid username format' });
     }
-    
+
     const result = await rconService.removeFromWhitelist(username);
     log.info(`POST /whitelist/remove: ${username}`);
     await logPlayerAction(username, 'whitelist_remove', null);
-    
+
     res.json(result);
   } catch (error) {
     log.error(`Failed to remove from whitelist: ${error.message}`);
@@ -269,7 +269,7 @@ router.post('/teleport', async (req, res) => {
         player2 = undefined;
       }
     }
-    
+
     let result;
     if (x !== undefined && y !== undefined && z !== undefined) {
       // Validate coordinates. B42 vanilla map extends past 16800 and modded maps
@@ -304,7 +304,7 @@ router.post('/teleport', async (req, res) => {
     } else {
       return res.status(400).json({ error: 'Player name or coordinates required' });
     }
-    
+
     res.json(result);
   } catch (error) {
     log.error(`Failed to teleport: ${error.message}`);
@@ -317,28 +317,28 @@ router.post('/add-item', async (req, res) => {
   try {
     const rconService = req.app.get('rconService');
     const { username, item, count } = req.body;
-    
+
     if (!item) {
       return res.status(400).json({ error: 'Item is required' });
     }
-    
+
     if (!isValidItem(item)) {
       return res.status(400).json({ error: 'Invalid item format' });
     }
-    
+
     if (username && !isValidUsername(username)) {
       return res.status(400).json({ error: 'Invalid username format' });
     }
-    
+
     if (count !== undefined && !isValidNumber(count, 1, 100)) {
       return res.status(400).json({ error: 'Invalid count (1-100)' });
     }
     const itemCount = count !== undefined ? Math.min(Math.floor(Number(count)), 100) : 1;
-    
+
     if (!username) {
       return res.status(400).json({ error: 'A player must be selected to give items' });
     }
-    
+
     let result;
     // Use RCON for additem — PZ handles inventory sync to client correctly via RCON
     // PanelBridge's inventory:AddItem() works server-side but client doesn't see items until relog
@@ -347,7 +347,7 @@ router.post('/add-item', async (req, res) => {
     if (username) {
       await logPlayerAction(username, 'add_item', `${item} x${itemCount}`);
     }
-    
+
     res.json(result);
   } catch (error) {
     log.error(`Failed to add item: ${error.message}`);
@@ -360,27 +360,27 @@ router.post('/add-xp', async (req, res) => {
   try {
     const rconService = req.app.get('rconService');
     const { username, perk, amount } = req.body;
-    
+
     if (!username || !perk || amount === undefined || amount === null) {
       return res.status(400).json({ error: 'Username, perk, and amount are required' });
     }
-    
+
     if (!isValidUsername(username)) {
       return res.status(400).json({ error: 'Invalid username format' });
     }
-    
+
     if (!PERKS.includes(perk)) {
       return res.status(400).json({ error: `Invalid perk. Valid: ${PERKS.join(', ')}` });
     }
-    
+
     if (!isValidNumber(amount, 0, 100000)) {
       return res.status(400).json({ error: 'Invalid XP amount (0-100000)' });
     }
-    
+
     const result = await rconService.addXp(username, perk, amount);
     log.info(`POST /add-xp: ${perk}=${amount} to ${username}`);
     await logPlayerAction(username, 'add_xp', `${perk}=${amount}`);
-    
+
     res.json(result);
   } catch (error) {
     log.error(`Failed to add XP: ${error.message}`);
@@ -393,27 +393,27 @@ router.post('/add-vehicle', async (req, res) => {
   try {
     const rconService = req.app.get('rconService');
     const { vehicle, username } = req.body;
-    
+
     if (!vehicle) {
       return res.status(400).json({ error: 'Vehicle is required' });
     }
-    
+
     // Validate vehicle ID format (e.g., "Base.CarNormal", "mod.VehicleName")
     // Allows catalog-scanned vehicles beyond the static VEHICLES list
     if (!/^[A-Za-z0-9_]+\.[A-Za-z0-9_]+$/.test(vehicle)) {
       return res.status(400).json({ error: 'Invalid vehicle ID format' });
     }
-    
+
     if (username && !isValidUsername(username)) {
       return res.status(400).json({ error: 'Invalid username format' });
     }
-    
+
     const result = await rconService.addVehicle(vehicle, username);
     log.info(`POST /add-vehicle: ${vehicle} for ${username || 'self'}`);
     if (username) {
       await logPlayerAction(username, 'add_vehicle', vehicle);
     }
-    
+
     res.json(result);
   } catch (error) {
     log.error(`Failed to spawn vehicle: ${error.message}`);
@@ -497,7 +497,7 @@ router.get('/vehicles', (req, res) => {
 
 // Get available perks
 router.get('/perks', (req, res) => {
-  res.json({ perks: PERKS });
+  res.json({ perks: PERKS, catalog: PERK_CATALOG });
 });
 
 // Get access levels
@@ -522,11 +522,11 @@ router.post('/banid', async (req, res) => {
     const rconService = req.app.get('rconService');
     const { steamId, reason } = req.body;
     const normalizedReason = typeof reason === 'string' ? reason.trim() : '';
-    
+
     if (!steamId) {
       return res.status(400).json({ error: 'SteamID is required' });
     }
-    
+
     // SteamIDs are numeric strings
     if (!/^\d{17}$/.test(steamId)) {
       return res.status(400).json({ error: 'Invalid SteamID format (must be 17 digits)' });
@@ -535,12 +535,12 @@ router.post('/banid', async (req, res) => {
     if (normalizedReason && !isValidText(normalizedReason)) {
       return res.status(400).json({ error: 'Invalid reason format' });
     }
-    
+
     const result = await rconService.banSteamId(steamId);
     log.info(`POST /banid: SteamID ${steamId}`);
     await addSteamIdBan(steamId, normalizedReason || null);
     await logPlayerAction(steamId, 'banid', normalizedReason || null);
-    
+
     res.json(result);
   } catch (error) {
     log.error(`Failed to ban SteamID: ${error.message}`);
@@ -553,20 +553,20 @@ router.post('/unbanid', async (req, res) => {
   try {
     const rconService = req.app.get('rconService');
     const { steamId } = req.body;
-    
+
     if (!steamId) {
       return res.status(400).json({ error: 'SteamID is required' });
     }
-    
+
     if (!/^\d{17}$/.test(steamId)) {
       return res.status(400).json({ error: 'Invalid SteamID format (must be 17 digits)' });
     }
-    
+
     const result = await rconService.unbanSteamId(steamId);
     log.info(`POST /unbanid: SteamID ${steamId}`);
     await removeSteamIdBan(steamId);
     await logPlayerAction(steamId, 'unbanid', null);
-    
+
     res.json(result);
   } catch (error) {
     log.error(`Failed to unban SteamID: ${error.message}`);
@@ -579,19 +579,19 @@ router.post('/voiceban', async (req, res) => {
   try {
     const rconService = req.app.get('rconService');
     const { username, enabled } = req.body;
-    
+
     if (!username) {
       return res.status(400).json({ error: 'Username is required' });
     }
-    
+
     if (!isValidUsername(username)) {
       return res.status(400).json({ error: 'Invalid username format' });
     }
-    
+
     const result = await rconService.voiceBan(username, enabled);
     log.info(`POST /voiceban: ${username} → ${enabled ? 'ON' : 'OFF'}`);
     await logPlayerAction(username, 'voiceban', enabled ? 'enabled' : 'disabled');
-    
+
     res.json(result);
   } catch (error) {
     log.error(`Failed to set voice ban: ${error.message}`);
@@ -604,23 +604,23 @@ router.post('/adduser', async (req, res) => {
   try {
     const rconService = req.app.get('rconService');
     const { username, password } = req.body;
-    
+
     if (!username || !password) {
       return res.status(400).json({ error: 'Username and password are required' });
     }
-    
+
     if (!isValidUsername(username)) {
       return res.status(400).json({ error: 'Invalid username format' });
     }
-    
+
     // Password validation - alphanumeric and some special chars
     if (!/^[a-zA-Z0-9!@#$%^&*_-]{4,64}$/.test(password)) {
       return res.status(400).json({ error: 'Invalid password format' });
     }
-    
+
     const result = await rconService.addUser(username, password);
     await logPlayerAction(username, 'adduser', null);
-    
+
     res.json(result);
   } catch (error) {
     log.error(`Failed to add user: ${error.message}`);
@@ -633,7 +633,7 @@ router.post('/whitelist/addall', async (req, res) => {
   try {
     const rconService = req.app.get('rconService');
     const result = await rconService.addAllToWhitelist();
-    
+
     res.json(result);
   } catch (error) {
     log.error(`Failed to add all to whitelist: ${error.message}`);
@@ -672,16 +672,16 @@ router.post('/notes', async (req, res) => {
   try {
     const { playerName, note } = req.body;
     const tags = req.body.tags || [];
-    
+
     if (!playerName) {
       return res.status(400).json({ error: 'Player name is required' });
     }
-    
+
     // Validate note length
     if (note && note.length > 10000) {
       return res.status(400).json({ error: 'Note too long (max 10000 characters)' });
     }
-    
+
     // Validate tags array and individual tag format
     if (!Array.isArray(tags)) {
       return res.status(400).json({ error: 'Tags must be an array' });
@@ -689,7 +689,7 @@ router.post('/notes', async (req, res) => {
     if (tags.some(t => typeof t !== 'string' || t.length > 50)) {
       return res.status(400).json({ error: 'Tags must be strings (max 50 chars each)' });
     }
-    
+
     const result = await upsertPlayerNote(playerName, note, tags);
     res.json({ success: true, note: result });
   } catch (error) {
