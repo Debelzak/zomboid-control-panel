@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.17] - 2026-07-31
+
+### Fixed
+
+- **Standalone auto-updates left the web UI behind**: the updater downloaded only the executable, while the dashboard is served from the adjacent `client/dist` directory. It now verifies the matching platform archive and refreshes that directory too, without touching `data/`.
+
 ## [1.1.16] - 2026-07-31
 
 ### Added
