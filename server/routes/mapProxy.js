@@ -12,8 +12,39 @@ const router = express.Router();
 const PZ_MAP_ROOT = "https://map.projectzomboid.com";
 const B42_DIR_FALLBACK = "42.19.0";
 const B42_DIR_TTL_MS = 24 * 60 * 60 * 1000; // re-resolve at most once per 24 h
+// A brand-new PZ build's tiles can be listed as the "default" entry in
+// build_list.json before map.projectzomboid.com has actually finished
+// rendering full world coverage for it. Probing a real inhabited area (West
+// Point) at a representative deep-zoom level lets us detect "listed but not
+// rendered yet" and fall back to the previous build instead of showing an
+// empty map. Confirmed live: 42.20.0 was listed as default with only its
+// origin-corner tiles present, while 42.19.0 had full coverage at these
+// exact coordinates.
+const COVERAGE_PROBE_TILES = ["15/9_3.jpg", "15/9_4.jpg", "15/10_3.jpg", "15/10_4.jpg"];
 let _b42Dir = null;
 let _b42DirFetchedAt = 0;
+
+async function hasTileCoverage(directory) {
+  for (const tile of COVERAGE_PROBE_TILES) {
+    try {
+      const resp = await fetch(
+        `${PZ_MAP_ROOT}/maps/${directory}/base/layer0_files/${tile}`,
+        {
+          method: "HEAD",
+          signal: AbortSignal.timeout(4000),
+          headers: {
+            "User-Agent":
+              "ZomboidControlPanel/1.0 (+https://github.com/fpsacha/zomboid-control-panel)",
+          },
+        },
+      );
+      if (resp.ok) return true;
+    } catch {
+      // Treat as not-covered and try the next probe tile.
+    }
+  }
+  return false;
+}
 
 async function getB42Dir() {
   const now = Date.now();
@@ -30,17 +61,24 @@ async function getB42Dir() {
     });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const list = await resp.json();
-    // Entries are ordered newest-first. Find the first B42+ entry.
-    const entry =
-      Array.isArray(list) &&
-      list.find((e) => /^4[2-9]\./.test(e.directory || ""));
-    if (entry?.directory) {
-      if (_b42Dir !== entry.directory) {
-        log.info(`B42 map directory resolved: ${entry.directory}`);
+    // Entries are ordered newest-first. Walk B42+ candidates until one
+    // actually has rendered tile coverage, not just a build_list.json entry.
+    const candidates = Array.isArray(list)
+      ? list.filter((e) => /^4[2-9]\./.test(e.directory || ""))
+      : [];
+    for (const entry of candidates) {
+      if (!entry?.directory) continue;
+      if (await hasTileCoverage(entry.directory)) {
+        if (_b42Dir !== entry.directory) {
+          log.info(`B42 map directory resolved: ${entry.directory}`);
+        }
+        _b42Dir = entry.directory;
+        _b42DirFetchedAt = now;
+        return _b42Dir;
       }
-      _b42Dir = entry.directory;
-      _b42DirFetchedAt = now;
-      return _b42Dir;
+      log.warn(
+        `B42 map directory ${entry.directory} listed but has no rendered tile coverage yet — trying older build.`,
+      );
     }
   } catch (err) {
     log.warn(
