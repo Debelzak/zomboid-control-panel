@@ -485,6 +485,9 @@ export interface CharacterImportResponse {
 // Server API
 export const serverApi = {
   getStatus: () => apiGet("/server/status"),
+  getNetworkInterfaces: (): Promise<{
+    interfaces: { name: string; address: string }[];
+  }> => apiGet("/server/network-interfaces"),
   start: () => apiPost("/server/start"),
   stop: () => apiPost("/server/stop"),
   forceStop: () => apiPost("/server/force-stop"),

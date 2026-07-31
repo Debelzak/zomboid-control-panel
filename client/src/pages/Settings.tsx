@@ -153,6 +153,10 @@ interface AppSettings {
 
   // Privacy
   enablePublicIpLookup: boolean;
+
+  // Which detected network interface's IPv4 the dashboard displays.
+  // Empty string = auto-detect (first non-internal interface found).
+  lanIpAddress: string;
 }
 
 interface CorsDiagnostics {
@@ -227,6 +231,7 @@ export default function Settings() {
     corsAllowPrivateNetworks: true,
     corsDebug: false,
     enablePublicIpLookup: false,
+    lanIpAddress: "",
   });
   const [originalSettings, setOriginalSettings] = useState<AppSettings | null>(
     null,
@@ -517,6 +522,16 @@ export default function Settings() {
   useEffect(() => {
     fetchCorsDiagnostics();
   }, [fetchCorsDiagnostics]);
+
+  const [networkInterfaces, setNetworkInterfaces] = useState<
+    { name: string; address: string }[]
+  >([]);
+  useEffect(() => {
+    serverApi
+      .getNetworkInterfaces()
+      .then((data) => setNetworkInterfaces(data.interfaces || []))
+      .catch(() => setNetworkInterfaces([]));
+  }, []);
 
   // Reload settings when active server changes
   useEffect(() => {
@@ -2056,6 +2071,43 @@ export default function Settings() {
                       }
                       aria-label="Enable public IP lookup"
                     />
+                  </div>
+
+                  <div className="space-y-2 rounded-lg border border-border/60 bg-muted/25 p-3">
+                    <div>
+                      <Label className="text-sm font-medium">
+                        Dashboard LAN Address
+                      </Label>
+                      <p className="text-xs text-muted-foreground">
+                        Which network interface's address the dashboard
+                        shows. Useful when this host has more than one, e.g.
+                        Tailscale and ZeroTier at once — pick the one you
+                        actually want to share with players.
+                      </p>
+                    </div>
+                    <Select
+                      value={settings.lanIpAddress || "auto"}
+                      onValueChange={(value) =>
+                        updateSetting(
+                          "lanIpAddress",
+                          value === "auto" ? "" : value,
+                        )
+                      }
+                    >
+                      <SelectTrigger aria-label="Dashboard LAN address">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="auto">
+                          Auto-detect (default)
+                        </SelectItem>
+                        {networkInterfaces.map((iface) => (
+                          <SelectItem key={iface.address} value={iface.address}>
+                            {iface.name} — {iface.address}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
 
                   <div className="space-y-2">
