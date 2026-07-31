@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Add XP was missing nine B42 skills**: Blacksmithing, Carving, Glassmaking, Knapping, Masonry, Pottery, Animal Care, Butchering and Tracking could not be selected at all.
 - **Add XP silently doing nothing**: the perk name was quoted, which the server tokenises as two arguments and then rejects without an error.
 - **God mode and invisibility**: these commands have no form that targets another player, so over RCON they were always a no-op. They now go through PanelBridge, which sets the flag on the player.
+- **World Map tiles failing to load ("signal.lost / tiles offline")**: an earlier merge's map fallback and geometry-resolution logic had been committed but never actually deployed to the live server, so the client called a resolve endpoint the running backend didn't have. Redeployed; tiles load again.
+
+### Added
+
+- **Settings > Network: Dashboard LAN Address**: pick which detected network interface's IPv4 the dashboard displays, for hosts running more than one network (e.g. Tailscale and ZeroTier at once).
 
 ### Changed
 

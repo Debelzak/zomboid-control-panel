@@ -10,6 +10,11 @@ Mod settings and the Add XP tool both had bugs that made them look like they wor
 - **Add XP was missing nine B42 skills.** Blacksmithing, Carving, Glassmaking, Knapping, Masonry, Pottery, Animal Care, Butchering and Tracking could not be selected at all.
 - **Add XP silently doing nothing.** The perk name was quoted, which the server tokenises as two arguments and then rejects by printing usage rather than reporting an error.
 - **God mode and invisibility never applied.** Neither command has a form that targets another player, so issued over RCON — which has no player of its own — they were always a no-op. They now go through PanelBridge, which sets the flag on the player directly.
+- **World Map tiles failing to load ("signal.lost / tiles offline").** The map fallback and geometry-resolution logic from an earlier merge had been committed but never actually deployed to the live server, so the client kept calling a resolve endpoint the running backend didn't have. Redeployed; tiles load again.
+
+### Added
+
+- **Settings > Network: Dashboard LAN Address.** Pick which detected network interface's IPv4 the dashboard displays, for hosts running more than one (e.g. Tailscale and ZeroTier at once). Previously the panel just took whichever interface the OS listed first, with no way to change it short of an undocumented environment variable.
 
 ### Changed
 
