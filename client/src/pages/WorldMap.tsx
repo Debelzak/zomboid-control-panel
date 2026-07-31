@@ -65,7 +65,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { panelBridgeApi, updateApi, serversApi } from '@/lib/api'
+import { panelBridgeApi, updateApi, serversApi, mapApi } from '@/lib/api'
 import { useToast } from '@/components/ui/use-toast'
 import { cn } from '@/lib/utils'
 
@@ -177,21 +177,52 @@ interface MapConfig {
   isoHalfSqr: number
   isoQuarterSqr: number
   defaultCenter: { x: number; y: number }
+  defaultScale: number
   label: string
 }
 
 const MAP_B42: MapConfig = {
   tileUrl: '/api/map/tiles',
   tileSize: 1024,
-  fullWidth: 2314432,
-  fullHeight: 1019072,
-  maxLevel: 22,
-  isoX0: 1036288,
-  isoY0: -139296,
-  isoHalfSqr: 64,
-  isoQuarterSqr: 32,
-  defaultCenter: { x: 1280000, y: 410000 },
+  fullWidth: 1157312,
+  fullHeight: 509520,
+  maxLevel: 21,
+  isoX0: 518144,
+  isoY0: -69648,
+  isoHalfSqr: 32,
+  isoQuarterSqr: 16,
+  defaultCenter: { x: 640000, y: 205000 },
+  defaultScale: 0.002,
   label: 'B42',
+}
+
+// PZ renders each map build at its own resolution — 42.19.0 is 1157312 wide
+// with 1024px tiles, 42.20.0 doubled to 2318656 with 2048px tiles. The
+// projection constants above are expressed against MAP_B42.fullWidth, so
+// rescale them by whatever the backend reports it is actually proxying.
+function b42ConfigFor(info: {
+  tileSize: number
+  width: number
+  height: number
+  maxLevel: number
+}): MapConfig {
+  const k = info.width / MAP_B42.fullWidth
+  return {
+    ...MAP_B42,
+    tileSize: info.tileSize,
+    fullWidth: info.width,
+    fullHeight: info.height,
+    maxLevel: info.maxLevel,
+    isoX0: MAP_B42.isoX0 * k,
+    isoY0: MAP_B42.isoY0 * k,
+    isoHalfSqr: MAP_B42.isoHalfSqr * k,
+    isoQuarterSqr: MAP_B42.isoQuarterSqr * k,
+    defaultCenter: {
+      x: MAP_B42.defaultCenter.x * k,
+      y: MAP_B42.defaultCenter.y * k,
+    },
+    defaultScale: MAP_B42.defaultScale / k,
+  }
 }
 
 const MAP_B41: MapConfig = {
@@ -207,10 +238,9 @@ const MAP_B41: MapConfig = {
   isoHalfSqr: 64,  // 32 * multiply(2)
   isoQuarterSqr: 32, // 16 * multiply(2)
   defaultCenter: { x: 1100000, y: 400000 },
+  defaultScale: 0.001,
   label: 'B41',
 }
-
-const DZI_TILE_SIZE = 1024      // shared between both configs
 
 const MIN_SCALE = 0.0003        // canvas px per DZI px (zoomed way out)
 const MAX_SCALE = 1.0           // canvas px per DZI px (zoomed way in)
@@ -465,7 +495,7 @@ export default function WorldMap() {
   const [players, setPlayers] = useState<MapPlayer[]>([])
   const [mapCfg, setMapCfg] = useState<MapConfig>(MAP_B42)
   const mapCfgRef = useRef<MapConfig>(MAP_B42)
-  const [scale, setScale] = useState(0.001)
+  const [scale, setScale] = useState(MAP_B42.defaultScale)
   const [offset, setOffset] = useState({ x: 0, y: 0 })
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 })
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null)
@@ -615,8 +645,29 @@ export default function WorldMap() {
           // Re-center on B41 default center
           const el = containerRef.current
           if (el) {
-            const s = 0.001
+            const s = MAP_B41.defaultScale
             const c = MAP_B41.defaultCenter
+            setScale(s)
+            setOffset({
+              x: el.clientWidth / 2 - c.x * s,
+              y: el.clientHeight / 2 - c.y * s,
+            })
+          }
+        } else {
+          const info = await mapApi.getInfo()
+          if (cancelled) return
+          const cfg = b42ConfigFor(info)
+          setMapCfg(cfg)
+          mapCfgRef.current = cfg
+          tileCacheRef.current = {}
+          tileFailRef.current = {}
+          tileFailureCountRef.current = 0
+          setTileLoadFailing(false)
+          const el = containerRef.current
+          if (el) {
+            const s = cfg.defaultScale
+            const c = cfg.defaultCenter
+            setScale(s)
             setOffset({
               x: el.clientWidth / 2 - c.x * s,
               y: el.clientHeight / 2 - c.y * s,
@@ -926,10 +977,10 @@ export default function WorldMap() {
     const visMaxDziY = (H - off.y) / s
 
     // Convert to level-pixel tile indices
-    const minCol = Math.max(0, Math.floor(visMinDziX / levelScale / DZI_TILE_SIZE))
-    const maxCol = Math.min(Math.ceil(levelW / DZI_TILE_SIZE) - 1, Math.floor(visMaxDziX / levelScale / DZI_TILE_SIZE))
-    const minRow = Math.max(0, Math.floor(visMinDziY / levelScale / DZI_TILE_SIZE))
-    const maxRow = Math.min(Math.ceil(levelH / DZI_TILE_SIZE) - 1, Math.floor(visMaxDziY / levelScale / DZI_TILE_SIZE))
+    const minCol = Math.max(0, Math.floor(visMinDziX / levelScale / mc.tileSize))
+    const maxCol = Math.min(Math.ceil(levelW / mc.tileSize) - 1, Math.floor(visMaxDziX / levelScale / mc.tileSize))
+    const minRow = Math.max(0, Math.floor(visMinDziY / levelScale / mc.tileSize))
+    const maxRow = Math.min(Math.ceil(levelH / mc.tileSize) - 1, Math.floor(visMaxDziY / levelScale / mc.tileSize))
 
     ctx.save()
     ctx.globalAlpha = 0.9
@@ -941,8 +992,8 @@ export default function WorldMap() {
           // Floor the origin and pad the size by 1px so adjacent tiles
           // slightly overlap instead of leaving a sub-pixel seam (visible as
           // a dark line since tiles draw at globalAlpha 0.9 over a dark bg).
-          const dx = Math.floor(col * DZI_TILE_SIZE * levelScale * s + off.x)
-          const dy = Math.floor(row * DZI_TILE_SIZE * levelScale * s + off.y)
+          const dx = Math.floor(col * mc.tileSize * levelScale * s + off.x)
+          const dy = Math.floor(row * mc.tileSize * levelScale * s + off.y)
           const dw = Math.ceil(img.naturalWidth * levelScale * s) + 1
           const dh = Math.ceil(img.naturalHeight * levelScale * s) + 1
           ctx.drawImage(img, dx, dy, dw, dh)
@@ -1551,7 +1602,7 @@ export default function WorldMap() {
     if (hasInitRef.current || canvasSize.width === 0) return
     hasInitRef.current = true
     const c = mapCfgRef.current.defaultCenter
-    const s = 0.001
+    const s = mapCfgRef.current.defaultScale
     setOffset({
       x: canvasSize.width / 2 - c.x * s,
       y: canvasSize.height / 2 - c.y * s,
@@ -1567,7 +1618,7 @@ export default function WorldMap() {
     if (players.length === 0) {
       // Reset to default Knox County view
       const c = mapCfgRef.current.defaultCenter
-      const s = 0.001
+      const s = mapCfgRef.current.defaultScale
       setScale(s)
       setOffset({
         x: W / 2 - c.x * s,
@@ -2177,7 +2228,7 @@ export default function WorldMap() {
     const H = canvasSize.height
     if (W === 0) return
     const dzi = gameTileToDzi(p.x, p.y, mapCfgRef.current)
-    const viewScale = Math.max(scale, 0.01) // zoom in if too far out
+    const viewScale = Math.max(scale, mapCfgRef.current.defaultScale * 10) // zoom in if too far out
     setScale(viewScale)
     setOffset({ x: W / 2 - dzi.x * viewScale, y: H / 2 - dzi.y * viewScale })
     setSelectedPlayer(p)
@@ -2421,7 +2472,7 @@ export default function WorldMap() {
             </div>
             <div className="flex items-center gap-1 px-2.5 py-1.5">
               <span className="text-muted-foreground/50 text-[9px] uppercase tracking-[0.22em]">zm</span>
-              <span className="text-muted-foreground/80">{(scale / 0.001 * 100).toFixed(0)}%</span>
+              <span className="text-muted-foreground/80">{(scale / mapCfg.defaultScale * 100).toFixed(0)}%</span>
             </div>
           </div>
         </div>

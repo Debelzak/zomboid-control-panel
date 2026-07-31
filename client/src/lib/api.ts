@@ -2513,6 +2513,17 @@ export interface PanelUpdateActionResult {
   preflight?: PanelUpdatePreflight;
 }
 
+export const mapApi = {
+  // Geometry of the B42 map build the backend is currently proxying.
+  getInfo: (): Promise<{
+    directory: string;
+    tileSize: number;
+    width: number;
+    height: number;
+    maxLevel: number;
+  }> => apiGet("/map/info"),
+};
+
 export const updateApi = {
   // Check for updates (force = true to refresh from Steam)
   check: (
