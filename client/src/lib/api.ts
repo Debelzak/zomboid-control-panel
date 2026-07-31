@@ -1642,6 +1642,12 @@ export const serverFilesApi = {
   // Reload options
   saveAndReload: () => apiPost("/server-files/save-and-reload"),
 
+  saveSandboxOption: (
+    name: string,
+    value: string | number | boolean,
+  ): Promise<{ success: boolean; persisted: boolean }> =>
+    apiPut("/server-files/sandbox-option", { name, value }),
+
   // Config Templates
   getTemplates: () =>
     apiGet("/server-files/templates") as Promise<{

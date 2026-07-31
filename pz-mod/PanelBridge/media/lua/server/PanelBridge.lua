@@ -1,10 +1,15 @@
 ---@diagnostic disable: undefined-global, deprecated
 --[[
     PanelBridge - Server-side mod for Zomboid Control Panel
-    Version: 1.7.14
+    Version: 1.7.15
 
     This mod enables external control panel communication with the PZ server.
     Communication happens via JSON files in the server save folder.
+
+    v1.7.15 Changes:
+    - setSandboxOption now calls toLua() after setting the value. setValue only
+      updates the Java object; mod code reads the global SandboxVars table,
+      which stayed stale, so a changed mod option had no visible effect.
 
     v1.7.14 Changes:
     - teleportPlayer now reports which position-sync APIs actually exist on
@@ -244,7 +249,7 @@
 local json
 
 local PanelBridge = {
-    VERSION = "1.7.14",
+    VERSION = "1.7.15",
     PROTOCOL_VERSION = "queue-v1",
     CHECK_INTERVAL = 250, -- milliseconds (fast command polling)
     lastCheck = 0,
@@ -3840,6 +3845,12 @@ handlers.setSandboxOption = function(args)
     end)
 
     PanelBridge.info("Sandbox option set", { name = optName, value = tostring(newValue), confirmed = tostring(confirmed) })
+
+    -- setValue only touches the Java object. Mod code reads the global
+    -- SandboxVars table, which stays stale until toLua() rebuilds it.
+    pcall(function()
+        if sandbox.toLua then sandbox:toLua() end
+    end)
 
     -- Trigger a world save so the changed option persists across restarts
     pcall(function()
