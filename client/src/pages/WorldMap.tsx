@@ -66,7 +66,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { panelBridgeApi, updateApi, serversApi } from '@/lib/api'
+import { panelBridgeApi, updateApi, serversApi, mapApi } from '@/lib/api'
 import { useToast } from '@/components/ui/use-toast'
 import { cn } from '@/lib/utils'
 
@@ -723,6 +723,37 @@ export default function WorldMap() {
   // 404 from any other failure.
   const tileCacheRef = useRef<Record<string, HTMLImageElement | null | 'empty'>>({})
 
+  // Resolved once per session: lets the browser build direct-to-upstream
+  // tile URLs (https://map.projectzomboid.com/maps/<dir>/...) instead of
+  // always routing through this server's proxy. Some deployments (e.g. a
+  // Kubernetes cluster with a restrictive Gateway API egress policy) block
+  // outbound access to map.projectzomboid.com for the panel's own pod while
+  // the admin's browser has no such restriction. /api/map/resolve has its
+  // own cache + hardcoded fallback server-side, so it responds instantly
+  // even when the backend itself can't reach map.projectzomboid.com.
+  const mapSourceRef = useRef<{ root: string; b42Dir: string; b41Path: string } | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    mapApi.resolve()
+      .then((info) => { if (!cancelled) mapSourceRef.current = info })
+      .catch(() => { /* direct loading just won't be attempted; proxy fallback still works */ })
+    return () => { cancelled = true }
+  }, [])
+
+  // Builds the real map.projectzomboid.com URL for a tile, or null if we
+  // haven't resolved enough info yet (falls back to the backend proxy).
+  const buildDirectTileUrl = useCallback((level: number, col: number, row: number, floor: number, ext: string) => {
+    const src = mapSourceRef.current
+    if (!src) return null
+    if (mapCfgRef.current === MAP_B41) {
+      return `${src.root}/${src.b41Path}/${level}/${col}_${row}.${ext}`
+    }
+    // Floor is a path segment on the real upstream, not a query param —
+    // the ?floor= convention only exists on our own proxy route, which
+    // encodes it that way because /tiles/:level/:tile has no :floor segment.
+    return `${src.root}/maps/${src.b42Dir}/base/layer${floor}_files/${level}/${col}_${row}.${ext}`
+  }, [])
+
   // Cap concurrent tile loads to avoid flooding the network
   const pendingTileLoadsRef = useRef(0)
   const MAX_CONCURRENT_TILES = 8
@@ -777,57 +808,91 @@ export default function WorldMap() {
     }
 
     const ext = f === 0 ? 'jpg' : 'webp'
-    const floorParam = f !== 0 ? `?floor=${f}` : ''
-    const url = `${mapCfgRef.current.tileUrl}/${level}/${col}_${row}.${ext}${floorParam}`
+    const proxyFloorParam = f !== 0 ? `?floor=${f}` : ''
+    const proxyUrl = `${mapCfgRef.current.tileUrl}/${level}/${col}_${row}.${ext}${proxyFloorParam}`
 
-    // fetch() rather than a plain <img src> so we can see the actual HTTP
-    // status: a 404 means the upstream confirmed this tile doesn't exist
-    // (render blank, like the reference viewer does), while anything else
-    // is a real failure that should count toward the backoff/banner logic.
-    // An <img> tag's onerror alone can't tell these apart.
+    // Loads through this server's proxy — the "smart" path that can tell a
+    // real 404 (tile genuinely absent; the reference OpenSeadragon viewer
+    // on map.projectzomboid.com just renders these blank) apart from an
+    // actual connectivity failure, since an <img> tag alone can't see HTTP
+    // status codes. Used directly when we haven't resolved a direct
+    // upstream URL yet, and as the fallback when a direct browser load
+    // fails for an ambiguous reason (which itself might just be a real
+    // 404 — routing it through here resolves that ambiguity).
     //
-    // pendingTileLoadsRef is decremented at each actual terminal point below
+    // pendingTileLoadsRef is decremented at each actual terminal point
     // (not in a blanket .finally()) so the concurrency cap holds the slot
-    // for the full lifecycle including image decode, same as before.
-    fetch(url)
-      .then((res) => {
-        if (floorRef.current !== f) { pendingTileLoadsRef.current--; return null } // stale — floor changed mid-flight
-        if (res.status === 404) {
-          pendingTileLoadsRef.current--
-          tileCacheRef.current[key] = 'empty'
-          markRecovered()
-          return null
-        }
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        return res.blob()
-      })
-      .then((blob) => {
-        if (!blob) return // already handled (stale or 404) above
-        if (floorRef.current !== f) { pendingTileLoadsRef.current--; return }
-        const objectUrl = URL.createObjectURL(blob)
-        const img = new window.Image()
-        img.onload = () => {
-          URL.revokeObjectURL(objectUrl)
-          pendingTileLoadsRef.current--
-          if (floorRef.current !== f) return
-          tileCacheRef.current[key] = img
-          markRecovered()
-          if (drawRequestRef.current === 0) {
-            drawRequestRef.current = requestAnimationFrame(() => { drawRequestRef.current = 0 })
+    // for the full lifecycle including image decode.
+    const loadViaProxy = () => {
+      fetch(proxyUrl)
+        .then((res) => {
+          if (floorRef.current !== f) { pendingTileLoadsRef.current--; return null } // stale — floor changed mid-flight
+          if (res.status === 404) {
+            pendingTileLoadsRef.current--
+            tileCacheRef.current[key] = 'empty'
+            markRecovered()
+            return null
           }
-        }
-        img.onerror = () => {
-          URL.revokeObjectURL(objectUrl)
+          if (!res.ok) throw new Error(`HTTP ${res.status}`)
+          return res.blob()
+        })
+        .then((blob) => {
+          if (!blob) return // already handled (stale or 404) above
+          if (floorRef.current !== f) { pendingTileLoadsRef.current--; return }
+          const objectUrl = URL.createObjectURL(blob)
+          const img = new window.Image()
+          img.onload = () => {
+            URL.revokeObjectURL(objectUrl)
+            pendingTileLoadsRef.current--
+            if (floorRef.current !== f) return
+            tileCacheRef.current[key] = img
+            markRecovered()
+            if (drawRequestRef.current === 0) {
+              drawRequestRef.current = requestAnimationFrame(() => { drawRequestRef.current = 0 })
+            }
+          }
+          img.onerror = () => {
+            URL.revokeObjectURL(objectUrl)
+            pendingTileLoadsRef.current--
+            markFailed()
+          }
+          img.src = objectUrl
+        })
+        .catch(() => {
           pendingTileLoadsRef.current--
           markFailed()
-        }
-        img.src = objectUrl
-      })
-      .catch(() => {
-        pendingTileLoadsRef.current--
-        markFailed()
-      })
-  }, [])
+        })
+    }
+
+    const directUrl = buildDirectTileUrl(level, col, row, f, ext)
+    if (!directUrl) {
+      loadViaProxy()
+      return
+    }
+
+    // Fast path: load straight from map.projectzomboid.com in the browser,
+    // bypassing this server entirely. Some deployments' backend can't reach
+    // that host (e.g. a restrictive Kubernetes egress policy) even though
+    // the admin's own browser has no such restriction. An <img> tag can't
+    // tell a real 404 apart from any other failure, so any failure here
+    // just falls back to the proxy path above, which can — still using the
+    // same pending-load slot from the increment above (not a new one).
+    const directImg = new window.Image()
+    directImg.onload = () => {
+      if (floorRef.current !== f) { pendingTileLoadsRef.current--; return }
+      tileCacheRef.current[key] = directImg
+      markRecovered()
+      pendingTileLoadsRef.current--
+      if (drawRequestRef.current === 0) {
+        drawRequestRef.current = requestAnimationFrame(() => { drawRequestRef.current = 0 })
+      }
+    }
+    directImg.onerror = () => {
+      if (floorRef.current !== f) { pendingTileLoadsRef.current--; return } // stale, no need to fall back
+      loadViaProxy()
+    }
+    directImg.src = directUrl
+  }, [buildDirectTileUrl])
 
   // ─── Coordinate transforms (DZI pixel ↔ canvas, game-tile ↔ DZI) ─
   const dziToCanvas = useCallback(

@@ -2538,6 +2538,14 @@ export const updateApi = {
     apiPost("/server/update-check/interval", { minutes }),
 };
 
+export const mapApi = {
+  // Just enough for the client to build direct-to-upstream tile URLs and
+  // load them from the browser instead of through this server's proxy —
+  // see the /api/map/resolve route for why.
+  resolve: (): Promise<{ root: string; b42Dir: string; b41Path: string }> =>
+    apiGet("/map/resolve"),
+};
+
 export const panelUpdateApi = {
   check: (): Promise<PanelUpdateStatus> => apiGet("/panel/update-check"),
   getStatus: (): Promise<PanelUpdateStatus> => apiGet("/panel/update-status"),

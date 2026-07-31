@@ -111,6 +111,12 @@ async function getB42Dir() {
     );
   }
   _b42Dir = _b42Dir || B42_DIR_FALLBACK;
+  // Stamp the fallback too, not just a successful resolve — otherwise a
+  // backend that can never reach map.projectzomboid.com (e.g. a blocked
+  // cluster egress policy) retries this fetch and eats the full 5s
+  // timeout on every single call forever, instead of just once per TTL
+  // window like a successful resolve does.
+  _b42DirFetchedAt = now;
   return _b42Dir;
 }
 
@@ -256,6 +262,27 @@ async function serveTile(req, res, url, contentType, relPath) {
     if (!res.headersSent) res.status(502).end();
   }
 }
+
+// Exposes just enough for the client to build direct-to-upstream tile URLs
+// (https://map.projectzomboid.com/maps/<dir>/...) and load them straight
+// from the browser via <img>, instead of always routing through this
+// server's proxy. Some deployments (e.g. a Kubernetes cluster with a
+// restrictive Gateway API egress policy) block outbound access to
+// map.projectzomboid.com for the panel's own pod while the admin's browser
+// has no such restriction — in that case every tile-proxy fetch here times
+// out/fails no matter how good the retry/cache/circuit-breaker logic is,
+// but the browser can just fetch tiles itself. getB42Dir() already has its
+// own cache + hardcoded fallback (stamped even on failure, see below), so
+// this responds fast on every call after the first even when
+// build_list.json itself is unreachable from here.
+router.get("/resolve", async (req, res) => {
+  const b42Dir = await getB42Dir();
+  res.json({
+    root: PZ_MAP_ROOT,
+    b42Dir,
+    b41Path: "maps/SurvivalB417812L0/map_files",
+  });
+});
 
 // Proxy DZI tiles from map.projectzomboid.com (migrated from b42map.com) to
 // avoid CORS restrictions. Resolves the latest B42 map directory dynamically
