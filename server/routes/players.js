@@ -46,6 +46,22 @@ function isValidNumber(num, min = -Infinity, max = Infinity) {
   return Number.isFinite(n) && n >= min && n <= max;
 }
 
+// B42's godmod/invisible commands only accept the "-true" value form and ignore
+// a target username, so over RCON — which has no player of its own — they are
+// a no-op. PanelBridge sets the flag on the player object instead.
+async function setPlayerMode(req, bridgeAction, rconMethod, username, enabled) {
+  if (bridge.isRunning) {
+    const result = await bridge.sendCommand(bridgeAction, { username, enabled: enabled === true });
+    return { ...result, via: 'bridge' };
+  }
+  const result = await req.app.get('rconService')[rconMethod](username, enabled);
+  return {
+    ...result,
+    via: 'rcon',
+    warning: 'PanelBridge is offline; RCON cannot target another player for this command.',
+  };
+}
+
 // Get player activity logs
 router.get('/activity', async (req, res) => {
   try {
@@ -408,22 +424,19 @@ router.post('/add-vehicle', async (req, res) => {
 // God mode
 router.post('/godmode', async (req, res) => {
   try {
-    const rconService = req.app.get('rconService');
     const { username, enabled } = req.body;
-    
+
     if (!username) {
       return res.status(400).json({ error: 'Username is required' });
     }
     if (!isValidUsername(username)) {
       return res.status(400).json({ error: 'Invalid username format' });
     }
-    
-    const result = await rconService.setGodMode(username, enabled);
-    log.info(`POST /godmode: ${username || 'self'} → ${enabled ? 'ON' : 'OFF'}`);
-    if (username) {
-      await logPlayerAction(username, 'godmode', enabled ? 'enabled' : 'disabled');
-    }
-    
+
+    const result = await setPlayerMode(req, 'setGodMode', 'setGodMode', username, enabled);
+    log.info(`POST /godmode: ${username} → ${enabled ? 'ON' : 'OFF'} via ${result.via}`);
+    await logPlayerAction(username, 'godmode', enabled ? 'enabled' : 'disabled');
+
     res.json(result);
   } catch (error) {
     log.error(`Failed to set godmode: ${error.message}`);
@@ -434,22 +447,19 @@ router.post('/godmode', async (req, res) => {
 // Invisible
 router.post('/invisible', async (req, res) => {
   try {
-    const rconService = req.app.get('rconService');
     const { username, enabled } = req.body;
-    
+
     if (!username) {
       return res.status(400).json({ error: 'Username is required' });
     }
     if (!isValidUsername(username)) {
       return res.status(400).json({ error: 'Invalid username format' });
     }
-    
-    const result = await rconService.setInvisible(username, enabled);
-    log.info(`POST /invisible: ${username || 'self'} → ${enabled ? 'ON' : 'OFF'}`);
-    if (username) {
-      await logPlayerAction(username, 'invisible', enabled ? 'enabled' : 'disabled');
-    }
-    
+
+    const result = await setPlayerMode(req, 'setInvisible', 'setInvisible', username, enabled);
+    log.info(`POST /invisible: ${username} → ${enabled ? 'ON' : 'OFF'} via ${result.via}`);
+    await logPlayerAction(username, 'invisible', enabled ? 'enabled' : 'disabled');
+
     res.json(result);
   } catch (error) {
     log.error(`Failed to set invisible: ${error.message}`);
@@ -460,22 +470,19 @@ router.post('/invisible', async (req, res) => {
 // Noclip
 router.post('/noclip', async (req, res) => {
   try {
-    const rconService = req.app.get('rconService');
     const { username, enabled } = req.body;
-    
+
     if (!username) {
       return res.status(400).json({ error: 'Username is required' });
     }
     if (!isValidUsername(username)) {
       return res.status(400).json({ error: 'Invalid username format' });
     }
-    
-    const result = await rconService.setNoclip(username, enabled);
-    log.info(`POST /noclip: ${username || 'self'} → ${enabled ? 'ON' : 'OFF'}`);
-    if (username) {
-      await logPlayerAction(username, 'noclip', enabled ? 'enabled' : 'disabled');
-    }
-    
+
+    const result = await setPlayerMode(req, 'setNoclip', 'setNoclip', username, enabled);
+    log.info(`POST /noclip: ${username} → ${enabled ? 'ON' : 'OFF'} via ${result.via}`);
+    await logPlayerAction(username, 'noclip', enabled ? 'enabled' : 'disabled');
+
     res.json(result);
   } catch (error) {
     log.error(`Failed to set noclip: ${error.message}`);
