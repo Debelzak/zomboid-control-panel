@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.19] - 2026-08-01
+
+### Fixed
+
+- **Standalone update download failed with `expected MZ header, got 0x504b`**: the updater correctly downloaded the Windows ZIP needed to refresh `client/dist`, but incorrectly validated it as an executable. ZIP and gzip package signatures are now validated separately from executable signatures.
+
 ## [1.1.18] - 2026-07-31
 
 ### Fixed
