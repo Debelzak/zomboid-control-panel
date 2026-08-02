@@ -48,6 +48,7 @@ import { requireRole } from "./services/auth.js";
 import authRoutes from "./routes/auth.js";
 import { loadOrCreateCerts } from "./utils/certs.js";
 import { sanitizeError } from "./utils/sanitize.js";
+import { getSftpCachePath } from "./services/panelBridgeSftp.js";
 import {
   getEmbeddedPanelBridgeLua,
   compareModVersions,
@@ -788,6 +789,25 @@ async function tryStartPanelBridge(trigger = "unknown") {
     return true;
   }
 
+  const settings = await getAllSettings();
+  if (settings?.panelBridgeSftpEnabled) {
+    try {
+      const sftpConfig = {
+        host: settings.panelBridgeSftpHost,
+        port: settings.panelBridgeSftpPort,
+        username: settings.panelBridgeSftpUsername,
+        password: settings.panelBridgeSftpPassword,
+        bridgePath: settings.panelBridgeSftpBridgePath,
+        pollIntervalSeconds: settings.panelBridgeSftpPollIntervalSeconds,
+      };
+      await panelBridge.configureSftp(sftpConfig, getSftpCachePath(sftpConfig));
+      log.info(`Started SFTP transport (trigger: ${trigger})`);
+      return true;
+    } catch (error) {
+      log.warn(`Could not start configured SFTP transport: ${error.message}`);
+    }
+  }
+
   const result = await findPanelBridgePath();
 
   if (result.error) {
@@ -981,6 +1001,7 @@ app.set("serverManager", serverManager);
 app.set("modChecker", modChecker);
 app.set("scheduler", scheduler);
 app.set("discordBot", discordBot);
+backupService.setServerManager(serverManager);
 app.set("backupService", backupService);
 app.set("io", io);
 app.set("refreshCorsConfig", refreshCorsConfig);

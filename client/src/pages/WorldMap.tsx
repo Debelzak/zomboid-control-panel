@@ -796,6 +796,8 @@ export default function WorldMap() {
   const tileFailRef = useRef<Record<string, { count: number; nextAt: number }>>({})
   const tileFailureCountRef = useRef(0)
   const [tileLoadFailing, setTileLoadFailing] = useState(false)
+  const [tileFailureKind, setTileFailureKind] = useState<'network' | 'coverage'>('network')
+  const tileCoverageFailRef = useRef(0)
 
   const loadDziTile = useCallback((level: number, col: number, row: number) => {
     const f = floorRef.current
@@ -808,7 +810,7 @@ export default function WorldMap() {
     tileCacheRef.current[key] = null
     pendingTileLoadsRef.current++
 
-    const markFailed = () => {
+    const markFailed = (reason: 'network' | 'coverage' = 'network') => {
       if (floorRef.current !== f) return
       // Drop the pending entry so the per-tile backoff guard above is what
       // gates the next retry (rather than the "key in cache" check).
@@ -820,7 +822,15 @@ export default function WorldMap() {
       // Surface a user-visible warning if many distinct tiles are failing.
       if (count === 1) {
         tileFailureCountRef.current++
-        if (tileFailureCountRef.current >= 6) setTileLoadFailing(true)
+        if (reason === 'coverage') tileCoverageFailRef.current++
+        if (tileFailureCountRef.current >= 6) {
+          setTileFailureKind(
+            tileCoverageFailRef.current * 2 >= tileFailureCountRef.current
+              ? 'coverage'
+              : 'network',
+          )
+          setTileLoadFailing(true)
+        }
       }
     }
 
@@ -832,7 +842,10 @@ export default function WorldMap() {
         delete tileFailRef.current[key]
         if (tileFailureCountRef.current > 0) {
           tileFailureCountRef.current = Math.max(0, tileFailureCountRef.current - 1)
-          if (tileFailureCountRef.current === 0) setTileLoadFailing(false)
+          if (tileFailureCountRef.current === 0) {
+            tileCoverageFailRef.current = 0
+            setTileLoadFailing(false)
+          }
         }
       }
     }
@@ -863,7 +876,11 @@ export default function WorldMap() {
             markRecovered()
             return null
           }
-          if (!res.ok) throw new Error(`HTTP ${res.status}`)
+          if (!res.ok) {
+            const err = new Error(`HTTP ${res.status}`) as Error & { status?: number }
+            err.status = res.status
+            throw err
+          }
           return res.blob()
         })
         .then((blob) => {
@@ -884,13 +901,17 @@ export default function WorldMap() {
           img.onerror = () => {
             URL.revokeObjectURL(objectUrl)
             pendingTileLoadsRef.current--
-            markFailed()
+            // Bytes arrived and only the decode failed, so the network is fine.
+            markFailed('coverage')
           }
           img.src = objectUrl
         })
-        .catch(() => {
+        .catch((err) => {
           pendingTileLoadsRef.current--
-          markFailed()
+          const status = (err as { status?: number } | undefined)?.status
+          // A readable 4xx means we reached upstream and it has no tile there;
+          // 5xx or a rejected fetch means we could not reach it at all.
+          markFailed(status && status >= 400 && status < 500 ? 'coverage' : 'network')
         })
     }
 
@@ -2543,11 +2564,24 @@ export default function WorldMap() {
                 <span className="text-warning/70">tiles offline</span>
               </div>
               <div className="px-3 py-2 text-xs leading-snug">
-                <div className="font-semibold text-foreground">Map tiles aren't loading</div>
-                <div className="text-muted-foreground mt-0.5">
-                  Panel can't reach <span className="font-mono text-warning/90">map.projectzomboid.com</span>.
-                  Check outbound HTTPS access and try Refresh.
-                </div>
+                {tileFailureKind === 'coverage' ? (
+                  <>
+                    <div className="font-semibold text-foreground">No map tiles at this zoom</div>
+                    <div className="text-muted-foreground mt-0.5">
+                      <span className="font-mono text-warning/90">map.projectzomboid.com</span> is
+                      reachable but hasn't rendered this area at this detail level. Zoom out, or
+                      try Refresh later.
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="font-semibold text-foreground">Map tiles aren't loading</div>
+                    <div className="text-muted-foreground mt-0.5">
+                      Panel can't reach <span className="font-mono text-warning/90">map.projectzomboid.com</span>.
+                      Check outbound HTTPS access and try Refresh.
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           </div>

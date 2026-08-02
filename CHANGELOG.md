@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.20] - 2026-08-02
+
+### Added
+
+- **Remote PanelBridge over SFTP**: VPS and hosted-server operators can connect PanelBridge with SFTP credentials and an absolute remote bridge path. The panel synchronizes only the small status, queue-state, command-result, and queued-command files through a local cache. The Settings flow tests connectivity, reports round-trip latency, masks the saved password, and offers a configurable 2-10 second sync interval.
+- **Mapped-drive support for remote PanelBridge**: an explicitly configured read/write path, including an SFTP-mounted drive such as RaiDrive, can now power PanelBridge for a remote server.
+- **Force Stop**: Dashboard now provides a confirmation-gated emergency stop that kills the managed PZ process without requiring RCON. It refuses ambiguous multi-server process detection rather than risking the wrong server.
+- **Collection cookie shortcut**: Workshop Collection now has a compact paste action for a Steam `Cookie:` header or copied cURL request. It extracts and stores `sessionid` and `steamLoginSecure` without navigating to Settings.
+- **Utility controls**: Events has direct restore/shutoff actions for server electricity and water.
+
+### Changed
+
+- **PZ memory reporting**: normal JVM heap allocation is now shown as `normal` instead of being treated as a host-memory alert. Actual host RAM pressure remains monitored.
+- **Scheduled restarts**: a restart stays pinned to the server it started against, even if the active server changes in the panel.
+
+### Fixed
+
+- **Sandbox and utility persistence**: edits to top-level sandbox values now write `<server>_SandboxVars.lua`, so changes survive restart. PanelBridge 1.7.16 also applies electricity/water changes correctly in the running world.
+- **Unsafe backup restore**: restore is blocked while the target server is still running, preventing the running world from overwriting the restored save.
+- **Mod-update restart settings**: legacy settings are normalized on load, and unknown player count keeps an automatic restart on hold instead of restarting blindly.
+- **Workshop sync feedback**: Steam-rejected collection items now return their resolved titles rather than opaque IDs alone.
+
 ## [1.1.19] - 2026-08-01
 
 ### Fixed

@@ -249,7 +249,7 @@
 local json
 
 local PanelBridge = {
-    VERSION = "1.7.15",
+    VERSION = "1.7.16",
     PROTOCOL_VERSION = "queue-v1",
     CHECK_INTERVAL = 250, -- milliseconds (fast command polling)
     lastCheck = 0,
@@ -4130,8 +4130,6 @@ handlers.getUtilitiesStatus = function(args)
     local currentDay = 0
     local nightsSurvived = 0
     local timeSinceApo = 1
-    local elecShutStart = nil
-    local waterShutStart = nil
     -- Power: Use the same formula the game uses (ISButtonPrompt.lua line 421):
     --   if (ElecShutModifier > -1 AND worldAgeDays < ElecShutModifier) OR square:haveElectricity()
     -- isHydroPowerOn() is NOT used by the game's Lua gameplay code.
@@ -4160,11 +4158,6 @@ handlers.getUtilitiesStatus = function(args)
             currentHour = gameTime:getWorldAgeHours()
             currentDay = currentHour / 24
             nightsSurvived = gameTime:getNightsSurvived()
-            local modData = gameTime:getModData()
-            if modData then
-                elecShutStart = modData.ElecShutStart
-                waterShutStart = modData.WaterShutStart
-            end
         end
 
         -- Water has no Java flag like isHydroPowerOn().
@@ -4191,8 +4184,6 @@ handlers.getUtilitiesStatus = function(args)
         currentWorldDay = currentDay,
         nightsSurvived = nightsSurvived,
         timeSinceApo = timeSinceApo,
-        elecShutStart = elecShutStart,
-        waterShutStart = waterShutStart,
         elecShut = elecShut,
         waterShut = waterShut,
         elecShutModifier = elecModifier,
@@ -4587,28 +4578,12 @@ handlers.restoreUtilities = function(args, cmdId)
             SandboxVars.ElecShut = 9        -- 9 = Disabled (sandbox UI label)
             SandboxVars.ElecShutModifier = restoreDays
             table.insert(debugInfo, "Lua ElecShut=9(Disabled) ElecShutModifier=" .. tostring(restoreDays))
-
-            -- Clear ElecShutStart in GameTime modData
-            local gameTimeModData = gameTime and gameTime:getModData() or nil
-            if gameTimeModData then
-                local oldVal = gameTimeModData.ElecShutStart
-                gameTimeModData.ElecShutStart = -1
-                table.insert(debugInfo, "ElecShutStart: " .. tostring(oldVal) .. " -> -1")
-            end
         end
 
         if restoreWater then
             SandboxVars.WaterShut = 9       -- 9 = Disabled (sandbox UI label)
             SandboxVars.WaterShutModifier = restoreDays
             table.insert(debugInfo, "Lua WaterShut=9(Disabled) WaterShutModifier=" .. tostring(restoreDays))
-
-            -- Clear WaterShutStart in GameTime modData
-            local gameTimeModData = gameTime and gameTime:getModData() or nil
-            if gameTimeModData then
-                local oldVal = gameTimeModData.WaterShutStart
-                gameTimeModData.WaterShutStart = -1
-                table.insert(debugInfo, "WaterShutStart: " .. tostring(oldVal) .. " -> -1")
-            end
         end
 
         -- Step 2: Sync Lua -> Java via updateFromLua, then apply
@@ -4674,7 +4649,9 @@ handlers.restoreUtilities = function(args, cmdId)
     -- path below regardless of whether the grid scan ran synchronously,
     -- was skipped (water-only), or ran as a background job.
     local function finishRestoreUtilities()
-        -- Step 6: /reloadoptions — the in-game admin panel uses this to push sandbox changes
+        -- Step 6: /reloadoptions only re-reads ServerOptions.ini; sandbox vars are
+        -- not in that file, so this is a nudge for connected clients, not the
+        -- mechanism that moves ElecShutModifier across the wire.
         pcall(function()
             if executeCommand then
                 executeCommand("/reloadoptions")
@@ -4772,24 +4749,12 @@ handlers.shutOffUtilities = function(args, cmdId)
             SandboxVars.ElecShut = 1        -- 1 = Instant
             SandboxVars.ElecShutModifier = 0   -- 0 = shut off at day 0
             table.insert(debugInfo, "Lua ElecShut=1(Instant) ElecShutModifier=0")
-
-            local gameTimeModData = gameTime and gameTime:getModData() or nil
-            if gameTimeModData then
-                gameTimeModData.ElecShutStart = nightsSurvived * 24
-                table.insert(debugInfo, "ElecShutStart=" .. tostring(nightsSurvived * 24))
-            end
         end
 
         if shutWater then
             SandboxVars.WaterShut = 1       -- 1 = Instant
             SandboxVars.WaterShutModifier = 0  -- 0 = shut off at day 0
             table.insert(debugInfo, "Lua WaterShut=1(Instant) WaterShutModifier=0")
-
-            local gameTimeModData = gameTime and gameTime:getModData() or nil
-            if gameTimeModData then
-                gameTimeModData.WaterShutStart = nightsSurvived * 24
-                table.insert(debugInfo, "WaterShutStart=" .. tostring(nightsSurvived * 24))
-            end
         end
 
         -- Step 2: Sync Lua -> Java and apply
@@ -4798,6 +4763,26 @@ handlers.shutOffUtilities = function(args, cmdId)
             pcall(function()
                 if sandboxOptions.updateFromLua then sandboxOptions:updateFromLua() end
             end)
+            pcall(function()
+                if sandboxOptions.applySettings then sandboxOptions:applySettings() end
+            end)
+            table.insert(debugInfo, "Java getElecShutModifier=" .. tostring(sandboxOptions:getElecShutModifier()))
+            table.insert(debugInfo, "Java getWaterShutModifier=" .. tostring(sandboxOptions:getWaterShutModifier()))
+            -- applySettings can re-roll the modifier from the enum, so pin it back
+            if shutPower and sandboxOptions:getElecShutModifier() ~= 0 then
+                pcall(function()
+                    local opt = sandboxOptions:getOptionByName("ElecShutModifier")
+                    if opt and opt.setValue then opt:setValue(0) end
+                end)
+                table.insert(debugInfo, "FORCED Java ElecShutModifier=0")
+            end
+            if shutWater and sandboxOptions:getWaterShutModifier() ~= 0 then
+                pcall(function()
+                    local opt = sandboxOptions:getOptionByName("WaterShutModifier")
+                    if opt and opt.setValue then opt:setValue(0) end
+                end)
+                table.insert(debugInfo, "FORCED Java WaterShutModifier=0")
+            end
             pcall(function()
                 if sandboxOptions.applySettings then sandboxOptions:applySettings() end
             end)
@@ -4822,7 +4807,7 @@ handlers.shutOffUtilities = function(args, cmdId)
     -- below regardless of whether the grid scan ran synchronously, was
     -- skipped (water-only), or ran as a background job.
     local function finishShutOffUtilities()
-        -- Step 6: /reloadoptions pushes sandbox changes to clients
+        -- Step 6: /reloadoptions only re-reads ServerOptions.ini, not sandbox vars.
         pcall(function()
             if executeCommand then
                 executeCommand("/reloadoptions")
