@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.21] - 2026-08-02
+
+### Fixed
+
+- **Remote server status**: remote servers are now considered online when RCON is connected or PanelBridge has a fresh heartbeat. The dashboard no longer marks a healthy hosted server inactive just because there is no local Java process to inspect.
+- **SFTP PanelBridge commands**: queued commands upload before remote status/result reads and have a 60-second timeout, preventing high-latency VPS SFTP syncs from timing out before the game mod can respond.
+
 ## [1.1.20] - 2026-08-02
 
 ### Added

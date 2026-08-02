@@ -117,6 +117,10 @@ class PanelBridge extends EventEmitter {
     if (this.isRunning) this.stop();
     if (this.sftpTransport) await this.sftpTransport.stop();
     this.configure(cachePath, true);
+    // A remote sync can take longer than the local file transport's 15s
+    // command limit. Allow the upload, Lua tick, result download, and one
+    // retry interval to complete before reporting a timeout.
+    this.config.commandTimeoutMs = 60000;
     const transport = new PanelBridgeSftpTransport();
     try {
       await transport.start(config, cachePath);
@@ -132,6 +136,7 @@ class PanelBridge extends EventEmitter {
   async stopSftp() {
     if (this.sftpTransport) await this.sftpTransport.stop();
     this.sftpTransport = null;
+    this.config.commandTimeoutMs = 15000;
   }
 
   isSftpRunning() {

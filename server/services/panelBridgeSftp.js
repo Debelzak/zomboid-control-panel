@@ -141,10 +141,12 @@ export class PanelBridgeSftpTransport {
     this.syncing = true;
     const startedAt = Date.now();
     try {
+      // Upload first so a newly queued command never waits behind remote
+      // reads. Results are collected in the same pass after the Lua mod ticks.
+      await this.uploadInbox();
       await this.syncModFile('status.json');
       await this.syncModFile('queue-state-lua.json');
       await this.syncOutbox();
-      await this.uploadInbox();
       this.lastSyncAt = Date.now();
       this.lastLatencyMs = this.lastSyncAt - startedAt;
       this.lastError = null;

@@ -919,7 +919,10 @@ rconService.on("disconnected", async () => {
   // This gives faster detection than the 10s watchdog interval
   setTimeout(async () => {
     try {
-      const running = await serverManager.checkServerRunning();
+      const activeServer = await getActiveServer();
+      const running = activeServer?.isRemote
+        ? panelBridge.isModConnected()
+        : await serverManager.checkServerRunning();
       if (!running && lastKnownRunning !== false) {
         lastKnownRunning = false;
         log.info(
@@ -1917,12 +1920,21 @@ function stopPerfPolling() {
 let statusWatchdogInterval = null;
 let lastKnownRunning = null;
 
+async function getObservedServerRunning() {
+  const activeServer = await getActiveServer();
+  if (!activeServer?.isRemote) return serverManager.checkServerRunning();
+
+  // A remote host has no local Java process to inspect. A live RCON session
+  // or fresh PanelBridge heartbeat is direct evidence that the game is up.
+  return rconService.connected || panelBridge.isModConnected();
+}
+
 function startStatusWatchdog() {
   if (statusWatchdogInterval) clearInterval(statusWatchdogInterval);
 
   statusWatchdogInterval = setInterval(async () => {
     try {
-      const running = await serverManager.checkServerRunning();
+      const running = await getObservedServerRunning();
       if (lastKnownRunning !== null && running !== lastKnownRunning) {
         log.info(
           `Status watchdog: server state changed → ${running ? "running" : "stopped"}`,
@@ -2181,8 +2193,11 @@ async function start() {
 
         // STEP 2: Check if PZ server is running and connect RCON
         const timeoutMs = 15000;
+        const activeServer = await getActiveServer();
         const isRunning = await Promise.race([
-          serverManager.checkServerRunning(),
+          activeServer?.isRemote
+            ? Promise.resolve(rconService.connected || panelBridge.isModConnected())
+            : serverManager.checkServerRunning(),
           new Promise((_, reject) =>
             setTimeout(
               () => reject(new Error("Server check timeout")),
