@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.26] - 2026-08-03
+
+### Fixed
+
+- **Sandbox configuration before first launch**: the Sandbox editor now opens with Project Zomboid defaults and creates a valid `SandboxVars.lua` on its first save, instead of requiring an administrator to manually create the file.
+- **Build 42 anti-cheat settings**: replaced stale Build 41 controls with the current Build 42.20 anti-cheat keys and their correct Ban, Kick, Log, and Disabled values.
+- **Valid item IDs**: item actions now accept Build 42 IDs that start with digits or contain documented punctuation, including `Base.556Clip` and `Base.3030Bullets`.
+- **Vehicle map spawning**: map vehicle spawns now use the supported RCON `addvehicle` command on Build 42, returning a direct success or failure result instead of relying on unavailable Lua APIs.
+- **Windows launcher line endings**: `Start.bat` is now always distributed with CRLF line endings, preventing `^M` command failures on Windows.
+
 ## [1.1.25] - 2026-08-03
 
 ### Fixed

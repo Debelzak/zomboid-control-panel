@@ -1,12 +1,19 @@
 ---@diagnostic disable: undefined-global, deprecated
 --[[
     PanelBridge - Server-side mod for Zomboid Control Panel
-    Version: 1.7.17
+    Version: 1.7.18
 
     This mod enables external control panel communication with the PZ server.
     Communication happens via JSON files in the server save folder.
 
-        v1.7.17 Changes:
+                v1.7.18 Changes:
+                - Item validation now accepts valid Build 42 IDs that include numbers
+                    or documented punctuation, including Base.556Clip and
+                    Base.3030Bullets.
+                - Vehicle spawning on Build 42 now uses the panel's supported RCON
+                    command path instead of unavailable Lua map APIs.
+
+                v1.7.17 Changes:
         - Fixed character inventory, worn-item, and trait exports on Build 42.
             Java collection methods can be invoked with `:size()` but do not always
             appear as Lua fields, so the previous field-existence guard reported
@@ -255,7 +262,7 @@
 local json
 
 local PanelBridge = {
-    VERSION = "1.7.17",
+    VERSION = "1.7.18",
     PROTOCOL_VERSION = "queue-v1",
     CHECK_INTERVAL = 250, -- milliseconds (fast command polling)
     lastCheck = 0,
@@ -5231,11 +5238,11 @@ handlers.giveItem = function(args)
     if not username then
         return false, nil, "Username required"
     end
-    if not itemType then
+    if type(itemType) ~= "string" then
         return false, nil, "Item type required (e.g., 'Base.Axe')"
     end
     -- Basic format validation: must look like "Module.ItemName"
-    if not itemType:match("^%a[%w_]*%.[%w_]+$") then
+    if not itemType:match("^[%w_]+%.[%w_&%#%+%.%-]+$") then
         return false, nil, "Invalid item type format (expected Module.ItemName): " .. tostring(itemType)
     end
 
@@ -5364,7 +5371,7 @@ handlers.airdrop = function(args)
         for _, entry in ipairs(customItems) do
             if entry.itemType and type(entry.itemType) == "string" then
                 -- Validate item type format: must be "Module.ItemName" pattern
-                if not entry.itemType:match("^%a[%w_]*%.[%w_]+$") then
+                if not entry.itemType:match("^[%w_]+%.[%w_&%#%+%.%-]+$") then
                     return false, nil, "Invalid item type format: " .. tostring(entry.itemType) .. " (expected Module.ItemName)"
                 end
                 local count = math.min(math.max(tonumber(entry.count) or 1, 1), 20)
@@ -6440,54 +6447,7 @@ handlers.removeVehiclesInArea = function(args)
 end
 
 handlers.spawnVehicleAt = function(args)
-    local scriptName = args.vehicle or args.scriptName
-    if not scriptName or scriptName == "" then
-        return false, nil, "Vehicle script name required (e.g. Base.CarNormal)"
-    end
-    local x = math.floor(tonumber(args.x) or 0)
-    local y = math.floor(tonumber(args.y) or 0)
-    local z = math.floor(tonumber(args.z) or 0)
-    if x == 0 and y == 0 then
-        return false, nil, "Valid x, y coordinates required"
-    end
-
-    local vehicle = nil
-    local ok, err = pcall(function()
-        local world = getWorld()
-        local cell = world and world:getCell() or nil
-        if not cell then error("World cell not available") end
-
-        -- Find a valid square at the target position
-        local sq = cell:getGridSquare(x, y, z)
-        if not sq then
-            error("Grid square not loaded at " .. x .. "," .. y .. "," .. z .. " — area must be loaded")
-        end
-
-        -- Use addVehicle API (B42+)
-        if cell.addVehicle then
-            vehicle = cell:addVehicle(scriptName, sq)
-        elseif addVehicleToWorld then
-            vehicle = addVehicleToWorld(scriptName, sq)
-        else
-            error("No vehicle spawn API available")
-        end
-
-        if not vehicle then
-            error("Failed to create vehicle '" .. scriptName .. "' — check script name")
-        end
-    end)
-
-    if not ok then
-        return false, nil, "Spawn failed: " .. tostring(err)
-    end
-
-    local vId = vehicle and vehicle.getId and vehicle:getId() or nil
-    return true, {
-        message = "Vehicle spawned",
-        vehicleId = vId,
-        scriptName = scriptName,
-        x = x, y = y, z = z
-    }
+    return false, nil, "Vehicle spawning is handled by the panel through RCON on Build 42"
 end
 
 handlers.vehicleHotwire = function(args)

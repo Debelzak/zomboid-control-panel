@@ -37,6 +37,9 @@ const __dirname = path.dirname(__filename);
 
 const router = express.Router();
 
+const ITEM_TYPE_REGEX = /^[A-Za-z0-9_]+\.[A-Za-z0-9_&#+.\-]+$/;
+const VEHICLE_SCRIPT_REGEX = /^[A-Za-z0-9_]+\.[A-Za-z0-9_&#+.\-]+$/;
+
 const SFTP_SETTING_KEYS = {
   enabled: "panelBridgeSftpEnabled",
   host: "panelBridgeSftpHost",
@@ -1004,6 +1007,44 @@ router.post("/command", requireRole("admin"), async (req, res) => {
     return res.status(400).json({ error: "args must be an object" });
   }
 
+  // Build 42 does not expose a Lua vehicle-spawn API. The RCON command is
+  // the supported server path and returns its result directly to the map.
+  if (action === "spawnVehicleAt") {
+    const vehicle = args?.vehicle ?? args?.scriptName;
+    const x = Number(args?.x);
+    const y = Number(args?.y);
+    const z = Number(args?.z ?? 0);
+    if (typeof vehicle !== "string" || !VEHICLE_SCRIPT_REGEX.test(vehicle)) {
+      return res.status(400).json({ error: "Invalid vehicle script name" });
+    }
+    if (
+      !Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z) ||
+      x < 0 || x > 24000 || y < 0 || y > 24000 || z < 0 || z > 8 ||
+      (x === 0 && y === 0)
+    ) {
+      return res.status(400).json({ error: "Invalid coordinates (x/y: 0-24000, z: 0-8)" });
+    }
+
+    try {
+      const result = await req.app.get("rconService").addVehicleAt(vehicle, x, y, z);
+      logBridgeCommand(action, args, result, result.success, 0).catch(() => {});
+      return res.json({
+        ...result,
+        data: result.success ? {
+          message: "Vehicle spawn requested",
+          scriptName: vehicle,
+          x: Math.floor(x),
+          y: Math.floor(y),
+          z: Math.floor(z),
+        } : undefined,
+      });
+    } catch (error) {
+      const message = sanitizeError(error?.message || "Vehicle spawn failed");
+      logBridgeCommand(action, args, { error: message }, false, 0).catch(() => {});
+      return res.status(500).json({ success: false, error: message });
+    }
+  }
+
   if (!bridge.bridgePath) {
     return res.status(400).json({ error: "Bridge not configured" });
   }
@@ -1060,7 +1101,7 @@ router.post("/command", requireRole("admin"), async (req, res) => {
         }
         if (
           typeof entry.itemType !== "string" ||
-          !/^[A-Za-z]\w*\.\w+$/.test(entry.itemType)
+          !ITEM_TYPE_REGEX.test(entry.itemType)
         ) {
           return res.status(400).json({
             error: `Invalid item type format: ${String(entry.itemType).slice(0, 60)}`,

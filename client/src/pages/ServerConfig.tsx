@@ -158,6 +158,26 @@ function mergeSchemaDefaults(parsed: Record<string, string>): Record<string, str
   return merged
 }
 
+function createSandboxDefaults(): SandboxData {
+  const sandbox: SandboxData = {
+    VERSION: 4,
+    settings: {},
+    ZombieLore: {},
+    ZombieConfig: {},
+    MultiplierConfig: {},
+    Map: {},
+    Basement: {},
+  }
+  for (const setting of SANDBOX_SCHEMA) {
+    const section = (setting.section || 'settings') as keyof SandboxData
+    const values = sandbox[section]
+    if (typeof values === 'object' && values !== null) {
+      values[setting.key] = setting.default ?? ''
+    }
+  }
+  return sandbox
+}
+
 // Auth-aware image preview (img tags can't send Bearer tokens)
 function AuthImage({ filePath, alt, className }: { filePath: string; alt?: string; className?: string }) {
   const [blobUrl, setBlobUrl] = useState<string | null>(null)
@@ -846,11 +866,11 @@ export default function ServerConfig() {
         setOriginalIniSettings(merged)
       }
 
-      if (paths.exists.sandbox) {
-        const sandboxRes = await serverFilesApi.getSandbox()
-        setSandboxData(sandboxRes.sandbox)
-        setOriginalSandboxData(sandboxRes.sandbox)
-      }
+      const sandboxRes = paths.exists.sandbox
+        ? await serverFilesApi.getSandbox()
+        : { sandbox: createSandboxDefaults() }
+      setSandboxData(sandboxRes.sandbox)
+      setOriginalSandboxData(sandboxRes.sandbox)
 
       if (paths.exists.spawnpoints) {
         const spawnRes = await serverFilesApi.getSpawnPoints()

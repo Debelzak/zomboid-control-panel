@@ -610,6 +610,51 @@ function applySandboxChanges(originalContent, changes) {
   return content;
 }
 
+function createSandboxVars(sandbox) {
+  const sections = [
+    "settings",
+    "ZombieLore",
+    "ZombieConfig",
+    "MultiplierConfig",
+    "Map",
+    "Basement",
+  ];
+  const lines = ["SandboxVars = {"];
+  const version = Number.isInteger(sandbox.VERSION) ? sandbox.VERSION : 4;
+  lines.push(`    VERSION = ${version},`);
+
+  const formatValue = (value) => {
+    if (typeof value === "boolean") return String(value);
+    if (typeof value === "number" && Number.isFinite(value)) return String(value);
+    return `"${escapeLuaString(String(value))}"`;
+  };
+
+  for (const sectionName of sections) {
+    const values = sandbox[sectionName];
+    if (!values || typeof values !== "object") continue;
+
+    if (sectionName === "settings") {
+      for (const [key, value] of Object.entries(values)) {
+        if (/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(key)) {
+          lines.push(`    ${key} = ${formatValue(value)},`);
+        }
+      }
+      continue;
+    }
+
+    lines.push(`    ${sectionName} = {`);
+    for (const [key, value] of Object.entries(values)) {
+      if (/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(key)) {
+        lines.push(`        ${key} = ${formatValue(value)},`);
+      }
+    }
+    lines.push("    },");
+  }
+
+  lines.push("}");
+  return lines.join("\n") + "\n";
+}
+
 // Parse spawn points lua - handles profession-based structure
 function parseSpawnPoints(content) {
   const professions = {};
@@ -907,24 +952,27 @@ router.put("/sandbox", async (req, res) => {
         .json({ error: "Sandbox data too large (max 1MB)" });
     }
 
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({
-        error:
-          "SandboxVars file not found. Start the server once to generate it.",
-      });
-    }
-
-    // Modify in-place to preserve comments and structure. Locked per-path so
-    // two overlapping PUTs to the same file can't interleave.
+    // Modify an existing file in-place to preserve comments and structure.
+    // On a fresh server, create a valid sandbox file from the submitted schema
+    // values so the editor works before the game's first boot.
+    let fileExists;
     await withFileLock(filePath, async () => {
-      await createBackup(`${serverName}_SandboxVars.lua`);
-      const originalContent = fs.readFileSync(filePath, "utf-8");
-      const newContent = applySandboxChanges(originalContent, sandbox);
+      fileExists = fs.existsSync(filePath);
+      const newContent = fileExists
+        ? applySandboxChanges(fs.readFileSync(filePath, "utf-8"), sandbox)
+        : createSandboxVars(sandbox);
+      if (fileExists) {
+        await createBackup(`${serverName}_SandboxVars.lua`);
+      }
       writeFileAtomic(filePath, newContent, "utf-8");
     });
 
-    log.info("Saved SandboxVars file");
-    res.json({ success: true, message: "Sandbox settings saved" });
+    log.info(`${fileExists ? "Saved" : "Created"} SandboxVars file`);
+    res.json({
+      success: true,
+      created: !fileExists,
+      message: fileExists ? "Sandbox settings saved" : "SandboxVars file created",
+    });
   } catch (error) {
     log.error("Failed to save SandboxVars:", error);
     res.status(500).json({ error: sanitizeError(error.message) });
