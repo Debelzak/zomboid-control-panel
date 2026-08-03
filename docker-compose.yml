@@ -15,10 +15,11 @@
 #        or the host's LAN IP)
 #
 #   2) Remote PZ server, panel in Docker
-#      - PZ runs on a separate machine
-#      - Panel only talks to it over RCON (network)
-#      - PanelBridge file IPC won't work unless you share the Zomboid folder
-#        over the network (NFS/SMB) and bind-mount that share here
+#      - PZ can run on another machine or in a separate container on this host
+#      - Panel talks to it over RCON (use the PZ Compose service name when both
+#        containers are on the same Docker network)
+#      - For PanelBridge, either share the Zomboid folder over NFS/SMB and
+#        bind-mount it here, or configure the SFTP bridge in Settings
 #
 # ============================================================================
 # QUICK START
