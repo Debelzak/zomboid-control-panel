@@ -433,13 +433,25 @@ export interface CharacterStats {
   unhappyness?: number;
 }
 
+export interface CharacterInventoryItem {
+  fullType: string;
+  count?: number;
+  condition?: number;
+  uses?: number;
+  delta?: number;
+  contents?: CharacterInventoryItem[];
+}
+
 export interface CharacterExportData {
   username: string;
-  exportedAt: string;
+  exportTime?: number;
   perks: Record<string, PerkData>;
-  stats: CharacterStats;
+  stats?: CharacterStats;
   recipes: string[];
   traits?: string[];
+  inventory?: CharacterInventoryItem[];
+  wornItems?: Array<{ location: string; fullType: string; condition?: number }>;
+  bagInventory?: Record<string, CharacterInventoryItem[]>;
   health?: {
     overall: number;
     infection?: number;
@@ -466,6 +478,7 @@ export interface CharacterImportData {
   perks?: Record<string, PerkData>;
   stats?: CharacterStats;
   recipes?: string[];
+  inventory?: CharacterInventoryItem[];
 }
 
 export interface CharacterImportResponse {
@@ -474,10 +487,8 @@ export interface CharacterImportResponse {
     message: string;
     restored: {
       perks: number;
-      stats: boolean;
-      recipes: number;
+      items: number;
     };
-    note: string;
   };
   error?: string;
 }
@@ -2612,6 +2623,12 @@ export const mapApi = {
     width: number;
     height: number;
     maxLevel: number;
+    // Isometric projection origin from the build's own map_info.json.
+    // Absent if map.projectzomboid.com couldn't be reached.
+    x0?: number;
+    y0?: number;
+    sqr?: number;
+    scale?: number;
   }> => apiGet("/map/resolve"),
 };
 

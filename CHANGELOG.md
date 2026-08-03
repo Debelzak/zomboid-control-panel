@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [1.1.25] - 2026-08-03
+
+### Fixed
+
+- **Obsolete image settings**: removed the login, loading, and server-icon image controls. These INI options existed in Build 42.13, but Project Zomboid later made them obsolete and now discards them during `reloadoptions`, making the panel appear not to save the selected files.
+- **Character inventory restore**: PanelBridge 1.7.17 now exports Build 42 inventory and worn-item Java lists correctly, so imported characters recover their saved items.
+- **Discord relay and permissions**: Discord-to-game messages no longer echo back as duplicates, dedicated relay channels work both ways, and role-protected slash commands stay locked when no role is configured.
+- **Discord delivery resilience**: invalid or non-text channels now report failed sends, oversized game-chat messages are capped below Discord's limit, and failed bot login cleanup no longer throws.
+- **World map alignment**: custom map tiles and proxy bounds now remain centered with the game world.
+
 ## [1.1.24] - 2026-08-03
 
 ### Added

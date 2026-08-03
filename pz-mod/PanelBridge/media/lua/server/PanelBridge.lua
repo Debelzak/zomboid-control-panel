@@ -1,12 +1,18 @@
 ---@diagnostic disable: undefined-global, deprecated
 --[[
     PanelBridge - Server-side mod for Zomboid Control Panel
-    Version: 1.7.15
+    Version: 1.7.17
 
     This mod enables external control panel communication with the PZ server.
     Communication happens via JSON files in the server save folder.
 
-    v1.7.15 Changes:
+        v1.7.17 Changes:
+        - Fixed character inventory, worn-item, and trait exports on Build 42.
+            Java collection methods can be invoked with `:size()` but do not always
+            appear as Lua fields, so the previous field-existence guard reported
+            every collection as empty before attempting to read it.
+
+        v1.7.15 Changes:
     - setSandboxOption now calls toLua() after setting the value. setValue only
       updates the Java object; mod code reads the global SandboxVars table,
       which stayed stale, so a changed mod option had no visible effect.
@@ -249,7 +255,7 @@
 local json
 
 local PanelBridge = {
-    VERSION = "1.7.16",
+    VERSION = "1.7.17",
     PROTOCOL_VERSION = "queue-v1",
     CHECK_INTERVAL = 250, -- milliseconds (fast command polling)
     lastCheck = 0,
@@ -2816,10 +2822,9 @@ local function serializeInventory(container, depth, maxItems, currentCount)
 
     if not itemList then return {}, "no items method (tried: getItems, getAllItems)" end
 
-    local listSize = 0
-    if itemList.size then
-        local ok, sz = pcall(function() return itemList:size() end)
-        if ok then listSize = sz end
+    local sizeOk, listSize = pcall(function() return itemList:size() end)
+    if not sizeOk or type(listSize) ~= "number" then
+        return {}, method .. " size() failed"
     end
 
     if listSize == 0 then return {}, method .. " returned size 0" end
@@ -2939,10 +2944,9 @@ local function getPlayerTraits(player)
     if not traitList then return {}, "no trait method worked (tried: desc:getTraitList, desc:getTraits, player:getTraits)" end
 
     -- Get size safely
-    local listSize = 0
-    if traitList.size then
-        local ok, sz = pcall(function() return traitList:size() end)
-        if ok then listSize = sz end
+    local sizeOk, listSize = pcall(function() return traitList:size() end)
+    if not sizeOk or type(listSize) ~= "number" then
+        return {}, method .. " size() failed"
     end
 
     if listSize == 0 then return {}, method .. " returned size 0" end
@@ -2994,10 +2998,9 @@ local function getWornItems(player)
 
     if not wornItems then return {}, "getWornItems returned nil or failed" end
 
-    local listSize = 0
-    if wornItems.size then
-        local ok, sz = pcall(function() return wornItems:size() end)
-        if ok then listSize = sz end
+    local sizeOk, listSize = pcall(function() return wornItems:size() end)
+    if not sizeOk or type(listSize) ~= "number" then
+        return {}, method .. " size() failed"
     end
 
     if listSize == 0 then return {}, method .. " returned size 0" end

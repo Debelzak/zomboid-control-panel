@@ -913,33 +913,6 @@ export const INI_SCHEMA: IniSetting[] = [
     category: 'general'
   },
   {
-    key: 'ServerImageLoginScreen',
-    label: 'Login Screen Image',
-    description: 'Custom image displayed on the login screen. PNG file, recommended 1920×1080. Path relative to the server folder or absolute.',
-    type: 'filepath',
-    default: '',
-    category: 'general',
-    fileExtensions: ['.png']
-  },
-  {
-    key: 'ServerImageLoadingScreen',
-    label: 'Loading Screen Image',
-    description: 'Custom image displayed while loading into the server. PNG file, recommended 1920×1080. Path relative to the server folder or absolute.',
-    type: 'filepath',
-    default: '',
-    category: 'general',
-    fileExtensions: ['.png']
-  },
-  {
-    key: 'ServerImageIcon',
-    label: 'Server Icon',
-    description: 'Custom server icon shown in the server browser. Square PNG, recommended 256×256. Displayed in a circular mask at 42×42px in the list and ~87×87px in the detail panel.',
-    type: 'filepath',
-    default: '',
-    category: 'general',
-    fileExtensions: ['.png']
-  },
-  {
     key: 'Seed',
     label: 'World Seed',
     description: 'The worldgen seed used to generate the world. Changing this requires deleting map_worldgen.bin.',

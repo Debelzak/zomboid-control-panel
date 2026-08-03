@@ -128,6 +128,13 @@ const VANILLA_SANDBOX_GROUPS = new Set([
   'Basement',
 ])
 
+// These were shown by older panel releases but Build 42 does not support them.
+const UNSUPPORTED_INI_KEYS = new Set([
+  'ServerImageLoginScreen',
+  'ServerImageLoadingScreen',
+  'ServerImageIcon',
+])
+
 /** Merge schema defaults into parsed INI settings so schema-defined keys always exist.
  *  Also warns to the console when a stored value doesn't parse for the schema type — helps
  *  catch a corrupted INI without changing behaviour. */
@@ -1382,7 +1389,7 @@ export default function ServerConfig() {
     const lower = deferredSearchQuery.toLowerCase()
     const out: { key: string; value: string }[] = []
     for (const [key, value] of Object.entries(iniSettings)) {
-      if (schemaKeys.has(key)) continue
+      if (schemaKeys.has(key) || UNSUPPORTED_INI_KEYS.has(key)) continue
       if (deferredSearchQuery && !(
         key.toLowerCase().includes(lower) ||
         String(value).toLowerCase().includes(lower)
