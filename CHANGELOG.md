@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.22] - 2026-08-02
+
+### Fixed
+
+- **First server startup**: the setup wizard now persists the configured admin password. New servers launch with `-adminpassword` instead of Project Zomboid attempting an unavailable interactive stdin prompt and exiting immediately.
+
 ## [1.1.21] - 2026-08-02
 
 ### Fixed
