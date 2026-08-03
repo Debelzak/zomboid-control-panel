@@ -1,10 +1,16 @@
 ---@diagnostic disable: undefined-global, deprecated
 --[[
     PanelBridge - Server-side mod for Zomboid Control Panel
-    Version: 1.7.18
+    Version: 1.7.19
 
     This mod enables external control panel communication with the PZ server.
     Communication happens via JSON files in the server save folder.
+
+                v1.7.19 Changes:
+                - Character imports now preserve the invariant that cumulative XP is
+                    at least the threshold for the restored skill level. This prevents
+                    invalid states such as level 5 with 0 XP, which render in-game as
+                    negative XP progress.
 
                 v1.7.18 Changes:
                 - Item validation now accepts valid Build 42 IDs that include numbers
@@ -3185,12 +3191,12 @@ handlers.importPlayerData = function(args)
                     for lvl = 1, perkData.level do
                         player:LevelPerk(perk, false)
                     end
-                    -- Set XP last -- level and xp are independently tracked
-                    -- fields (level isn't derived from xp or vice versa), so
-                    -- this authoritative final write is safe regardless of
-                    -- any xp side effects from the LevelPerk loop above.
-                    if xp and perkData.xp then
-                        xp:setXP(perk, perkData.xp)
+                    -- Set XP last. Level and cumulative XP are independently
+                    -- tracked, but XP must never be below the level threshold:
+                    -- an imported level 5 with XP 0 renders as -1275 / 1500.
+                    if xp and type(perkData.xp) == "number" then
+                        local minimumXP = perk:getTotalXpForLevel(perkData.level)
+                        xp:setXP(perk, math.max(perkData.xp, minimumXP))
                     end
                     restored.perks = restored.perks + 1
                 end)

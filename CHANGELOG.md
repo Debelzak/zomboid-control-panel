@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.27] - 2026-08-03
+
+### Fixed
+
+- **Negative skill XP after character restore**: PanelBridge now ensures restored cumulative XP is never below the restored skill level's threshold. This prevents invalid states such as Welding level 5 with 0 XP, which Build 42 displays as negative progress.
+
 ## [1.1.26] - 2026-08-03
 
 ### Fixed
