@@ -442,7 +442,7 @@ export class PanelUpdateChecker {
     // we're running from, otherwise we'd try to overwrite our own binary.
     const stagedPath = this.getStageSlotPath();
     const tmpDownloadPath = `${stagedPath}.partial.${process.pid}`;
-    const clientArchiveExtension = path.extname(clientArchive.name) || ".zip";
+    const clientArchiveExtension = isWindows ? ".zip" : ".tar.gz";
     const tmpClientArchivePath = path.join(
       exeDir,
       `.client-dist-${this.latestRelease.version}.partial.${process.pid}${clientArchiveExtension}`,
@@ -1002,17 +1002,26 @@ export class PanelUpdateChecker {
     const exeDir = path.dirname(process.execPath);
     const extractDir = fs.mkdtempSync(path.join(os.tmpdir(), "zpanel-update-"));
     const escapePowerShellLiteral = (value) => String(value).replace(/'/g, "''");
+    let extractArchivePath = archivePath;
+    let windowsArchiveCopy = null;
 
     try {
       if (isWindows) {
+        // Expand-Archive rejects a valid ZIP when its staging name lacks a
+        // .zip suffix. Keep this defensive copy for callers from older paths.
+        if (path.extname(extractArchivePath).toLowerCase() !== ".zip") {
+          windowsArchiveCopy = `${extractArchivePath}.zip`;
+          fs.copyFileSync(extractArchivePath, windowsArchiveCopy);
+          extractArchivePath = windowsArchiveCopy;
+        }
         await this.runUpdateCommand("powershell.exe", [
           "-NoProfile",
           "-NonInteractive",
           "-Command",
-          `Expand-Archive -LiteralPath '${escapePowerShellLiteral(archivePath)}' -DestinationPath '${escapePowerShellLiteral(extractDir)}' -Force`,
+          `Expand-Archive -LiteralPath '${escapePowerShellLiteral(extractArchivePath)}' -DestinationPath '${escapePowerShellLiteral(extractDir)}' -Force`,
         ]);
       } else {
-        await this.runUpdateCommand("tar", ["-xzf", archivePath, "-C", extractDir]);
+        await this.runUpdateCommand("tar", ["-xzf", extractArchivePath, "-C", extractDir]);
       }
 
       const incoming = path.join(extractDir, "client", "dist");
@@ -1040,6 +1049,9 @@ export class PanelUpdateChecker {
       fs.rmSync(backupDist, { recursive: true, force: true });
       log.info("Updated client/dist from verified release archive");
     } finally {
+      if (windowsArchiveCopy) {
+        fs.rmSync(windowsArchiveCopy, { force: true });
+      }
       fs.rmSync(extractDir, { recursive: true, force: true });
     }
   }

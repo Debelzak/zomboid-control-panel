@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Map interaction**: player markers scale at close zoom, and long player or vehicle context menus remain inside the map with scrolling instead of being clipped.
 - **Discord chat relay**: local Q shouts and Shout-channel messages remain visible in the panel but are no longer forwarded to Discord. Only public General chat is relayed.
 - **Windows self-update extraction**: staged client archives retain their `.zip` extension, so PowerShell `Expand-Archive` no longer rejects them after a successful download and checksum verification.
+- **Windows self-update recovery**: extraction now also makes a temporary `.zip` copy when an older staging path is extensionless, preventing the `Expand-Archive` format error reported in #30.
 
 ## [1.1.27] - 2026-08-03
 
