@@ -1,10 +1,15 @@
 ---@diagnostic disable: undefined-global, deprecated
 --[[
     PanelBridge - Server-side mod for Zomboid Control Panel
-    Version: 1.7.19
+    Version: 1.7.20
 
     This mod enables external control panel communication with the PZ server.
     Communication happens via JSON files in the server save folder.
+
+                v1.7.20 Changes:
+                - Repair and battery controls now use Build 42 vehicle-part APIs.
+                - Corrected the runtime version constant so automatic updates
+                    recognize this bridge as newer than v1.7.19.
 
                 v1.7.19 Changes:
                 - Character imports now preserve the invariant that cumulative XP is
@@ -268,7 +273,7 @@
 local json
 
 local PanelBridge = {
-    VERSION = "1.7.18",
+    VERSION = "1.7.20",
     PROTOCOL_VERSION = "queue-v1",
     CHECK_INTERVAL = 250, -- milliseconds (fast command polling)
     lastCheck = 0,
@@ -6243,13 +6248,35 @@ handlers.vehicleRepair = function(args)
     local vehicle = findVehicleById(args.vehicleId)
     if not vehicle then return false, nil, "Vehicle not found" end
 
-    local ok, err = pcall(function()
-        if vehicle.repair then vehicle:repair() end
+    local ok, repairedOrErr = pcall(function()
+        local partCount = vehicle.getPartCount and vehicle:getPartCount() or 0
+        local repaired = 0
+        for i = 0, partCount - 1 do
+            local part = vehicle.getPartByIndex and vehicle:getPartByIndex(i) or nil
+            if part and part.setCondition then
+                local item = part.getInventoryItem and part:getInventoryItem() or nil
+                local condition = item and item.getConditionMax and item:getConditionMax() or 100
+                part:setCondition(condition)
+                if item then
+                    if item.setCondition then item:setCondition(condition) end
+                    if part.doInventoryItemStats then
+                        part:doInventoryItemStats(item, part:getMechanicSkillInstaller())
+                    end
+                end
+                if vehicle.transmitPartCondition then vehicle:transmitPartCondition(part) end
+                if item and vehicle.transmitPartItem then vehicle:transmitPartItem(part) end
+                if vehicle.transmitPartModData then vehicle:transmitPartModData(part) end
+                repaired = repaired + 1
+            end
+        end
+        if repaired == 0 then error("No repairable vehicle parts available") end
         if vehicle.updatePartStats then vehicle:updatePartStats() end
+        if vehicle.updateBulletStats then vehicle:updateBulletStats() end
+        return repaired
     end)
-    if not ok then return false, nil, "Vehicle repair failed: " .. tostring(err) end
+    if not ok then return false, nil, "Vehicle repair failed: " .. tostring(repairedOrErr) end
 
-    return true, { message = "Vehicle repaired", vehicleId = tonumber(args.vehicleId) }
+    return true, { message = "Vehicle repaired", vehicleId = tonumber(args.vehicleId), parts = repairedOrErr }
 end
 
 handlers.vehicleSetAlarm = function(args)
@@ -6346,17 +6373,12 @@ handlers.vehicleSetBattery = function(args)
     charge = math.min(math.max(charge, 0), 100)
 
     local ok, err = pcall(function()
-        -- B42: battery charge is set via the battery part's inventory item
-        -- Pattern from VehicleUtils.chargeBattery in Vehicles.lua
         local battery = vehicle.getBattery and vehicle:getBattery() or nil
         if battery and battery.getInventoryItem then
             local item = battery:getInventoryItem()
-            if item and item.setUsedDelta then
-                item:setUsedDelta(charge / 100)
-                if vehicle.transmitPartUsedDelta then
-                    vehicle:transmitPartUsedDelta(battery)
-                end
-                return -- B42 success
+            if item and item.getCurrentUsesFloat and VehicleUtils and VehicleUtils.chargeBattery then
+                VehicleUtils.chargeBattery(vehicle, charge / 100 - item:getCurrentUsesFloat())
+                return
             end
         end
         -- B41 fallback (also used if B42 battery has no inventory item)

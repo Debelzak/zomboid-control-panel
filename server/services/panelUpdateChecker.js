@@ -442,9 +442,10 @@ export class PanelUpdateChecker {
     // we're running from, otherwise we'd try to overwrite our own binary.
     const stagedPath = this.getStageSlotPath();
     const tmpDownloadPath = `${stagedPath}.partial.${process.pid}`;
+    const clientArchiveExtension = path.extname(clientArchive.name) || ".zip";
     const tmpClientArchivePath = path.join(
       exeDir,
-      `.client-dist-${this.latestRelease.version}.partial.${process.pid}`,
+      `.client-dist-${this.latestRelease.version}.partial.${process.pid}${clientArchiveExtension}`,
     );
 
     try {

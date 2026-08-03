@@ -150,6 +150,11 @@ export class DiscordBot {
   async handleGameChat(data) {
     if (!this.chatRelayEnabled || !this.isRunning || !this.client) return;
 
+    // B42 records Q shouts as Local and sometimes as Shout. Keep those in the
+    // panel chat view, but do not forward proximity chat to Discord.
+    if (data?.sourceChatType && data.sourceChatType !== "General") return;
+    if (!data?.sourceChatType && data?.type !== "general") return;
+
     // Discord messages reach PZ through RCON as "[Discord] user: message".
     // The server logs that broadcast as chat, so relaying it back would create
     // an immediate duplicate in the originating Discord channel.

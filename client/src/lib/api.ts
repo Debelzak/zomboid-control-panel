@@ -661,6 +661,8 @@ export const playersApi = {
     apiPost("/players/add-xp", { username, perk, amount }),
   addVehicle: (vehicle: string, username?: string) =>
     apiPost("/players/add-vehicle", { vehicle, username }),
+  addVehicleAt: (vehicle: string, x: number, y: number, z = 0) =>
+    apiPost("/players/add-vehicle-at", { vehicle, x, y, z }),
   setGodMode: (username: string | null, enabled: boolean) =>
     apiPost("/players/godmode", { username, enabled }),
   setInvisible: (username: string | null, enabled: boolean) =>
@@ -2630,6 +2632,8 @@ export const mapApi = {
     sqr?: number;
     scale?: number;
   }> => apiGet("/map/resolve"),
+  vehicles: (): Promise<{ vehicles: Array<{ id: number; x: number; y: number }> }> =>
+    apiGet("/map/vehicles"),
 };
 
 export const panelUpdateApi = {

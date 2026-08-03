@@ -3,6 +3,8 @@ import fs from "fs";
 import path from "path";
 import { createLogger } from "../utils/logger.js";
 import { getDataPaths } from "../utils/paths.js";
+import { getActiveServer } from "../database/init.js";
+import { listPersistedVehicles } from "../utils/vehiclesDb.js";
 const log = createLogger("API:MapProxy");
 
 const router = express.Router();
@@ -435,6 +437,32 @@ router.get("/resolve", async (req, res) => {
   });
 });
 
+let persistedVehicleCache = { key: null, expiresAt: 0, vehicles: [] };
+
+router.get("/vehicles", async (req, res) => {
+  try {
+    const activeServer = await getActiveServer();
+    if (!activeServer || activeServer.isRemote || !activeServer.zomboidDataPath) {
+      return res.json({ vehicles: [] });
+    }
+    const serverName = activeServer.serverName || activeServer.name;
+    if (!serverName) return res.json({ vehicles: [] });
+    const savePath = path.join(activeServer.zomboidDataPath, "Saves", "Multiplayer", serverName);
+    const cacheKey = `${savePath}`;
+    if (persistedVehicleCache.key !== cacheKey || Date.now() >= persistedVehicleCache.expiresAt) {
+      persistedVehicleCache = {
+        key: cacheKey,
+        expiresAt: Date.now() + 15000,
+        vehicles: await listPersistedVehicles(savePath),
+      };
+    }
+    res.json({ vehicles: persistedVehicleCache.vehicles });
+  } catch (err) {
+    log.warn(`Persisted vehicle lookup failed: ${err.message}`);
+    res.json({ vehicles: [] });
+  }
+});
+
 // Proxy DZI tiles from map.projectzomboid.com (migrated from b42map.com) to
 // avoid CORS restrictions. Resolves the latest B42 map directory dynamically
 // from build_list.json so new PZ map builds are picked up automatically.
@@ -456,15 +484,15 @@ router.get("/tiles/:level/:tile", async (req, res) => {
   if (isNaN(floor) || floor < -17 || floor > 29) {
     return res.status(400).json({ error: "Invalid floor" });
   }
-  // layer0 uses jpg, all other layers use webp
-  const ext = floor === 0 ? "jpg" : "webp";
+  // Every B42 layer DZI declares JPEG tiles, including basements and upper floors.
+  const ext = "jpg";
   if (!new RegExp(`^\\d+_\\d+\\.${ext}$`).test(tile)) {
     return res.status(400).json({ error: "Invalid tile" });
   }
 
   const dir = await getB42Dir();
   const url = `${PZ_MAP_ROOT}/maps/${dir}/base/layer${floor}_files/${level}/${tile}`;
-  const contentType = floor === 0 ? "image/jpeg" : "image/webp";
+  const contentType = "image/jpeg";
   const relPath = path.join("b42", dir, `layer${floor}`, String(level), tile);
   await serveTile(req, res, url, contentType, relPath);
 });

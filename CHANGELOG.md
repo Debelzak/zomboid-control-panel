@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.28] - 2026-08-03
+
+### Fixed
+
+- **Build 42 world-map floors**: map tiles now consistently use the upstream JPEG format, basement level B1 is selectable, and labels include Ekron, Brandenburg, Irvington, and Echo Creek.
+- **Persisted vehicle visibility and actions**: the map reads parked-car positions from `vehicles.db` when vehicles are not streamed into memory. Database-only markers no longer offer controls that need a loaded game vehicle. Loaded vehicles use Build 42-compatible repair and battery APIs.
+- **Map vehicle spawning**: coordinate-based map spawning now uses the supported Build 42 RCON `addvehicle` path instead of an unavailable PanelBridge command.
+- **Map interaction**: player markers scale at close zoom, and long player or vehicle context menus remain inside the map with scrolling instead of being clipped.
+- **Discord chat relay**: local Q shouts and Shout-channel messages remain visible in the panel but are no longer forwarded to Discord. Only public General chat is relayed.
+- **Windows self-update extraction**: staged client archives retain their `.zip` extension, so PowerShell `Expand-Archive` no longer rejects them after a successful download and checksum verification.
+
 ## [1.1.27] - 2026-08-03
 
 ### Fixed

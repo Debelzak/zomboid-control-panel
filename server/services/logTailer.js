@@ -32,7 +32,7 @@ export class LogTailer extends EventEmitter {
         const activeServer = await getActiveServer();
         const homeDir = os.homedir();
         let basePath = process.env.PZ_SAVE_PATH || (homeDir ? path.join(homeDir, 'Zomboid') : '');
-        
+
         if (activeServer?.zomboidDataPath) {
             basePath = activeServer.zomboidDataPath;
         } else {
@@ -141,7 +141,7 @@ export class LogTailer extends EventEmitter {
         }
 
         log.info(`Started watching (console: ${this.logPath || 'none'}, chatLog: ${this.chatLogPath || 'none'}, userLog: ${this.userLogPath || 'none'})`);
-        
+
         this.isWatching = true;
         this.checkLoop();
     } catch (e) {
@@ -161,11 +161,11 @@ export class LogTailer extends EventEmitter {
 
   async checkLoop() {
       if (!this.isWatching) return;
-      
+
       await this.checkConsoleLog();
       await this.checkChatLog();
       await this.checkUserLog();
-      
+
       if (this.isWatching) {
           this.checkTimer = setTimeout(() => this.checkLoop(), 2000);
       }
@@ -180,7 +180,7 @@ export class LogTailer extends EventEmitter {
            log.debug(`LogTailer: console log stat failed: ${e.message}`);
            return;
          }
-         
+
          if (stats.size > this.currentSize) {
              const bytesToRead = stats.size - this.currentSize;
              if (bytesToRead > 1024 * 1024) {
@@ -216,7 +216,7 @@ export class LogTailer extends EventEmitter {
            log.debug(`LogTailer: chat log stat failed: ${e.message}`);
            return;
          }
-         
+
          if (stats.size > this.chatLogSize) {
              const bytesToRead = stats.size - this.chatLogSize;
              if (bytesToRead > 1024 * 1024) {
@@ -287,7 +287,13 @@ export class LogTailer extends EventEmitter {
             else if (chatType === 'Local') type = 'general';
             else if (chatType === 'Shout') type = 'general';
 
-            this.emit('chatMessage', { author, message: text, type, timestamp: new Date() });
+            this.emit('chatMessage', {
+                author,
+                message: text,
+                type,
+                sourceChatType: chatType,
+                timestamp: new Date()
+            });
             continue;
         }
 
