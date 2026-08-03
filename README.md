@@ -201,6 +201,12 @@ The Compose files use named volumes for panel state, so do not replace them with
 host `./panel-data` or `./data` mounts unless those directories are owned by
 UID/GID `1000:1000`.
 
+For bind-mounted Project Zomboid folders, set `PUID` and `PGID` in `.env` to
+the numeric owner of the shared files, then run `docker compose up -d`. This
+works with the published image; rebuilding is not required. The panel changes
+ownership only of its own `/app/data` and `/app/logs` directories, never of PZ
+game or save mounts.
+
 ### Linux: installing a new PZ server through the panel
 
 If you installed the panel as the bundled `zomboid-panel.service`, use this install folder in the setup wizard:

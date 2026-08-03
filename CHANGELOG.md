@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.24] - 2026-08-03
+
+### Added
+
+- **Docker runtime PUID/PGID**: prebuilt panel images now accept `PUID` and `PGID` environment variables, so bind-mounted PZ directories can use their existing owner without rebuilding the image. Startup re-owns only panel state and logs, never game or save mounts.
+
 ## [1.1.23] - 2026-08-02
 
 ### Fixed

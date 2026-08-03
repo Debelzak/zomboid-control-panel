@@ -24,8 +24,8 @@
 # QUICK START
 # ============================================================================
 #   1. Edit the volumes / environment section below to match your host paths
-#   2. (Linux) Match container UID/GID to your host user:
-#        docker compose build --build-arg UID=$(id -u) --build-arg GID=$(id -g)
+#   2. (Linux) Set PUID/PGID in .env to match the owner of shared mounts.
+#      The published image applies them at runtime; rebuilding is not needed.
 #   3. Bring it up:
 #        docker compose up -d
 #   4. Open http://localhost:3001 and create the admin account
@@ -45,8 +45,8 @@ services:
     build:
       context: .
       args:
-        UID: 1000
-        GID: 1000
+        UID: ${PUID:-1000}
+        GID: ${PGID:-1000}
     container_name: zomboid-panel
     restart: unless-stopped
     ports:
@@ -74,6 +74,8 @@ services:
 
     environment:
       - NODE_ENV=production
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
       # Optional overrides (see .env.example for the full list):
       # - PORT=3001
       # - PZ_SERVER_PATH=/pz-server
