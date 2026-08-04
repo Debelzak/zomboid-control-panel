@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useSocket } from '@/contexts/SocketContext'
 import { useConfirm } from '@/contexts/ConfirmContext'
@@ -191,6 +192,9 @@ function parseWorkshopId(input: string): string | null {
 }
 
 export default function Mods() {
+  const [searchParams] = useSearchParams()
+  const reviewUnresolved = searchParams.get('review') === 'unresolved'
+  const reviewDeepLinkStarted = useRef(false)
   const demoMode = isDemoMode()
   const [mods, setMods] = useState<TrackedMod[]>([])
   const [status, setStatus] = useState<ModStatus | null>(null)
@@ -306,6 +310,7 @@ export default function Mods() {
 
   // Inner sub-tab within Conflicts: 'network' or 'dependencies'
   const [conflictSubTab, setConflictSubTab] = useLocalStorageState<'network' | 'dependencies'>('zcp:mods:conflicts:subTab', 'network')
+  const [activeTab, setActiveTab] = useState<'mods' | 'config' | 'conflicts' | 'collection' | 'deactivated'>(reviewUnresolved ? 'conflicts' : 'mods')
   // Severity filter for pairs list: 'all' | 'high' | 'medium' | 'low'
   const [pairSeverityFilter, setPairSeverityFilter] = useLocalStorageState<'all' | 'real' | 'high' | 'medium' | 'low'>('zcp:mods:conflicts:severity', 'real')
   const [groupByWinner, setGroupByWinner] = useLocalStorageState<boolean>('zcp:mods:conflicts:groupByWinner', true)
@@ -2540,6 +2545,14 @@ export default function Mods() {
     })
   }, [toast, iniConfig?.workshopIds, iniConfig?.modIds])
 
+  useEffect(() => {
+    if (!reviewUnresolved || reviewDeepLinkStarted.current) return
+
+    reviewDeepLinkStarted.current = true
+    setConflictSubTab('dependencies')
+    if (!conflicts && !conflictsLoading) void scanConflicts()
+  }, [reviewUnresolved, conflicts, conflictsLoading, scanConflicts, setConflictSubTab])
+
   return (
     <TooltipProvider>
       <div className="space-y-6 page-transition">
@@ -2726,7 +2739,14 @@ export default function Mods() {
           </div>
         )}
 
-        <Tabs defaultValue="mods" className="space-y-4">
+        <Tabs
+          value={activeTab}
+          onValueChange={(value) => {
+            setActiveTab(value as typeof activeTab)
+            if (value === 'conflicts' && !conflicts && !conflictsLoading) void scanConflicts()
+          }}
+          className="space-y-4"
+        >
           <div className="flex items-center justify-between flex-wrap gap-2">
             <TabsList className="flex h-auto w-full max-w-full justify-start gap-1 overflow-x-auto rounded-md border border-border/55 bg-muted/30 p-1 sm:inline-flex sm:w-auto">
               <TabsTrigger value="mods" className="shrink-0 gap-2 px-3 py-1.5 text-sm font-medium">
@@ -2737,7 +2757,7 @@ export default function Mods() {
                 <Settings2 className="w-4 h-4" />
                 Advanced
               </TabsTrigger>
-              <TabsTrigger value="conflicts" className="shrink-0 gap-2 px-3 py-1.5 text-sm font-medium" onClick={() => { if (!conflicts && !conflictsLoading) scanConflicts() }}>
+              <TabsTrigger value="conflicts" className="shrink-0 gap-2 px-3 py-1.5 text-sm font-medium">
                 <Shield className="w-4 h-4" />
                 Conflicts
               </TabsTrigger>

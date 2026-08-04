@@ -307,7 +307,9 @@ function getDiagnosticsFixAction(
         label: count > 0 ? `Review ${count} unresolved` : "Review unresolved",
         automated: false,
         openServerConfig: true,
-        openMods: true,
+        links: [
+          { to: "/mods?review=unresolved", label: "Open dependency review" },
+        ],
         note: "Fix orphan Workshop items first (below), then re-run diagnostics. Disable manually only if entries truly don\u2019t resolve after downloads finish.",
       };
     }
@@ -788,6 +790,10 @@ export default function Debug() {
       setFixingDiagnosticsCheckId(check.id);
       try {
         if (!action.automated) {
+          if (check.id === "mods.resolved") {
+            window.location.assign("/mods?review=unresolved");
+            return;
+          }
           toast({
             title: "Manual fix recommended",
             description:

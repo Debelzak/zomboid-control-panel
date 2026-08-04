@@ -7,8 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Settings that were previously unreachable**: the game server can now be set to start with the panel from Settings → RCON, and automatic character exports (including how many copies to keep per player) moved into Settings → Backups. The export retention limit had no interface at all before.
+- **Where the rest of the settings live**: Settings → About now lists the pages that own their own configuration, such as server profiles, the Discord bot, scheduled tasks, game server config, and chat quick messages.
+
+### Changed
+
+- **Settings page reorganised**: the sections are grouped into Panel, Game server, Automation, and System in a sidebar instead of a single row of tabs that wrapped onto two lines. The former Panel tab held the port, remote access, and the updater in one long page; those are now separate sections, and the single-field API Keys tab was folded into Mods & Workshop. Existing links such as `?tab=rcon` still open the right section.
+
 ### Fixed
 
+- **Unresolved Workshop-mod review now opens the repair workflow**: the diagnostics action previously showed only a toast. It now opens Mods → Conflicts → Dependencies and starts the existing review scan, where each candidate can be checked and added individually.
+- **RCON-only hosted servers no longer appear stopped**: profiles without local install, server, or save paths are now identified as provider-managed. Diagnostics explain that local process monitoring is unavailable while RCON controls remain usable.
 - **RCON host with stray whitespace silently failed to connect**: a host copied from a game-server-provider panel often carries a leading or trailing space, which made the connection fail DNS resolution. The panel reported no players, Discord reported the server offline, and broadcasts failed, with nothing in the log to explain why. Whitespace is now stripped when the host is saved and when it is loaded, so existing configurations repair themselves.
 - **Unreachable RCON is now reported**: a host that cannot be reached was only logged at debug level, leaving no diagnosis in the normal log. It now logs a throttled warning naming the host and port.
 

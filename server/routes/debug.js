@@ -1994,7 +1994,22 @@ router.get("/diagnostics", async (req, res) => {
 
     // ─── Core Services ────────────────────────────────────────────────
     try {
-      if (serverRunning) {
+      const remoteRconOnly =
+        !activeServer?.installPath &&
+        !activeServer?.serverPath &&
+        !activeServer?.zomboidDataPath &&
+        Boolean(activeServer?.rconHost || rconService?.config?.host);
+
+      if (remoteRconOnly) {
+        checks.push(
+          diagSkip(
+            "server.process",
+            "Remote server process",
+            "Managed by the hosting provider; local process monitoring is unavailable. RCON controls remain available.",
+            { category: "services" },
+          ),
+        );
+      } else if (serverRunning) {
         checks.push(
           diagOk(
             "server.process",

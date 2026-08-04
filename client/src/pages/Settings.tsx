@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, Link as RouterLink } from "react-router-dom";
 import { usePageShortcut } from "../hooks/useKeyboardShortcuts";
 import {
   Save,
@@ -124,6 +124,11 @@ interface AppSettings {
   panelBridgeSftpBridgePath: string;
   panelBridgeSftpPollIntervalSeconds: string;
 
+  // Server automation
+  autoStartServer: boolean;
+  autoExportOnLogin: boolean;
+  autoExportMaxPerPlayer: string;
+
   // Mod Checker Settings
   modCheckInterval: string;
   modAutoRestart: boolean;
@@ -185,6 +190,15 @@ interface CorsDiagnostics {
 const MAX_CORS_ALLOWED_ORIGINS = 100;
 const MAX_CORS_ORIGIN_LENGTH = 256;
 
+// Settings written by other pages are persisted as raw strings, so a stored
+// "false" would otherwise read as truthy here.
+function toSettingBoolean(value: unknown, fallback: boolean): boolean {
+  if (typeof value === "boolean") return value;
+  if (value === "true") return true;
+  if (value === "false") return false;
+  return fallback;
+}
+
 // Human-friendly age string for bridge diagnostics. Avoids showing the user
 // raw seconds counts like "3344627s" which read as gibberish.
 function formatBridgeAge(seconds: number): string {
@@ -224,6 +238,9 @@ export default function Settings() {
     panelBridgeSftpPassword: "",
     panelBridgeSftpBridgePath: "",
     panelBridgeSftpPollIntervalSeconds: "3",
+    autoStartServer: false,
+    autoExportOnLogin: false,
+    autoExportMaxPerPlayer: "3",
     modCheckInterval: "5",
     modAutoRestart: true,
     modRestartDelay: "5",
@@ -385,92 +402,117 @@ export default function Settings() {
   // Section navigation via tabs
   const settingsSections = [
     {
-      id: "panel",
-      label: "Panel",
-      icon: Globe,
-      group: "core",
-      tip: "Port, theme, and panel updates",
-      description:
-        "Panel port, theme, and update behaviour for this admin interface.",
+      id: "general",
+      label: "General",
+      icon: Settings2,
+      group: "Panel",
+      tip: "Panel port, restart, and appearance",
+      description: "Port this admin interface listens on, plus theme.",
+    },
+    {
+      id: "updates",
+      label: "Updates",
+      icon: Download,
+      group: "Panel",
+      tip: "Check for and apply new panel releases",
+      description: "Panel release checks, downloads, and how updates apply.",
     },
     {
       id: "https",
       label: "HTTPS",
       icon: Lock,
-      group: "core",
-      tip: "SSL/TLS encryption for secure connections",
+      group: "Panel",
+      tip: "TLS certificates for encrypted connections",
       description:
-        "TLS termination — enable this when exposing the panel beyond your LAN.",
+        "TLS termination. Enable this when exposing the panel beyond your LAN.",
     },
     {
-      id: "rcon",
-      label: "RCON",
-      icon: Link,
-      group: "connections",
-      tip: "Remote console \u2014 built-in game server protocol for commands",
+      id: "access",
+      label: "Remote access",
+      icon: Globe,
+      group: "Panel",
+      tip: "Which browsers and devices may connect (CORS)",
       description:
-        "RCON connection to the Project Zomboid server. Required for kick, ban, and console commands.",
-    },
-    {
-      id: "bridge",
-      label: "Bridge",
-      icon: Zap,
-      group: "connections",
-      tip: "PanelBridge Lua mod \u2014 adds weather, teleport, and world control",
-      description:
-        "PanelBridge Lua mod link — unlocks weather, teleport, item spawn, and chat features.",
-    },
-    {
-      id: "mods",
-      label: "Mods",
-      icon: Clock,
-      group: "features",
-      tip: "Auto-update checking and restart behavior",
-      description:
-        "Workshop mod tracking, update detection, and Steam Workshop collection sync.",
-    },
-    {
-      id: "api-keys",
-      label: "API Keys",
-      icon: Key,
-      group: "features",
-      tip: "Steam API key for Workshop mod lookups",
-      description:
-        "Third-party API credentials used for mod metadata and Workshop lookups.",
-    },
-    {
-      id: "backups",
-      label: "Backups",
-      icon: Archive,
-      group: "features",
-      tip: "Scheduled backup frequency and retention",
-      description:
-        "Automatic save backups — frequency, retention, and target directory.",
+        "Which origins may reach this panel from another machine, and why requests get blocked.",
     },
     {
       id: "security",
       label: "Security",
       icon: Shield,
-      group: "system",
-      tip: "Password and access control",
+      group: "Panel",
+      tip: "Account password and sign-in",
+      description: "Panel account password and sign-in controls.",
+    },
+    {
+      id: "connection",
+      label: "RCON",
+      icon: Link,
+      group: "Game server",
+      tip: "Remote console connection and startup behaviour",
       description:
-        "Authentication, password policy, and CORS/remote access controls.",
+        "RCON connection used for commands, plus whether the game server starts with the panel.",
+    },
+    {
+      id: "bridge",
+      label: "PanelBridge",
+      icon: Zap,
+      group: "Game server",
+      tip: "Lua mod link, including remote servers over SFTP",
+      description:
+        "PanelBridge Lua mod link for weather, teleport, and item control. Supports remote servers over SFTP.",
+    },
+    {
+      id: "mods",
+      label: "Mods & Workshop",
+      icon: Clock,
+      group: "Automation",
+      tip: "Update checks, collection sync, and Steam key",
+      description:
+        "Workshop update detection, collection sync, and the Steam Web API key they rely on.",
+    },
+    {
+      id: "backups",
+      label: "Backups",
+      icon: Archive,
+      group: "Automation",
+      tip: "World backup schedule and character exports",
+      description:
+        "Automatic world backups and per-character export copies.",
     },
     {
       id: "about",
       label: "About",
-      icon: Server,
-      group: "system",
-      tip: "Version info and diagnostics",
-      description: "Panel version, runtime info, and diagnostics.",
+      icon: Info,
+      group: "System",
+      tip: "Version, runtime info, and settings kept on other pages",
+      description:
+        "Panel version and runtime details, plus where the remaining settings live.",
     },
   ];
+  const settingsGroups = settingsSections.reduce<
+    { name: string; sections: typeof settingsSections }[]
+  >((groups, section) => {
+    const existing = groups.find((group) => group.name === section.group);
+    if (existing) existing.sections.push(section);
+    else groups.push({ name: section.group, sections: [section] });
+    return groups;
+  }, []);
+  // Keeps older ?tab= links and in-app deep links working after the rename.
+  const legacyTabAliases: Record<string, string> = {
+    panel: "general",
+    rcon: "connection",
+    "api-keys": "mods",
+  };
   const validTabs = settingsSections.map((s) => s.id);
+  const resolveTabId = (tab: string | null) => {
+    if (!tab) return null;
+    const resolved = legacyTabAliases[tab] ?? tab;
+    return validTabs.includes(resolved) ? resolved : null;
+  };
   const [searchParams, setSearchParams] = useSearchParams();
-  const [activeSection, setActiveSection] = useState(() => {
-    const tab = searchParams.get("tab");
-    return tab && validTabs.includes(tab) ? tab : "panel";
-  });
+  const [activeSection, setActiveSection] = useState(
+    () => resolveTabId(searchParams.get("tab")) ?? "general",
+  );
 
   // Sync active tab to URL
   const handleTabChange = useCallback(
@@ -509,9 +551,19 @@ export default function Settings() {
       if (data.settings) {
         // Use functional update to get current state and merge with loaded settings
         setSettings((prevSettings) => {
-          const loadedSettings = {
+          const incoming = data.settings as Partial<AppSettings>;
+          const loadedSettings: AppSettings = {
             ...prevSettings,
-            ...data.settings,
+            ...incoming,
+            autoStartServer: toSettingBoolean(incoming.autoStartServer, false),
+            autoExportOnLogin: toSettingBoolean(
+              incoming.autoExportOnLogin,
+              false,
+            ),
+            autoExportMaxPerPlayer: String(
+              incoming.autoExportMaxPerPlayer ??
+                prevSettings.autoExportMaxPerPlayer,
+            ),
           };
           setOriginalSettings(loadedSettings);
           return loadedSettings;
@@ -1930,57 +1982,55 @@ export default function Settings() {
       <Tabs
         value={activeSection}
         onValueChange={handleTabChange}
-        className="mt-6"
+        className="mt-6 lg:grid lg:grid-cols-[14.5rem_minmax(0,1fr)] lg:items-start lg:gap-7"
       >
         <TabsList
           aria-label="Settings sections"
-          className="flex h-auto flex-wrap gap-1 bg-muted/30 border border-border/50 p-1 rounded-md w-full"
+          className="mb-4 flex h-auto w-full max-w-full justify-start gap-1 overflow-x-auto rounded-md border border-border/50 bg-muted/30 p-1 lg:sticky lg:top-4 lg:mb-0 lg:flex-col lg:items-stretch lg:gap-px lg:overflow-visible lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0"
         >
-          {settingsSections.map((section, idx) => {
-            const Icon = section.icon;
-            const prevGroup =
-              idx > 0 ? settingsSections[idx - 1].group : section.group;
-            const showSeparator = idx > 0 && section.group !== prevGroup;
-            return (
-              <React.Fragment key={section.id}>
-                {showSeparator && (
-                  <div
-                    aria-hidden="true"
-                    className="mx-0.5 w-px self-stretch bg-border/60"
-                  />
-                )}
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <TabsTrigger
-                      value={section.id}
-                      aria-label={section.label}
-                      className="settings-tab-trigger flex-1 min-w-[110px] flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium relative overflow-hidden text-muted-foreground/70 hover:text-foreground hover:bg-muted/50 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none"
-                    >
-                      <Icon className="w-4 h-4 shrink-0" />
-                      <span>{section.label}</span>
-                    </TabsTrigger>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" className="max-w-[220px]">
-                    <p className="text-xs">{section.tip}</p>
-                  </TooltipContent>
-                </Tooltip>
-              </React.Fragment>
-            );
-          })}
+          {settingsGroups.map((group) => (
+            <React.Fragment key={group.name}>
+              <p
+                role="presentation"
+                className="hidden lg:block px-2 pb-1.5 pt-5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/60 lg:first:pt-0"
+              >
+                {group.name}
+              </p>
+              {group.sections.map((section) => {
+                const Icon = section.icon;
+                return (
+                  <Tooltip key={section.id}>
+                    <TooltipTrigger asChild>
+                      <TabsTrigger
+                        value={section.id}
+                        className="settings-tab-trigger shrink-0 flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground/70 hover:bg-muted/50 hover:text-foreground data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none lg:w-full lg:justify-start lg:px-2.5"
+                      >
+                        <Icon className="w-4 h-4 shrink-0" />
+                        <span className="truncate">{section.label}</span>
+                      </TabsTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent side="right" className="max-w-[220px]">
+                      <p className="text-xs">{section.tip}</p>
+                    </TooltipContent>
+                  </Tooltip>
+                );
+              })}
+            </React.Fragment>
+          ))}
         </TabsList>
 
         {/* Tab Content */}
-        <div className="mt-5 space-y-5">
-          <TabsContent value="panel" className="mt-0">
+        <div className="space-y-5">
+          <TabsContent value="general" className="mt-0">
             {/* Panel Settings */}
-            <Card id="settings-panel">
+            <Card id="settings-general">
               <CardHeader className="pb-4">
                 <CardTitle className="flex items-center gap-2">
                   <Globe className="w-4 h-4 text-primary" />
                   Panel Settings
                 </CardTitle>
                 <CardDescription>
-                  Port, remote access, and panel updates.
+                  Port this panel listens on, and how it looks.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -2062,6 +2112,11 @@ export default function Settings() {
                   </div>
                 </div>
 
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="access" className="mt-0">
                 <div className="rounded-xl border border-border/70 bg-background/40 p-4 space-y-4">
                   <div className="space-y-1">
                     <p className="text-sm font-medium">Remote Access (CORS)</p>
@@ -2345,6 +2400,9 @@ export default function Settings() {
                   )}
                 </div>
 
+          </TabsContent>
+
+          <TabsContent value="updates" className="mt-0">
                 <div className="rounded-xl border border-border/70 bg-muted/30 p-4 space-y-4">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                     <div>
@@ -2915,8 +2973,6 @@ export default function Settings() {
                       : "Auto-update works in packaged builds only. In dev mode, update from git."}
                   </p>
                 </div>
-              </CardContent>
-            </Card>
           </TabsContent>
 
           <TabsContent value="https" className="mt-0">
@@ -3101,7 +3157,7 @@ export default function Settings() {
             </Card>
           </TabsContent>
 
-          <TabsContent value="rcon" className="mt-0">
+          <TabsContent value="connection" className="mt-0 space-y-5">
             {/* RCON Settings */}
             <Card id="settings-rcon">
               <CardHeader className="pb-4">
@@ -3170,6 +3226,44 @@ export default function Settings() {
                     </li>
                     <li>Configure RCON host, port, and password there</li>
                   </ol>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card id="settings-server-startup">
+              <CardHeader className="pb-4">
+                <CardTitle className="flex items-center gap-2">
+                  <Server className="w-4 h-4 text-primary" />
+                  Server Startup
+                </CardTitle>
+                <CardDescription>
+                  Whether the panel launches the game server for you.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-start justify-between gap-4 rounded-lg border border-border/60 bg-muted/25 p-3">
+                  <div className="space-y-1">
+                    <Label
+                      htmlFor="auto-start-server"
+                      className="text-sm font-medium"
+                    >
+                      Start the game server when the panel starts
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Skipped automatically when the RCON port is already in
+                      use, so a server that is already running is never
+                      duplicated. Needs a local install path; servers hosted by
+                      a provider are started by the provider.
+                    </p>
+                  </div>
+                  <Switch
+                    id="auto-start-server"
+                    checked={settings.autoStartServer}
+                    onCheckedChange={(value) =>
+                      updateSetting("autoStartServer", value)
+                    }
+                    aria-label="Start the game server when the panel starts"
+                  />
                 </div>
               </CardContent>
             </Card>
@@ -3781,7 +3875,7 @@ export default function Settings() {
             </Card>
           </TabsContent>
 
-          <TabsContent value="mods" className="mt-0">
+          <TabsContent value="mods" className="mt-0 space-y-5">
             {/* Mod Update Settings */}
             <Card id="settings-mods">
               <CardHeader className="pb-4">
@@ -3869,9 +3963,7 @@ export default function Settings() {
               settings={settings}
               updateSetting={updateSetting}
             />
-          </TabsContent>
 
-          <TabsContent value="api-keys" className="mt-0">
             {/* API Keys */}
             <Card id="settings-api-keys">
               <CardHeader className="pb-4">
@@ -3970,7 +4062,7 @@ export default function Settings() {
             </Card>
           </TabsContent>
 
-          <TabsContent value="backups" className="mt-0">
+          <TabsContent value="backups" className="mt-0 space-y-5">
             {/* World Backups */}
             <Card id="settings-backups">
               <CardHeader className="pb-4">
@@ -4268,6 +4360,67 @@ export default function Settings() {
                     </p>
                     <p>
                       <strong>Backups:</strong> {backupStatus.backupsPath}
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card id="settings-character-exports">
+              <CardHeader className="pb-4">
+                <CardTitle className="flex items-center gap-2">
+                  <User className="w-4 h-4 text-primary" />
+                  Character Exports
+                </CardTitle>
+                <CardDescription>
+                  Per-player character copies, saved separately from world
+                  backups.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-start justify-between gap-4 rounded-lg border border-border/60 bg-muted/25 p-3">
+                  <div className="space-y-1">
+                    <Label
+                      htmlFor="auto-export-on-login"
+                      className="text-sm font-medium"
+                    >
+                      Export a character when a player joins
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Runs about ten seconds after the player loads, so one
+                      character can be restored without rolling back the world.
+                      Needs PanelBridge connected.
+                    </p>
+                  </div>
+                  <Switch
+                    id="auto-export-on-login"
+                    checked={settings.autoExportOnLogin}
+                    onCheckedChange={(value) =>
+                      updateSetting("autoExportOnLogin", value)
+                    }
+                    aria-label="Export a character when a player joins"
+                  />
+                </div>
+                {settings.autoExportOnLogin && (
+                  <div className="max-w-xs space-y-1.5">
+                    <Label htmlFor="auto-export-max">
+                      Copies kept per player
+                    </Label>
+                    <Input
+                      id="auto-export-max"
+                      type="number"
+                      min="1"
+                      max="50"
+                      inputMode="numeric"
+                      value={settings.autoExportMaxPerPlayer}
+                      onChange={(e) =>
+                        updateSetting("autoExportMaxPerPlayer", e.target.value)
+                      }
+                      onWheel={(e) => e.currentTarget.blur()}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Oldest exports are deleted once a player passes this
+                      count. Restore them from the Players page.
                     </p>
                   </div>
                 )}
@@ -4666,7 +4819,73 @@ export default function Settings() {
             </Card>
           </TabsContent>
 
-          <TabsContent value="about" className="mt-0">
+          <TabsContent value="about" className="mt-0 space-y-5">
+            <Card id="settings-elsewhere">
+              <CardHeader className="pb-4">
+                <CardTitle className="flex items-center gap-2">
+                  <ExternalLink className="w-4 h-4 text-primary" />
+                  Settings kept on other pages
+                </CardTitle>
+                <CardDescription>
+                  These features own their own configuration, so it lives with
+                  the feature instead of here.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ul className="divide-y divide-border/50">
+                  {[
+                    {
+                      href: "/servers",
+                      label: "Server profiles",
+                      detail:
+                        "Install paths, RCON host and password, memory, and SteamCMD.",
+                    },
+                    {
+                      href: "/discord",
+                      label: "Discord bot",
+                      detail:
+                        "Bot token, channels, event notifications, and the chat bridge.",
+                    },
+                    {
+                      href: "/scheduler",
+                      label: "Scheduled tasks",
+                      detail: "Restarts, announcements, and recurring commands.",
+                    },
+                    {
+                      href: "/server-config",
+                      label: "Game server config",
+                      detail: "Server INI options and sandbox rules.",
+                    },
+                    {
+                      href: "/chat",
+                      label: "Chat quick messages",
+                      detail: "Preset messages shown above the chat input.",
+                    },
+                  ].map((item) => (
+                    <li key={item.href}>
+                      <RouterLink
+                        to={item.href}
+                        className="flex items-center justify-between gap-4 py-2.5 group"
+                      >
+                        <span className="min-w-0">
+                          <span className="block text-sm font-medium text-foreground group-hover:text-primary">
+                            {item.label}
+                          </span>
+                          <span className="block text-xs text-muted-foreground">
+                            {item.detail}
+                          </span>
+                        </span>
+                        <ExternalLink
+                          className="w-3.5 h-3.5 shrink-0 text-muted-foreground/60 group-hover:text-primary"
+                          aria-hidden="true"
+                        />
+                      </RouterLink>
+                    </li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+
             {/* About */}
             <Card id="settings-about">
               <CardHeader className="pb-4">
