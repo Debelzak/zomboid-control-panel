@@ -9,6 +9,7 @@ import {
   getServer,
 } from "../database/init.js";
 import { SourceRconClient } from "../utils/sourceRcon.js";
+import { readSecret } from "../utils/secrets.js";
 
 export class RconService extends EventEmitter {
   constructor() {
@@ -20,10 +21,11 @@ export class RconService extends EventEmitter {
     this.connected = false;
     this.connecting = false; // Mutex to prevent concurrent connection attempts
     this.connectPromise = null; // Store ongoing connection promise
+    this.passwordFromSecretFile = Boolean(process.env.RCON_PASSWORD_FILE);
     this.config = {
       host: process.env.RCON_HOST || "127.0.0.1",
       port: parseInt(process.env.RCON_PORT, 10) || 27015,
-      password: process.env.RCON_PASSWORD || "",
+      password: readSecret("RCON_PASSWORD") || "",
     };
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 5;
@@ -243,7 +245,9 @@ export class RconService extends EventEmitter {
         ? await getServer(serverId)
         : await getActiveServer();
       if (targetServer?.rconPassword) {
-        this.config.password = targetServer.rconPassword;
+        if (!this.passwordFromSecretFile) {
+          this.config.password = targetServer.rconPassword;
+        }
         this.config.host = targetServer.rconHost || "127.0.0.1";
         this.config.port = parseInt(targetServer.rconPort, 10) || 27015;
         log.info(
@@ -264,7 +268,7 @@ export class RconService extends EventEmitter {
         const dbPort = await getSetting("rconPort");
         const dbPassword = await getSetting("rconPassword");
 
-        if (dbPassword) {
+        if (dbPassword && !this.passwordFromSecretFile) {
           this.config.password = dbPassword;
           log.info("password loaded from legacy settings");
         }
