@@ -261,10 +261,7 @@ const ENV_PRESENCE_ONLY = [
 ];
 
 function maskValue(v) {
-  if (v == null) return v;
-  const s = String(v);
-  if (s.length <= 4) return "••••";
-  return "••••••••" + s.slice(-4);
+  return v == null ? v : "••••";
 }
 
 /** Deep-clone with any field whose key looks secret-like masked. */
@@ -445,6 +442,117 @@ async function buildPanelConfig(activeServer) {
     scheduledTasks: sanitizeForBundle(scheduledTasks),
     trackedMods: sanitizeForBundle(trackedMods),
   };
+}
+
+const SUPPORT_INI_KEYS = [
+  "DefaultPort",
+  "RCONPort",
+  "Public",
+  "Open",
+  "PauseEmpty",
+  "MaxPlayers",
+  "MaxAccountsPerUser",
+  "SteamVAC",
+  "DoLuaChecksum",
+  "UsernameDisguises",
+  "HideDisguisedUserName",
+  "AntiCheatProtectionType",
+];
+
+async function buildServerConfigSummary(activeServer) {
+  const configDir = activeServer?.serverConfigPath;
+  const serverName = activeServer?.serverName || activeServer?.name;
+  if (!configDir || !serverName) {
+    return { available: false, reason: "Active server configuration is not set" };
+  }
+
+  const iniPath = path.join(configDir, `${serverName}.ini`);
+  const sandboxPath = path.join(configDir, `${serverName}_SandboxVars.lua`);
+  const result = {
+    available: false,
+    serverName,
+    ini: { path: iniPath, exists: false },
+    sandbox: { path: sandboxPath, exists: false },
+  };
+
+  try {
+    const iniContent = await fs.promises.readFile(iniPath, "utf8");
+    const values = {};
+    for (const raw of iniContent.split(/\r?\n/)) {
+      const line = raw.trim();
+      if (!line || line.startsWith("#") || line.startsWith(";")) continue;
+      const separator = line.indexOf("=");
+      if (separator <= 0) continue;
+      values[line.slice(0, separator).trim()] = line.slice(separator + 1).trim();
+    }
+    const splitList = (value) =>
+      (value || "")
+        .split(";")
+        .map((entry) => entry.trim())
+        .filter(Boolean);
+    const safeSettings = Object.fromEntries(
+      SUPPORT_INI_KEYS.filter((key) => values[key] !== undefined).map((key) => [
+        key,
+        values[key],
+      ]),
+    );
+    result.available = true;
+    result.ini = {
+      ...result.ini,
+      exists: true,
+      sha256: crypto.createHash("sha256").update(iniContent).digest("hex"),
+      settings: safeSettings,
+      mods: splitList(values.Mods),
+      workshopItems: splitList(values.WorkshopItems),
+      map: splitList(values.Map),
+    };
+  } catch (error) {
+    result.ini.error = error.message;
+  }
+
+  try {
+    const sandboxContent = await fs.promises.readFile(sandboxPath, "utf8");
+    const braces = checkSandboxBraceBalance(sandboxContent);
+    result.sandbox = {
+      ...result.sandbox,
+      exists: true,
+      bytes: Buffer.byteLength(sandboxContent),
+      sha256: crypto.createHash("sha256").update(sandboxContent).digest("hex"),
+      braceBalance: braces,
+    };
+  } catch (error) {
+    result.sandbox.error = error.message;
+  }
+
+  return result;
+}
+
+async function buildPzBuildInfo(activeServer) {
+  const installPath = activeServer?.installPath;
+  if (!installPath) return { available: false, reason: "Install path is not set" };
+
+  const manifestPath = path.join(
+    installPath,
+    "steamapps",
+    "appmanifest_380870.acf",
+  );
+  try {
+    const manifest = await fs.promises.readFile(manifestPath, "utf8");
+    const valueFor = (key) =>
+      manifest.match(new RegExp(`"${key}"\\s+"([^"]+)"`))?.[1] || null;
+    const lastUpdated = valueFor("LastUpdated");
+    return {
+      available: true,
+      appId: valueFor("appid") || "380870",
+      buildId: valueFor("buildid"),
+      branch: valueFor("BetaKey") || "public",
+      lastUpdated: lastUpdated
+        ? new Date(Number(lastUpdated) * 1000).toISOString()
+        : null,
+    };
+  } catch (error) {
+    return { available: false, manifestPath, error: error.message };
+  }
 }
 
 async function listDir(target, { recurseInto = [], maxEntries = 200 } = {}) {
@@ -691,6 +799,8 @@ function buildBundleReadme() {
     "9. `environment.txt` — relevant env vars (secrets show as `<set>`/`<unset>` only).",
     "10. `network-interfaces.json` — local IPs (no MACs).",
     "11. `process.json` — process flags, versions, active handle counts.",
+    "12. `server-config-summary.json` — sanitized effective server settings, mod/map lists, and sandbox integrity.",
+    "13. `pz-build-info.json` — installed Project Zomboid branch and Steam build ID.",
     "",
     "## Then the raw logs",
     "",
@@ -734,6 +844,8 @@ async function buildBundleDiagnostics(activeServer) {
     wrap("bridge-status.json", async () => buildBridgeStatus()),
     wrap("process.json", () => buildProcessSnapshot()),
     wrap("network-interfaces.json", () => buildNetworkInterfaces()),
+    wrap("server-config-summary.json", () => buildServerConfigSummary(activeServer)),
+    wrap("pz-build-info.json", () => buildPzBuildInfo(activeServer)),
     wrap("in-memory-log-buffer.json", async () => ({
       total: logBuffer.length,
       entries: logBuffer.slice(-MAX_BUFFER_SIZE),
@@ -4312,12 +4424,20 @@ router.get("/crash-logs/:filename", async (req, res) => {
 // Production builds can't console.error, so this makes client crashes visible.
 const CLIENT_ERROR_RATE = new Map(); // IP -> { count, resetAt }
 const CLIENT_ERROR_MAX = 30; // max reports per minute per IP
+// Entries expire logically but were never removed, so every distinct client IP
+// left a permanent entry. Sweep expired ones once the map gets large.
+const CLIENT_ERROR_RATE_MAX_ENTRIES = 5000;
 
 router.post("/client-errors", (req, res) => {
   try {
     // Simple per-IP rate limit to prevent abuse
     const ip = req.ip || "unknown";
     const now = Date.now();
+    if (CLIENT_ERROR_RATE.size > CLIENT_ERROR_RATE_MAX_ENTRIES) {
+      for (const [key, tracked] of CLIENT_ERROR_RATE) {
+        if (now > tracked.resetAt) CLIENT_ERROR_RATE.delete(key);
+      }
+    }
     const entry = CLIENT_ERROR_RATE.get(ip) || {
       count: 0,
       resetAt: now + 60000,

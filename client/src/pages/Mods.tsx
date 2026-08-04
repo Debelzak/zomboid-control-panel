@@ -204,6 +204,7 @@ export default function Mods() {
   const [searchQuery, setSearchQuery] = useState('')
   const [deferredSearchQuery, setDeferredSearchQuery] = useState('')
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const trackedModsRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const [showUpdatesOnly, setShowUpdatesOnly] = useState(false)
   const [selectedMods, setSelectedMods] = useState<Set<string>>(new Set())
@@ -452,6 +453,9 @@ export default function Mods() {
       if (searchTimerRef.current) {
         clearTimeout(searchTimerRef.current)
       }
+      if (trackedModsRetryRef.current) {
+        clearTimeout(trackedModsRetryRef.current)
+      }
       if (modSearchTimerRef.current) {
         clearTimeout(modSearchTimerRef.current)
       }
@@ -490,6 +494,20 @@ export default function Mods() {
       // Extract successful results
       if (results[0].status === 'fulfilled') {
         setMods(results[0].value.mods || [])
+      } else {
+        reportClientError('Failed to fetch tracked mods.', results[0].reason)
+        setFetchError('Mod list is temporarily unavailable. Retrying...')
+        if (trackedModsRetryRef.current) clearTimeout(trackedModsRetryRef.current)
+        trackedModsRetryRef.current = setTimeout(async () => {
+          try {
+            const retry = await modsApi.getTrackedMods()
+            setMods(retry.mods || [])
+            setFetchError(null)
+          } catch (error) {
+            reportClientError('Failed to retry tracked mods fetch.', error)
+            setFetchError('Unable to load the mod list. Use Sync or reload the page to retry.')
+          }
+        }, 1500)
       }
       if (results[1].status === 'fulfilled') {
         const statusData = results[1].value
