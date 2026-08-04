@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Docker and Kubernetes secret files for credentials**: `RCON_PASSWORD_FILE` and `STEAM_API_KEY_FILE` read the value from a mounted secret file. The file takes precedence over the environment variable and over the value saved in Settings, so the credential is never written to the panel database.
+- **`STEAM_API_KEY` environment variable**: the variable was documented in `.env.example` but never read by the panel. The Steam Web API key can now be supplied by environment, secret file, or Settings.
+- **Support bundle server details**: the diagnostics bundle now includes a sanitized server configuration summary (selected INI settings, mod, workshop and map lists, and a sandbox integrity check) plus the installed Project Zomboid branch and Steam build ID.
+
+### Fixed
+
+- **Restoring a backup can no longer destroy the world** (#33): the archive is extracted to a staging folder and only swapped into place after it completes successfully. A corrupt or truncated backup now leaves the existing save untouched, and a failed swap restores the previous save automatically.
+- **Restoring a backup on Windows**: the restore reported completion before every extracted file had finished writing, which made the final step fail with an `EPERM` error. It now waits for all files to be flushed.
+- **Concurrent server wipes**: two wipe requests arriving at the same time could both pass the "wipe already in progress" check and delete the same save folder together.
+- **Mod preset updates reported a false failure**: the preset was saved correctly, but the panel returned an error afterwards, so the change appeared not to have applied.
+- **Network settings reported a false failure**: the server INI and panel settings were written correctly, but the response failed in the same way.
+- **Discord integration could not reach the Discord API**: a dependency version override forced the Discord REST client onto an unsupported release, so every request failed with a header type error. Discord requests now work again.
+- **Mod list loading failures are visible**: a failed mod list request previously left the page silently empty. The panel now reports the failure, retries once automatically, and explains how to retry manually if that also fails.
+- **Backups of large saves use less memory**: counting files for the progress bar no longer walks the entire save tree in parallel.
+- **Dashboard performance panel could break when telemetry first arrived**: the chart component changed its React hook count between renders, which React rejects. It now renders consistently whether or not history data is present.
+- **Two slow memory leaks**: the client-error rate limiter and the CORS origin cache both grew without bound from values supplied by callers, and never released old entries.
+
+### Security
+
+- **Support bundles no longer reveal parts of secrets**: masked values previously kept the last four characters of passwords, tokens, and API keys.
+- **Server wipe rate limiting**: the wipe endpoint is now covered by the same strict per-operation limit already applied to other destructive actions such as deleting server files and map regions.
+- **Updated vulnerable dependencies**: `ip-address` (address parsing that could bypass SSRF and trust-boundary checks), `socket.io-parser` (memory exhaustion from zero-attachment packets), and `undici` (cookie and cache-directive handling). `npm audit` now reports no known vulnerabilities.
+
 ## [1.1.28] - 2026-08-03
 
 ### Fixed
