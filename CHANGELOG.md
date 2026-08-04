@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **RCON host with stray whitespace silently failed to connect**: a host copied from a game-server-provider panel often carries a leading or trailing space, which made the connection fail DNS resolution. The panel reported no players, Discord reported the server offline, and broadcasts failed, with nothing in the log to explain why. Whitespace is now stripped when the host is saved and when it is loaded, so existing configurations repair themselves.
+- **Unreachable RCON is now reported**: a host that cannot be reached was only logged at debug level, leaving no diagnosis in the normal log. It now logs a throttled warning naming the host and port.
+
 ## [1.1.29] - 2026-08-04
 
 ### Added

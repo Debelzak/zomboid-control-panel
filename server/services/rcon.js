@@ -11,6 +11,14 @@ import {
 import { SourceRconClient } from "../utils/sourceRcon.js";
 import { readSecret } from "../utils/secrets.js";
 
+// Hosts pasted from a game-server-provider panel routinely carry surrounding
+// whitespace, which makes DNS resolution fail with ENOTFOUND and looks exactly
+// like an unreachable server.
+export function normalizeRconHost(host) {
+  if (typeof host !== "string") return "127.0.0.1";
+  return host.trim() || "127.0.0.1";
+}
+
 export class RconService extends EventEmitter {
   constructor() {
     super();
@@ -248,7 +256,7 @@ export class RconService extends EventEmitter {
         if (!this.passwordFromSecretFile) {
           this.config.password = targetServer.rconPassword;
         }
-        this.config.host = targetServer.rconHost || "127.0.0.1";
+        this.config.host = normalizeRconHost(targetServer.rconHost);
         this.config.port = parseInt(targetServer.rconPort, 10) || 27015;
         log.info(
           serverId
@@ -276,7 +284,7 @@ export class RconService extends EventEmitter {
           this.config.port = parseInt(dbPort, 10);
         }
         if (dbHost) {
-          this.config.host = dbHost;
+          this.config.host = normalizeRconHost(dbHost);
         }
       } else {
         log.warn(`No RCON config found for server ${serverId}`);
@@ -472,11 +480,15 @@ export class RconService extends EventEmitter {
         this.config.port,
       );
       if (!isOpen) {
-        log.debug(
-          `Skipping connection - Port ${this.config.host}:${this.config.port} is not listening yet`,
-        );
-        // We consider this a "soft" failure - don't increment failure counters too aggressively?
-        // Actually, returning false here just means "try again later" in auto-reconnect loop
+        // Throttled to one line a minute: this used to be debug-only, so a
+        // wrong host or a closed port produced no diagnosis at all.
+        const now = Date.now();
+        if (now - this.lastConnectionErrorLog > this.connectionErrorLogCooldown) {
+          this.lastConnectionErrorLog = now;
+          log.warn(
+            `RCON ${this.config.host}:${this.config.port} is not reachable - check the host, port, and that RCON is enabled on the server`,
+          );
+        }
         return false;
       }
     } catch (e) {
