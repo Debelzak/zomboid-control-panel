@@ -2197,7 +2197,7 @@ router.post("/configure-network", async (req, res) => {
     await setSetting("useUpnp", useUpnp);
 
     log.info(
-      `Network settings configured in ${iniPath}: port=${serverPort}, UPnP=${upnpValue}`,
+      `Network settings configured in ${iniPath}: port=${serverPort}, UPnP=${useUpnp ? "true" : "false"}`,
     );
     res.json({
       success: true,
@@ -3876,14 +3876,17 @@ router.post("/wipe/preview", async (req, res) => {
 
 // Execute server wipe
 router.post("/wipe", requireRole("admin"), async (req, res) => {
-  try {
-    // Prevent concurrent wipes
-    if (wipeInProgress) {
-      return res.status(409).json({
-        error: "A wipe operation is already in progress. Please wait.",
-      });
-    }
+  // Claim the guard before the first await: awaiting between the check and the
+  // assignment lets a second concurrent request pass the check and run a
+  // parallel destructive wipe of the same save directory.
+  if (wipeInProgress) {
+    return res.status(409).json({
+      error: "A wipe operation is already in progress. Please wait.",
+    });
+  }
+  wipeInProgress = true;
 
+  try {
     const serverManager = req.app.get("serverManager");
     await serverManager.loadConfig();
 
@@ -3938,7 +3941,6 @@ router.post("/wipe", requireRole("admin"), async (req, res) => {
       return res.status(400).json({ error: "Invalid path" });
     }
 
-    wipeInProgress = true;
     const results = {};
 
     // Same directory/file lists as preview
@@ -4071,6 +4073,8 @@ router.post("/wipe", requireRole("admin"), async (req, res) => {
   } catch (error) {
     log.error(`Wipe failed: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });
+  } finally {
+    wipeInProgress = false;
   }
 });
 

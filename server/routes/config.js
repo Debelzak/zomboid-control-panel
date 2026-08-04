@@ -32,10 +32,11 @@ const VALID_SETTINGS_KEYS = [
   "darkMode",
   "autoReconnect",
   "reconnectInterval",
-  "discordEnabled",
-  "discordToken",
+  // Discord config is owned by /api/discord (discordBotToken,
+  // discordAdminRoleId, ...). The old discordEnabled/discordToken/
+  // discordAdminRole keys are deliberately NOT listed: nothing reads them, so
+  // allowing them here would accept a write that silently never takes effect.
   "discordGuildId",
-  "discordAdminRole",
   "autoStartServer",
   "panelPort",
   "httpsEnabled",
@@ -212,6 +213,8 @@ router.post("/option", async (req, res) => {
 // Sensitive keys that should be masked in API responses
 const SENSITIVE_KEYS = [
   "rconPassword",
+  // Retained so any value left in an existing db.json stays masked, even
+  // though this key is no longer writable.
   "discordToken",
   "steamApiKey",
   "steamSessionId",

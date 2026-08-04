@@ -358,9 +358,19 @@ function recordCorsBlock(origin, source) {
 }
 
 // Allow dynamic HTTPS origins (will be populated at startup if HTTPS is enabled)
+// Capped: this is memoisation of the private-network check, and the Origin
+// header is caller-supplied, so an unbounded Set would grow forever. Refusing
+// to memoise does not refuse the request.
+const MAX_ALLOWED_ORIGINS = 200;
 function addAllowedOrigin(origin) {
   const normalized = normalizeOrigin(origin);
   if (!normalized) return;
+  if (
+    allowedOrigins.size >= MAX_ALLOWED_ORIGINS &&
+    !allowedOrigins.has(normalized)
+  ) {
+    return;
+  }
   allowedOrigins.add(normalized);
 }
 
@@ -471,7 +481,9 @@ function isAllowedOrigin(origin) {
       addAllowedOrigin(normalized);
       return true;
     }
-  } catch (_) {}
+  } catch (_) {
+    // Unparseable origin: fall through and deny.
+  }
 
   return false;
 }
@@ -572,6 +584,8 @@ const strictLimiter = rateLimit({
 });
 app.use("/api/server/install", strictLimiter);
 app.use("/api/server/delete-files", strictLimiter);
+// Also covers /wipe/preview, whose save-folder scan is not cheap either.
+app.use("/api/server/wipe", strictLimiter);
 app.use("/api/server/steam-update", strictLimiter);
 app.use("/api/server/steamcmd/download", strictLimiter);
 app.use("/api/server/start", strictLimiter);

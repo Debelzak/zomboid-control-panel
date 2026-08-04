@@ -28,6 +28,7 @@ import {
   removeIgnoredModPair,
 } from "../database/init.js";
 import { getDataPaths } from "../utils/paths.js";
+import { getSteamApiKey } from "../services/steamApiKey.js";
 import {
   sanitizeError,
   sanitizeIniValue,
@@ -3910,7 +3911,7 @@ router.post("/search-workshop-mods", async (req, res) => {
     let steamSearchAttempted = false;
     if (!/^\d{5,15}$/.test(searchTerm) && !hasExactLocalMatch) {
       try {
-        const steamApiKey = await getSetting("steamApiKey");
+        const steamApiKey = await getSteamApiKey();
         if (
           steamApiKey &&
           typeof steamApiKey === "string" &&
@@ -4494,7 +4495,7 @@ router.put("/presets/:id", async (req, res) => {
       return res.status(404).json({ error: "Preset not found" });
     }
 
-    log.info(`Updated mod preset: ${name || id}`);
+    log.info(`Updated mod preset: ${updates.name || id}`);
     res.json({ preset, message: "Preset updated successfully" });
   } catch (error) {
     log.error(`Failed to update mod preset: ${error.message}`);
@@ -6089,7 +6090,7 @@ function findMissingDeps(modInfoMap, modIdsFromIni, serverPath) {
 // then checks which required Workshop IDs are missing from the configured list.
 // Returns { deps: [...], warnings: [...] }
 async function findSteamDeps(workshopIds) {
-  const steamApiKey = await getSetting("steamApiKey");
+  const steamApiKey = await getSteamApiKey();
   if (
     !steamApiKey ||
     typeof steamApiKey !== "string" ||

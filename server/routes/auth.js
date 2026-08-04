@@ -326,7 +326,9 @@ router.post("/refresh", async (req, res) => {
     // Always clear stale cookie on any failure
     try {
       res.clearCookie("refreshToken", getRefreshCookieOptions(req, false));
-    } catch {}
+    } catch {
+      // Headers may already be sent; the 401 below is what matters.
+    }
     res.status(401).json({ error: "Token refresh failed" });
   }
 });
@@ -455,7 +457,11 @@ router.post("/reset-token/local", localResetTokenLimiter, async (req, res) => {
     ) {
       try {
         fs.unlinkSync(tokenState.tokenPath);
-      } catch {}
+      } catch (error) {
+        log.warn(
+          `Could not remove ${tokenState.reason} reset token file: ${error.message}`,
+        );
+      }
     }
 
     const token = crypto.randomBytes(24).toString("hex");
@@ -535,7 +541,9 @@ router.post("/reset-password", resetLimiter, async (req, res) => {
       log.warn("Password reset attempted with expired token file (>24h old)");
       try {
         fs.unlinkSync(tokenPath);
-      } catch {}
+      } catch (error) {
+        log.warn(`Could not remove expired reset token file: ${error.message}`);
+      }
       return res
         .status(403)
         .json({

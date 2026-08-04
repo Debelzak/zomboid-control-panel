@@ -286,7 +286,12 @@ class AuthService {
       }
       try {
         await commitNow();
-      } catch {}
+      } catch (error) {
+        // Losing this write silently would let brute-force lockout state vanish.
+        log.error(
+          `Failed to persist failed-login state for ${user.username}: ${error.message}`,
+        );
+      }
       throw new Error("Invalid username or password");
     }
 
