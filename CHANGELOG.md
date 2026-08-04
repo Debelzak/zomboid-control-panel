@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.29] - 2026-08-04
+
 ### Added
 
 - **Docker and Kubernetes secret files for credentials**: `RCON_PASSWORD_FILE` and `STEAM_API_KEY_FILE` read the value from a mounted secret file. The file takes precedence over the environment variable and over the value saved in Settings, so the credential is never written to the panel database.
