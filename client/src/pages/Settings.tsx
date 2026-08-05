@@ -13,6 +13,7 @@ import {
   Loader2,
   Key,
   Cloud,
+  Library,
   Zap,
   CheckCircle2,
   XCircle,
@@ -135,6 +136,7 @@ interface AppSettings {
   modRestartDelay: string;
   serverAutoUpdate: boolean;
   serverAutoUpdateWarningMinutes: string;
+  steamUpdateAccount: string;
 
   // API Keys
   steamApiKey: string;
@@ -249,6 +251,7 @@ export default function Settings() {
     modRestartDelay: "5",
     serverAutoUpdate: false,
     serverAutoUpdateWarningMinutes: "15",
+    steamUpdateAccount: "",
     steamApiKey: "",
     workshopCollectionId: "",
     workshopCollectionAutoSync: false,
@@ -4204,8 +4207,24 @@ export default function Settings() {
                       </p>
                     </div>
                   </div>
+                  <div className="max-w-md space-y-2 pl-4 pt-4 border-l-2 border-primary/30">
+                    <Label htmlFor="steam-update-account" className="text-base">
+                      SteamCMD update account
+                    </Label>
+                    <Input
+                      id="steam-update-account"
+                      value={settings.steamUpdateAccount}
+                      onChange={(e) => updateSetting("steamUpdateAccount", e.target.value)}
+                      placeholder="Leave blank to use anonymous login"
+                      autoComplete="username"
+                      className="h-11"
+                    />
+                    <p className="text-sm text-muted-foreground">
+                      Use a Steam account that owns Project Zomboid when anonymous updates cannot access a depot. Only the account name is saved; SteamCMD keeps its own encrypted login session and may ask for Steam Guard again.
+                    </p>
+                  </div>
                   {settings.serverAutoUpdate && (
-                    <div className="max-w-xs space-y-2 pl-4 pt-4 border-l-2 border-primary/30">
+                    <div className="max-w-md space-y-2 pl-4 pt-4 border-l-2 border-primary/30">
                       <Label htmlFor="server-update-warning-minutes" className="text-base">
                         Player warning (minutes)
                       </Label>
@@ -5474,7 +5493,6 @@ function WorkshopCollectionSyncCard({
   const [diffError, setDiffError] = useState<string | null>(null);
   const [diffLoading, setDiffLoading] = useState(false);
   const [diffCheckedAt, setDiffCheckedAt] = useState<Date | null>(null);
-  const [syncing, setSyncing] = useState(false);
   const [browsers, setBrowsers] = useState<Awaited<
     ReturnType<typeof modsApi.collectionBrowsers>
   > | null>(null);
@@ -5484,14 +5502,24 @@ function WorkshopCollectionSyncCard({
   const [showCookies, setShowCookies] = useState(false);
 
   // Unified mod table state.
-  // Filter defaults to "mismatch" so the page lands on actionable rows;
+  // Filter defaults to "missing" so the page lands on actionable rows;
   // user can switch to "all" / "tracked" / "collection" to inspect.
   const [itemFilter, setItemFilter] = useState<
-    "all" | "mismatch" | "tracked" | "collection"
-  >("mismatch");
+    | "all"
+    | "missing"
+    | "not-on-server"
+    | "tracked-only"
+    | "synced"
+    | "tracked"
+    | "collection"
+  >("missing");
   const [itemSearch, setItemSearch] = useState("");
-  // Per-row busy flag: { [workshopId]: 'add' | 'remove' | 'track' | 'untrack' | null }
+  // Per-row busy flag: { [workshopId]: 'add' | 'remove' | 'track' | 'untrack' | 'purge' | null }
   const [rowBusy, setRowBusy] = useState<Record<string, string | null>>({});
+  const [purgeTarget, setPurgeTarget] = useState<{
+    workshopId: string;
+    name: string | null;
+  } | null>(null);
 
   // Trust the server's credential check over a brittle bullet-prefix sniff:
   // the diff endpoint reports `hasCredentials` based on the actual stored
@@ -5743,35 +5771,6 @@ function WorkshopCollectionSyncCard({
     }
   };
 
-  const handleSync = async () => {
-    if (syncing) return;
-    setSyncing(true);
-    try {
-      const r = await modsApi.collectionSync();
-      if (r.success) {
-        toast({ title: "Collection synced", description: r.message });
-      } else {
-        const failedItems = Array.isArray(r.errors)
-          ? r.errors.map((entry: { title?: string | null; id?: string }) => entry.title || entry.id).filter(Boolean)
-          : [];
-        toast({
-          variant: "destructive",
-          title: "Steam rejected items",
-          description: failedItems.length > 0 ? `${r.message}: ${failedItems.join(", ")}` : r.message,
-        });
-      }
-      await refreshDiff();
-    } catch (err: any) {
-      toast({
-        variant: "destructive",
-        title: "Sync failed",
-        description: err?.message || "Unknown error",
-      });
-    } finally {
-      setSyncing(false);
-    }
-  };
-
   const handleTest = async () => {
     if (testing) return;
     setTesting(true);
@@ -5790,15 +5789,25 @@ function WorkshopCollectionSyncCard({
     }
   };
 
-  const inSync =
-    diff && diff.ok && diff.toAdd.length === 0 && diff.toRemove.length === 0;
-  const driftCount =
-    diff && diff.ok ? diff.toAdd.length + diff.toRemove.length : 0;
-
   // ── Unified item table derivation ───────────────────────────────────────
   const allItems = diff?.ok && Array.isArray(diff.items) ? diff.items : [];
+  const missingCount = allItems.filter((it) => it.status === "to-add").length;
+  const notOnServerCount = allItems.filter(
+    (it) => it.status === "collection-only",
+  ).length;
+  const trackedOnlyCount = allItems.filter(
+    (it) => it.status === "tracked-only",
+  ).length;
+  const syncedCount = allItems.filter((it) => it.status === "synced").length;
+  const driftCount = missingCount + notOnServerCount + trackedOnlyCount;
+  const inSync = !!diff?.ok && driftCount === 0;
   const filteredItems = allItems.filter((it) => {
-    if (itemFilter === "mismatch" && it.status === "synced") return false;
+    if (itemFilter === "missing" && it.status !== "to-add") return false;
+    if (itemFilter === "not-on-server" && it.status !== "collection-only")
+      return false;
+    if (itemFilter === "tracked-only" && it.status !== "tracked-only")
+      return false;
+    if (itemFilter === "synced" && it.status !== "synced") return false;
     if (itemFilter === "tracked" && !it.inTracked) return false;
     if (itemFilter === "collection" && !it.inCollection) return false;
     if (itemSearch.trim()) {
@@ -5817,7 +5826,15 @@ function WorkshopCollectionSyncCard({
   // unchanged because refreshDiff re-reads ground truth from Steam.
   const runRowAction = async (
     workshopId: string,
-    action: "add" | "remove" | "track" | "untrack",
+    action:
+      | "add"
+      | "remove"
+      | "track"
+      | "untrack"
+      | "add-server"
+      | "remove-server"
+      | "purge",
+    name?: string | null,
   ) => {
     setRowBusy((prev) => ({ ...prev, [workshopId]: action }));
     try {
@@ -5837,6 +5854,42 @@ function WorkshopCollectionSyncCard({
         await modsApi.trackMod(workshopId);
       } else if (action === "untrack") {
         await modsApi.untrackMod(workshopId);
+      } else if (action === "add-server") {
+        await modsApi.addToIni(workshopId);
+        // Tracking is what drives update checks, so a mod the server now
+        // loads should be watched too.
+        if (!allItems.find((it) => it.workshopId === workshopId)?.inTracked) {
+          await modsApi.trackMod(workshopId);
+        }
+        toast({
+          title: "Added to the server",
+          description:
+            "Project Zomboid will download and load this mod on the next server restart.",
+        });
+      } else if (action === "remove-server") {
+        await modsApi.batchRemove([workshopId]);
+        toast({
+          title: "Removed from the server",
+          description: diff?.autoSync
+            ? "It will also be removed from the Steam collection."
+            : "The Steam collection was left unchanged because auto-sync is off.",
+        });
+      } else if (action === "purge") {
+        const r = await modsApi.purgeMod(workshopId, name);
+        const done = [
+          r.collection.attempted
+            ? r.collection.ok
+              ? "removed from the collection"
+              : `collection not updated (${r.collection.error || "Steam rejected the change"})`
+            : null,
+          "removed from the server config",
+          r.deletedFromDisk ? "deleted from disk" : "no files on disk",
+          "untracked and ignored",
+        ].filter(Boolean);
+        toast({
+          title: `Removed ${r.name || workshopId} everywhere`,
+          description: `${done.join(", ")}.`,
+        });
       }
       await refreshDiff();
     } catch (err: any) {
@@ -6253,30 +6306,6 @@ function WorkshopCollectionSyncCard({
               )}
               Check drift
             </Button>
-            <Button
-              variant={driftCount > 0 ? "default" : "outline"}
-              size="sm"
-              onClick={handleSync}
-              disabled={
-                !collectionIdValid ||
-                !credsConfigured ||
-                syncing ||
-                !diff?.ok ||
-                driftCount === 0
-              }
-              title={
-                !credsConfigured
-                  ? "Add Steam session cookies to write to the collection"
-                  : `Push ${driftCount} change${driftCount === 1 ? "" : "s"} to Steam`
-              }
-            >
-              {syncing ? (
-                <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-              ) : (
-                <Cloud className="w-3.5 h-3.5 mr-1.5" />
-              )}
-              Sync now {driftCount > 0 && `(${driftCount})`}
-            </Button>
 
             <div className="ml-auto text-xs text-muted-foreground">
               {diffError ? (
@@ -6302,7 +6331,7 @@ function WorkshopCollectionSyncCard({
               ) : (
                 <span className="text-warning flex items-center gap-1">
                   <AlertTriangle className="w-3 h-3" />
-                  {diff.toAdd.length} to add, {diff.toRemove.length} to remove
+                  {driftCount} to review
                 </span>
               )}
             </div>
@@ -6330,9 +6359,8 @@ function WorkshopCollectionSyncCard({
           )}
         </div>
 
-        {/* Unified mod table — every tracked + collection mod in one place,
-            filterable, with per-row actions. The user can fix drift one
-            row at a time or click "Sync now" for a one-shot bulk pass. */}
+        {/* Unified mod table — every server + collection mod in one place,
+            filterable, with per-row actions applied one at a time. */}
         {diff?.ok && allItems.length > 0 && (
           <div className="space-y-2 pt-2 border-t border-border/40">
             <div className="flex flex-wrap items-center gap-2">
@@ -6340,34 +6368,31 @@ function WorkshopCollectionSyncCard({
               <div className="flex items-center gap-1 rounded-md border border-border/60 bg-muted/30 p-0.5 text-xs">
                 {(
                   [
-                    ["mismatch", "Mismatch", driftCount],
+                    ["missing", "Missing from collection", missingCount],
+                    ["not-on-server", "Not on server", notOnServerCount],
+                    ["tracked-only", "Tracked only", trackedOnlyCount],
+                    ["synced", "In sync", syncedCount],
                     ["all", "All", allItems.length],
-                    [
-                      "tracked",
-                      "Tracked",
-                      allItems.filter((i) => i.inTracked).length,
-                    ],
-                    [
-                      "collection",
-                      "Collection",
-                      allItems.filter((i) => i.inCollection).length,
-                    ],
                   ] as const
-                ).map(([key, label, count]) => (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => setItemFilter(key)}
-                    className={cn(
-                      "px-2 py-1 rounded-sm transition-colors",
-                      itemFilter === key
-                        ? "bg-primary text-primary-foreground"
-                        : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
-                    )}
-                  >
-                    {label} <span className="opacity-70">({count})</span>
-                  </button>
-                ))}
+                )
+                  .filter(
+                    ([key, , count]) => key !== "tracked-only" || count > 0,
+                  )
+                  .map(([key, label, count]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setItemFilter(key)}
+                      className={cn(
+                        "px-2 py-1 rounded-sm transition-colors",
+                        itemFilter === key
+                          ? "bg-primary text-primary-foreground"
+                          : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+                      )}
+                    >
+                      {label} <span className="opacity-70">({count})</span>
+                    </button>
+                  ))}
               </div>
 
               {/* Search */}
@@ -6409,7 +6434,7 @@ function WorkshopCollectionSyncCard({
                           Status
                         </th>
                         <th className="font-medium px-3 py-2">Mod</th>
-                        <th className="font-medium px-3 py-2 w-[300px] text-right">
+                        <th className="font-medium px-3 py-2 w-[540px] text-right">
                           Actions
                         </th>
                       </tr>
@@ -6426,15 +6451,23 @@ function WorkshopCollectionSyncCard({
                               }
                             : it.status === "to-add"
                               ? {
-                                  label: "Missing in collection",
+                                  label: "Missing from collection",
                                   cls: "text-warning border-warning/40 bg-warning/10",
                                   icon: <Plus className="w-3 h-3" />,
                                 }
-                              : {
-                                  label: "Not tracked",
-                                  cls: "text-destructive border-destructive/40 bg-destructive/10",
-                                  icon: <AlertTriangle className="w-3 h-3" />,
-                                };
+                              : it.status === "collection-only"
+                                ? {
+                                    label: "Not on server",
+                                    cls: "text-primary border-primary/40 bg-primary/10",
+                                    icon: <Library className="w-3 h-3" />,
+                                  }
+                                : {
+                                    label: "Tracked only",
+                                    cls: "text-muted-foreground border-border bg-muted/40",
+                                    icon: (
+                                      <AlertTriangle className="w-3 h-3" />
+                                    ),
+                                  };
                         return (
                           <tr
                             key={it.workshopId}
@@ -6483,6 +6516,49 @@ function WorkshopCollectionSyncCard({
                             </td>
                             <td className="px-3 py-2 align-top">
                               <div className="flex items-center justify-end gap-1">
+                                {/* Ordered by consequence: what the server
+                                    loads, then the collection, then local
+                                    tracking, then the destructive one. */}
+                                {it.inServer ? (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-7 px-2 text-[11px] text-destructive hover:text-destructive hover:bg-destructive/10"
+                                    onClick={() =>
+                                      runRowAction(
+                                        it.workshopId,
+                                        "remove-server",
+                                      )
+                                    }
+                                    disabled={!!busy}
+                                    title="Remove this mod from the server configuration"
+                                  >
+                                    {busy === "remove-server" ? (
+                                      <Loader2 className="w-3 h-3 animate-spin" />
+                                    ) : (
+                                      <Server className="w-3 h-3" />
+                                    )}
+                                    <span className="ml-1">From server</span>
+                                  </Button>
+                                ) : (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-7 px-2 text-[11px] text-success hover:text-success hover:bg-success/10"
+                                    onClick={() =>
+                                      runRowAction(it.workshopId, "add-server")
+                                    }
+                                    disabled={!!busy}
+                                    title="Add this mod to the server configuration"
+                                  >
+                                    {busy === "add-server" ? (
+                                      <Loader2 className="w-3 h-3 animate-spin" />
+                                    ) : (
+                                      <Server className="w-3 h-3" />
+                                    )}
+                                    <span className="ml-1">To server</span>
+                                  </Button>
+                                )}
                                 {/* Collection side */}
                                 {it.inCollection ? (
                                   <Button
@@ -6569,6 +6645,30 @@ function WorkshopCollectionSyncCard({
                                     <span className="ml-1">Track</span>
                                   </Button>
                                 )}
+                                <span
+                                  aria-hidden
+                                  className="mx-1 h-4 w-px bg-border"
+                                />
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 px-2 text-[11px] text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                                  onClick={() =>
+                                    setPurgeTarget({
+                                      workshopId: it.workshopId,
+                                      name: it.name,
+                                    })
+                                  }
+                                  disabled={!!busy}
+                                  title="Remove from the collection, the server, and disk, then ignore it so it can't come back"
+                                >
+                                  {busy === "purge" ? (
+                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                  ) : (
+                                    <Trash2 className="w-3 h-3" />
+                                  )}
+                                  <span className="ml-1">Everywhere</span>
+                                </Button>
                               </div>
                             </td>
                           </tr>
@@ -6583,13 +6683,56 @@ function WorkshopCollectionSyncCard({
                   {filteredItems.length} of {allItems.length} shown
                 </span>
                 <span className="hidden sm:inline">
-                  Per-row actions apply immediately · &ldquo;Sync now&rdquo;
-                  pushes every mismatch at once
+                  Per-row actions apply immediately
                 </span>
               </div>
             </div>
           </div>
         )}
+        <AlertDialog
+          open={!!purgeTarget}
+          onOpenChange={(open) => !open && setPurgeTarget(null)}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                Remove {purgeTarget?.name || purgeTarget?.workshopId}{" "}
+                everywhere?
+              </AlertDialogTitle>
+              <AlertDialogDescription asChild>
+                <div className="space-y-2">
+                  <p>This removes the mod from all four places at once:</p>
+                  <ul className="list-disc pl-5 space-y-0.5">
+                    <li>the Steam collection</li>
+                    <li>
+                      the server config (<code>WorkshopItems</code>,{" "}
+                      <code>Mods</code>, <code>Map</code>)
+                    </li>
+                    <li>the downloaded files on disk</li>
+                    <li>the panel's tracked list</li>
+                  </ul>
+                  <p>
+                    It is then added to the ignore list so a later scan can't
+                    quietly bring it back. Restart the server to apply.
+                  </p>
+                </div>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={() => {
+                  const t = purgeTarget;
+                  setPurgeTarget(null);
+                  if (t) runRowAction(t.workshopId, "purge", t.name);
+                }}
+              >
+                Remove everywhere
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </CardContent>
     </Card>
   );

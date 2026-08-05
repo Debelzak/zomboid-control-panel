@@ -89,7 +89,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { useToast } from '@/components/ui/use-toast'
 import { modsApi } from '@/lib/api'
-import { buildRequiresMap, computeAutoSortedOrder, type AutoSortResult } from '@/lib/modLoadOrder'
+import { buildRequiresMap, computeAutoSortedOrder, createRequirementResolver, type AutoSortResult } from '@/lib/modLoadOrder'
 import { EmptyState } from '@/components/EmptyState'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import {
@@ -1692,9 +1692,11 @@ export default function Mods() {
 
     if (result.appliedEdges === 0) {
       toast({
-        title: 'No dependency data',
+        title: result.missing.length > 0 ? 'Nothing to sort by' : 'No dependency data',
         description:
-          'None of the enabled mods declare a "require" in their mod.info, so there is nothing to sort by.',
+          result.missing.length > 0
+            ? `${result.missing.length} declared requirement${result.missing.length === 1 ? ' is' : 's are'} not enabled, so none of the enabled mods depend on each other.`
+            : 'None of the enabled mods declare a "require" in their mod.info, so there is nothing to sort by.',
       })
       return
     }
@@ -1702,7 +1704,10 @@ export default function Mods() {
     if (result.moved.length === 0) {
       toast({
         title: 'Load order already correct',
-        description: `All ${result.appliedEdges} declared dependencies already load before the mods that need them.`,
+        description:
+          result.cycles.length > 0
+            ? `Every satisfiable dependency already loads first. ${result.cycles.length} circular dependenc${result.cycles.length === 1 ? 'y' : 'ies'} cannot be ordered.`
+            : `All ${result.appliedEdges} declared dependencies already load before the mods that need them.`,
       })
       return
     }
@@ -2043,18 +2048,10 @@ export default function Mods() {
     const multiIdCount = groups.filter(g => g.mods.length > 1).length
 
     // Build missing-deps map: modId → list of required mod IDs not currently enabled.
-    // A require is satisfied either by an exact-id enabled mod or by a variant whose id
-    // is "<required>_<suffix>" / "<required>-<suffix>" (the convention modders use for
-    // refactor / test / legacy forks of the same mod shipped from the same workshop item).
-    const enabledLower = new Set(Array.from(enabledIds, id => id.toLowerCase()))
-    const isRequireSatisfied = (req: string) => {
-      if (enabledIds.has(req)) return true
-      const r = req.toLowerCase()
-      for (const id of enabledLower) {
-        if (id.startsWith(r + '_') || id.startsWith(r + '-')) return true
-      }
-      return false
-    }
+    // Resolution (exact id, or a "<required>_<suffix>" / "<required>-<suffix>" fork)
+    // is shared with the load-order auto-sort so the two can't disagree.
+    const resolveRequirement = createRequirementResolver(enabledIds)
+    const isRequireSatisfied = (req: string) => resolveRequirement(req) !== null
     const missingDepsMap = new Map<string, string[]>()
     for (const g of groups) {
       for (const mod of g.mods) {
@@ -4746,9 +4743,13 @@ export default function Mods() {
                         </ScrollArea>
 
                         {autoSortPreview.cycles.length > 0 && (
-                          <p className="text-[11px] text-warning">
-                            Circular dependency between {autoSortPreview.cycles.join(', ')}. These keep their current order.
-                          </p>
+                          <div className="space-y-0.5">
+                            {autoSortPreview.cycles.map((group) => (
+                              <p key={group.join('|')} className="text-[11px] text-warning">
+                                Circular dependency between {group.join(', ')}. No order can satisfy it, so these keep their current order relative to each other.
+                              </p>
+                            ))}
+                          </div>
                         )}
                         {autoSortPreview.missing.length > 0 && (
                           <p className="text-[11px] text-muted-foreground">
