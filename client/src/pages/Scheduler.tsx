@@ -377,21 +377,15 @@ export default function Scheduler() {
     if (runningTaskId !== null) return // Prevent double-click
     setRunningTaskId(task.id)
     try {
-      const result = await rconApi.execute(task.command)
-      if (result.success) {
-        toast({
-          title: 'Task Executed',
-          description: `"${task.name}" ran successfully`,
-          variant: 'success' as const,
-        })
-        fetchData() // Refresh to update history
-      } else {
-        toast({
-          title: 'Execution Failed',
-          description: result.response || 'Command failed',
-          variant: 'destructive',
-        })
-      }
+      // Goes through the same restart/save/servermsg/bridge: dispatch as a
+      // cron fire, instead of sending task.command to RCON as a raw string.
+      await schedulerApi.runTask(task.id)
+      toast({
+        title: 'Task Triggered',
+        description: `"${task.name}" is running`,
+        variant: 'success' as const,
+      })
+      fetchData() // Refresh to update history
     } catch (error) {
       toast({
         title: 'Error',

@@ -766,6 +766,7 @@ export const schedulerApi = {
       serverId,
     }),
   deleteTask: (id: number) => apiDelete(`/scheduler/tasks/${id}`),
+  runTask: (id: number) => apiPost(`/scheduler/tasks/${id}/run`),
   restartNow: (warningMinutes?: number) =>
     apiPost("/scheduler/restart-now", { warningMinutes }),
   getCronPresets: () => apiGet("/scheduler/cron-presets"),

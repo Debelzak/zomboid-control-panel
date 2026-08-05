@@ -110,55 +110,60 @@ export class Scheduler {
       this.jobs.get(task.id).stop();
     }
 
-    const job = cron.schedule(task.cron_expression, async () => {
-      // Prevent duplicate execution of same task
-      if (this.runningTasks.has(task.id)) {
-        log.debug(
-          `Skipping duplicate execution of task ${task.name} (already running)`,
-        );
-        return;
-      }
-
-      this.runningTasks.add(task.id);
-      log.info(`Executing scheduled task: ${task.name}`);
-      const startTime = Date.now();
-      try {
-        await this.executeTask(task);
-        const duration = Date.now() - startTime;
-        await updateTaskLastRun(task.id);
-        await logScheduleExecution(
-          task.id,
-          task.name,
-          task.command,
-          true,
-          "Completed successfully",
-          duration,
-        );
-        await logServerEvent("scheduled_task", `Executed: ${task.name}`);
-      } catch (error) {
-        const duration = Date.now() - startTime;
-        log.error(`Scheduled task failed ${task.name}: ${error.message}`);
-        await logScheduleExecution(
-          task.id,
-          task.name,
-          task.command,
-          false,
-          error.message,
-          duration,
-        );
-        await logServerEvent(
-          "scheduled_task_error",
-          `${task.name}: ${error.message}`,
-        );
-      } finally {
-        this.runningTasks.delete(task.id);
-      }
-    });
+    const job = cron.schedule(task.cron_expression, () => this.runTaskNow(task));
 
     this.jobs.set(task.id, job);
     this.jobLabels.set(task.id, task.name || task.command || "task");
     log.info(`Scheduled task: ${task.name} (${task.cron_expression})`);
     return true;
+  }
+
+  // Runs a task through the same dispatch as its cron trigger (restart/save/
+  // servermsg/bridge: special-casing in executeTask), so a manual "run now"
+  // behaves identically to the scheduled fire instead of shelling the raw
+  // command string straight to RCON.
+  async runTaskNow(task) {
+    if (this.runningTasks.has(task.id)) {
+      log.debug(
+        `Skipping duplicate execution of task ${task.name} (already running)`,
+      );
+      return;
+    }
+
+    this.runningTasks.add(task.id);
+    log.info(`Executing scheduled task: ${task.name}`);
+    const startTime = Date.now();
+    try {
+      await this.executeTask(task);
+      const duration = Date.now() - startTime;
+      await updateTaskLastRun(task.id);
+      await logScheduleExecution(
+        task.id,
+        task.name,
+        task.command,
+        true,
+        "Completed successfully",
+        duration,
+      );
+      await logServerEvent("scheduled_task", `Executed: ${task.name}`);
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      log.error(`Scheduled task failed ${task.name}: ${error.message}`);
+      await logScheduleExecution(
+        task.id,
+        task.name,
+        task.command,
+        false,
+        error.message,
+        duration,
+      );
+      await logServerEvent(
+        "scheduled_task_error",
+        `${task.name}: ${error.message}`,
+      );
+    } finally {
+      this.runningTasks.delete(task.id);
+    }
   }
 
   /**
