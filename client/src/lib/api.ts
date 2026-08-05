@@ -1876,6 +1876,35 @@ export const panelBridgeApi = {
     transport: { type: "sftp"; running: boolean; lastLatencyMs?: number | null };
   }>,
 
+  listSftpLogs: (config: {
+    host?: string;
+    port?: string;
+    username?: string;
+    password?: string;
+    logPath?: string;
+  }) => apiPost("/panel-bridge/sftp/logs/list", config) as Promise<{
+    success: boolean;
+    logPath: string;
+    files: Array<{ name: string; size: number; modifiedAt: string | null }>;
+  }>,
+
+  tailSftpLog: (config: {
+    name: string;
+    maxBytes?: number;
+    host?: string;
+    port?: string;
+    username?: string;
+    password?: string;
+    logPath?: string;
+  }) => apiPost("/panel-bridge/sftp/logs/tail", config) as Promise<{
+    success: boolean;
+    name: string;
+    size: number;
+    truncated: boolean;
+    bytesReturned: number;
+    content: string;
+  }>,
+
   testSftp: (config: {
     host: string;
     port: string;
@@ -2479,6 +2508,19 @@ export const authApi = {
     newPassword: string,
   ): Promise<{ success: boolean; message?: string }> =>
     apiPost("/auth/change-password", { currentPassword, newPassword }),
+
+  getRecoveryCodes: (): Promise<{
+    configured: boolean;
+    remaining: number;
+    total: number;
+    createdAt: string | null;
+  }> => apiGet("/auth/recovery-codes"),
+
+  generateRecoveryCodes: (): Promise<{
+    success: boolean;
+    codes: string[];
+    createdAt: string;
+  }> => apiPost("/auth/recovery-codes", {}),
 };
 
 // Servers detection API helpers (added to serversApi)

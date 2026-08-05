@@ -775,6 +775,20 @@ export class RconService extends EventEmitter {
       }
 
       log.debug(`response: ${response}`);
+
+      // The server answers an unrecognised command with a normal RCON reply, so
+      // without this check a command removed by a game update looks like it
+      // succeeded. Build 42 dropped several Build 41 commands this way.
+      if (typeof response === "string" && /^\s*Unknown command\b/i.test(response)) {
+        const unknown = response.trim();
+        log.warn(`Server rejected command as unknown: ${command}`);
+        return {
+          success: false,
+          error: `${unknown}. This command is not available on this server build.`,
+          response: unknown,
+        };
+      }
+
       return {
         success: true,
         response: response || "Command executed successfully",
@@ -1063,10 +1077,17 @@ export class RconService extends EventEmitter {
     );
   }
 
-  async addToWhitelist(username) {
-    return this.execute(
-      `addusertowhitelist "${this.sanitizeQuotedArg(username, "Username", 64)}"`,
-    );
+  async addToWhitelist(username, password) {
+    // Build 41's `addusertowhitelist` was removed in Build 42; the replacement
+    // creates the account outright and therefore needs a password.
+    const safeUser = this.sanitizeQuotedArg(username, "Username", 64);
+    if (!password || typeof password !== "string") {
+      throw new Error(
+        "Build 42 requires a password to add a whitelist user. Provide one, or add the account with /adduser on the server console.",
+      );
+    }
+    const safePassword = this.sanitizeQuotedArg(password, "Password", 128);
+    return this.execute(`adduser "${safeUser}" "${safePassword}"`);
   }
 
   async removeFromWhitelist(username) {
@@ -1296,7 +1317,11 @@ export class RconService extends EventEmitter {
   }
 
   async addAllToWhitelist() {
-    return this.execute("addalltowhitelist");
+    // No Build 42 equivalent exists; fail loudly instead of sending a command
+    // the server will silently reject.
+    throw new Error(
+      "Build 42 removed the bulk whitelist command. Add players individually with a username and password.",
+    );
   }
 
   // Events

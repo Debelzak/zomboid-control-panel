@@ -9,13 +9,17 @@ import { getSetting, setSetting, getActiveServer } from "../database/init.js";
  * Service to check for PZ server updates via Steam
  */
 export class UpdateChecker {
-  constructor(io) {
+  constructor(io, { rconService, serverManager } = {}) {
     this.io = io;
+    this.rconService = rconService;
+    this.serverManager = serverManager;
     this.checkInterval = null;
     this.lastCheck = null;
     this.updateAvailable = null;
     this.gameVersion = null;
     this.isChecking = false;
+    this.autoUpdateTimer = null;
+    this.autoUpdateRunning = false;
 
     // Default check interval: 30 minutes
     this.intervalMs = 30 * 60 * 1000;
@@ -53,6 +57,10 @@ export class UpdateChecker {
     if (this.checkInterval) {
       clearInterval(this.checkInterval);
       this.checkInterval = null;
+    }
+    if (this.autoUpdateTimer) {
+      clearTimeout(this.autoUpdateTimer);
+      this.autoUpdateTimer = null;
     }
     log.info("stopped");
   }
@@ -406,6 +414,9 @@ export class UpdateChecker {
           // Emit to all connected clients
           this.io.emit("server:updateAvailable", updateInfo);
         }
+        if (!wasAvailable) {
+          await this.scheduleAutoUpdate(updateInfo);
+        }
       } else {
         log.debug(
           `Server is up to date (build ${installed.buildId}, ${installed.branch} branch)`,
@@ -423,6 +434,91 @@ export class UpdateChecker {
       return null;
     } finally {
       this.isChecking = false;
+    }
+  }
+
+  async scheduleAutoUpdate(updateInfo) {
+    if (this.autoUpdateRunning || this.autoUpdateTimer || !this.rconService || !this.serverManager) return;
+
+    const enabled = await getSetting("serverAutoUpdate");
+    if (enabled !== true && enabled !== "true") return;
+
+    const rawWarning = Number(await getSetting("serverAutoUpdateWarningMinutes"));
+    const warningMinutes = Number.isFinite(rawWarning)
+      ? Math.min(60, Math.max(0, Math.floor(rawWarning)))
+      : 15;
+    const activeServer = await getActiveServer();
+    if (!activeServer?.installPath || activeServer.isRemote) {
+      log.warn("Auto-update skipped: the active server is remote or has no local install path");
+      return;
+    }
+
+    this.autoUpdateRunning = true;
+    const message = warningMinutes > 0
+      ? `A server update was detected. The server will restart in ${warningMinutes} minute${warningMinutes === 1 ? "" : "s"}.`
+      : "A server update was detected. The server is restarting now.";
+    try {
+      if (this.rconService.connected) await this.rconService.serverMessage(message, { skipLog: true });
+    } catch (error) {
+      log.warn(`Could not announce automatic update: ${error.message}`);
+    }
+    this.io.emit("server:autoUpdateScheduled", { warningMinutes, updateInfo });
+    this.autoUpdateTimer = setTimeout(() => {
+      this.autoUpdateTimer = null;
+      this.runAutoUpdate(updateInfo).catch((error) => log.error(`Automatic update failed: ${error.message}`));
+    }, warningMinutes * 60 * 1000);
+  }
+
+  async runAutoUpdate(updateInfo) {
+    let shouldRestart = false;
+    try {
+      const enabled = await getSetting("serverAutoUpdate");
+      if (enabled !== true && enabled !== "true") {
+        log.info("Automatic server update cancelled because the setting was disabled");
+        return;
+      }
+      const activeServer = await getActiveServer();
+      const steamcmdPath = await getSetting("steamcmdPath");
+      if (!activeServer?.installPath || !steamcmdPath) throw new Error("SteamCMD path or server install path is not configured");
+
+      if (await this.serverManager.checkServerRunning()) {
+        shouldRestart = true;
+        if (!this.rconService.connected) throw new Error("RCON is not connected, so the server cannot be stopped safely");
+        await this.rconService.save({ skipLog: true });
+        await this.rconService.quit();
+        const deadline = Date.now() + 5 * 60 * 1000;
+        while (await this.serverManager.checkServerRunning()) {
+          if (Date.now() >= deadline) throw new Error("Server did not stop within 5 minutes");
+          await new Promise((resolve) => setTimeout(resolve, 5000));
+        }
+      }
+
+      const steamcmdExe = process.platform === "win32"
+        ? path.join(steamcmdPath, "steamcmd.exe")
+        : fs.existsSync(path.join(steamcmdPath, "steamcmd.sh"))
+          ? path.join(steamcmdPath, "steamcmd.sh")
+          : path.join(steamcmdPath, "steamcmd");
+      if (!fs.existsSync(steamcmdExe)) throw new Error(`SteamCMD not found at ${steamcmdExe}`);
+      const branch = ["public", "stable"].includes(updateInfo.installed.branch) ? [] : ["-beta", updateInfo.installed.branch];
+      const code = await new Promise((resolve, reject) => {
+        const child = spawn(steamcmdExe, ["+force_install_dir", activeServer.installPath, "+login", "anonymous", "+app_update", "380870", ...branch, "validate", "+quit"], { cwd: steamcmdPath });
+        child.once("error", reject);
+        child.once("close", resolve);
+      });
+      if (code !== 0) throw new Error(`SteamCMD exited with code ${code}`);
+      this.io.emit("server:autoUpdateComplete", { success: true });
+    } catch (error) {
+      this.io.emit("server:autoUpdateComplete", { success: false, error: error.message });
+      throw error;
+    } finally {
+      this.autoUpdateRunning = false;
+      if (shouldRestart) {
+        try {
+          await this.serverManager.startServer();
+        } catch (error) {
+          log.error(`Automatic update could not restart the server: ${error.message}`);
+        }
+      }
     }
   }
 

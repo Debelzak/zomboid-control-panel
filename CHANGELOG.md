@@ -7,17 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.30] - 2026-08-05
+
 ### Added
 
 - **Settings that were previously unreachable**: the game server can now be set to start with the panel from Settings → RCON, and automatic character exports (including how many copies to keep per player) moved into Settings → Backups. The export retention limit had no interface at all before.
 - **Where the rest of the settings live**: Settings → About now lists the pages that own their own configuration, such as server profiles, the Discord bot, scheduled tasks, game server config, and chat quick messages.
+- **Automatic game-server updates**: an opt-in Settings → Mods & Workshop control can announce an update, wait a configurable player-warning period (15 minutes by default), save and stop the server through RCON, update through SteamCMD, and start it again. It never stops a server without RCON, only schedules one job, and attempts to restart after a SteamCMD failure.
+- **Password recovery codes**: admins can generate one-time recovery codes in Settings → Security. The login page accepts a recovery code when normal access is unavailable, without requiring filesystem access.
+- **Read-only remote server logs over SFTP**: Settings → PanelBridge can list and safely read the tail of remote `.log` and `.txt` files without granting write access.
+- **Editable scheduled tasks**: existing scheduler tasks can be edited from the panel, including their schedule, command, and enabled state.
 
 ### Changed
 
 - **Settings page reorganised**: the sections are grouped into Panel, Game server, Automation, and System in a sidebar instead of a single row of tabs that wrapped onto two lines. The former Panel tab held the port, remote access, and the updater in one long page; those are now separate sections, and the single-field API Keys tab was folded into Mods & Workshop. Existing links such as `?tab=rcon` still open the right section.
+- **Mods navigation and active-server workflow redesigned**: the former nested tab maze is now a flat grouped navigation rail. Installed Workshop items, what the server actually loads, conflict repair, collections, and maintenance actions are distinct destinations. The Active on server view adds an attention filter, compact/detailed density, an always-available inspector, honest enabled-state colour, and shared row primitives.
+- **Events and server configuration restyled**: Events now uses a searchable section rail and compact action groups; Server Configuration and Events no longer use the decorative corner-bracket treatment that made panels look misaligned.
+- **Conflicts view extracted**: the 1,400-line conflict surface now lives in its own component with shared mod types and row primitives, making further repair-workflow changes safer.
 
 ### Fixed
 
+- **Container failed to start under a non-root Kubernetes securityContext** ([#34](https://github.com/fpsacha/zomboid-control-panel/issues/34)): a pod that pins `runAsUser`/`runAsGroup` with `runAsNonRoot: true` never starts as root, so the entrypoint's `chown` failed with "Operation not permitted" and killed the script, and `setpriv --clear-groups` would then have failed too because `setgroups()` needs `CAP_SETGID`. Adding the `CHOWN` capability does not help, since Kubernetes only places it in a non-root container's bounding set. The entrypoint now detects that it is already running as a non-root user, skips both the ownership fix and the privilege drop, and executes the panel directly; it prints a note when the running UID/GID differs from `PUID`/`PGID`. Plain Docker and Docker Compose are unaffected and keep the existing `PUID`/`PGID` behaviour. The init-container and `command` overrides previously needed as a workaround can be removed.
+- **Discord no longer reports the server online while it is still starting**: the Server Started notification now waits for an authenticated RCON connection instead of firing as soon as the Java process appears.
+- **Chat no longer duplicates panel-sent General messages**: the page now recognises the server log's `[Admin] message` echo as the matching optimistic local entry.
+- **Build 42 top-down map tiles load again**: the map proxy resolves the current upstream build and image format rather than assuming the old WebP endpoint.
+- **Build 42 RCON command failures are visible**: unsupported commands now return a failure instead of appearing successful.
+- **PanelBridge vehicle operations work with Build 42 Java collections**: live vehicle details, lookup, repair, battery, and area removal no longer discard valid loaded vehicles.
 - **Vehicles near a player showed "no telemetry"** (PanelBridge 1.7.21): the World Map listed cars read from `vehicles.db` rather than live ones, so a car parked beside a player reported no fuel or battery and offered no repair or battery controls. The mod checked whether the game's vehicle list had a `get` field before reading it; that list reports its size correctly but does not expose `get` as a field, so every loaded vehicle was discarded. A live server with 21 loaded vehicles returned none. Vehicle lookup by id failed the same way, which also broke repair, battery, and area removal. Restart the game server once to load the updated mod.
 - **Unresolved Workshop-mod review now opens the repair workflow**: the diagnostics action previously showed only a toast. It now opens Mods → Conflicts → Dependencies and starts the existing review scan, where each candidate can be checked and added individually.
 - **RCON-only hosted servers no longer appear stopped**: profiles without local install, server, or save paths are now identified as provider-managed. Diagnostics explain that local process monitoring is unavailable while RCON controls remain usable.

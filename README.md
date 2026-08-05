@@ -217,6 +217,13 @@ Find the values with `id -u` and `id -g`, then restart the panel:
 docker compose up -d
 ```
 
+`PUID` and `PGID` apply when the container starts as root, which is the default
+for Docker and Docker Compose. If the runtime already pins a non-root user — for
+example a Kubernetes pod with `runAsUser`, `runAsGroup`, and `runAsNonRoot: true`
+— the entrypoint skips the ownership fix and the privilege drop and runs the
+panel as the given user. In that case `PUID` and `PGID` are ignored, and the
+`/app/data` and `/app/logs` volumes must already be writable by that UID/GID.
+
 This works with the published image; rebuilding is not required. The panel
 changes ownership only of its own `/app/data` and `/app/logs` directories,
 never of PZ game or save mounts.

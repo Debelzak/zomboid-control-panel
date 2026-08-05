@@ -29,6 +29,8 @@ const VALID_SETTINGS_KEYS = [
   "modCheckInterval",
   "modAutoRestart",
   "modRestartDelay",
+  "serverAutoUpdate",
+  "serverAutoUpdateWarningMinutes",
   "darkMode",
   "autoReconnect",
   "reconnectInterval",
@@ -72,6 +74,7 @@ const VALID_SETTINGS_KEYS = [
   "panelBridgeSftpPassword",
   "panelBridgeSftpBridgePath",
   "panelBridgeSftpPollIntervalSeconds",
+  "panelBridgeSftpLogPath",
 ];
 
 const OPTION_NAME_REGEX = /^[a-zA-Z0-9_]{1,64}$/;

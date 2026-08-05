@@ -201,6 +201,47 @@ async function hasTileCoverage(directory, geometry) {
   return false;
 }
 
+// The top-down (base_top) view is rendered separately from the isometric base
+// and does not use the same image format across builds: 42.19.0 publishes webp
+// while 42.20.0 publishes jpg. Requesting the wrong extension is a hard 404, so
+// read the format from the build's own base_top descriptor.
+const TOP_FORMAT_FALLBACK = "jpg";
+const TOP_CONTENT_TYPES = {
+  webp: "image/webp",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+};
+const _topFormatCache = new Map(); // directory -> format
+
+async function getB42TopFormat(directory) {
+  const cached = _topFormatCache.get(directory);
+  if (cached) return cached;
+  try {
+    const resp = await fetch(
+      `${PZ_MAP_ROOT}/maps/${directory}/base_top/layer0.dzi`,
+      {
+        signal: AbortSignal.timeout(5000),
+        headers: {
+          "User-Agent":
+            "ZomboidControlPanel/1.0 (+https://github.com/fpsacha/zomboid-control-panel)",
+        },
+      },
+    );
+    if (resp.ok) {
+      const xml = await resp.text();
+      const format = xml.match(/Format="(\w+)"/)?.[1]?.toLowerCase();
+      if (format && TOP_CONTENT_TYPES[format]) {
+        _topFormatCache.set(directory, format);
+        return format;
+      }
+    }
+  } catch {
+    // Fall through to the default below.
+  }
+  return TOP_FORMAT_FALLBACK;
+}
+
 async function getB42Map() {
   const now = Date.now();
   if (_b42Map && now - _b42DirFetchedAt < B42_DIR_TTL_MS) {
@@ -507,14 +548,19 @@ router.get("/toptiles/:level/:tile", async (req, res) => {
   if (isNaN(level) || level < 0 || level > 22) {
     return res.status(400).json({ error: "Invalid level" });
   }
-  if (!/^\d+_\d+\.webp$/.test(tile)) {
+  const parsed = /^(\d+_\d+)\.(webp|jpe?g|png)$/.exec(tile);
+  if (!parsed) {
     return res.status(400).json({ error: "Invalid tile" });
   }
 
   const dir = await getB42Dir();
-  const url = `${PZ_MAP_ROOT}/maps/${dir}/base_top/layer0_files/${level}/${tile}`;
-  const relPath = path.join("b42-top", dir, String(level), tile);
-  await serveTile(req, res, url, "image/webp", relPath);
+  // The requested extension is ignored: the client cannot know which format a
+  // given build was rendered in, so the upstream descriptor decides.
+  const format = await getB42TopFormat(dir);
+  const upstreamTile = `${parsed[1]}.${format}`;
+  const url = `${PZ_MAP_ROOT}/maps/${dir}/base_top/layer0_files/${level}/${upstreamTile}`;
+  const relPath = path.join("b42-top", dir, String(level), upstreamTile);
+  await serveTile(req, res, url, TOP_CONTENT_TYPES[format], relPath);
 });
 
 // Proxy B41 DZI tiles from map.projectzomboid.com
@@ -535,3 +581,7 @@ router.get("/b41tiles/:level/:tile", async (req, res) => {
 });
 
 export default router;
+
+// Exposed so the diagnostics route can probe the exact URLs this proxy would
+// request, instead of a hardcoded build that may not be the one in use.
+export { PZ_MAP_ROOT, getB42Dir, getB42TopFormat };

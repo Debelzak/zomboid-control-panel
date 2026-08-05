@@ -472,6 +472,14 @@ function getDiagnosticsFixAction(
       };
 
     // ─── Bridge ────────────────────────────────────────────────────────────
+    case "bridge.configured":
+    case "worldmap.bridge.configured":
+      return {
+        label: "Auto-configure bridge",
+        automated: true,
+        links: [{ to: "/settings?tab=bridge", label: "Open Bridge settings" }],
+        note: "Points the panel at the active server\u2019s bridge folder and starts the watcher. The game server must then be running with PanelBridge.lua installed.",
+      };
     case "bridge.writable":
     case "bridge.heartbeat":
       return {
@@ -952,6 +960,18 @@ export default function Debug() {
             title: "Stale lock files removed",
             description:
               data?.message || `Deleted ${data?.deleted ?? 0} lock file(s).`,
+          });
+        } else if (
+          check.id === "bridge.configured" ||
+          check.id === "worldmap.bridge.configured"
+        ) {
+          const result = await panelBridgeApi.autoConfigure();
+          if (!result?.success) {
+            throw new Error(result?.message || "Could not configure the bridge.");
+          }
+          toast({
+            title: "Bridge configured",
+            description: `Watching ${result.serverName || "the active server"}. Start the server to complete the handshake.`,
           });
         } else if (check.id === "server.recentCrash") {
           setActiveTab("crashes");

@@ -1026,7 +1026,7 @@ app.set("getCorsDebugSnapshot", getCorsDebugSnapshot);
 app.set("clearCorsBlockedOrigins", clearCorsBlockedOrigins);
 
 // Initialize update checker (needs io for socket events)
-const updateChecker = new UpdateChecker(io);
+const updateChecker = new UpdateChecker(io, { rconService, serverManager });
 app.set("updateChecker", updateChecker);
 
 // Initialize panel self-update checker

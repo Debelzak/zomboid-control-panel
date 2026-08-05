@@ -86,7 +86,6 @@ import {
   PanelUpdatePreflight,
   ServerInstance,
 } from "@/lib/api";
-import { getAccessToken } from "@/lib/authToken";
 import { useSocket } from "@/contexts/SocketContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme, type ThemeName } from "@/contexts/ThemeContext";
@@ -123,6 +122,7 @@ interface AppSettings {
   panelBridgeSftpPassword: string;
   panelBridgeSftpBridgePath: string;
   panelBridgeSftpPollIntervalSeconds: string;
+  panelBridgeSftpLogPath: string;
 
   // Server automation
   autoStartServer: boolean;
@@ -133,6 +133,8 @@ interface AppSettings {
   modCheckInterval: string;
   modAutoRestart: boolean;
   modRestartDelay: string;
+  serverAutoUpdate: boolean;
+  serverAutoUpdateWarningMinutes: string;
 
   // API Keys
   steamApiKey: string;
@@ -238,12 +240,15 @@ export default function Settings() {
     panelBridgeSftpPassword: "",
     panelBridgeSftpBridgePath: "",
     panelBridgeSftpPollIntervalSeconds: "3",
+    panelBridgeSftpLogPath: "",
     autoStartServer: false,
     autoExportOnLogin: false,
     autoExportMaxPerPlayer: "3",
     modCheckInterval: "5",
     modAutoRestart: true,
     modRestartDelay: "5",
+    serverAutoUpdate: false,
+    serverAutoUpdateWarningMinutes: "15",
     steamApiKey: "",
     workshopCollectionId: "",
     workshopCollectionAutoSync: false,
@@ -302,6 +307,13 @@ export default function Settings() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [changingPassword, setChangingPassword] = useState(false);
+  const [recoveryCodeStatus, setRecoveryCodeStatus] = useState<{
+    configured: boolean;
+    remaining: number;
+    total: number;
+  } | null>(null);
+  const [generatedRecoveryCodes, setGeneratedRecoveryCodes] = useState<string[]>([]);
+  const [generatingRecoveryCodes, setGeneratingRecoveryCodes] = useState(false);
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [localPasswordResetSupported, setLocalPasswordResetSupported] =
@@ -375,6 +387,17 @@ export default function Settings() {
   const [pinging, setPinging] = useState(false);
   const [manualBridgePath, setManualBridgePath] = useState("");
   const [testingSftp, setTestingSftp] = useState(false);
+  const [remoteLogs, setRemoteLogs] = useState<
+    Array<{ name: string; size: number; modifiedAt: string | null }>
+  >([]);
+  const [remoteLogContent, setRemoteLogContent] = useState<{
+    name: string;
+    content: string;
+    truncated: boolean;
+    bytesReturned: number;
+  } | null>(null);
+  const [loadingRemoteLogs, setLoadingRemoteLogs] = useState(false);
+  const [remoteLogError, setRemoteLogError] = useState<string | null>(null);
 
   // Server list for install dropdown
   const [servers, setServers] = useState<ServerInstance[]>([]);
@@ -732,6 +755,42 @@ export default function Settings() {
       validateCorsOriginsInput(settings.corsAllowedOrigins),
     );
   }, [settings.corsAllowedOrigins, validateCorsOriginsInput]);
+
+  const fetchRecoveryCodeStatus = useCallback(async () => {
+    try {
+      const status = await authApi.getRecoveryCodes();
+      setRecoveryCodeStatus(status);
+    } catch {
+      setRecoveryCodeStatus(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchRecoveryCodeStatus();
+  }, [fetchRecoveryCodeStatus]);
+
+  const handleGenerateRecoveryCodes = async () => {
+    setGeneratingRecoveryCodes(true);
+    try {
+      const result = await authApi.generateRecoveryCodes();
+      setGeneratedRecoveryCodes(result.codes || []);
+      await fetchRecoveryCodeStatus();
+      toast({
+        title: "Recovery codes generated",
+        description: "Save them now — they cannot be shown again.",
+        variant: "success" as const,
+      });
+    } catch (error) {
+      toast({
+        title: "Could not generate recovery codes",
+        description:
+          error instanceof Error ? error.message : "Try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setGeneratingRecoveryCodes(false);
+    }
+  };
 
   const handleSave = async () => {
     const validationError = validateCorsOriginsInput(
@@ -1587,6 +1646,53 @@ export default function Settings() {
     pollIntervalSeconds: settings.panelBridgeSftpPollIntervalSeconds,
   });
 
+  const handleListRemoteLogs = async () => {
+    setLoadingRemoteLogs(true);
+    setRemoteLogError(null);
+    try {
+      const result = await panelBridgeApi.listSftpLogs({
+        ...sftpConfig(),
+        logPath: settings.panelBridgeSftpLogPath,
+      });
+      setRemoteLogs(result.files || []);
+      if (!result.files?.length) {
+        setRemoteLogError("No .txt or .log files found in that folder.");
+      }
+    } catch (error) {
+      setRemoteLogs([]);
+      setRemoteLogError(
+        error instanceof Error ? error.message : "Could not list remote logs.",
+      );
+    } finally {
+      setLoadingRemoteLogs(false);
+    }
+  };
+
+  const handleTailRemoteLog = async (name: string) => {
+    setLoadingRemoteLogs(true);
+    setRemoteLogError(null);
+    try {
+      const result = await panelBridgeApi.tailSftpLog({
+        ...sftpConfig(),
+        logPath: settings.panelBridgeSftpLogPath,
+        name,
+      });
+      setRemoteLogContent({
+        name: result.name,
+        content: result.content,
+        truncated: result.truncated,
+        bytesReturned: result.bytesReturned,
+      });
+    } catch (error) {
+      setRemoteLogContent(null);
+      setRemoteLogError(
+        error instanceof Error ? error.message : "Could not read that log file.",
+      );
+    } finally {
+      setLoadingRemoteLogs(false);
+    }
+  };
+
   const handleTestSftp = async () => {
     setTestingSftp(true);
     try {
@@ -1696,6 +1802,7 @@ export default function Settings() {
   const selectedInstallServer =
     servers.find((server) => String(server.id) === selectedInstallServerId) ||
     null;
+  const activeServer = servers.find((server) => server.isActive) || null;
   const trimmedHttpsKeyPath = settings.httpsKeyPath.trim();
   const trimmedHttpsCertPath = settings.httpsCertPath.trim();
   const hasPartialHttpsCertPath =
@@ -3550,25 +3657,6 @@ export default function Settings() {
                       </div>
                     </div>
 
-                    <div className="border-t border-border/50 pt-4 space-y-3">
-                      <div>
-                        <p className="text-sm font-medium">Remote server via SFTP</p>
-                        <p className="text-xs text-muted-foreground">Syncs only bridge status, queue state, and command result files. Command delivery runs every 2 to 10 seconds.</p>
-                      </div>
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <div className="space-y-1.5"><Label htmlFor="sftp-host">Host</Label><Input id="sftp-host" value={settings.panelBridgeSftpHost} onChange={(event) => updateSetting("panelBridgeSftpHost", event.target.value)} placeholder="pz.example.net" /></div>
-                        <div className="space-y-1.5"><Label htmlFor="sftp-port">Port</Label><Input id="sftp-port" inputMode="numeric" value={settings.panelBridgeSftpPort} onChange={(event) => updateSetting("panelBridgeSftpPort", event.target.value)} /></div>
-                        <div className="space-y-1.5"><Label htmlFor="sftp-user">Username</Label><Input id="sftp-user" autoComplete="username" value={settings.panelBridgeSftpUsername} onChange={(event) => updateSetting("panelBridgeSftpUsername", event.target.value)} /></div>
-                        <div className="space-y-1.5"><Label htmlFor="sftp-password">Password</Label><Input id="sftp-password" type="password" autoComplete="current-password" value={settings.panelBridgeSftpPassword} onChange={(event) => updateSetting("panelBridgeSftpPassword", event.target.value)} placeholder="Stored securely" /></div>
-                      </div>
-                      <div className="space-y-1.5"><Label htmlFor="sftp-bridge-path">Remote absolute bridge folder</Label><Input id="sftp-bridge-path" value={settings.panelBridgeSftpBridgePath} onChange={(event) => updateSetting("panelBridgeSftpBridgePath", event.target.value)} placeholder="/home/pz/Zomboid/Lua/panelbridge/MyServer" /></div>
-                      <div className="flex flex-wrap items-end gap-3">
-                        <div className="w-36 space-y-1.5"><Label htmlFor="sftp-poll">Sync interval (seconds)</Label><Input id="sftp-poll" inputMode="numeric" value={settings.panelBridgeSftpPollIntervalSeconds} onChange={(event) => updateSetting("panelBridgeSftpPollIntervalSeconds", event.target.value)} /></div>
-                        <Button type="button" variant="outline" onClick={handleTestSftp} disabled={testingSftp || bridgeLoading}>{testingSftp ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Link className="mr-2 h-4 w-4" />}Test SFTP</Button>
-                        <Button type="button" onClick={handleConfigureSftp} disabled={bridgeLoading}>{bridgeLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Cloud className="mr-2 h-4 w-4" />}Start SFTP bridge</Button>
-                      </div>
-                      {bridgeStatus?.transport?.type === "sftp" && <p className="text-xs text-muted-foreground">SFTP {bridgeStatus.transport.running ? "running" : "stopped"}{bridgeStatus.transport.lastLatencyMs != null ? `, last sync ${bridgeStatus.transport.lastLatencyMs} ms` : ""}{bridgeStatus.transport.lastError ? `, last error: ${bridgeStatus.transport.lastError}` : ""}</p>}
-                    </div>
                   </div>
                 )}
 
@@ -3799,6 +3887,149 @@ export default function Settings() {
                   </div>
                 )}
 
+                <div className="border-t border-border/60 pt-5 space-y-4">
+                  <div>
+                    <p className="text-sm font-medium">Remote connection</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      PanelBridge and RCON are separate transports. Configure both for a remote server so every Events, Players, and bridge action has the path it needs.
+                    </p>
+                  </div>
+
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <div className="rounded-md border border-border/60 p-4 space-y-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium">RCON command connection</p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Used for console commands and RCON-backed event actions. It is stored with the active server profile, not with PanelBridge.
+                          </p>
+                        </div>
+                        <Link className="h-4 w-4 shrink-0 text-primary" />
+                      </div>
+                      {activeServer ? (
+                        <div className="rounded border border-border/50 bg-muted/25 px-3 py-2 text-xs text-muted-foreground">
+                          <p className="font-medium text-foreground">{activeServer.name}</p>
+                          <p className="mt-1 font-mono">{activeServer.rconHost || "Host not configured"}:{activeServer.rconPort || "port not configured"}</p>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-warning">No active server profile is available.</p>
+                      )}
+                      <RouterLink
+                        to="/servers"
+                        className="inline-flex text-xs font-medium text-primary hover:underline underline-offset-2"
+                      >
+                        Edit active server RCON connection
+                      </RouterLink>
+                    </div>
+
+                    <div className="rounded-md border border-border/60 p-4 space-y-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium">SFTP PanelBridge files</p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Syncs only the bridge status, command queue, and results folder. It does not read general server files.
+                          </p>
+                        </div>
+                        <Cloud className="h-4 w-4 shrink-0 text-primary" />
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="space-y-1.5"><Label htmlFor="sftp-host">SFTP host</Label><Input id="sftp-host" value={settings.panelBridgeSftpHost} onChange={(event) => updateSetting("panelBridgeSftpHost", event.target.value)} placeholder="pz.example.net" /></div>
+                        <div className="space-y-1.5"><Label htmlFor="sftp-port">Port</Label><Input id="sftp-port" inputMode="numeric" value={settings.panelBridgeSftpPort} onChange={(event) => updateSetting("panelBridgeSftpPort", event.target.value)} /></div>
+                        <div className="space-y-1.5"><Label htmlFor="sftp-user">Username</Label><Input id="sftp-user" autoComplete="username" value={settings.panelBridgeSftpUsername} onChange={(event) => updateSetting("panelBridgeSftpUsername", event.target.value)} /></div>
+                        <div className="space-y-1.5"><Label htmlFor="sftp-password">Password</Label><Input id="sftp-password" type="password" autoComplete="current-password" value={settings.panelBridgeSftpPassword} onChange={(event) => updateSetting("panelBridgeSftpPassword", event.target.value)} placeholder="Stored securely" /></div>
+                      </div>
+                      <div className="space-y-1.5"><Label htmlFor="sftp-bridge-path">Remote bridge folder</Label><Input id="sftp-bridge-path" value={settings.panelBridgeSftpBridgePath} onChange={(event) => updateSetting("panelBridgeSftpBridgePath", event.target.value)} placeholder="/home/pz/Zomboid/Lua/panelbridge/MyServer" /></div>
+                      <div className="flex flex-wrap items-end gap-3">
+                        <div className="w-36 space-y-1.5"><Label htmlFor="sftp-poll">Sync interval (seconds)</Label><Input id="sftp-poll" inputMode="numeric" value={settings.panelBridgeSftpPollIntervalSeconds} onChange={(event) => updateSetting("panelBridgeSftpPollIntervalSeconds", event.target.value)} /></div>
+                        <Button type="button" variant="outline" onClick={handleTestSftp} disabled={testingSftp || bridgeLoading}>{testingSftp ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Link className="mr-2 h-4 w-4" />}Test SFTP</Button>
+                        <Button type="button" onClick={handleConfigureSftp} disabled={bridgeLoading}>{bridgeLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Cloud className="mr-2 h-4 w-4" />}Start SFTP bridge</Button>
+                      </div>
+                      {bridgeStatus?.transport?.type === "sftp" && <p className="text-xs text-muted-foreground">SFTP {bridgeStatus.transport.running ? "running" : "stopped"}{bridgeStatus.transport.lastLatencyMs != null ? `, last sync ${bridgeStatus.transport.lastLatencyMs} ms` : ""}{bridgeStatus.transport.lastError ? `, last error: ${bridgeStatus.transport.lastError}` : ""}</p>}
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-muted-foreground">
+                    <strong className="text-foreground">Server logs:</strong> read-only. The panel lists the remote log folder and fetches the tail of a file on demand. Nothing is written to the remote host and whole files are never mirrored to disk.
+                  </p>
+
+                  <div className="rounded-md border border-border/60 p-4 space-y-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium">Remote server logs</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Absolute path to the Zomboid <code>Logs</code> folder on the remote host. Only <code>.txt</code> and <code>.log</code> files are listed.
+                        </p>
+                      </div>
+                      <FolderOpen className="h-4 w-4 shrink-0 text-primary" />
+                    </div>
+                    <div className="flex flex-wrap items-end gap-3">
+                      <div className="min-w-[18rem] flex-1 space-y-1.5">
+                        <Label htmlFor="sftp-log-path">Remote log folder</Label>
+                        <Input
+                          id="sftp-log-path"
+                          value={settings.panelBridgeSftpLogPath}
+                          onChange={(event) => updateSetting("panelBridgeSftpLogPath", event.target.value)}
+                          placeholder="/home/pz/Zomboid/Logs"
+                        />
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleListRemoteLogs}
+                        disabled={loadingRemoteLogs || !settings.panelBridgeSftpLogPath.trim()}
+                      >
+                        {loadingRemoteLogs ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FolderOpen className="mr-2 h-4 w-4" />}
+                        List logs
+                      </Button>
+                    </div>
+
+                    {remoteLogError && (
+                      <p className="text-xs text-destructive">{remoteLogError}</p>
+                    )}
+
+                    {remoteLogs.length > 0 && (
+                      <div className="space-y-2">
+                        <div className="max-h-48 overflow-auto rounded border border-border/50">
+                          <ul className="divide-y divide-border/40">
+                            {remoteLogs.map((file) => (
+                              <li key={file.name} className="flex items-center justify-between gap-3 px-3 py-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleTailRemoteLog(file.name)}
+                                  className="min-w-0 flex-1 truncate text-left text-xs font-mono text-primary hover:underline"
+                                >
+                                  {file.name}
+                                </button>
+                                <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                                  {(file.size / 1024).toFixed(0)} KB
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground">
+                          Select a file to load the last 256 KB.
+                        </p>
+                      </div>
+                    )}
+
+                    {remoteLogContent && (
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-xs font-medium">{remoteLogContent.name}</p>
+                          <span className="text-[11px] text-muted-foreground">
+                            {remoteLogContent.truncated ? "tail of " : ""}
+                            {(remoteLogContent.bytesReturned / 1024).toFixed(0)} KB
+                          </span>
+                        </div>
+                        <pre className="max-h-72 overflow-auto rounded border border-border/50 bg-background/60 p-3 text-[11px] leading-relaxed font-mono whitespace-pre-wrap break-words">
+                          {remoteLogContent.content}
+                        </pre>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
                 {/* Auto-update toggle */}
                 <div className="flex items-center justify-between rounded-xl border border-border/60 bg-muted/25 p-4">
                   <div>
@@ -3955,6 +4186,48 @@ export default function Settings() {
                     </p>
                   </div>
                 )}
+                <div className="border-t border-border/60 pt-6">
+                  <div className="flex items-center gap-3 p-4 rounded-xl bg-muted/50">
+                    <Switch
+                      checked={settings.serverAutoUpdate}
+                      onCheckedChange={(value) =>
+                        updateSetting("serverAutoUpdate", value)
+                      }
+                      aria-label="Automatically update the server when a new build is detected"
+                    />
+                    <div>
+                      <Label className="text-base">
+                        Automatically update the game server
+                      </Label>
+                      <p className="text-sm text-muted-foreground">
+                        Save, stop, update through SteamCMD, then start again when a new build is detected.
+                      </p>
+                    </div>
+                  </div>
+                  {settings.serverAutoUpdate && (
+                    <div className="max-w-xs space-y-2 pl-4 pt-4 border-l-2 border-primary/30">
+                      <Label htmlFor="server-update-warning-minutes" className="text-base">
+                        Player warning (minutes)
+                      </Label>
+                      <Input
+                        id="server-update-warning-minutes"
+                        type="number"
+                        value={settings.serverAutoUpdateWarningMinutes}
+                        onChange={(e) =>
+                          updateSetting("serverAutoUpdateWarningMinutes", e.target.value)
+                        }
+                        onWheel={(e) => e.currentTarget.blur()}
+                        min="0"
+                        max="60"
+                        className="h-11"
+                        inputMode="numeric"
+                      />
+                      <p className="text-sm text-muted-foreground">
+                        Defaults to 15 minutes. Set 0 to update immediately when no players are online.
+                      </p>
+                    </div>
+                  )}
+                </div>
               </CardContent>
             </Card>
 
@@ -3962,6 +4235,13 @@ export default function Settings() {
             <WorkshopCollectionSyncCard
               settings={settings}
               updateSetting={updateSetting}
+              persistCookies={async (cookies) => {
+                await configApi.updateAppSettings(cookies);
+                setSettings((current) => ({ ...current, ...cookies }));
+                setOriginalSettings((current) =>
+                  current ? { ...current, ...cookies } : current,
+                );
+              }}
             />
 
             {/* API Keys */}
@@ -4594,6 +4874,105 @@ export default function Settings() {
                       </Button>
                     </form>
 
+                    <div className="max-w-2xl rounded-xl border border-border/70 p-4 space-y-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium text-foreground">
+                            Recovery codes
+                          </p>
+                          <p className="mt-1 text-sm text-muted-foreground">
+                            Save these now while you can still sign in. If you forget the
+                            password, enter one on the login screen to set a new one. No
+                            server or file access needed.
+                          </p>
+                        </div>
+                        <Key className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-3">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => void handleGenerateRecoveryCodes()}
+                          disabled={generatingRecoveryCodes}
+                        >
+                          {generatingRecoveryCodes ? (
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          ) : (
+                            <Key className="mr-2 h-4 w-4" />
+                          )}
+                          {recoveryCodeStatus?.configured
+                            ? "Generate new codes"
+                            : "Generate recovery codes"}
+                        </Button>
+                        {recoveryCodeStatus && (
+                          <span className="text-xs text-muted-foreground">
+                            {recoveryCodeStatus.configured
+                              ? `${recoveryCodeStatus.remaining} of ${recoveryCodeStatus.total} unused`
+                              : "No codes generated yet"}
+                          </span>
+                        )}
+                      </div>
+
+                      {recoveryCodeStatus?.configured && (
+                        <p className="text-xs text-muted-foreground">
+                          Generating new codes replaces every existing code.
+                        </p>
+                      )}
+
+                      {generatedRecoveryCodes.length > 0 && (
+                        <div className="space-y-2 rounded-md border border-warning/40 bg-warning/10 p-3">
+                          <p className="text-xs font-medium text-warning">
+                            Copy these now. They are shown once and cannot be retrieved later.
+                          </p>
+                          <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
+                            {generatedRecoveryCodes.map((code) => (
+                              <code
+                                key={code}
+                                className="rounded bg-background/70 px-2 py-1 font-mono text-xs tracking-wider"
+                              >
+                                {code}
+                              </code>
+                            ))}
+                          </div>
+                          <div className="flex flex-wrap gap-2 pt-1">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                const blob = new Blob(
+                                  [
+                                    `Zomboid Control Panel recovery codes\nGenerated: ${new Date().toISOString()}\nEach code works once.\n\n${generatedRecoveryCodes.join("\n")}\n`,
+                                  ],
+                                  { type: "text/plain" },
+                                );
+                                const url = URL.createObjectURL(blob);
+                                const a = document.createElement("a");
+                                a.href = url;
+                                a.download = "zomboid-panel-recovery-codes.txt";
+                                document.body.appendChild(a);
+                                a.click();
+                                a.remove();
+                                window.setTimeout(() => URL.revokeObjectURL(url), 1500);
+                              }}
+                            >
+                              <Download className="mr-1.5 h-3.5 w-3.5" />
+                              Download
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => setGeneratedRecoveryCodes([])}
+                            >
+                              Done
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
                     <div className="max-w-2xl rounded-xl border border-border/70 bg-muted/35 p-4 text-sm text-muted-foreground">
                       <div className="flex items-start gap-3">
                         <Info className="mt-0.5 h-4 w-4 text-primary" />
@@ -5079,12 +5458,14 @@ export default function Settings() {
 function WorkshopCollectionSyncCard({
   settings,
   updateSetting,
+  persistCookies,
 }: {
   settings: AppSettings;
   updateSetting: (
     key: keyof AppSettings,
     value: AppSettings[keyof AppSettings],
   ) => void;
+  persistCookies: (cookies: Pick<AppSettings, "steamSessionId" | "steamLoginSecure">) => Promise<void>;
 }) {
   const { toast } = useToast();
   const [diff, setDiff] = useState<Awaited<
@@ -5098,9 +5479,7 @@ function WorkshopCollectionSyncCard({
     ReturnType<typeof modsApi.collectionBrowsers>
   > | null>(null);
   const [extractingFrom, setExtractingFrom] = useState<string | null>(null);
-  const [extensionInfoOpen, setExtensionInfoOpen] = useState(false);
-  const [downloadingExt, setDownloadingExt] = useState(false);
-  const [copied, setCopied] = useState<string | null>(null);
+  const [savingCookies, setSavingCookies] = useState(false);
   const [testing, setTesting] = useState(false);
   const [showCookies, setShowCookies] = useState(false);
 
@@ -5190,7 +5569,35 @@ function WorkshopCollectionSyncCard({
     return result;
   };
 
-  const handlePasteApply = () => {
+  const saveExtractedCookies = async (
+    sessionId: string,
+    loginSecure: string,
+  ) => {
+    setSavingCookies(true);
+    try {
+      await persistCookies({
+        steamSessionId: sessionId,
+        steamLoginSecure: loginSecure,
+      });
+      toast({
+        title: "Cookies saved",
+        description: "Your Steam session is ready for collection sync.",
+        variant: "success" as const,
+      });
+      return true;
+    } catch (error) {
+      setPasteError(
+        error instanceof Error
+          ? error.message
+          : "Could not save cookies. Try again.",
+      );
+      return false;
+    } finally {
+      setSavingCookies(false);
+    }
+  };
+
+  const handlePasteApply = async () => {
     setPasteError(null);
     const parsed = parseCookieBlob(pasteText);
     if (parsed.error) {
@@ -5201,16 +5608,20 @@ function WorkshopCollectionSyncCard({
       setPasteError("Nothing usable found");
       return;
     }
+    const { sessionId, loginSecure } = parsed;
+    if (sessionId && loginSecure) {
+      if (await saveExtractedCookies(sessionId, loginSecure)) {
+        setPasteText("");
+        setPasteOpen(false);
+      }
+      return;
+    }
     if (parsed.sessionId) updateSetting("steamSessionId", parsed.sessionId);
-    if (parsed.loginSecure)
-      updateSetting("steamLoginSecure", parsed.loginSecure);
-    const both = parsed.sessionId && parsed.loginSecure;
+    if (parsed.loginSecure) updateSetting("steamLoginSecure", parsed.loginSecure);
     toast({
-      title: both ? "Cookies extracted" : "Partial extraction",
-      description: both
-        ? "Found sessionid + steamLoginSecure. Don't forget to save settings."
-        : `Only ${parsed.sessionId ? "sessionid" : "steamLoginSecure"} found — paste a request that includes both, or fill the other field manually.`,
-      variant: both ? "default" : "destructive",
+      title: "Partial extraction",
+      description: `Only ${parsed.sessionId ? "sessionid" : "steamLoginSecure"} found — paste a request that includes both, or fill the other field manually.`,
+      variant: "destructive",
     });
     setPasteText("");
     setPasteOpen(false);
@@ -5233,15 +5644,12 @@ function WorkshopCollectionSyncCard({
         return;
       }
       const parsed = parseCookieBlob(text);
-      if (parsed.sessionId && parsed.loginSecure) {
-        updateSetting("steamSessionId", parsed.sessionId);
-        updateSetting("steamLoginSecure", parsed.loginSecure);
-        toast({
-          title: "Cookies extracted from clipboard",
-          description: "Don't forget to save settings.",
-        });
-        setPasteText("");
-        setPasteOpen(false);
+      const { sessionId, loginSecure } = parsed;
+      if (sessionId && loginSecure) {
+        if (await saveExtractedCookies(sessionId, loginSecure)) {
+          setPasteText("");
+          setPasteOpen(false);
+        }
         return;
       }
       // Partial / no match: surface the textarea so the user can see what
@@ -5313,15 +5721,10 @@ function WorkshopCollectionSyncCard({
     try {
       const r = await modsApi.collectionExtractCookies(browserId);
       if (r.ok && r.sessionid && r.steamLoginSecure) {
-        updateSetting("steamSessionId", r.sessionid);
-        updateSetting("steamLoginSecure", r.steamLoginSecure);
-        toast({
-          title: `Cookies extracted from ${label}`,
-          description:
-            r.notes && r.notes.length > 0
-              ? r.notes[0]
-              : "Don't forget to save settings.",
-        });
+        const saved = await saveExtractedCookies(r.sessionid, r.steamLoginSecure);
+        if (saved && r.notes && r.notes.length > 0) {
+          toast({ title: `Cookies extracted from ${label}`, description: r.notes[0] });
+        }
       } else {
         toast({
           variant: "destructive",
@@ -5337,165 +5740,6 @@ function WorkshopCollectionSyncCard({
       });
     } finally {
       setExtractingFrom(null);
-    }
-  };
-
-  // Browser detection from User-Agent — used to tailor the extension
-  // install instructions to whatever the admin is using right now.
-  // Order matters: Edge/Brave/Opera UA also contain "Chrome".
-  const detectedBrowser:
-    | "firefox"
-    | "edge"
-    | "brave"
-    | "opera"
-    | "chrome"
-    | "safari"
-    | "other" = (() => {
-    if (typeof navigator === "undefined") return "other";
-    const ua = navigator.userAgent;
-    if (/Firefox\//i.test(ua)) return "firefox";
-    // Brave only differentiates via navigator.brave at runtime — UA mimics Chrome.
-    const nav: any = navigator;
-    if (nav?.brave?.isBrave) return "brave";
-    if (/Edg\//i.test(ua)) return "edge";
-    if (/OPR\/|Opera/i.test(ua)) return "opera";
-    if (/Chrome\//i.test(ua)) return "chrome";
-    if (/Safari\//i.test(ua) && !/Chrome\//i.test(ua)) return "safari";
-    return "other";
-  })();
-
-  const extensionsUrl = ((): string => {
-    switch (detectedBrowser) {
-      case "firefox":
-        return "about:debugging#/runtime/this-firefox";
-      case "edge":
-        return "edge://extensions";
-      case "brave":
-        return "brave://extensions";
-      case "opera":
-        return "opera://extensions";
-      case "chrome":
-        return "chrome://extensions";
-      default:
-        return "chrome://extensions";
-    }
-  })();
-
-  const extensionsUrlLabel = ((): string => {
-    switch (detectedBrowser) {
-      case "firefox":
-        return "about:debugging";
-      case "edge":
-        return "edge://extensions";
-      case "brave":
-        return "brave://extensions";
-      case "opera":
-        return "opera://extensions";
-      case "chrome":
-        return "chrome://extensions";
-      default:
-        return "chrome://extensions";
-    }
-  })();
-
-  const browserLabel = ((): string => {
-    switch (detectedBrowser) {
-      case "firefox":
-        return "Firefox";
-      case "edge":
-        return "Edge";
-      case "brave":
-        return "Brave";
-      case "opera":
-        return "Opera";
-      case "chrome":
-        return "Chrome";
-      case "safari":
-        return "Safari";
-      default:
-        return "your browser";
-    }
-  })();
-
-  const copyToClipboard = async (text: string, label: string) => {
-    try {
-      let copiedToClipboard = false;
-      if (navigator.clipboard?.writeText) {
-        try {
-          await navigator.clipboard.writeText(text);
-          copiedToClipboard = true;
-        } catch {
-          // Firefox on an HTTP panel exposes this API but rejects the write.
-          // Fall through to the user-gesture-compatible legacy command.
-        }
-      }
-      if (!copiedToClipboard) {
-        const input = document.createElement("textarea");
-        input.value = text;
-        input.setAttribute("readonly", "");
-        input.style.cssText = "position:fixed;opacity:0;pointer-events:none";
-        document.body.appendChild(input);
-        input.select();
-        const copied = document.execCommand("copy");
-        input.remove();
-        if (!copied) throw new Error("Clipboard access denied");
-      }
-      setCopied(label);
-      window.setTimeout(() => setCopied((c) => (c === label ? null : c)), 1800);
-    } catch {
-      toast({
-        variant: "destructive",
-        title: "Copy failed",
-        description:
-          "Your browser blocked clipboard access — copy it manually.",
-      });
-    }
-  };
-
-  // Pulls the bundled extension .zip from the panel itself so the user can
-  // install it without going to GitHub. Auth'd via the same bearer token as
-  // every other API call.
-  const handleDownloadExtension = async () => {
-    if (downloadingExt) return;
-    setDownloadingExt(true);
-    try {
-      const token = getAccessToken();
-      const res = await fetch("/api/mods/collection/extension-bundle", {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      if (!res.ok) {
-        let detail = "";
-        try {
-          detail = ((await res.json()) as any)?.error || "";
-        } catch {
-          /* ignore */
-        }
-        throw new Error(detail || `Download failed (${res.status})`);
-      }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "zomboid-panel-extension.zip";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.setTimeout(() => URL.revokeObjectURL(url), 1500);
-      toast({
-        title: "Extension downloaded",
-        description:
-          "Unzip it somewhere safe, then follow the steps below to load it into " +
-          browserLabel +
-          ".",
-      });
-    } catch (err: any) {
-      toast({
-        variant: "destructive",
-        title: "Download failed",
-        description: err?.message || "Unknown error",
-      });
-    } finally {
-      setDownloadingExt(false);
     }
   };
 
@@ -5622,7 +5866,8 @@ function WorkshopCollectionSyncCard({
           add/remove only happens in one place.
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-6">
+      <CardContent className="space-y-7">
+        <div className="grid gap-6 border-b border-border/40 pb-6 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,.8fr)]">
         {/* Collection ID */}
         <div className="space-y-2">
           <Label htmlFor="ws-collection-id" className="text-base">
@@ -5646,9 +5891,9 @@ function WorkshopCollectionSyncCard({
 
         {/* Auto-sync toggle */}
         <div
-          className={`flex items-start justify-between gap-4 rounded-lg border p-4 transition-colors ${
+          className={`flex items-start justify-between gap-4 lg:border-l lg:border-border/40 lg:pl-6 ${
             autoSyncOn && !credsConfigured
-              ? "border-warning/40 bg-warning/5"
+              ? "text-warning"
               : ""
           }`}
         >
@@ -5680,11 +5925,13 @@ function WorkshopCollectionSyncCard({
             }
           />
         </div>
+        </div>
 
         {/* Steam session cookies */}
-        <div className="space-y-2">
-          <div className="flex items-center gap-2 flex-wrap">
-            <Label className="text-base">Steam Session Cookies</Label>
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Label className="text-base">Steam Session Cookies</Label>
             {credsConfigured ? (
               <span className="inline-flex items-center gap-1 rounded border border-success/40 bg-success/10 px-1.5 py-0.5 text-[11px] font-medium text-success">
                 <Check className="w-3 h-3" /> Configured
@@ -5694,6 +5941,19 @@ function WorkshopCollectionSyncCard({
                 Not configured
               </span>
             )}
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowCookies((v) => !v)}
+              className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
+            >
+              {showCookies ? (
+                <EyeOff className="w-3.5 h-3.5" />
+              ) : (
+                <Eye className="w-3.5 h-3.5" />
+              )}
+              {showCookies ? "Hide" : "Show"}
+            </button>
           </div>
           <p className="text-sm text-muted-foreground">
             Required to <strong>write</strong> to the collection. Reading is
@@ -5739,25 +5999,12 @@ function WorkshopCollectionSyncCard({
               />
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => setShowCookies((v) => !v)}
-            className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
-          >
-            {showCookies ? (
-              <EyeOff className="w-3.5 h-3.5" />
-            ) : (
-              <Eye className="w-3.5 h-3.5" />
-            )}
-            {showCookies ? "Hide cookies" : "Show cookies"}
-          </button>
-
           {/* Auto-detect from local browser — fastest path when Steam is
               logged in on the same machine the panel runs on. */}
           {browsers &&
             browsers.supported &&
             browsers.browsers.some((b) => b.detected) && (
-              <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 mt-3 space-y-3">
+              <div className="border-t border-border/40 pt-4 space-y-3">
                 <div className="flex items-start gap-3">
                   <Zap className="w-4 h-4 text-primary mt-0.5 shrink-0" />
                   <div className="flex-1 space-y-1">
@@ -5795,206 +6042,14 @@ function WorkshopCollectionSyncCard({
                 </div>
                 <p className="text-[11px] text-muted-foreground">
                   Chrome 127+ may seal <code>steamLoginSecure</code> away from
-                  this method (App-Bound Encryption). If extraction returns
-                  nothing, use the panel browser extension below instead.
+                  this method (App-Bound Encryption). Paste a Steam request if
+                  extraction returns nothing.
                 </p>
               </div>
             )}
-
-          {/* Browser extension — works regardless of platform or which
-              machine Steam is logged in on. Guided install with one-button
-              download and copy-to-clipboard helpers for the bits browsers
-              won't let us automate (chrome:// nav, extension load). */}
-          <div className="rounded-lg border border-primary/40 bg-primary/5 p-4 mt-3 space-y-3">
-            <div className="flex items-start gap-3">
-              <ExternalLink className="w-4 h-4 text-primary mt-0.5 shrink-0" />
-              <div className="flex-1 space-y-1">
-                <p className="font-medium text-sm">
-                  Install the panel extension — recommended
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  We detected <strong>{browserLabel}</strong>. Three clicks
-                  total: download, load, paste — then you'll have a one-click
-                  "send cookies" button in your toolbar forever.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                size="sm"
-                variant="default"
-                onClick={handleDownloadExtension}
-                disabled={downloadingExt}
-              >
-                {downloadingExt ? (
-                  <RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-                ) : (
-                  <Download className="w-3.5 h-3.5 mr-1.5" />
-                )}
-                1. Download extension
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => copyToClipboard(extensionsUrl, "ext-url")}
-                title={`Copy ${extensionsUrlLabel} to your clipboard — browsers don't let websites navigate to this URL.`}
-              >
-                {copied === "ext-url" ? (
-                  <Check className="w-3.5 h-3.5 mr-1.5 text-green-500" />
-                ) : (
-                  <ExternalLink className="w-3.5 h-3.5 mr-1.5" />
-                )}
-                2. Copy {extensionsUrlLabel}
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() =>
-                  copyToClipboard(
-                    typeof window !== "undefined" ? window.location.origin : "",
-                    "panel-url",
-                  )
-                }
-                title="Copy your panel URL — paste it into the extension popup so it knows where to send cookies."
-              >
-                {copied === "panel-url" ? (
-                  <Check className="w-3.5 h-3.5 mr-1.5 text-green-500" />
-                ) : (
-                  <ExternalLink className="w-3.5 h-3.5 mr-1.5" />
-                )}
-                3. Copy panel URL
-              </Button>
-            </div>
-
-            {/* Browser-specific load steps. Kept terse — long walls of text
-                kill momentum at the "I almost have this working" phase. */}
-            <div className="rounded-md border border-border/40 bg-background/40 p-3 text-xs text-muted-foreground space-y-2">
-              {detectedBrowser === "firefox" ? (
-                <>
-                  <p className="font-medium text-foreground">
-                    Load into Firefox
-                  </p>
-                  <ol className="list-decimal list-inside space-y-1 pl-1">
-                    <li>
-                      Unzip the downloaded file somewhere you won't accidentally
-                      delete.
-                    </li>
-                    <li>
-                      Paste <code>about:debugging#/runtime/this-firefox</code>{" "}
-                      in a new tab.
-                    </li>
-                    <li>
-                      Click <strong>Load Temporary Add-on…</strong> and pick{" "}
-                      <code>manifest.json</code> from the unzipped folder.
-                    </li>
-                    <li>
-                      Click the puzzle-piece icon in your toolbar, then pin
-                      "Zomboid Control Panel".
-                    </li>
-                  </ol>
-                  <p className="text-[11px]">
-                    Note: Firefox unloads temporary add-ons on restart. To make
-                    it permanent, sign it on{" "}
-                    <a
-                      className="underline"
-                      href="https://addons.mozilla.org/developers/"
-                      target="_blank"
-                      rel="noopener"
-                    >
-                      addons.mozilla.org
-                    </a>{" "}
-                    or use Firefox Developer/Nightly with{" "}
-                    <code>xpinstall.signatures.required = false</code>.
-                  </p>
-                </>
-              ) : detectedBrowser === "safari" ? (
-                <>
-                  <p className="font-medium text-foreground">
-                    Safari isn't supported yet
-                  </p>
-                  <p>
-                    Safari requires extensions to be packaged as a signed macOS
-                    app. For now, use the auto-detect buttons above, the
-                    cookie-paste helper below, or install the extension in
-                    another browser.
-                  </p>
-                </>
-              ) : (
-                <>
-                  <p className="font-medium text-foreground">
-                    Load into {browserLabel}
-                  </p>
-                  <ol className="list-decimal list-inside space-y-1 pl-1">
-                    <li>
-                      Unzip the downloaded file somewhere you won't accidentally
-                      delete.
-                    </li>
-                    <li>
-                      Paste <code>{extensionsUrlLabel}</code> in a new tab.
-                    </li>
-                    <li>
-                      Toggle <strong>Developer mode</strong> (top-right of the
-                      extensions page).
-                    </li>
-                    <li>
-                      Click <strong>Load unpacked</strong> and pick the unzipped
-                      folder.
-                    </li>
-                    <li>
-                      Click the puzzle-piece icon in your toolbar, then pin
-                      "Zomboid Control Panel".
-                    </li>
-                  </ol>
-                </>
-              )}
-              <div className="pt-1 border-t border-border/30 mt-2">
-                <p className="font-medium text-foreground mb-1">
-                  Then, in the extension popup
-                </p>
-                <ol className="list-decimal list-inside space-y-1 pl-1">
-                  <li>
-                    Paste the panel URL (use the button above) and your panel
-                    login.
-                  </li>
-                  <li>
-                    Click <em>Test login</em>, then make sure you're signed into{" "}
-                    <code>steamcommunity.com</code>.
-                  </li>
-                  <li>
-                    Click <em>Send Steam cookies to panel</em>. From now on it's
-                    a one-click refresh.
-                  </li>
-                </ol>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setExtensionInfoOpen((v) => !v)}
-              className="text-[11px] text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
-            >
-              {extensionInfoOpen
-                ? "Hide privacy & permissions"
-                : "Privacy & permissions"}
-            </button>
-            {extensionInfoOpen && (
-              <p className="text-[11px] text-muted-foreground">
-                The extension only talks to <code>steamcommunity.com</code>{" "}
-                (locally, to read your <code>sessionid</code> +{" "}
-                <code>steamLoginSecure</code> cookies) and to the panel URL you
-                configured. Your password is <strong>not</strong> stored unless
-                you explicitly tick "Remember password" — by default only a
-                short-lived access token is cached.
-              </p>
-            )}
-          </div>
 
           {/* Paste helper — much faster than copying two cookies by hand */}
-          <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 mt-3 space-y-3">
+          <div className="border-t border-border/40 pt-4 space-y-3">
             <div className="flex items-start gap-3">
               <Zap className="w-4 h-4 text-primary mt-0.5 shrink-0" />
               <div className="flex-1 space-y-1">
@@ -6035,6 +6090,7 @@ function WorkshopCollectionSyncCard({
                     size="sm"
                     variant="default"
                     onClick={handlePasteFromClipboard}
+                    disabled={savingCookies}
                   >
                     <Cloud className="w-3.5 h-3.5 mr-1.5" />
                     Paste from clipboard
@@ -6079,10 +6135,14 @@ function WorkshopCollectionSyncCard({
                     type="button"
                     size="sm"
                     onClick={handlePasteApply}
-                    disabled={!pasteText.trim()}
+                    disabled={!pasteText.trim() || savingCookies}
                   >
-                    <Check className="w-3.5 h-3.5 mr-1.5" />
-                    Extract cookies
+                    {savingCookies ? (
+                      <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                    ) : (
+                      <Check className="w-3.5 h-3.5 mr-1.5" />
+                    )}
+                    {savingCookies ? "Saving…" : "Extract & save"}
                   </Button>
                   <Button
                     type="button"

@@ -755,14 +755,6 @@ router.post("/start", async (req, res) => {
           pollCleared = true;
           clearInterval(pollInterval);
           if (io) io.emit("server:status", { running: true });
-          req.app
-            .get("discordBot")
-            ?.sendEventNotification("serverStart", {})
-            .catch((err) =>
-              log.debug(
-                `Discord serverStart notification failed: ${err.message}`,
-              ),
-            );
           log.info("Server detected as running");
 
           // Wait for RCON to be ready (PZ takes 60-180s to fully start)
@@ -852,6 +844,14 @@ router.post("/start", async (req, res) => {
           // Log completion status
           if (rconConnected) {
             log.info("RCON startup sequence completed - connected");
+            req.app
+              .get("discordBot")
+              ?.sendEventNotification("serverStart", {})
+              .catch((err) =>
+                log.debug(
+                  `Discord serverStart notification failed: ${err.message}`,
+                ),
+              );
           } else {
             log.warn(
               "RCON startup sequence completed - NOT connected (auto-reconnect will keep trying every 30s)",
