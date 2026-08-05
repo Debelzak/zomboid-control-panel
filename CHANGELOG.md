@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Unraid and Indifferent Broccoli deployment guide**: the README now separates the panel's own `/app/data` and `/app/logs` state from shared Project Zomboid `/pz-server` and `/zomboid` mounts, explains RCON networking and PanelBridge access for a separate PZ container, and includes an importable Unraid template. It also calls out that `/panel-data` and `/panel-logs` are unused paths.
+
 ## [1.1.30] - 2026-08-05
 
 ### Added
