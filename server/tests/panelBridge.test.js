@@ -188,4 +188,16 @@ describe('PanelBridge vehicle compatibility', () => {
     expect(vehicleAt?.[1]).toContain('if not vehicles or not vehicles.get then return nil end');
     expect(vehicleAt?.[1]).toContain('pcall(function() return vehicles:get(i) end)');
   });
+
+  it('keeps the Lua runtime version aligned with the manifest', async () => {
+    const luaPath = path.resolve(process.cwd(), 'pz-mod/PanelBridge/media/lua/server/PanelBridge.lua');
+    const modInfoPath = path.resolve(process.cwd(), 'pz-mod/PanelBridge/mod.info');
+    const [lua, modInfo] = await Promise.all([readFile(luaPath, 'utf8'), readFile(modInfoPath, 'utf8')]);
+    const headerVersion = lua.match(/^    Version: ([^\r\n]+)/m)?.[1];
+    const runtimeVersion = lua.match(/^    VERSION = "([^"]+)",/m)?.[1];
+    const manifestVersion = modInfo.match(/^modversion=(.+)$/m)?.[1];
+
+    expect(runtimeVersion).toBe(headerVersion);
+    expect(manifestVersion).toBe(headerVersion);
+  });
 });
