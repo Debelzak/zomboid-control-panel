@@ -28,6 +28,7 @@ import {
   initDatabase,
   getActiveServer,
   getAllSettings,
+  getServers,
   getSetting,
   setSetting,
   flushWrites,
@@ -55,6 +56,7 @@ import {
   writeLuaAtomic,
 } from "./utils/embeddedLua.js";
 import { isServerObservedRunning } from "./utils/serverStatus.js";
+import { discoverMounts } from "./services/mountDiscovery.js";
 
 // === Supervisor bootstrap ===
 // If the .exe was double-clicked directly (no PANEL_SUPERVISOR_V env var) and
@@ -210,6 +212,7 @@ process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 
 // Routes
 import serverRoutes from "./routes/server.js";
+import discoveryRoutes from "./routes/discovery.js";
 import serversRoutes from "./routes/servers.js";
 import serverFilesRoutes from "./routes/serverFiles.js";
 import playerRoutes from "./routes/players.js";
@@ -1045,6 +1048,10 @@ app.use("/api/auth", authRoutes);
 
 // API Routes
 app.use("/api/server", serverRoutes);
+// Mounted BEFORE serversRoutes: its literal /discover-mounts and
+// /create-from-discovery paths must match before servers.js's GET /:id
+// catch-all would otherwise swallow them as a server-id lookup.
+app.use("/api/servers", discoveryRoutes);
 app.use("/api/servers", serversRoutes);
 app.use("/api/server-files", serverFilesRoutes);
 app.use("/api/players", playerRoutes);
@@ -2520,6 +2527,23 @@ async function start() {
           });
         }
         logReady(urls);
+
+        // If PZ server files were bind-mounted in but no server profile has
+        // been created yet, point the user at Settings instead of leaving
+        // them to guess a Docker mount path manually.
+        try {
+          const existingServers = await getServers();
+          if (!existingServers || existingServers.length === 0) {
+            const mounts = discoverMounts();
+            if (mounts.length > 0) {
+              log.info(
+                `PZ server files detected at ${mounts[0].installPath} — visit Settings to connect`,
+              );
+            }
+          }
+        } catch (err) {
+          log.debug(`Mount auto-discovery check failed: ${err.message}`);
+        }
 
         // Linux/CentOS: Check for common issues at startup
         if (process.platform !== "win32") {
