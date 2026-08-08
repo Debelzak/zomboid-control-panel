@@ -23,6 +23,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+#### Discord
+
+- **Chat relay privacy clarity**: the broad relay option now names Local chat explicitly and warns that it is forwarded to Discord; choose General tab only to keep proximity chat private.
+
+#### PanelBridge
+
+- **Build 42.20 startup errors**: capability caching now stringifies the Java class wrapper instead of calling its incompatible `getName()` member, preventing a non-fatal Lua error on every server start.
+
 #### Server status
 
 - **A running systemd server could display as Offline**: strict per-server process ownership intentionally refuses to claim another local server, but a systemd-launched server can be difficult to attribute even when the panel's own RCON connection and PanelBridge heartbeat prove it is alive. Status reporting now accepts either direct connection as live evidence while keeping strict ownership requirements for stop and force-stop operations.

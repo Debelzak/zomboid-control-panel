@@ -207,6 +207,16 @@ describe('PanelBridge vehicle compatibility', () => {
     expect(offenders).toEqual([]);
   });
 
+  it('uses a stringified Java class wrapper for capability cache keys', async () => {
+    const luaPath = path.resolve(process.cwd(), 'pz-mod/PanelBridge/media/lua/server/PanelBridge.lua');
+    const lua = await readFile(luaPath, 'utf8');
+    const capabilityKey = lua.match(/local function capabilityKey\(obj, methodName\)([\s\S]*?)\nend/);
+
+    expect(capabilityKey?.[1]).toContain('obj:getClass()');
+    expect(capabilityKey?.[1]).toContain('tostring(classValue) .. "#" .. methodName');
+    expect(capabilityKey?.[1]).not.toContain(':getName()');
+  });
+
   it('never gates a Java call on an `if obj.method then` field test', async () => {
     const luaPath = path.resolve(process.cwd(), 'pz-mod/PanelBridge/media/lua/server/PanelBridge.lua');
     const lua = await readFile(luaPath, 'utf8');

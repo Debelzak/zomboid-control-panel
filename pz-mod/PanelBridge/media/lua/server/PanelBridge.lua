@@ -1,10 +1,14 @@
 ---@diagnostic disable: undefined-global, deprecated
 --[[
     PanelBridge - Server-side mod for Zomboid Control Panel
-    Version: 1.7.24
+    Version: 1.7.25
 
     This mod enables external control panel communication with the PZ server.
     Communication happens via JSON files in the server save folder.
+
+                v1.7.25 Changes:
+                - Avoid getName() on Build 42.20 Java class wrappers; their
+                    stable string representation is used for cache keys.
 
                 v1.7.24 Changes:
                 - Java methods are now probed by calling them and caching the
@@ -317,7 +321,7 @@
 local json
 
 local PanelBridge = {
-    VERSION = "1.7.24",
+    VERSION = "1.7.25",
     PROTOCOL_VERSION = "queue-v1",
     CHECK_INTERVAL = 250, -- milliseconds (fast command polling)
     lastCheck = 0,
@@ -487,9 +491,10 @@ end
 -- vehicle's getter) is NOT marked unavailable, so one bad object cannot
 -- disable a working accessor server-wide.
 local function capabilityKey(obj, methodName)
-    local ok, className = pcall(function() return obj:getClass():getName() end)
-    if ok and className then
-        return tostring(className) .. "#" .. methodName
+    local ok, classValue = pcall(function() return obj:getClass() end)
+    if ok and classValue then
+        -- Build 42.20 class wrappers stringify correctly but reject getName().
+        return tostring(classValue) .. "#" .. methodName
     end
     return nil
 end
