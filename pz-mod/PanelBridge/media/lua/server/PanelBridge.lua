@@ -1,10 +1,21 @@
 ---@diagnostic disable: undefined-global, deprecated
 --[[
     PanelBridge - Server-side mod for Zomboid Control Panel
-    Version: 1.7.26
+    Version: 1.7.28
 
     This mod enables external control panel communication with the PZ server.
     Communication happens via JSON files in the server save folder.
+
+                v1.7.28 Changes:
+                - Game-time reads only call documented Build 42 clock methods.
+                    Optional getter probes emitted a full Kahlua trace when
+                    unavailable, even inside pcall.
+
+                v1.7.27 Changes:
+                - Healing no longer probes optional body-damage, Stats, or
+                    Moodles Java methods. Build 42 logs a full engine trace
+                    for each unavailable probe even inside pcall; healing now
+                    uses only the documented body-part collection.
 
                 v1.7.26 Changes:
                 - Player health actions use the Build 42 body-part collection
@@ -321,7 +332,7 @@
 local json
 
 local PanelBridge = {
-    VERSION = "1.7.26",
+    VERSION = "1.7.28",
     PROTOCOL_VERSION = "queue-v1",
     CHECK_INTERVAL = 250, -- milliseconds (fast command polling)
     lastCheck = 0,
@@ -2611,18 +2622,21 @@ handlers.getGameTime = function(args)
         return false, nil, "GameTime not available"
     end
 
-    -- Use safeGetValue for methods that may not exist in all PZ versions
+    -- Build 42 logs a full Kahlua trace for an unavailable Java probe, even
+    -- inside pcall. Restrict this to clock methods used by vanilla Lua.
+    local timeOfDay = gameTime:getTimeOfDay()
+    local hour = math.floor(timeOfDay)
     return true, {
-        year = safeGetValue(gameTime, "getYear", 1993),
-        month = (safeGetValue(gameTime, "getMonth", 0) or 0) + 1, -- Lua 1-indexed
-        day = safeGetValue(gameTime, "getDay", 1),
-        hour = safeGetValue(gameTime, "getTimeOfDay", 12),
-        minute = safeGetValue(gameTime, "getMinutes", 0),
-        dayOfWeek = safeGetValue(gameTime, "getDayOfWeek", nil),
-        worldAgeHours = safeGetValue(gameTime, "getWorldAgeHours", 0),
-        timeSinceApo = safeGetValue(gameTime, "getTimeSinceApo", 0),
-        moonPhase = safeGetValue(gameTime, "getMoon", nil),
-        nightsSurvived = safeGetValue(gameTime, "getNightsSurvived", 0)
+        year = gameTime:getYear(),
+        month = gameTime:getMonth() + 1, -- Lua 1-indexed
+        day = gameTime:getDay(),
+        hour = timeOfDay,
+        minute = math.floor((timeOfDay - hour) * 60),
+        dayOfWeek = 0,
+        worldAgeHours = gameTime:getWorldAgeHours(),
+        timeSinceApo = 0,
+        moonPhase = 0,
+        nightsSurvived = gameTime:getNightsSurvived()
     }
 end
 
@@ -4884,19 +4898,12 @@ handlers.healPlayer = function(args)
     local healed = {}
     local errors = {}
 
-    -- Heal body damage
+    -- Build 42's documented body-part collection is the complete supported
+    -- healing path. Optional Java-method probes log engine errors even inside
+    -- pcall, so do not call bodyDamage/Stats/Moodles compatibility methods.
     local bodyDamage = player:getBodyDamage()
     if bodyDamage then
         local ok1, err1 = pcall(function()
-            -- RestoreToFullHealth handles most healing in one shot on B42.
-            if PanelBridge.invoke(bodyDamage, "RestoreToFullHealth") then
-                healed.bodyDamage = true
-            end
-            -- Clear Knox virus (zombie) infection at body level
-            PanelBridge.invoke(bodyDamage, "setInfected", false)
-            PanelBridge.invoke(bodyDamage, "setInfectedWound", false)
-            -- Build 42 exposes a Java collection of BodyPart objects.
-            -- Using it avoids capability probes that log engine errors.
             local bodyParts = bodyDamage:getBodyParts()
             for i = 0, bodyParts:size() - 1 do
                 local part = bodyParts:get(i)
@@ -4907,41 +4914,6 @@ handlers.healPlayer = function(args)
         end)
         if not ok1 then table.insert(errors, "bodyDamage: " .. tostring(err1)) end
     end
-
-    -- Restore stats
-    local stats = player:getStats()
-    if stats then
-        local ok2, err2 = pcall(function()
-            local applied = 0
-            local function reset(methodName, value)
-                if PanelBridge.invoke(stats, methodName, value) then applied = applied + 1 end
-            end
-            reset("setHunger", 0)
-            reset("setThirst", 0)
-            reset("setFatigue", 0)
-            reset("setStress", 0)
-            reset("setBoredom", 0)
-            reset("setUnhappyness", 0)
-            reset("setPain", 0)
-            reset("setEndurance", 1)
-            -- B42: additional stat resets
-            reset("setDrunkenness", 0)
-            reset("setAngry", 0)
-            reset("setFear", 0)
-            reset("setPanic", 0)
-            healed.stats = applied > 0
-        end)
-        if not ok2 then table.insert(errors, "stats: " .. tostring(err2)) end
-    end
-
-    -- Clear moodles/effects if possible
-    local ok3, err3 = pcall(function()
-        local moodles = player:getMoodles()
-        if moodles then
-            healed.moodles = PanelBridge.invoke(moodles, "reset") and true or false
-        end
-    end)
-    if not ok3 then table.insert(errors, "moodles: " .. tostring(err3)) end
 
     -- CRITICAL: Network sync — transmit changes to client
     -- Without this, the server has the healed state but the player client doesn't see it

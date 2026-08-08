@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+#### PanelBridge
+
+- **Game-time reads could flood the server log with Lua stack traces**: querying optional clock fields that Build 42 does not expose generated a trace per probe. The bridge now reads only the documented core clock values and derives minutes locally.
+
 #### Discord
 
 - **Chat relay privacy clarity**: the broad relay option now names Local chat explicitly and warns that it is forwarded to Discord; choose General tab only to keep proximity chat private.
@@ -30,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### PanelBridge
 
+- **Healing a player could flood the server log with Lua stack traces**: the Build 42 handler still probed optional health, stat, and moodle methods. Project Zomboid logs each unavailable Java probe even when it is caught, so healing now uses only the documented body-part collection.
 - **Build 42.20 startup errors**: capability caching now stringifies the Java class wrapper instead of calling its incompatible `getName()` member, preventing a non-fatal Lua error on every server start.
 - **Healing a player could flood the server log with Lua stack traces**: Build 42.20 does not expose several optional body-damage APIs to Kahlua, and attempting to probe them logs an engine error even inside `pcall`. Healing now uses the known body-part slots without probing those unavailable APIs.
 - **Killing a player could report success without killing them**: the command used unverified health fallbacks and returned success even when its final death check failed. It now uses Build 42's native death path and returns the failed verification to the panel.

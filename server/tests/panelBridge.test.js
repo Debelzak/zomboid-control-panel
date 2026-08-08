@@ -272,6 +272,9 @@ describe('PanelBridge player healing compatibility', () => {
     expect(healHandler).toContain('part:SetFakeInfected(false)');
     expect(healHandler).not.toContain('setFakeInfected');
     expect(healHandler).not.toContain('getNumOfBodyParts');
+    expect(healHandler).not.toContain('PanelBridge.invoke(');
+    expect(healHandler).not.toContain('player:getStats()');
+    expect(healHandler).not.toContain('player:getMoodles()');
   });
 
   it('uses Build 42 native death and reports a failed verification', async () => {
@@ -286,5 +289,30 @@ describe('PanelBridge player healing compatibility', () => {
     expect(killHandler).toContain('return isDead, {');
     expect(killHandler).not.toContain('setOverallBodyHealth');
     expect(killHandler).not.toContain('DoDeath');
+  });
+});
+
+describe('PanelBridge game-time compatibility', () => {
+  it('uses only documented Build 42 clock methods without speculative probes', async () => {
+    const source = await readFile(
+      path.resolve(import.meta.dirname, '../../pz-mod/PanelBridge/media/lua/server/PanelBridge.lua'),
+      'utf8',
+    );
+    const handlerStart = source.indexOf('handlers.getGameTime = function(args)');
+    const handlerEnd = source.indexOf('-- Set game time', handlerStart);
+    const handler = source.slice(handlerStart, handlerEnd);
+
+    expect(handlerStart).toBeGreaterThanOrEqual(0);
+    expect(handlerEnd).toBeGreaterThan(handlerStart);
+    expect(handler).toContain('gameTime:getTimeOfDay()');
+    expect(handler).toContain('gameTime:getWorldAgeHours()');
+    expect(handler).toContain('gameTime:getNightsSurvived()');
+    expect(handler).toContain('math.floor((timeOfDay - hour) * 60)');
+    expect(handler).not.toContain('safeGetValue(');
+    expect(handler).not.toContain('PanelBridge.invoke(');
+    expect(handler).not.toContain('getMinutes');
+    expect(handler).not.toContain('getDayOfWeek');
+    expect(handler).not.toContain('getTimeSinceApo');
+    expect(handler).not.toContain('getMoon');
   });
 });
