@@ -1,10 +1,19 @@
 ---@diagnostic disable: undefined-global, deprecated
 --[[
     PanelBridge - Server-side mod for Zomboid Control Panel
-    Version: 1.7.28
+    Version: 1.7.29
 
     This mod enables external control panel communication with the PZ server.
     Communication happens via JSON files in the server save folder.
+
+                v1.7.29 Changes:
+                - A Java method that is unavailable is now retried only a few
+                    times before it is remembered as missing. Kahlua reports a
+                    missing method as an empty RuntimeException, so the previous
+                    text match never recognised it and the engine retraced the
+                    same call on every poll. A method that has succeeded once is
+                    never disabled, so one broken modded object cannot turn off
+                    a working accessor.
 
                 v1.7.28 Changes:
                 - Game-time reads only call documented Build 42 clock methods.
@@ -332,7 +341,7 @@
 local json
 
 local PanelBridge = {
-    VERSION = "1.7.28",
+    VERSION = "1.7.29",
     PROTOCOL_VERSION = "queue-v1",
     CHECK_INTERVAL = 250, -- milliseconds (fast command polling)
     lastCheck = 0,
@@ -370,6 +379,9 @@ local PanelBridge = {
 
     -- Cached results of Java method probes, keyed by class name + method.
     methodCapabilities = {},
+
+    -- Consecutive failures per class+method, reset by any success.
+    methodFailures = {},
 
     -- Statistics
     stats = {
@@ -507,6 +519,12 @@ local function capabilityKey(obj, methodName)
         -- Build 42.20 class wrappers stringify correctly but reject getName().
         return tostring(classValue) .. "#" .. methodName
     end
+    -- Some Java wrappers reject getClass(). Strip the identity hash so the key
+    -- still identifies the class rather than the individual instance.
+    local textOk, text = pcall(tostring, obj)
+    if textOk and text then
+        return (text:gsub("@%x+", "")) .. "#" .. methodName
+    end
     return nil
 end
 
@@ -516,6 +534,11 @@ local function isMissingMethodError(err)
         or text:find("attempt to call", 1, true) ~= nil
         or text:find("not a function", 1, true) ~= nil
 end
+
+-- Build 42 raises a bare java.lang.RuntimeException with an empty message for a
+-- missing method, which no error-text test can recognise. Stop calling a method
+-- that has never once succeeded after this many consecutive failures.
+local MAX_METHOD_FAILURES = 3
 
 -- Returns: success, result (or error message on failure)
 function PanelBridge.invoke(obj, methodName, ...)
@@ -534,19 +557,30 @@ function PanelBridge.invoke(obj, methodName, ...)
     end)
 
     if success then
-        if key then PanelBridge.methodCapabilities[key] = true end
+        if key then
+            PanelBridge.methodCapabilities[key] = true
+            PanelBridge.methodFailures[key] = nil
+        end
         return true, result
     end
 
-    if key and isMissingMethodError(result) then
-        PanelBridge.methodCapabilities[key] = false
-        PanelBridge.debug("Method unavailable on this build; will not retry", {
-            method = methodName,
-            class = key
-        })
-    else
-        PanelBridge.debug("invoke failed", { method = methodName, error = tostring(result) })
+    -- Never disable a method that has already worked: a single broken modded
+    -- object must not turn off a genuine accessor for every other object.
+    if key and PanelBridge.methodCapabilities[key] ~= true then
+        local failures = (PanelBridge.methodFailures[key] or 0) + 1
+        PanelBridge.methodFailures[key] = failures
+        if isMissingMethodError(result) or failures >= MAX_METHOD_FAILURES then
+            PanelBridge.methodCapabilities[key] = false
+            PanelBridge.debug("Method unavailable on this build; will not retry", {
+                method = methodName,
+                class = key,
+                failures = failures
+            })
+            return false, result
+        end
     end
+
+    PanelBridge.debug("invoke failed", { method = methodName, error = tostring(result) })
     return false, result
 end
 

@@ -292,6 +292,34 @@ describe('PanelBridge player healing compatibility', () => {
   });
 });
 
+describe('PanelBridge Java capability caching', () => {
+  const bridgePath = path.resolve(
+    import.meta.dirname,
+    '../../pz-mod/PanelBridge/media/lua/server/PanelBridge.lua',
+  );
+
+  it('stops retrying a method that never succeeds, even without an error message', async () => {
+    const source = await readFile(bridgePath, 'utf8');
+    const invoke = source.match(/function PanelBridge\.invoke\(obj, methodName, \.\.\.\)([\s\S]*?)\nend/);
+
+    // Build 42 raises an empty RuntimeException for a missing method, so the
+    // error-text test alone never matched and the engine retraced every call.
+    expect(invoke?.[1]).toContain('failures >= MAX_METHOD_FAILURES');
+    expect(invoke?.[1]).toContain('PanelBridge.methodCapabilities[key] = false');
+    // A method that already worked must survive one broken modded object.
+    expect(invoke?.[1]).toContain('PanelBridge.methodCapabilities[key] ~= true');
+    expect(invoke?.[1]).toContain('PanelBridge.methodFailures[key] = nil');
+  });
+
+  it('still identifies a class when the Java wrapper rejects getClass', async () => {
+    const source = await readFile(bridgePath, 'utf8');
+    const capabilityKey = source.match(/local function capabilityKey\(obj, methodName\)([\s\S]*?)\nend/);
+
+    // Without a key nothing can be cached, so the call retraces forever.
+    expect(capabilityKey?.[1]).toContain('@%x+');
+  });
+});
+
 describe('PanelBridge game-time compatibility', () => {
   it('uses only documented Build 42 clock methods without speculative probes', async () => {
     const source = await readFile(

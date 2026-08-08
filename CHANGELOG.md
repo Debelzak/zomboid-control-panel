@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### PanelBridge
 
+- **Repeated Lua stack traces in the game server log**: when a Java method is missing on a Build 42 server the game reports it as an error with no message, so the bridge never recognised it as unavailable and called it again on every poll. Vehicle, healing, and game-time queries could each fill the log with the same trace. The bridge now stops calling a method that has never once succeeded, while a method that has worked before is never disabled by a single broken modded object.
 - **Game-time reads could flood the server log with Lua stack traces**: querying optional clock fields that Build 42 does not expose generated a trace per probe. The bridge now reads only the documented core clock values and derives minutes locally.
 
 #### Discord
