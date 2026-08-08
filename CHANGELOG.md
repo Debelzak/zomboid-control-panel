@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### Discord
 
 - **Chat relay privacy clarity**: the broad relay option now names Local chat explicitly and warns that it is forwarded to Discord; choose General tab only to keep proximity chat private.
+- **Server start and stop notices could disappear permanently**: duplicate suppression now expires after one minute, so a missed state observation cannot silence later lifecycle notifications while still preventing repeated notices from overlapping checks.
 
 #### PanelBridge
 
