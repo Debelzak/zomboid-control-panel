@@ -717,6 +717,12 @@ export const playersApi = {
     ),
 };
 
+export interface RconTestResult {
+  success: boolean;
+  error?: "unreachable" | "auth_failed" | "invalid_input" | "internal_error";
+  detail: string;
+}
+
 // RCON API
 export const rconApi = {
   execute: (command: string) => apiPost("/rcon/execute", { command }),
@@ -726,6 +732,8 @@ export const rconApi = {
   disconnect: () => apiPost("/rcon/disconnect"),
   getHistory: (limit?: number) => apiGet(`/rcon/history?limit=${limit || 100}`),
   getCommands: () => apiGet("/rcon/commands"),
+  testConnection: (host: string, port: number, password: string) =>
+    apiPost<RconTestResult>("/rcon/test", { host, port, password }),
 };
 
 // Scheduler API

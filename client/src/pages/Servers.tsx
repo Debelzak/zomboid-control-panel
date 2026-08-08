@@ -80,6 +80,8 @@ import { serversApi, serversDetectApi, ServerInstance, configApi, serverApi, upd
 import { SocketContext } from '@/contexts/SocketContext'
 import { useNavigate } from 'react-router-dom'
 import { PageHeader } from '@/components/PageHeader'
+import { PasswordInput } from '@/components/PasswordInput'
+import { RconTestConnection } from '@/components/RconTestConnection'
 
 interface DetectedServerConfig {
   dataPath: string
@@ -1444,11 +1446,16 @@ export default function Servers() {
 
                 <div className="space-y-2">
                   <Label>RCON Password *</Label>
-                  <Input
-                    type="password"
+                  <PasswordInput
                     value={newServer.rconPassword}
-                    onChange={e => setNewServer({ ...newServer, rconPassword: e.target.value })}
+                    onChange={value => setNewServer({ ...newServer, rconPassword: value })}
                     placeholder="Enter the RCON password set in the server's INI file"
+                    label="RCON password"
+                  />
+                  <RconTestConnection
+                    host={newServer.rconHost}
+                    port={newServer.rconPort}
+                    password={newServer.rconPassword}
                   />
                 </div>
 
@@ -1693,12 +1700,12 @@ export default function Servers() {
                         {/* RCON Password Section */}
                         <div className="space-y-2 mt-2">
                           <Label>RCON Password *</Label>
-                          <Input
-                            type="password"
+                          <PasswordInput
                             placeholder="Enter RCON password"
                             value={newServer.rconPassword}
                             className="bg-background"
-                            onChange={e => setNewServer({ ...newServer, rconPassword: e.target.value })}
+                            onChange={value => setNewServer({ ...newServer, rconPassword: value })}
+                            label="RCON password"
                           />
                           {!newServer.rconPassword ? (
                             <p className="text-xs text-warning">
@@ -1709,6 +1716,11 @@ export default function Servers() {
                               <CheckCircle className="w-3 h-3" /> Password set
                             </p>
                           )}
+                          <RconTestConnection
+                            host={newServer.rconHost || '127.0.0.1'}
+                            port={newServer.rconPort}
+                            password={newServer.rconPassword}
+                          />
                         </div>
 
                         {/* Memory Configuration */}
@@ -1887,10 +1899,15 @@ export default function Servers() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>RCON Password</Label>
-                  <Input
-                    type="password"
+                  <PasswordInput
                     value={editingServer.rconPassword}
-                    onChange={e => setEditingServer({ ...editingServer, rconPassword: e.target.value })}
+                    onChange={value => setEditingServer({ ...editingServer, rconPassword: value })}
+                    label="RCON password"
+                  />
+                  <RconTestConnection
+                    host={editingServer.rconHost}
+                    port={editingServer.rconPort}
+                    password={editingServer.rconPassword}
                   />
                 </div>
                 {!editingServer.isRemote && (
@@ -1906,11 +1923,11 @@ export default function Servers() {
                       </TooltipContent>
                     </Tooltip>
                   </Label>
-                  <Input
-                    type="password"
+                  <PasswordInput
                     value={editingServer.adminPassword || ''}
-                    onChange={e => setEditingServer({ ...editingServer, adminPassword: e.target.value })}
+                    onChange={value => setEditingServer({ ...editingServer, adminPassword: value })}
                     placeholder="Set admin password"
+                    label="admin password"
                   />
                 </div>
                 )}
