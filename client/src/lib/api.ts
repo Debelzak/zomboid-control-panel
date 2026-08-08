@@ -1469,6 +1469,17 @@ export interface ServerInstance {
   createdAt: string;
 }
 
+// Mount discovery — probes common Docker bind-mount locations for PZ server
+// files so a fresh panel can offer a one-click "connect this" profile.
+export interface DiscoveredMount {
+  installPath: string;
+  dataPath: string | null;
+  source: string;
+  serverNames: string[];
+  hasStartScript: boolean;
+  hasPanelBridge: boolean;
+}
+
 // Servers API (multi-server management)
 export const serversApi = {
   getAll: () => apiGet("/servers") as Promise<{ servers: ServerInstance[] }>,
@@ -1539,6 +1550,25 @@ export const serversApi = {
       branch,
       validateFiles: true,
     }) as Promise<{ success: boolean; message: string }>,
+
+  // Probe common Docker bind-mount locations for PZ server files.
+  discoverMounts: () =>
+    apiGet("/servers/discover-mounts") as Promise<{
+      mounts: DiscoveredMount[];
+    }>,
+
+  // Turn a discover-mounts result into a fully-populated server profile —
+  // RCON settings are read server-side from the discovered server's own INI.
+  createFromDiscovery: (data: {
+    installPath: string;
+    dataPath: string;
+    serverName?: string;
+    name?: string;
+  }) =>
+    apiPost("/servers/create-from-discovery", data) as Promise<{
+      server: ServerInstance;
+      message: string;
+    }>,
 };
 
 // Server Files API (INI, Sandbox, Spawn Points)

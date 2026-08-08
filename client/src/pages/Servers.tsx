@@ -76,12 +76,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { serversApi, serversDetectApi, ServerInstance, configApi, serverApi, updateApi, UpdateStatus } from '@/lib/api'
+import { serversApi, serversDetectApi, ServerInstance, configApi, serverApi, updateApi, UpdateStatus, DiscoveredMount } from '@/lib/api'
 import { SocketContext } from '@/contexts/SocketContext'
 import { useNavigate } from 'react-router-dom'
 import { PageHeader } from '@/components/PageHeader'
 import { PasswordInput } from '@/components/PasswordInput'
 import { RconTestConnection } from '@/components/RconTestConnection'
+import { MountDiscoveryBanner } from '@/components/MountDiscoveryBanner'
+import { DiscoverySetup } from '@/components/DiscoverySetup'
 
 interface DetectedServerConfig {
   dataPath: string
@@ -243,6 +245,16 @@ export default function Servers() {
   ])
   const [loadingBranches, setLoadingBranches] = useState(false)
 
+  // Mount discovery — offers a one-click "connect this" profile when PZ
+  // server files are found at a common bind-mount path and no profile
+  // uses them yet.
+  const [discoveredMounts, setDiscoveredMounts] = useState<DiscoveredMount[]>([])
+  const [scanningMounts, setScanningMounts] = useState(false)
+  const [discoverySetupMount, setDiscoverySetupMount] = useState<DiscoveredMount | null>(null)
+  const connectableMounts = discoveredMounts.filter(
+    (mount) => mount.dataPath && mount.serverNames.length > 0,
+  )
+
   const { toast } = useToast()
   const socket = useContext(SocketContext)
   const navigate = useNavigate()
@@ -304,6 +316,39 @@ export default function Servers() {
     }).catch(e => reportClientWarning('Failed to load update status.', e))
     return () => clearInterval(statusInterval)
   }, [fetchServers, fetchServerStatuses])
+
+  // Silently probe for common bind-mount PZ installs — non-fatal since the
+  // banner is a convenience, not a requirement.
+  useEffect(() => {
+    serversApi.discoverMounts()
+      .then(data => setDiscoveredMounts(data.mounts || []))
+      .catch(e => reportClientWarning('Mount discovery failed.', e))
+  }, [])
+
+  const handleScanMounts = async () => {
+    setScanningMounts(true)
+    try {
+      const data = await serversApi.discoverMounts()
+      const mounts = data.mounts || []
+      const connectableCount = mounts.filter(
+        (mount) => mount.dataPath && mount.serverNames.length > 0,
+      ).length
+      setDiscoveredMounts(mounts)
+      toast({
+        title: connectableCount
+          ? `${connectableCount} server${connectableCount === 1 ? '' : 's'} found`
+          : 'No servers found',
+      })
+    } catch (error) {
+      toast({
+        title: 'Scan Failed',
+        description: error instanceof Error ? error.message : 'Mount discovery failed',
+        variant: 'destructive'
+      })
+    } finally {
+      setScanningMounts(false)
+    }
+  }
 
   // Listen for update status changes (clears banner after successful update)
   useEffect(() => {
@@ -967,6 +1012,21 @@ export default function Servers() {
         icon={<Server className="w-5 h-5 text-primary" />}
         actions={
           <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-9 w-9"
+              onClick={handleScanMounts}
+              disabled={scanningMounts}
+              aria-label="Scan for servers"
+              title="Scan for servers"
+            >
+              {scanningMounts ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Search className="h-4 w-4" aria-hidden="true" />
+              )}
+            </Button>
             <Button variant="outline" onClick={() => { setAddMode('remote'); setShowAddDialog(true) }}>
               <Globe className="w-4 h-4 mr-2" /> Add Remote Server
             </Button>
@@ -979,6 +1039,19 @@ export default function Servers() {
           </div>
         }
       />
+
+      {/* Discovered mounts — offer a one-click connect when no server profile uses them yet */}
+      {servers.length === 0 && connectableMounts.length > 0 && (
+        <div className="space-y-2">
+          {connectableMounts.map(mount => (
+            <MountDiscoveryBanner
+              key={mount.installPath}
+              mount={mount}
+              onConnect={setDiscoverySetupMount}
+            />
+          ))}
+        </div>
+      )}
 
       {/* Server Grid */}
       {servers.length === 0 ? (
@@ -2237,6 +2310,14 @@ export default function Servers() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Discovery Setup — "Connect" from the mount discovery banner */}
+      <DiscoverySetup
+        open={!!discoverySetupMount}
+        onOpenChange={(open) => !open && setDiscoverySetupMount(null)}
+        mount={discoverySetupMount}
+        onCreated={() => { fetchServers(); fetchServerStatuses() }}
+      />
     </div>
   )
 }
