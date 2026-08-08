@@ -541,6 +541,13 @@ router.post("/", async (req, res) => {
       `POST / — creating server: name=${config?.name}, remote=${!!config?.isRemote}`,
     );
 
+    // Fall back to env-configured paths (docker-compose PZ_SERVER_PATH /
+    // PZ_SAVE_PATH) when the request body doesn't set them explicitly.
+    if (!config.installPath)
+      config.installPath = process.env.PZ_SERVER_PATH || "";
+    if (!config.zomboidDataPath)
+      config.zomboidDataPath = process.env.PZ_SAVE_PATH || null;
+
     // Validate required fields - installPath not required for remote servers
     const isRemote = !!config.isRemote;
     const requiredFields = isRemote

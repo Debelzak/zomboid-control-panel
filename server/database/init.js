@@ -1263,10 +1263,25 @@ export async function getAllSettings() {
 // Server Configurations (Multi-server)
 // ============================================
 
-function normalizeServerMemory(server) {
+// Falls back to the docker-compose PZ_SERVER_PATH / PZ_SAVE_PATH env vars when
+// a stored server profile has no path configured, and auto-detects isRemote
+// from whether the resolved paths exist on this host.
+export function normalizeServerMemory(server) {
   if (!server) return server;
+  const installPath = server.installPath || process.env.PZ_SERVER_PATH || "";
+  const zomboidDataPath =
+    server.zomboidDataPath || process.env.PZ_SAVE_PATH || null;
+
+  const pathsConfigured = Boolean(installPath || zomboidDataPath);
+  const pathsExistLocally =
+    Boolean(installPath && fs.existsSync(installPath)) ||
+    Boolean(zomboidDataPath && fs.existsSync(zomboidDataPath));
+
   return {
     ...server,
+    installPath,
+    zomboidDataPath,
+    isRemote: pathsConfigured ? !pathsExistLocally : server.isRemote || false,
     minMemory: normalizeMemoryGb(server.minMemory, 4),
     maxMemory: normalizeMemoryGb(server.maxMemory, 8),
   };
