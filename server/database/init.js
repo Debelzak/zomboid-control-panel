@@ -67,6 +67,7 @@ const defaultData = {
   player_notes: [],
   player_stats: [],
   mod_presets: [],
+  user_templates: [],
   steamid_bans: [],
   performance_history: [],
   bridge_logs: [],
@@ -642,6 +643,7 @@ function getDatabaseStatsSync() {
       player_notes: data.player_notes?.length ?? 0,
       player_stats: data.player_stats?.length ?? 0,
       mod_presets: data.mod_presets?.length ?? 0,
+      user_templates: data.user_templates?.length ?? 0,
       performance_history: data.performance_history?.length ?? 0,
       bridge_logs: data.bridge_logs?.length ?? 0,
       discord_webhooks: data.discord_webhooks?.length ?? 0,
@@ -1689,6 +1691,50 @@ export async function deleteModPreset(id) {
   if (index === -1) return false;
 
   db.data.mod_presets.splice(index, 1);
+  scheduleWrite();
+  return true;
+}
+
+// ============================================
+// Simulation Templates (user-created; built-ins live under server/data/templates)
+// ============================================
+
+export async function getUserTemplates() {
+  const db = await getDb();
+  if (!db.data.user_templates) db.data.user_templates = [];
+  return db.data.user_templates;
+}
+
+export async function getUserTemplate(id) {
+  const db = await getDb();
+  if (!db.data.user_templates) db.data.user_templates = [];
+  return db.data.user_templates.find((t) => t.meta?.id === id) || null;
+}
+
+export async function saveUserTemplate(template) {
+  const db = await getDb();
+  if (!db.data.user_templates) db.data.user_templates = [];
+
+  const index = db.data.user_templates.findIndex(
+    (t) => t.meta?.id === template.meta?.id,
+  );
+  if (index === -1) {
+    db.data.user_templates.push(template);
+  } else {
+    db.data.user_templates[index] = template;
+  }
+  scheduleWrite();
+  return template;
+}
+
+export async function deleteUserTemplate(id) {
+  const db = await getDb();
+  if (!db.data.user_templates) return false;
+
+  const index = db.data.user_templates.findIndex((t) => t.meta?.id === id);
+  if (index === -1) return false;
+
+  db.data.user_templates.splice(index, 1);
   scheduleWrite();
   return true;
 }
