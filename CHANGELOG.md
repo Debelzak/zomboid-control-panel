@@ -30,6 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### PanelBridge
 
 - **Build 42.20 startup errors**: capability caching now stringifies the Java class wrapper instead of calling its incompatible `getName()` member, preventing a non-fatal Lua error on every server start.
+- **Healing a player could flood the server log with Lua stack traces**: Build 42.20 does not expose several optional body-damage APIs to Kahlua, and attempting to probe them logs an engine error even inside `pcall`. Healing now uses the known body-part slots without probing those unavailable APIs.
+- **Killing a player could report success without killing them**: the command used unverified health fallbacks and returned success even when its final death check failed. It now uses Build 42's native death path and returns the failed verification to the panel.
 
 #### Server status
 
