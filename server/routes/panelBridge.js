@@ -27,6 +27,11 @@ import {
   compareModVersions,
   writeLuaAtomic,
 } from "../utils/embeddedLua.js";
+import {
+  canAutoInstall,
+  checkBridgeInstalled,
+  installBridge,
+} from "../services/panelBridgeInstaller.js";
 import { createLogger } from "../utils/logger.js";
 import {
   getSftpCachePath,
@@ -207,8 +212,10 @@ const BRIDGE_USERNAME_REGEX = /^(?=.*\S)[^\x00-\x1F\x7F"\\]{1,64}$/;
 router.get("/status", async (req, res) => {
   const status = bridge.getStatus();
 
-  // Also include detected paths from active server
+  // Also include detected paths and local auto-install status from the
+  // active server (only meaningful for local/non-remote installs).
   let detectedPaths = null;
+  let localInstall = null;
   try {
     const activeServer = await getActiveServer();
     if (activeServer) {
@@ -219,6 +226,10 @@ router.get("/status", async (req, res) => {
         // Bridge path would be: zomboidDataPath/Saves/Multiplayer/{serverName}/panelbridge/
         // OR for dedicated servers: installPath/../Server_files/Saves/Multiplayer/{serverName}/panelbridge/
       };
+      localInstall = {
+        canAutoInstall: canAutoInstall(activeServer),
+        ...checkBridgeInstalled(activeServer),
+      };
     }
   } catch (e) {
     // Ignore
@@ -228,6 +239,7 @@ router.get("/status", async (req, res) => {
     ...status,
     modConnected: bridge.isModConnected(),
     detectedPaths,
+    localInstall,
   });
 });
 
@@ -2500,6 +2512,43 @@ router.get("/mod-path", async (req, res) => {
     files: exists ? fs.readdirSync(modPath) : [],
     suggestedInstallPath,
   });
+});
+
+// Explicitly install/update PanelBridge.lua on the active server's local
+// filesystem (bind mount / same-host install). See services/panelBridgeInstaller.js
+// — this is the manual counterpart to the auto-install run on activation.
+router.post("/install-local", requireRole("admin"), async (req, res) => {
+  try {
+    const server = await getActiveServer();
+    if (!server) {
+      return res
+        .status(400)
+        .json({ success: false, error: "No active server configured." });
+    }
+
+    if (!canAutoInstall(server)) {
+      return res.status(400).json({
+        success: false,
+        error:
+          "Auto-install is not available for this server. It must be a local (non-remote) server with a writable install path and the PanelBridge source present.",
+      });
+    }
+
+    const result = installBridge(server);
+    if (!result.success) {
+      return res.status(500).json(result);
+    }
+
+    res.json({
+      ...result,
+      message: `PanelBridge installed to ${result.targetPath}`,
+      serverName: server.serverName || server.name,
+    });
+  } catch (error) {
+    res
+      .status(500)
+      .json({ success: false, error: sanitizeError(error.message) });
+  }
 });
 
 // Auto-install mod to server's Lua folder (optionally specify serverId)

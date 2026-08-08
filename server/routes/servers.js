@@ -22,6 +22,11 @@ import {
 } from "../database/init.js";
 import { isRemoteConfigConfigured } from "../services/remoteConfigFiles.js";
 import { requireRole } from "../services/auth.js";
+import {
+  canAutoInstall,
+  checkBridgeInstalled,
+  installBridge,
+} from "../services/panelBridgeInstaller.js";
 
 const router = express.Router();
 
@@ -34,6 +39,28 @@ const SERVER_NAME_REGEX =
 
 function isValidServerName(value) {
   return typeof value === "string" && SERVER_NAME_REGEX.test(value);
+}
+
+// Auto-install/update PanelBridge.lua on the newly-activated server when the
+// panel has direct filesystem access to its install directory. Best-effort:
+// logs and swallows any failure rather than affecting activation.
+function autoInstallBridgeIfNeeded(server) {
+  try {
+    if (!canAutoInstall(server)) return;
+    const status = checkBridgeInstalled(server);
+    if (status.installed && !status.needsUpdate) return;
+
+    const result = installBridge(server);
+    if (result.success) {
+      log.info(
+        `PanelBridge ${status.installed ? "updated" : "installed"} at ${result.targetPath} (v${result.version || "unknown"})`,
+      );
+    } else {
+      log.warn(`PanelBridge auto-install failed: ${result.error}`);
+    }
+  } catch (error) {
+    log.warn(`PanelBridge auto-install check failed: ${error.message}`);
+  }
 }
 
 function normalizeMemoryGb(value, fallback) {
@@ -865,6 +892,10 @@ router.post("/:id/activate", async (req, res) => {
         log.warn(`Failed to connect RCON for new server: ${rconErr.message}`);
       }
     }
+
+    // Best-effort: keep PanelBridge.lua current on servers the panel can
+    // reach directly on disk. Never let an install failure block activation.
+    autoInstallBridgeIfNeeded(server);
 
     // Emit to clients that active server changed
     if (io) {

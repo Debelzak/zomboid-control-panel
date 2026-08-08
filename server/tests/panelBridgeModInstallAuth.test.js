@@ -36,10 +36,21 @@ async function runRoute(routePath, method, req, res) {
   await next();
 }
 
-// Finding 9: /install-mod-auto and /install-mod were missing the
+// Finding 9: PanelBridge installation routes were missing the
 // requireRole("admin") guard every other privileged PanelBridge route has
 // (see /sftp/*, /command).
 describe("PanelBridge mod-install routes require admin", () => {
+  it("rejects POST /install-local for a non-admin authenticated user", async () => {
+    const response = createResponse();
+    await runRoute(
+      "/install-local",
+      "post",
+      { body: {}, user: { role: "viewer" } },
+      response,
+    );
+    expect(response.status).toHaveBeenCalledWith(403);
+  });
+
   it("rejects POST /install-mod-auto for a non-admin authenticated user", async () => {
     const response = createResponse();
     await runRoute(
