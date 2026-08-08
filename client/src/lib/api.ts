@@ -2724,3 +2724,36 @@ export const panelUpdateApi = {
   getApplyLog: (): Promise<{ log: string | null }> =>
     apiGet("/panel/update-apply-log"),
 };
+
+// Disk-space + write circuit-breaker health (P0 data-loss surfacing)
+export interface DiskSpaceStatus {
+  path: string | null;
+  totalBytes: number;
+  freeBytes: number;
+  usedPercent: number;
+  warning: boolean;
+  critical: boolean;
+}
+
+export interface DiskSpaceReport {
+  saveVolume: DiskSpaceStatus | null;
+  panelData: DiskSpaceStatus;
+}
+
+export interface CircuitBreakerStatus {
+  open: boolean;
+  lastError: string | null;
+  failCount: number;
+  cooldownEndsAt: string | null;
+}
+
+export interface StorageHealth {
+  diskSpace: DiskSpaceReport;
+  circuitBreaker: CircuitBreakerStatus;
+}
+
+export const systemApi = {
+  getDiskSpace: (): Promise<DiskSpaceReport> => apiGet("/system/disk-space"),
+  getStorageHealth: (): Promise<StorageHealth> =>
+    apiGet("/system/storage-health"),
+};

@@ -119,6 +119,11 @@ const WRITE_BACKOFF_MAX_MS = 16_000;
 // Circuit breaker: once tripped, refuse to schedule further writes for a cooldown.
 let _writeCircuitOpenUntil = 0;
 const CIRCUIT_OPEN_MS = 60_000;
+// State surfaced read-only via getCircuitBreakerStatus() below — purely
+// observational, never read by the write path itself, so adding these
+// doesn't change any circuit-breaker behavior.
+let _lastWriteError = null;
+let _circuitFailCount = 0;
 let _backupTimer = null;
 let _shutdownRegistered = false;
 
@@ -188,14 +193,18 @@ export async function flushWrites() {
       }
       fs.renameSync(tmpPath, dbPath);
       _writeRetries = 0; // Reset on success
+      _lastWriteError = null;
+      _circuitFailCount = 0;
       log.debug(`DB flushed (${Math.round(data.length / 1024)}KB)`);
     } catch (err) {
       _writeRetries++;
+      _lastWriteError = err.message;
       if (_writeRetries >= MAX_WRITE_RETRIES) {
         log.error(
           `DB write failed ${_writeRetries} times, opening circuit breaker for ${CIRCUIT_OPEN_MS / 1000}s: ${err.message}`,
         );
         // Open the circuit — stop scheduling writes for a cooldown so we don't pin the event loop.
+        _circuitFailCount = _writeRetries;
         _writeCircuitOpenUntil = Date.now() + CIRCUIT_OPEN_MS;
         _writeRetries = 0;
         _dirty = true; // Keep dirty; next scheduleWrite after cooldown will retry.
@@ -221,6 +230,25 @@ export async function flushWrites() {
 
   await _writePromise;
   _writePromise = null;
+}
+
+/**
+ * Read-only snapshot of the write circuit breaker's current state, for
+ * surfacing storage health to the UI. `failCount` reflects the consecutive
+ * failures that most recently tripped the breaker while it's open (the
+ * write path resets its own retry counter on open — see flushWrites above),
+ * and the live retry count once it's closed again.
+ */
+export function getCircuitBreakerStatus() {
+  const open = Date.now() < _writeCircuitOpenUntil;
+  return {
+    open,
+    lastError: _lastWriteError,
+    failCount: open ? _circuitFailCount : _writeRetries,
+    cooldownEndsAt: open
+      ? new Date(_writeCircuitOpenUntil).toISOString()
+      : null,
+  };
 }
 
 /**
