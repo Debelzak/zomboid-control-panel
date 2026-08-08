@@ -17,6 +17,7 @@ import {
   Layers,
   ChevronDown,
   FileCog,
+  LayoutTemplate,
   Menu,
   X,
   Search,
@@ -106,6 +107,7 @@ const navSections: NavSection[] = [
     items: [
       { to: '/server-config', icon: FileCog, label: 'Server Configuration', requiresLocal: true, allowRemoteConfigMirror: true },
       { to: '/mods', icon: Package, label: 'Mod Manager', requiresLocal: true },
+      { to: '/templates', icon: LayoutTemplate, label: 'Templates', requiresLocal: true, allowRemoteConfigMirror: true },
     ]
   },
   {

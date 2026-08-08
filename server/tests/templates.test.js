@@ -315,6 +315,34 @@ describe("previewTemplate / applyTemplate", () => {
     expect(fs.readdirSync(backupsDir).length).toBeGreaterThan(0);
   });
 
+  it("applyTemplate skips the ini section when options.applyIni is false", async () => {
+    const result = await templateService.applyTemplate("first-week-friendly", "server-1", {
+      applyIni: false,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.ini).toBeNull();
+    const ini = fs.readFileSync(path.join(dir, "TestServer.ini"), "utf-8");
+    expect(ini).toContain("PauseEmpty=false");
+
+    const lua = fs.readFileSync(path.join(dir, "TestServer_SandboxVars.lua"), "utf-8");
+    expect(lua).toContain("Zombies = 5");
+  });
+
+  it("applyTemplate skips the sandbox section when options.applySandbox is false", async () => {
+    const result = await templateService.applyTemplate("first-week-friendly", "server-1", {
+      applySandbox: false,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.sandbox).toBeNull();
+    const lua = fs.readFileSync(path.join(dir, "TestServer_SandboxVars.lua"), "utf-8");
+    expect(lua).toContain("Zombies = 4");
+
+    const ini = fs.readFileSync(path.join(dir, "TestServer.ini"), "utf-8");
+    expect(ini).toContain("PauseEmpty=true");
+  });
+
   it("applyTemplate never writes an excluded ini key even if one slipped into a stored template", async () => {
     // Simulate a template that bypassed validateTemplate (e.g. a hand-edited
     // db.json) to prove applyTemplate defends against this independently.

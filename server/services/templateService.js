@@ -226,11 +226,11 @@ function prepareSandboxChange(template, paths, result) {
   };
 }
 
-function applyTemplateLocked(template, paths, backup) {
+function applyTemplateLocked(template, paths, backup, options) {
   const result = { success: true, ini: null, sandbox: null, backups: [] };
   const changes = [
-    prepareIniChange(template, paths, result),
-    prepareSandboxChange(template, paths, result),
+    options.applyIni === false ? null : prepareIniChange(template, paths, result),
+    options.applySandbox === false ? null : prepareSandboxChange(template, paths, result),
   ].filter(Boolean);
 
   if (backup) {
@@ -262,7 +262,9 @@ export async function applyTemplate(templateId, serverId, options = {}) {
   const backup = options.backup !== false;
   const lockPaths = [paths.iniPath, paths.sandboxPath].sort();
   const result = await withFileLock(lockPaths[0], () =>
-    withFileLock(lockPaths[1], () => applyTemplateLocked(template, paths, backup)),
+    withFileLock(lockPaths[1], () =>
+      applyTemplateLocked(template, paths, backup, options),
+    ),
   );
 
   log.info(`Applied template "${template.meta.name}" to server ${server.id}`);
