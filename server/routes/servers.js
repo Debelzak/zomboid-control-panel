@@ -3,7 +3,12 @@ import fs from "fs";
 import path from "path";
 import { createLogger } from "../utils/logger.js";
 const log = createLogger("API:Servers");
-import { sanitizeError } from "../utils/sanitize.js";
+import {
+  sanitizeError,
+  sanitizeServerResponse,
+  sanitizeServerResponseList,
+  isMaskedSecret,
+} from "../utils/sanitize.js";
 import { normalizeRconHost } from "../services/rcon.js";
 import {
   getServers,
@@ -16,8 +21,20 @@ import {
   getAllSettings,
 } from "../database/init.js";
 import { isRemoteConfigConfigured } from "../services/remoteConfigFiles.js";
+import { requireRole } from "../services/auth.js";
 
 const router = express.Router();
+
+// serverName is interpolated into filesystem paths (server-files, backups,
+// chunks) as `${serverName}.ini` etc. — reject anything but a plain,
+// non-traversal-capable name up front instead of relying on every
+// downstream path-building call site to re-validate it.
+const SERVER_NAME_REGEX =
+  /^[a-zA-Z0-9_-][a-zA-Z0-9_\- ]*[a-zA-Z0-9_-]$|^[a-zA-Z0-9_-]$/;
+
+function isValidServerName(value) {
+  return typeof value === "string" && SERVER_NAME_REGEX.test(value);
+}
 
 function normalizeMemoryGb(value, fallback) {
   const parsed = parseInt(value, 10);
@@ -158,7 +175,10 @@ function scanForPzPaths(rootPath, maxDepth = 3) {
 }
 
 // Auto-scan a folder to find PZ server install paths and data paths
-router.post("/auto-scan", async (req, res) => {
+// Reads arbitrary local server .ini files and returns their RCON passwords
+// in plaintext to prefill the "create server" form — admin-only, same
+// sensitivity tier as chunks delete / panel-bridge command execution.
+router.post("/auto-scan", requireRole("admin"), async (req, res) => {
   try {
     const { scanPath, maxDepth = 3 } = req.body;
 
@@ -269,7 +289,8 @@ router.post("/auto-scan", async (req, res) => {
 });
 
 // Detect server settings from data path (folder containing Server/, Saves/, Logs/)
-router.post("/detect", async (req, res) => {
+// Same as /auto-scan: exposes RCON passwords read straight off disk.
+router.post("/detect", requireRole("admin"), async (req, res) => {
   try {
     const { dataPath, installPath } = req.body;
     log.info(
@@ -388,7 +409,7 @@ router.post("/detect", async (req, res) => {
 router.get("/", async (req, res) => {
   try {
     const servers = await getServers();
-    res.json({ servers });
+    res.json({ servers: sanitizeServerResponseList(servers) });
   } catch (error) {
     log.error(`Failed to get servers: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });
@@ -480,7 +501,9 @@ router.get("/active", async (req, res) => {
     const remoteConfigConfigured = server.isRemote
       ? isRemoteConfigConfigured(await getAllSettings())
       : false;
-    res.json({ server: { ...server, remoteConfigConfigured } });
+    res.json({
+      server: sanitizeServerResponse({ ...server, remoteConfigConfigured }),
+    });
   } catch (error) {
     log.error(`Failed to get active server: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });
@@ -503,7 +526,7 @@ router.get("/:id", async (req, res) => {
       return res.status(404).json({ error: "Server not found" });
     }
 
-    res.json({ server });
+    res.json({ server: sanitizeServerResponse(server) });
   } catch (error) {
     log.error(`Failed to get server: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });
@@ -546,11 +569,7 @@ router.post("/", async (req, res) => {
 
     // Validate serverName against path traversal
     const serverName = (config.serverName || "servertest").trim();
-    if (
-      !/^[a-zA-Z0-9_-][a-zA-Z0-9_\- ]*[a-zA-Z0-9_-]$|^[a-zA-Z0-9_-]$/.test(
-        serverName,
-      )
-    ) {
+    if (!isValidServerName(serverName)) {
       return res
         .status(400)
         .json({
@@ -587,7 +606,10 @@ router.post("/", async (req, res) => {
     });
 
     log.info(`Created new server: ${server.name} (ID: ${server.id})`);
-    res.status(201).json({ server, message: "Server created successfully" });
+    res.status(201).json({
+      server: sanitizeServerResponse(server),
+      message: "Server created successfully",
+    });
   } catch (error) {
     log.error(`Failed to create server: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });
@@ -634,6 +656,29 @@ router.put("/:id", async (req, res) => {
     for (const key of ALLOWED_SERVER_UPDATE_FIELDS) {
       if (req.body[key] !== undefined) {
         updates[key] = req.body[key];
+      }
+    }
+
+    // Validate serverName against path traversal — this field is
+    // interpolated into filesystem paths downstream (server-files, backups,
+    // chunks), so it must pass the same check as server creation.
+    if (updates.serverName !== undefined) {
+      const trimmed = String(updates.serverName).trim();
+      if (!isValidServerName(trimmed)) {
+        return res.status(400).json({
+          error:
+            "Invalid server name: only letters, numbers, underscores, hyphens and spaces allowed",
+        });
+      }
+      updates.serverName = trimmed;
+    }
+
+    // GET responses mask rconPassword/adminPassword (sanitizeServerResponse).
+    // If the client echoes that masked value back unmodified, drop the field
+    // so the real stored secret isn't overwritten with bullets.
+    for (const key of ["rconPassword", "adminPassword"]) {
+      if (updates[key] !== undefined && isMaskedSecret(updates[key])) {
+        delete updates[key];
       }
     }
 
@@ -731,7 +776,10 @@ router.put("/:id", async (req, res) => {
       }
     }
 
-    res.json({ server, message: "Server updated successfully" });
+    res.json({
+      server: sanitizeServerResponse(server),
+      message: "Server updated successfully",
+    });
   } catch (error) {
     log.error(`Failed to update server: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });
@@ -817,7 +865,10 @@ router.post("/:id/activate", async (req, res) => {
     }
 
     log.info(`Activated server: ${server.name} (ID: ${server.id})`);
-    res.json({ server, message: `Now managing: ${server.name}` });
+    res.json({
+      server: sanitizeServerResponse(server),
+      message: `Now managing: ${server.name}`,
+    });
   } catch (error) {
     log.error(`Failed to activate server: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });

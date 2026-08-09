@@ -19,7 +19,7 @@ import {
   commitNow,
   logBridgeCommand,
 } from "../database/init.js";
-import { sanitizeError } from "../utils/sanitize.js";
+import { sanitizeError, isMaskedSecret } from "../utils/sanitize.js";
 import { persistSandboxValues } from "./serverFiles.js";
 import { requireRole } from "../services/auth.js";
 import {
@@ -63,10 +63,6 @@ const SFTP_SETTING_KEYS = {
 };
 
 const SFTP_LOG_PATH_KEY = "panelBridgeSftpLogPath";
-
-function isMaskedSecret(value) {
-  return typeof value === "string" && value.startsWith("••••••••");
-}
 
 async function resolveSftpConfig(input = {}) {
   const settings = await getAllSettings();
@@ -2507,7 +2503,7 @@ router.get("/mod-path", async (req, res) => {
 });
 
 // Auto-install mod to server's Lua folder (optionally specify serverId)
-router.post("/install-mod-auto", async (req, res) => {
+router.post("/install-mod-auto", requireRole("admin"), async (req, res) => {
   try {
     const { serverId } = req.body;
 
@@ -2595,7 +2591,7 @@ router.post("/install-mod-auto", async (req, res) => {
 });
 
 // Copy mod to server Lua folder (manual path)
-router.post("/install-mod", (req, res) => {
+router.post("/install-mod", requireRole("admin"), (req, res) => {
   const { serverLuaPath } = req.body;
 
   // Support legacy field name

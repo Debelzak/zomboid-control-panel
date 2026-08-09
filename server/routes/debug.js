@@ -24,7 +24,7 @@ import {
   getTrackedMods,
   getAllSettings,
 } from "../database/init.js";
-import { sanitizeError } from "../utils/sanitize.js";
+import { sanitizeError, SENSITIVE_FIELD_RE } from "../utils/sanitize.js";
 import { checkSandboxBraceBalance } from "./serverFiles.js";
 import panelBridgeService from "../services/panelBridge.js";
 import {
@@ -231,8 +231,10 @@ async function collectBundleFilesFromDir(
 // and must never throw, so the zip download keeps working even on bad data.
 // ───────────────────────────────────────────────────────────────────────
 
-const SECRET_FIELD_RE =
-  /(password|secret|token|apikey|api_key|jwt|sessionid|loginsecure|cookie|webhook)/i;
+// Shared with server/utils/sanitize.js (maskSensitiveObject) so every
+// secret-shaped field — settings, server records, and this bundle — is
+// masked by the same pattern instead of drifting out of sync.
+const SECRET_FIELD_RE = SENSITIVE_FIELD_RE;
 const ENV_VALUE_ALLOWLIST = [
   "NODE_ENV",
   "PORT",
