@@ -220,6 +220,7 @@ process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 import serverRoutes from "./routes/server.js";
 import discoveryRoutes from "./routes/discovery.js";
 import serversRoutes from "./routes/servers.js";
+import serverStatusRoutes from "./routes/serverStatus.js";
 import serverFilesRoutes from "./routes/serverFiles.js";
 import playerRoutes from "./routes/players.js";
 import rconRoutes from "./routes/rcon.js";
@@ -1068,6 +1069,7 @@ app.use("/api/server", serverRoutes);
 // catch-all would otherwise swallow them as a server-id lookup.
 app.use("/api/servers", discoveryRoutes);
 app.use("/api/servers", serversRoutes);
+app.use("/api/servers", serverStatusRoutes);
 app.use("/api/server-files", serverFilesRoutes);
 app.use("/api/players", playerRoutes);
 app.use("/api/rcon", rconRoutes);

@@ -1480,11 +1480,33 @@ export interface DiscoveredMount {
   hasPanelBridge: boolean;
 }
 
+// One signal (host / server / bridge) from GET /servers/active/status — see
+// server/utils/serverStatusModel.js for the full set of `status` values per
+// signal (they differ: host uses running/stopped/unknown/not-applicable,
+// server uses connected/disconnected/connecting, bridge uses
+// active/offline/not-installed).
+export interface ServerStatusSignal {
+  status: string;
+  label: string;
+  detail: string | null;
+}
+
+export interface ComposedServerStatus {
+  provider: string;
+  selected: boolean;
+  host: ServerStatusSignal;
+  server: ServerStatusSignal;
+  bridge: ServerStatusSignal;
+  summary: string;
+}
+
 // Servers API (multi-server management)
 export const serversApi = {
   getAll: () => apiGet("/servers") as Promise<{ servers: ServerInstance[] }>,
   getActive: () =>
     apiGet("/servers/active") as Promise<{ server: ServerInstance }>,
+  getComposedStatus: () =>
+    apiGet("/servers/active/status") as Promise<ComposedServerStatus>,
   getResolvedActive: async () => {
     const data = (await apiGet("/servers")) as { servers: ServerInstance[] };
     return {
