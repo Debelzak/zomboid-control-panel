@@ -72,6 +72,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/components/ui/use-toast";
+import { ToastAction } from "@/components/ui/toast";
 import { EmptyState } from "@/components/EmptyState";
 import {
   configApi,
@@ -1782,6 +1783,11 @@ export default function Settings() {
             result.error ||
             "No response from PanelBridge.lua. Make sure the game server is running and the mod is enabled.",
           variant: "destructive",
+          action: (
+            <ToastAction altText="Open PanelBridge settings" onClick={() => handleTabChange("bridge")}>
+              Open Bridge
+            </ToastAction>
+          ),
         });
       }
     } catch (error) {
@@ -1792,6 +1798,11 @@ export default function Settings() {
             ? error.message
             : "The panel could not ping the mod. Confirm the server is running with PanelBridge enabled.",
         variant: "destructive",
+        action: (
+          <ToastAction altText="Open PanelBridge settings" onClick={() => handleTabChange("bridge")}>
+            Open Bridge
+          </ToastAction>
+        ),
       });
     } finally {
       setPinging(false);
