@@ -231,8 +231,11 @@ Indifferent Broccoli runs the **game server**. Run this panel on your Windows PC
 
 1. In the Indifferent Broccoli panel, enable or note the server's RCON host, port, and password.
 2. In Zomboid Control Panel, open **Servers** and add it as a **remote server** using those RCON details.
-3. In **Settings > PanelBridge**, use your host's full file access to install `PanelBridge.lua`, or configure SFTP if your plan provides it.
-4. Keep start, stop, restart, and game updates in Indifferent Broccoli's own dashboard. The panel can administer the game through RCON and PanelBridge, but it does not take ownership of a hosted provider's container.
+3. Install `PanelBridge.lua` through the provider's file manager, then set `DoLuaChecksum=false` in the server `.ini` and restart the game server.
+4. In **Settings > PanelBridge > Remote connection**, enter the SFTP **host**, **port**, **username**, and **password** supplied by Indifferent Broccoli. Plain FTP will not work.
+5. Set **Remote bridge folder** to the remote folder that contains PanelBridge's `status.json`, `inbox`, and `outbox` files. Click **Test SFTP**, then **Start SFTP bridge**.
+6. Optional, but recommended for browser-based configuration editing: set **Remote Server folder** to the absolute folder containing the server's `.ini` and `_SandboxVars.lua` files, then click **Check folder**.
+7. Keep start, stop, restart, and game updates in Indifferent Broccoli's own dashboard. The panel can administer the game through RCON and PanelBridge, but it does not take ownership of a hosted provider's container.
 
 Indifferent Broccoli advertises full file access, mod support, and its own server control panel. Their current Project Zomboid guide is available at [Indifferent Broccoli](https://indifferentbroccoli.com/project-zomboid-server-hosting).
 
