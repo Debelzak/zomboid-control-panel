@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Templates
+
+- **Reusable server templates**: preview curated or saved templates against the active server, then apply selected `server.ini` and sandbox settings after the server is stopped. Templates exclude identity, network, and secret settings; local writes are backed up and roll back if a paired file update fails.
+
+#### Server operations
+
+- **Mount discovery and guided connection**: scan configured and common local Project Zomboid paths, inspect discovered server settings, and add an exact discovered server profile without typing paths or exposing RCON credentials in the browser.
+- **RCON connection diagnostics**: test reachability and authentication from Servers or Settings before relying on control actions.
+- **PanelBridge local installation**: when a local server is activated, the panel can install and verify the bundled bridge Lua file atomically.
+- **Storage and server health**: surface low-disk and database write-circuit faults, and report host/process, RCON, and PanelBridge signals separately.
+
 #### Remote servers
 
 - **Edit a remote server's configuration over SFTP**: the Server Configuration page was closed to remote servers entirely, because everything under it reads and writes the panel host's own filesystem. Point Settings > PanelBridge at the remote `Server` folder and the panel now mirrors `<server>.ini`, `SandboxVars.lua`, `spawnpoints.lua` and `spawnregions.lua` over the SFTP credentials PanelBridge already uses, edits the local copy, and writes the changed files back atomically. Only `.ini` and `.lua` files are ever transferred, and only the four the editor touches. Requests are serialized so two overlapping saves cannot lose each other's edits. Sandbox settings applied through PanelBridge now persist on remote servers too.
@@ -22,6 +33,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Keep Q shouts out of the Discord chat relay**: the relay's "Which messages to forward" setting gains a "Public chat without yells" option, so `HEY!`, `HEY YOU!` and `OVER HERE!` no longer flood the channel every time someone presses Q. Build 42 labels both ordinary talking and yells as `Local`, so the panel now reads the chat room id from the game's own delivery log line to tell them apart.
 
 ### Fixed
+
+#### Security and reliability
+
+- **Safer local administration**: sensitive configuration fields are masked in responses, filesystem browsing is confined to approved roots, and server-name validation prevents path traversal.
+- **Reliable local path defaults**: empty saved paths now fall back to `PZ_SERVER_PATH` and `PZ_SAVE_PATH` when configured.
 
 #### PanelBridge
 
