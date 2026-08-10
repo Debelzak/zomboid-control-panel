@@ -37,6 +37,7 @@ import {
 } from "./database/init.js";
 import { RconService } from "./services/rcon.js";
 import { ServerManager } from "./services/serverManager.js";
+import { DockerClient } from "./services/dockerClient.js";
 import { ModChecker } from "./services/modChecker.js";
 import { Scheduler } from "./services/scheduler.js";
 import { DiscordBot } from "./services/discordBot.js";
@@ -237,6 +238,7 @@ import backupRoutes from "./routes/backup.js";
 import mapProxyRoutes from "./routes/mapProxy.js";
 import systemRoutes from "./routes/system.js";
 import templatesRoutes from "./routes/templates.js";
+import dockerRoutes from "./routes/docker.js";
 import panelBridge from "./services/panelBridge.js";
 
 dotenv.config();
@@ -665,6 +667,7 @@ app.use("/api/panel-bridge/command", panelBridgeCommandLimiter);
 // Initialize services
 const rconService = new RconService();
 const serverManager = new ServerManager();
+const dockerClient = new DockerClient();
 const modChecker = new ModChecker();
 const logTailer = new LogTailer();
 const scheduler = new Scheduler(rconService, serverManager);
@@ -1039,6 +1042,7 @@ panelBridge.on("playerDisconnect", (playerName) => {
 // Make services available to routes
 app.set("rconService", rconService);
 app.set("serverManager", serverManager);
+app.set("dockerClient", dockerClient);
 app.set("modChecker", modChecker);
 app.set("scheduler", scheduler);
 app.set("discordBot", discordBot);
@@ -1089,6 +1093,7 @@ app.use("/api/backup", backupRoutes);
 app.use("/api/map", mapProxyRoutes);
 app.use("/api/system", systemRoutes);
 app.use("/api/templates", templatesRoutes);
+app.use("/api/docker", dockerRoutes);
 
 // Health check + panel version
 // In exe builds, PANEL_VERSION is injected by esbuild at compile time.

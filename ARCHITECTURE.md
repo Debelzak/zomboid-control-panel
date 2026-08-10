@@ -38,4 +38,4 @@ Authentication uses bcrypt password hashing, JWT access tokens, refresh cookies,
 
 ## Deferred Work
 
-Docker socket integration, container lifecycle management, and per-container resource collection are deferred. Do not infer that a Docker provider label or a detected mount permits lifecycle operations.
+Docker capability discovery is disabled unless `PANEL_DOCKER_CONTROL_ENABLED=true` and the Docker socket is mounted. Even then, the panel recognizes only containers carrying `zomboid-panel.managed=true`; image names and provider labels never grant access. Container lifecycle management and per-container resource collection remain deferred. Do not infer that a Docker provider label or a detected mount permits lifecycle operations.
