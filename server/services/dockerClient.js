@@ -11,6 +11,47 @@ export function isManagedContainer(container) {
   return labels?.[MANAGED_LABEL] === "true";
 }
 
+function cpuCount(stats) {
+  return stats?.cpu_stats?.online_cpus || stats?.cpu_stats?.cpu_usage?.percpu_usage?.length || 1;
+}
+
+function sumEntries(entries, operation) {
+  return (entries || [])
+    .filter((entry) => entry.op?.toLowerCase() === operation)
+    .reduce((sum, entry) => sum + (entry.value || 0), 0);
+}
+
+function sumNetwork(networks, field) {
+  return Object.values(networks || {}).reduce(
+    (sum, network) => sum + (network[field] || 0),
+    0,
+  );
+}
+
+export function parseContainerStats(stats) {
+  const cpuDelta = (stats?.cpu_stats?.cpu_usage?.total_usage || 0) -
+    (stats?.precpu_stats?.cpu_usage?.total_usage || 0);
+  const systemDelta = (stats?.cpu_stats?.system_cpu_usage || 0) -
+    (stats?.precpu_stats?.system_cpu_usage || 0);
+  const cores = cpuCount(stats);
+  const memoryUsed = stats?.memory_stats?.usage || 0;
+  const memoryLimit = stats?.memory_stats?.limit || 0;
+  return {
+    cpuPercent: systemDelta > 0 && cpuDelta > 0
+      ? Math.round((cpuDelta / systemDelta) * cores * 1000) / 10
+      : 0,
+    memoryUsed,
+    memoryLimit,
+    memoryPercent: memoryLimit > 0
+      ? Math.round((memoryUsed / memoryLimit) * 1000) / 10
+      : 0,
+    networkRx: sumNetwork(stats?.networks, "rx_bytes"),
+    networkTx: sumNetwork(stats?.networks, "tx_bytes"),
+    diskRead: sumEntries(stats?.blkio_stats?.io_service_bytes_recursive, "read"),
+    diskWrite: sumEntries(stats?.blkio_stats?.io_service_bytes_recursive, "write"),
+  };
+}
+
 export class DockerClient {
   constructor({ socketPath = "/var/run/docker.sock", enabled = process.env.PANEL_DOCKER_CONTROL_ENABLED === "true" } = {}) {
     this.socketPath = socketPath;
@@ -56,6 +97,20 @@ export class DockerClient {
     } catch (error) {
       log.warn(`Docker ${action} failed for ${containerId}: ${error.message}`);
       return { success: false, error: "Docker action failed" };
+    }
+  }
+
+  async getContainerStats(containerId) {
+    if (!this.available) return null;
+    try {
+      const raw = await this._requestJson(
+        "GET",
+        `/containers/${encodeURIComponent(containerId)}/stats?stream=false`,
+      );
+      return parseContainerStats(raw);
+    } catch (error) {
+      log.debug(`Docker stats failed for ${containerId}: ${error.message}`);
+      return null;
     }
   }
 

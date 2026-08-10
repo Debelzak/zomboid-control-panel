@@ -28,6 +28,8 @@ import {
   Network,
   Play,
   Square,
+  Container,
+  RotateCw,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
@@ -36,6 +38,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useToast } from '@/components/ui/use-toast'
 import { reportClientError, reportClientWarning } from '@/lib/client-errors'
+import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -75,7 +78,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { serversApi, serversDetectApi, ServerInstance, configApi, serverApi, updateApi, UpdateStatus, DiscoveredMount, ComposedServerStatus } from '@/lib/api'
+import { serversApi, serversDetectApi, dockerApi, DockerContainerStats, DockerContainerSummary, ServerInstance, configApi, serverApi, updateApi, UpdateStatus, DiscoveredMount, ComposedServerStatus } from '@/lib/api'
 import { ServerStatusBadge } from '@/components/ServerStatusBadge'
 import { SocketContext } from '@/contexts/SocketContext'
 import { useNavigate } from 'react-router-dom'
@@ -88,6 +91,7 @@ import { DiscoverySetup } from '@/components/DiscoverySetup'
 interface DetectedServerConfig {
   dataPath: string
   serverConfigPath: string
+  dockerContainerName: string
   serverName: string
   iniFile: string
   rconPort: number
@@ -140,6 +144,7 @@ interface NewServerForm {
   installPath: string
   zomboidDataPath: string
   serverConfigPath: string
+  dockerContainerName: string
   rconHost: string
   rconPort: number
   rconPassword: string
@@ -157,6 +162,7 @@ const defaultNewServer: NewServerForm = {
   installPath: '',
   zomboidDataPath: '',
   serverConfigPath: '',
+  dockerContainerName: '',
   rconHost: '127.0.0.1',
   rconPort: 27015,
   rconPassword: '',
@@ -168,10 +174,21 @@ const defaultNewServer: NewServerForm = {
   isRemote: false
 }
 
+function formatBytes(bytes: number) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1)
+  return `${(bytes / 1024 ** index).toFixed(index === 0 ? 0 : 1)} ${units[index]}`
+}
+
 export default function Servers() {
   const [servers, setServers] = useState<ServerInstance[]>([])
   const [serverStatuses, setServerStatuses] = useState<Record<string, { running: boolean; pid: string | null }>>({})
   const [rconStatuses, setRconStatuses] = useState<Record<string, string>>({})
+  const [dockerAvailable, setDockerAvailable] = useState(false)
+  const [dockerContainers, setDockerContainers] = useState<DockerContainerSummary[]>([])
+  const [dockerStats, setDockerStats] = useState<Record<string, DockerContainerStats>>({})
+  const [dockerActionPending, setDockerActionPending] = useState<string | null>(null)
   // Full 3-signal status (host/RCON/bridge) for the active server only — the
   // other servers' cards fall back to the host-only signal in serverStatuses.
   const [activeStatus, setActiveStatus] = useState<ComposedServerStatus | null>(null)
@@ -309,6 +326,45 @@ export default function Servers() {
     }
   }, [])
 
+  const fetchDockerState = useCallback(async () => {
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+    try {
+      const status = await dockerApi.getStatus()
+      setDockerAvailable(status.enabled && status.available)
+      setDockerContainers(status.containers || [])
+      if (!status.enabled || !status.available) {
+        setDockerStats({})
+        return
+      }
+      const stats = await dockerApi.getStats()
+      setDockerStats(stats.containers || {})
+    } catch (error) {
+      setDockerAvailable(false)
+      reportClientWarning('Failed to fetch managed Docker state.', error)
+    }
+  }, [])
+
+  const handleDockerAction = useCallback(async (
+    container: DockerContainerSummary,
+    action: 'start' | 'stop' | 'restart',
+  ) => {
+    setDockerActionPending(`${action}-${container.id}`)
+    try {
+      const result = await dockerApi.runAction(container.id, action)
+      if (!result.success) throw new Error(result.error || `Failed to ${action} container`)
+      toast({ title: `Container ${action} requested`, description: container.name, variant: 'success' as const })
+      await fetchDockerState()
+    } catch (error) {
+      toast({
+        title: `Container ${action} failed`,
+        description: error instanceof Error ? error.message : 'Docker action failed',
+        variant: 'destructive',
+      })
+    } finally {
+      setDockerActionPending(null)
+    }
+  }, [fetchDockerState, toast])
+
   // Provider-aware host/RCON/bridge status for whichever server is active —
   // shown on its card via ServerStatusBadge instead of a single Running/
   // Stopped flag that hides RCON/bridge trouble behind a "running" container.
@@ -327,8 +383,10 @@ export default function Servers() {
     fetchServers()
     fetchServerStatuses()
     fetchRconStatuses()
+    fetchDockerState()
     const statusInterval = setInterval(fetchServerStatuses, 15000)
     const rconStatusInterval = setInterval(fetchRconStatuses, 30000)
+    const dockerInterval = setInterval(fetchDockerState, 10000)
     // Load steamcmd path from settings
     configApi.getAppSettings().then(data => {
       if (data.settings?.steamcmdPath) {
@@ -347,8 +405,9 @@ export default function Servers() {
     return () => {
       clearInterval(statusInterval)
       clearInterval(rconStatusInterval)
+      clearInterval(dockerInterval)
     }
-  }, [fetchServers, fetchServerStatuses, fetchRconStatuses])
+  }, [fetchServers, fetchServerStatuses, fetchRconStatuses, fetchDockerState])
 
   useEffect(() => {
     if (!activeServerId) {
@@ -995,6 +1054,7 @@ export default function Servers() {
         rconHost: newServer.rconHost,
         rconPort: newServer.rconPort,
         rconPassword: newServer.rconPassword,
+        dockerContainerName: newServer.dockerContainerName || null,
         serverPort: newServer.serverPort,
         minMemory: newServer.minMemory,
         maxMemory: newServer.maxMemory,
@@ -1317,6 +1377,63 @@ export default function Servers() {
                   </div>
                 )}
 
+                {(() => {
+                  const container = server.dockerContainerName
+                    ? dockerContainers.find((item) => item.name === server.dockerContainerName || item.id === server.dockerContainerName)
+                    : null
+                  if (!container || !dockerAvailable) return null
+                  const stats = dockerStats[container.id] || dockerStats[container.name]
+                  const isRunning = container.state === 'running'
+                  const pending = dockerActionPending !== null
+                  return (
+                    <div className="space-y-2 border-y border-border/50 py-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <Container className="h-4 w-4 shrink-0 text-muted-foreground" />
+                          <span className="truncate text-xs font-medium">{container.name}</span>
+                          <span className={cn('text-xs', isRunning ? 'text-muted-foreground' : 'text-destructive')}>
+                            {container.state}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button size="iconDense" variant="ghost" disabled={pending || isRunning} onClick={() => handleDockerAction(container, 'start')} aria-label={`Start ${container.name}`}>
+                                {dockerActionPending === `start-${container.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Start container</TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button size="iconDense" variant="ghost" disabled={pending || !isRunning} onClick={() => handleDockerAction(container, 'stop')} aria-label={`Stop ${container.name}`}>
+                                {dockerActionPending === `stop-${container.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Square className="h-4 w-4" />}
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Stop container</TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button size="iconDense" variant="ghost" disabled={pending} onClick={() => handleDockerAction(container, 'restart')} aria-label={`Restart ${container.name}`}>
+                                {dockerActionPending === `restart-${container.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCw className="h-4 w-4" />}
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Restart container</TooltipContent>
+                          </Tooltip>
+                        </div>
+                      </div>
+                      {stats && (
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-4">
+                          <span className="text-muted-foreground">CPU <span className="font-mono text-foreground">{stats.cpuPercent}%</span></span>
+                          <span className="text-muted-foreground">RAM <span className="font-mono text-foreground">{formatBytes(stats.memoryUsed)} ({stats.memoryPercent}%)</span></span>
+                          <span className="text-muted-foreground">Net <span className="font-mono text-foreground">{formatBytes(stats.networkRx)} in</span></span>
+                          <span className="text-muted-foreground">Disk <span className="font-mono text-foreground">{formatBytes(stats.diskWrite)} write</span></span>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
+
                 {/* Network & Config Grid */}
                 <div className={`grid ${server.isRemote ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1 sm:grid-cols-3'} gap-2`}>
                   <div className="flex items-center gap-2.5 rounded-md border border-border/50 bg-muted/20 px-2.5 py-2">
@@ -1397,7 +1514,8 @@ export default function Servers() {
                     const isRunning = status?.running ?? false
                     const startPending = serverActionPending === `start-${server.id}`
                     const stopPending = serverActionPending === `stop-${server.id}`
-                    if (server.isRemote) return null
+                    const hasManagedContainer = dockerAvailable && server.dockerContainerName && dockerContainers.some((item) => item.name === server.dockerContainerName || item.id === server.dockerContainerName)
+                    if (server.isRemote || hasManagedContainer) return null
                     return isRunning ? (
                       <Button
                         size="sm"
@@ -1946,6 +2064,16 @@ export default function Servers() {
                     onChange={e => setEditingServer({ ...editingServer, serverName: e.target.value })}
                     maxLength={64}
                   />
+                </div>
+                <div className="space-y-2">
+                  <Label>Managed Docker Container</Label>
+                  <Input
+                    value={editingServer.dockerContainerName || ''}
+                    onChange={e => setEditingServer({ ...editingServer, dockerContainerName: e.target.value || null })}
+                    placeholder="Optional explicit container name"
+                    maxLength={128}
+                  />
+                  <p className="text-xs text-muted-foreground">Requires PANEL_DOCKER_CONTROL_ENABLED and the container label zomboid-panel.managed=true.</p>
                 </div>
               </div>
 

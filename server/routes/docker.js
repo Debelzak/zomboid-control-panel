@@ -4,6 +4,19 @@ import { sanitizeError } from "../utils/sanitize.js";
 
 const router = express.Router();
 
+async function mapWithConcurrency(items, limit, mapper) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (nextIndex < items.length) {
+      const index = nextIndex++;
+      results[index] = await mapper(items[index]);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
 router.get("/status", requireRole("admin"), async (req, res) => {
   try {
     const dockerClient = req.app.get("dockerClient");
@@ -22,6 +35,28 @@ router.get("/status", requireRole("admin"), async (req, res) => {
         status: container.Status,
       })),
     });
+  } catch (error) {
+    return res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
+router.get("/stats", requireRole("admin"), async (req, res) => {
+  try {
+    const dockerClient = req.app.get("dockerClient");
+    if (!dockerClient?.enabled || !dockerClient.available) return res.json({ containers: {} });
+    const containers = await dockerClient.listManagedContainers();
+    const samples = await mapWithConcurrency(containers, 3, async (container) => ({
+      container,
+      stats: await dockerClient.getContainerStats(container.Id),
+    }));
+    const result = {};
+    for (const { container, stats } of samples) {
+      if (!stats) continue;
+      result[container.Id] = stats;
+      const name = (container.Names?.[0] || "").replace(/^\//, "");
+      if (name) result[name] = stats;
+    }
+    return res.json({ containers: result });
   } catch (error) {
     return res.status(500).json({ error: sanitizeError(error.message) });
   }

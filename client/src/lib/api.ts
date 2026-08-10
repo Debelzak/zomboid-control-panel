@@ -1451,6 +1451,7 @@ export interface ServerInstance {
   installPath: string;
   zomboidDataPath: string | null;
   serverConfigPath: string | null;
+  dockerContainerName?: string | null;
   branch?: string;
   rconHost: string;
   rconPort: number;
@@ -1594,6 +1595,42 @@ export const serversApi = {
     apiPost("/servers/create-from-discovery", data) as Promise<{
       server: ServerInstance;
       message: string;
+    }>,
+};
+
+export interface DockerContainerSummary {
+  id: string;
+  name: string;
+  image: string;
+  state: string;
+  status: string;
+}
+
+export interface DockerContainerStats {
+  cpuPercent: number;
+  memoryUsed: number;
+  memoryLimit: number;
+  memoryPercent: number;
+  networkRx: number;
+  networkTx: number;
+  diskRead: number;
+  diskWrite: number;
+}
+
+export const dockerApi = {
+  getStatus: () => apiGet("/docker/status") as Promise<{
+    enabled: boolean;
+    available: boolean;
+    containers: DockerContainerSummary[];
+  }>,
+  getStats: () => apiGet("/docker/stats") as Promise<{
+    containers: Record<string, DockerContainerStats>;
+  }>,
+  runAction: (id: string, action: "start" | "stop" | "restart") =>
+    apiPost(`/docker/containers/${encodeURIComponent(id)}/${action}`, {}) as Promise<{
+      success: boolean;
+      message?: string;
+      error?: string;
     }>,
 };
 

@@ -108,3 +108,29 @@ describe("POST /api/docker/containers/:id/:action", () => {
     expect(response.json).toHaveBeenCalledWith({ success: true });
   });
 });
+
+describe("GET /api/docker/stats", () => {
+  it("samples only managed containers returned by the Docker client", async () => {
+    const response = createResponse();
+    const getContainerStats = vi.fn(async () => ({ cpuPercent: 12.5 }));
+
+    await runRoute("/stats", "get", {
+      user: { role: "admin" },
+      app: {
+        get: () => ({
+          enabled: true,
+          available: true,
+          listManagedContainers: vi.fn(async () => [{ Id: "managed", Names: ["/managed"] }]),
+          getContainerStats,
+        }),
+      },
+    }, response);
+
+    expect(getContainerStats).toHaveBeenCalledWith("managed");
+    expect(response.json).toHaveBeenCalledWith({
+      containers: {
+        managed: { cpuPercent: 12.5 },
+      },
+    });
+  });
+});

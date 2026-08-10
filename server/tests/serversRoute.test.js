@@ -110,6 +110,24 @@ describe("POST /api/servers", () => {
     expect(response.status).toHaveBeenCalledWith(400);
   });
 
+  it("rejects an unsafe Docker container mapping on creation", async () => {
+    const response = createResponse();
+
+    await getCreateHandler()({
+      body: {
+        name: "Test Server",
+        installPath: "C:\\PZ",
+        rconHost: "127.0.0.1",
+        rconPort: 27015,
+        rconPassword: "rcon-password",
+        dockerContainerName: "../other-container",
+      },
+    }, response);
+
+    expect(createServer).not.toHaveBeenCalled();
+    expect(response.status).toHaveBeenCalledWith(400);
+  });
+
   it("masks rconPassword in the create response", async () => {
     createServer.mockResolvedValue({
       id: "server-id",

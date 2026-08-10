@@ -41,6 +41,10 @@ function isValidServerName(value) {
   return typeof value === "string" && SERVER_NAME_REGEX.test(value);
 }
 
+function isValidDockerContainerRef(value) {
+  return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(value);
+}
+
 async function mapWithConcurrency(items, limit, mapper) {
   const results = new Array(items.length);
   let nextIndex = 0;
@@ -651,6 +655,10 @@ router.post("/", async (req, res) => {
             "Invalid server name: only letters, numbers, underscores, hyphens and spaces allowed",
         });
     }
+    const dockerContainerName = String(config.dockerContainerName || "").trim();
+    if (dockerContainerName && !isValidDockerContainerRef(dockerContainerName)) {
+      return res.status(400).json({ error: "Invalid Docker container name" });
+    }
 
     // Validate server port if provided
     if (config.serverPort) {
@@ -666,6 +674,7 @@ router.post("/", async (req, res) => {
       installPath: config.installPath || "",
       zomboidDataPath: config.zomboidDataPath || null,
       serverConfigPath: config.serverConfigPath || null,
+      dockerContainerName: dockerContainerName || null,
       branch: config.branch || "stable",
       rconHost: normalizeRconHost(config.rconHost),
       rconPort: rconPort,
@@ -698,6 +707,7 @@ const ALLOWED_SERVER_UPDATE_FIELDS = [
   "serverPath",
   "zomboidDataPath",
   "serverConfigPath",
+  "dockerContainerName",
   "branch",
   "rconHost",
   "rconPort",
@@ -745,6 +755,16 @@ router.put("/:id", async (req, res) => {
         });
       }
       updates.serverName = trimmed;
+    }
+
+    if (updates.dockerContainerName !== undefined) {
+      const value = String(updates.dockerContainerName).trim();
+      if (value && !isValidDockerContainerRef(value)) {
+        return res.status(400).json({
+          error: "Invalid Docker container name",
+        });
+      }
+      updates.dockerContainerName = value || null;
     }
 
     // GET responses mask rconPassword/adminPassword (sanitizeServerResponse).
