@@ -42,7 +42,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { useToast } from '@/components/ui/use-toast'
 import { useSocket } from '@/contexts/SocketContext'
-import { backupApi, serversApi, BackupStatus, BackupFile, BackupSnapshot } from '@/lib/api'
+import { backupApi, serversApi, BackupStatus, BackupFile, BackupHistoryRecord, BackupSnapshot } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { PageHeader } from '@/components/PageHeader'
 import { EmptyState } from '@/components/EmptyState'
@@ -82,6 +82,8 @@ export default function Backups() {
   // and refresh when the server-changed socket event fires (handled via
   // socket effect below) so the banner / button-disable stays accurate.
   const [activeServerRemote, setActiveServerRemote] = useState(false)
+  const [activeServerId, setActiveServerId] = useState<string | number | null>(null)
+  const [history, setHistory] = useState<BackupHistoryRecord[]>([])
 
   // Selection state
   const [selectedBackups, setSelectedBackups] = useState<Set<string>>(new Set())
@@ -140,21 +142,34 @@ export default function Backups() {
     }
   }, [])
 
+  const fetchHistory = useCallback(async (serverId: string | number | null) => {
+    if (serverId == null) {
+      setHistory([])
+      return
+    }
+    try {
+      const data = await backupApi.getHistory(serverId)
+      setHistory(data.records || [])
+    } catch {
+      setHistory([])
+    }
+  }, [])
+
   const refreshAll = useCallback(async () => {
     setLoading(true)
     try {
+      const active = await serversApi.getResolvedActive().catch(() => ({ server: null }))
+      setActiveServerRemote(!!active.server?.isRemote)
+      setActiveServerId(active.server?.id ?? null)
       await Promise.all([
         fetchBackupStatus(),
         fetchBackups(),
-        // Active server may change between visits to this page — always re-check.
-        serversApi.getResolvedActive()
-          .then(({ server }) => setActiveServerRemote(!!server?.isRemote))
-          .catch(() => setActiveServerRemote(false)),
+        fetchHistory(active.server?.id ?? null),
       ])
     } finally {
       setLoading(false)
     }
-  }, [fetchBackupStatus, fetchBackups])
+  }, [fetchBackupStatus, fetchBackups, fetchHistory])
 
   // Initial load
   useEffect(() => {
@@ -587,6 +602,15 @@ export default function Backups() {
             Create, upload, and restore are unavailable until you switch to a local server.
           </AlertDescription>
         </Alert>
+      )}
+
+      {activeServerId != null && history.length > 0 && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-y border-border/50 py-2 text-xs text-muted-foreground">
+          <span className="font-medium text-foreground">History</span>
+          <span>{history.length} recorded backup{history.length === 1 ? '' : 's'}</span>
+          <span>Latest: {formatDate(history[0].createdAt)}</span>
+          <span className="font-mono">{history[0].fileName}</span>
+        </div>
       )}
 
       {/* Status Cards */}

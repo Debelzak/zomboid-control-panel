@@ -1680,6 +1680,15 @@ export interface BackupFile {
   created: string;
 }
 
+export interface BackupHistoryRecord {
+  id: string;
+  fileName: string;
+  createdAt: string;
+  size: number;
+  serverId: string | number | null;
+  serverName: string;
+}
+
 export interface BackupSnapshot {
   schemaVersion: number;
   createdAt: string;
@@ -2612,6 +2621,11 @@ export const backupApi = {
 
   // Get list of backups
   listBackups: (): Promise<{ backups: BackupFile[] }> => apiGet("/backup/list"),
+
+  getHistory: (serverId?: string | number) =>
+    apiGet(`/backup/history${serverId != null ? `?serverId=${encodeURIComponent(serverId)}` : ""}`) as Promise<{
+      records: BackupHistoryRecord[];
+    }>,
 
   getSnapshot: (name: string): Promise<{ success: boolean; snapshot?: BackupSnapshot; message?: string }> =>
     apiGet(`/backup/${encodeURIComponent(name)}/snapshot`),
