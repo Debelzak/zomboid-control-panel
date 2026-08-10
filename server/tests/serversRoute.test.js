@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const createServer = vi.fn();
 const updateServer = vi.fn();
 const getServers = vi.fn();
+const testRconConnection = vi.fn();
 
 vi.mock("../database/init.js", () => ({
   getServers,
@@ -12,6 +13,11 @@ vi.mock("../database/init.js", () => ({
   updateServer,
   deleteServer: vi.fn(),
   setActiveServer: vi.fn(),
+}));
+
+vi.mock("../services/rcon.js", () => ({
+  normalizeRconHost: (host) => host.trim(),
+  testRconConnection,
 }));
 
 const { default: router } = await import("../routes/servers.js");
@@ -174,6 +180,41 @@ describe("PUT /api/servers/:id", () => {
       1,
       expect.not.objectContaining({ rconPassword: expect.anything() }),
     );
+  });
+});
+
+describe("GET /api/servers/rcon-status", () => {
+  beforeEach(() => {
+    getServers.mockReset();
+    testRconConnection.mockReset();
+  });
+
+  it("reports per-server RCON status without exposing credentials", async () => {
+    getServers.mockResolvedValue([
+      { id: "one", rconHost: " 127.0.0.1 ", rconPort: 27015, rconPassword: "secret" },
+      { id: "two", rconHost: "example.test", rconPort: 27016, rconPassword: "other" },
+      { id: "three" },
+    ]);
+    testRconConnection
+      .mockResolvedValueOnce({ success: true })
+      .mockResolvedValueOnce({ success: false, error: "auth_failed" });
+    const response = createResponse();
+
+    await runRoute("/rcon-status", "get", {}, response);
+
+    expect(testRconConnection).toHaveBeenCalledWith(expect.objectContaining({
+      host: "127.0.0.1",
+      port: 27015,
+      timeoutMs: 3000,
+    }));
+    expect(response.json).toHaveBeenCalledWith({
+      servers: [
+        { id: "one", status: "connected" },
+        { id: "two", status: "auth_failed" },
+        { id: "three", status: "unconfigured" },
+      ],
+    });
+    expect(JSON.stringify(response.json.mock.calls[0][0])).not.toMatch(/secret|other/);
   });
 });
 

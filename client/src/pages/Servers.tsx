@@ -171,6 +171,7 @@ const defaultNewServer: NewServerForm = {
 export default function Servers() {
   const [servers, setServers] = useState<ServerInstance[]>([])
   const [serverStatuses, setServerStatuses] = useState<Record<string, { running: boolean; pid: string | null }>>({})
+  const [rconStatuses, setRconStatuses] = useState<Record<string, string>>({})
   // Full 3-signal status (host/RCON/bridge) for the active server only — the
   // other servers' cards fall back to the host-only signal in serverStatuses.
   const [activeStatus, setActiveStatus] = useState<ComposedServerStatus | null>(null)
@@ -298,6 +299,16 @@ export default function Servers() {
     }
   }, [])
 
+  const fetchRconStatuses = useCallback(async () => {
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+    try {
+      const data = await serversApi.getRconStatuses()
+      setRconStatuses(Object.fromEntries((data.servers || []).map((server) => [String(server.id), server.status])))
+    } catch (error) {
+      reportClientWarning('Failed to fetch per-server RCON status.', error)
+    }
+  }, [])
+
   // Provider-aware host/RCON/bridge status for whichever server is active —
   // shown on its card via ServerStatusBadge instead of a single Running/
   // Stopped flag that hides RCON/bridge trouble behind a "running" container.
@@ -315,7 +326,9 @@ export default function Servers() {
   useEffect(() => {
     fetchServers()
     fetchServerStatuses()
+    fetchRconStatuses()
     const statusInterval = setInterval(fetchServerStatuses, 15000)
+    const rconStatusInterval = setInterval(fetchRconStatuses, 30000)
     // Load steamcmd path from settings
     configApi.getAppSettings().then(data => {
       if (data.settings?.steamcmdPath) {
@@ -333,8 +346,9 @@ export default function Servers() {
     }).catch(e => reportClientWarning('Failed to load update status.', e))
     return () => {
       clearInterval(statusInterval)
+      clearInterval(rconStatusInterval)
     }
-  }, [fetchServers, fetchServerStatuses])
+  }, [fetchServers, fetchServerStatuses, fetchRconStatuses])
 
   useEffect(() => {
     if (!activeServerId) {
@@ -1214,7 +1228,15 @@ export default function Servers() {
                           : status
                             ? { status: status.running ? 'running' : 'stopped', label: 'Process' }
                             : undefined
-                        return <ServerStatusBadge compact host={host} />
+                        const rconStatus = rconStatuses[String(server.id)]
+                        const rcon = rconStatus
+                          ? rconStatus === 'connected'
+                            ? { status: 'connected', label: 'RCON' }
+                            : rconStatus === 'unconfigured'
+                              ? { status: 'unknown', label: 'RCON', detail: 'Not configured' }
+                              : { status: 'disconnected', label: 'RCON', detail: rconStatus === 'auth_failed' ? 'Authentication failed' : 'Unavailable' }
+                          : undefined
+                        return <ServerStatusBadge compact host={host} server={rcon} />
                       })()}
                       {server.isRemote && (
                         <Badge variant="outline" className="text-xs">

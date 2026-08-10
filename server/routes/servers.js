@@ -9,7 +9,7 @@ import {
   sanitizeServerResponseList,
   isMaskedSecret,
 } from "../utils/sanitize.js";
-import { normalizeRconHost } from "../services/rcon.js";
+import { normalizeRconHost, testRconConnection } from "../services/rcon.js";
 import {
   getServers,
   getServer,
@@ -39,6 +39,19 @@ const SERVER_NAME_REGEX =
 
 function isValidServerName(value) {
   return typeof value === "string" && SERVER_NAME_REGEX.test(value);
+}
+
+async function mapWithConcurrency(items, limit, mapper) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (nextIndex < items.length) {
+      const index = nextIndex++;
+      results[index] = await mapper(items[index]);
+    }
+  });
+  await Promise.all(workers);
+  return results;
 }
 
 // Auto-install/update PanelBridge.lua on the newly-activated server when the
@@ -512,6 +525,33 @@ router.get("/status", async (req, res) => {
     });
   } catch (error) {
     log.error(`Failed to get per-server status: ${error.message}`);
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
+// Lightweight, bounded RCON connectivity probe for every configured server.
+// It creates no persistent connections and never returns credential material.
+router.get("/rcon-status", async (req, res) => {
+  try {
+    const servers = await getServers();
+    const statuses = await mapWithConcurrency(servers, 3, async (server) => {
+      if (!server.rconHost || !server.rconPort) {
+        return { id: server.id, status: "unconfigured" };
+      }
+      const result = await testRconConnection({
+        host: normalizeRconHost(server.rconHost),
+        port: Number(server.rconPort),
+        password: server.rconPassword || "",
+        timeoutMs: 3000,
+      });
+      return {
+        id: server.id,
+        status: result.success ? "connected" : result.error || "unavailable",
+      };
+    });
+    res.json({ servers: statuses });
+  } catch (error) {
+    log.error(`Failed to probe server RCON status: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });
   }
 });

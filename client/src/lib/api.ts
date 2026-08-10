@@ -1528,6 +1528,10 @@ export const serversApi = {
       detectedProcesses: number;
       detectionError: string | null;
     }>,
+  getRconStatuses: () =>
+    apiGet("/servers/rcon-status") as Promise<{
+      servers: Array<{ id: string; status: "connected" | "unreachable" | "auth_failed" | "unconfigured" | "unavailable" }>;
+    }>,
   get: (id: string | number) =>
     apiGet(`/servers/${id}`) as Promise<{ server: ServerInstance }>,
   create: (config: Partial<ServerInstance>) =>
