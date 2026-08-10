@@ -15,8 +15,10 @@ function createResponse() {
   return response;
 }
 
-async function runRoute(request, response) {
-  const layer = router.stack.find((entry) => entry.route?.path === "/status");
+async function runRoute(routePath, method, request, response) {
+  const layer = router.stack.find(
+    (entry) => entry.route?.path === routePath && entry.route.methods[method],
+  );
   const handlers = layer.route.stack.map((entry) => entry.handle);
   let index = -1;
   const next = async (error) => {
@@ -32,7 +34,7 @@ describe("GET /api/docker/status", () => {
     const response = createResponse();
     const listManagedContainers = vi.fn();
 
-    await runRoute(
+    await runRoute("/status", "get",
       { user: { role: "viewer" }, app: { get: () => ({ enabled: true, listManagedContainers }) } },
       response,
     );
@@ -43,7 +45,7 @@ describe("GET /api/docker/status", () => {
 
   it("reports only the managed containers supplied by the client", async () => {
     const response = createResponse();
-    await runRoute(
+    await runRoute("/status", "get",
       {
         user: { role: "admin" },
         app: {
@@ -74,5 +76,35 @@ describe("GET /api/docker/status", () => {
         status: "Up 2 minutes",
       }],
     });
+  });
+});
+
+describe("POST /api/docker/containers/:id/:action", () => {
+  it("rejects a non-admin caller before invoking Docker", async () => {
+    const response = createResponse();
+    const runManagedAction = vi.fn();
+
+    await runRoute("/containers/:id/:action", "post", {
+      user: { role: "viewer" },
+      params: { id: "managed", action: "restart" },
+      app: { get: () => ({ enabled: true, available: true, runManagedAction }) },
+    }, response);
+
+    expect(response.status).toHaveBeenCalledWith(403);
+    expect(runManagedAction).not.toHaveBeenCalled();
+  });
+
+  it("only runs an action through the managed-container client", async () => {
+    const response = createResponse();
+    const runManagedAction = vi.fn(async () => ({ success: true }));
+
+    await runRoute("/containers/:id/:action", "post", {
+      user: { role: "admin" },
+      params: { id: "managed", action: "restart" },
+      app: { get: () => ({ enabled: true, available: true, runManagedAction }) },
+    }, response);
+
+    expect(runManagedAction).toHaveBeenCalledWith("managed", "restart");
+    expect(response.json).toHaveBeenCalledWith({ success: true });
   });
 });

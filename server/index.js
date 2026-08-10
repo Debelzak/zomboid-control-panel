@@ -607,6 +607,7 @@ app.use("/api/server/start", strictLimiter);
 app.use("/api/server/stop", strictLimiter);
 app.use("/api/server/force-stop", strictLimiter);
 app.use("/api/server/restart", strictLimiter);
+app.use("/api/docker/containers", strictLimiter);
 app.use("/api/backup/restore", strictLimiter);
 app.use("/api/backup/delete-older-than", strictLimiter);
 app.use("/api/backup/upload", strictLimiter);
