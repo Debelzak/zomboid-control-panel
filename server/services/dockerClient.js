@@ -73,6 +73,20 @@ export class DockerClient {
     }
   }
 
+  async inspectManagedContainer(containerId) {
+    if (!this.available) return null;
+    if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(containerId)) return null;
+    try {
+      const container = await this._requestJson(
+        "GET",
+        `/containers/${encodeURIComponent(containerId)}/json`,
+      );
+      return isManagedContainer(container) ? container : null;
+    } catch {
+      return null;
+    }
+  }
+
   async runManagedAction(containerId, action) {
     if (!this.available) return { success: false, error: "Docker control is unavailable" };
     if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(containerId)) {
@@ -83,8 +97,8 @@ export class DockerClient {
     }
 
     try {
-      const container = await this._requestJson("GET", `/containers/${encodeURIComponent(containerId)}/json`);
-      if (!isManagedContainer(container)) {
+      const container = await this.inspectManagedContainer(containerId);
+      if (!container) {
         return { success: false, error: "Container is not managed by this panel" };
       }
       const statusCode = await this._requestStatus(

@@ -351,7 +351,9 @@ export default function Servers() {
   ) => {
     setDockerActionPending(`${action}-${container.id}`)
     try {
-      const result = await dockerApi.runAction(container.id, action)
+      const server = servers.find((item) => item.dockerContainerName === container.name || item.dockerContainerName === container.id)
+      if (!server) throw new Error('No server profile maps to this container')
+      const result = await dockerApi.runAction(server.dockerContainerName || container.id, action, server.id)
       if (!result.success) throw new Error(result.error || `Failed to ${action} container`)
       toast({ title: `Container ${action} requested`, description: container.name, variant: 'success' as const })
       await fetchDockerState()
@@ -364,7 +366,23 @@ export default function Servers() {
     } finally {
       setDockerActionPending(null)
     }
-  }, [fetchDockerState, toast])
+  }, [fetchDockerState, servers, toast])
+
+  const handleConfigureRemoteBridge = useCallback(async (server: ServerInstance) => {
+    try {
+      if (!server.isActive) {
+        await serversApi.activate(server.id)
+        await fetchServers()
+      }
+      navigate('/settings?tab=bridge')
+    } catch (error) {
+      toast({
+        title: 'Could not select remote server',
+        description: error instanceof Error ? error.message : 'Server activation failed',
+        variant: 'destructive',
+      })
+    }
+  }, [fetchServers, navigate, toast])
 
   // Provider-aware host/RCON/bridge status for whichever server is active —
   // shown on its card via ServerStatusBadge instead of a single Running/
@@ -1551,7 +1569,7 @@ export default function Servers() {
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => navigate('/settings?tab=bridge')}
+                      onClick={() => handleConfigureRemoteBridge(server)}
                       title="Configure the SFTP bridge for this remote server"
                     >
                       <Link className="w-4 h-4 mr-1.5" /> Configure SFTP Bridge

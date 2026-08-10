@@ -1626,8 +1626,8 @@ export const dockerApi = {
   getStats: () => apiGet("/docker/stats") as Promise<{
     containers: Record<string, DockerContainerStats>;
   }>,
-  runAction: (id: string, action: "start" | "stop" | "restart") =>
-    apiPost(`/docker/containers/${encodeURIComponent(id)}/${action}`, {}) as Promise<{
+  runAction: (id: string, action: "start" | "stop" | "restart", serverId: string | number) =>
+    apiPost(`/docker/containers/${encodeURIComponent(id)}/${action}`, { serverId }) as Promise<{
       success: boolean;
       message?: string;
       error?: string;

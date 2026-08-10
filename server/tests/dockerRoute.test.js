@@ -1,4 +1,25 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const { getServer, connect, save, disconnect } = vi.hoisted(() => ({
+  getServer: vi.fn(),
+  connect: vi.fn(),
+  save: vi.fn(),
+  disconnect: vi.fn(),
+}));
+
+vi.mock("../database/init.js", () => ({ getServer }));
+vi.mock("../services/rcon.js", () => ({
+  RconService: class {
+    connected = false;
+    async loadConfig() {}
+    async connect() {
+      this.connected = await connect();
+      return this.connected;
+    }
+    save = save;
+    disconnect = disconnect;
+  },
+}));
 
 vi.mock("../services/auth.js", () => ({
   requireRole: () => (req, res, next) => {
@@ -8,6 +29,14 @@ vi.mock("../services/auth.js", () => ({
 }));
 
 const { default: router } = await import("../routes/docker.js");
+
+beforeEach(() => {
+  getServer.mockReset();
+  connect.mockReset();
+  save.mockReset();
+  disconnect.mockReset();
+  disconnect.mockResolvedValue(undefined);
+});
 
 function createResponse() {
   const response = { status: vi.fn(), json: vi.fn() };
@@ -97,15 +126,61 @@ describe("POST /api/docker/containers/:id/:action", () => {
   it("only runs an action through the managed-container client", async () => {
     const response = createResponse();
     const runManagedAction = vi.fn(async () => ({ success: true }));
+    const inspectManagedContainer = vi.fn(async () => ({ State: { Running: true } }));
+    getServer.mockResolvedValue({ id: "server-1", dockerContainerName: "managed" });
+    connect.mockResolvedValue(true);
+    save.mockResolvedValue({ success: true });
 
     await runRoute("/containers/:id/:action", "post", {
       user: { role: "admin" },
       params: { id: "managed", action: "restart" },
-      app: { get: () => ({ enabled: true, available: true, runManagedAction }) },
+      body: { serverId: "server-1" },
+      app: { get: () => ({ enabled: true, available: true, inspectManagedContainer, runManagedAction }) },
     }, response);
 
     expect(runManagedAction).toHaveBeenCalledWith("managed", "restart");
     expect(response.json).toHaveBeenCalledWith({ success: true });
+  });
+
+  it("does not stop a container when the world save fails", async () => {
+    const response = createResponse();
+    const runManagedAction = vi.fn();
+    const inspectManagedContainer = vi.fn(async () => ({ State: { Running: true } }));
+    getServer.mockResolvedValue({ id: "server-1", dockerContainerName: "managed" });
+    connect.mockResolvedValue(true);
+    save.mockResolvedValue({ success: false, error: "timeout" });
+
+    await runRoute("/containers/:id/:action", "post", {
+      user: { role: "admin" },
+      params: { id: "managed", action: "stop" },
+      body: { serverId: "server-1" },
+      app: { get: () => ({ enabled: true, available: true, inspectManagedContainer, runManagedAction }) },
+    }, response);
+
+    expect(response.status).toHaveBeenCalledWith(409);
+    expect(runManagedAction).not.toHaveBeenCalled();
+  });
+
+  it("restarts a stopped managed container without requiring RCON", async () => {
+    const response = createResponse();
+    const runManagedAction = vi.fn(async () => ({ success: true }));
+    getServer.mockResolvedValue({ id: "server-1", dockerContainerName: "managed" });
+
+    await runRoute("/containers/:id/:action", "post", {
+      user: { role: "admin" },
+      params: { id: "managed", action: "restart" },
+      body: { serverId: "server-1" },
+      app: { get: () => ({
+        enabled: true,
+        available: true,
+        inspectManagedContainer: vi.fn(async () => ({ State: { Running: false } })),
+        runManagedAction,
+      }) },
+    }, response);
+
+    expect(connect).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
+    expect(runManagedAction).toHaveBeenCalledWith("managed", "restart");
   });
 });
 

@@ -40,4 +40,26 @@ describe("backup records", () => {
       expect.objectContaining({ fileName: "b.zip" }),
     ]);
   });
+
+  it("serializes concurrent additions so neither record is lost", async () => {
+    let stored = [];
+    getSetting.mockImplementation(async () => structuredClone(stored));
+    setSetting.mockImplementation(async (_key, records) => {
+      await Promise.resolve();
+      stored = structuredClone(records);
+    });
+
+    await Promise.all([
+      addBackupRecord({
+        backup: { name: "one.zip", created: "2026-08-10T01:00:00.000Z", size: 1 },
+        server: { id: "one", serverName: "One" },
+      }),
+      addBackupRecord({
+        backup: { name: "two.zip", created: "2026-08-10T02:00:00.000Z", size: 2 },
+        server: { id: "two", serverName: "Two" },
+      }),
+    ]);
+
+    expect(stored.map((record) => record.fileName).sort()).toEqual(["one.zip", "two.zip"]);
+  });
 });

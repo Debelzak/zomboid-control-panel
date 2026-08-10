@@ -1,6 +1,8 @@
 import express from "express";
 import { requireRole } from "../services/auth.js";
 import { sanitizeError } from "../utils/sanitize.js";
+import { getServer } from "../database/init.js";
+import { RconService } from "../services/rcon.js";
 
 const router = express.Router();
 
@@ -63,16 +65,44 @@ router.get("/stats", requireRole("admin"), async (req, res) => {
 });
 
 router.post("/containers/:id/:action", requireRole("admin"), async (req, res) => {
+  let rconService = null;
   try {
     const dockerClient = req.app.get("dockerClient");
     if (!dockerClient?.enabled || !dockerClient.available) {
       return res.status(503).json({ error: "Docker control is unavailable" });
+    }
+    const server = await getServer(req.body?.serverId);
+    if (!server) return res.status(404).json({ error: "Server profile not found" });
+    if (
+      server.dockerContainerName !== req.params.id &&
+      server.dockerContainerId !== req.params.id
+    ) {
+      return res.status(403).json({ error: "Container is not mapped to this server" });
+    }
+    const container = await dockerClient.inspectManagedContainer(req.params.id);
+    if (!container) {
+      return res.status(403).json({ error: "Container is not managed by this panel" });
+    }
+    if (["stop", "restart"].includes(req.params.action) && container.State?.Running) {
+      rconService = new RconService();
+      await rconService.loadConfig(server.id);
+      if (!(await rconService.connect())) {
+        return res.status(409).json({ error: "RCON connection failed; container was not changed" });
+      }
+      const saved = await rconService.save({ skipLog: true });
+      if (!saved?.success) {
+        return res.status(409).json({ error: `World save failed: ${saved?.error || "unknown error"}` });
+      }
     }
     const result = await dockerClient.runManagedAction(req.params.id, req.params.action);
     if (!result.success) return res.status(403).json(result);
     return res.json(result);
   } catch (error) {
     return res.status(500).json({ error: sanitizeError(error.message) });
+  } finally {
+    if (rconService?.connected) {
+      await rconService.disconnect().catch(() => {});
+    }
   }
 });
 
