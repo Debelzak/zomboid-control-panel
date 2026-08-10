@@ -13,6 +13,7 @@ import {
 } from "../database/init.js";
 import { sanitizeError } from "../utils/sanitize.js";
 import { captureBackupSnapshot } from "../utils/backupSnapshot.js";
+import { addBackupRecord, removeBackupRecord } from "./backupRecords.js";
 
 // Dynamic import for unzipper (CommonJS module)
 let unzipper;
@@ -369,6 +370,16 @@ export class BackupService {
           created: new Date().toISOString(),
         };
 
+        try {
+          await addBackupRecord({
+            backup: this.lastBackup,
+            server: activeServer,
+            snapshot: serverSnapshot,
+          });
+        } catch (error) {
+          log.warn(`Backup record could not be saved for ${backupName}: ${error.message}`);
+        }
+
         await logServerEvent("backup_created", `${backupName} (${sizeMB} MB)`);
 
         // Clean up old backups
@@ -525,6 +536,11 @@ export class BackupService {
       }
 
       fs.unlinkSync(backupPath);
+      try {
+        await removeBackupRecord(safeName);
+      } catch (error) {
+        log.warn(`Backup record could not be removed for ${safeName}: ${error.message}`);
+      }
       log.info(`Deleted backup: ${safeName}`);
       await logServerEvent("backup_deleted", safeName);
 
