@@ -1639,6 +1639,14 @@ export interface BackupFile {
   created: string;
 }
 
+export interface BackupSnapshot {
+  schemaVersion: number;
+  createdAt: string;
+  server: { id: string | number | null; name: string; provider: string };
+  serverIni: Record<string, string>;
+  sandboxVars: Record<string, string | number | boolean>;
+}
+
 export interface ConfigTemplate {
   id: string;
   name: string;
@@ -2563,6 +2571,9 @@ export const backupApi = {
 
   // Get list of backups
   listBackups: (): Promise<{ backups: BackupFile[] }> => apiGet("/backup/list"),
+
+  getSnapshot: (name: string): Promise<{ success: boolean; snapshot?: BackupSnapshot; message?: string }> =>
+    apiGet(`/backup/${encodeURIComponent(name)}/snapshot`),
 
   // Update backup settings
   updateSettings: (

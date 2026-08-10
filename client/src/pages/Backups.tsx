@@ -13,6 +13,7 @@ import {
   AlertTriangle,
   Check,
   Upload,
+  FileText,
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -41,7 +42,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { useToast } from '@/components/ui/use-toast'
 import { useSocket } from '@/contexts/SocketContext'
-import { backupApi, serversApi, BackupStatus, BackupFile } from '@/lib/api'
+import { backupApi, serversApi, BackupStatus, BackupFile, BackupSnapshot } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { PageHeader } from '@/components/PageHeader'
 import { EmptyState } from '@/components/EmptyState'
@@ -103,6 +104,7 @@ export default function Backups() {
   const [deleteOlderDialog, setDeleteOlderDialog] = useState(false)
   const [deleteOlderDays, setDeleteOlderDays] = useState(7)
   const [deletingOlder, setDeletingOlder] = useState(false)
+  const [snapshotDialog, setSnapshotDialog] = useState<{ name: string; snapshot: BackupSnapshot } | null>(null)
 
   // Fetch functions
   const fetchBackupStatus = useCallback(async () => {
@@ -294,6 +296,20 @@ export default function Backups() {
       })
     } finally {
       setRestoringBackup(null)
+    }
+  }
+
+  const handleViewSnapshot = async (name: string) => {
+    try {
+      const result = await backupApi.getSnapshot(name)
+      if (!result.success || !result.snapshot) throw new Error(result.message || 'No panel snapshot in this backup')
+      setSnapshotDialog({ name, snapshot: result.snapshot })
+    } catch (error) {
+      toast({
+        title: 'Snapshot unavailable',
+        description: error instanceof Error ? error.message : 'Could not read backup snapshot',
+        variant: 'destructive',
+      })
     }
   }
 
@@ -896,6 +912,16 @@ export default function Backups() {
                           <Button
                             variant="ghost"
                             size="sm"
+                            onClick={() => handleViewSnapshot(backup.name)}
+                            className="h-9 w-9"
+                            aria-label={`View snapshot for ${backup.name}`}
+                            title="View server snapshot"
+                          >
+                            <FileText className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
                             onClick={() => setRestoreDialog({ open: true, backupName: backup.name })}
                             disabled={isRestoring || restoringBackup !== null || creatingBackup}
                             className="h-9 w-9 text-warning hover:text-warning hover:bg-warning/10"
@@ -939,6 +965,35 @@ export default function Backups() {
           )}
         </CardContent>
       </Card>
+
+      <AlertDialog open={snapshotDialog !== null} onOpenChange={(open) => !open && setSnapshotDialog(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Server Snapshot</AlertDialogTitle>
+            <AlertDialogDescription>{snapshotDialog?.name}</AlertDialogDescription>
+          </AlertDialogHeader>
+          {snapshotDialog && (
+            <div className="space-y-3 text-sm">
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-muted-foreground">
+                <span>Server</span><span className="text-foreground">{snapshotDialog.snapshot.server.name}</span>
+                <span>Provider</span><span className="text-foreground">{snapshotDialog.snapshot.server.provider}</span>
+                <span>Captured</span><span className="text-foreground">{new Date(snapshotDialog.snapshot.createdAt).toLocaleString()}</span>
+              </div>
+              <div>
+                <p className="mb-1 text-xs font-medium text-muted-foreground">SERVER.INI</p>
+                <pre className="max-h-36 overflow-auto rounded border border-border/60 bg-muted/20 p-2 text-xs">{Object.entries(snapshotDialog.snapshot.serverIni).map(([key, value]) => `${key}=${value}`).join('\n') || 'No captured settings'}</pre>
+              </div>
+              <div>
+                <p className="mb-1 text-xs font-medium text-muted-foreground">SANDBOX</p>
+                <pre className="max-h-36 overflow-auto rounded border border-border/60 bg-muted/20 p-2 text-xs">{Object.entries(snapshotDialog.snapshot.sandboxVars).map(([key, value]) => `${key}=${value}`).join('\n') || 'No captured settings'}</pre>
+              </div>
+            </div>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => setSnapshotDialog(null)}>Close</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Restore Confirmation Dialog */}
       <AlertDialog open={restoreDialog.open} onOpenChange={(open) => setRestoreDialog({ open, backupName: null })}>

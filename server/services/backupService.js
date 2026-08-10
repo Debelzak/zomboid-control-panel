@@ -12,6 +12,7 @@ import {
   logServerEvent,
 } from "../database/init.js";
 import { sanitizeError } from "../utils/sanitize.js";
+import { captureBackupSnapshot } from "../utils/backupSnapshot.js";
 
 // Dynamic import for unzipper (CommonJS module)
 let unzipper;
@@ -246,6 +247,7 @@ export class BackupService {
     const serverName = activeServer?.serverName || "server";
     const backupName = `${serverName}_${timestamp}.zip`;
     const backupPath = path.join(backupsPath, backupName);
+    const serverSnapshot = captureBackupSnapshot(activeServer);
 
     log.info(`Starting backup: ${backupName}`);
     log.info(`Source: ${savesPath}`);
@@ -418,6 +420,9 @@ export class BackupService {
 
       // Add the saves folder to the archive
       archive.directory(savesPath, path.basename(savesPath));
+      archive.append(JSON.stringify(serverSnapshot, null, 2), {
+        name: "panel-server-snapshot.json",
+      });
 
       // Optionally include database
       if (dbPathToInclude) {
@@ -465,6 +470,35 @@ export class BackupService {
     } catch (error) {
       log.error(`Failed to list backups: ${error.message}`);
       return [];
+    }
+  }
+
+  async getBackupSnapshot(backupName) {
+    const backupsPath = await this.getBackupsPath();
+    const safeName = path.basename(backupName);
+    if (!backupsPath || !safeName.endsWith(".zip")) {
+      return { success: false, message: "Invalid backup file" };
+    }
+
+    const backupPath = path.join(backupsPath, safeName);
+    if (!fs.existsSync(backupPath)) {
+      return { success: false, message: "Backup not found" };
+    }
+
+    try {
+      const unzip = await getUnzipper();
+      const archive = await unzip.Open.file(backupPath);
+      const entry = archive.files.find(
+        (file) => file.path === "panel-server-snapshot.json",
+      );
+      if (!entry) {
+        return { success: false, message: "This backup has no panel snapshot" };
+      }
+      const snapshot = JSON.parse((await entry.buffer()).toString("utf-8"));
+      return { success: true, snapshot };
+    } catch (error) {
+      log.warn(`Could not read backup snapshot from ${safeName}: ${error.message}`);
+      return { success: false, message: "Could not read backup snapshot" };
     }
   }
 
@@ -616,6 +650,7 @@ export class BackupService {
         "vehicles.db - Vehicle data",
         "reanimated.bin - Zombie data",
         "worldstats.txt - World statistics",
+        "panel-server-snapshot.json - Safe server configuration snapshot",
         "Other world-specific data files",
       ],
       location: "Saves/Multiplayer/{ServerName}/",
