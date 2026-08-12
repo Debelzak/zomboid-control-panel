@@ -47,6 +47,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+#### World Map and Chunk Cleaner
+
+- **Blank Build 42 map tiles**: Project Zomboid moved its map build list behind a versioned static directory and removed the old `42.19.0` fallback. The panel now discovers the upstream static path dynamically, falls back to the available `42.20.0` geometry, and permits browser-created tile blobs under its Content Security Policy.
+
+#### Managed Docker servers
+
+- **Containerized servers could immediately come back after Stop**: stopping PID 1 through RCON or a host process kill triggered Docker's restart policy. Dashboard controls, Discord commands, scheduled restarts, and manual lifecycle actions now use Docker for explicitly managed containers. A running world is saved first; a failed save cancels the operation.
+- **Docker control could appear available but lack socket permission**: supplemental container groups are preserved when the image drops privileges, and socket-access failures are surfaced instead of looking like an empty container list.
+
 #### Safety and recovery
 
 - **Docker stop/restart could skip the world save**: running managed containers now require a successful server-scoped RCON save before Docker is allowed to stop or restart them. Stopped containers can still start without impossible RCON checks.
