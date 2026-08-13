@@ -6,6 +6,15 @@ const log = createLogger("Updates");
 import { getSetting, setSetting, getActiveServer } from "../database/init.js";
 import { resolveManagedContainer } from "./managedContainer.js";
 
+export function parseAutoUpdateWarningMinutes(value) {
+  if (value === null || value === undefined) return 15;
+  if (typeof value === "string" && value.trim() === "") return 15;
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 15;
+  return Math.min(60, Math.max(0, Math.floor(parsed)));
+}
+
 async function getSteamLoginArgs() {
   const account = String((await getSetting("steamUpdateAccount")) || "").trim();
   return ["+login", account || "anonymous"];
@@ -449,10 +458,9 @@ export class UpdateChecker {
     const enabled = await getSetting("serverAutoUpdate");
     if (enabled !== true && enabled !== "true") return;
 
-    const rawWarning = Number(await getSetting("serverAutoUpdateWarningMinutes"));
-    const warningMinutes = Number.isFinite(rawWarning)
-      ? Math.min(60, Math.max(0, Math.floor(rawWarning)))
-      : 15;
+    const warningMinutes = parseAutoUpdateWarningMinutes(
+      await getSetting("serverAutoUpdateWarningMinutes"),
+    );
     const activeServer = await getActiveServer();
     if (!activeServer?.installPath || activeServer.isRemote) {
       log.warn("Auto-update skipped: the active server is remote or has no local install path");

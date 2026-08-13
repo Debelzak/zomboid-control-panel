@@ -20,6 +20,7 @@ import {
   parseLegacyBoolean,
   parseLegacyMinutes,
 } from "../services/modChecker.js";
+import { parseAutoUpdateWarningMinutes } from "../services/updateChecker.js";
 import { BackupService } from "../services/backupService.js";
 
 // Test the restart timeout pattern fix
@@ -87,6 +88,22 @@ describe("Restart timeout pattern", () => {
 
     // Timeout case
     expect(await sendWarning("test", false)).toBe("RCON timeout");
+  });
+});
+
+describe("automatic update warning parsing", () => {
+  it("uses the documented default for unset or blank settings", () => {
+    expect(parseAutoUpdateWarningMinutes(null)).toBe(15);
+    expect(parseAutoUpdateWarningMinutes(undefined)).toBe(15);
+    expect(parseAutoUpdateWarningMinutes(" ")).toBe(15);
+  });
+
+  it("keeps valid values bounded and rejects invalid values", () => {
+    expect(parseAutoUpdateWarningMinutes("5")).toBe(5);
+    expect(parseAutoUpdateWarningMinutes(2.9)).toBe(2);
+    expect(parseAutoUpdateWarningMinutes(-4)).toBe(0);
+    expect(parseAutoUpdateWarningMinutes(90)).toBe(60);
+    expect(parseAutoUpdateWarningMinutes("abc")).toBe(15);
   });
 });
 

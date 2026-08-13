@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Player access
+
+- **Whitelist management**: the Players page now lists per-server Build 42 whitelist accounts without exposing passwords, shows roles, Steam IDs, last connections, and online status, and supports account creation, removal, and allowed Steam ID management. Remote-server rosters remain unavailable until the remote database transport is implemented.
+
 #### Backups
 
 - **Server snapshots and durable history**: new backups embed a secret-free snapshot of the server identity and selected INI/sandbox settings. The Backups page can inspect the snapshot and shows persisted history for the active server.
