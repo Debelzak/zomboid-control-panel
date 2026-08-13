@@ -21,7 +21,9 @@ jobs:
             archive_file: ZomboidControlPanel-windows.zip
             binary_file: ZomboidControlPanel.exe
             build_arg: --windows
-          - os: ubuntu-latest
+          # Keep the standalone Linux binary compatible with glibc 2.28+
+          # hosts. ubuntu-latest moved to 24.04 and raised the symbol floor.
+          - os: ubuntu-22.04
             artifact_name: linux-tarball
             binary_artifact_name: linux-binary
             archive_file: ZomboidControlPanel-linux.tar.gz

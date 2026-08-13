@@ -47,6 +47,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Linux release compatibility**: pin standalone Linux artifact builds to Ubuntu 22.04 so the binary remains compatible with hosts using the documented glibc 2.28+ baseline. v1.1.44 was built through the moving `ubuntu-latest` runner after it moved to Ubuntu 24.04.
+
 #### World Map and Chunk Cleaner
 
 - **Blank Build 42 map tiles**: Project Zomboid moved its map build list behind a versioned static directory and removed the old `42.19.0` fallback. The panel now discovers the upstream static path dynamically, falls back to the available `42.20.0` geometry, and permits browser-created tile blobs under its Content Security Policy.
