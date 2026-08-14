@@ -21,6 +21,40 @@ import bridge from '../services/panelBridge.js';
 import { listWhitelistAccounts } from '../utils/whitelistDb.js';
 
 const router = express.Router();
+const MAX_EXPORT_FILE_BYTES = 5 * 1024 * 1024;
+
+export function parsePlayerExportFile(filePath) {
+  let stat;
+  try {
+    stat = fs.statSync(filePath);
+  } catch {
+    throw new Error('Export not found');
+  }
+
+  if (stat.size > MAX_EXPORT_FILE_BYTES) {
+    throw new Error('Export file is too large');
+  }
+
+  let raw;
+  try {
+    raw = fs.readFileSync(filePath, 'utf8');
+  } catch {
+    throw new Error('Could not read export file');
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error('Invalid JSON export file');
+  }
+
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('Invalid export structure');
+  }
+
+  return parsed;
+}
 
 // Validation helpers to prevent RCON command injection
 // Allow normal in-game names (spaces/symbols) but block control chars and quote/backslash.
@@ -911,7 +945,7 @@ router.get('/exports/:username/:filename', async (req, res) => {
       return res.status(404).json({ error: 'Export not found' });
     }
 
-    const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    const data = parsePlayerExportFile(filePath);
     res.json(data);
   } catch (error) {
     log.error(`Failed to get export: ${error.message}`);
