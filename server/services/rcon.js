@@ -1143,21 +1143,47 @@ export class RconService extends EventEmitter {
   async teleportPlayer(player1, player2 = null) {
     const safeP1 = this.sanitizeQuotedArg(player1, "Username", 64);
     if (player2) {
-      return this.execute(
-        `teleport "${safeP1}" "${this.sanitizeQuotedArg(player2, "Target username", 64)}"`,
-      );
+      const safeP2 = this.sanitizeQuotedArg(player2, "Target username", 64);
+      return this.execute(`teleportplayer "${safeP1}" "${safeP2}"`);
     }
-    return this.execute(`teleport "${safeP1}"`);
+    return this.execute(`teleportplayer "${safeP1}"`);
   }
 
-  async teleportTo(x, y, z) {
-    const nx = Number(x),
-      ny = Number(y),
-      nz = Number(z);
+  async teleportTo(usernameOrX, xOrY, yOrZ, zArg = 0) {
+    if (
+      typeof usernameOrX === "number" ||
+      (!isNaN(Number(usernameOrX)) &&
+        typeof xOrY === "number" &&
+        typeof yOrZ === "number")
+    ) {
+      const nx = Math.floor(Number(usernameOrX)),
+        ny = Math.floor(Number(xOrY)),
+        nz = Math.floor(Number(yOrZ ?? 0));
+      if (!Number.isFinite(nx) || !Number.isFinite(ny) || !Number.isFinite(nz)) {
+        throw new Error("Coordinates must be valid numbers");
+      }
+      return this.execute(`teleportto ${nx},${ny},${nz}`);
+    }
+
+    const username = usernameOrX;
+    const x = Number(xOrY);
+    const y = Number(yOrZ);
+    const z = Number(zArg ?? 0);
+
+    if (!username || typeof username !== "string") {
+      throw new Error("Username is required for teleportto");
+    }
+
+    const nx = Math.floor(x);
+    const ny = Math.floor(y);
+    const nz = Math.floor(z);
+
     if (!Number.isFinite(nx) || !Number.isFinite(ny) || !Number.isFinite(nz)) {
       throw new Error("Coordinates must be valid numbers");
     }
-    return this.execute(`teleportto ${nx},${ny},${nz}`);
+
+    const safeUser = this.sanitizeQuotedArg(username, "Username", 64);
+    return this.execute(`teleportto "${safeUser}" ${nx},${ny},${nz}`);
   }
 
   // Items and XP

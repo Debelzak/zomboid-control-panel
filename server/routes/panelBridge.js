@@ -112,6 +112,8 @@ const VALID_ACTIONS = new Set([
   "healPlayer",
   "killPlayer",
   "teleportPlayer",
+  "teleportTo",
+  "teleportPlayerToPlayer",
   "setGodMode",
   "setInvisible",
   "setNoclip",
@@ -1129,6 +1131,78 @@ router.post("/command", requireRole("admin"), async (req, res) => {
     }
   }
 
+  // Player teleportation is handled directly via RCON using teleportto and teleportplayer
+  if (action === "teleportPlayer" || action === "teleportTo" || action === "teleportPlayerToPlayer") {
+    const username = args?.username ?? args?.player1 ?? args?.player;
+    const targetPlayer = args?.targetPlayer ?? args?.player2 ?? args?.target;
+    const x = args?.x !== undefined ? Number(args.x) : undefined;
+    const y = args?.y !== undefined ? Number(args.y) : undefined;
+    const z = args?.z !== undefined ? Number(args.z ?? 0) : 0;
+
+    const rconService = req.app.get("rconService");
+
+    // Branch 1: Teleport player to player
+    if (targetPlayer || action === "teleportPlayerToPlayer") {
+      if (typeof username !== "string" || !BRIDGE_USERNAME_REGEX.test(username)) {
+        return res.status(400).json({ error: "Invalid username format for player1" });
+      }
+      if (typeof targetPlayer !== "string" || !BRIDGE_USERNAME_REGEX.test(targetPlayer)) {
+        return res.status(400).json({ error: "Invalid target player username format" });
+      }
+
+      try {
+        const result = await rconService.teleportPlayer(username, targetPlayer);
+        logBridgeCommand(action, args, result, result.success, 0).catch(() => {});
+        return res.json({
+          ...result,
+          data: result.success ? {
+            message: `Teleported ${username} to ${targetPlayer}`,
+            player1: username,
+            player2: targetPlayer,
+          } : undefined,
+        });
+      } catch (error) {
+        const message = sanitizeError(error?.message || "Teleport failed");
+        logBridgeCommand(action, args, { error: message }, false, 0).catch(() => {});
+        return res.status(500).json({ success: false, error: message });
+      }
+    }
+
+    // Branch 2: Teleport player to coordinates
+    if (x !== undefined && y !== undefined) {
+      if (typeof username !== "string" || !BRIDGE_USERNAME_REGEX.test(username)) {
+        return res.status(400).json({ error: "Invalid username format" });
+      }
+      if (
+        !Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z) ||
+        x < 0 || x > 24000 || y < 0 || y > 24000 || z < 0 || z > 8
+      ) {
+        return res.status(400).json({ error: "Invalid coordinates (x/y: 0-24000, z: 0-8)" });
+      }
+
+      try {
+        const result = await rconService.teleportTo(username, x, y, z);
+        logBridgeCommand(action, args, result, result.success, 0).catch(() => {});
+        return res.json({
+          ...result,
+          data: result.success ? {
+            message: `Teleported ${username} to ${Math.floor(x)},${Math.floor(y)},${Math.floor(z)}`,
+            username,
+            x: Math.floor(x),
+            y: Math.floor(y),
+            z: Math.floor(z),
+          } : undefined,
+        });
+      } catch (error) {
+        const message = sanitizeError(error?.message || "Teleport failed");
+        logBridgeCommand(action, args, { error: message }, false, 0).catch(() => {});
+        return res.status(500).json({ success: false, error: message });
+      }
+    }
+
+    return res.status(400).json({ error: "Missing required parameters for teleport (targetPlayer or x, y coordinates required)" });
+  }
+
   if (!bridge.bridgePath) {
     return res.status(400).json({ error: "Bridge not configured" });
   }
@@ -1765,17 +1839,27 @@ router.get("/players/:username", async (req, res) => {
 });
 
 router.post("/players/:username/teleport", async (req, res) => {
-  if (!bridge.isRunning) {
-    return res
-      .status(400)
-      .json({ error: "Bridge not running. Start it first." });
-  }
   if (!BRIDGE_USERNAME_REGEX.test(req.params.username)) {
     return res.status(400).json({ error: "Invalid username format" });
   }
-  const { x, y, z } = req.body;
+  const { x, y, z, targetPlayer, player2, target } = req.body || {};
+  const targetUser = targetPlayer ?? player2 ?? target;
+  const rconService = req.app.get("rconService");
+
+  if (targetUser) {
+    if (typeof targetUser !== "string" || !BRIDGE_USERNAME_REGEX.test(targetUser)) {
+      return res.status(400).json({ error: "Invalid target player username format" });
+    }
+    try {
+      const result = await rconService.teleportPlayer(req.params.username, targetUser);
+      return res.json(result);
+    } catch (error) {
+      return res.status(500).json({ error: sanitizeError(error?.message || "Teleport failed") });
+    }
+  }
+
   if (x === undefined || y === undefined) {
-    return res.status(400).json({ error: "x and y coordinates are required" });
+    return res.status(400).json({ error: "x and y coordinates or target player required" });
   }
   if (
     typeof x !== "number" ||
@@ -1793,10 +1877,10 @@ router.post("/players/:username/teleport", async (req, res) => {
     return res.status(400).json({ error: "z coordinate out of range (0-8)" });
   }
   try {
-    const result = await bridge.teleportPlayer(req.params.username, x, y, z);
-    res.json(result);
+    const result = await rconService.teleportTo(req.params.username, x, y, z ?? 0);
+    return res.json(result);
   } catch (error) {
-    res.status(500).json({ error: "Teleport failed" });
+    return res.status(500).json({ error: sanitizeError(error?.message || "Teleport failed") });
   }
 });
 
@@ -2021,9 +2105,10 @@ router.get("/commands", (req, res) => {
         description: "Teleport a player",
         args: {
           username: "string (required)",
-          x: "number (required)",
-          y: "number (required)",
+          x: "number (optional if targetPlayer set)",
+          y: "number (optional if targetPlayer set)",
           z: "number (default: 0)",
+          targetPlayer: "string (optional, for player-to-player teleport)",
         },
       },
       {

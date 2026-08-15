@@ -1468,7 +1468,7 @@ class PanelBridge extends EventEmitter {
   }
 
   /**
-   * Convenience method: teleport player
+   * Convenience method: teleport player (Note: Panel route intercepts this and dispatches via RCON)
    */
   async teleportPlayer(username, x, y, z = 0) {
     if (!this.isRunning) {
