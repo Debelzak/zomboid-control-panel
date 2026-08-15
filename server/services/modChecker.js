@@ -920,7 +920,7 @@ export class ModChecker extends EventEmitter {
       // RCON path strips emoji/unicode automatically inside serverMessage().
       const trimmedNames =
         modNames.length > 100 ? `${modNames.substring(0, 100)}...` : modNames;
-      const warningMessage = `🔧 Mod updates detected: ${trimmedNames}. Server will restart in ${this.restartWarningMinutes} minute(s).`;
+      const warningMessage = `🔧 Atualização de mod detectada: ${trimmedNames}. O servidor será reiniciado em ${this.restartWarningMinutes} minuto(s).`;
       log.info(
         `Sending mod-restart warning: ${trimmedNames} — restart in ${this.restartWarningMinutes} min`,
       );

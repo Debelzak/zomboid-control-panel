@@ -792,15 +792,15 @@ export class Scheduler {
           if (this.restartCancelled) {
             log.info("Auto-restart: Cancelled during countdown");
             await this._broadcastRestartMessage(
-              "[SERVER] Restart CANCELLED.",
+              "Reinicialização cancelada.",
               rconService,
             );
             await this._notifyRestartCancelled();
             return { success: false, message: "Restart cancelled" };
           }
-          const minuteWord = i === 1 ? "MINUTE" : "MINUTES";
+          const minuteWord = i === 1 ? "MINUTO" : "MINUTOS";
           await this._broadcastRestartMessage(
-            `[SERVER] *** RESTART IN ${i} ${minuteWord} ***`,
+            `*** REINICIALIZANDO EM ${i} ${minuteWord} ***`,
             rconService,
           );
 
@@ -815,20 +815,20 @@ export class Scheduler {
         // +5s -> "5", +1s -> "4", +1s -> "3", +1s -> "2", +1s -> "1",
         // +1s -> "RESTARTING NOW".
         const finalTicks = [
-          { wait: 30000, msg: "[SERVER] *** RESTART IN 30 SECONDS ***" },
-          { wait: 20000, msg: "[SERVER] *** RESTART IN 10 SECONDS ***" },
-          { wait: 5000, msg: "[SERVER] 5..." },
-          { wait: 1000, msg: "[SERVER] 4..." },
-          { wait: 1000, msg: "[SERVER] 3..." },
-          { wait: 1000, msg: "[SERVER] 2..." },
-          { wait: 1000, msg: "[SERVER] 1..." },
+          { wait: 30000, msg: "*** REINICIALIZANDO EM 30 SEGUNDOS ***" },
+          { wait: 20000, msg: "*** REINICIALIZANDO EM 10 SEGUNDOS ***" },
+          { wait: 5000, msg: "5..." },
+          { wait: 1000, msg: "4..." },
+          { wait: 1000, msg: "3..." },
+          { wait: 1000, msg: "2..." },
+          { wait: 1000, msg: "1..." },
         ];
         for (const tick of finalTicks) {
           await this.sleep(tick.wait);
           if (this.restartCancelled) {
             log.info("Auto-restart: Cancelled during final countdown");
             await this._broadcastRestartMessage(
-              "[SERVER] Restart CANCELLED.",
+              "Reinicialização cancelada.",
               rconService,
             );
             await this._notifyRestartCancelled();
@@ -840,14 +840,14 @@ export class Scheduler {
         // One last second, then go.
         await this.sleep(1000);
         await this._broadcastRestartMessage(
-          "[SERVER] *** RESTARTING NOW - please reconnect in a few minutes ***",
+          "[SERVER] *** REINICIALIZANDO AGORA - por favor reconecte em alguns minutos ***",
           rconService,
         );
         await this.sleep(2000);
       } else {
         // Immediate restart - just a brief message
         await this._broadcastRestartMessage(
-          "[SERVER] *** RESTARTING NOW ***",
+          "[SERVER] *** REINICIALIZANDO AGORA ***",
           rconService,
         );
         await this.sleep(2000);
