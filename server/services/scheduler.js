@@ -798,7 +798,7 @@ export class Scheduler {
             await this._notifyRestartCancelled();
             return { success: false, message: "Restart cancelled" };
           }
-          const minuteWord = i === 1 ? "MINUTE" : "MINUTES";
+          const minuteWord = i === 1 ? "MINUTO" : "MINUTOS";
           await this._broadcastRestartMessage(
             `*** REINICIALIZANDO EM ${i} ${minuteWord} ***`,
             rconService,
