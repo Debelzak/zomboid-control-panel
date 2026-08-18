@@ -253,6 +253,27 @@ describe('PanelBridge vehicle compatibility', () => {
   });
 });
 
+describe('PanelBridge climate compatibility', () => {
+  it('uses the direct Build 42 ThunderStorm event for lightning', async () => {
+    const luaPath = path.resolve(
+      process.cwd(),
+      'pz-mod/PanelBridge/media/lua/server/PanelBridge.lua',
+    );
+    const source = await readFile(luaPath, 'utf8');
+    const start = source.indexOf('handlers.triggerLightning = function(args)');
+    const end = source.indexOf('-- Applies a climate float', start);
+    const handler = source.slice(start, end);
+
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    expect(handler).toContain('getThunderStorm');
+    expect(handler).toContain('triggerThunderEvent');
+    expect(handler.indexOf('triggerThunderEvent')).toBeLessThan(
+      handler.indexOf('transmitServerTriggerLightning'),
+    );
+  });
+});
+
 describe('PanelBridge player healing compatibility', () => {
   const bridgePath = path.resolve(
     import.meta.dirname,

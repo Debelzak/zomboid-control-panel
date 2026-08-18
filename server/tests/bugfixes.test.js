@@ -970,7 +970,6 @@ describe("Discord event notifications", () => {
       sent.push(message);
       return true;
     };
-
     await bot.sendEventNotification("serverStop");
     expect(bot._lastLifecycleState).toBeNull();
 
@@ -993,6 +992,49 @@ describe("Discord event notifications", () => {
     await bot.sendEventNotification("serverStop");
     expect(sent).toEqual(["Server stopped", "Server stopped"]);
   }, 15000);
+});
+
+describe("Discord player presence", () => {
+  it("shows the current player count when RCON is connected", async () => {
+    const { DiscordBot } = await import("../services/discordBot.js");
+    const setActivity = vi.fn();
+    const bot = Object.create(DiscordBot.prototype);
+    bot.isRunning = true;
+    bot.client = { user: { setActivity } };
+    bot.serverManager = { checkServerRunning: async () => true };
+    bot.rconService = {
+      connected: true,
+      getPlayers: async () => ({ success: true, players: ["alice", "bob"] }),
+    };
+    bot._presenceUpdateInFlight = null;
+
+    await bot.updatePlayerPresence();
+
+    expect(setActivity).toHaveBeenCalledWith(
+      "2 players online",
+      expect.any(Object),
+    );
+  });
+
+  it("does not query RCON while it is disconnected", async () => {
+    const { DiscordBot } = await import("../services/discordBot.js");
+    const getPlayers = vi.fn();
+    const setActivity = vi.fn();
+    const bot = Object.create(DiscordBot.prototype);
+    bot.isRunning = true;
+    bot.client = { user: { setActivity } };
+    bot.serverManager = { checkServerRunning: async () => true };
+    bot.rconService = { connected: false, getPlayers };
+    bot._presenceUpdateInFlight = null;
+
+    await bot.updatePlayerPresence();
+
+    expect(getPlayers).not.toHaveBeenCalled();
+    expect(setActivity).toHaveBeenCalledWith(
+      "Players unavailable",
+      expect.any(Object),
+    );
+  });
 });
 
 describe("Discord slash command visibility", () => {

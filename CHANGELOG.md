@@ -51,6 +51,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Build 42 map visibility now matches the game**: Map Player Visibility includes the new `Friends and nearby players` value and the `Everyone` value, instead of treating value 3 as Everyone and hiding value 4.
+- **Custom start commands now persist**: editing a managed server keeps its Custom Start Command and reloads it into the server manager when that server is active.
+- **Lightning controls work on Build 42.20**: PanelBridge now triggers the server-side ThunderStorm event directly instead of relying solely on the ClimateManager transmit helper, which could report success without producing a visible strike.
+- **SteamCMD retries are no longer blocked by failed setup**: an installation or update error before the SteamCMD process starts now clears its operation lock, so the next attempt is not rejected as already in progress.
+
 - **Linux release compatibility**: pin standalone Linux artifact builds to Ubuntu 22.04 so the binary remains compatible with hosts using the documented glibc 2.28+ baseline. v1.1.44 was built through the moving `ubuntu-latest` runner after it moved to Ubuntu 24.04.
 
 #### World Map and Chunk Cleaner
