@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Repository hardening**: added CODEOWNERS, a security reporting policy, Dependabot configuration, CodeQL analysis, immutable GitHub Action pins, deterministic Pages installs, and protected `main` branch settings.
 - **Template catalog controls**: administrators can now hide built-in templates from the panel as well as delete custom templates.
+- **Dependency security**: updated vulnerable React Router, PostCSS, Nanoid, JS-YAML, Socket.IO parser, Undici, and brace-expansion lockfile entries; root and client audits now report zero vulnerabilities.
+- **Fresh install admin password**: newly installed servers now persist the setup password into the created profile so the first launch receives `-adminpassword`.
 
 ## [1.1.49] - 2026-08-18
 
