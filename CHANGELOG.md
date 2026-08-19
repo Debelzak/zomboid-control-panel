@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.50] - 2026-08-19
+
+### Fixed
+
+- **Fresh install admin password**: fresh installs and quick setup now persist the entered administrator password into the created server profile, so the first launch receives `-adminpassword` instead of waiting for unavailable console input.
+- **PanelBridge installer safety**: remote profiles are rejected with clear manual/SFTP guidance, invalid local paths are blocked, duplicate installer logic was removed, and a newer installed bridge is never downgraded.
+- **SFTP chroot guidance**: permission failures for `/home` paths now explain that chrooted accounts must use the path visible in their SFTP client without the `/home` prefix.
+
 ### Security and maintenance
 
 - **Repository hardening**: added CODEOWNERS, a security reporting policy, Dependabot configuration, CodeQL analysis, immutable GitHub Action pins, deterministic Pages installs, and protected `main` branch settings.
