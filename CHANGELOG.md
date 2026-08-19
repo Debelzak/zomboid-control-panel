@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security and maintenance
+
+- **Repository hardening**: added CODEOWNERS, a security reporting policy, Dependabot configuration, CodeQL analysis, immutable GitHub Action pins, deterministic Pages installs, and protected `main` branch settings.
+- **Template catalog controls**: administrators can now hide built-in templates from the panel as well as delete custom templates.
+
 ## [1.1.49] - 2026-08-18
 
 ### Added
