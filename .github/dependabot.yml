@@ -5,18 +5,46 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
+    groups:
+      root-non-breaking:
+        update-types:
+          - minor
+          - patch
+        patterns:
+          - "*"
   - package-ecosystem: npm
     directory: /client
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
+    groups:
+      client-non-breaking:
+        update-types:
+          - minor
+          - patch
+        patterns:
+          - "*"
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
+    groups:
+      actions-non-breaking:
+        update-types:
+          - minor
+          - patch
+        patterns:
+          - "*"
   - package-ecosystem: docker
     directory: /
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      docker-non-breaking:
+        update-types:
+          - minor
+          - patch
+        patterns:
+          - "*"
