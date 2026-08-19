@@ -26,6 +26,10 @@ function isRemoteFile(entryType) {
 
 export function getSftpErrorGuidance(error) {
   const message = error?.message || String(error);
+  if (/chroot|remove the \/home prefix|remote bridge path .*\/home(?:\/|$)/i.test(message)
+    || /mkdir.*permission denied.*\/(?:home|Home)(?:[\s/]|$)/i.test(message)) {
+    return 'This SFTP account appears to be chrooted. Remove the /home prefix and enter the path exactly as shown in the SFTP client, for example /server-data/lua/panelbridge/<server name>.';
+  }
   if (/authentication|auth fail|all configured authentication methods failed|permission denied.*auth|publickey|keyboard-interactive/i.test(message)) {
     return 'Verify the SFTP username and password, then confirm the account can log in over port 22.';
   }
@@ -243,9 +247,17 @@ export class PanelBridgeSftpTransport {
 
   async ensureRemoteDirectories() {
     const client = await this.connect();
-    await client.mkdir(this.config.bridgePath, true);
-    await client.mkdir(this.remote('inbox'), true);
-    await client.mkdir(this.remote('outbox'), true);
+    try {
+      await client.mkdir(this.config.bridgePath, true);
+      await client.mkdir(this.remote('inbox'), true);
+      await client.mkdir(this.remote('outbox'), true);
+    } catch (error) {
+      if (/permission denied|eacces/i.test(error?.message || '')
+        && /^\/home(?:\/|$)/i.test(this.config.bridgePath)) {
+        throw new Error(`SFTP account rejected remote bridge path ${this.config.bridgePath}; likely chrooted account path. Remove the /home prefix and use the path visible in the SFTP client.`);
+      }
+      throw error;
+    }
     this.nextRemoteDirectoryCheckAt = Date.now() + REMOTE_DIRECTORY_CHECK_MS;
   }
 

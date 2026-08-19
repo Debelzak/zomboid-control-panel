@@ -12,6 +12,10 @@ updates:
           - patch
         patterns:
           - "*"
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - version-update:semver-major
   - package-ecosystem: npm
     directory: /client
     schedule:
@@ -24,6 +28,10 @@ updates:
           - patch
         patterns:
           - "*"
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - version-update:semver-major
   - package-ecosystem: github-actions
     directory: /
     schedule:
@@ -36,6 +44,10 @@ updates:
           - patch
         patterns:
           - "*"
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - version-update:semver-major
   - package-ecosystem: docker
     directory: /
     schedule:
@@ -48,3 +60,7 @@ updates:
           - patch
         patterns:
           - "*"
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - version-update:semver-major
