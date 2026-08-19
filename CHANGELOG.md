@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.49] - 2026-08-18
+
 ### Added
 
 #### Player access
@@ -50,6 +52,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Keep Q shouts out of the Discord chat relay**: the relay's "Which messages to forward" setting gains a "Public chat without yells" option, so `HEY!`, `HEY YOU!` and `OVER HERE!` no longer flood the channel every time someone presses Q. Build 42 labels both ordinary talking and yells as `Local`, so the panel now reads the chat room id from the game's own delivery log line to tell them apart.
 
 ### Fixed
+
+- **Remote PanelBridge SFTP reliability**: setup now prepares remote queue folders, gives actionable recovery guidance, protects queue transfers from partial uploads, recovers queue numbering after a cleared panel cache, and records sanitized SFTP diagnostics in support bundles.
+- **SandboxVars nested tables**: structured sandbox saves now preserve the `Music` and `Debug` tables instead of corrupting their child settings into top-level values.
+- **SteamCMD update path input**: asynchronous SteamCMD detection no longer overwrites a path entered while the update dialog is open.
+- **Remote server dashboard status**: provider-aware host, RCON, and PanelBridge signals prevent a reachable remote server from being reported as stopped solely because it has no local process.
+- **Local config edit safety**: configuration mutations now fail closed while the local game server is running or its state cannot be verified, preventing Project Zomboid from overwriting edits from memory.
 
 - **Build 42 map visibility now matches the game**: Map Player Visibility includes the new `Friends and nearby players` value and the `Everyone` value, instead of treating value 3 as Everyone and hiding value 4.
 - **Custom start commands now persist**: editing a managed server keeps its Custom Start Command and reloads it into the server manager when that server is active.

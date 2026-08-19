@@ -36,6 +36,7 @@ import { createLogger } from "../utils/logger.js";
 import {
   getSftpCachePath,
   testSftpBridge,
+  formatSftpError,
   validateSftpBridgeConfig,
   listSftpLogs,
   readSftpLogTail,
@@ -793,22 +794,22 @@ router.post("/sftp/test", requireRole("admin"), async (req, res) => {
     const result = await testSftpBridge(config);
     res.json(result);
   } catch (error) {
-    res.status(400).json({ error: sanitizeError(error.message) });
+    res.status(400).json({ error: sanitizeError(formatSftpError(error)) });
   }
 });
 
 router.post("/sftp/configure", requireRole("admin"), async (req, res) => {
   try {
     const config = await resolveSftpConfig(req.body);
+    const cachePath = getSftpCachePath(config);
+    await bridge.configureSftp(config, cachePath);
     for (const [field, key] of Object.entries(SFTP_SETTING_KEYS)) {
       const value = field === "enabled" ? true : config[field];
       if (value !== undefined) await setSetting(key, value);
     }
-    const cachePath = getSftpCachePath(config);
-    await bridge.configureSftp(config, cachePath);
     res.json({ success: true, bridgePath: cachePath, transport: bridge.getStatus().transport });
   } catch (error) {
-    res.status(400).json({ error: sanitizeError(error.message) });
+    res.status(400).json({ error: sanitizeError(formatSftpError(error)) });
   }
 });
 

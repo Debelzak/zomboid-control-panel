@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { readFile } from 'node:fs/promises';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 // Test PanelBridge command serialization logic
@@ -163,6 +165,7 @@ describe('PanelBridge pending commands', () => {
         action: 'test',
         timestamp: Date.now()
       });
+
     }
 
     // Simulate bridge stop
@@ -176,6 +179,27 @@ describe('PanelBridge pending commands', () => {
       expect(fn).toHaveBeenCalledWith(expect.objectContaining({ message: 'Bridge stopped' }));
     });
     expect(pendingCommands.size).toBe(0);
+  });
+});
+
+describe('PanelBridge queue recovery', () => {
+  it('resumes command numbering after a cleared SFTP cache', async () => {
+    const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'pz-bridge-test-'));
+    try {
+      const { PanelBridge } = await import('../services/panelBridge.js');
+      fs.writeFileSync(
+        path.join(temporaryDirectory, 'queue-state-lua.json.txt'),
+        JSON.stringify({ lastCommandSeq: 42 }),
+      );
+      const bridge = new PanelBridge();
+      bridge.configure(temporaryDirectory, true);
+
+      bridge.ensureQueueProtocol();
+
+      expect(bridge.queueState.nextCommandSeq).toBe(43);
+    } finally {
+      fs.rmSync(temporaryDirectory, { recursive: true, force: true });
+    }
   });
 });
 

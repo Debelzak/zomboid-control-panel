@@ -244,15 +244,18 @@ describe("logout and export trust boundaries", () => {
 });
 
 describe("config mutation guard", () => {
-  it("allows local server config writes while the server is running because they apply on reboot", async () => {
+  it("fails closed when server state cannot be verified", async () => {
     const next = vi.fn();
     const req = { app: { get: vi.fn() } };
     const res = { status: vi.fn().mockReturnThis(), json: vi.fn() };
 
     await requireStoppedForLocalConfigMutation(req, res, next);
 
-    expect(next).toHaveBeenCalledTimes(1);
-    expect(res.status).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ code: "SERVER_STATE_UNKNOWN" }),
+    );
   });
 });
 
