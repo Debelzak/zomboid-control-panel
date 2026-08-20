@@ -1235,6 +1235,15 @@ export default function Settings() {
       return;
     }
 
+    if (selectedInstallServer?.isRemote) {
+      toast({
+        title: "Manual install required",
+        description: "Remote servers cannot be written from this computer. Copy PanelBridge.lua to the server's Lua folder using SFTP or the hosting provider's file manager.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setInstallingMod(true);
     try {
       const result = await panelBridgeApi.installModAuto(
@@ -4213,7 +4222,7 @@ export default function Settings() {
                     </Select>
                     <Button
                       onClick={handleInstallMod}
-                      disabled={installingMod || !selectedInstallServerId}
+                      disabled={installingMod || !selectedInstallServerId || selectedInstallServer?.isRemote}
                       className="gap-2"
                       variant="outline"
                     >
@@ -4225,6 +4234,11 @@ export default function Settings() {
                       Install Mod
                     </Button>
                   </div>
+                  {selectedInstallServer?.isRemote && (
+                    <p className="text-xs text-warning">
+                      Remote server: copy PanelBridge.lua to the remote Lua folder with SFTP or the provider file manager. Automatic local installation is unavailable.
+                    </p>
+                  )}
                   {selectedInstallTarget && (
                     <p className="text-xs text-muted-foreground break-all">
                       Destination:{" "}

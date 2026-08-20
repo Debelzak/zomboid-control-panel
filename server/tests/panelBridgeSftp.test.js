@@ -50,6 +50,14 @@ describe('PanelBridge SFTP configuration', () => {
     expect(getSftpErrorGuidance(new Error('Permission denied (publickey).'))).toMatch(/username and password/i);
   });
 
+  it('explains chroot paths when mkdir is denied under home', () => {
+    expect(getSftpErrorGuidance(new Error('mkdir: _doMkdir: Permission denied /Home'))).toMatch(/remove the \/home prefix/i);
+  });
+
+  it('keeps chroot guidance when the transport classifies the path failure', () => {
+    expect(getSftpErrorGuidance(new Error('SFTP account rejected remote bridge path /home/server-data; likely chrooted account path'))).toMatch(/remove the \/home prefix/i);
+  });
+
   it('explains how to repair a non-regular bridge file path', () => {
     expect(getSftpErrorGuidance(new Error('Expected a regular file, but found a non-regular entry'))).toMatch(/remove or rename/i);
   });
@@ -67,6 +75,14 @@ describe('PanelBridge SFTP sync', () => {
     expect(mkdir).toHaveBeenNthCalledWith(1, valid.bridgePath, true);
     expect(mkdir).toHaveBeenNthCalledWith(2, `${valid.bridgePath}/inbox`, true);
     expect(mkdir).toHaveBeenNthCalledWith(3, `${valid.bridgePath}/outbox`, true);
+  });
+
+  it('classifies permission errors under /home as a chroot path problem', async () => {
+    const transport = new PanelBridgeSftpTransport();
+    transport.config = validateSftpBridgeConfig(valid);
+    transport.client = { mkdir: vi.fn(async () => { throw new Error('Permission denied /home'); }) };
+
+    await expect(transport.ensureRemoteDirectories()).rejects.toThrow(/chrooted account path/);
   });
 
   it('exposes bounded diagnostics without retaining the SFTP password', () => {
