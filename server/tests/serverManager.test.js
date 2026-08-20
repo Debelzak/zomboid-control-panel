@@ -109,3 +109,28 @@ describe('ServerManager detection with two servers on one host', () => {
     expect(details.owned.map((entry) => entry.pid)).toEqual(['111']);
   });
 });
+
+describe('ServerManager status state', () => {
+  it('clears stale uptime after a confirmed stop', async () => {
+    const manager = new ServerManager();
+    manager.configLoaded = true;
+    manager.configLoadedFor = null;
+    manager.fetchingIp = true;
+    manager.gamePort = 16261;
+    manager.serverPath = 'C:\\pz';
+    manager.startTime = new Date(Date.now() - 60_000);
+    manager.loadConfig = async () => {};
+    manager.getLocalIp = async () => null;
+    manager.getServerProcessDetails = async () => ({
+      running: false,
+      matched: [],
+      scanFailed: false,
+    });
+
+    const status = await manager.getServerStatus();
+
+    expect(status.running).toBe(false);
+    expect(status.startTime).toBeNull();
+    expect(status.uptime).toBe(0);
+  });
+});

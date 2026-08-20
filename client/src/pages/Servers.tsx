@@ -2152,6 +2152,17 @@ export default function Servers() {
                   <p className="text-xs text-destructive">Command contains disallowed shell characters</p>
                 )}
               </div>
+              <div className="flex items-start gap-3 rounded-md border border-border/60 p-3">
+                <Checkbox
+                  id={`edit-use-no-steam-${editingServer.id}`}
+                  checked={!!editingServer.useNoSteam}
+                  onCheckedChange={(checked) => setEditingServer({ ...editingServer, useNoSteam: checked === true })}
+                />
+                <div className="space-y-1">
+                  <Label htmlFor={`edit-use-no-steam-${editingServer.id}`}>Launch without Steam</Label>
+                  <p className="text-xs text-muted-foreground">Use the non-Steam dedicated-server mode on the next start.</p>
+                </div>
+              </div>
               </>
               )}
 

@@ -980,7 +980,7 @@ router.post("/stop", async (req, res) => {
       : await rconService.quit();
 
     const io = req.app.get("io");
-    if (io) io.to("server-status").emit("server:status", { running: false });
+    if (io) io.emit("server:status", { running: false });
 
     await logServerEvent("server_stop", "Server stopped via web UI");
     req.app
@@ -1027,7 +1027,7 @@ router.post("/force-stop", async (req, res) => {
       : await serverManager.stopServer(false);
 
     const io = req.app.get("io");
-    if (io) io.to("server-status").emit("server:status", { running: false });
+    if (io) io.emit("server:status", { running: false });
 
     res.json(result);
   } catch (error) {

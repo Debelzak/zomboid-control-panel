@@ -1200,6 +1200,9 @@ export class ServerManager {
 
     const processDetails = await this.getServerProcessDetails();
     const isRunning = processDetails.running;
+    if (!isRunning && !processDetails.scanFailed) {
+      this._clearRunState();
+    }
     if (isRunning && !this.startTime) {
       const detectedUptime = await this.getProcessUptimeSeconds(
         processDetails.matched[0]?.pid,

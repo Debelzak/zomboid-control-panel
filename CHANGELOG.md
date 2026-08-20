@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.51] - 2026-08-20
+
+### Added
+
+- **Scheduled tasks**: schedule commands weekly with a visual Monday-to-Sunday selector.
+- **Discord presence**: show the live player count and configured capacity, such as `Playing 19/32`.
+- **Server launch mode**: choose Steam or non-Steam dedicated-server launch mode when editing a local server.
+
+### Fixed
+
+- **World Map access**: use the current `pzmap.org` host for browser-direct B42 tiles when the panel host receives a Cloudflare 403.
+- **Dashboard server controls**: stop events now reach connected dashboards immediately, stale composed status no longer overrides live local process status, and stopped servers no longer retain stale uptime.
+- **Portable world restores**: restore world saves from archives whose nested folder names differ from the destination machine.
+- **First-run panel port**: persist the selected setup port and fall back to a free port when the requested port is occupied.
+
+### PanelBridge
+
+- Updated PanelBridge to `1.7.38` for this panel release. No protocol changes.
+
 ## [1.1.50] - 2026-08-19
 
 ### Fixed

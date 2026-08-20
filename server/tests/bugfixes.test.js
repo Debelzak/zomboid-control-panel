@@ -1009,12 +1009,13 @@ describe("Discord player presence", () => {
       connected: true,
       getPlayers: async () => ({ success: true, players: ["alice", "bob"] }),
     };
+    bot.getConfiguredMaxPlayers = async () => 32;
     bot._presenceUpdateInFlight = null;
 
     await bot.updatePlayerPresence();
 
     expect(setActivity).toHaveBeenCalledWith(
-      "2 players online",
+      "2/32",
       expect.any(Object),
     );
   });
