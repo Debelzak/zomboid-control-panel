@@ -7,10 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.1.54] - 2026-08-21
+## [1.1.55] - 2026-08-21
 
 ### Fixed
 
+- **Server Configuration crash**: tolerate missing numeric keys while loading older or partially generated server profiles.
 - **Sandbox decimal input**: accept comma decimals such as `0,8`, normalize them to `0.8`, and reject malformed or out-of-range numeric values before saving.
 - **Configuration editing feedback**: show why local configuration must be saved while the server is stopped and disable save actions while it is running.
 

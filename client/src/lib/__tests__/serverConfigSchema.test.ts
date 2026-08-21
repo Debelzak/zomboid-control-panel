@@ -30,4 +30,8 @@ describe('server configuration schema ownership', () => {
     expect(parseNumericSettingValue('0,8oops', { min: 0, max: 1 })).toBeNull()
     expect(parseNumericSettingValue('1,1', { min: 0, max: 1 })).toBeNull()
   })
+
+  it('treats a missing numeric value as empty instead of throwing', () => {
+    expect(parseNumericSettingValue(undefined, { min: 0, max: 1 })).toBeNull()
+  })
 })
