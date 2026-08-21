@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client'
 import { BrowserRouter, HashRouter } from 'react-router-dom'
 import App from './App'
 import './index.css'
+import './known-issues.css'
 import { isDemoMode, installDemoFetchShim } from './lib/demo'
 
 const Router = isDemoMode() ? HashRouter : BrowserRouter
