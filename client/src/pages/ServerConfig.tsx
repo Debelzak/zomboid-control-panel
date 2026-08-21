@@ -221,7 +221,7 @@ const IniSettingRow = memo(({
 }) => {
   const isModified = originalValue !== undefined && value !== originalValue
   const isDifferentFromDefault = setting.default !== undefined && String(value) !== String(setting.default)
-  const numberIsInvalid = setting.type === 'number' && value.trim() !== '' && parseNumericSettingValue(value, setting) === null
+  const numberIsInvalid = setting.type === 'number' && String(value ?? '').trim() !== '' && parseNumericSettingValue(value, setting) === null
 
   // Multiline settings
   if (setting.type === 'multiline') {
@@ -759,7 +759,7 @@ export default function ServerConfig() {
     () => INI_SCHEMA.filter(setting => {
       if (setting.type !== 'number') return false
       const value = iniSettings[setting.key]
-      return value.trim() !== '' && parseNumericSettingValue(value, setting) === null
+      return String(value ?? '').trim() !== '' && parseNumericSettingValue(value, setting) === null
     }),
     [iniSettings],
   )
