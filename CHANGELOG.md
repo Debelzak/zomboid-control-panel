@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.52] - 2026-08-20
+
+### Fixed
+
+- **Workshop update detection**: automatically find the Steam Workshop ACF from common server and SteamCMD layouts, refresh detection when switching or editing servers, and provide a direct folder picker when the path is missing.
+
 ## [1.1.51] - 2026-08-20
 
 ### Added
