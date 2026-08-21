@@ -17,6 +17,30 @@ export interface IniSetting {
   fileExtensions?: string[]
 }
 
+export interface NumericSettingBounds {
+  min?: number
+  max?: number
+}
+
+export function normalizeNumericInput(value: string): string {
+  return value.replace(/,/g, '.')
+}
+
+export function parseNumericSettingValue(value: unknown, bounds: NumericSettingBounds = {}): number | null {
+  const normalized = typeof value === 'string'
+    ? normalizeNumericInput(value).trim()
+    : value
+  if (normalized === '' || normalized === null || normalized === undefined) return null
+
+  const text = String(normalized)
+  if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(text)) return null
+  const parsed = Number(text)
+  if (!Number.isFinite(parsed)) return null
+  if (bounds.min !== undefined && parsed < bounds.min) return null
+  if (bounds.max !== undefined && parsed > bounds.max) return null
+  return parsed
+}
+
 const ANTI_CHEAT_POLICY_OPTIONS = [
   { value: '1', label: '1 - Ban' },
   { value: '2', label: '2 - Kick' },

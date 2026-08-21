@@ -7,7 +7,7 @@
     Communication happens via JSON files in the server save folder.
 
                 v1.7.38 Changes:
-                - Bundled with panel v1.1.52. No bridge protocol changes.
+                - Bundled with panel v1.1.54. No bridge protocol changes.
 
                 v1.7.36 Changes:
                 - Bundled with panel v1.1.49. No bridge protocol changes.
