@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.53] - 2026-08-20
+
+### Fixed
+
+- **Build 42 configuration ownership**: keep shared gameplay settings such as `MinutesPerPage`, loot respawn, and blood lifespan in the SandboxVars editor instead of exposing duplicate INI controls with conflicting defaults.
+- **Configuration save verification**: show the resolved config file path and verify INI writes by reading the value back from disk.
+- **Server lifecycle status**: keep the Servers page synchronized through start and stop transitions, including delayed process shutdowns and status events.
+- **Remote RCON setup guidance**: clarify that the host field is the machine running Project Zomboid and that `127.0.0.1` is only correct when the panel shares that machine.
+
 ## [1.1.52] - 2026-08-20
 
 ### Fixed

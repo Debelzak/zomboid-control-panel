@@ -473,17 +473,6 @@ export const INI_SCHEMA: IniSetting[] = [
     default: true,
     category: 'players'
   },
-  {
-    key: 'MinutesPerPage',
-    label: 'Minutes Per Page',
-    description: 'In-game minutes needed to read a single page.',
-    type: 'number',
-    min: 0.1,
-    max: 10,
-    default: 1.0,
-    category: 'players'
-  },
-
   // Safehouses
   {
     key: 'PlayerSafehouse',
@@ -564,44 +553,6 @@ export const INI_SCHEMA: IniSetting[] = [
 
   // Loot & Items
   {
-    key: 'HoursForLootRespawn',
-    label: 'Loot Respawn Hours',
-    description: 'In-game hours before loot can respawn. 0 = never.',
-    type: 'number',
-    min: 0,
-    max: 8760,
-    default: 0,
-    category: 'loot'
-  },
-  {
-    key: 'MaxItemsForLootRespawn',
-    label: 'Max Items for Respawn',
-    description: 'Max items in container before respawn is blocked.',
-    type: 'number',
-    min: 0,
-    max: 100,
-    default: 4,
-    category: 'loot'
-  },
-  {
-    key: 'ConstructionPreventsLootRespawn',
-    label: 'Construction Blocks Respawn',
-    description: 'Player constructions near containers prevent loot respawn.',
-    type: 'boolean',
-    default: true,
-    category: 'loot'
-  },
-  {
-    key: 'HoursForWorldItemRemoval',
-    label: 'World Item Removal Hours',
-    description: 'Hours before corpses/items on ground disappear. 0 = never.',
-    type: 'number',
-    min: 0,
-    max: 8760,
-    default: 0,
-    category: 'loot'
-  },
-  {
     key: 'ItemNumbersLimitPerContainer',
     label: 'Container Item Limit',
     description: 'Max items per container. 0 = unlimited.',
@@ -617,16 +568,6 @@ export const INI_SCHEMA: IniSetting[] = [
     description: 'Delete all items when placed in trash.',
     type: 'boolean',
     default: false,
-    category: 'loot'
-  },
-  {
-    key: 'BloodSplatLifespanDays',
-    label: 'Blood Splat Lifespan',
-    description: 'Days before blood splats disappear. 0 = never.',
-    type: 'number',
-    min: 0,
-    max: 365,
-    default: 0,
     category: 'loot'
   },
   {

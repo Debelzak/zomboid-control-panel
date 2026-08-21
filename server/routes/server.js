@@ -947,6 +947,7 @@ router.post("/start", async (req, res) => {
 router.post("/stop", async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
+    const serverManager = req.app.get("serverManager");
     log.info("POST /stop — graceful shutdown requested");
 
     // Check if RCON is connected first
@@ -978,6 +979,10 @@ router.post("/stop", async (req, res) => {
     const result = managed.handled
       ? { success: true, message: managed.message || "Container stopping" }
       : await rconService.quit();
+
+    if (result?.success !== false) {
+      serverManager?.markServerStopped?.();
+    }
 
     const io = req.app.get("io");
     if (io) io.emit("server:status", { running: false });
@@ -1025,6 +1030,10 @@ router.post("/force-stop", async (req, res) => {
             "Container stopped. Docker ran the container's own shutdown handler before killing it.",
         }
       : await serverManager.stopServer(false);
+
+    if (result?.success !== false) {
+      serverManager?.markServerStopped?.();
+    }
 
     const io = req.app.get("io");
     if (io) io.emit("server:status", { running: false });

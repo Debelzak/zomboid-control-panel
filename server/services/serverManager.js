@@ -994,6 +994,10 @@ export class ServerManager {
 
   // Clear state fields so getServerStatus doesn't report a stale startTime /
   // old serverProcess handle after a kill.
+  markServerStopped() {
+    this._clearRunState();
+  }
+
   _clearRunState() {
     this.isRunning = false;
     this.serverProcess = null;

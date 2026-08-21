@@ -111,6 +111,19 @@ describe('ServerManager detection with two servers on one host', () => {
 });
 
 describe('ServerManager status state', () => {
+  it('clears tracked process state when a graceful stop is accepted', () => {
+    const manager = new ServerManager();
+    manager.isRunning = true;
+    manager.serverProcess = { pid: 1234 };
+    manager.startTime = new Date();
+
+    manager.markServerStopped();
+
+    expect(manager.isRunning).toBe(false);
+    expect(manager.serverProcess).toBeNull();
+    expect(manager.startTime).toBeNull();
+  });
+
   it('clears stale uptime after a confirmed stop', async () => {
     const manager = new ServerManager();
     manager.configLoaded = true;
