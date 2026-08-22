@@ -213,8 +213,11 @@ const BRIDGE_USERNAME_REGEX = /^(?=.*\S)[^\x00-\x1F\x7F"\\]{1,64}$/;
 // /auto-detect: bridge.configure()/autoDetect() (services/panelBridge.js)
 // perform no validation of their own -- whatever path reaches them becomes
 // this.bridgePath, which mkdirSync/writeFileSync/readFileSync then act on
-// directly once the bridge starts polling. Must be absolute (path.resolve
-// also collapses any ".." traversal) and not a protected system directory.
+// directly once the bridge starts polling. Must be absolute and not a
+// protected system directory. Checks isAbsolute() on the RAW input, not on
+// the result of path.resolve() -- resolve() always returns an absolute path
+// by resolving against cwd, so checking absoluteness after resolving can
+// never reject anything and silently accepted relative paths.
 const BLOCKED_BRIDGE_PATH_PREFIXES =
   process.platform === "win32"
     ? ["c:\\windows", "c:\\program files"]
@@ -222,8 +225,8 @@ const BLOCKED_BRIDGE_PATH_PREFIXES =
 
 function isValidBridgePath(inputPath) {
   if (!inputPath || typeof inputPath !== "string") return false;
+  if (!path.isAbsolute(inputPath)) return false;
   const resolved = path.resolve(inputPath);
-  if (!path.isAbsolute(resolved)) return false;
   const lower = process.platform === "win32" ? resolved.toLowerCase() : resolved;
   return !BLOCKED_BRIDGE_PATH_PREFIXES.some((p) => lower.startsWith(p));
 }
@@ -779,11 +782,14 @@ router.post("/configure-direct", requireRole("admin", "technician"), async (req,
     return res.status(400).json({ error: "bridgePath is required" });
   }
 
-  // Basic validation: must be an absolute path
-  const resolved = path.resolve(reqPath);
-  if (!path.isAbsolute(resolved)) {
+  // Must check isAbsolute() on the raw input: path.resolve() always returns
+  // an absolute path (resolved against cwd), so this check would never
+  // reject anything if run on its result -- it was a no-op that silently
+  // accepted relative paths.
+  if (!path.isAbsolute(reqPath)) {
     return res.status(400).json({ error: "Path must be absolute" });
   }
+  const resolved = path.resolve(reqPath);
 
   // Block obvious system dirs
   const lower =

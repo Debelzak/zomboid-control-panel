@@ -135,6 +135,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security and maintenance
 
+- **Steam branch lookup could run an arbitrary program on the host**: the Steam-branches endpoint
+  (used when picking which PZ build to install) took a SteamCMD folder from the request and ran
+  whatever executable it found there, without checking the path first — unlike every other endpoint
+  that takes a filesystem path. A technician account, which is meant to operate the game server and
+  nothing more, could have pointed it at any program on the machine and had the panel run it. It now
+  validates the path the same way installation and update do, and refuses anything that isn't one.
+  Two related gaps in the PanelBridge mod-connection settings, where a relative folder path was
+  silently accepted instead of rejected, were fixed the same way.
+
 - **Leftover database copies after a crash**: if the panel is killed while saving, a full copy of
   the database file — including the RCON password and login secret — no longer lingers on disk
   indefinitely. It is cleaned up automatically the next time the panel starts, once it can confirm
