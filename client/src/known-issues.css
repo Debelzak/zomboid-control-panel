@@ -1,0 +1,17 @@
+/* Known Project Zomboid issues that need an inline warning next to affected settings. */
+.perf-content-auto:has([aria-label="Username Disguises"]) > div:first-child > div:first-child::after,
+.perf-content-auto:has([aria-label="Hide Disguised Names"]) > div:first-child > div:first-child::after {
+  display: block;
+  margin-top: 0.375rem;
+  color: hsl(var(--warning));
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+.perf-content-auto:has([aria-label="Username Disguises"]) > div:first-child > div:first-child::after {
+  content: "⚠ Known Project Zomboid 42.20.3 multiplayer issue: enabling this setting can crash clients while loading into the world. Keep it disabled until fixed upstream.";
+}
+
+.perf-content-auto:has([aria-label="Hide Disguised Names"]) > div:first-child > div:first-child::after {
+  content: "⚠ Known Project Zomboid 42.20.3 multiplayer issue: this setting can trigger the same loading crash. Keep it disabled until fixed upstream.";
+}
