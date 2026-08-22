@@ -3,6 +3,7 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { SystemHealthBanner } from '../SystemHealthBanner'
 import { systemApi, type StorageHealth } from '@/lib/api'
+import en from '@/locales/en/systemHealthBanner.json'
 
 vi.mock('@/lib/api', () => ({
   systemApi: { getStorageHealth: vi.fn() },
@@ -55,9 +56,9 @@ describe('SystemHealthBanner', () => {
     await renderBanner()
 
     expect(await screen.findByRole('alert')).toBeInTheDocument()
-    expect(screen.getByText('Panel writes blocked')).toBeInTheDocument()
+    expect(screen.getByText(en.writesBlockedTitle)).toBeInTheDocument()
     // A blocked-writes condition must not offer a dismiss that hides it from the operator.
-    expect(screen.queryByRole('button', { name: 'Dismiss storage warning' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: en.dismissAria })).not.toBeInTheDocument()
   })
 
   it('surfaces a critical banner when the save volume itself is critical', async () => {
@@ -72,8 +73,8 @@ describe('SystemHealthBanner', () => {
     await renderBanner()
 
     expect(await screen.findByRole('alert')).toBeInTheDocument()
-    expect(screen.getByText('Save volume critical')).toBeInTheDocument()
-    expect(screen.getByText('99% used')).toBeInTheDocument()
+    expect(screen.getByText(en.saveVolumeCriticalTitle)).toBeInTheDocument()
+    expect(screen.getByText(en.usedPercent.replace('{{percent}}', '99'))).toBeInTheDocument()
   })
 
   it('lets a warning-level banner be dismissed', async () => {
@@ -88,8 +89,8 @@ describe('SystemHealthBanner', () => {
     await renderBanner()
 
     expect(await screen.findByRole('status')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Dismiss storage warning' }))
-    expect(screen.queryByText('Save volume warning')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: en.dismissAria }))
+    expect(screen.queryByText(en.saveVolumeWarningTitle)).not.toBeInTheDocument()
   })
 
   it('does not render a false-healthy banner when the health fetch itself fails', async () => {

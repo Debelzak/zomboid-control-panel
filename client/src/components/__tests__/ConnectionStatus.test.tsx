@@ -3,6 +3,7 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import { ConnectionStatus } from '../ConnectionStatus'
 import { ConnectionStatusContext, type ConnectionStatus as Status } from '@/contexts/SocketContext'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import en from '@/locales/en/connectionStatus.json'
 
 function renderWithStatus(status: Status, props: { showLabel?: boolean } = {}) {
   return render(
@@ -32,26 +33,26 @@ describe('ConnectionStatus', () => {
 
   it('shows the real reconnect attempt count while reconnecting, not a generic spinner', () => {
     renderWithStatus(reconnecting, { showLabel: true })
-    expect(screen.getByText('Reconnecting...')).toBeInTheDocument()
+    expect(screen.getByText(en.reconnecting.label)).toBeInTheDocument()
   })
 
   it('reports disconnected with the real backend error message in the tooltip, not a canned string', async () => {
     renderWithStatus(disconnectedWithError, { showLabel: true })
-    expect(screen.getByText('Panel Disconnected')).toBeInTheDocument()
+    expect(screen.getByText(en.disconnected.label)).toBeInTheDocument()
 
-    fireEvent.focus(screen.getByText('Panel Disconnected').closest('div')!)
+    fireEvent.focus(screen.getByText(en.disconnected.label).closest('div')!)
     expect(await screen.findByText('socket hang up')).toBeInTheDocument()
   })
 
   it('falls back to a generic disconnected description only when no error is known', async () => {
     renderWithStatus(disconnected, { showLabel: true })
-    fireEvent.focus(screen.getByText('Panel Disconnected').closest('div')!)
-    expect(await screen.findByText('WebSocket connection to the panel backend lost')).toBeInTheDocument()
+    fireEvent.focus(screen.getByText(en.disconnected.label).closest('div')!)
+    expect(await screen.findByText(en.disconnected.description)).toBeInTheDocument()
   })
 
   it('keeps the label visually hidden (not absent) when showLabel is false, for screen readers', () => {
     renderWithStatus(disconnected)
-    expect(screen.queryByText('Panel Disconnected', { selector: 'span:not(.sr-only)' })).not.toBeInTheDocument()
-    expect(screen.getByText('Panel Disconnected', { selector: '.sr-only' })).toBeInTheDocument()
+    expect(screen.queryByText(en.disconnected.label, { selector: 'span:not(.sr-only)' })).not.toBeInTheDocument()
+    expect(screen.getByText(en.disconnected.label, { selector: '.sr-only' })).toBeInTheDocument()
   })
 })

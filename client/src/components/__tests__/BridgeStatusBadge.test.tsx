@@ -1,28 +1,29 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { BridgeStatusBadge } from '../BridgeStatusBadge'
+import en from '@/locales/en/bridgeStatusBadge.json'
 
 describe('BridgeStatusBadge', () => {
   it('reports connected when the bridge is connected', () => {
     render(<BridgeStatusBadge connected running />)
-    expect(screen.getByText('Bridge connected')).toBeInTheDocument()
+    expect(screen.getByText(en.connected.label)).toBeInTheDocument()
   })
 
   it('does not claim connected just because the server is running', () => {
     render(<BridgeStatusBadge connected={false} running />)
-    expect(screen.getByText('Bridge waiting')).toBeInTheDocument()
-    expect(screen.queryByText('Bridge connected')).not.toBeInTheDocument()
+    expect(screen.getByText(en.waiting.label)).toBeInTheDocument()
+    expect(screen.queryByText(en.connected.label)).not.toBeInTheDocument()
   })
 
   it('reports offline when neither connected nor running', () => {
     render(<BridgeStatusBadge connected={false} running={false} />)
-    expect(screen.getByText('Bridge offline')).toBeInTheDocument()
+    expect(screen.getByText(en.offline.label)).toBeInTheDocument()
   })
 
   it('loading overrides a stale connected flag rather than asserting it', () => {
     render(<BridgeStatusBadge connected loading />)
-    expect(screen.getByText('Checking…')).toBeInTheDocument()
-    expect(screen.queryByText('Bridge connected')).not.toBeInTheDocument()
+    expect(screen.getByText(en.loading.label)).toBeInTheDocument()
+    expect(screen.queryByText(en.connected.label)).not.toBeInTheDocument()
   })
 
   it('surfaces the bridge path in the tooltip so operators can verify it', () => {
@@ -34,7 +35,7 @@ describe('BridgeStatusBadge', () => {
     render(<BridgeStatusBadge connected={false} running={false} />)
     expect(screen.getByRole('status')).toHaveAttribute(
       'title',
-      expect.stringContaining('Settings')
+      expect.stringContaining(en.offline.hint)
     )
   })
 
@@ -42,6 +43,6 @@ describe('BridgeStatusBadge', () => {
     render(<BridgeStatusBadge connected={false} running={false} summary="Custom detail from server" />)
     const el = screen.getByRole('status')
     expect(el.getAttribute('title')).toContain('Custom detail from server')
-    expect(el.getAttribute('title')).not.toContain('Settings → Bridge')
+    expect(el.getAttribute('title')).not.toContain(en.offline.hint)
   })
 })

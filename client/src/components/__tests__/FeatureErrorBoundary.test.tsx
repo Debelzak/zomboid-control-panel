@@ -2,6 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { FeatureErrorBoundary } from '../FeatureErrorBoundary'
+import en from '@/locales/en/featureErrorBoundary.json'
+
+const widgetErrorTitle = en.titleSuffix.replace('{{featureName}}', 'Widget')
+const widgetCompactMessage = en.compactMessage.replace('{{featureName}}', 'Widget')
 
 const originalConsoleError = console.error
 beforeEach(() => {
@@ -39,7 +43,7 @@ describe('FeatureErrorBoundary', () => {
         </FeatureErrorBoundary>
       </MemoryRouter>
     )
-    expect(screen.getByText('Widget Error')).toBeInTheDocument()
+    expect(screen.getByText(widgetErrorTitle)).toBeInTheDocument()
     expect(screen.getByText('feature exploded')).toBeInTheDocument()
   })
 
@@ -65,7 +69,7 @@ describe('FeatureErrorBoundary', () => {
         </FeatureErrorBoundary>
       </MemoryRouter>
     )
-    expect(screen.getByText('Widget encountered an error')).toBeInTheDocument()
+    expect(screen.getByText(widgetCompactMessage)).toBeInTheDocument()
     expect(screen.queryByText('feature exploded')).not.toBeInTheDocument()
   })
 
@@ -90,14 +94,14 @@ describe('FeatureErrorBoundary', () => {
         </FeatureErrorBoundary>
       </MemoryRouter>
     )
-    expect(screen.getByText('Widget Error')).toBeInTheDocument()
+    expect(screen.getByText(widgetErrorTitle)).toBeInTheDocument()
 
     // Simulate the underlying cause having cleared before the retry.
     shouldThrow.current = false
-    fireEvent.click(screen.getByRole('button', { name: /try again/i }))
+    fireEvent.click(screen.getByRole('button', { name: en.tryAgain }))
 
     expect(screen.getByText('Feature content')).toBeInTheDocument()
-    expect(screen.queryByText('Widget Error')).not.toBeInTheDocument()
+    expect(screen.queryByText(widgetErrorTitle)).not.toBeInTheDocument()
   })
 
   it('Try Again re-shows the error UI if the underlying cause is still present', () => {
@@ -109,7 +113,7 @@ describe('FeatureErrorBoundary', () => {
         </FeatureErrorBoundary>
       </MemoryRouter>
     )
-    fireEvent.click(screen.getByRole('button', { name: /try again/i }))
-    expect(screen.getByText('Widget Error')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: en.tryAgain }))
+    expect(screen.getByText(widgetErrorTitle)).toBeInTheDocument()
   })
 })

@@ -56,7 +56,7 @@ export function CreateTemplateDialog({ open, onClose, onCreated }: CreateTemplat
       const result = await templatesApi.create({
         name: name.trim(),
         description: description.trim(),
-        tags: tags.split(',').map((t) => t.trim()).filter(Boolean),
+        tags: tags.split(',').map((tag) => tag.trim()).filter(Boolean),
         serverIni: capture.serverIni,
         sandboxVars: capture.sandboxVars,
       })
