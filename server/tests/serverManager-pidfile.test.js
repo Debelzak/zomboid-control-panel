@@ -169,10 +169,10 @@ describe('ServerManager pidfile fast path', () => {
     } finally {
       try {
         fs.unlinkSync(managerA._pidFilePath());
-      } catch {}
+      } catch { /* best-effort cleanup; the file may already be gone */ }
       try {
         fs.unlinkSync(managerB._pidFilePath());
-      } catch {}
+      } catch { /* best-effort cleanup; the file may already be gone */ }
     }
   });
 });
