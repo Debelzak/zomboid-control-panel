@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **A Roles & Permissions screen, so the permission system is something you can actually see and
+  use**: until now roles and their permissions existed only inside the server, with no way to look
+  at them. There is now a screen at Roles & Permissions showing every role as a column and every
+  permission as a row - 27 permissions in 12 groups. Tick a box to grant a permission, untick it to
+  take it away, and it saves as you go. You can create a role, rename it, delete it, and put a
+  person on it.
+
+  The screen refuses, with the reason spelled out, any change that would leave nobody able to manage
+  users and roles - so you cannot lock yourself out of your own panel by editing the wrong box. The
+  permission list is read from the server rather than written into the screen, so it cannot drift
+  out of date. Available in English and French.
 - **A custom role can now actually be given to someone**: previously the permissions work let you
   create a role but only the built-in administrator, technician and moderator roles could be assigned
   to an account. Any role can now be assigned. The panel refuses a change that would leave nobody able
