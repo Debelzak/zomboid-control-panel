@@ -1,7 +1,7 @@
 ---
 plan_version: "2.0"
 baseline_sha: "8642dc467938a47ca8aac76fc44fc1875446c88b"
-current_sha: "e966fe94c7d6aca60986c7704a80e576bc1fa9f3"
+current_sha: "2ae02c43911c0e84ca6d6bd8f8f64cbac63d180c"
 active_work_package: "none - Foundation review gate"
 state: "accepted"
 owner: "coordinator"
@@ -178,7 +178,7 @@ Keep only the latest three here. Move older entries to `STATUS_ARCHIVE.md`.
 | Package | SHA | Accepted at | Evidence |
 | --- | --- | --- | --- |
 | FND-001 | `e966fe9` (+ evidence uncommitted at accept time) | 2026-08-22 | `evidence/FND-001/` |
-| FND-005 | uncommitted working tree at accept time | 2026-08-22 | `evidence/FND-005/` |
+| FND-005 | `2ae02c4` | 2026-08-22 | `evidence/FND-005/` |
 
 Both accepted by the coordinator **after** independent verification returned PASS, which is the
 only order the plan permits. FND-001's first verification returned FAIL; it was fixed, re-verified,

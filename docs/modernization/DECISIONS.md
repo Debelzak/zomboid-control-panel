@@ -206,3 +206,26 @@ pwsh -NoProfile -ExecutionPolicy Bypass -Command `
 **Status: open, awaiting user decision. Not fixed.** FND-005's own scope was verified with the
 correct invocation, so its result is sound; the plan's documented command remains wrong. Recorded
 as RISK-007.
+
+### DISC-002b — a second instance of the same shape, found the same day
+
+While recording the checkpoint SHA I briefly wrote the **abbreviated** form (`2ae02c4`) into
+`STATUS.md`'s `current_sha`. `bootstrap-plan.ps1` then emitted **neither** `PASS status-current-sha`
+**nor** the `WARN ... commit(s) behind HEAD` it produces on genuine drift — the check simply
+produced no line at all, and `RESULT=PASS` still appeared. Restoring the full 40-character SHA made
+`PASS status-current-sha=2ae02c43911c0e84ca6d6bd8f8f64cbac63d180c` reappear.
+
+So the staleness guard **silently no-ops on a short SHA**. Combined with DISC-002, that is two
+guards in one session that report success while not actually evaluating their input.
+
+**The pattern is worth naming, because it is what makes both dangerous:** neither guard fails
+loudly on a malformed input — one discards its argument, the other skips its own check — and both
+leave `RESULT=PASS` intact. A guard that cannot distinguish "checked and fine" from "did not check"
+is indistinguishable from no guard, while carrying more authority than one.
+
+**Recommended, alongside the DISC-002 options:** make both checks *fail* on unusable input rather
+than skip it. A `current_sha` that is not 40 hex characters should be an error, not a silent pass.
+
+**Status: open, folded into the DISC-002 decision. Not fixed.** No harm occurred — the value was
+corrected within minutes and the full SHA is now recorded — but the class of defect is the finding,
+not this instance.
