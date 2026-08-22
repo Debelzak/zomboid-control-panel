@@ -66,6 +66,11 @@ const KNOWN_TRANSLATED_IDS = new Set([
   "update.panel",
   "update.mods",
   "updates.error",
+  // Batch 6: PanelBridge IPC
+  "bridge.configured",
+  "bridge.writable",
+  "bridge.heartbeat",
+  "bridge.error",
 ]);
 
 /**

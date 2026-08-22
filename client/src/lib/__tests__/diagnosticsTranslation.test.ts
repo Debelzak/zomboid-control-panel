@@ -405,4 +405,49 @@ describe('translateDiagnosticCheck', () => {
     }
     expect(translateDiagnosticCheck(check).message).toBe('3 mods have updates on Steam Workshop.')
   })
+
+  it('resolves the platform variant for bridge.writable.fail, message shared, hint distinct', () => {
+    const linux = translateDiagnosticCheck({
+      id: 'bridge.writable',
+      status: 'fail',
+      label: 'Bridge directory not writable',
+      message: "Panel can't write to the bridge directory. Mod won't receive commands.",
+      hint: 'Check ownership / chmod on the Zomboid Lua folder (often needs the panel user to own ~/Zomboid)',
+      variant: 'linux',
+    })
+    const other = translateDiagnosticCheck({
+      id: 'bridge.writable',
+      status: 'fail',
+      label: 'Bridge directory not writable',
+      message: "Panel can't write to the bridge directory. Mod won't receive commands.",
+      hint: 'Check filesystem permissions on the Lua write folder',
+      variant: 'other',
+    })
+    expect(linux.message).toBe(other.message)
+    expect(linux.hint).not.toBe(other.hint)
+    expect(linux.hint).toContain('chmod')
+  })
+
+  it('resolves two distinct fail variants for bridge.heartbeat (stale vs never-written)', () => {
+    const stale = translateDiagnosticCheck({
+      id: 'bridge.heartbeat',
+      status: 'fail',
+      label: 'Mod heartbeat stale',
+      message: 'Last heartbeat 5m ago. Mod may have crashed or be unloaded.',
+      hint: 'Check server console.txt for PanelBridge errors',
+      params: { age: '5m ago' },
+      variant: 'stale',
+    })
+    const never = translateDiagnosticCheck({
+      id: 'bridge.heartbeat',
+      status: 'fail',
+      label: 'No mod heartbeat',
+      message: 'status.json has never been written. Mod is not loaded on the server.',
+      hint: "Verify PanelBridge is in the server's mod list and Workshop subscription",
+      variant: 'never',
+    })
+    expect(stale.message).toBe('Dernier battement 5m ago. Le mod a peut-être planté ou a été déchargé.')
+    expect(never.message).toBe("status.json n'a jamais été écrit. Le mod n'est pas chargé sur le serveur.")
+    expect(stale.message).not.toBe(never.message)
+  })
 })

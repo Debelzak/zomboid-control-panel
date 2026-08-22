@@ -705,6 +705,68 @@
             "message": "Update checks could not run: {{reason}}"
           }
         }
+      },
+      "bridge": {
+        "configured": {
+          "skip": {
+            "label": "PanelBridge bridge path",
+            "message": "Bridge path not yet configured (server may be starting up)."
+          },
+          "ok": {
+            "label": "Bridge path configured",
+            "message": "Bridge IPC directory is set."
+          }
+        },
+        "writable": {
+          "ok": {
+            "label": "Bridge directory writable",
+            "message": "Panel can write commands.json for the mod."
+          },
+          "warn": {
+            "label": "Bridge directory missing",
+            "message": "Bridge folder does not exist yet — it will be created when the mod first writes status.json."
+          },
+          "fail": {
+            "linux": {
+              "label": "Bridge directory not writable",
+              "message": "Panel can't write to the bridge directory. Mod won't receive commands.",
+              "hint": "Check ownership / chmod on the Zomboid Lua folder (often needs the panel user to own ~/Zomboid)"
+            },
+            "other": {
+              "label": "Bridge directory not writable",
+              "message": "Panel can't write to the bridge directory. Mod won't receive commands.",
+              "hint": "Check filesystem permissions on the Lua write folder"
+            }
+          }
+        },
+        "heartbeat": {
+          "ok": {
+            "label": "Mod heartbeat fresh",
+            "message": "Status from mod {{age}}."
+          },
+          "skip": {
+            "label": "Mod heartbeat",
+            "message": "Server is offline — heartbeat resumes when it starts."
+          },
+          "fail": {
+            "stale": {
+              "label": "Mod heartbeat stale",
+              "message": "Last heartbeat {{age}}. Mod may have crashed or be unloaded.",
+              "hint": "Check server console.txt for PanelBridge errors"
+            },
+            "never": {
+              "label": "No mod heartbeat",
+              "message": "status.json has never been written. Mod is not loaded on the server.",
+              "hint": "Verify PanelBridge is in the server's mod list and Workshop subscription"
+            }
+          }
+        },
+        "error": {
+          "warn": {
+            "label": "Bridge checks errored",
+            "message": "Bridge IPC checks could not run: {{reason}}"
+          }
+        }
       }
     }
   },

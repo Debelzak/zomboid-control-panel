@@ -3118,6 +3118,19 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
                 { category: "bridge" },
               ),
             );
+          } else if (process.platform === "linux") {
+            checks.push(
+              diagFail(
+                "bridge.writable",
+                "Bridge directory not writable",
+                "Panel can't write to the bridge directory. Mod won't receive commands.",
+                {
+                  category: "bridge",
+                  hint: "Check ownership / chmod on the Zomboid Lua folder (often needs the panel user to own ~/Zomboid)",
+                  variant: "linux",
+                },
+              ),
+            );
           } else {
             checks.push(
               diagFail(
@@ -3126,10 +3139,8 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
                 "Panel can't write to the bridge directory. Mod won't receive commands.",
                 {
                   category: "bridge",
-                  hint:
-                    process.platform === "linux"
-                      ? "Check ownership / chmod on the Zomboid Lua folder (often needs the panel user to own ~/Zomboid)"
-                      : "Check filesystem permissions on the Lua write folder",
+                  hint: "Check filesystem permissions on the Lua write folder",
+                  variant: "other",
                 },
               ),
             );
@@ -3138,12 +3149,13 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
           const status = bridgeStatus.modStatus;
           const conn = bridgeStatus.connection;
           if (status?.alive) {
+            const ageText = fmtAge(status.age || 0);
             checks.push(
               diagOk(
                 "bridge.heartbeat",
                 "Mod heartbeat fresh",
-                `Status from mod ${fmtAge(status.age || 0)}.`,
-                { category: "bridge" },
+                `Status from mod ${ageText}.`,
+                { category: "bridge", params: { age: ageText } },
               ),
             );
           } else if (!serverRunning) {
@@ -3156,14 +3168,20 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
               ),
             );
           } else if (conn?.statusFile?.exists) {
+            // Two distinct "fail" scenarios (stale vs never-written) with
+            // different messages -- variant, same discipline as db.backup's
+            // four-way warn fan-out in batch 3.
+            const ageText = fmtAge(conn.statusFile.age || 0);
             checks.push(
               diagFail(
                 "bridge.heartbeat",
                 "Mod heartbeat stale",
-                `Last heartbeat ${fmtAge(conn.statusFile.age || 0)}. Mod may have crashed or be unloaded.`,
+                `Last heartbeat ${ageText}. Mod may have crashed or be unloaded.`,
                 {
                   category: "bridge",
                   hint: "Check server console.txt for PanelBridge errors",
+                  params: { age: ageText },
+                  variant: "stale",
                 },
               ),
             );
@@ -3176,6 +3194,7 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
                 {
                   category: "bridge",
                   hint: "Verify PanelBridge is in the server's mod list and Workshop subscription",
+                  variant: "never",
                 },
               ),
             );
@@ -3183,12 +3202,13 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
         }
       }
     } catch (e) {
+      const reason = e?.message || "unknown";
       checks.push(
         diagWarn(
           "bridge.error",
           "Bridge checks errored",
-          `Bridge IPC checks could not run: ${e?.message || "unknown"}`,
-          { category: "bridge" },
+          `Bridge IPC checks could not run: ${reason}`,
+          { category: "bridge", params: { reason } },
         ),
       );
     }

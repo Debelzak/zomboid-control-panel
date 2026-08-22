@@ -705,6 +705,68 @@
             "message": "Les vérifications de mises à jour n'ont pas pu s'exécuter : {{reason}}"
           }
         }
+      },
+      "bridge": {
+        "configured": {
+          "skip": {
+            "label": "Chemin du bridge PanelBridge",
+            "message": "Chemin du bridge pas encore configuré (le serveur est peut-être en cours de démarrage)."
+          },
+          "ok": {
+            "label": "Chemin du bridge configuré",
+            "message": "Le répertoire IPC du bridge est défini."
+          }
+        },
+        "writable": {
+          "ok": {
+            "label": "Répertoire du bridge accessible en écriture",
+            "message": "Le panneau peut écrire commands.json pour le mod."
+          },
+          "warn": {
+            "label": "Répertoire du bridge manquant",
+            "message": "Le dossier du bridge n'existe pas encore — il sera créé lorsque le mod écrira status.json pour la première fois."
+          },
+          "fail": {
+            "linux": {
+              "label": "Répertoire du bridge non accessible en écriture",
+              "message": "Le panneau ne peut pas écrire dans le répertoire du bridge. Le mod ne recevra pas de commandes.",
+              "hint": "Vérifiez la propriété / chmod du dossier Lua de Zomboid (nécessite souvent que l'utilisateur du panneau possède ~/Zomboid)"
+            },
+            "other": {
+              "label": "Répertoire du bridge non accessible en écriture",
+              "message": "Le panneau ne peut pas écrire dans le répertoire du bridge. Le mod ne recevra pas de commandes.",
+              "hint": "Vérifiez les permissions du système de fichiers sur le dossier d'écriture Lua"
+            }
+          }
+        },
+        "heartbeat": {
+          "ok": {
+            "label": "Battement du mod récent",
+            "message": "État du mod {{age}}."
+          },
+          "skip": {
+            "label": "Battement du mod",
+            "message": "Le serveur est hors ligne — le battement reprendra à son démarrage."
+          },
+          "fail": {
+            "stale": {
+              "label": "Battement du mod obsolète",
+              "message": "Dernier battement {{age}}. Le mod a peut-être planté ou a été déchargé.",
+              "hint": "Vérifiez console.txt du serveur pour des erreurs PanelBridge"
+            },
+            "never": {
+              "label": "Aucun battement du mod",
+              "message": "status.json n'a jamais été écrit. Le mod n'est pas chargé sur le serveur.",
+              "hint": "Vérifiez que PanelBridge figure dans la liste de mods du serveur et dans l'abonnement Workshop"
+            }
+          }
+        },
+        "error": {
+          "warn": {
+            "label": "Erreur lors des vérifications du bridge",
+            "message": "Les vérifications IPC du bridge n'ont pas pu s'exécuter : {{reason}}"
+          }
+        }
       }
     }
   },
