@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security and maintenance
+
+- **GitHub release notes**: releases now publish the real changelog entries for their version. The
+  matcher that pulled them out of this file depended on which `awk` the build runner happened to
+  ship — under one of them it matched nothing at all, and the release quietly published a generic
+  "See CHANGELOG.md for details" placeholder instead. A version with no changelog section now also
+  logs a visible warning in the build output rather than passing silently.
+
 ## [1.1.55] - 2026-08-21
 
 ### Fixed
