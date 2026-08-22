@@ -22,8 +22,46 @@ import {
   regenerateJwtSecretFile,
 } from "../utils/jwtSecret.js";
 import { readSecret } from "../utils/secrets.js";
+import {
+  getRoleById,
+  getRoleByName,
+  getRoles,
+  RECOVERY_CAPABILITIES,
+} from "./permissions.js";
+import { ErrorCode } from "../utils/errorCodes.js";
 
 const log = createLogger("Auth");
+
+// The ONLY /api/auth/* paths middleware() below lets through before
+// req.user is set. This used to be a blanket `startsWith("/api/auth/")`
+// exemption (comment: "login, setup, status"), which correctly covered
+// those but ALSO silently exempted every route added under this prefix
+// afterward, including ones gated by requireRole/requirePermission —
+// whose own "no req.user, let it through" branch (meant for the
+// auth-disabled case) then admitted EVERY request, authenticated or not.
+// Confirmed live: an unauthenticated POST /api/auth/users with
+// role:"admin" created a real admin account on a fully set-up install.
+// /api/auth/oidc/* is handled separately (see middleware() below) — a
+// self-contained pre-auth flow (Dwight's), kept as its own prefix rather
+// than enumerated, since login/callback are inherently pre-session by
+// design and neither uses requireRole/requirePermission. /me,
+// /change-password and /recovery-codes are deliberately NOT in this list
+// even though they used to be exempt too — they already verify the
+// Bearer token themselves via getAuthenticatedUser() and are safe either
+// way, but leaving them exempt would keep the same blanket-prefix shape
+// that caused this in the first place for the next route someone adds.
+const PUBLIC_AUTH_PATHS = new Set([
+  "/api/auth/status",
+  "/api/auth/setup",
+  "/api/auth/login",
+  "/api/auth/refresh",
+  "/api/auth/logout",
+  "/api/auth/reset-status",
+  "/api/auth/reset-token/local",
+  "/api/auth/reset-password",
+  "/api/auth/recovery-status",
+  "/api/auth/recover-with-code",
+]);
 
 // The three roles the operator asked for. admin = everything, including user
 // management. technician = operate the server (start/stop/restart, backups,
@@ -46,6 +84,36 @@ const LOCKOUT_DURATION_MS = 15 * 60 * 1000;
 // real password — it's just a fixed bcrypt digest to compare against.
 const DUMMY_BCRYPT_HASH =
   "$2a$12$CwTycUXWue0Thq9StjUM0uJ8u2H8ekjqOGWjF/9JMlSlL5C.tZgqe";
+
+function makeRoleError(code, message, status) {
+  const err = new Error(message);
+  err.code = code;
+  err.status = status;
+  return err;
+}
+
+// How many users OTHER than excludingUserId currently hold `capability`
+// via their role (roleId if set, else the legacy name — same resolution
+// order as everywhere else in this file). Deliberately per-USER, not
+// per-ROLE like services/permissions.js's own countUsersWithCapability:
+// reassigning one user doesn't change what anyone else's role grants them,
+// so excluding a whole role (as the role-edit lockout check does) would
+// undercount when that role has other members who aren't moving.
+async function countOtherUsersWithCapability(capability, excludingUserId) {
+  const db = await getDb();
+  const users = db.data.users || [];
+  const roles = await getRoles();
+  const roleById = new Map(roles.map((r) => [String(r.id), r]));
+  const roleByName = new Map(roles.map((r) => [r.name, r]));
+
+  let count = 0;
+  for (const u of users) {
+    if (String(u.id) === String(excludingUserId)) continue;
+    const role = u.roleId ? roleById.get(String(u.roleId)) : roleByName.get(u.role);
+    if (role?.capabilities?.includes(capability)) count++;
+  }
+  return count;
+}
 
 class AuthService {
   constructor() {
@@ -326,11 +394,11 @@ class AuthService {
   }
 
   /**
-   * Change an existing user's role. Refuses to demote the last remaining
-   * admin — that would leave the panel with no admin account, and
-   * resetPassword()/generateRecoveryCodes() only restore a PASSWORD, not a
-   * role, so a demoted last-admin couldn't recover admin access even via
-   * the recovery flows. Promote a second admin first.
+   * Change an existing user's role by the legacy fixed-name string.
+   * Unchanged from before the roles/capabilities system existed — kept
+   * exactly as-is (including its own admin-count lockout check) for
+   * whatever still calls it this way. See changeUserRoleById() below for
+   * the roleId-aware path a custom role needs.
    */
   async changeUserRole(userId, newRole) {
     return this._withMutex(async () => {
@@ -365,6 +433,88 @@ class AuthService {
       // request — no forced logout / tokenGen bump needed.
       log.info(`Role changed for user ${user.username}: ${user.role}`);
       return { id: user.id, username: user.username, role: user.role };
+    });
+  }
+
+  /**
+   * Change an existing user's role by roleId — the path a custom role
+   * (one the fixed USER_ROLES enum has no name for) needs, since
+   * changeUserRole() above can only ever assign admin/technician/moderator.
+   *
+   * user.role is ALWAYS set to the resolved role's exact .name, seeded or
+   * custom, no exceptions: requirePermission() (services/permissions.js)
+   * still resolves a user's capabilities via getRoleByName(user.role)
+   * today, not roleId (roleId is dual-written for a future switch to
+   * id-based resolution — see database/init.js's schema v2 migration
+   * comment, "not read by anything yet"). Leaving user.role stale for a
+   * role with no legacy equivalent would silently keep authorizing this
+   * user against their OLD role's capabilities forever — the exact
+   * silent-old-role failure a permission system can least afford.
+   *
+   * Lockout: refuses any change that would leave zero OTHER users able to
+   * roles.manage or users.manage. This is the per-user-reassignment analog
+   * of services/permissions.js's own rule 1 for role EDITS — same shared
+   * RECOVERY_CAPABILITIES policy (imported, not duplicated), a necessarily
+   * different count (excluding one user, not one role) because moving a
+   * single user between two EXISTING roles doesn't change what either role
+   * grants to anyone else.
+   */
+  async changeUserRoleById(userId, roleId) {
+    return this._withMutex(async () => {
+      const targetRole = await getRoleById(roleId);
+      if (!targetRole) {
+        throw makeRoleError(
+          ErrorCode.ROLE_NOT_FOUND,
+          "That role does not exist.",
+          404,
+        );
+      }
+
+      const db = await getDb();
+      const users = db.data.users || [];
+      const user = users.find((u) => u.id === userId);
+      if (!user) {
+        throw new Error("User not found");
+      }
+
+      const currentRole = user.roleId
+        ? await getRoleById(user.roleId)
+        : await getRoleByName(user.role);
+      const currentCapabilities = currentRole?.capabilities || [];
+      const nextCapabilities = targetRole.capabilities || [];
+
+      for (const capability of RECOVERY_CAPABILITIES) {
+        const currentlyGrants = currentCapabilities.includes(capability);
+        const willStillGrant = nextCapabilities.includes(capability);
+        // Nothing is being taken away for this capability — either this
+        // user's current role never granted it, or the new one still does.
+        if (!currentlyGrants || willStillGrant) continue;
+
+        const others = await countOtherUsersWithCapability(capability, userId);
+        if (others === 0) {
+          throw makeRoleError(
+            ErrorCode.ROLE_LOCKOUT_LAST_MANAGER,
+            `This change would leave no user able to ${
+              capability === "roles.manage" ? "manage roles" : "manage user accounts"
+            }.`,
+            409,
+          );
+        }
+      }
+
+      user.role = targetRole.name;
+      user.roleId = targetRole.id;
+      await commitNow();
+
+      log.info(
+        `Role changed for user ${user.username}: ${user.role} (roleId: ${user.roleId})`,
+      );
+      return {
+        id: user.id,
+        username: user.username,
+        role: user.role,
+        roleId: user.roleId,
+      };
     });
   }
 
@@ -604,6 +754,7 @@ class AuthService {
       id: u.id,
       username: u.username,
       role: u.role,
+      roleId: u.roleId || null,
       createdAt: u.createdAt,
       lastLogin: u.lastLogin,
     }));
@@ -978,8 +1129,12 @@ class AuthService {
           return next();
         }
 
-        // Always allow auth routes (login, setup, status)
-        if (req.path.startsWith("/api/auth/")) {
+        // Only these specific /api/auth/* paths run before req.user is
+        // set — NOT the whole prefix (see PUBLIC_AUTH_PATHS above for why).
+        if (
+          PUBLIC_AUTH_PATHS.has(req.path) ||
+          req.path.startsWith("/api/auth/oidc/")
+        ) {
           return next();
         }
 
@@ -1032,9 +1187,27 @@ class AuthService {
             .json({ error: "First-run setup required", code: "SETUP_REQUIRED" });
         }
 
-        // Skip auth if it's been explicitly disabled
+        // Auth explicitly disabled: grant full access, but EXPLICITLY —
+        // set a real req.user rather than leaving it unset and relying on
+        // every requireRole/requirePermission call site to treat "no
+        // req.user" as "this must be the auth-disabled case, let it
+        // through". That implicit meaning is exactly what made the
+        // /api/auth/* prefix hole (see PUBLIC_AUTH_PATHS above) turn into
+        // unauthenticated admin creation: something else set req.user
+        // aside without meaning to grant access, and every gate downstream
+        // read the absence as permission anyway. With this, "no req.user"
+        // can mean only one thing everywhere in the app — not
+        // authenticated, refuse — and requireRole/requirePermission below
+        // are written to do exactly that unconditionally.
         const authEnabled = await this.isAuthEnabled();
         if (!authEnabled) {
+          req.user = {
+            userId: null,
+            username: null,
+            role: "admin",
+            tokenGen: null,
+            authDisabled: true,
+          };
           return next();
         }
 
@@ -1079,13 +1252,27 @@ export default authService;
  * rather than trusting the role embedded in the JWT at login time) — so a
  * role change via changeUserRole() takes effect on the user's very next
  * request, no re-login required.
+ *
+ * FAILS CLOSED: a missing req.user refuses (401), full stop — it does NOT
+ * mean "auth disabled, let it through" the way it used to. That reading
+ * used to be correct (middleware() genuinely never set req.user when auth
+ * was off), right up until a route was added under a path middleware()
+ * exempted from authentication ENTIRELY without also exempting it from
+ * requireRole — at which point "no req.user" silently meant "nobody
+ * checked" instead of "auth is off", and every requireRole-gated route on
+ * that path admitted every request. middleware() now sets an explicit
+ * req.user even when auth is disabled (see the authEnabled branch above),
+ * so this function no longer needs — or trusts — an implicit meaning for
+ * absence. A future exemption mistake now produces a locked door, not an
+ * open one.
  */
 export function requireRole(...roles) {
   return (req, res, next) => {
-    // No auth configured (setup pending / auth disabled) — middleware()
-    // already let the request through without setting req.user in that
-    // case, so there's nothing to check here.
-    if (!req.user) return next();
+    if (!req.user) {
+      return res
+        .status(401)
+        .json({ error: "Authentication required", code: ErrorCode.AUTH_REQUIRED });
+    }
     if (roles.includes(req.user.role)) return next();
     return res.status(403).json({ error: "Insufficient permissions" });
   };

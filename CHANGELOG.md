@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **A custom role can now actually be given to someone**: previously the permissions work let you
+  create a role but only the built-in administrator, technician and moderator roles could be assigned
+  to an account. Any role can now be assigned. The panel refuses a change that would leave nobody able
+  to manage users and roles, so it is not possible to lock yourself out by moving the last
+  administrator onto a role that cannot undo it.
 - **Regenerate the login signing key from Settings**: an administrator can now replace the key that
   signs login sessions, from Settings > Security. You would do this if a backup taken before this
   release - which still contains the old key in plain text - may have been exposed. It signs out
@@ -60,6 +65,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `client/src/locales/README.md`.
 
 ### Fixed
+- **Anyone who could reach the panel could create an administrator account, with no password**:
+  requests to the account-management endpoints were not checking who was calling them. On any panel
+  that had finished setup, a request with no credentials at all could list every account, create a
+  new administrator, change any account's role, or sign every user out. The screens always implied a
+  login was required; the server was not enforcing it. It is enforced now. **If this panel has ever
+  been reachable from outside your own machine, review your accounts and treat any you did not create
+  yourself as suspect.** This was not introduced by any recent change - it dates back several months.
 - **Only the panel's own startup script may run inline**: the browser was previously told to allow
   any inline script on the page, which weakens the main defence against a script being injected into
   it. It is now restricted to the exact fingerprint of the panel's own theme bootstrap, recalculated

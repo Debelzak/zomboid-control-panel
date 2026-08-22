@@ -16,6 +16,7 @@ import { getDataPaths } from "../utils/paths.js";
 import { setSetting } from "../database/init.js";
 import { verifySetupToken, clearSetupToken } from "../utils/setupToken.js";
 import { getRefreshCookieOptions } from "../utils/refreshCookie.js";
+import { requirePermission } from "../services/permissions.js";
 
 const log = createLogger("Auth");
 const router = Router();
@@ -448,25 +449,47 @@ router.post("/users", requireRole("admin"), async (req, res) => {
 
 /**
  * PATCH /api/auth/users/:id/role
- * Change an existing account's role. Admin-only. Refuses to demote the
- * last remaining admin (enforced in authService.changeUserRole).
+ * Change an existing account's role — by roleId (any role, including a
+ * custom one from the matrix) or by the legacy fixed-name role string
+ * (kept for whatever still sends that shape). Gated on users.manage
+ * rather than the old admin-only requireRole: that capability's own
+ * catalogue description is literally "change which role each one holds",
+ * and today only the seeded admin role grants it, so this is a no-op
+ * change for every existing install until an operator grants users.manage
+ * to a custom role. Refuses to remove the last user able to manage roles
+ * or users (enforced in authService.changeUserRoleById) and refuses an
+ * unknown roleId outright rather than falling through to a default.
  */
-router.patch("/users/:id/role", requireRole("admin"), async (req, res) => {
-  try {
-    const { role } = req.body || {};
-    if (!USER_ROLES.includes(role)) {
-      return res
-        .status(400)
-        .json({ error: `role must be one of: ${USER_ROLES.join(", ")}` });
+router.patch(
+  "/users/:id/role",
+  requirePermission("users.manage"),
+  async (req, res) => {
+    try {
+      const { roleId, role } = req.body || {};
+      let user;
+      if (typeof roleId === "string" && roleId.trim()) {
+        user = await authService.changeUserRoleById(
+          req.params.id,
+          roleId.trim(),
+        );
+      } else {
+        if (!USER_ROLES.includes(role)) {
+          return res
+            .status(400)
+            .json({ error: `role must be one of: ${USER_ROLES.join(", ")}` });
+        }
+        user = await authService.changeUserRole(req.params.id, role);
+      }
+      log.info(`Role changed by admin: ${user.username} -> ${user.role}`);
+      res.json({ success: true, user });
+    } catch (error) {
+      log.warn(`Role change failed: ${error.message}`);
+      const body = { error: sanitizeError(error.message) };
+      if (error.code) body.code = error.code;
+      res.status(error.status || 400).json(body);
     }
-    const user = await authService.changeUserRole(req.params.id, role);
-    log.info(`Role changed by admin: ${user.username} -> ${role}`);
-    res.json({ success: true, user });
-  } catch (error) {
-    log.warn(`Role change failed: ${error.message}`);
-    res.status(400).json({ error: sanitizeError(error.message) });
-  }
-});
+  },
+);
 
 /**
  * POST /api/auth/regenerate-jwt-secret
