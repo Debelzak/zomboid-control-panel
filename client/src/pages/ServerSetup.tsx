@@ -27,6 +27,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { configApi, serverApi, serversApi, debugApi } from "@/lib/api";
+import { getInstallProgressMessage } from "@/lib/installProgressMessage";
 import { useNavigate } from "react-router-dom";
 import {
   Card,
@@ -359,11 +360,14 @@ export default function ServerSetup() {
     const handleInstallLog = (data: {
       type: "stdout" | "stderr";
       text: string;
+      progressCode?: string;
+      params?: Record<string, string | number>;
     }) => {
       const text = data.text.trim();
+      const displayText = getInstallProgressMessage(data, text);
       setLogs((prev) => [
         ...prev,
-        { type: data.type, message: text, timestamp: new Date() },
+        { type: data.type, message: displayText, timestamp: new Date() },
       ]);
 
       // Parse SteamCMD progress: "Update state (0x61) downloading, progress: 50.00 (1234567890 / 2469135780)"
@@ -421,13 +425,16 @@ export default function ServerSetup() {
       serverPort?: number;
       minMemory?: number;
       maxMemory?: number;
+      progressCode?: string;
+      params?: Record<string, string | number>;
     }) => {
       setInstalling(false);
       setInstallComplete(data.success);
+      const displayMessage = getInstallProgressMessage(data, data.message);
       if (data.success) {
         setLogs((prev) => [
           ...prev,
-          { type: "success", message: data.message, timestamp: new Date() },
+          { type: "success", message: displayMessage, timestamp: new Date() },
         ]);
 
         try {
@@ -489,11 +496,11 @@ export default function ServerSetup() {
       } else {
         setLogs((prev) => [
           ...prev,
-          { type: "error", message: data.message, timestamp: new Date() },
+          { type: "error", message: displayMessage, timestamp: new Date() },
         ]);
         toast({
           title: t("toasts.installationFailedTitle"),
-          description: data.message,
+          description: displayMessage,
           variant: "destructive",
         });
       }
@@ -506,8 +513,11 @@ export default function ServerSetup() {
       status: string;
       message: string;
       path?: string;
+      progressCode?: string;
+      params?: Record<string, string | number>;
     }) => {
-      setSteamCmdStatus(data.message);
+      const displayMessage = getInstallProgressMessage(data, data.message);
+      setSteamCmdStatus(displayMessage);
       if (data.status === "complete" && data.path) {
         setSteamCmdPath(data.path);
         setHasSteamCmd(true);
@@ -520,14 +530,19 @@ export default function ServerSetup() {
         setDownloadingSteamCmd(false);
         toast({
           title: t("toasts.steamCmdFailedTitle"),
-          description: data.message,
+          description: displayMessage,
           variant: "destructive",
         });
       }
     };
 
-    const handleSteamCmdLog = (data: { type: string; text: string }) => {
-      setSteamCmdStatus(data.text.trim());
+    const handleSteamCmdLog = (data: {
+      type: string;
+      text: string;
+      progressCode?: string;
+      params?: Record<string, string | number>;
+    }) => {
+      setSteamCmdStatus(getInstallProgressMessage(data, data.text.trim()));
     };
 
     socket.on("steamcmd:status", handleSteamCmdStatus);

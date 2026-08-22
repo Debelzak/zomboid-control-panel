@@ -82,6 +82,7 @@ import {
 } from "@/components/ui/select"
 import { serversApi, serversDetectApi, dockerApi, DockerContainerStats, DockerContainerSummary, ServerInstance, configApi, serverApi, updateApi, UpdateStatus, DiscoveredMount, ComposedServerStatus } from '@/lib/api'
 import { waitForServerState } from '@/lib/serverStatus'
+import { getInstallProgressMessage } from '@/lib/installProgressMessage'
 import { ServerStatusBadge } from '@/components/ServerStatusBadge'
 import { SocketContext } from '@/contexts/SocketContext'
 import { useNavigate } from 'react-router-dom'
@@ -597,22 +598,23 @@ export default function Servers() {
   useEffect(() => {
     if (!socket) return
 
-    const handleSteamStart = (data: { type: string; message: string }) => {
+    const handleSteamStart = (data: { type: string; message: string; progressCode?: string; params?: Record<string, string | number> }) => {
       setSteamRunning(true)
-      setSteamLogs([data.message])
+      setSteamLogs([getInstallProgressMessage(data, data.message)])
     }
 
-    const handleSteamLog = (data: { type: string; text: string }) => {
-      setSteamLogs(prev => [...prev.slice(-200), data.text]) // Keep last 200 lines
+    const handleSteamLog = (data: { type: string; text: string; progressCode?: string; params?: Record<string, string | number> }) => {
+      setSteamLogs(prev => [...prev.slice(-200), getInstallProgressMessage(data, data.text)]) // Keep last 200 lines
     }
 
-    const handleSteamComplete = (data: { success: boolean; message: string }) => {
+    const handleSteamComplete = (data: { success: boolean; message: string; progressCode?: string; params?: Record<string, string | number> }) => {
+      const displayMessage = getInstallProgressMessage(data, data.message)
       setSteamRunning(false)
       setSteamCompleted(data.success ? 'success' : 'error')
-      setSteamLogs(prev => [...prev, '', data.success ? '✓ ' + data.message : '✗ ' + data.message])
+      setSteamLogs(prev => [...prev, '', data.success ? '✓ ' + displayMessage : '✗ ' + displayMessage])
       toast({
         title: data.success ? t('toasts.success') : t('toasts.failed'),
-        description: data.message,
+        description: displayMessage,
         variant: data.success ? 'default' : 'destructive'
       })
     }

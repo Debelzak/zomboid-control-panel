@@ -19,6 +19,7 @@ import { withFileLock, writeFileAtomic } from "../utils/fileWriteQueue.js";
 import { requirePermission } from "../services/permissions.js";
 import { runManagedLifecycle } from "../services/managedContainer.js";
 import { ErrorCode } from "../utils/errorCodes.js";
+import { ProgressCode } from "../utils/progressCodes.js";
 
 const router = express.Router();
 
@@ -48,6 +49,21 @@ function getSteamCmdExe(steamcmdPath) {
   return primary; // Return primary path even if not found — let caller handle the error
 }
 
+// Emits one line of SteamCMD's OWN stdout/stderr, forwarded verbatim, with
+// no `progressCode` field and no way to attach one. This is the ONLY
+// function in this file allowed to emit install:log, steam:log or
+// steamcmd:log for a raw passthrough line -- every other emit of those
+// three events is an authored line and must carry a progressCode instead.
+// That split used to be enforced only by which event name a call site
+// picked, and it was violated exactly once (the 32-bit-library warning
+// below, our own text going out through steamcmd:log) before anyone was
+// even trying to maintain the rule -- see ProgressCode's file header. Going
+// through this helper (or not) is what makes "raw" and "authored" mutually
+// exclusive now, not a comment.
+function emitRawSteamCmdLine(io, event, type, text) {
+  io?.emit(event, { type, text });
+}
+
 // Self-heal "SteamCMD not found": downloads, extracts and first-time
 // initializes SteamCMD into `installPath` on Linux, mirroring the same
 // steps as POST /steamcmd/download. Called from /install and /update when
@@ -75,6 +91,7 @@ async function ensureSteamCmdLinux(installPath, io) {
   emit("steamcmd:status", {
     status: "downloading",
     message: "SteamCMD missing — downloading it now...",
+    progressCode: ProgressCode.STEAMCMD_LINUX_AUTO_DOWNLOAD_START,
   });
 
   if (!fs.existsSync(installPath)) {
@@ -102,6 +119,7 @@ async function ensureSteamCmdLinux(installPath, io) {
   emit("steamcmd:status", {
     status: "extracting",
     message: "Extracting SteamCMD...",
+    progressCode: ProgressCode.STEAMCMD_EXTRACTING,
   });
   await execAsync(`tar -xzf '${safeTarPath}' -C '${safeInstallPath}'`, {
     timeout: 30000,
@@ -125,6 +143,7 @@ async function ensureSteamCmdLinux(installPath, io) {
   emit("steamcmd:status", {
     status: "initializing",
     message: "Initializing SteamCMD (first run)...",
+    progressCode: ProgressCode.STEAMCMD_INITIALIZING,
   });
   const ldPaths = [
     path.join(installPath, "linux32"),
@@ -141,10 +160,10 @@ async function ensureSteamCmdLinux(installPath, io) {
       env: { ...process.env, LD_LIBRARY_PATH: ldPaths },
     });
     proc.stdout.on("data", (d) =>
-      emit("steamcmd:log", { type: "stdout", text: d.toString() }),
+      emitRawSteamCmdLine(io, "steamcmd:log", "stdout", d.toString()),
     );
     proc.stderr.on("data", (d) =>
-      emit("steamcmd:log", { type: "stderr", text: d.toString() }),
+      emitRawSteamCmdLine(io, "steamcmd:log", "stderr", d.toString()),
     );
     proc.on("close", (code) => {
       if (code === 0 || code === 7) {
@@ -166,6 +185,7 @@ async function ensureSteamCmdLinux(installPath, io) {
     status: "complete",
     message: "SteamCMD installed successfully!",
     path: installPath,
+    progressCode: ProgressCode.STEAMCMD_INSTALL_COMPLETE,
   });
   log.info(`SteamCMD auto-installed to ${installPath}`);
   return steamcmdExe;
@@ -1728,7 +1748,7 @@ router.post("/install", requirePermission("server.install"), async (req, res) =>
 
       for (const line of lines) {
         if (line.trim()) {
-          io.emit("install:log", { type: "stdout", text: line });
+          emitRawSteamCmdLine(io, "install:log", "stdout", line);
           log.info(`SteamCMD: ${line}`);
         }
       }
@@ -1748,7 +1768,7 @@ router.post("/install", requirePermission("server.install"), async (req, res) =>
 
       for (const line of lines) {
         if (line.trim()) {
-          io.emit("install:log", { type: "stderr", text: line });
+          emitRawSteamCmdLine(io, "install:log", "stderr", line);
           log.warn(`SteamCMD stderr: ${line}`);
         }
       }
@@ -1757,11 +1777,11 @@ router.post("/install", requirePermission("server.install"), async (req, res) =>
     steamcmd.on("close", async (code) => {
       // Flush any remaining buffered output
       if (stdoutBuffer.trim()) {
-        io.emit("install:log", { type: "stdout", text: stdoutBuffer.trim() });
+        emitRawSteamCmdLine(io, "install:log", "stdout", stdoutBuffer.trim());
         log.info(`SteamCMD: ${stdoutBuffer.trim()}`);
       }
       if (stderrBuffer.trim()) {
-        io.emit("install:log", { type: "stderr", text: stderrBuffer.trim() });
+        emitRawSteamCmdLine(io, "install:log", "stderr", stderrBuffer.trim());
         log.warn(`SteamCMD stderr: ${stderrBuffer.trim()}`);
       }
 
@@ -1783,6 +1803,10 @@ router.post("/install", requirePermission("server.install"), async (req, res) =>
           io.emit("install:log", {
             type: "stdout",
             text: `Using ${usesEnvironmentDataPath ? "configured" : "isolated"} data folder: ${zomboidPath}`,
+            progressCode: usesEnvironmentDataPath
+              ? ProgressCode.DATA_FOLDER_USING_CONFIGURED
+              : ProgressCode.DATA_FOLDER_USING_ISOLATED,
+            params: { path: zomboidPath },
           });
         }
 
@@ -1804,6 +1828,12 @@ router.post("/install", requirePermission("server.install"), async (req, res) =>
               `sudo install -d -m 0755 -o "$(whoami)" -g "$(whoami)" "${zomboidPath}", then retry.`,
             installPath,
             serverName,
+            progressCode: ProgressCode.INSTALL_DATA_FOLDER_NOT_WRITABLE,
+            params: {
+              path: zomboidPath,
+              reason: dirError.code || dirError.message,
+              command: `sudo install -d -m 0755 -o "$(whoami)" -g "$(whoami)" "${zomboidPath}"`,
+            },
           });
           activeSteamOperations.delete(normalizedPath);
           return;
@@ -1817,6 +1847,8 @@ router.post("/install", requirePermission("server.install"), async (req, res) =>
           io.emit("install:log", {
             type: "stdout",
             text: `RCON settings saved (port: ${rconPort})`,
+            progressCode: ProgressCode.RCON_SETTINGS_SAVED,
+            params: { port: rconPort },
           });
 
           // Pre-create INI with RCON settings so PZ reads them on first boot
@@ -1837,6 +1869,7 @@ router.post("/install", requirePermission("server.install"), async (req, res) =>
               io.emit("install:log", {
                 type: "stdout",
                 text: "Pre-created server INI with RCON credentials",
+                progressCode: ProgressCode.INI_PRECREATED_WITH_RCON,
               });
             }
           } catch (iniError) {
@@ -1882,6 +1915,8 @@ router.post("/install", requirePermission("server.install"), async (req, res) =>
           io.emit("install:log", {
             type: "stdout",
             text: `Created custom startup script: ${scriptName}`,
+            progressCode: ProgressCode.STARTUP_SCRIPT_CREATED,
+            params: { scriptName },
           });
         } catch (batchError) {
           log.warn(`Failed to create startup scripts: ${batchError.message}`);
@@ -1926,6 +1961,7 @@ router.post("/install", requirePermission("server.install"), async (req, res) =>
               io.emit("install:log", {
                 type: "stdout",
                 text: "PanelBridge mod installed automatically",
+                progressCode: ProgressCode.PANELBRIDGE_AUTO_INSTALLED,
               });
               log.info("PanelBridge mod auto-installed to server");
             }
@@ -1949,6 +1985,7 @@ router.post("/install", requirePermission("server.install"), async (req, res) =>
           serverPort: safeServerPort,
           minMemory: safeMinMemory,
           maxMemory: safeMaxMemory,
+          progressCode: ProgressCode.INSTALL_COMPLETE_SUCCESS,
         });
       } else {
         log.error(`SteamCMD exited with code ${code}`);
@@ -1956,6 +1993,8 @@ router.post("/install", requirePermission("server.install"), async (req, res) =>
           success: false,
           message: `Installation failed with exit code ${code}`,
           output,
+          progressCode: ProgressCode.INSTALL_FAILED_EXIT_CODE,
+          params: { code },
         });
       }
 
@@ -1971,6 +2010,8 @@ router.post("/install", requirePermission("server.install"), async (req, res) =>
       io.emit("install:complete", {
         success: false,
         message: `Failed to run SteamCMD: ${sanitizeError(error.message)}`,
+        progressCode: ProgressCode.STEAMCMD_RUN_FAILED,
+        params: { reason: sanitizeError(error.message) },
       });
     });
 
@@ -2686,6 +2727,9 @@ router.post("/steam-update", requirePermission("server.install"), async (req, re
     io.emit("steam:start", {
       type: validateFiles ? "verify" : "update",
       message: validateFiles ? "Verifying game files..." : "Updating server...",
+      progressCode: validateFiles
+        ? ProgressCode.STEAM_START_VERIFY
+        : ProgressCode.STEAM_START_UPDATE,
     });
 
     // On Linux, set LD_LIBRARY_PATH so SteamCMD can find its 32-bit libraries
@@ -2731,7 +2775,7 @@ router.post("/steam-update", requirePermission("server.install"), async (req, re
 
       for (const line of lines) {
         if (line.trim()) {
-          io.emit("steam:log", { type: "stdout", text: line });
+          emitRawSteamCmdLine(io, "steam:log", "stdout", line);
           log.info(`SteamCMD: ${line}`);
         }
       }
@@ -2750,7 +2794,7 @@ router.post("/steam-update", requirePermission("server.install"), async (req, re
 
       for (const line of lines) {
         if (line.trim()) {
-          io.emit("steam:log", { type: "stderr", text: line });
+          emitRawSteamCmdLine(io, "steam:log", "stderr", line);
           log.warn(`SteamCMD stderr: ${line}`);
         }
       }
@@ -2759,10 +2803,10 @@ router.post("/steam-update", requirePermission("server.install"), async (req, re
     steamcmd.on("close", (code) => {
       // Flush remaining buffers
       if (stdoutBuffer.trim()) {
-        io.emit("steam:log", { type: "stdout", text: stdoutBuffer.trim() });
+        emitRawSteamCmdLine(io, "steam:log", "stdout", stdoutBuffer.trim());
       }
       if (stderrBuffer.trim()) {
-        io.emit("steam:log", { type: "stderr", text: stderrBuffer.trim() });
+        emitRawSteamCmdLine(io, "steam:log", "stderr", stderrBuffer.trim());
       }
 
       // Clear active operation
@@ -2776,11 +2820,32 @@ router.post("/steam-update", requirePermission("server.install"), async (req, re
         ? "SteamCMD could not access a Project Zomboid depot manifest. Your installed server files were not changed. Retry later; if it persists, update using a Steam account that owns Project Zomboid."
         : `Server ${operation} failed with code ${code}`;
 
+      // "update" vs "verification" is a word choice, not a value -- own
+      // codes per direction, not a shared template with `operation`
+      // substituted in (see ProgressCode's file header, params-vs-variant
+      // rule). steamDepotAccessDenied is independent of that distinction.
+      let completeProgressCode;
+      let completeParams;
+      if (success) {
+        completeProgressCode = validateFiles
+          ? ProgressCode.STEAM_VERIFY_COMPLETE_SUCCESS
+          : ProgressCode.STEAM_UPDATE_COMPLETE_SUCCESS;
+      } else if (steamDepotAccessDenied) {
+        completeProgressCode = ProgressCode.STEAM_DEPOT_ACCESS_DENIED;
+      } else {
+        completeProgressCode = validateFiles
+          ? ProgressCode.STEAM_VERIFY_FAILED
+          : ProgressCode.STEAM_UPDATE_FAILED;
+        completeParams = { code };
+      }
+
       io.emit("steam:complete", {
         success,
         message: success
           ? `Server ${operation} completed successfully`
           : failureMessage,
+        progressCode: completeProgressCode,
+        ...(completeParams ? { params: completeParams } : {}),
       });
 
       // After successful update, re-check update status so banner clears
@@ -2810,6 +2875,8 @@ router.post("/steam-update", requirePermission("server.install"), async (req, re
       io.emit("steam:complete", {
         success: false,
         message: `Failed to run SteamCMD: ${sanitizeError(error.message)}`,
+        progressCode: ProgressCode.STEAMCMD_RUN_FAILED,
+        params: { reason: sanitizeError(error.message) },
       });
       log.error(`SteamCMD error: ${error.message}`);
     });
@@ -2867,6 +2934,7 @@ router.post("/steamcmd/download", requirePermission("server.install"), async (re
       io.emit("steamcmd:status", {
         status: "downloading",
         message: "Downloading SteamCMD...",
+        progressCode: ProgressCode.STEAMCMD_DOWNLOADING,
       });
       log.info(`Downloading SteamCMD to ${installPath}`);
 
@@ -2878,6 +2946,8 @@ router.post("/steamcmd/download", requirePermission("server.install"), async (re
         io.emit("steamcmd:status", {
           status: "error",
           message: `Download failed: ${err.message}`,
+          progressCode: ProgressCode.STEAMCMD_DOWNLOAD_FAILED,
+          params: { reason: err.message },
         });
         log.error(`SteamCMD download failed: ${err.message}`);
       };
@@ -2908,6 +2978,7 @@ router.post("/steamcmd/download", requirePermission("server.install"), async (re
           io.emit("steamcmd:status", {
             status: "extracting",
             message: "Extracting SteamCMD...",
+            progressCode: ProgressCode.STEAMCMD_EXTRACTING,
           });
           log.info("Extracting SteamCMD...");
 
@@ -2922,6 +2993,8 @@ router.post("/steamcmd/download", requirePermission("server.install"), async (re
           io.emit("steamcmd:status", {
             status: "error",
             message: `Extraction failed: ${sanitizeError(extractError.message)}`,
+            progressCode: ProgressCode.STEAMCMD_EXTRACTION_FAILED,
+            params: { reason: sanitizeError(extractError.message) },
           });
           log.error(`SteamCMD extraction failed: ${extractError.message}`);
         }
@@ -2936,6 +3009,7 @@ router.post("/steamcmd/download", requirePermission("server.install"), async (re
       io.emit("steamcmd:status", {
         status: "downloading",
         message: "Downloading SteamCMD for Linux...",
+        progressCode: ProgressCode.STEAMCMD_DOWNLOADING_LINUX,
       });
       log.info(`Downloading SteamCMD (Linux) to ${installPath}`);
 
@@ -2958,6 +3032,8 @@ router.post("/steamcmd/download", requirePermission("server.install"), async (re
             io.emit("steamcmd:status", {
               status: "error",
               message: `Download failed: ${dlErr.message}. Ensure curl or wget is installed.`,
+              progressCode: ProgressCode.STEAMCMD_DOWNLOAD_FAILED_LINUX,
+              params: { reason: dlErr.message },
             });
             log.error(`SteamCMD download failed: ${dlErr.message}`);
             return;
@@ -2972,6 +3048,7 @@ router.post("/steamcmd/download", requirePermission("server.install"), async (re
         io.emit("steamcmd:status", {
           status: "extracting",
           message: "Extracting SteamCMD...",
+          progressCode: ProgressCode.STEAMCMD_EXTRACTING,
         });
         log.info("Extracting SteamCMD...");
 
@@ -2991,6 +3068,8 @@ router.post("/steamcmd/download", requirePermission("server.install"), async (re
               io.emit("steamcmd:status", {
                 status: "error",
                 message: `Extraction failed: ${tarErr.message}`,
+                progressCode: ProgressCode.STEAMCMD_EXTRACTION_FAILED,
+                params: { reason: tarErr.message },
               });
               log.error(`SteamCMD extraction failed: ${tarErr.message}`);
               return;
@@ -3023,9 +3102,18 @@ router.post("/steamcmd/download", requirePermission("server.install"), async (re
                   log.warn(
                     "Could not verify 32-bit libraries. SteamCMD may fail if glibc.i686 / lib32gcc is not installed.",
                   );
+                  // Our own authored text, not SteamCMD's -- deliberately
+                  // NOT routed through emitRawSteamCmdLine(). It carries a
+                  // progressCode like every other authored line, on the
+                  // same event a raw line would use, which is exactly the
+                  // ambiguity that made this call site worth fixing: with
+                  // the helper split in place, a raw line physically
+                  // cannot carry a progressCode, so this one being
+                  // authored is now visible in the payload shape itself.
                   io.emit("steamcmd:log", {
                     type: "stderr",
                     text: "Warning: Could not verify 32-bit libraries. If SteamCMD fails, install: yum install glibc.i686 libstdc++.i686 (CentOS/RHEL) or apt install lib32gcc-s1 (Debian/Ubuntu)",
+                    progressCode: ProgressCode.STEAMCMD_32BIT_LIB_WARNING,
                   });
                 }
                 runFirstTimeSetup();
@@ -3040,6 +3128,7 @@ router.post("/steamcmd/download", requirePermission("server.install"), async (re
       io.emit("steamcmd:status", {
         status: "initializing",
         message: "Initializing SteamCMD (first run)...",
+        progressCode: ProgressCode.STEAMCMD_INITIALIZING,
       });
       log.info("Running SteamCMD first-time setup...");
 
@@ -3060,11 +3149,11 @@ router.post("/steamcmd/download", requirePermission("server.install"), async (re
       const steamcmd = spawn(steamcmdExe, ["+quit"], firstRunOpts);
 
       steamcmd.stdout.on("data", (data) => {
-        io.emit("steamcmd:log", { type: "stdout", text: data.toString() });
+        emitRawSteamCmdLine(io, "steamcmd:log", "stdout", data.toString());
       });
 
       steamcmd.stderr.on("data", (data) => {
-        io.emit("steamcmd:log", { type: "stderr", text: data.toString() });
+        emitRawSteamCmdLine(io, "steamcmd:log", "stderr", data.toString());
       });
 
       steamcmd.on("close", (code) => {
@@ -3073,12 +3162,15 @@ router.post("/steamcmd/download", requirePermission("server.install"), async (re
             status: "complete",
             message: "SteamCMD installed successfully!",
             path: installPath,
+            progressCode: ProgressCode.STEAMCMD_INSTALL_COMPLETE,
           });
           log.info(`SteamCMD installed successfully to ${installPath}`);
         } else {
           io.emit("steamcmd:status", {
             status: "error",
             message: `SteamCMD setup failed with code ${code}`,
+            progressCode: ProgressCode.STEAMCMD_SETUP_FAILED,
+            params: { code },
           });
           log.error(`SteamCMD first-run failed with code ${code}`);
         }
@@ -3088,6 +3180,8 @@ router.post("/steamcmd/download", requirePermission("server.install"), async (re
         io.emit("steamcmd:status", {
           status: "error",
           message: `Failed to run SteamCMD: ${sanitizeError(error.message)}`,
+          progressCode: ProgressCode.STEAMCMD_RUN_FAILED,
+          params: { reason: sanitizeError(error.message) },
         });
         log.error(`SteamCMD run error: ${error.message}`);
       });
