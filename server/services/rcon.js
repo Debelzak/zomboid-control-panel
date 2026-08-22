@@ -301,12 +301,36 @@ export class RconService extends EventEmitter {
       const targetServer = serverId
         ? await getServer(serverId)
         : await getActiveServer();
-      if (targetServer?.rconPassword) {
-        if (!this.passwordFromSecretFile) {
-          this.config.password = targetServer.rconPassword;
-        }
+      if (targetServer) {
+        // A configured server's host and port are the right target
+        // regardless of whether it has an RCON password set yet — a freshly
+        // added PZ server with no password configured is a completely
+        // normal state. Silently falling back to a different host/port here
+        // would make "wrong/missing password" and "no server configured at
+        // all" indistinguishable: both used to fall through to the
+        // hardcoded default and probe whatever else happened to be
+        // listening there. Whether we can authenticate is decided
+        // separately, below — it never changes WHERE we try to connect.
         this.config.host = normalizeRconHost(targetServer.rconHost);
         this.config.port = parseInt(targetServer.rconPort, 10) || 27015;
+
+        if (targetServer.rconPassword) {
+          if (!this.passwordFromSecretFile) {
+            this.config.password = targetServer.rconPassword;
+          }
+        } else if (!this.passwordFromSecretFile) {
+          // Don't carry over a stale password from a previously loaded
+          // server (e.g. after reloadConfig() on server switch) — a missing
+          // password is a real, visible state to report, not a value to
+          // silently inherit from whatever this instance last connected to.
+          this.config.password = "";
+          log.warn(
+            serverId
+              ? `Server ${serverId} has no RCON password set — connection attempts will fail authentication until one is configured`
+              : "Active server has no RCON password set — connection attempts will fail authentication until one is configured",
+          );
+        }
+
         log.info(
           serverId
             ? `config loaded for server ${serverId}`
@@ -341,6 +365,36 @@ export class RconService extends EventEmitter {
       this.configLoaded = true;
     } catch (error) {
       log.debug(`Could not load RCON config from database: ${error.message}`);
+    }
+  }
+
+  // Is there an actual RCON target on record — a server row (any server ever
+  // added, active or not) or the legacy global rcon* settings some installs
+  // still rely on? Deliberately NEVER memoized, unlike loadConfig()/
+  // configLoaded above: this is checked fresh on every connection attempt so
+  // that adding a first server while the panel is already running is picked
+  // up on the very next reconnect tick, without needing reloadConfig() to be
+  // called by whatever route created it, or a panel restart.
+  // Without this check, "nothing configured" and "configured but wrong"
+  // are indistinguishable to a caller — both used to fall through to the
+  // hardcoded default host/port and attempt authentication against whatever
+  // unrelated process happened to be listening there.
+  async hasConfiguredTarget() {
+    try {
+      if (await getActiveServer()) return true;
+    } catch (e) {
+      log.debug(`hasConfiguredTarget: active server lookup failed: ${e.message}`);
+    }
+    try {
+      const [dbHost, dbPort, dbPassword] = await Promise.all([
+        getSetting("rconHost"),
+        getSetting("rconPort"),
+        getSetting("rconPassword"),
+      ]);
+      return Boolean(dbHost || dbPort || dbPassword);
+    } catch (e) {
+      log.debug(`hasConfiguredTarget: legacy settings lookup failed: ${e.message}`);
+      return false;
     }
   }
 
@@ -474,6 +528,18 @@ export class RconService extends EventEmitter {
   async _doConnect() {
     // Capture current version at start - if it changes, this attempt is stale
     const startVersion = this.connectionVersion;
+
+    // Nothing to connect to yet — the normal state for a fresh install, and
+    // for the 60s auto-reconnect interval every time it ticks before a
+    // server has been added. Checked before loadConfig() so we never even
+    // populate this.config with the hardcoded default in this case, let
+    // alone probe/authenticate against whatever else might hold that port.
+    if (!(await this.hasConfiguredTarget())) {
+      log.debug(
+        "No RCON server configured yet — skipping connection attempt",
+      );
+      return false;
+    }
 
     // Load config from database before connecting
     await this.loadConfig();

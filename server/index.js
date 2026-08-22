@@ -954,13 +954,20 @@ async function tryStartPanelBridge(trigger = "unknown") {
 }
 
 // Auto-start PanelBridge when RCON connects (secondary trigger)
+// An async EventEmitter listener that rejects becomes an unhandled rejection,
+// which reaches process.on("unhandledRejection") and kills the panel — so
+// this is wrapped the same way the sibling "disconnected" handler below is.
 rconService.on("connected", async () => {
-  log.info("RCON connected - checking PanelBridge...");
-  rconConnectedAt = Date.now();
-  // Whoever is online at reconnect was not necessarily a new arrival.
-  lastPlayerList = [];
-  playerBaselineReady = false;
-  await tryStartPanelBridge("rcon-connected");
+  try {
+    log.info("RCON connected - checking PanelBridge...");
+    rconConnectedAt = Date.now();
+    // Whoever is online at reconnect was not necessarily a new arrival.
+    lastPlayerList = [];
+    playerBaselineReady = false;
+    await tryStartPanelBridge("rcon-connected");
+  } catch (err) {
+    log.debug(`RCON-connected PanelBridge check failed: ${err.message}`);
+  }
 });
 
 rconService.on("disconnected", async () => {
@@ -2067,6 +2074,64 @@ function startStatusWatchdog() {
   log.info("Server status watchdog started (10s interval)");
 }
 
+// Process detection can fail with wrappers (WinGSM) or restricted permissions.
+// When that happens on startup, probe the RCON port directly as a fallback so we
+// don't wait 60s for auto-reconnect. This only makes sense for a server the
+// operator actually configured — without one, "host/port" is just the hardcoded
+// default, and probing it means repeatedly trying to authenticate against
+// whatever unrelated process happens to hold that port on the host.
+// Exported for testing. `rconServiceInstance` is injected so tests can pass a
+// stub instead of the real singleton; production always calls it with `rconService`.
+// Returns whether the RCON port was found occupied.
+export async function probeRconFallbackIfConfigured(
+  activeServer,
+  rconServiceInstance,
+  timeoutMs,
+) {
+  if (!activeServer) {
+    log.debug(
+      "No server configured yet — skipping RCON port fallback probe",
+    );
+    return false;
+  }
+
+  let rconPortOccupied = false;
+  try {
+    await rconServiceInstance.loadConfig();
+    const rconHost = rconServiceInstance.config.host || "127.0.0.1";
+    const rconPort = rconServiceInstance.config.port || 27015;
+    const portOpen = await rconServiceInstance.checkPortOpen(
+      rconHost,
+      rconPort,
+    );
+    if (portOpen) {
+      rconPortOccupied = true;
+      log.info(
+        `RCON port ${rconHost}:${rconPort} is open even though process check failed — connecting...`,
+      );
+      try {
+        await Promise.race([
+          rconServiceInstance.connect(),
+          new Promise((_, reject) =>
+            setTimeout(
+              () => reject(new Error("RCON connection timeout")),
+              timeoutMs,
+            ),
+          ),
+        ]);
+        if (rconServiceInstance.connected) {
+          log.info("RCON connected via port fallback probe");
+        }
+      } catch (e) {
+        log.debug(`Fallback RCON connect failed: ${e.message}`);
+      }
+    }
+  } catch (e) {
+    log.debug(`Fallback RCON probe error: ${e.message}`);
+  }
+  return rconPortOccupied;
+}
+
 // Initialize and start server
 async function start() {
   try {
@@ -2337,42 +2402,11 @@ async function start() {
         } else {
           log.info("PZ server not detected running on startup");
 
-          // Process detection can fail with wrappers (WinGSM) or restricted permissions.
-          // Probe the RCON port directly as a fallback so we don't wait 60s for auto-reconnect.
-          let rconPortOccupied = false;
-          try {
-            await rconService.loadConfig();
-            const rconHost = rconService.config.host || "127.0.0.1";
-            const rconPort = rconService.config.port || 27015;
-            const portOpen = await rconService.checkPortOpen(
-              rconHost,
-              rconPort,
-            );
-            if (portOpen) {
-              rconPortOccupied = true;
-              log.info(
-                `RCON port ${rconHost}:${rconPort} is open even though process check failed — connecting...`,
-              );
-              try {
-                await Promise.race([
-                  rconService.connect(),
-                  new Promise((_, reject) =>
-                    setTimeout(
-                      () => reject(new Error("RCON connection timeout")),
-                      timeoutMs,
-                    ),
-                  ),
-                ]);
-                if (rconService.connected) {
-                  log.info("RCON connected via port fallback probe");
-                }
-              } catch (e) {
-                log.debug(`Fallback RCON connect failed: ${e.message}`);
-              }
-            }
-          } catch (e) {
-            log.debug(`Fallback RCON probe error: ${e.message}`);
-          }
+          const rconPortOccupied = await probeRconFallbackIfConfigured(
+            activeServer,
+            rconService,
+            timeoutMs,
+          );
 
           // Check if auto-start is enabled
           const autoStartServer = await getSetting("autoStartServer");
@@ -2726,6 +2760,26 @@ async function start() {
   }
 }
 
-start();
+// Skip the real auto-start when this module is imported by the test runner
+// (Vitest sets process.env.VITEST) — otherwise merely importing a function for
+// unit testing would spin up the whole Express app, sockets and timers as a
+// side effect. Vitest sets this var; it's never set in a real deployment, so
+// production startup is unaffected.
+//
+// The more precise "was I run directly" ESM entry-point idiom (comparing
+// process.argv[1] against this file, e.g. via path.resolve/realpathSync) was
+// considered instead, since it asks the question we actually mean rather
+// than inferring it from a test-runner env var. It's deliberately NOT used
+// here: this app also ships as a pkg-bundled executable (see build.js /
+// `npm run build:exe`, and utils/paths.js's own isPkg check above), where
+// process.argv[1] and import.meta.url don't behave like a normal on-disk
+// module — pkg snapshots the filesystem and rewrites module resolution, and
+// that comparison is a known trouble spot in bundled builds. Getting it
+// wrong there would mean the *packaged app* — the primary way operators run
+// this — silently never calls start(). A stray VITEST=true in a real
+// deployment is a far more contained and unlikely failure than that.
+if (!process.env.VITEST) {
+  start();
+}
 
 export { io };

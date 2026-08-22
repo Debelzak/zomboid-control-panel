@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **RCON reconnect targeting**: a panel with no server configured no longer repeatedly attempts RCON
+  logins against whatever happens to be listening on the default port, and once a server is added it
+  is targeted correctly — including one that has no RCON password set yet — instead of silently
+  falling back to defaults. A server added while the panel is running is picked up on the next
+  reconnect attempt, with no restart.
+
+- **RCON reconnect stability**: a failure while automatically restarting Panel Bridge after RCON
+  reconnects no longer has a path to crash the entire panel process.
+
 - **Server-running detection after a panel restart**: the panel now remembers the process it started
   and rechecks that one directly first, falling back to the full host-wide process scan whenever
   there is any doubt — the process died, or its command line no longer matches. Recognizing an
