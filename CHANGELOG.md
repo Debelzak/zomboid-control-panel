@@ -8,6 +8,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **A Users screen, and a new Access Control section in the menu**: there is now a screen listing
+  everyone who can sign in to the panel, and a form to add someone. The role picker offers every
+  role that actually exists on your panel, including ones you created yourself, rather than only
+  the three built-in ones. Users and Roles & Permissions have moved out of Settings & Tools into
+  their own Access Control section, since managing who can do what is not a tool.
+
+  **There is still no way to delete a user from this screen** - the server has no endpoint for it
+  yet, and a button that does nothing is worse than no button. It is being built next.
+
+- **Single sign-on can be set up from the panel instead of environment variables**: OIDC (Google,
+  Authentik, Keycloak, Azure AD and anything else that speaks the standard) previously had to be
+  configured by editing environment variables and restarting. It can now be configured from
+  Settings, and the change takes effect immediately without a restart. There is a Test Connection
+  button that checks your provider is reachable before you commit to the settings.
+
+  The redirect URI - the one value your identity provider needs and that you cannot guess - is
+  shown to you, worked out from the address you are actually using to reach the panel, so it is
+  correct behind a reverse proxy. The client secret is stored outside the main database and is
+  never sent back to the browser, not even masked. If you had already set any of this through
+  environment variables, those still win, per field, so nothing you pinned deliberately gets
+  overridden.
 - **The parts of the panel that appear on every screen are now in French too**: the
   connection-status indicator, the server and PanelBridge status badges, the disk-space warning
   banner, both crash-recovery screens, the keyboard shortcuts dialog, the folder browser, the
