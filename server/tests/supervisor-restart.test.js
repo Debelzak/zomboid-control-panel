@@ -243,6 +243,55 @@ describe.skipIf(!!skipReason)(
     );
 
     it(
+      "does not relaunch or crash-loop a deliberate refusal (code 78) -- retrying is pointless when another instance already holds the lock",
+      async () => {
+        // 78 is the dedicated exit code server/index.js uses when pidLock
+        // refuses a second instance. Before this, that refusal used the
+        // generic exit code 1, indistinguishable here from a real crash --
+        // Start.bat would retry it 5 times with backoff and finish with
+        // "Gave up after N rapid crashes", even though the panel behaved
+        // correctly and identically every single time. Confirmed with the
+        // real exe: the refusal message itself is printed correctly and
+        // immediately; this is purely about not then treating it as a crash.
+        const dir = freshScenarioDir("refused-second-instance");
+        await writeStartBatInto(dir);
+        setupStub(dir, [78], [0]);
+
+        const result = await runSupervisor(dir, {}, 30000);
+
+        expect(countLaunches(result.stdout)).toBe(1);
+        expect(result.status).toBe(78);
+        const log = readSupervisorLog(dir);
+        expect(log).not.toMatch(/relaunch attempt/i);
+        expect(log).not.toMatch(/Gave up/i);
+      },
+      45000,
+    );
+
+    it(
+      "does not assert a URL it cannot actually know -- the panel prints its own real one",
+      async () => {
+        // Start.bat used to print "Open your browser to: http://localhost:3001"
+        // before the panel had even bound a port. The panel falls back to a
+        // free port when 3001 is taken, and that fallback is PERSISTED, so a
+        // hardcoded guess here goes stale forever the first time it ever
+        // fires -- a second source of truth is exactly how this class of bug
+        // (the product asserting something false about itself) comes back.
+        // server/index.js already logs the real bound URL once it's ready;
+        // Start.bat must defer to that, not compute its own answer.
+        const dir = freshScenarioDir("no-hardcoded-url");
+        await writeStartBatInto(dir);
+        setupStub(dir, [0], [0]);
+
+        const result = await runSupervisor(dir, {}, 30000);
+
+        expect(result.status).toBe(0);
+        expect(result.stdout).not.toMatch(/localhost:3001/);
+      },
+      45000,
+    );
+
+    it(
       "relaunches once after a crash, then stops cleanly once the panel recovers",
       async () => {
         const dir = freshScenarioDir("recover-after-crash");

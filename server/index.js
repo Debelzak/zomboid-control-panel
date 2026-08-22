@@ -2419,7 +2419,12 @@ async function start() {
         log.error(
           `If you're sure no other panel is running, delete ${lockResult.lockPath} and try again.`,
         );
-        process.exit(1);
+        // Dedicated exit code (not the generic 1) so Start.bat's supervisor
+        // can tell "deliberately refused, retrying is pointless" apart from
+        // a real crash -- retrying this exact condition is guaranteed to
+        // fail identically every time, so it must not enter the crash-loop
+        // backoff/relaunch path the way an unrecovered crash should.
+        process.exit(78);
       }
     } catch (err) {
       log.warn(`Lock check skipped: ${err.message}`);

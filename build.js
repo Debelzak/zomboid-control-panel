@@ -257,7 +257,7 @@ if not exist "%LOG_DIR%" mkdir "%LOG_DIR%" >nul 2>&1
 call :stamp "Supervisor v2 starting"
 
 echo Starting Zomboid Control Panel...
-echo Open your browser to: http://localhost:3001
+echo (the panel will print the URL to open once it is ready)
 echo.
 
 :run_loop
@@ -293,6 +293,18 @@ echo.
     echo Panel requested restart for update. Applying...
     echo.
     goto run_loop
+  )
+
+  rem Exit code 78 = another panel instance already holds the lock. The
+  rem panel already printed exactly which PID and what to do about it;
+  rem retrying is guaranteed to fail identically every time, so this stops
+  rem here instead of entering the crash-loop backoff -- retrying (and
+  rem eventually "giving up") would misrepresent a working refusal as a
+  rem string of crashes.
+  if "!EXITCODE!"=="78" (
+    echo.
+    pause
+    exit /b 78
   )
 
   rem If a marker appeared during runtime (panel wrote it but then crashed
