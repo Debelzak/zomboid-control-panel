@@ -1101,13 +1101,17 @@ router.get("/ping", async (req, res) => {
   }
 });
 
-// Send a command to the game. Admin-gated for consistency with the other
-// powerful/destructive routes (backup restore, chunk deletion, server wipe)
-// — this is the generic passthrough for ANY PanelBridge handler (teleport,
-// giveItem, character import/export, horde spawning, etc.), not just the
-// curated preset buttons in the Events UI. Every account is currently
-// created as 'admin' (see auth.js), so this has no effect today, but keeps
-// the route safe if a lower-privilege role is ever introduced.
+// Send a command to the game. Gated on bridge.command for consistency with
+// the other powerful/destructive routes (backup restore, chunk deletion,
+// server wipe) — this is the generic passthrough for ANY PanelBridge
+// handler (teleport, giveItem, character import/export, horde spawning,
+// etc.), not just the curated preset buttons in the Events UI. Neither
+// technician nor moderator holds bridge.command in the default role seed
+// (see permissions.js's DEFAULT_ROLE_CAPABILITIES) — only admin does,
+// automatically, by holding every capability. This gate is live and doing
+// real work today: roles are data now, an operator can create a custom
+// role and grant it bridge.command deliberately, and this is exactly what
+// stops that role also getting the unrestricted passthrough by accident.
 router.post("/command", requirePermission("bridge.command"), async (req, res) => {
   const activeServer = await getActiveServer();
   if (activeServer?.isRemote && !bridge.isSftpRunning() && !bridge.isRunning) {
