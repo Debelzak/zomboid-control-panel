@@ -552,19 +552,31 @@ export class BackupService {
   }
 
   /**
-   * Clean up old backups based on maxBackups setting
+   * Clean up old backups based on maxBackups setting.
+   *
+   * Uploaded archives (see routes/backup.js's /upload comment -- stored
+   * with an "uploaded-" prefix precisely so they can be told apart here)
+   * are exempt from this automatic, unattended prune, full stop -- they
+   * are never counted toward maxBackups and never selected for deletion.
+   * This runs on a schedule with nobody watching; an operator who
+   * uploaded an archive specifically to preserve it must not lose it
+   * just because enough panel-created backups piled up around it.
+   * deleteBackupsOlderThan is the other pruning path and is a deliberate
+   * choice: it is operator-initiated, not automatic, so it does the
+   * opposite and includes uploads -- see its own comment.
    */
   async cleanupOldBackups() {
     try {
       const settings = await this.getSettings();
       const backups = await this.listBackups();
+      const prunable = backups.filter((b) => !b.name.startsWith("uploaded-"));
 
-      if (backups.length <= settings.maxBackups) {
+      if (prunable.length <= settings.maxBackups) {
         return;
       }
 
       // Delete oldest backups
-      const toDelete = backups.slice(settings.maxBackups);
+      const toDelete = prunable.slice(settings.maxBackups);
       for (const backup of toDelete) {
         const deleted = await this.deleteBackup(backup.name);
         if (!deleted?.success) {
@@ -581,7 +593,16 @@ export class BackupService {
   }
 
   /**
-   * Delete backups older than X days
+   * Delete backups older than X days -- operator-initiated (the route
+   * requires a human to submit a days value), unlike cleanupOldBackups
+   * which fires unattended on a schedule. Deliberately does NOT exempt
+   * uploaded archives: an explicit "delete everything older than X days"
+   * reasonably means what it says. Automatic pruning must never surprise
+   * an operator by taking something they deliberately preserved;
+   * an explicit bulk delete they typed in themselves is a choice they
+   * made, not a surprise. To keep a specific upload past a bulk cutoff,
+   * delete everything else and re-upload it, or use DELETE /:name to
+   * remove other backups by exact name instead of by age.
    */
   async deleteBackupsOlderThan(days) {
     try {
