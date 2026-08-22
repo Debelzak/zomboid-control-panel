@@ -143,12 +143,26 @@ describe("panelBridge.js: POST /command stays admin-only (unchanged, whitelist-f
   });
 });
 
-describe("panelBridge.js: curated in-game GM tools + read-only status stay open to every role", () => {
-  const OPEN = [
+describe("panelBridge.js: /status, /ping, /server-info, /commands stay outside the matrix entirely", () => {
+  const TRULY_UNGATED = [
     ["/status", "get"],
     ["/ping", "get"],
-    ["/weather", "get"],
     ["/server-info", "get"],
+    ["/commands", "get"],
+  ];
+
+  it.each(TRULY_UNGATED)("%s %s has no requirePermission gate ahead of its handler", async (routePath, method) => {
+    const { default: router } = await import("../routes/panelBridge.js");
+    const layer = router.stack.find(
+      (entry) => entry.route?.path === routePath && entry.route.methods[method],
+    );
+    expect(layer.route.stack.length).toBe(1);
+  });
+});
+
+describe("panelBridge.js: server.world_events (world-wide GM effects, folded in from previously-ungated) -- open to every role", () => {
+  const WORLD_EVENTS_ROUTES = [
+    ["/weather", "get"],
     ["/weather/blizzard", "post"],
     ["/weather/tropical-storm", "post"],
     ["/weather/storm", "post"],
@@ -168,17 +182,7 @@ describe("panelBridge.js: curated in-game GM tools + read-only status stay open 
     ["/time", "get"],
     ["/time", "post"],
     ["/world/stats", "get"],
-    ["/players", "get"],
-    ["/players/:username", "get"],
-    ["/players/:username/teleport", "post"],
-    ["/players/:username/give-item", "post"],
-    ["/players/:username/heal", "post"],
-    ["/players/:username/kill", "post"],
-    ["/players/:username/godmode", "post"],
-    ["/players/:username/invisible", "post"],
     ["/message", "post"],
-    ["/sandbox", "get"],
-    ["/commands", "get"],
     ["/sound/world", "post"],
     ["/sound/near-player", "post"],
     ["/sound/gunshot", "post"],
@@ -187,8 +191,6 @@ describe("panelBridge.js: curated in-game GM tools + read-only status stay open 
     ["/utilities/status", "get"],
     ["/utilities/restore", "post"],
     ["/utilities/shutoff", "post"],
-    ["/character/export", "post"],
-    ["/character/import", "post"],
     ["/zombies/count", "get"],
     ["/zombies/clear-near-player", "post"],
     ["/zombies/clear-all", "post"],
@@ -203,15 +205,47 @@ describe("panelBridge.js: curated in-game GM tools + read-only status stay open 
     ["/chat/admin", "post"],
     ["/chat/general", "post"],
     ["/chat/alert", "post"],
+  ];
+
+  it.each(WORLD_EVENTS_ROUTES)("does not refuse a moderator on %s %s", async (routePath, method) => {
+    const { default: router } = await import("../routes/panelBridge.js");
+    const { calledNext } = await runGate(router, routePath, method, "moderator");
+    expect(calledNext).toBe(true);
+  });
+
+  it.each(WORLD_EVENTS_ROUTES)("does not refuse a technician on %s %s", async (routePath, method) => {
+    const { default: router } = await import("../routes/panelBridge.js");
+    const { calledNext } = await runGate(router, routePath, method, "technician");
+    expect(calledNext).toBe(true);
+  });
+});
+
+describe("panelBridge.js: players.gm_tools (player-targeted actions + supporting reads, folded in from previously-ungated) -- open to every role", () => {
+  const GM_TOOLS_ROUTES = [
+    ["/players", "get"],
+    ["/players/:username", "get"],
+    ["/players/:username/teleport", "post"],
+    ["/players/:username/give-item", "post"],
+    ["/players/:username/heal", "post"],
+    ["/players/:username/kill", "post"],
+    ["/players/:username/godmode", "post"],
+    ["/players/:username/invisible", "post"],
+    ["/sandbox", "get"],
+    ["/character/export", "post"],
+    ["/character/import", "post"],
     ["/catalog/items", "get"],
     ["/catalog/vehicles", "get"],
   ];
 
-  it.each(OPEN)("%s %s has no requireRole gate ahead of its handler", async (routePath, method) => {
+  it.each(GM_TOOLS_ROUTES)("does not refuse a moderator on %s %s", async (routePath, method) => {
     const { default: router } = await import("../routes/panelBridge.js");
-    const layer = router.stack.find(
-      (entry) => entry.route?.path === routePath && entry.route.methods[method],
-    );
-    expect(layer.route.stack.length).toBe(1);
+    const { calledNext } = await runGate(router, routePath, method, "moderator");
+    expect(calledNext).toBe(true);
+  });
+
+  it.each(GM_TOOLS_ROUTES)("does not refuse a technician on %s %s", async (routePath, method) => {
+    const { default: router } = await import("../routes/panelBridge.js");
+    const { calledNext } = await runGate(router, routePath, method, "technician");
+    expect(calledNext).toBe(true);
   });
 });

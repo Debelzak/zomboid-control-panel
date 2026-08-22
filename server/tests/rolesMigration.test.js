@@ -77,11 +77,15 @@ describe("database/init.js schema v2 migration: roles collection + user.roleId",
       ]),
     );
 
-    // moderator: exactly the players.* trio -- nothing else. Matches the
-    // single blanket router.use(requireRole(admin,tech,mod)) in players.js;
-    // no other requireRole call site anywhere in the app includes moderator.
+    // moderator: the players.* trio (matches the single blanket
+    // router.use(requireRole(admin,tech,mod)) players.js had before its
+    // three-way split) plus server.world_events -- the ~150 routes that
+    // were reachable by any signed-in role with NO gate at all (weather,
+    // zombie hordes, broadcast messages) were folded in and granted to all
+    // three default roles by explicit ruling ("adding a capability is not
+    // restricting it"), not narrowed to admin+technician only.
     expect(moderator.capabilities.slice().sort()).toEqual(
-      ["players.gm_tools", "players.moderate", "players.view"].sort(),
+      ["players.gm_tools", "players.moderate", "players.view", "server.world_events"].sort(),
     );
 
     const users = data.users;

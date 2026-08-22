@@ -665,8 +665,18 @@ export LD_LIBRARY_PATH="\${INSTDIR}/natives/:\${INSTDIR}/natives/linux64/:\${INS
 // update the game, edit its .ini config, browse the filesystem to set that
 // up) vs. what's read-only status/info or in-game/GM authority that every
 // role legitimately uses. Wipe and delete-files stay admin-only, unchanged.
-// Everything left unguarded below is a deliberate decision, not an
-// oversight -- see the comments at each group.
+//
+// UPDATE: the weather/events/alarm/message/removezombies/releasesafehouse
+// group below, previously left open with no gate at all (every signed-in
+// role reached them, same as any other GM tool), is now
+// requirePermission("server.world_events") -- folded into the matrix and
+// granted to admin+technician+moderator by default, so this is a zero-
+// behaviour-change addition, not a restriction (adding a capability isn't
+// narrowing anything). Only /status and /network-interfaces stay
+// deliberately outside the matrix entirely: dashboard-wide reads that
+// protect nothing if gated and can break a screen for a role if mis-set.
+// Everything left unguarded below is that deliberate exception, not an
+// oversight.
 
 // Get server status
 router.get("/status", async (req, res) => {
@@ -1109,7 +1119,7 @@ router.post("/save", requirePermission("server.control"), async (req, res) => {
 // safehouse), the same territory as players.js, not server operation.
 
 // Send server message
-router.post("/message", async (req, res) => {
+router.post("/message", requirePermission("server.world_events"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
     const { message } = req.body;
@@ -1136,7 +1146,7 @@ router.post("/message", async (req, res) => {
 });
 
 // Weather controls
-router.post("/weather/start-rain", async (req, res) => {
+router.post("/weather/start-rain", requirePermission("server.world_events"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
     const { intensity } = req.body;
@@ -1147,7 +1157,7 @@ router.post("/weather/start-rain", async (req, res) => {
   }
 });
 
-router.post("/weather/stop-rain", async (req, res) => {
+router.post("/weather/stop-rain", requirePermission("server.world_events"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
     const result = await rconService.stopRain();
@@ -1157,7 +1167,7 @@ router.post("/weather/stop-rain", async (req, res) => {
   }
 });
 
-router.post("/weather/start-storm", async (req, res) => {
+router.post("/weather/start-storm", requirePermission("server.world_events"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
     const { duration } = req.body;
@@ -1168,7 +1178,7 @@ router.post("/weather/start-storm", async (req, res) => {
   }
 });
 
-router.post("/weather/stop", async (req, res) => {
+router.post("/weather/stop", requirePermission("server.world_events"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
     const result = await rconService.stopWeather();
@@ -1179,7 +1189,7 @@ router.post("/weather/stop", async (req, res) => {
 });
 
 // Events
-router.post("/events/chopper", async (req, res) => {
+router.post("/events/chopper", requirePermission("server.world_events"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
     const result = await rconService.triggerChopper();
@@ -1189,7 +1199,7 @@ router.post("/events/chopper", async (req, res) => {
   }
 });
 
-router.post("/events/gunshot", async (req, res) => {
+router.post("/events/gunshot", requirePermission("server.world_events"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
     const result = await rconService.triggerGunshot();
@@ -1199,7 +1209,7 @@ router.post("/events/gunshot", async (req, res) => {
   }
 });
 
-router.post("/events/lightning", async (req, res) => {
+router.post("/events/lightning", requirePermission("server.world_events"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
     const { username } = req.body;
@@ -1213,7 +1223,7 @@ router.post("/events/lightning", async (req, res) => {
   }
 });
 
-router.post("/events/thunder", async (req, res) => {
+router.post("/events/thunder", requirePermission("server.world_events"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
     const { username } = req.body;
@@ -1227,7 +1237,7 @@ router.post("/events/thunder", async (req, res) => {
   }
 });
 
-router.post("/events/horde", async (req, res) => {
+router.post("/events/horde", requirePermission("server.world_events"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
     const { count, username } = req.body;
@@ -1251,7 +1261,7 @@ const FALLBACK_BRANCHES = [
   { name: "legacy41", description: "Legacy Build 41 branch for older worlds and mods." },
 ];
 
-router.get("/steamcmd/detect", async (_req, res) => {
+router.get("/steamcmd/detect", requirePermission("server.world_events"), async (_req, res) => {
   try {
     const steamcmdPath = await findSteamCmdPath();
     if (!steamcmdPath) {
@@ -2358,7 +2368,7 @@ router.post("/configure-network", requirePermission("server.configure"), async (
 });
 
 // Alarm - sound building alarm
-router.post("/alarm", async (req, res) => {
+router.post("/alarm", requirePermission("server.world_events"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
     const result = await rconService.alarm();
@@ -2371,7 +2381,7 @@ router.post("/alarm", async (req, res) => {
 });
 
 // Remove zombies
-router.post("/removezombies", async (req, res) => {
+router.post("/removezombies", requirePermission("server.world_events"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
     const result = await rconService.removeZombies();
@@ -2503,7 +2513,7 @@ router.post("/stats", requirePermission("server.configure"), async (req, res) =>
 });
 
 // Release safehouse
-router.post("/releasesafehouse", async (req, res) => {
+router.post("/releasesafehouse", requirePermission("server.world_events"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
     const result = await rconService.releaseSafehouse();
@@ -3472,7 +3482,7 @@ function filterConsoleLogLines(lines, filterLevel = "filtered") {
 }
 
 // Get server console log content
-router.get("/console-log", async (req, res) => {
+router.get("/console-log", requirePermission("server.world_events"), async (req, res) => {
   try {
     const activeServer = await getActiveServer();
     // server-console.txt is in zomboidDataPath (where Server/, Saves/, Logs/ are)
@@ -3558,7 +3568,7 @@ router.get("/console-log", async (req, res) => {
 let errorCountCache = { at: 0, value: null };
 const ERROR_COUNT_TTL_MS = 20000;
 
-router.get("/console-log/error-count", async (req, res) => {
+router.get("/console-log/error-count", requirePermission("server.world_events"), async (req, res) => {
   try {
     const now = Date.now();
     if (errorCountCache.value && now - errorCountCache.at < ERROR_COUNT_TTL_MS) {
@@ -3636,7 +3646,7 @@ router.get("/console-log/error-count", async (req, res) => {
 });
 
 // Stream server console log (long-polling for new content)
-router.get("/console-log/stream", async (req, res) => {
+router.get("/console-log/stream", requirePermission("server.world_events"), async (req, res) => {
   try {
     const activeServer = await getActiveServer();
     // server-console.txt is in zomboidDataPath (where Server/, Saves/, Logs/ are)
@@ -3752,7 +3762,7 @@ router.post("/console-log/clear", requirePermission("server.configure"), async (
 // ==================== UPDATE CHECKER ROUTES ====================
 
 // Check for server updates
-router.get("/update-check", async (req, res) => {
+router.get("/update-check", requirePermission("server.world_events"), async (req, res) => {
   try {
     const updateChecker = req.app.get("updateChecker");
     if (!updateChecker) {
@@ -3774,7 +3784,7 @@ router.get("/update-check", async (req, res) => {
 });
 
 // Get update checker status
-router.get("/update-check/status", async (req, res) => {
+router.get("/update-check/status", requirePermission("server.world_events"), async (req, res) => {
   try {
     const updateChecker = req.app.get("updateChecker");
     if (!updateChecker) {

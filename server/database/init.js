@@ -108,6 +108,7 @@ const MIGRATION_V2_TECHNICIAN_CAPABILITIES = [
   "server.control",
   "server.install",
   "server.configure",
+  "server.world_events",
   "rcon.execute",
   "servers.manage",
   "templates.manage",
@@ -127,6 +128,7 @@ const MIGRATION_V2_MODERATOR_CAPABILITIES = [
   "players.moderate",
   "players.gm_tools",
   "players.view",
+  "server.world_events",
 ];
 const MIGRATION_V2_ADMIN_CAPABILITIES = [
   "users.manage",
@@ -137,6 +139,7 @@ const MIGRATION_V2_ADMIN_CAPABILITIES = [
   "server.install",
   "server.configure",
   "server.wipe",
+  "server.world_events",
   "rcon.execute",
   "servers.manage",
   "servers.discover",
@@ -1738,7 +1741,15 @@ export async function reassignRoleMembers(fromRole, toRole) {
       user.roleId === fromRole.id || (fromRole.isSeeded && user.role === fromRole.name);
     if (!matches) continue;
     user.roleId = toRole.id;
-    if (toRole.isSeeded) user.role = toRole.name;
+    // No isSeeded condition: requirePermission() resolves capabilities via
+    // getRoleByName(req.user.role) -- roleId is dual-written but read by
+    // nothing yet (see the migration's own comment). Only updating .role
+    // for a seeded target left it stale for a custom one, so every request
+    // from a reassigned user kept authorizing against their OLD role
+    // indefinitely -- fail-open on the one operation whose entire purpose
+    // is taking access away. Found by Kevin reading this function; the fix
+    // is that .role always becomes the target's exact .name, seeded or not.
+    user.role = toRole.name;
     count++;
   }
   if (count > 0) scheduleWrite();

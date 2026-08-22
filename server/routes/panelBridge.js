@@ -231,6 +231,21 @@ function isValidBridgePath(inputPath) {
   return !BLOCKED_BRIDGE_PATH_PREFIXES.some((p) => lower.startsWith(p));
 }
 
+// The 60 curated in-game GM/world routes below (weather, climate, time,
+// sound, zombies, visual, chat, utilities, character export/import,
+// teleport/give-item/heal/kill/godmode/invisible, plus /message) were
+// previously reachable by any signed-in role with no gate at all. Folded
+// into the matrix now, split by target: world-wide effects (weather,
+// climate, zombies, sound, visual, utilities, chat, /message, /time,
+// /world/stats) are requirePermission("server.world_events"); actions
+// aimed at a specific player or character, plus the read-only catalogue/
+// sandbox reads that support them, are requirePermission("players.gm_tools")
+// -- the same capability players.js's own teleport/give-item-equivalent
+// routes use. Both default to admin+technician+moderator, so this is a
+// zero-behaviour-change addition (adding a capability, not restricting
+// one). /status, /ping, /server-info and /commands stay deliberately
+// outside the matrix -- see server.js's equivalent comment for why.
+
 // Get bridge status
 router.get("/status", async (req, res) => {
   const status = bridge.getStatus();
@@ -1271,7 +1286,7 @@ router.post("/command", requirePermission("bridge.command"), async (req, res) =>
 });
 
 // Get weather info
-router.get("/weather", async (req, res) => {
+router.get("/weather", requirePermission("server.world_events"), async (req, res) => {
   if (!bridge.bridgePath) {
     return res.status(400).json({ error: "Bridge not configured" });
   }
@@ -1313,7 +1328,7 @@ router.get("/server-info", async (req, res) => {
 });
 
 // Weather control endpoints
-router.post("/weather/blizzard", async (req, res) => {
+router.post("/weather/blizzard", requirePermission("server.world_events"), async (req, res) => {
   if (!bridge.isRunning) {
     return res
       .status(400)
@@ -1328,7 +1343,7 @@ router.post("/weather/blizzard", async (req, res) => {
   }
 });
 
-router.post("/weather/tropical-storm", async (req, res) => {
+router.post("/weather/tropical-storm", requirePermission("server.world_events"), async (req, res) => {
   if (!bridge.isRunning) {
     return res
       .status(400)
@@ -1343,7 +1358,7 @@ router.post("/weather/tropical-storm", async (req, res) => {
   }
 });
 
-router.post("/weather/storm", async (req, res) => {
+router.post("/weather/storm", requirePermission("server.world_events"), async (req, res) => {
   if (!bridge.isRunning) {
     return res
       .status(400)
@@ -1369,7 +1384,7 @@ router.post("/weather/storm", async (req, res) => {
   }
 });
 
-router.post("/weather/stop", async (req, res) => {
+router.post("/weather/stop", requirePermission("server.world_events"), async (req, res) => {
   if (!bridge.isRunning) {
     return res
       .status(400)
@@ -1384,7 +1399,7 @@ router.post("/weather/stop", async (req, res) => {
 });
 
 // Generate weather period
-router.post("/weather/generate", async (req, res) => {
+router.post("/weather/generate", requirePermission("server.world_events"), async (req, res) => {
   if (!bridge.isRunning) {
     return res
       .status(400)
@@ -1420,7 +1435,7 @@ router.post("/weather/generate", async (req, res) => {
   }
 });
 
-router.post("/weather/snow", async (req, res) => {
+router.post("/weather/snow", requirePermission("server.world_events"), async (req, res) => {
   if (!bridge.isRunning) {
     return res
       .status(400)
@@ -1450,7 +1465,7 @@ router.post("/weather/snow", async (req, res) => {
 // =============================================
 
 // Rain control
-router.post("/weather/rain/start", async (req, res) => {
+router.post("/weather/rain/start", requirePermission("server.world_events"), async (req, res) => {
   if (!bridge.isRunning) {
     return res
       .status(400)
@@ -1474,7 +1489,7 @@ router.post("/weather/rain/start", async (req, res) => {
   }
 });
 
-router.post("/weather/rain/stop", async (req, res) => {
+router.post("/weather/rain/stop", requirePermission("server.world_events"), async (req, res) => {
   if (!bridge.isRunning) {
     return res
       .status(400)
@@ -1489,7 +1504,7 @@ router.post("/weather/rain/stop", async (req, res) => {
 });
 
 // Lightning
-router.post("/weather/lightning", async (req, res) => {
+router.post("/weather/lightning", requirePermission("server.world_events"), async (req, res) => {
   if (!bridge.isRunning) {
     return res
       .status(400)
@@ -1511,7 +1526,7 @@ router.post("/weather/lightning", async (req, res) => {
 });
 
 // Climate float control
-router.get("/climate/floats", async (req, res) => {
+router.get("/climate/floats", requirePermission("server.world_events"), async (req, res) => {
   if (!bridge.isRunning) {
     return res
       .status(400)
@@ -1525,7 +1540,7 @@ router.get("/climate/floats", async (req, res) => {
   }
 });
 
-router.post("/climate/float", async (req, res) => {
+router.post("/climate/float", requirePermission("server.world_events"), async (req, res) => {
   if (!bridge.isRunning) {
     return res
       .status(400)
@@ -1558,7 +1573,7 @@ router.post("/climate/float", async (req, res) => {
   }
 });
 
-router.post("/climate/reset", async (req, res) => {
+router.post("/climate/reset", requirePermission("server.world_events"), async (req, res) => {
   if (!bridge.isRunning) {
     return res
       .status(400)
@@ -1573,7 +1588,7 @@ router.post("/climate/reset", async (req, res) => {
 });
 
 // Individual climate shortcuts
-router.post("/climate/temperature", async (req, res) => {
+router.post("/climate/temperature", requirePermission("server.world_events"), async (req, res) => {
   if (!bridge.isRunning) {
     return res
       .status(400)
@@ -1597,7 +1612,7 @@ router.post("/climate/temperature", async (req, res) => {
   }
 });
 
-router.post("/climate/wind", async (req, res) => {
+router.post("/climate/wind", requirePermission("server.world_events"), async (req, res) => {
   if (!bridge.isRunning) {
     return res
       .status(400)
@@ -1621,7 +1636,7 @@ router.post("/climate/wind", async (req, res) => {
   }
 });
 
-router.post("/climate/fog", async (req, res) => {
+router.post("/climate/fog", requirePermission("server.world_events"), async (req, res) => {
   if (!bridge.isRunning) {
     return res
       .status(400)
@@ -1645,7 +1660,7 @@ router.post("/climate/fog", async (req, res) => {
   }
 });
 
-router.post("/climate/clouds", async (req, res) => {
+router.post("/climate/clouds", requirePermission("server.world_events"), async (req, res) => {
   if (!bridge.isRunning) {
     return res
       .status(400)
@@ -1670,7 +1685,7 @@ router.post("/climate/clouds", async (req, res) => {
 });
 
 // Game time endpoints
-router.get("/time", async (req, res) => {
+router.get("/time", requirePermission("server.world_events"), async (req, res) => {
   if (!bridge.isRunning) {
     return res
       .status(400)
@@ -1684,7 +1699,7 @@ router.get("/time", async (req, res) => {
   }
 });
 
-router.post("/time", async (req, res) => {
+router.post("/time", requirePermission("server.world_events"), async (req, res) => {
   if (!bridge.isRunning) {
     return res
       .status(400)
@@ -1733,7 +1748,7 @@ router.post("/time", async (req, res) => {
 });
 
 // World stats
-router.get("/world/stats", async (req, res) => {
+router.get("/world/stats", requirePermission("server.world_events"), async (req, res) => {
   if (!bridge.isRunning) {
     return res
       .status(400)
@@ -1764,7 +1779,7 @@ router.post("/world/save", requirePermission("server.control"), async (req, res)
 });
 
 // Player endpoints
-router.get("/players", async (req, res) => {
+router.get("/players", requirePermission("players.gm_tools"), async (req, res) => {
   if (!bridge.isRunning) {
     return res
       .status(400)
@@ -1778,7 +1793,7 @@ router.get("/players", async (req, res) => {
   }
 });
 
-router.get("/players/:username", async (req, res) => {
+router.get("/players/:username", requirePermission("players.gm_tools"), async (req, res) => {
   if (!bridge.isRunning) {
     return res
       .status(400)
@@ -1795,7 +1810,7 @@ router.get("/players/:username", async (req, res) => {
   }
 });
 
-router.post("/players/:username/teleport", async (req, res) => {
+router.post("/players/:username/teleport", requirePermission("players.gm_tools"), async (req, res) => {
   if (!bridge.isRunning) {
     return res
       .status(400)
@@ -1832,7 +1847,7 @@ router.post("/players/:username/teleport", async (req, res) => {
 });
 
 // Server message (routed via sendToServerChat; no dedicated sendServerMessage Lua handler)
-router.post("/message", async (req, res) => {
+router.post("/message", requirePermission("server.world_events"), async (req, res) => {
   if (!bridge.isRunning) {
     return res
       .status(400)
@@ -1856,7 +1871,7 @@ router.post("/message", async (req, res) => {
 });
 
 // Sandbox options (read-only)
-router.get("/sandbox", async (req, res) => {
+router.get("/sandbox", requirePermission("players.gm_tools"), async (req, res) => {
   if (!bridge.isRunning) {
     return res
       .status(400)
@@ -2746,7 +2761,7 @@ router.post("/install-mod", requirePermission("bridge.setup"), (req, res) => {
 // =============================================
 
 // Play sound at world coordinates
-router.post("/sound/world", async (req, res) => {
+router.post("/sound/world", requirePermission("server.world_events"), async (req, res) => {
   if (!bridge.isRunning) {
     return res
       .status(400)
@@ -2777,7 +2792,7 @@ router.post("/sound/world", async (req, res) => {
 });
 
 // Play sound near a player
-router.post("/sound/near-player", async (req, res) => {
+router.post("/sound/near-player", requirePermission("server.world_events"), async (req, res) => {
   if (!bridge.isRunning) {
     return res
       .status(400)
@@ -2796,7 +2811,7 @@ router.post("/sound/near-player", async (req, res) => {
 });
 
 // Trigger gunshot sound
-router.post("/sound/gunshot", async (req, res) => {
+router.post("/sound/gunshot", requirePermission("server.world_events"), async (req, res) => {
   if (!bridge.isRunning) {
     return res
       .status(400)
@@ -2815,7 +2830,7 @@ router.post("/sound/gunshot", async (req, res) => {
 });
 
 // Trigger alarm sound
-router.post("/sound/alarm", async (req, res) => {
+router.post("/sound/alarm", requirePermission("server.world_events"), async (req, res) => {
   if (!bridge.isRunning) {
     return res
       .status(400)
@@ -2834,7 +2849,7 @@ router.post("/sound/alarm", async (req, res) => {
 });
 
 // Create custom noise
-router.post("/sound/noise", async (req, res) => {
+router.post("/sound/noise", requirePermission("server.world_events"), async (req, res) => {
   if (!bridge.isRunning) {
     return res
       .status(400)
@@ -2892,7 +2907,7 @@ async function persistUtilities(power, water, on) {
 }
 
 // Get utilities (power/water) status
-router.get("/utilities/status", async (req, res) => {
+router.get("/utilities/status", requirePermission("server.world_events"), async (req, res) => {
   if (!bridge.isRunning) {
     return res
       .status(400)
@@ -2907,7 +2922,7 @@ router.get("/utilities/status", async (req, res) => {
 });
 
 // Restore utilities (turn power/water back on)
-router.post("/utilities/restore", async (req, res) => {
+router.post("/utilities/restore", requirePermission("server.world_events"), async (req, res) => {
   if (!bridge.isRunning) {
     return res
       .status(400)
@@ -2937,7 +2952,7 @@ router.post("/utilities/restore", async (req, res) => {
 });
 
 // Shut off utilities
-router.post("/utilities/shutoff", async (req, res) => {
+router.post("/utilities/shutoff", requirePermission("server.world_events"), async (req, res) => {
   if (!bridge.isRunning) {
     return res
       .status(400)
@@ -2971,7 +2986,7 @@ router.post("/utilities/shutoff", async (req, res) => {
 // =============================================
 
 // Export character data (XP, perks, skills, traits, inventory)
-router.post("/character/export", async (req, res) => {
+router.post("/character/export", requirePermission("players.gm_tools"), async (req, res) => {
   if (!bridge.isRunning) {
     return res
       .status(400)
@@ -2990,7 +3005,7 @@ router.post("/character/export", async (req, res) => {
 });
 
 // Import character data (apply XP, perks to player)
-router.post("/character/import", async (req, res) => {
+router.post("/character/import", requirePermission("players.gm_tools"), async (req, res) => {
   if (!bridge.isRunning) {
     return res
       .status(400)
@@ -3045,7 +3060,7 @@ router.post("/character/import", async (req, res) => {
 // ============================================
 
 // Give item to player
-router.post("/players/:username/give-item", async (req, res) => {
+router.post("/players/:username/give-item", requirePermission("players.gm_tools"), async (req, res) => {
   if (!bridge.isRunning) {
     return res.status(400).json({ error: "Bridge not running" });
   }
@@ -3079,7 +3094,7 @@ router.post("/players/:username/give-item", async (req, res) => {
 });
 
 // Heal player
-router.post("/players/:username/heal", async (req, res) => {
+router.post("/players/:username/heal", requirePermission("players.gm_tools"), async (req, res) => {
   if (!bridge.isRunning) {
     return res.status(400).json({ error: "Bridge not running" });
   }
@@ -3096,7 +3111,7 @@ router.post("/players/:username/heal", async (req, res) => {
 });
 
 // Kill player
-router.post("/players/:username/kill", async (req, res) => {
+router.post("/players/:username/kill", requirePermission("players.gm_tools"), async (req, res) => {
   if (!bridge.isRunning) {
     return res.status(400).json({ error: "Bridge not running" });
   }
@@ -3113,7 +3128,7 @@ router.post("/players/:username/kill", async (req, res) => {
 });
 
 // Set god mode for player
-router.post("/players/:username/godmode", async (req, res) => {
+router.post("/players/:username/godmode", requirePermission("players.gm_tools"), async (req, res) => {
   if (!bridge.isRunning) {
     return res.status(400).json({ error: "Bridge not running" });
   }
@@ -3134,7 +3149,7 @@ router.post("/players/:username/godmode", async (req, res) => {
 });
 
 // Set invisible for player
-router.post("/players/:username/invisible", async (req, res) => {
+router.post("/players/:username/invisible", requirePermission("players.gm_tools"), async (req, res) => {
   if (!bridge.isRunning) {
     return res.status(400).json({ error: "Bridge not running" });
   }
@@ -3159,7 +3174,7 @@ router.post("/players/:username/invisible", async (req, res) => {
 // ============================================
 
 // Get zombie statistics
-router.get("/zombies/count", async (req, res) => {
+router.get("/zombies/count", requirePermission("server.world_events"), async (req, res) => {
   if (!bridge.isRunning) {
     return res.status(400).json({ error: "Bridge not running" });
   }
@@ -3172,7 +3187,7 @@ router.get("/zombies/count", async (req, res) => {
 });
 
 // Clear zombies near a player
-router.post("/zombies/clear-near-player", async (req, res) => {
+router.post("/zombies/clear-near-player", requirePermission("server.world_events"), async (req, res) => {
   if (!bridge.isRunning) {
     return res.status(400).json({ error: "Bridge not running" });
   }
@@ -3195,7 +3210,7 @@ router.post("/zombies/clear-near-player", async (req, res) => {
 });
 
 // Clear ALL zombies in loaded cells
-router.post("/zombies/clear-all", async (req, res) => {
+router.post("/zombies/clear-all", requirePermission("server.world_events"), async (req, res) => {
   if (!bridge.isRunning) {
     return res.status(400).json({ error: "Bridge not running" });
   }
@@ -3211,7 +3226,7 @@ router.post("/zombies/clear-all", async (req, res) => {
 });
 
 // Spawn horde near a player
-router.post("/zombies/spawn-near", async (req, res) => {
+router.post("/zombies/spawn-near", requirePermission("server.world_events"), async (req, res) => {
   if (!bridge.isRunning) {
     return res.status(400).json({ error: "Bridge not running" });
   }
@@ -3235,7 +3250,7 @@ router.post("/zombies/spawn-near", async (req, res) => {
 });
 
 // Spawn horde behind a player
-router.post("/zombies/spawn-behind", async (req, res) => {
+router.post("/zombies/spawn-behind", requirePermission("server.world_events"), async (req, res) => {
   if (!bridge.isRunning) {
     return res.status(400).json({ error: "Bridge not running" });
   }
@@ -3263,7 +3278,7 @@ router.post("/zombies/spawn-behind", async (req, res) => {
 // ============================================
 
 // Set view distance
-router.post("/visual/view-distance", async (req, res) => {
+router.post("/visual/view-distance", requirePermission("server.world_events"), async (req, res) => {
   if (!bridge.isRunning) {
     return res.status(400).json({ error: "Bridge not running" });
   }
@@ -3282,7 +3297,7 @@ router.post("/visual/view-distance", async (req, res) => {
 });
 
 // Set daylight level
-router.post("/visual/daylight", async (req, res) => {
+router.post("/visual/daylight", requirePermission("server.world_events"), async (req, res) => {
   if (!bridge.isRunning) {
     return res.status(400).json({ error: "Bridge not running" });
   }
@@ -3299,7 +3314,7 @@ router.post("/visual/daylight", async (req, res) => {
 });
 
 // Set night strength
-router.post("/visual/night-strength", async (req, res) => {
+router.post("/visual/night-strength", requirePermission("server.world_events"), async (req, res) => {
   if (!bridge.isRunning) {
     return res.status(400).json({ error: "Bridge not running" });
   }
@@ -3316,7 +3331,7 @@ router.post("/visual/night-strength", async (req, res) => {
 });
 
 // Set desaturation (color wash)
-router.post("/visual/desaturation", async (req, res) => {
+router.post("/visual/desaturation", requirePermission("server.world_events"), async (req, res) => {
   if (!bridge.isRunning) {
     return res.status(400).json({ error: "Bridge not running" });
   }
@@ -3333,7 +3348,7 @@ router.post("/visual/desaturation", async (req, res) => {
 });
 
 // Set ambient light
-router.post("/visual/ambient", async (req, res) => {
+router.post("/visual/ambient", requirePermission("server.world_events"), async (req, res) => {
   if (!bridge.isRunning) {
     return res.status(400).json({ error: "Bridge not running" });
   }
@@ -3354,7 +3369,7 @@ router.post("/visual/ambient", async (req, res) => {
 // ============================================
 
 // Get chat info
-router.get("/chat/info", async (req, res) => {
+router.get("/chat/info", requirePermission("server.world_events"), async (req, res) => {
   if (!bridge.isRunning) {
     return res.status(400).json({ error: "Bridge not running" });
   }
@@ -3375,7 +3390,7 @@ async function trySendViaRcon(req, text) {
 }
 
 // Send to admin chat
-router.post("/chat/admin", async (req, res) => {
+router.post("/chat/admin", requirePermission("server.world_events"), async (req, res) => {
   const { message } = req.body;
   if (!message || typeof message !== "string" || message.length > 2000) {
     return res
@@ -3425,7 +3440,7 @@ router.post("/chat/admin", async (req, res) => {
 });
 
 // Send to general chat with author
-router.post("/chat/general", async (req, res) => {
+router.post("/chat/general", requirePermission("server.world_events"), async (req, res) => {
   const author =
     typeof req.body.author === "string"
       ? req.body.author.trim().slice(0, 64) || "Server"
@@ -3475,7 +3490,7 @@ router.post("/chat/general", async (req, res) => {
 });
 
 // Send server alert
-router.post("/chat/alert", async (req, res) => {
+router.post("/chat/alert", requirePermission("server.world_events"), async (req, res) => {
   const { message, alert = true } = req.body;
   if (!message || typeof message !== "string" || message.length > 2000) {
     return res
@@ -3620,7 +3635,7 @@ router.post("/debug/clear-errors", requirePermission("bridge.diagnostics"), asyn
 // ============================================
 
 // Get cached item catalog
-router.get("/catalog/items", async (req, res) => {
+router.get("/catalog/items", requirePermission("players.gm_tools"), async (req, res) => {
   try {
     const db = await getDb();
     const catalog = db.data.itemCatalog || null;
@@ -3634,7 +3649,7 @@ router.get("/catalog/items", async (req, res) => {
 });
 
 // Get cached vehicle catalog
-router.get("/catalog/vehicles", async (req, res) => {
+router.get("/catalog/vehicles", requirePermission("players.gm_tools"), async (req, res) => {
   try {
     const db = await getDb();
     const catalog = db.data.vehicleCatalog || null;

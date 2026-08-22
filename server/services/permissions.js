@@ -102,6 +102,13 @@ export const CAPABILITIES = [
     label: "Wipe the world",
     description: "Irreversibly delete map, player or world save data.",
   },
+  {
+    key: "server.world_events",
+    group: "Server Lifecycle",
+    label: "Run world events",
+    description:
+      "Weather, climate, time of day, ambient sound, zombie hordes, utilities, visual settings and broadcast messages -- world-wide effects, not aimed at a specific player.",
+  },
 
   // --- RCON ---
   {
@@ -271,6 +278,7 @@ const TECHNICIAN_CAPABILITIES = [
   "server.control",
   "server.install",
   "server.configure",
+  "server.world_events",
   "rcon.execute",
   "servers.manage",
   "templates.manage",
@@ -287,7 +295,18 @@ const TECHNICIAN_CAPABILITIES = [
   "serverfiles.manage",
 ];
 
-const MODERATOR_CAPABILITIES = ["players.moderate", "players.gm_tools", "players.view"];
+// server.world_events joins here too (not just players.gm_tools/moderate/view):
+// weather/climate/zombie-horde/broadcast-message routes were previously
+// reachable by any signed-in role including moderator with no gate at all,
+// same as the players.* routes -- folding them in is adding a capability
+// that already existed as "no gate", not narrowing anything (see god's
+// ruling: "adding a capability is not restricting it").
+const MODERATOR_CAPABILITIES = [
+  "players.moderate",
+  "players.gm_tools",
+  "players.view",
+  "server.world_events",
+];
 
 export const DEFAULT_ROLE_CAPABILITIES = Object.freeze({
   admin: Object.freeze(CAPABILITIES.map((c) => c.key)),
@@ -366,7 +385,20 @@ export function requirePermission(capability) {
 // getRoles/getRoleById/getRoleByName/getUsersForRole are re-exported here
 // (imported from database/init.js above) so route/service callers only
 // ever need to import from this file, not from the data layer directly.
-export { getRoles, getRoleById, getRoleByName, getUsersForRole };
+// RECOVERY_CAPABILITIES is exported as the shared POLICY, not as shared logic.
+// The counting differs legitimately by operation — editing a role asks whether
+// its members collectively drop a capability to zero holders, while reassigning
+// one user asks whether everybody else still covers it — so callers write their
+// own count. What must never be duplicated is WHICH capabilities are the ones
+// that can lock an operator out: a second hardcoded copy of that list silently
+// stops protecting anything the day a third capability is added here.
+export {
+  getRoles,
+  getRoleById,
+  getRoleByName,
+  getUsersForRole,
+  RECOVERY_CAPABILITIES,
+};
 
 async function countUsersWithCapability(capability, excludingRoleId = null) {
   const roles = await getRoles();

@@ -139,18 +139,32 @@ describe("server.js: server.wipe (destroys the live world for everyone) -- admin
   });
 });
 
-describe("server.js: read-only status/info and in-game/GM authority stay open to every role", () => {
-  const OPEN_GET = [
+describe("server.js: only /status and /network-interfaces stay outside the matrix entirely", () => {
+  const TRULY_UNGATED = [
     ["/status", "get"],
     ["/network-interfaces", "get"],
+  ];
+
+  it.each(TRULY_UNGATED)(
+    "%s %s has no requirePermission gate ahead of its handler",
+    async (routePath, method) => {
+      const { default: router } = await import("../routes/server.js");
+      const layer = router.stack.find(
+        (entry) => entry.route?.path === routePath && entry.route.methods[method],
+      );
+      expect(layer.route.stack.length).toBe(1);
+    },
+  );
+});
+
+describe("server.js: server.world_events (folded in from previously-ungated GM/world routes) -- open to every role", () => {
+  const WORLD_EVENTS_ROUTES = [
     ["/steamcmd/detect", "get"],
     ["/console-log", "get"],
     ["/console-log/error-count", "get"],
     ["/console-log/stream", "get"],
     ["/update-check", "get"],
     ["/update-check/status", "get"],
-  ];
-  const OPEN_POST = [
     ["/message", "post"],
     ["/weather/start-rain", "post"],
     ["/weather/stop-rain", "post"],
@@ -165,15 +179,24 @@ describe("server.js: read-only status/info and in-game/GM authority stay open to
     ["/removezombies", "post"],
     ["/releasesafehouse", "post"],
   ];
+  // /steamcmd/detect and the console-log/update-check reads are ALSO
+  // server.world_events, not server.install/server.configure like their
+  // write siblings (/steamcmd/check, /console-log/clear,
+  // /update-check/interval) -- those two are admin+technician only, and
+  // joining a previously-open read to an admin+technician-only capability
+  // would have narrowed moderator's access, not preserved it. Caught by
+  // this exact test failing on first write: moderator refused where the
+  // ruling required "not refused."
 
-  it.each([...OPEN_GET, ...OPEN_POST])(
-    "%s %s has no requireRole gate ahead of its handler",
-    async (routePath, method) => {
-      const { default: router } = await import("../routes/server.js");
-      const layer = router.stack.find(
-        (entry) => entry.route?.path === routePath && entry.route.methods[method],
-      );
-      expect(layer.route.stack.length).toBe(1);
-    },
-  );
+  it.each(WORLD_EVENTS_ROUTES)("does not refuse a moderator on %s %s", async (routePath, method) => {
+    const { default: router } = await import("../routes/server.js");
+    const { calledNext } = await runGate(router, routePath, method, "moderator");
+    expect(calledNext).toBe(true);
+  });
+
+  it.each(WORLD_EVENTS_ROUTES)("does not refuse a technician on %s %s", async (routePath, method) => {
+    const { default: router } = await import("../routes/server.js");
+    const { calledNext } = await runGate(router, routePath, method, "technician");
+    expect(calledNext).toBe(true);
+  });
 });

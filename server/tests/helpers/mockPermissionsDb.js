@@ -30,6 +30,7 @@ const ADMIN_CAPABILITIES = [
   "server.install",
   "server.configure",
   "server.wipe",
+  "server.world_events",
   "rcon.execute",
   "servers.manage",
   "servers.discover",
@@ -55,6 +56,7 @@ const TECHNICIAN_CAPABILITIES = [
   "server.control",
   "server.install",
   "server.configure",
+  "server.world_events",
   "rcon.execute",
   "servers.manage",
   "templates.manage",
@@ -71,7 +73,12 @@ const TECHNICIAN_CAPABILITIES = [
   "serverfiles.manage",
 ];
 
-const MODERATOR_CAPABILITIES = ["players.moderate", "players.gm_tools", "players.view"];
+const MODERATOR_CAPABILITIES = [
+  "players.moderate",
+  "players.gm_tools",
+  "players.view",
+  "server.world_events",
+];
 
 export const TEST_ROLE_CAPABILITIES = Object.freeze({
   admin: Object.freeze(ADMIN_CAPABILITIES),
