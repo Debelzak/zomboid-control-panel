@@ -46,12 +46,15 @@ const router = express.Router();
 
 // Every endpoint in this file is admin-only (requirePermission("diagnostics.manage") is
 // applied to each route below), with one deliberate exception:
-// POST /client-errors is client-side crash/error telemetry. ANY logged-in
-// role's browser can hit a frontend bug, and locking this to admin would
-// silently blind the operator to every technician's or moderator's UI
-// errors — the opposite of what a debug endpoint is for. It's already
-// per-IP rate-limited and exposes/mutates nothing sensitive (just logs a
-// message), so it deliberately stays open to every logged-in role.
+// POST /client-errors is client-side crash/error telemetry, and it is fully
+// UNAUTHENTICATED — no login required at all, not even "any logged-in
+// role". A frontend crash can happen before the client has authenticated,
+// most notably on the login page itself, where there is no token to attach
+// and no req.user to check — requiring login here would silently delete
+// exactly the crash reports an operator most needs to see. What protects it
+// instead: a per-IP rate limit, plus the fact that it only ever logs a
+// message and mutates/exposes nothing sensitive. See the comment directly
+// above that route for the full reasoning.
 //
 // This was previously the whole file's exposure: behind the central login
 // gate only, so ANY authenticated role — including a moderator — could
