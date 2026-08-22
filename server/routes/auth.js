@@ -9,7 +9,7 @@ import path from "path";
 import fs from "fs";
 import crypto from "crypto";
 import os from "os";
-import authService from "../services/auth.js";
+import authService, { USER_ROLES, requireRole } from "../services/auth.js";
 import { createLogger } from "../utils/logger.js";
 import { sanitizeError } from "../utils/sanitize.js";
 import { getDataPaths } from "../utils/paths.js";
@@ -407,6 +407,72 @@ router.post("/change-password", async (req, res) => {
 
     res.json({ success: true, message: "Password changed successfully" });
   } catch (error) {
+    res.status(400).json({ error: sanitizeError(error.message) });
+  }
+});
+
+/**
+ * GET /api/auth/users
+ * List all local accounts. Admin-only — usernames, roles and login history
+ * for every account are exactly the kind of thing a technician or moderator
+ * account must not be able to enumerate.
+ */
+router.get("/users", requireRole("admin"), async (req, res) => {
+  try {
+    const users = await authService.getUsers();
+    res.json({ users });
+  } catch (error) {
+    log.error(`Failed to list users: ${error.message}`);
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
+/**
+ * POST /api/auth/users
+ * Create an additional account with an explicit role. Admin-only. Unlike
+ * /api/auth/setup, this does not auto-login or set a session cookie for the
+ * caller — it creates an account for someone else to log in with.
+ */
+router.post("/users", requireRole("admin"), async (req, res) => {
+  try {
+    const { username, password, role } = req.body || {};
+    if (!isNonEmptyString(username) || !isNonEmptyString(password)) {
+      return res
+        .status(400)
+        .json({ error: "Username and password are required" });
+    }
+    if (!USER_ROLES.includes(role)) {
+      return res
+        .status(400)
+        .json({ error: `role must be one of: ${USER_ROLES.join(", ")}` });
+    }
+    const user = await authService.createUser(username, password, role);
+    log.info(`User created by admin: ${username} (role: ${role})`);
+    res.status(201).json({ success: true, user });
+  } catch (error) {
+    log.warn(`User creation failed: ${error.message}`);
+    res.status(400).json({ error: sanitizeError(error.message) });
+  }
+});
+
+/**
+ * PATCH /api/auth/users/:id/role
+ * Change an existing account's role. Admin-only. Refuses to demote the
+ * last remaining admin (enforced in authService.changeUserRole).
+ */
+router.patch("/users/:id/role", requireRole("admin"), async (req, res) => {
+  try {
+    const { role } = req.body || {};
+    if (!USER_ROLES.includes(role)) {
+      return res
+        .status(400)
+        .json({ error: `role must be one of: ${USER_ROLES.join(", ")}` });
+    }
+    const user = await authService.changeUserRole(req.params.id, role);
+    log.info(`Role changed by admin: ${user.username} -> ${role}`);
+    res.json({ success: true, user });
+  } catch (error) {
+    log.warn(`Role change failed: ${error.message}`);
     res.status(400).json({ error: sanitizeError(error.message) });
   }
 });

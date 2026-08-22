@@ -46,8 +46,14 @@ function getLayer(routePath, method) {
   );
 }
 
+// POST / now has requireRole("admin", "technician") ahead of the real
+// handler (see roles.test.js for coverage of that gate itself) — grab the
+// last stack entry rather than the first, same as getUpdateHandler() below,
+// so this keeps working regardless of how many gating middlewares precede
+// the handler.
 function getCreateHandler() {
-  return getLayer("/", "post").route.stack[0].handle;
+  const layer = getLayer("/", "post");
+  return layer.route.stack[layer.route.stack.length - 1].handle;
 }
 
 function getUpdateHandler() {

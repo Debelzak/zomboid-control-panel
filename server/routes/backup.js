@@ -60,7 +60,7 @@ router.get("/history", async (req, res) => {
   }
 });
 
-router.get("/:name/snapshot", requireRole("admin"), async (req, res) => {
+router.get("/:name/snapshot", requireRole("admin", "technician"), async (req, res) => {
   try {
     const backupService = req.app.get("backupService");
     const result = await backupService.getBackupSnapshot(req.params.name);
@@ -73,7 +73,7 @@ router.get("/:name/snapshot", requireRole("admin"), async (req, res) => {
 });
 
 // Update backup settings
-router.post("/settings", async (req, res) => {
+router.post("/settings", requireRole("admin", "technician"), async (req, res) => {
   try {
     const backupService = req.app.get("backupService");
     const scheduler = req.app.get("scheduler");
@@ -107,7 +107,7 @@ router.post("/settings", async (req, res) => {
 });
 
 // Create a manual backup
-router.post("/create", async (req, res) => {
+router.post("/create", requireRole("admin", "technician"), async (req, res) => {
   try {
     log.info("POST /create — creating manual backup");
     const activeServer = await getActiveServer();
@@ -138,7 +138,7 @@ router.post("/create", async (req, res) => {
 });
 
 // Delete a backup
-router.delete("/:name", requireRole("admin"), async (req, res) => {
+router.delete("/:name", requireRole("admin", "technician"), async (req, res) => {
   try {
     log.info(`DELETE /${req.params.name}`);
     const backupService = req.app.get("backupService");
@@ -185,7 +185,7 @@ router.get("/download/:name", async (req, res) => {
 });
 
 // Restore a backup
-router.post("/restore/:name", requireRole("admin"), async (req, res) => {
+router.post("/restore/:name", requireRole("admin", "technician"), async (req, res) => {
   try {
     const activeServer = await getActiveServer();
     if (activeServer?.isRemote) {
@@ -230,7 +230,7 @@ router.post("/restore/:name", requireRole("admin"), async (req, res) => {
 });
 
 // Delete backups older than X days
-router.post("/delete-older-than", requireRole("admin"), async (req, res) => {
+router.post("/delete-older-than", requireRole("admin", "technician"), async (req, res) => {
   try {
     const { days } = req.body;
 
@@ -259,7 +259,7 @@ router.post("/delete-older-than", requireRole("admin"), async (req, res) => {
 const MAX_UPLOAD_BYTES = 4 * 1024 * 1024 * 1024; // 4 GB ceiling
 router.post(
   "/upload",
-  requireRole("admin"),
+  requireRole("admin", "technician"),
   express.raw({ type: "application/zip", limit: MAX_UPLOAD_BYTES }),
   async (req, res) => {
     try {

@@ -19,7 +19,7 @@ async function mapWithConcurrency(items, limit, mapper) {
   return results;
 }
 
-router.get("/status", requireRole("admin"), async (req, res) => {
+router.get("/status", requireRole("admin", "technician"), async (req, res) => {
   try {
     const dockerClient = req.app.get("dockerClient");
     if (!dockerClient?.enabled) {
@@ -45,7 +45,7 @@ router.get("/status", requireRole("admin"), async (req, res) => {
   }
 });
 
-router.get("/stats", requireRole("admin"), async (req, res) => {
+router.get("/stats", requireRole("admin", "technician"), async (req, res) => {
   try {
     const dockerClient = req.app.get("dockerClient");
     if (!dockerClient?.enabled || !dockerClient.available) return res.json({ containers: {} });
@@ -67,7 +67,7 @@ router.get("/stats", requireRole("admin"), async (req, res) => {
   }
 });
 
-router.post("/containers/:id/:action", requireRole("admin"), async (req, res) => {
+router.post("/containers/:id/:action", requireRole("admin", "technician"), async (req, res) => {
   let rconService = null;
   try {
     const dockerClient = req.app.get("dockerClient");

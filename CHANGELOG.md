@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **User roles**: accounts can now be created as **administrator**, **technician** or
+  **moderator** instead of every account being an administrator. Technicians can operate the server
+  — start, stop, backups, mods, configuration — while moderators hold in-game player authority, and
+  only administrators manage user accounts. The last remaining administrator cannot be demoted, so a
+  panel cannot be locked out of its own account management.
+
 - **Sign in with SSO (OIDC)**: administrators can now enable sign-in through an external identity
   provider — Google, Discord, Authentik, Keycloak, or any standards-compliant OpenID Connect
   provider — alongside the existing username and password login, which always keeps working as a

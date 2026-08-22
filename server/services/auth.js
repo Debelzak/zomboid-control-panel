@@ -18,6 +18,13 @@ import { getSetting, setSetting, getDb, commitNow } from "../database/init.js";
 
 const log = createLogger("Auth");
 
+// The three roles the operator asked for. admin = everything, including user
+// management. technician = operate the server (start/stop/restart, backups,
+// mods, config) but not manage users. moderator = in-game/player authority
+// (kick/ban/chat/players) but not destructive server operations. See the
+// requireRole() call sites in server/routes/*.js for where each is enforced.
+export const USER_ROLES = ["admin", "technician", "moderator"];
+
 const BCRYPT_ROUNDS = 12;
 const ACCESS_TOKEN_EXPIRY = "24h";
 const REFRESH_TOKEN_EXPIRY = "30d";
@@ -182,9 +189,18 @@ class AuthService {
   }
 
   /**
-   * Create a new user account (admin)
+   * Create a new user account.
+   *
+   * The FIRST user ever created (first-run setup) always becomes admin,
+   * regardless of what `role` is passed — this is enforced here, not just at
+   * the call site, so the operator can never be locked out of their own
+   * panel by a bad request. Every subsequent user must have an explicit,
+   * valid role — there is no silent default, because silently defaulting a
+   * new account to "admin" would be a privilege-escalation bug and silently
+   * defaulting it to a low-privilege role is a decision that belongs to the
+   * caller, not this function.
    */
-  async createUser(username, password) {
+  async createUser(username, password, role) {
     return this._withMutex(async () => {
       if (!username || !password) {
         throw new Error("Username and password are required");
@@ -213,6 +229,17 @@ class AuthService {
         db.data.users = [];
       }
 
+      const isFirstUser = db.data.users.length === 0;
+      let resolvedRole;
+      if (isFirstUser) {
+        resolvedRole = "admin";
+      } else {
+        if (!USER_ROLES.includes(role)) {
+          throw new Error(`role must be one of: ${USER_ROLES.join(", ")}`);
+        }
+        resolvedRole = role;
+      }
+
       // Check for duplicate username
       const existing = db.data.users.find(
         (u) => u.username.toLowerCase() === username.toLowerCase(),
@@ -226,7 +253,7 @@ class AuthService {
         id: crypto.randomUUID(),
         username,
         password: hashedPassword,
-        role: "admin",
+        role: resolvedRole,
         createdAt: new Date().toISOString(),
         lastLogin: null,
       };
@@ -234,7 +261,50 @@ class AuthService {
       db.data.users.push(user);
       await commitNow();
 
-      log.info(`User created: ${username}`);
+      log.info(`User created: ${username} (role: ${resolvedRole})`);
+      return { id: user.id, username: user.username, role: user.role };
+    });
+  }
+
+  /**
+   * Change an existing user's role. Refuses to demote the last remaining
+   * admin — that would leave the panel with no admin account, and
+   * resetPassword()/generateRecoveryCodes() only restore a PASSWORD, not a
+   * role, so a demoted last-admin couldn't recover admin access even via
+   * the recovery flows. Promote a second admin first.
+   */
+  async changeUserRole(userId, newRole) {
+    return this._withMutex(async () => {
+      if (!USER_ROLES.includes(newRole)) {
+        throw new Error(`role must be one of: ${USER_ROLES.join(", ")}`);
+      }
+
+      const db = await getDb();
+      const users = db.data.users || [];
+      const user = users.find((u) => u.id === userId);
+      if (!user) {
+        throw new Error("User not found");
+      }
+
+      if (user.role === "admin" && newRole !== "admin") {
+        const remainingAdmins = users.filter(
+          (u) => u.role === "admin" && u.id !== userId,
+        ).length;
+        if (remainingAdmins === 0) {
+          throw new Error(
+            "Cannot change this user's role — they are the only remaining admin. Promote another user to admin first.",
+          );
+        }
+      }
+
+      user.role = newRole;
+      await commitNow();
+
+      // authenticateAccessToken() re-reads role from the live user record on
+      // every request (see below) rather than trusting the role embedded in
+      // the JWT at login time, so this takes effect on the user's very next
+      // request — no forced logout / tokenGen bump needed.
+      log.info(`Role changed for user ${user.username}: ${user.role}`);
       return { id: user.id, username: user.username, role: user.role };
     });
   }
@@ -272,7 +342,16 @@ class AuthService {
       throw new Error("Invalid username or password");
     }
 
-    const valid = await bcrypt.compare(password, user.password);
+    // OIDC-only accounts (bootstrapped via bootstrapAdminFromExternalIdentity)
+    // have no local password hash. Still run the dummy compare so this
+    // branch costs the same as a real wrong-password attempt.
+    let valid;
+    if (user.password) {
+      valid = await bcrypt.compare(password, user.password);
+    } else {
+      await bcrypt.compare(password, DUMMY_BCRYPT_HASH);
+      valid = false;
+    }
     if (!valid) {
       user.failedLoginCount = (user.failedLoginCount || 0) + 1;
       if (user.failedLoginCount >= MAX_FAILED_LOGINS) {
@@ -435,6 +514,12 @@ class AuthService {
       throw new Error("User not found");
     }
 
+    if (!user.password) {
+      throw new Error(
+        "This account has no local password set (it signs in via an external provider). Use password reset/recovery to set one instead.",
+      );
+    }
+
     const valid = await bcrypt.compare(currentPassword, user.password);
     if (!valid) {
       throw new Error("Current password is incorrect");
@@ -463,6 +548,183 @@ class AuthService {
       createdAt: u.createdAt,
       lastLogin: u.lastLogin,
     }));
+  }
+
+  // ============================================
+  // OIDC seam — for Dwight's OIDC work. These methods do NO token
+  // verification of their own; the caller must have already verified the
+  // external provider's ID token / userinfo response before calling any of
+  // these. They only map an already-verified external identity to a local
+  // account (and issue a normal panel session, for the login path).
+  // ============================================
+
+  /**
+   * Look up a local user by external identity and, if found, log them in —
+   * same access/refresh token issuance as password login(). Refuse-by-
+   * default: an identity with no local account already linked to it is NOT
+   * auto-created. On a panel reachable from the internet, "anyone who can
+   * complete an external login" and "anyone who should have panel access"
+   * are not the same set.
+   *
+   * @param {{issuer: string, subject: string, email?: string}} identity
+   * @param {boolean} rememberMe
+   * @returns {Promise<{linked: true, user, accessToken, refreshToken} | {linked: false, canBootstrapAdmin: boolean}>}
+   */
+  async loginWithExternalIdentity({ issuer, subject } = {}, rememberMe = true) {
+    if (!issuer || !subject) {
+      throw new Error("issuer and subject are required");
+    }
+
+    const db = await getDb();
+    const users = db.data.users || [];
+    const existing = users.find(
+      (u) =>
+        Array.isArray(u.externalIdentities) &&
+        u.externalIdentities.some(
+          (ext) => ext.issuer === issuer && ext.subject === subject,
+        ),
+    );
+
+    if (!existing) {
+      return { linked: false, canBootstrapAdmin: users.length === 0 };
+    }
+
+    this.ensureUserAuthState(existing);
+    existing.lastLogin = new Date().toISOString();
+    const refreshSession = rememberMe
+      ? this.createRefreshSession(existing)
+      : null;
+    await commitNow();
+
+    const accessToken = this.generateAccessToken(existing);
+    const refreshToken = refreshSession
+      ? this.generateRefreshToken(existing, refreshSession.id)
+      : null;
+
+    log.info(`User logged in via OIDC: ${existing.username}`);
+    return {
+      linked: true,
+      user: { id: existing.id, username: existing.username, role: existing.role },
+      accessToken,
+      refreshToken,
+    };
+  }
+
+  /**
+   * Bootstrap the FIRST local account directly from an external identity.
+   * Only succeeds while zero local users exist — same trust boundary
+   * createUser()/the /api/auth/setup route already rely on for the
+   * password path (whoever gets there first, while the panel has zero
+   * users, owns it). Refuses once any user exists; an admin must link the
+   * identity to an existing account via linkExternalIdentity() instead.
+   */
+  async bootstrapAdminFromExternalIdentity({
+    issuer,
+    subject,
+    email,
+    username,
+  } = {}) {
+    return this._withMutex(async () => {
+      if (!issuer || !subject) {
+        throw new Error("issuer and subject are required");
+      }
+      if (!username || typeof username !== "string") {
+        throw new Error("username is required");
+      }
+      if (username.length < 3 || username.length > 32) {
+        throw new Error("Username must be 3-32 characters");
+      }
+      if (!/^[a-zA-Z0-9_-]+$/.test(username)) {
+        throw new Error(
+          "Username can only contain letters, numbers, underscores and hyphens",
+        );
+      }
+
+      const db = await getDb();
+      if (!db.data.users) {
+        db.data.users = [];
+      }
+      if (db.data.users.length > 0) {
+        throw new Error(
+          "Setup already completed. An admin must link this identity instead.",
+        );
+      }
+
+      const user = {
+        id: crypto.randomUUID(),
+        username,
+        password: null, // OIDC-only account — no local password set
+        role: "admin",
+        externalIdentities: [
+          {
+            issuer,
+            subject,
+            email: email || null,
+            linkedAt: new Date().toISOString(),
+          },
+        ],
+        createdAt: new Date().toISOString(),
+        lastLogin: null,
+      };
+
+      db.data.users.push(user);
+      await commitNow();
+
+      log.info(`First admin account bootstrapped via OIDC: ${username}`);
+      return { id: user.id, username: user.username, role: user.role };
+    });
+  }
+
+  /**
+   * Link an external identity to an EXISTING local account. This is the
+   * data operation only — the route that calls this is responsible for
+   * enforcing it's admin-only, the same way the requireRole("admin")
+   * routes elsewhere in this app do.
+   */
+  async linkExternalIdentity(userId, { issuer, subject, email } = {}) {
+    if (!issuer || !subject) {
+      throw new Error("issuer and subject are required");
+    }
+
+    const db = await getDb();
+    const users = db.data.users || [];
+    const user = users.find((u) => u.id === userId);
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    const claimedElsewhere = users.some(
+      (u) =>
+        u.id !== userId &&
+        Array.isArray(u.externalIdentities) &&
+        u.externalIdentities.some(
+          (ext) => ext.issuer === issuer && ext.subject === subject,
+        ),
+    );
+    if (claimedElsewhere) {
+      throw new Error(
+        "This external identity is already linked to a different account",
+      );
+    }
+
+    if (!Array.isArray(user.externalIdentities)) {
+      user.externalIdentities = [];
+    }
+    const alreadyLinked = user.externalIdentities.some(
+      (ext) => ext.issuer === issuer && ext.subject === subject,
+    );
+    if (!alreadyLinked) {
+      user.externalIdentities.push({
+        issuer,
+        subject,
+        email: email || null,
+        linkedAt: new Date().toISOString(),
+      });
+      await commitNow();
+    }
+
+    log.info(`Linked external identity to user: ${user.username}`);
+    return { id: user.id, username: user.username, role: user.role };
   }
 
   async logout(refreshToken) {
@@ -715,13 +977,11 @@ export default authService;
  * Express middleware factory — requires req.user.role to be one of the
  * given roles. Must run AFTER authService.middleware() so req.user is set.
  *
- * Currently every account is created with role 'admin' (see createUser()),
- * so this is a no-op today — but every route handler in this app grants
- * full power (RCON god-mode, file delete, server install/wipe, panel
- * self-update) with zero authorization check beyond "is logged in". Wiring
- * this in now on destructive/privileged routes makes that boundary explicit
- * ahead of a non-admin role ever being introduced, instead of every future
- * route inheriting full access by default.
+ * req.user.role is always the LIVE role from the database (see
+ * authenticateAccessToken() above, which re-reads it on every request
+ * rather than trusting the role embedded in the JWT at login time) — so a
+ * role change via changeUserRole() takes effect on the user's very next
+ * request, no re-login required.
  */
 export function requireRole(...roles) {
   return (req, res, next) => {

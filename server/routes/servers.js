@@ -618,7 +618,7 @@ router.get("/:id", async (req, res) => {
 });
 
 // Create a new server
-router.post("/", async (req, res) => {
+router.post("/", requireRole("admin", "technician"), async (req, res) => {
   try {
     const config = req.body;
     log.info(
@@ -739,7 +739,7 @@ const ALLOWED_SERVER_UPDATE_FIELDS = [
 ];
 
 // Update a server
-router.put("/:id", async (req, res) => {
+router.put("/:id", requireRole("admin", "technician"), async (req, res) => {
   try {
     const id = req.params.id;
     if (!id) {
@@ -900,7 +900,7 @@ router.put("/:id", async (req, res) => {
 });
 
 // Delete a server
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", requireRole("admin", "technician"), async (req, res) => {
   try {
     const id = req.params.id;
     if (!id) {
@@ -930,7 +930,7 @@ router.delete("/:id", async (req, res) => {
 });
 
 // Set active server
-router.post("/:id/activate", async (req, res) => {
+router.post("/:id/activate", requireRole("admin", "technician"), async (req, res) => {
   try {
     const id = req.params.id;
     if (!id) {

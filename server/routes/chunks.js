@@ -578,7 +578,7 @@ router.get("/suggested-paths", async (req, res) => {
 // to the legacy flat setting. The path is validated with the same rules as
 // the /saves customPath query parameter so users can't smuggle in arbitrary
 // directories via this endpoint.
-router.post("/save-path", async (req, res) => {
+router.post("/save-path", requireRole("admin", "technician"), async (req, res) => {
   try {
     const { path: rawPath } = req.body || {};
     if (!rawPath || typeof rawPath !== "string") {
@@ -1039,7 +1039,7 @@ router.get("/chunks/:saveName", async (req, res) => {
 });
 
 // Delete selected chunks
-router.post("/delete-chunks", requireRole("admin"), async (req, res) => {
+router.post("/delete-chunks", requireRole("admin", "technician"), async (req, res) => {
   try {
     const {
       saveName,
@@ -1425,7 +1425,7 @@ router.post("/delete-chunks", requireRole("admin"), async (req, res) => {
 });
 
 // Delete chunks by region (x/y coordinate range)
-router.post("/delete-region", requireRole("admin"), async (req, res) => {
+router.post("/delete-region", requireRole("admin", "technician"), async (req, res) => {
   try {
     const {
       saveName,

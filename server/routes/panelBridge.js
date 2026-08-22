@@ -788,7 +788,7 @@ router.post("/configure-direct", async (req, res) => {
   }
 });
 
-router.post("/sftp/test", requireRole("admin"), async (req, res) => {
+router.post("/sftp/test", requireRole("admin", "technician"), async (req, res) => {
   try {
     const config = await resolveSftpConfig(req.body);
     const result = await testSftpBridge(config);
@@ -798,7 +798,7 @@ router.post("/sftp/test", requireRole("admin"), async (req, res) => {
   }
 });
 
-router.post("/sftp/configure", requireRole("admin"), async (req, res) => {
+router.post("/sftp/configure", requireRole("admin", "technician"), async (req, res) => {
   try {
     const config = await resolveSftpConfig(req.body);
     const cachePath = getSftpCachePath(config);
@@ -813,7 +813,7 @@ router.post("/sftp/configure", requireRole("admin"), async (req, res) => {
   }
 });
 
-router.post("/sftp/logs/list", requireRole("admin"), async (req, res) => {
+router.post("/sftp/logs/list", requireRole("admin", "technician"), async (req, res) => {
   try {
     const config = await resolveSftpLogConfig(req.body);
     const result = await listSftpLogs(config);
@@ -824,7 +824,7 @@ router.post("/sftp/logs/list", requireRole("admin"), async (req, res) => {
   }
 });
 
-router.post("/sftp/logs/tail", requireRole("admin"), async (req, res) => {
+router.post("/sftp/logs/tail", requireRole("admin", "technician"), async (req, res) => {
   try {
     const config = await resolveSftpLogConfig(req.body);
     const result = await readSftpLogTail(config, req.body?.name, req.body?.maxBytes);
@@ -835,7 +835,7 @@ router.post("/sftp/logs/tail", requireRole("admin"), async (req, res) => {
 });
 
 // Verify the remote Server/ folder the config editor mirrors for a remote server.
-router.post("/sftp/config/list", requireRole("admin"), async (req, res) => {
+router.post("/sftp/config/list", requireRole("admin", "technician"), async (req, res) => {
   try {
     const settings = await getAllSettings();
     const password =
@@ -2518,7 +2518,7 @@ router.get("/mod-path", async (req, res) => {
 // Explicitly install/update PanelBridge.lua on the active server's local
 // filesystem (bind mount / same-host install). See services/panelBridgeInstaller.js
 // — this is the manual counterpart to the auto-install run on activation.
-router.post("/install-local", requireRole("admin"), async (req, res) => {
+router.post("/install-local", requireRole("admin", "technician"), async (req, res) => {
   try {
     const server = await getActiveServer();
     if (!server) {
@@ -2553,7 +2553,7 @@ router.post("/install-local", requireRole("admin"), async (req, res) => {
 });
 
 // Auto-install mod to server's Lua folder (optionally specify serverId)
-router.post("/install-mod-auto", requireRole("admin"), async (req, res) => {
+router.post("/install-mod-auto", requireRole("admin", "technician"), async (req, res) => {
   try {
     const { serverId } = req.body;
 
@@ -2602,7 +2602,7 @@ router.post("/install-mod-auto", requireRole("admin"), async (req, res) => {
 });
 
 // Copy mod to server Lua folder (manual path)
-router.post("/install-mod", requireRole("admin"), (req, res) => {
+router.post("/install-mod", requireRole("admin", "technician"), (req, res) => {
   const { serverLuaPath } = req.body;
 
   // Support legacy field name
