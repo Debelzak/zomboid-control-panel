@@ -91,7 +91,7 @@ const defaultData = {
 // Schema Migrations
 // ============================================
 
-const CURRENT_SCHEMA_VERSION = 2;
+const CURRENT_SCHEMA_VERSION = 3;
 
 // Migration 2 seed: a SNAPSHOT of what every requireRole(...) call site in
 // the app actually granted at the moment this migration was written --
@@ -208,6 +208,36 @@ export function runMigrations(data) {
     for (const user of data.users || []) {
       if (!user.roleId && roleIdByName[user.role]) {
         user.roleId = roleIdByName[user.role];
+      }
+    }
+  }
+
+  // Migration 3: backups.download was split out of backups.manage after
+  // GET /api/backup/download/:name went from having no gate at all to
+  // requiring its own capability (see routes/backup.js). The v2 seed
+  // above already grants backups.download to a FRESH v1-install's admin
+  // and technician roles directly, but that only helps an install that
+  // migrates today -- an install that already passed through v2 before
+  // this split existed has its roles frozen at whatever v2 seeded them
+  // with, and never re-runs that step. Without this, every existing
+  // technician role would silently lose an ability it already had
+  // (the route was unguarded, so it could always download) the moment
+  // this build shipped, with no explanation and nothing to click.
+  // Backfill rule, applied uniformly to every role -- seeded or a custom
+  // one an operator built themselves, since both are equally "existed
+  // before the split": whatever already held backups.manage keeps the
+  // same trust level it always had by also getting backups.download.
+  // Anything that never held backups.manage (a bare custom role, or
+  // moderator) gets nothing here -- that gap is the fix Finding 2 asked
+  // for, not a bug in this migration.
+  if (version < 3) {
+    for (const role of data.roles || []) {
+      if (
+        Array.isArray(role.capabilities) &&
+        role.capabilities.includes("backups.manage") &&
+        !role.capabilities.includes("backups.download")
+      ) {
+        role.capabilities.push("backups.download");
       }
     }
   }

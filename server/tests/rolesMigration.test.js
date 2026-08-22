@@ -28,7 +28,7 @@ describe("database/init.js schema v2 migration: roles collection + user.roleId",
   it("seeds admin/technician/moderator roles and assigns roleId to every existing user, without touching user.role", () => {
     const data = runMigrations(makeV1Data());
 
-    expect(data._schemaVersion).toBe(2);
+    expect(data._schemaVersion).toBe(3);
     expect(Array.isArray(data.roles)).toBe(true);
     expect(data.roles.map((r) => r.name).sort()).toEqual([
       "admin",
@@ -107,7 +107,7 @@ describe("database/init.js schema v2 migration: roles collection + user.roleId",
         { id: "role-admin", name: "admin", capabilities: ["users.manage"], isSeeded: true },
       ],
       settings: {},
-      _schemaVersion: 2,
+      _schemaVersion: 3,
     };
 
     const data = runMigrations(alreadyMigrated);
@@ -145,5 +145,93 @@ describe("database/init.js schema v2 migration: roles collection + user.roleId",
   it("leaves user.role completely untouched (dual-write, not a replace)", () => {
     const data = runMigrations(makeV1Data());
     expect(data.users.map((u) => u.role)).toEqual(["admin", "technician", "moderator"]);
+  });
+});
+
+describe("database/init.js schema v3 migration: backups.download backfill", () => {
+  // The exact regression this exists to prevent: an install that already
+  // migrated to v2 -- i.e. every real install upgrading to this build --
+  // has its roles frozen at whatever v2 seeded them with. GET /download
+  // went from ungated to requiring backups.download in the same release;
+  // without this migration, an existing technician role would silently
+  // lose an ability it already had (the route was unguarded), with no
+  // explanation. Fixtures here start at _schemaVersion: 2 on purpose --
+  // that is the real-world starting point this migration has to handle,
+  // not a fresh v1 install (which the v2 seed already covers directly).
+
+  it("grants backups.download to an existing role that already holds backups.manage", () => {
+    const data = runMigrations({
+      users: [],
+      roles: [
+        {
+          id: "role-technician",
+          name: "technician",
+          capabilities: ["backups.manage", "server.control"],
+          isSeeded: true,
+        },
+      ],
+      settings: {},
+      _schemaVersion: 2,
+    });
+
+    expect(data._schemaVersion).toBe(3);
+    const technician = data.roles.find((r) => r.id === "role-technician");
+    expect(technician.capabilities).toEqual(
+      expect.arrayContaining(["backups.manage", "backups.download", "server.control"]),
+    );
+  });
+
+  it("does the same for a CUSTOM role an operator built themselves, not just the seeded ones", () => {
+    const data = runMigrations({
+      users: [],
+      roles: [
+        {
+          id: "role-custom-housekeeper",
+          name: "housekeeper",
+          capabilities: ["backups.manage"],
+          isSeeded: false,
+        },
+      ],
+      settings: {},
+      _schemaVersion: 2,
+    });
+
+    const custom = data.roles.find((r) => r.id === "role-custom-housekeeper");
+    expect(custom.capabilities).toContain("backups.download");
+  });
+
+  it("does NOT grant it to a role that never held backups.manage -- that gap is the fix, not a bug", () => {
+    const data = runMigrations({
+      users: [],
+      roles: [
+        {
+          id: "role-moderator",
+          name: "moderator",
+          capabilities: ["players.moderate", "players.view"],
+          isSeeded: true,
+        },
+      ],
+      settings: {},
+      _schemaVersion: 2,
+    });
+
+    const moderator = data.roles.find((r) => r.id === "role-moderator");
+    expect(moderator.capabilities).not.toContain("backups.download");
+  });
+
+  it("is idempotent -- re-running does not duplicate the entry for a role that already has it", () => {
+    const once = runMigrations({
+      users: [],
+      roles: [
+        { id: "role-technician", name: "technician", capabilities: ["backups.manage"], isSeeded: true },
+      ],
+      settings: {},
+      _schemaVersion: 2,
+    });
+    once._schemaVersion = 2; // as if the version bump never made it to disk
+    const twice = runMigrations(once);
+
+    const technician = twice.roles.find((r) => r.id === "role-technician");
+    expect(technician.capabilities.filter((c) => c === "backups.download")).toHaveLength(1);
   });
 });
