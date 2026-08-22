@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **The parts of the panel that appear on every screen are now in French too**: the
+  connection-status indicator, the server and PanelBridge status badges, the disk-space warning
+  banner, both crash-recovery screens, the keyboard shortcuts dialog, the folder browser, the
+  "add discovered server" wizard, and every Simulation Templates dialog. Previously a French
+  operator could open any of these from an otherwise-French page and land back in English.
 - **A Roles & Permissions screen, so the permission system is something you can actually see and
   use**: until now roles and their permissions existed only inside the server, with no way to look
   at them. There is now a screen at Roles & Permissions showing every role as a column and every
