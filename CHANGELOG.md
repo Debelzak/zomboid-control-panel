@@ -213,6 +213,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unrecognised airdrop preset or item type, character data with nothing usable in it, and a failed
   sandbox-repair backup. Each of them names a specific count, ID or file, and each now carries that
   detail across so the French version says it too instead of dropping back to English.
+
+  The last two were a different problem and needed a different fix. "This folder is not writable"
+  and "cannot read this folder" each ended with a line of advice that changed completely depending
+  on whether the panel runs in Docker or directly on the machine, and on Windows versus Linux -
+  four and two entirely different sentences respectively, all sharing one message. Those are not one
+  sentence with a blank in it, so they are now separate messages, each written properly in both
+  languages, rather than a French frame with an English instruction stapled on the end.
 - **The French wording for "Wipe server" said "reset", not "erase"**: the dialog title, the
   confirm button and both menu entries used *Réinitialiser* - the word this panel uses for ordinary,
   recoverable resets elsewhere - directly above body text correctly warning that the action deletes
