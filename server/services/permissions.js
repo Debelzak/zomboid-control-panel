@@ -653,6 +653,20 @@ export async function updateRole(
 }
 
 /**
+ * Rule 0: a seeded role (admin/technician/moderator) can never be deleted,
+ * independent of member count -- this used to be enforced ONLY by
+ * RolesPermissions.tsx disabling the delete button for isSeeded roles,
+ * which meant a seeded role with zero current members (e.g. every admin
+ * reassigned to a custom role first) could be deleted outright via a
+ * direct DELETE /roles/:id call, requiring only roles.manage, not
+ * users.manage -- the same "wipe out the ability to administer the panel"
+ * catastrophe the recovery-lockout rules below exist to prevent, reached
+ * by deleting the ROLE DEFINITION instead of removing its last manager's
+ * membership. See docs/qa/kevin-access-control-french-usability.md
+ * Finding 1. The guard belongs here, in the service every caller goes
+ * through, not only in the one route or the one screen that happens to
+ * call it today.
+ *
  * Rule 3: refuse to delete a role with members unless reassignTo names
  * another role -- then every affected user is moved there first.
  * Rule 1 also applies here: deleting a role is a capability change to
@@ -664,6 +678,13 @@ export async function deleteRole(id, { reassignTo, actingUser } = {}) {
   const role = await getRoleById(id);
   if (!role) {
     throw makeError(ErrorCode.ROLE_NOT_FOUND, "Role not found", 404);
+  }
+  if (role.isSeeded) {
+    throw makeError(
+      ErrorCode.ROLE_IS_SEEDED,
+      "Built-in roles cannot be deleted.",
+      403,
+    );
   }
   const members = await getUsersForRole(role);
 

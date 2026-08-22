@@ -214,4 +214,27 @@ describe("DELETE /roles/:id", () => {
     expect(res.getBody().code).toBe("ROLE_HAS_MEMBERS");
     expect(res.getBody().params).toEqual({ count: expect.any(Number) });
   });
+
+  // docs/qa/kevin-access-control-french-usability.md Finding 1: a seeded
+  // role used to be deletable via this exact route (no isSeeded check
+  // anywhere in the stack) as long as it had zero members. Confirms the
+  // service-level refusal actually reaches an HTTP caller as a 403 with
+  // the named code, not just that deleteRole() itself throws.
+  it("surfaces ROLE_IS_SEEDED as a 403 for a seeded role with ZERO members -- the exact gap that was reachable before this fix", async () => {
+    const seededId = "role-seeded-technician";
+    seedRole(seededId, "technician", ["server.control"]);
+    rolesById.get(seededId).isSeeded = true; // seedRole() always sets false; flip it for this one role
+    // No users hold it -- this was the reachable case: ROLE_HAS_MEMBERS
+    // never fired, so nothing else stood between the request and deletion.
+
+    const res = await runRoute("/roles/:id", "delete", {
+      user: { userId: "u-admin", role: "admin" },
+      params: { id: seededId },
+      query: {},
+    });
+
+    expect(res.getStatusCode()).toBe(403);
+    expect(res.getBody().code).toBe("ROLE_IS_SEEDED");
+    expect(rolesById.has(seededId)).toBe(true); // untouched
+  });
 });

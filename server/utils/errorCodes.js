@@ -316,6 +316,13 @@ export const ErrorCode = Object.freeze({
    * that users still hold, with no reassignTo given -- refused rather than
    * orphaning them. */
   ROLE_HAS_MEMBERS: "ROLE_HAS_MEMBERS",
+  /** server/services/permissions.js -- deleteRole() rule 0: DELETE on a
+   * seeded role (admin/technician/moderator), independent of member count.
+   * Hard refusal, no override: a seeded role with zero current members
+   * used to be deletable via a direct API call even though the UI's
+   * delete button is disabled for it -- this closes that gap in the
+   * service itself, not just the one screen that happened to check first. */
+  ROLE_IS_SEEDED: "ROLE_IS_SEEDED",
   /** server/services/auth.js -- DELETE /api/auth/users/:id, the caller
    * targeted their own account. Hard refusal, no override: unlike editing
    * your own role's capabilities (ROLE_SELF_CAPABILITY_LOSS_CONFIRM, which

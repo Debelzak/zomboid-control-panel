@@ -13,6 +13,13 @@ function seedRole(id, name, capabilities) {
   rolesById.set(id, { id, name, capabilities, isSeeded: false });
 }
 
+// Distinct from seedRole() above (which, confusingly, always creates a
+// NON-seeded role -- it's named for "seeding test data", not "isSeeded").
+// This one actually sets isSeeded: true, for the Rule 0 tests below.
+function seedBuiltinRole(id, name, capabilities) {
+  rolesById.set(id, { id, name, capabilities, isSeeded: true });
+}
+
 vi.mock("../database/init.js", () => ({
   getRoles: async () => Array.from(rolesById.values()),
   getRoleById: async (id) => rolesById.get(String(id)) || null,
@@ -164,6 +171,56 @@ describe("updateRole -- lockout rule 2 (soft block: acting user losing their own
       { actingUser: { userId: "u2", role: "superuser" } },
     );
     expect(updated.capabilities).toEqual(["users.manage"]);
+  });
+});
+
+// docs/qa/kevin-access-control-french-usability.md Finding 1: deleteRole()
+// used to have no isSeeded check at all -- a seeded role with zero current
+// members could be deleted outright via a direct call/API request, even
+// though RolesPermissions.tsx's delete button is disabled for isSeeded
+// roles. "Test both directions" per god's own framing: a seeded role must
+// be refused regardless of members, AND a custom role must still delete
+// normally -- the second is what proves this isn't a fix that just passes
+// by refusing everything.
+describe("deleteRole -- rule 0 (seeded roles can never be deleted, independent of member count)", () => {
+  it("refuses a seeded role with ZERO members -- the exact gap that was reachable before this fix", async () => {
+    seedBuiltinRole("role-admin", "admin", ["roles.manage", "users.manage"]);
+    users = []; // no members at all
+
+    await expect(deleteRole("role-admin")).rejects.toMatchObject({
+      code: "ROLE_IS_SEEDED",
+      status: 403,
+    });
+    expect(rolesById.has("role-admin")).toBe(true); // untouched
+  });
+
+  it("refuses a seeded role WITH members too, and the code says isSeeded, not has-members", async () => {
+    seedBuiltinRole("role-tech", "technician", ["server.control"]);
+    users = [{ id: "u1", role: "technician", roleId: "role-tech" }];
+
+    await expect(deleteRole("role-tech")).rejects.toMatchObject({
+      code: "ROLE_IS_SEEDED",
+    });
+  });
+
+  it("refuses even with a valid reassignTo given -- seeded status is checked before member/reassignment logic runs at all", async () => {
+    seedBuiltinRole("role-mod", "moderator", ["players.moderate"]);
+    seedRole("role-custom", "Custom", ["players.view"]);
+    users = [{ id: "u1", role: "moderator", roleId: "role-mod" }];
+
+    await expect(
+      deleteRole("role-mod", { reassignTo: "role-custom" }),
+    ).rejects.toMatchObject({ code: "ROLE_IS_SEEDED" });
+    expect(users[0].roleId).toBe("role-mod"); // never reassigned
+  });
+
+  it("a CUSTOM role with zero members still deletes normally -- the fix does not overreach", async () => {
+    seedRole("role-empty-custom", "Empty Custom", ["players.view"]);
+
+    const result = await deleteRole("role-empty-custom");
+
+    expect(result.deleted).toBe(true);
+    expect(rolesById.has("role-empty-custom")).toBe(false);
   });
 });
 
