@@ -544,10 +544,17 @@ export class Scheduler {
           );
         }
       } catch (err) {
-        // performRestart re-throws on failure. node-cron does not consume the
-        // returned promise, so without this catch the rejection is unhandled
-        // and takes the whole panel process down. Errors are already logged
-        // + schedule-execution-logged inside performRestart's catch block.
+        // performRestart re-throws on failure. Verified against the
+        // installed node-cron@4.6.0 (InlineScheduledTask.execute(),
+        // node_modules/node-cron/dist/_shared.js ~266-283): the task
+        // callback is already wrapped in try/catch internally and routed to
+        // onError, so an unhandled rejection here would NOT take the panel
+        // down even without this catch -- confirmed by running a throwing
+        // task under it directly. This catch is belt-and-braces, kept so the
+        // failure is logged in our own terms (schedule history, our log
+        // format) rather than only node-cron's. If node-cron's error
+        // containment ever changes in a future upgrade, re-verify before
+        // trusting this comment.
         log.error(`Auto-restart cron tick failed: ${err.message}`);
       }
     });

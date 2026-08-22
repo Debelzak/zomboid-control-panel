@@ -1,0 +1,280 @@
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { execFileSync, spawnSync } from "child_process";
+import fs from "fs";
+import os from "os";
+import path from "path";
+
+// Behavioral test for build.js's generated Start.bat crash-loop supervisor
+// (build.js's generateStartBat()). This does NOT grep the template text --
+// it generates the real file, points it at a controllable stub binary named
+// like the real panel exe, and asserts on what the supervisor actually does:
+// how many times it launches the stub, what its own exit code is, and what
+// it wrote to logs\supervisor.log. A text-grep test would prove the string
+// "MAX_RAPID_CRASHES" is present, not that the loop behaves -- this proves
+// the behavior.
+//
+// Windows-only: this is a Windows batch supervisor, and this repo's CI runs
+// on ubuntu-latest (no cmd.exe). It also needs a C# compiler to build the
+// stub as a real .exe (a renamed .bat can't stand in for ZomboidControlPanel.exe --
+// Windows dispatches by PE header, not extension). Both are skipped with an
+// explicit, visible reason rather than silently vanishing from the run.
+const isWindows = process.platform === "win32";
+const CSC_PATH =
+  "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe";
+const hasCsc = isWindows && fs.existsSync(CSC_PATH);
+const skipReason = !isWindows
+  ? `Windows-only supervisor test, running on ${process.platform}`
+  : !hasCsc
+    ? "legacy .NET Framework csc.exe not found -- cannot build the stub exe"
+    : null;
+
+const STUB_SOURCE = `
+using System;
+using System.IO;
+
+// Controllable stand-in for ZomboidControlPanel.exe. Reads exit-codes.txt and
+// sleep-ms.txt (one value per line, one per invocation; the last line
+// repeats if invoked more times than there are lines) from its own
+// directory, tracks its invocation count via a counter file, sleeps, then
+// exits with the chosen code -- so a test can script a whole run history
+// ("crash, crash, stay up, crash, clean exit") without touching the real
+// panel binary.
+class Stub {
+  static int Main() {
+    string dir = AppDomain.CurrentDomain.BaseDirectory;
+    string counterPath = Path.Combine(dir, "invoke-count.txt");
+    int invocation = 0;
+    if (File.Exists(counterPath)) {
+      int.TryParse(File.ReadAllText(counterPath).Trim(), out invocation);
+    }
+    File.WriteAllText(counterPath, (invocation + 1).ToString());
+
+    int code = ReadIndexed(Path.Combine(dir, "exit-codes.txt"), invocation, 0);
+    int sleepMs = ReadIndexed(Path.Combine(dir, "sleep-ms.txt"), invocation, 0);
+
+    if (sleepMs > 0) System.Threading.Thread.Sleep(sleepMs);
+    Console.WriteLine("stub invocation " + invocation + " exiting with code " + code);
+    return code;
+  }
+
+  static int ReadIndexed(string path, int index, int fallback) {
+    if (!File.Exists(path)) return fallback;
+    var lines = File.ReadAllLines(path);
+    if (lines.Length == 0) return fallback;
+    int i = index < lines.Length ? index : lines.Length - 1;
+    int val;
+    return int.TryParse(lines[i].Trim(), out val) ? val : fallback;
+  }
+}
+`;
+
+let sharedDir;
+let stubExePath;
+let generateStartBat;
+
+async function writeStartBatInto(dir) {
+  fs.writeFileSync(path.join(dir, "Start.bat"), generateStartBat());
+}
+
+function setupStub(dir, exitCodes, sleepMsList) {
+  fs.copyFileSync(stubExePath, path.join(dir, "ZomboidControlPanel.exe"));
+  fs.writeFileSync(path.join(dir, "exit-codes.txt"), exitCodes.join("\n"));
+  fs.writeFileSync(
+    path.join(dir, "sleep-ms.txt"),
+    (sleepMsList || [0]).join("\n"),
+  );
+}
+
+function runSupervisor(dir, env, timeoutMs) {
+  const childEnv = { ...process.env, ...env };
+  // Strip any sandbox-imposed executable-search hardening from the child so
+  // this test reflects a normal operator machine, not this CI/dev
+  // environment's own shell settings. Windows env var names are
+  // case-insensitive, but a plain object built from a `{...process.env}`
+  // spread is case-SENSITIVE -- vitest's worker exposes this one in a
+  // different case than a plain shell does, so match by name, not by exact
+  // key, or the delete silently no-ops.
+  for (const key of Object.keys(childEnv)) {
+    if (key.toLowerCase() === "nodefaultcurrentdirectoryinexepath") {
+      delete childEnv[key];
+    }
+  }
+  return spawnSync("cmd.exe", ["/c", path.join(dir, "Start.bat")], {
+    cwd: dir,
+    env: childEnv,
+    input: "",
+    encoding: "utf8",
+    timeout: timeoutMs,
+    windowsHide: true,
+  });
+}
+
+function countLaunches(stdout) {
+  return ((stdout || "").match(/^Launching /gm) || []).length;
+}
+
+function readSupervisorLog(dir) {
+  const p = path.join(dir, "logs", "supervisor.log");
+  return fs.existsSync(p) ? fs.readFileSync(p, "utf8") : "";
+}
+
+function freshScenarioDir(name) {
+  const dir = path.join(sharedDir, name);
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+describe.skipIf(!!skipReason)(
+  "Start.bat supervisor crash-loop behavior",
+  () => {
+    beforeAll(async () => {
+      ({ generateStartBat } = await import("../../build.js"));
+
+      sharedDir = fs.mkdtempSync(
+        path.join(os.tmpdir(), "pz-supervisor-test-"),
+      );
+      const srcPath = path.join(sharedDir, "stub.cs");
+      fs.writeFileSync(srcPath, STUB_SOURCE);
+      stubExePath = path.join(sharedDir, "ZomboidControlPanel.exe");
+      execFileSync(
+        CSC_PATH,
+        ["-nologo", "-optimize", "-out:" + stubExePath, srcPath],
+        { stdio: "pipe" },
+      );
+    }, 30000);
+
+    afterAll(() => {
+      if (sharedDir) fs.rmSync(sharedDir, { recursive: true, force: true });
+    });
+
+    it(
+      "does not relaunch a clean exit (code 0)",
+      async () => {
+        const dir = freshScenarioDir("clean-exit");
+        await writeStartBatInto(dir);
+        setupStub(dir, [0], [0]);
+
+        const result = runSupervisor(dir, {}, 15000);
+
+        expect(countLaunches(result.stdout)).toBe(1);
+        expect(result.status).toBe(0);
+        expect(readSupervisorLog(dir)).not.toMatch(/relaunch attempt/i);
+      },
+      20000,
+    );
+
+    it(
+      "relaunches once after a crash, then stops cleanly once the panel recovers",
+      async () => {
+        const dir = freshScenarioDir("recover-after-crash");
+        await writeStartBatInto(dir);
+        setupStub(dir, [7, 0], [0, 0]);
+
+        const result = runSupervisor(
+          dir,
+          { PANEL_SUPERVISOR_BACKOFF_SECONDS: "0" },
+          15000,
+        );
+
+        expect(countLaunches(result.stdout)).toBe(2);
+        expect(result.status).toBe(0);
+        const log = readSupervisorLog(dir);
+        expect(log).toMatch(/relaunch attempt 1 of 5/);
+        expect(log).not.toMatch(/Gave up/);
+      },
+      20000,
+    );
+
+    it(
+      "stops and surfaces the exit code once repeated crashes exceed the cap",
+      async () => {
+        const dir = freshScenarioDir("hits-cap");
+        await writeStartBatInto(dir);
+        setupStub(dir, [7], [0]);
+
+        const result = runSupervisor(
+          dir,
+          {
+            PANEL_SUPERVISOR_BACKOFF_SECONDS: "0",
+            PANEL_SUPERVISOR_MAX_CRASHES: "3",
+          },
+          20000,
+        );
+
+        // cap=3 allows 3 relaunches (4 total launches) before giving up on
+        // the 4th crash.
+        expect(countLaunches(result.stdout)).toBe(4);
+        expect(result.status).toBe(7);
+        const log = readSupervisorLog(dir);
+        expect(log).toMatch(/relaunch attempt 1 of 3/);
+        expect(log).toMatch(/relaunch attempt 2 of 3/);
+        expect(log).toMatch(/relaunch attempt 3 of 3/);
+        expect(log).toMatch(/Gave up after 4 rapid crashes/);
+      },
+      25000,
+    );
+
+    it(
+      "still loops immediately on exit code 75 (update path), unaffected by the crash cap",
+      async () => {
+        const dir = freshScenarioDir("update-loop");
+        await writeStartBatInto(dir);
+        setupStub(dir, [75, 75, 0], [0, 0, 0]);
+
+        const result = runSupervisor(
+          dir,
+          { PANEL_SUPERVISOR_MAX_CRASHES: "1" },
+          15000,
+        );
+
+        expect(countLaunches(result.stdout)).toBe(3);
+        expect(result.status).toBe(0);
+        const log = readSupervisorLog(dir);
+        // Exit 75 is a requested update, never a "crash" -- it must never
+        // produce a relaunch-attempt/backoff message or count against the cap.
+        expect(log).not.toMatch(/relaunch attempt/);
+        expect(log).not.toMatch(/Gave up/);
+      },
+      20000,
+    );
+
+    it(
+      "resets the crash counter after a run that stays up long enough, so the cap never trips",
+      async () => {
+        const dir = freshScenarioDir("resets-after-stable-run");
+        await writeStartBatInto(dir);
+        // Crash, stay up ~2.5s, crash again, then exit cleanly. With
+        // MAX_CRASHES=1 this would give up on the very first relaunch if the
+        // counter did NOT reset after the stable run. The uptime check
+        // compares whole-second epoch timestamps (floor'd, not rounded), so
+        // the sleep needs enough margin over the 1s override below that a
+        // worst-case truncation at both ends still lands >= 1s -- 2.5s of
+        // real sleep guarantees that; something closer to 1.0-1.5s would be
+        // a flaky test, not a bug in the supervisor.
+        setupStub(dir, [7, 7, 0], [0, 2500, 0]);
+
+        const result = runSupervisor(
+          dir,
+          {
+            PANEL_SUPERVISOR_BACKOFF_SECONDS: "0",
+            PANEL_SUPERVISOR_MAX_CRASHES: "1",
+            PANEL_SUPERVISOR_MIN_STABLE_SECONDS: "1",
+          },
+          15000,
+        );
+
+        expect(countLaunches(result.stdout)).toBe(3);
+        expect(result.status).toBe(0);
+        const log = readSupervisorLog(dir);
+        expect(log).toMatch(/resetting crash counter/);
+        expect(log).not.toMatch(/Gave up/);
+      },
+      20000,
+    );
+  },
+);
+
+if (skipReason) {
+  it.skip(`Start.bat supervisor crash-loop behavior (skipped: ${skipReason})`, () => {});
+}

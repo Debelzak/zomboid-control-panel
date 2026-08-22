@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Windows panel recovery after a crash**: on Windows the panel launcher only restarted the panel
+  when an update was being applied, so any other crash left it stopped — waiting on a keypress —
+  while the game server carried on running unattended. It now relaunches automatically, backing off
+  between attempts, and still stops and shows the exit code if the panel is crashing repeatedly
+  rather than hiding a genuine problem behind an endless restart loop. A clean shutdown stays shut
+  down. Takes effect in the next Windows build.
+
 - **RCON reconnect targeting**: a panel with no server configured no longer repeatedly attempts RCON
   logins against whatever happens to be listening on the default port, and once a server is added it
   is targeted correctly — including one that has no RCON password set yet — instead of silently
