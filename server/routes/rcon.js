@@ -6,6 +6,7 @@ import { PZ_COMMANDS } from '../utils/commands.js';
 import { sanitizeError } from '../utils/sanitize.js';
 import { testRconConnection } from '../services/rcon.js';
 import { requirePermission } from '../services/permissions.js';
+import { ErrorCode } from '../utils/errorCodes.js';
 
 const router = express.Router();
 
@@ -44,12 +45,12 @@ router.post('/execute', requirePermission('rcon.execute'), async (req, res) => {
     log.info(`POST /execute: ${(command || '').substring(0, 100)}`);
     
     if (!command) {
-      return res.status(400).json({ error: 'Command is required' });
+      return res.status(400).json({ error: 'Command is required', code: ErrorCode.RCON_COMMAND_REQUIRED });
     }
-    
+
     // Validate command type and length
     if (typeof command !== 'string' || command.length > 2000) {
-      return res.status(400).json({ error: 'Invalid command (max 2000 characters)' });
+      return res.status(400).json({ error: 'Invalid command (max 2000 characters)', code: ErrorCode.RCON_COMMAND_INVALID });
     }
     
     const result = await rconService.execute(command);
@@ -91,22 +92,22 @@ router.post('/connect', requirePermission('rcon.execute'), async (req, res) => {
     // Validate host format if provided (only alphanumeric, dots, hyphens)
     if (host !== undefined) {
       if (typeof host !== 'string' || host.length > 255 || !/^[a-zA-Z0-9.-]+$/.test(host)) {
-        return res.status(400).json({ success: false, error: 'Invalid host format' });
+        return res.status(400).json({ success: false, error: 'Invalid host format', code: ErrorCode.RCON_INVALID_HOST });
       }
     }
-    
+
     // Validate port if provided
     if (port !== undefined) {
       const portNum = parseInt(port, 10);
       if (isNaN(portNum) || portNum < 1 || portNum > 65535) {
-        return res.status(400).json({ success: false, error: 'Invalid port (1-65535)' });
+        return res.status(400).json({ success: false, error: 'Invalid port (1-65535)', code: ErrorCode.RCON_INVALID_PORT });
       }
     }
-    
+
     // Validate password if provided
     if (password !== undefined) {
       if (typeof password !== 'string' || password.length > 256) {
-        return res.status(400).json({ success: false, error: 'Invalid password format' });
+        return res.status(400).json({ success: false, error: 'Invalid password format', code: ErrorCode.RCON_INVALID_PASSWORD });
       }
     }
     
@@ -118,7 +119,7 @@ router.post('/connect', requirePermission('rcon.execute'), async (req, res) => {
     if (connected) {
       res.json({ success: true, message: 'Connected to RCON' });
     } else {
-      res.status(503).json({ success: false, error: 'Could not connect to RCON. Is the server running and RCON enabled?' });
+      res.status(503).json({ success: false, error: 'Could not connect to RCON. Is the server running and RCON enabled?', code: ErrorCode.RCON_CONNECT_FAILED });
     }
   } catch (error) {
     log.error(`RCON connect failed: ${error.message}`);

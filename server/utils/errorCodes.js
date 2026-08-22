@@ -103,6 +103,15 @@ export const ErrorCode = Object.freeze({
    * that users still hold, with no reassignTo given -- refused rather than
    * orphaning them. */
   ROLE_HAS_MEMBERS: "ROLE_HAS_MEMBERS",
+  /** server/services/auth.js -- DELETE /api/auth/users/:id, the caller
+   * targeted their own account. Hard refusal, no override: unlike editing
+   * your own role's capabilities (ROLE_SELF_CAPABILITY_LOSS_CONFIRM, which
+   * still leaves you signed in with reduced access), deleting your own
+   * account invalidates your session on the very next request -- you'd be
+   * logged out mid-action with no account left to log back into. Another
+   * admin can delete the account instead, which is a deliberate two-party
+   * action rather than a one-click accident. */
+  USER_SELF_DELETE_REFUSED: "USER_SELF_DELETE_REFUSED",
   /** server/index.js -- Docker-update apply path ONLY: server is running
    * and RCON isn't connected, so the panel can't stop it automatically
    * before applying the update. Split out from SERVER_RUNNING_LEGACY
@@ -118,6 +127,87 @@ export const ErrorCode = Object.freeze({
    * `code: "server_running"` -> `code: ErrorCode.SERVER_RUNNING_RCON_
    * UNAVAILABLE` swap at that one site is pending sequencing. */
   SERVER_RUNNING_RCON_UNAVAILABLE: "SERVER_RUNNING_RCON_UNAVAILABLE",
+
+  /** server/routes/docker.js -- POST /api/docker/containers/:id/:action,
+   * dockerClient exists but isn't enabled/available. */
+  DOCKER_UNAVAILABLE: "DOCKER_UNAVAILABLE",
+  /** server/routes/docker.js -- POST /api/docker/containers/:id/:action,
+   * req.body.serverId doesn't match a known server profile. */
+  SERVER_PROFILE_NOT_FOUND: "SERVER_PROFILE_NOT_FOUND",
+  /** server/routes/docker.js -- the container id in the URL isn't the one
+   * mapped to the resolved server profile. */
+  CONTAINER_NOT_MAPPED: "CONTAINER_NOT_MAPPED",
+  /** server/routes/docker.js -- the container exists but isn't one this
+   * panel manages (inspectManagedContainer returned nothing). */
+  CONTAINER_NOT_MANAGED: "CONTAINER_NOT_MANAGED",
+  /** server/routes/docker.js -- stop/restart action on a running container:
+   * couldn't establish an RCON connection to save the world first. */
+  DOCKER_ACTION_RCON_CONNECT_FAILED: "DOCKER_ACTION_RCON_CONNECT_FAILED",
+  /** server/routes/docker.js -- stop/restart action on a running container:
+   * RCON connected but the pre-stop world save itself failed. */
+  DOCKER_ACTION_SAVE_FAILED: "DOCKER_ACTION_SAVE_FAILED",
+
+  /** server/routes/rcon.js -- POST /api/rcon/execute, no command in the body. */
+  RCON_COMMAND_REQUIRED: "RCON_COMMAND_REQUIRED",
+  /** server/routes/rcon.js -- POST /api/rcon/execute, command isn't a
+   * string or exceeds the 2000-character cap. */
+  RCON_COMMAND_INVALID: "RCON_COMMAND_INVALID",
+  /** server/routes/rcon.js -- POST /api/rcon/connect, host fails the
+   * alphanumeric/dot/hyphen format check. */
+  RCON_INVALID_HOST: "RCON_INVALID_HOST",
+  /** server/routes/rcon.js -- POST /api/rcon/connect, port isn't 1-65535. */
+  RCON_INVALID_PORT: "RCON_INVALID_PORT",
+  /** server/routes/rcon.js -- POST /api/rcon/connect, password isn't a
+   * string or exceeds 256 characters. */
+  RCON_INVALID_PASSWORD: "RCON_INVALID_PASSWORD",
+  /** server/routes/rcon.js -- POST /api/rcon/connect, rconService.connect()
+   * returned false (server not running or RCON not enabled there). */
+  RCON_CONNECT_FAILED: "RCON_CONNECT_FAILED",
+
+  /** server/routes/backup.js -- POST /api/backup/create, active server is
+   * remote (SFTP-managed), so there's no local filesystem to back up. */
+  BACKUP_REMOTE_NOT_AVAILABLE: "BACKUP_REMOTE_NOT_AVAILABLE",
+  /** server/routes/backup.js -- GET /api/backup/download/:name,
+   * getBackupsPath() returned nothing (no server configured yet). */
+  BACKUPS_FOLDER_NOT_FOUND: "BACKUPS_FOLDER_NOT_FOUND",
+  /** server/routes/backup.js (2 sites: download, restore) -- the :name
+   * param doesn't end in .zip after path.basename() sanitization. */
+  BACKUP_INVALID_FILE: "BACKUP_INVALID_FILE",
+  /** server/routes/backup.js -- GET /api/backup/download/:name, no file at
+   * the resolved path. */
+  BACKUP_NOT_FOUND: "BACKUP_NOT_FOUND",
+  /** server/routes/backup.js -- POST /api/backup/restore/:name, active
+   * server is remote. Distinct wording/code from BACKUP_REMOTE_NOT_AVAILABLE
+   * (create path) -- kept separate rather than merged, same reasoning as
+   * SERVER_RUNNING_RCON_UNAVAILABLE above. */
+  BACKUP_RESTORE_REMOTE_NOT_AVAILABLE: "BACKUP_RESTORE_REMOTE_NOT_AVAILABLE",
+  /** server/routes/backup.js -- POST /api/backup/restore/:name, the target
+   * server process is currently running. */
+  BACKUP_RESTORE_SERVER_RUNNING: "BACKUP_RESTORE_SERVER_RUNNING",
+  /** server/routes/backup.js -- POST /api/backup/delete-older-than, `days`
+   * isn't a number >= 1. */
+  BACKUP_INVALID_DAYS_PARAMETER: "BACKUP_INVALID_DAYS_PARAMETER",
+  /** server/routes/backup.js -- POST /api/backup/upload, active server is
+   * remote. Distinct from the create/restore remote-refusal codes above --
+   * own wording, own call site. */
+  BACKUP_UPLOAD_REMOTE_NOT_AVAILABLE: "BACKUP_UPLOAD_REMOTE_NOT_AVAILABLE",
+  /** server/routes/backup.js -- POST /api/backup/upload, empty or missing
+   * request body. */
+  BACKUP_UPLOAD_NO_FILE: "BACKUP_UPLOAD_NO_FILE",
+  /** server/routes/backup.js -- POST /api/backup/upload, body doesn't start
+   * with the zip local-file-header signature. */
+  BACKUP_UPLOAD_INVALID_ZIP_SIGNATURE: "BACKUP_UPLOAD_INVALID_ZIP_SIGNATURE",
+  /** server/routes/backup.js -- POST /api/backup/upload, sanitized filename
+   * doesn't end in .zip. Distinct check/site from BACKUP_UPLOAD_INVALID_ZIP_
+   * SIGNATURE (that one reads file bytes; this one reads the filename). */
+  BACKUP_UPLOAD_INVALID_EXTENSION: "BACKUP_UPLOAD_INVALID_EXTENSION",
+  /** server/routes/backup.js -- POST /api/backup/upload, a backup with the
+   * resolved target filename already exists on disk. */
+  BACKUP_UPLOAD_NAME_CONFLICT: "BACKUP_UPLOAD_NAME_CONFLICT",
+  /** server/routes/backup.js -- POST /api/backup/upload, getBackupsPath()
+   * returned nothing. Distinct code/status(500) from BACKUPS_FOLDER_NOT_
+   * FOUND (download path, status 404) -- different route, different wording. */
+  BACKUPS_FOLDER_UNAVAILABLE: "BACKUPS_FOLDER_UNAVAILABLE",
 
   // --- legacy: wire value frozen (client compares it with === today),
   //     constant name invented only so a locale key exists ---

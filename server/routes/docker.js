@@ -3,6 +3,7 @@ import { requirePermission } from "../services/permissions.js";
 import { sanitizeError } from "../utils/sanitize.js";
 import { getServer } from "../database/init.js";
 import { RconService } from "../services/rcon.js";
+import { ErrorCode } from "../utils/errorCodes.js";
 
 const router = express.Router();
 
@@ -72,29 +73,49 @@ router.post("/containers/:id/:action", requirePermission("docker.manage"), async
   try {
     const dockerClient = req.app.get("dockerClient");
     if (!dockerClient?.enabled || !dockerClient.available) {
-      return res.status(503).json({ error: "Docker control is unavailable" });
+      return res.status(503).json({
+        error: "Docker control is unavailable",
+        code: ErrorCode.DOCKER_UNAVAILABLE,
+      });
     }
     const server = await getServer(req.body?.serverId);
-    if (!server) return res.status(404).json({ error: "Server profile not found" });
+    if (!server) {
+      return res.status(404).json({
+        error: "Server profile not found",
+        code: ErrorCode.SERVER_PROFILE_NOT_FOUND,
+      });
+    }
     if (
       server.dockerContainerName !== req.params.id &&
       server.dockerContainerId !== req.params.id
     ) {
-      return res.status(403).json({ error: "Container is not mapped to this server" });
+      return res.status(403).json({
+        error: "Container is not mapped to this server",
+        code: ErrorCode.CONTAINER_NOT_MAPPED,
+      });
     }
     const container = await dockerClient.inspectManagedContainer(req.params.id);
     if (!container) {
-      return res.status(403).json({ error: "Container is not managed by this panel" });
+      return res.status(403).json({
+        error: "Container is not managed by this panel",
+        code: ErrorCode.CONTAINER_NOT_MANAGED,
+      });
     }
     if (["stop", "restart"].includes(req.params.action) && container.State?.Running) {
       rconService = new RconService();
       await rconService.loadConfig(server.id);
       if (!(await rconService.connect())) {
-        return res.status(409).json({ error: "RCON connection failed; container was not changed" });
+        return res.status(409).json({
+          error: "RCON connection failed; container was not changed",
+          code: ErrorCode.DOCKER_ACTION_RCON_CONNECT_FAILED,
+        });
       }
       const saved = await rconService.save({ skipLog: true });
       if (!saved?.success) {
-        return res.status(409).json({ error: `World save failed: ${saved?.error || "unknown error"}` });
+        return res.status(409).json({
+          error: `World save failed: ${saved?.error || "unknown error"}`,
+          code: ErrorCode.DOCKER_ACTION_SAVE_FAILED,
+        });
       }
     }
     const result = await dockerClient.runManagedAction(req.params.id, req.params.action);

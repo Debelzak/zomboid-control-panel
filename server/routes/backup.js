@@ -6,6 +6,7 @@ import { sanitizeError } from "../utils/sanitize.js";
 import { getActiveServer } from "../database/init.js";
 import { requirePermission } from "../services/permissions.js";
 import { listBackupRecords } from "../services/backupRecords.js";
+import { ErrorCode } from "../utils/errorCodes.js";
 const log = createLogger("API:Backup");
 
 const router = express.Router();
@@ -117,6 +118,7 @@ router.post("/create", requirePermission("backups.manage"), async (req, res) => 
         .json({
           error:
             "Backups are not available for remote servers. The server filesystem is not accessible from this panel.",
+          code: ErrorCode.BACKUP_REMOTE_NOT_AVAILABLE,
         });
     }
 
@@ -172,19 +174,19 @@ router.get("/download/:name", requirePermission("backups.download"), async (req,
     const backupsPath = await backupService.getBackupsPath();
 
     if (!backupsPath) {
-      return res.status(404).json({ error: "Backups folder not found" });
+      return res.status(404).json({ error: "Backups folder not found", code: ErrorCode.BACKUPS_FOLDER_NOT_FOUND });
     }
 
     // Sanitize filename to prevent path traversal
     const safeName = path.basename(req.params.name);
     if (!safeName.endsWith(".zip")) {
-      return res.status(400).json({ error: "Invalid backup file" });
+      return res.status(400).json({ error: "Invalid backup file", code: ErrorCode.BACKUP_INVALID_FILE });
     }
 
     const backupPath = path.join(backupsPath, safeName);
 
     if (!fs.existsSync(backupPath)) {
-      return res.status(404).json({ error: "Backup not found" });
+      return res.status(404).json({ error: "Backup not found", code: ErrorCode.BACKUP_NOT_FOUND });
     }
 
     res.download(backupPath, safeName);
@@ -208,6 +210,7 @@ router.post("/restore/:name", requirePermission("backups.restore"), async (req, 
         .json({
           error:
             "Backup restore is not available for remote servers. The server filesystem is not accessible from this panel.",
+          code: ErrorCode.BACKUP_RESTORE_REMOTE_NOT_AVAILABLE,
         });
     }
 
@@ -217,7 +220,7 @@ router.post("/restore/:name", requirePermission("backups.restore"), async (req, 
     // Sanitize filename to prevent path traversal
     const safeName = path.basename(req.params.name);
     if (!safeName.endsWith(".zip")) {
-      return res.status(400).json({ error: "Invalid backup file" });
+      return res.status(400).json({ error: "Invalid backup file", code: ErrorCode.BACKUP_INVALID_FILE });
     }
 
     // Check if server is running
@@ -227,6 +230,7 @@ router.post("/restore/:name", requirePermission("backups.restore"), async (req, 
         success: false,
         error:
           "Server must be stopped before restoring a backup. Please stop the server first.",
+        code: ErrorCode.BACKUP_RESTORE_SERVER_RUNNING,
       });
     }
 
@@ -251,7 +255,7 @@ router.post("/delete-older-than", requirePermission("backups.manage"), async (re
     if (typeof days !== "number" || days < 1) {
       return res
         .status(400)
-        .json({ error: "Invalid days parameter. Must be a number >= 1" });
+        .json({ error: "Invalid days parameter. Must be a number >= 1", code: ErrorCode.BACKUP_INVALID_DAYS_PARAMETER });
     }
 
     const backupService = req.app.get("backupService");
@@ -283,6 +287,7 @@ router.post(
           .status(400)
           .json({
             error: "Backup upload is not available for remote servers.",
+            code: ErrorCode.BACKUP_UPLOAD_REMOTE_NOT_AVAILABLE,
           });
       }
 
@@ -292,6 +297,7 @@ router.post(
           .json({
             error:
               "No file uploaded. Send the zip body with Content-Type: application/zip.",
+            code: ErrorCode.BACKUP_UPLOAD_NO_FILE,
           });
       }
 
@@ -301,7 +307,7 @@ router.post(
       if (req.body.length < 4 || req.body[0] !== 0x50 || req.body[1] !== 0x4b) {
         return res
           .status(400)
-          .json({ error: "File does not look like a valid .zip archive." });
+          .json({ error: "File does not look like a valid .zip archive.", code: ErrorCode.BACKUP_UPLOAD_INVALID_ZIP_SIGNATURE });
       }
 
       const rawName = String(
@@ -316,7 +322,7 @@ router.post(
       if (!baseName.toLowerCase().endsWith(".zip")) {
         return res
           .status(400)
-          .json({ error: "Only .zip backups are accepted." });
+          .json({ error: "Only .zip backups are accepted.", code: ErrorCode.BACKUP_UPLOAD_INVALID_EXTENSION });
       }
 
       const backupService = req.app.get("backupService");
@@ -326,6 +332,7 @@ router.post(
           .status(500)
           .json({
             error: "Backups folder not available. Configure the server first.",
+            code: ErrorCode.BACKUPS_FOLDER_UNAVAILABLE,
           });
       }
       if (!fs.existsSync(backupsPath)) {
@@ -344,6 +351,7 @@ router.post(
           .status(409)
           .json({
             error: `A backup named "${finalName}" already exists. Delete it first or rename the upload.`,
+            code: ErrorCode.BACKUP_UPLOAD_NAME_CONFLICT,
           });
       }
 
