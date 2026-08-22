@@ -40,6 +40,67 @@ against terms-<other translators>.md at the end.
   mine). Translated them since I own the call site; did not touch the
   component itself.
 
+## ServerConfig.tsx
+(Converted by a forked sub-agent under my direction, reviewed and verified
+by me before commit: independent key-parity check, i18n-check.mjs run,
+both gates re-run clean, `t`-shadowing fix spot-checked, French read as
+prose. Term choices below as reported by the fork.)
+- Reused rather than invented: "template" → **modèle** (servers.json/
+  roles.json); "Backup" → **Sauvegarde**, "Restore" → **Restaurer**,
+  "Refresh" → **Actualiser** (settings.json); "Reset" → **Réinitialiser**
+  (dashboard.json/login.json).
+- "discard" (changes, distinct from Cancel) → **ignorer** — no prior
+  precedent existed anywhere in the glossary for this concept; chose it
+  specifically to avoid colliding with "Annuler" (Cancel), already
+  established elsewhere and meaning something different (closing a dialog
+  vs. throwing away edits).
+- Lowercase command-style micro-buttons ("save", "discard", "expand all",
+  "refresh"/"load") are a deliberate terse-console register in the English
+  source on this page — kept that register in French ("enregistrer",
+  "ignorer", "tout développer", "actualiser"/"charger") rather than
+  capitalizing to normal French UI case, to preserve the visual/tonal
+  distinction from the page's other, normally-cased buttons.
+- Mod-settings "modified count" badge → **"{{count}} modif."**, not
+  "{{count}} mod." — this whole tab already says "mod" to mean "game
+  modification" constantly; an abbreviated "mod." for "modifié" would read
+  as a mod-count to a French speaker. "modif." is unambiguous.
+- Two *distinct* toggle-label registers, kept deliberately separate rather
+  than collapsed to one key: **ACTIVÉ/DÉSACTIVÉ** (all-caps, matches PZ's
+  own in-game convention) for the mod-settings sandbox switches, vs.
+  sentence-case **Activé/Désactivé** for the plain INI/Sandbox setting-row
+  toggles — the two appear in visually distinct contexts and use PZ's own
+  in-game casing convention only where the option is itself a PZ/mod
+  sandbox value.
+- SCOPE BOUNDARY (important, affects how "done" this page really is): the
+  hundreds of individual INI/Sandbox *setting names and descriptions*
+  (`setting.label`/`setting.description` in `IniSettingRow`/
+  `SandboxSettingRow`) are sourced from `client/src/lib/serverConfigSchema.ts`
+  (`INI_SCHEMA`/`SANDBOX_SCHEMA`), NOT from ServerConfig.tsx itself. That
+  file is out of my exclusive-ownership scope and was not touched. Result:
+  all page chrome (tabs, dialogs, toasts, search/filter, backups,
+  templates, mod-settings furniture, row furniture) is bilingual, but the
+  actual PZ setting names/descriptions throughout the INI and Sandbox tabs
+  stay English-only. This is a separate, materially larger task
+  (internationalizing the schema file that defines every PZ setting) —
+  needs a deliberate decision on ownership, same shape as the
+  components/templates/*.tsx gap but bigger.
+- Two real bugs found and fixed (not translation issues — code bugs the
+  translation pass surfaced): (1) a `.map((t) => (...))` inside the tab
+  strip's `TabsList` render used `t` as its lambda parameter, silently
+  shadowing the `useTranslation` `t` for every `t(...)` call inside that
+  JSX block — renamed to `tabDef`. Same latent-shadow pattern fixed in
+  `handleDeleteTemplate`'s `.filter(t => ...)`, renamed to `tpl`. (2) None
+  found beyond that on this page — no comment/code mismatch like the
+  Mods.tsx:911 one.
+- i18n-check.mjs flagged 2 remaining "duplicate" French pairs after fixing
+  2 real ones (see verification note above): an aria-label paired with its
+  own button's visible tooltip, deliberately worded identically so a
+  screen-reader user and a sighted user get the same message (e.g.
+  "Télécharger la sauvegarde des points de spawn" for both
+  `downloadSpawnPointsAria` and `downloadSpawnPointsTooltip`) — checked
+  against the English source, which is itself duplicated the same way by
+  design. Not a bug.
+
 ## Templates.tsx
 - Page title "Simulation Templates" → **Modèles de simulation**.
 - Scope note: TemplateCard, TemplatePreviewDialog, CreateTemplateDialog,
