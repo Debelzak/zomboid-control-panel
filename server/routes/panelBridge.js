@@ -243,10 +243,14 @@ function isValidBridgePath(inputPath) {
 // -- the same capability players.js's own teleport/give-item-equivalent
 // routes use. Both default to admin+technician+moderator, so this is a
 // zero-behaviour-change addition (adding a capability, not restricting
-// one). /status, /ping and /commands stay deliberately outside the matrix
-// -- see server.js's equivalent comment for why: dashboard-wide reads (or,
-// for /commands, static route metadata) that protect nothing if gated and
-// can break a screen for a role if mis-set.
+// one). /status and /ping stay deliberately outside the matrix -- see
+// server.js's equivalent comment for why: dashboard-wide reads that
+// protect nothing if gated and can break a screen for a role if mis-set.
+// /commands stays outside the matrix too, for its own reason: the handler
+// returns a static hardcoded array of action names and argument shapes --
+// no live data, no server state, nothing that differs by who's asking. It's
+// API documentation, not a read of anything. Gating it would add a
+// permission check that protects nothing.
 // /server-info is NOT in that class: handlers.getServerInfo returns every
 // online player's exact x/y/z position and current health, unauthenticated,
 // to anyone who can reach the panel. Gated requirePermission("players.view")
