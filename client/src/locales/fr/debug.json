@@ -582,6 +582,86 @@
             "message": "Les vérifications journaux/disque n'ont pas pu s'exécuter : {{reason}}"
           }
         }
+      },
+      "runtime": {
+        "heap": {
+          "fail": {
+            "label": "Utilisation du tas critique",
+            "message": "Tas à {{pct}} % de sa limite. {{heapUsed}} utilisés sur {{heapLimit}} de limite ({{heapTotal}} actuellement alloués). Redémarrage recommandé."
+          },
+          "warn": {
+            "label": "Utilisation du tas élevée",
+            "message": "Tas à {{pct}} % de sa limite. {{heapUsed}} utilisés sur {{heapLimit}} de limite ({{heapTotal}} actuellement alloués)."
+          },
+          "ok": {
+            "label": "Utilisation du tas saine",
+            "message": "{{pct}} % de la limite. {{heapUsed}} utilisés sur {{heapLimit}} de limite ({{heapTotal}} actuellement alloués)."
+          }
+        },
+        "hostMem": {
+          "fail": {
+            "label": "RAM hôte épuisée",
+            "message": "Seulement {{free}} libres sur {{total}}. Le serveur risque de planter."
+          },
+          "warn": {
+            "label": "Pression sur la RAM hôte",
+            "message": "{{pct}} % utilisés ({{used}} / {{total}})."
+          },
+          "ok": {
+            "label": "RAM hôte saine",
+            "message": "{{pct}} % utilisés sur {{total}}."
+          }
+        },
+        "uptime": {
+          "info": {
+            "label": "Disponibilité du panneau",
+            "message": "{{uptime}}."
+          }
+        },
+        "error": {
+          "warn": {
+            "label": "Erreur lors des vérifications d'exécution",
+            "message": "Les vérifications mémoire/disponibilité n'ont pas pu s'exécuter : {{reason}}"
+          }
+        },
+        "timeSkew": {
+          "fail": {
+            "ahead_linux": {
+              "label": "L'horloge hôte est incorrecte",
+              "message": "L'horloge du panneau a {{skew}} d'avance sur l'heure Steam. Les tâches planifiées se déclencheront au mauvais moment et les connexions HTTPS peuvent échouer.",
+              "hint": "Exécutez : sudo timedatectl set-ntp true"
+            },
+            "ahead_other": {
+              "label": "L'horloge hôte est incorrecte",
+              "message": "L'horloge du panneau a {{skew}} d'avance sur l'heure Steam. Les tâches planifiées se déclencheront au mauvais moment et les connexions HTTPS peuvent échouer.",
+              "hint": "Paramètres → Date et heure → Régler l'heure automatiquement"
+            },
+            "behind_linux": {
+              "label": "L'horloge hôte est incorrecte",
+              "message": "L'horloge du panneau a {{skew}} de retard sur l'heure Steam. Les tâches planifiées se déclencheront au mauvais moment et les connexions HTTPS peuvent échouer.",
+              "hint": "Exécutez : sudo timedatectl set-ntp true"
+            },
+            "behind_other": {
+              "label": "L'horloge hôte est incorrecte",
+              "message": "L'horloge du panneau a {{skew}} de retard sur l'heure Steam. Les tâches planifiées se déclencheront au mauvais moment et les connexions HTTPS peuvent échouer.",
+              "hint": "Paramètres → Date et heure → Régler l'heure automatiquement"
+            }
+          },
+          "warn": {
+            "ahead": {
+              "label": "L'horloge hôte est légèrement décalée",
+              "message": "L'horloge du panneau a {{skew}} d'avance sur l'heure Steam."
+            },
+            "behind": {
+              "label": "L'horloge hôte est légèrement décalée",
+              "message": "L'horloge du panneau a {{skew}} de retard sur l'heure Steam."
+            }
+          },
+          "ok": {
+            "label": "L'horloge hôte est synchronisée",
+            "message": "À {{skew}} près de l'heure Steam."
+          }
+        }
       }
     }
   },

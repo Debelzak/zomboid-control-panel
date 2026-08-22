@@ -55,6 +55,12 @@ const KNOWN_TRANSLATED_IDS = new Set([
   "disk.free",
   "storage.saveSize",
   "storage.error",
+  // Batch 4: Runtime & Memory
+  "runtime.heap",
+  "runtime.hostMem",
+  "runtime.uptime",
+  "runtime.error",
+  "runtime.timeSkew",
 ]);
 
 /**

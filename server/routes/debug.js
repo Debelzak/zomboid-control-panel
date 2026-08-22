@@ -3521,13 +3521,23 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
         const heapLimit = v8.getHeapStatistics().heap_size_limit;
         const heapPct = heapLimit > 0 ? (mem.heapUsed / heapLimit) * 100 : 0;
         const detail = `${fmtMB(mem.heapUsed)} used of ${fmtMB(heapLimit)} limit (${fmtMB(mem.heapTotal)} currently allocated).`;
+        // "detail" embeds English words ("used of", "limit", "currently
+        // allocated") -- passing it as one opaque param would leave that
+        // English fragment inside translated text. Broken into its three
+        // numbers instead so the whole sentence is real French.
+        const heapParams = {
+          pct: heapPct.toFixed(0),
+          heapUsed: fmtMB(mem.heapUsed),
+          heapLimit: fmtMB(heapLimit),
+          heapTotal: fmtMB(mem.heapTotal),
+        };
         if (heapPct >= 90) {
           checks.push(
             diagFail(
               "runtime.heap",
               "Heap usage critical",
               `Heap at ${heapPct.toFixed(0)}% of its limit. ${detail} Restart recommended.`,
-              { category: "runtime" },
+              { category: "runtime", params: heapParams },
             ),
           );
         } else if (heapPct >= 75) {
@@ -3536,7 +3546,7 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
               "runtime.heap",
               "Heap usage high",
               `Heap at ${heapPct.toFixed(0)}% of its limit. ${detail}`,
-              { category: "runtime" },
+              { category: "runtime", params: heapParams },
             ),
           );
         } else {
@@ -3545,7 +3555,7 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
               "runtime.heap",
               "Heap usage healthy",
               `${heapPct.toFixed(0)}% of limit. ${detail}`,
-              { category: "runtime" },
+              { category: "runtime", params: heapParams },
             ),
           );
         }
@@ -3559,7 +3569,7 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
               "runtime.hostMem",
               "Host RAM exhausted",
               `Only ${fmtMB(freeHostMem)} free of ${fmtGB(totalHostMem)}. Server may crash.`,
-              { category: "runtime" },
+              { category: "runtime", params: { free: fmtMB(freeHostMem), total: fmtGB(totalHostMem) } },
             ),
           );
         } else if (usedPct > 90) {
@@ -3568,7 +3578,14 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
               "runtime.hostMem",
               "Host RAM pressure",
               `${usedPct.toFixed(0)}% used (${fmtGB(totalHostMem - freeHostMem)} / ${fmtGB(totalHostMem)}).`,
-              { category: "runtime" },
+              {
+                category: "runtime",
+                params: {
+                  pct: usedPct.toFixed(0),
+                  used: fmtGB(totalHostMem - freeHostMem),
+                  total: fmtGB(totalHostMem),
+                },
+              },
             ),
           );
         } else {
@@ -3577,27 +3594,29 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
               "runtime.hostMem",
               "Host RAM healthy",
               `${usedPct.toFixed(0)}% used of ${fmtGB(totalHostMem)}.`,
-              { category: "runtime" },
+              { category: "runtime", params: { pct: usedPct.toFixed(0), total: fmtGB(totalHostMem) } },
             ),
           );
         }
 
+        const uptimeText = fmtAge(process.uptime() * 1000).replace(" ago", "");
         checks.push(
           diagInfo(
             "runtime.uptime",
             "Panel uptime",
-            `${fmtAge(process.uptime() * 1000).replace(" ago", "")}.`,
-            { category: "runtime" },
+            `${uptimeText}.`,
+            { category: "runtime", params: { uptime: uptimeText } },
           ),
         );
       }
     } catch (e) {
+      const reason = e?.message || "unknown";
       checks.push(
         diagWarn(
           "runtime.error",
           "Runtime checks errored",
-          `Memory/uptime checks could not run: ${e?.message || "unknown"}`,
-          { category: "runtime" },
+          `Memory/uptime checks could not run: ${reason}`,
+          { category: "runtime", params: { reason } },
         ),
       );
     }
@@ -3644,37 +3663,86 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
             ? `${Math.round(absSkew / 1000)}s`
             : `${Math.round(absSkew / 60000)}m`;
         if (absSkew >= 5 * 60 * 1000) {
-          checks.push(
-            diagFail(
-              "runtime.timeSkew",
-              "Host clock is wrong",
-              `Panel host clock is ${fmt} ${direction} of Steam time. Scheduled tasks will fire at the wrong wall-clock time and HTTPS handshakes may fail.`,
-              {
+          // Two independent axes -- which way the clock is off, and which
+          // platform's fix instructions apply -- need four literal-variant
+          // branches, not a template-built "`${direction}_${platform}`"
+          // string: that would be exactly the same invisible-to-static-scan
+          // problem as a ternary variant, just spelled differently. Message
+          // itself only needs `skew` as a param; the direction word is part
+          // of each variant's own pre-written sentence, not substituted, so
+          // French can phrase "en avance sur"/"en retard sur" naturally
+          // instead of forcing one template to accept either.
+          const isLinuxPlatform = process.platform === "linux";
+          const failMessage = `Panel host clock is ${fmt} ${direction} of Steam time. Scheduled tasks will fire at the wrong wall-clock time and HTTPS handshakes may fail.`;
+          if (direction === "ahead" && isLinuxPlatform) {
+            checks.push(
+              diagFail("runtime.timeSkew", "Host clock is wrong", failMessage, {
                 category: "runtime",
-                hint:
-                  process.platform === "linux"
-                    ? "Run: sudo timedatectl set-ntp true"
-                    : "Settings → Date & Time → Set time automatically",
+                hint: "Run: sudo timedatectl set-ntp true",
                 meta: { skewMs },
-              },
-            ),
-          );
+                params: { skew: fmt },
+                variant: "ahead_linux",
+              }),
+            );
+          } else if (direction === "ahead") {
+            checks.push(
+              diagFail("runtime.timeSkew", "Host clock is wrong", failMessage, {
+                category: "runtime",
+                hint: "Settings → Date & Time → Set time automatically",
+                meta: { skewMs },
+                params: { skew: fmt },
+                variant: "ahead_other",
+              }),
+            );
+          } else if (isLinuxPlatform) {
+            checks.push(
+              diagFail("runtime.timeSkew", "Host clock is wrong", failMessage, {
+                category: "runtime",
+                hint: "Run: sudo timedatectl set-ntp true",
+                meta: { skewMs },
+                params: { skew: fmt },
+                variant: "behind_linux",
+              }),
+            );
+          } else {
+            checks.push(
+              diagFail("runtime.timeSkew", "Host clock is wrong", failMessage, {
+                category: "runtime",
+                hint: "Settings → Date & Time → Set time automatically",
+                meta: { skewMs },
+                params: { skew: fmt },
+                variant: "behind_other",
+              }),
+            );
+          }
         } else if (absSkew >= 30 * 1000) {
-          checks.push(
-            diagWarn(
-              "runtime.timeSkew",
-              "Host clock slightly off",
-              `Panel host clock is ${fmt} ${direction} of Steam time.`,
-              { category: "runtime", meta: { skewMs } },
-            ),
-          );
+          const warnMessage = `Panel host clock is ${fmt} ${direction} of Steam time.`;
+          if (direction === "ahead") {
+            checks.push(
+              diagWarn("runtime.timeSkew", "Host clock slightly off", warnMessage, {
+                category: "runtime",
+                meta: { skewMs },
+                params: { skew: fmt },
+                variant: "ahead",
+              }),
+            );
+          } else {
+            checks.push(
+              diagWarn("runtime.timeSkew", "Host clock slightly off", warnMessage, {
+                category: "runtime",
+                meta: { skewMs },
+                params: { skew: fmt },
+                variant: "behind",
+              }),
+            );
+          }
         } else {
           checks.push(
             diagOk(
               "runtime.timeSkew",
               "Host clock in sync",
               `Within ${fmt} of Steam time.`,
-              { category: "runtime", meta: { skewMs } },
+              { category: "runtime", meta: { skewMs }, params: { skew: fmt } },
             ),
           );
         }

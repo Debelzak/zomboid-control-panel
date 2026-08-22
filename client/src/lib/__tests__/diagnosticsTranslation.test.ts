@@ -299,4 +299,69 @@ describe('translateDiagnosticCheck', () => {
     expect(fail.message).toBe('Seulement 300 MB libres sur 500 GB sur le disque de données.')
     expect(ok.message).toBe('50 GB libres sur 500 GB.')
   })
+
+  it('breaks a pre-formatted "detail" sentence into separate params rather than embedding it whole (runtime.heap)', () => {
+    const check = {
+      id: 'runtime.heap',
+      status: 'warn',
+      label: 'Heap usage high',
+      message: 'Heap at 80% of its limit. 400 MB used of 500 MB limit (480 MB currently allocated).',
+      params: { pct: '80', heapUsed: '400 MB', heapLimit: '500 MB', heapTotal: '480 MB' },
+    }
+    const message = translateDiagnosticCheck(check).message
+    expect(message).toBe('Tas à 80 % de sa limite. 400 MB utilisés sur 500 MB de limite (480 MB actuellement alloués).')
+    // The whole point: no leftover English fragment ("used of", "limit",
+    // "currently allocated") should ever appear in the French output.
+    expect(message).not.toMatch(/used of|currently allocated/i)
+  })
+
+  it('resolves a compound direction+platform variant (runtime.timeSkew.fail) with skew still interpolated', () => {
+    const check = {
+      id: 'runtime.timeSkew',
+      status: 'fail',
+      label: 'Host clock is wrong',
+      message: 'Panel host clock is 8m behind of Steam time. Scheduled tasks will fire at the wrong wall-clock time and HTTPS handshakes may fail.',
+      hint: 'Run: sudo timedatectl set-ntp true',
+      params: { skew: '8m' },
+      variant: 'behind_linux',
+    }
+    const translated = translateDiagnosticCheck(check)
+    expect(translated.message).toBe(
+      "L'horloge du panneau a 8m de retard sur l'heure Steam. Les tâches planifiées se déclencheront au mauvais moment et les connexions HTTPS peuvent échouer.",
+    )
+    expect(translated.hint).toBe('Exécutez : sudo timedatectl set-ntp true')
+  })
+
+  it('the ahead variant reads grammatically differently from behind, not just a substituted word (runtime.timeSkew.warn)', () => {
+    const ahead = translateDiagnosticCheck({
+      id: 'runtime.timeSkew',
+      status: 'warn',
+      label: 'Host clock slightly off',
+      message: 'Panel host clock is 45s ahead of Steam time.',
+      params: { skew: '45s' },
+      variant: 'ahead',
+    })
+    const behind = translateDiagnosticCheck({
+      id: 'runtime.timeSkew',
+      status: 'warn',
+      label: 'Host clock slightly off',
+      message: 'Panel host clock is 45s behind of Steam time.',
+      params: { skew: '45s' },
+      variant: 'behind',
+    })
+    expect(ahead.message).toBe("L'horloge du panneau a 45s d'avance sur l'heure Steam.")
+    expect(behind.message).toBe("L'horloge du panneau a 45s de retard sur l'heure Steam.")
+    expect(ahead.message).not.toBe(behind.message)
+  })
+
+  it('runtime.timeSkew.ok needs no variant (direction is never mentioned when in sync)', () => {
+    const check = {
+      id: 'runtime.timeSkew',
+      status: 'ok',
+      label: 'Host clock in sync',
+      message: 'Within 2s of Steam time.',
+      params: { skew: '2s' },
+    }
+    expect(translateDiagnosticCheck(check).message).toBe('À 2s près de l\'heure Steam.')
+  })
 })

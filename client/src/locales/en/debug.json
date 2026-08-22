@@ -582,6 +582,86 @@
             "message": "Logs/disk checks could not run: {{reason}}"
           }
         }
+      },
+      "runtime": {
+        "heap": {
+          "fail": {
+            "label": "Heap usage critical",
+            "message": "Heap at {{pct}}% of its limit. {{heapUsed}} used of {{heapLimit}} limit ({{heapTotal}} currently allocated). Restart recommended."
+          },
+          "warn": {
+            "label": "Heap usage high",
+            "message": "Heap at {{pct}}% of its limit. {{heapUsed}} used of {{heapLimit}} limit ({{heapTotal}} currently allocated)."
+          },
+          "ok": {
+            "label": "Heap usage healthy",
+            "message": "{{pct}}% of limit. {{heapUsed}} used of {{heapLimit}} limit ({{heapTotal}} currently allocated)."
+          }
+        },
+        "hostMem": {
+          "fail": {
+            "label": "Host RAM exhausted",
+            "message": "Only {{free}} free of {{total}}. Server may crash."
+          },
+          "warn": {
+            "label": "Host RAM pressure",
+            "message": "{{pct}}% used ({{used}} / {{total}})."
+          },
+          "ok": {
+            "label": "Host RAM healthy",
+            "message": "{{pct}}% used of {{total}}."
+          }
+        },
+        "uptime": {
+          "info": {
+            "label": "Panel uptime",
+            "message": "{{uptime}}."
+          }
+        },
+        "error": {
+          "warn": {
+            "label": "Runtime checks errored",
+            "message": "Memory/uptime checks could not run: {{reason}}"
+          }
+        },
+        "timeSkew": {
+          "fail": {
+            "ahead_linux": {
+              "label": "Host clock is wrong",
+              "message": "Panel host clock is {{skew}} ahead of Steam time. Scheduled tasks will fire at the wrong wall-clock time and HTTPS handshakes may fail.",
+              "hint": "Run: sudo timedatectl set-ntp true"
+            },
+            "ahead_other": {
+              "label": "Host clock is wrong",
+              "message": "Panel host clock is {{skew}} ahead of Steam time. Scheduled tasks will fire at the wrong wall-clock time and HTTPS handshakes may fail.",
+              "hint": "Settings → Date & Time → Set time automatically"
+            },
+            "behind_linux": {
+              "label": "Host clock is wrong",
+              "message": "Panel host clock is {{skew}} behind of Steam time. Scheduled tasks will fire at the wrong wall-clock time and HTTPS handshakes may fail.",
+              "hint": "Run: sudo timedatectl set-ntp true"
+            },
+            "behind_other": {
+              "label": "Host clock is wrong",
+              "message": "Panel host clock is {{skew}} behind of Steam time. Scheduled tasks will fire at the wrong wall-clock time and HTTPS handshakes may fail.",
+              "hint": "Settings → Date & Time → Set time automatically"
+            }
+          },
+          "warn": {
+            "ahead": {
+              "label": "Host clock slightly off",
+              "message": "Panel host clock is {{skew}} ahead of Steam time."
+            },
+            "behind": {
+              "label": "Host clock slightly off",
+              "message": "Panel host clock is {{skew}} behind of Steam time."
+            }
+          },
+          "ok": {
+            "label": "Host clock in sync",
+            "message": "Within {{skew}} of Steam time."
+          }
+        }
       }
     }
   },
