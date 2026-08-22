@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useAuth } from '../contexts/AuthContext'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
@@ -7,14 +8,16 @@ import { Checkbox } from '../components/ui/checkbox'
 import { AuthScreenLayout } from '../components/AuthScreenLayout'
 import { AlertTriangle, ArrowRight, CheckCircle, Eye, EyeOff, KeyRound, Loader2, RadioTower, Server, ShieldCheck, XCircle } from 'lucide-react'
 
+type StrengthKey = 'tooShort' | 'weak' | 'fair' | 'good' | 'strong'
+
 type PasswordStrength = {
   score: 0 | 1 | 2 | 3 | 4
-  label: string
+  key: StrengthKey | null
   tone: 'empty' | 'weak' | 'fair' | 'good' | 'strong'
 }
 
 function scorePassword(pw: string): PasswordStrength {
-  if (!pw) return { score: 0, label: '', tone: 'empty' }
+  if (!pw) return { score: 0, key: null, tone: 'empty' }
   let score = 0
   if (pw.length >= 6) score++
   if (pw.length >= 10) score++
@@ -22,16 +25,17 @@ function scorePassword(pw: string): PasswordStrength {
   if (/\d/.test(pw) && /[^A-Za-z0-9]/.test(pw)) score++
   if (pw.length >= 14) score = Math.min(4, score + 1)
   const map: Record<number, PasswordStrength> = {
-    0: { score: 1, label: 'Too short', tone: 'weak' },
-    1: { score: 1, label: 'Weak', tone: 'weak' },
-    2: { score: 2, label: 'Fair', tone: 'fair' },
-    3: { score: 3, label: 'Good', tone: 'good' },
-    4: { score: 4, label: 'Strong', tone: 'strong' },
+    0: { score: 1, key: 'tooShort', tone: 'weak' },
+    1: { score: 1, key: 'weak', tone: 'weak' },
+    2: { score: 2, key: 'fair', tone: 'fair' },
+    3: { score: 3, key: 'good', tone: 'good' },
+    4: { score: 4, key: 'strong', tone: 'strong' },
   }
   return map[Math.min(4, score) as 0 | 1 | 2 | 3 | 4]
 }
 
 export default function Setup() {
+  const { t } = useTranslation('setup')
   const { setup } = useAuth()
   const [username, setUsername] = useState('admin')
   const [password, setPassword] = useState('')
@@ -66,19 +70,19 @@ export default function Setup() {
     setError('')
 
     if (!usernameValid) {
-      setError('Username must be 3-32 characters (letters, numbers, _ or -)')
+      setError(t('errors.invalidUsername'))
       return
     }
     if (!passwordLongEnough) {
-      setError('Password must be at least 6 characters')
+      setError(t('errors.passwordTooShort'))
       return
     }
     if (!passwordsMatch) {
-      setError('Passwords do not match')
+      setError(t('errors.passwordsDontMatch'))
       return
     }
     if (!panelPortValid) {
-      setError('Panel port must be a whole number between 1024 and 65535')
+      setError(t('errors.invalidPort'))
       return
     }
 
@@ -86,7 +90,7 @@ export default function Setup() {
     try {
       await setup(username, password, rememberMe, panelPort)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Setup failed')
+      setError(err instanceof Error ? err.message : t('errors.setupFailed'))
     } finally {
       setLoading(false)
     }
@@ -94,39 +98,36 @@ export default function Setup() {
 
   return (
     <AuthScreenLayout
-      badge="Initial Provisioning"
-      title="Zomboid Control Panel"
-      description="Create the first admin account for this panel, then continue to the rest of setup."
-      cardTitle="Create Admin Account"
-      cardDescription="This account unlocks the control panel and signs you in right away."
+      badge={t('badge')}
+      title={t('title')}
+      description={t('description')}
+      cardTitle={t('cardTitle')}
+      cardDescription={t('cardDescription')}
       footer={
         <span className="inline-flex items-start gap-1.5 text-left">
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning/80" aria-hidden="true" />
-          <span>
-            Store this password safely. There is no email recovery — resetting it later requires
-            filesystem access to this server.
-          </span>
+          <span>{t('footer')}</span>
         </span>
       }
     >
       {/* ─── Step indicator ─── */}
       <ol
         className="-mt-1 mb-1 flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground"
-        aria-label="Setup progress"
+        aria-label={t('stepsAriaLabel')}
       >
         <li className="flex items-center gap-1.5">
           <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-primary/40 bg-primary/15 text-[10px] font-semibold text-primary">1</span>
-          <span className="text-foreground/80">Account</span>
+          <span className="text-foreground/80">{t('steps.account')}</span>
         </li>
         <span aria-hidden="true" className="h-px w-6 bg-border/60" />
         <li className="flex items-center gap-1.5 opacity-70">
           <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-border/60 bg-muted/20 text-[10px] font-semibold text-muted-foreground">2</span>
-          <span>Server</span>
+          <span>{t('steps.server')}</span>
         </li>
         <span aria-hidden="true" className="h-px w-6 bg-border/60" />
         <li className="flex items-center gap-1.5 opacity-50">
           <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-border/60 bg-muted/20 text-[10px] font-semibold text-muted-foreground">3</span>
-          <span>Online</span>
+          <span>{t('steps.online')}</span>
         </li>
       </ol>
 
@@ -144,13 +145,13 @@ export default function Setup() {
         )}
 
         <div className="space-y-2">
-          <Label htmlFor="username">Username</Label>
+          <Label htmlFor="username">{t('username.label')}</Label>
           <Input
             id="username"
             type="text"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            placeholder="admin"
+            placeholder={t('username.placeholder')}
             autoComplete="username"
             autoFocus
             maxLength={32}
@@ -162,24 +163,24 @@ export default function Setup() {
           <div id={usernameHintId} className="flex items-center gap-1.5 text-xs leading-5">
             {username.length === 0 ? (
               <span className="text-muted-foreground">
-                Use 3-32 characters: letters, numbers, underscores, or hyphens.
+                {t('username.hintEmpty')}
               </span>
             ) : usernameValid ? (
               <>
                 <CheckCircle className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
-                <span className="text-primary">Looks good.</span>
+                <span className="text-primary">{t('username.hintValid')}</span>
               </>
             ) : (
               <>
                 <div className="h-3.5 w-3.5 rounded-full border border-destructive" aria-hidden="true" />
-                <span className="text-destructive">3-32 chars; letters, numbers, _ or - only.</span>
+                <span className="text-destructive">{t('username.hintInvalid')}</span>
               </>
             )}
           </div>
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="panelPort">Panel Port</Label>
+          <Label htmlFor="panelPort">{t('panelPort.label')}</Label>
           <Input
             id="panelPort"
             type="number"
@@ -193,17 +194,17 @@ export default function Setup() {
             required
           />
           <p className="text-xs leading-5 text-muted-foreground">
-            Port used to open the panel. Default: 3001. If it is busy, the panel will choose and save a free port automatically.
+            {t('panelPort.help')}
           </p>
         </div>
 
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <Label htmlFor="password">Password</Label>
+            <Label htmlFor="password">{t('password.label')}</Label>
             {capsLockOn && (
               <span className="inline-flex items-center gap-1 text-[11px] font-medium text-warning" role="status">
                 <KeyRound className="h-3 w-3" aria-hidden="true" />
-                Caps Lock is on
+                {t('password.capsLockOn')}
               </span>
             )}
           </div>
@@ -227,7 +228,7 @@ export default function Setup() {
               type="button"
               onClick={() => setShowPassword(!showPassword)}
               className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-              aria-label={showPassword ? 'Hide password' : 'Show password'}
+              aria-label={showPassword ? t('password.hidePassword') : t('password.showPassword')}
               aria-pressed={showPassword}
             >
               {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -265,10 +266,10 @@ export default function Setup() {
                   <div className="h-3.5 w-3.5 rounded-full border border-muted-foreground/30" aria-hidden="true" />
                 )}
                 <span className={passwordLongEnough ? 'text-primary' : 'text-muted-foreground'}>
-                  Use at least 6 characters.
+                  {t('password.hint')}
                 </span>
               </span>
-              {strength.label && (
+              {strength.key && (
                 <span
                   className={
                     strength.tone === 'weak'
@@ -281,7 +282,7 @@ export default function Setup() {
                   }
                   aria-live="polite"
                 >
-                  {strength.label}
+                  {t(`password.strength.${strength.key}`)}
                 </span>
               )}
             </div>
@@ -289,7 +290,7 @@ export default function Setup() {
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="confirmPassword">Confirm Password</Label>
+          <Label htmlFor="confirmPassword">{t('confirmPassword.label')}</Label>
           <Input
             id="confirmPassword"
             type={showPassword ? 'text' : 'password'}
@@ -313,13 +314,13 @@ export default function Setup() {
                 <div className="h-3.5 w-3.5 rounded-full border border-destructive" aria-hidden="true" />
               )}
               <span className={passwordsMatch ? 'text-primary' : 'text-destructive'}>
-                {passwordsMatch ? 'Passwords match' : 'Passwords do not match'}
+                {passwordsMatch ? t('confirmPassword.match') : t('confirmPassword.noMatch')}
               </span>
             </div>
           )}
           {!confirmPassword && (
             <p id={confirmHintId} className="text-xs leading-5 text-muted-foreground">
-              Type the same password again to confirm it.
+              {t('confirmPassword.hint')}
             </p>
           )}
         </div>
@@ -331,7 +332,7 @@ export default function Setup() {
             onCheckedChange={(checked) => setRememberMe(checked === true)}
           />
           <Label htmlFor="rememberMe" className="cursor-pointer text-sm font-normal text-foreground/90">
-            Keep me signed in on this browser
+            {t('rememberMe')}
           </Label>
         </div>
 
@@ -343,11 +344,11 @@ export default function Setup() {
           {loading ? (
             <>
               <Loader2 className="w-4 h-4 animate-spin" />
-              Creating admin account...
+              {t('submitting')}
             </>
           ) : (
             <>
-              Create account &amp; continue
+              {t('submit')}
               <ArrowRight className="ml-1 h-4 w-4" aria-hidden="true" />
             </>
           )}
@@ -357,10 +358,10 @@ export default function Setup() {
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
               <ArrowRight className="h-4 w-4 text-primary" aria-hidden="true" />
-              After this step
+              {t('afterThisStep.heading')}
             </div>
             <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-              Preview
+              {t('afterThisStep.previewBadge')}
             </span>
           </div>
           <div className="mission-step-grid mt-3 space-y-2">
@@ -369,9 +370,9 @@ export default function Setup() {
                 <Server className="h-3.5 w-3.5" aria-hidden="true" />
               </div>
               <div className="min-w-0 pt-0.5">
-                <p className="text-[13px] font-medium leading-tight text-foreground">Bring a server into the panel</p>
+                <p className="text-[13px] font-medium leading-tight text-foreground">{t('afterThisStep.step1Title')}</p>
                 <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
-                  Add an existing install or run the guided setup to create one.
+                  {t('afterThisStep.step1Desc')}
                 </p>
               </div>
             </div>
@@ -381,9 +382,9 @@ export default function Setup() {
                 <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
               </div>
               <div className="min-w-0 pt-0.5">
-                <p className="text-[13px] font-medium leading-tight text-foreground">Confirm RCON and paths</p>
+                <p className="text-[13px] font-medium leading-tight text-foreground">{t('afterThisStep.step2Title')}</p>
                 <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
-                  The panel needs to authenticate against the server before it can do anything useful.
+                  {t('afterThisStep.step2Desc')}
                 </p>
               </div>
             </div>
@@ -393,9 +394,9 @@ export default function Setup() {
                 <RadioTower className="h-3.5 w-3.5" aria-hidden="true" />
               </div>
               <div className="min-w-0 pt-0.5">
-                <p className="text-[13px] font-medium leading-tight text-foreground">Take the dashboard live</p>
+                <p className="text-[13px] font-medium leading-tight text-foreground">{t('afterThisStep.step3Title')}</p>
                 <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
-                  Verify status, players, backups, and quick admin actions from one screen.
+                  {t('afterThisStep.step3Desc')}
                 </p>
               </div>
             </div>

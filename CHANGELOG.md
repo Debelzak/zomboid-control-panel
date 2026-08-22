@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **French language support (phase 1)**: sign-in, first-run setup and the sidebar navigation can now
+  be switched between English and French, with the choice remembered in your browser. The remaining
+  screens are still English only and will be translated in stages.
+
 - **User roles**: accounts can now be created as **administrator**, **technician** or
   **moderator** instead of every account being an administrator. Technicians can operate the server
   — start, stop, backups, mods, configuration — while moderators hold in-game player authority, and
