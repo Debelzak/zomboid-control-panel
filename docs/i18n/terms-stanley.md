@@ -208,3 +208,71 @@ anywhere else in my set. Read every label out loud as a first-time user would.
   agree with the subject, so it's correct regardless of who died. All `{variable}`
   placeholders (`{player}`, `{location}`, `{x}`, `{y}`, `{z}`, `{pvp}`, `{minutes}`)
   were left untouched since the server backend substitutes them literally by name.
+
+## Events.tsx (namespace: `events`)
+
+Largest and most technically dense page in my set (2900+ lines): weather/climate/clock/
+utilities/sounds/horde/vehicle/teleport/broadcast controls plus a full PanelBridge
+"advanced tools" UI for safehouses, factions, vehicles, moderation, and infrastructure
+with dynamic form generation.
+
+- Reused established vocabulary heavily rather than coining: **Refuge(s)** for
+  safehouses (matches worldMap.json/players.json precedent), **En direct/Hors ligne**
+  family → **en ligne/hors ligne** for player and bridge connection state, **Actualiser**
+  for refresh buttons, **instantané** for the infrastructure "snapshot" result view,
+  matching the existing backup-snapshot term rather than coining "aperçu" or "capture".
+- `loading === 'Start rain'`, `handleAction('Set time speed', ...)`, and similar action
+  identifiers passed into `handleAction`/`handleBridgeAction`/`handleUtilities` are
+  **not translated** — they are internal state keys (compared against `loading`/
+  `bridgeLoading` for spinner state) and are also the exact strings switched on inside
+  `getEventSuccessCopy()` to select the right toast copy. Translating them would silently
+  break both the spinner-active check and the toast-copy lookup with no test catching it
+  (the switch's `default` case would swallow every action into a generic "action
+  complete" toast). This is the same category of judgment call as ServerSetup.tsx's
+  status-key comparisons — only the *rendered* label text is translated, never the
+  identifier used for `===` comparisons.
+- PanelBridge operation `args` JSON template strings (e.g.
+  `'{\n  "safehouseRef": "SafehouseIdOrTitle",\n  "username": "PlayerName"\n}'`) stay in
+  English — they're illustrative API payload shapes with placeholder values shown to
+  the operator as a technical reference, not prose. Only each operation's `label` and
+  `description` (real UI copy) were translated.
+- Found and fixed a real bug while translating, not just a string-collision risk:
+  `SectionHeader`'s original code inferred the amber "bridge offline" warning styling by
+  string-matching the **English** sublabel text (`sublabel?.startsWith('bridge
+  offline')`). Once sublabels render in French ("bridge hors ligne"), this would have
+  silently stopped detecting the offline state — the section header would render in its
+  normal (non-warning) color even while genuinely offline, with no test catching it since
+  it's a purely visual regression. Replaced with an explicit `isBridgeOffline` prop
+  passed at each call site instead of string-sniffing rendered text. Same category of
+  finding as the Scheduler.tsx pluralization bug and the earlier hardcoded-role-check
+  fixes elsewhere in the app: translation work surfaces logic that was quietly coupled to
+  literal English string values.
+- Also found (while wiring, not string-related): three call sites of
+  `getEventSuccessCopy(action)` were missing the now-required `t` parameter
+  (`getEventSuccessCopy(action: string, t: TFunction)`) — a leftover from converting the
+  function from a hardcoded switch to a `t()`-backed one. Would have been a hard
+  TypeScript compile error, so not a silent-runtime-bug risk, but worth noting since it's
+  exactly the kind of mechanical slip this refactor pattern invites on a page this size.
+- Broadcast presets (`broadcast.messages.eventWarning/lootNotice/hordeAlert`) are real
+  text that gets sent to players via RCON servermsg, so — consistent with the Chat.tsx
+  precedent — I translated them into natural French rather than leaving English
+  placeholders an operator would have to rewrite before first use.
+- Vehicle preset names (`vehicles.names.*`, e.g. "Police Van", "Sports Car") are cosmetic
+  labels shown in a dropdown, not the underlying `Base.XXX` script IDs sent to the game —
+  translated freely (e.g. **Fourgon de police**, **Voiture de sport**) since nothing reads
+  these strings back except display.
+- Moderation reason presets (`'Rule violation'`, `'Abuse'`, `'Harassment'`, `'Cheating'`)
+  keep their English `value` (sent to the BanSystem bridge operation as literal data) but
+  their dropdown `label` is translated — same pattern as elsewhere: display text
+  translated, wire-format values left alone.
+- Three internal "which list source failed to refresh" tokens (`safehouses`, `factions`,
+  `vehicles`) that get joined into a single toast sentence
+  (`toasts.couldNotRefreshSomeLists`) were promoted to their own translated keys
+  (`toasts.sourceSafehouses/sourceFactions/sourceVehicles`) rather than left as raw
+  English words spliced into an otherwise-French sentence — leaving them untranslated
+  would have produced a jarring code-switched message like "Certaines listes du bridge
+  n'ont pas pu être actualisées (safehouses, factions)."
+- `BridgeResultDisplay` is a separate function component (not nested inside the page
+  component), so it needed its own `useTranslation('events')` call and its own
+  `useMemo(() => getBridgeOperationTemplates(t), [t])` — easy to miss since it's declared
+  above the page component in the file and doesn't inherit the page's `t`.
