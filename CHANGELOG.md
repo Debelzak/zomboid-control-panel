@@ -36,6 +36,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Exposure warning on startup**: a panel still awaiting first-run setup that is reachable on a
   network address now says so loudly in its startup log, naming the address, rather than leaving the
   window silently open.
+- **Adding a new language is now a two-step job**: translators can add a language by registering one
+  line and dropping in a folder of translation files - nothing in the application code needs
+  changing. Language names are shown in their own language (Deutsch, not German), and a check fails
+  loudly with the exact missing keys if a translation is incomplete. See
+  `client/src/locales/README.md`.
 
 ### Fixed
 - **Role permissions now actually restrict access everywhere**: every panel route has been reviewed

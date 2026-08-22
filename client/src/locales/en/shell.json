@@ -100,8 +100,6 @@
     "unreachable": "Panel service unreachable"
   },
   "languageSwitcher": {
-    "label": "Language",
-    "english": "English",
-    "french": "Français"
+    "label": "Language"
   }
 }

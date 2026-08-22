@@ -1,25 +1,45 @@
 import i18n from 'i18next'
 import { initReactI18next } from 'react-i18next'
+import { LANGUAGE_CODES, SOURCE_LANGUAGE } from './languages'
 
-import enLogin from '../locales/en/login.json'
-import enSetup from '../locales/en/setup.json'
-import enShell from '../locales/en/shell.json'
-import frLogin from '../locales/fr/login.json'
-import frSetup from '../locales/fr/setup.json'
-import frShell from '../locales/fr/shell.json'
-
-export const SUPPORTED_LANGUAGES = ['en', 'fr'] as const
-export type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number]
+export { LANGUAGES, SOURCE_LANGUAGE, LANGUAGE_CODES } from './languages'
+export type { LanguageDef } from './languages'
+export type SupportedLanguage = string
 
 export const LANGUAGE_STORAGE_KEY = 'zcp-language'
 
+// Discovers every client/src/locales/<code>/<namespace>.json file at build
+// time — no per-language, per-namespace import list to maintain. Adding a
+// language folder (or a namespace file within one) is picked up here with
+// no code change. See client/src/locales/README.md.
+// i18next's own Resource type is this loose (ResourceKey = string | an
+// object of unspecified shape), so `any` here matches its actual contract
+// rather than fighting it with a narrower type that doesn't describe it.
+const localeModules = import.meta.glob('../locales/*/*.json', {
+  eager: true,
+  import: 'default',
+}) as Record<string, any>
+
+const LOCALE_PATH_RE = /\.\.\/locales\/([^/]+)\/([^/]+)\.json$/
+
+const resources: Record<string, Record<string, any>> = {}
+for (const [filePath, mod] of Object.entries(localeModules)) {
+  const match = filePath.match(LOCALE_PATH_RE)
+  if (!match) continue
+  const [, code, namespace] = match
+  resources[code] ??= {}
+  resources[code][namespace] = mod
+}
+
+const namespaces = [...new Set(Object.values(resources).flatMap((r) => Object.keys(r)))]
+
 function isSupportedLanguage(value: string | null | undefined): value is SupportedLanguage {
-  return !!value && (SUPPORTED_LANGUAGES as readonly string[]).includes(value)
+  return !!value && LANGUAGE_CODES.includes(value)
 }
 
 // Phase 1 covers Login, Setup and the app shell/nav only — every other page
 // still renders hardcoded English. See the i18n scoping report for the plan
-// to roll the remaining ~3,300 strings out namespace by namespace.
+// to roll the remaining strings out namespace by namespace.
 function detectInitialLanguage(): SupportedLanguage {
   try {
     const stored = localStorage.getItem(LANGUAGE_STORAGE_KEY)
@@ -27,18 +47,15 @@ function detectInitialLanguage(): SupportedLanguage {
   } catch {
     // localStorage unavailable (privacy mode, disabled storage) — fall through
   }
-  const browserLang = (navigator.language || 'en').slice(0, 2).toLowerCase()
-  return isSupportedLanguage(browserLang) ? browserLang : 'en'
+  const browserLang = (navigator.language || SOURCE_LANGUAGE).slice(0, 2).toLowerCase()
+  return isSupportedLanguage(browserLang) ? browserLang : SOURCE_LANGUAGE
 }
 
 i18n.use(initReactI18next).init({
-  resources: {
-    en: { login: enLogin, setup: enSetup, shell: enShell },
-    fr: { login: frLogin, setup: frSetup, shell: frShell },
-  },
+  resources,
   lng: detectInitialLanguage(),
-  fallbackLng: 'en',
-  ns: ['login', 'setup', 'shell'],
+  fallbackLng: SOURCE_LANGUAGE,
+  ns: namespaces,
   defaultNS: 'shell',
   interpolation: { escapeValue: false }, // React already escapes interpolated values
   returnEmptyString: false,
@@ -54,7 +71,7 @@ export function setLanguage(lang: SupportedLanguage): void {
 }
 
 export function getCurrentLanguage(): SupportedLanguage {
-  return isSupportedLanguage(i18n.language) ? i18n.language : 'en'
+  return isSupportedLanguage(i18n.language) ? i18n.language : SOURCE_LANGUAGE
 }
 
 export default i18n

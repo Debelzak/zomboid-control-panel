@@ -7,19 +7,18 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
-import { getCurrentLanguage, setLanguage, SUPPORTED_LANGUAGES, SupportedLanguage } from '@/i18n'
+import { getCurrentLanguage, setLanguage, LANGUAGES } from '@/i18n'
 
-const LANGUAGE_LABEL_KEY: Record<SupportedLanguage, string> = {
-  en: 'languageSwitcher.english',
-  fr: 'languageSwitcher.french',
-}
-
-// Phase 1's visible, persisted locale switcher — English/French only, more
-// languages join SUPPORTED_LANGUAGES as later phases translate more of the
-// app. Usable pre-login (Login/Setup) and from the app shell footer.
+// The persisted locale switcher — its options come entirely from the
+// LANGUAGES registry (client/src/i18n/languages.ts), so adding a language
+// there is the only change needed for it to show up here. Language names
+// are each language's OWN native name (Deutsch, not German), read straight
+// from the registry rather than through t() — see languages.ts for why.
+// Usable pre-login (Login/Setup) and from the app shell footer.
 export function LanguageSwitcher({ className }: { className?: string }) {
   const { t, i18n } = useTranslation('shell')
   const current = getCurrentLanguage()
+  const currentLanguage = LANGUAGES.find((l) => l.code === current) ?? LANGUAGES[0]
 
   return (
     <DropdownMenu>
@@ -33,20 +32,20 @@ export function LanguageSwitcher({ className }: { className?: string }) {
           aria-label={t('languageSwitcher.label')}
         >
           <Languages className="h-3.5 w-3.5" aria-hidden="true" />
-          <span>{t(LANGUAGE_LABEL_KEY[current])}</span>
+          <span>{currentLanguage.nativeName}</span>
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        {SUPPORTED_LANGUAGES.map((lang) => (
+        {LANGUAGES.map((lang) => (
           <DropdownMenuItem
-            key={lang}
+            key={lang.code}
             onClick={() => {
-              setLanguage(lang)
+              setLanguage(lang.code)
             }}
-            className={cn(lang === current && 'font-medium text-foreground')}
+            className={cn(lang.code === current && 'font-medium text-foreground')}
           >
-            {t(LANGUAGE_LABEL_KEY[lang])}
-            {lang === i18n.language ? ' ✓' : ''}
+            {lang.nativeName}
+            {lang.code === i18n.language ? ' ✓' : ''}
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>

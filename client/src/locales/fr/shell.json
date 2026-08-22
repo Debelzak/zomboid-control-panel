@@ -100,8 +100,6 @@
     "unreachable": "Service du panneau injoignable"
   },
   "languageSwitcher": {
-    "label": "Langue",
-    "english": "English",
-    "french": "Français"
+    "label": "Langue"
   }
 }
