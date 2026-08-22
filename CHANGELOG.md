@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **A Sign-in (OIDC) settings screen**: single sign-on can now be set up from the panel itself,
+  under Access Control > Sign-in. Enter your provider's address, client ID and secret, and press
+  Test Connection to check the provider answers before you save. The redirect URI your provider
+  needs - the one value you cannot guess - is offered with a single action that fills it in and
+  copies it. The client secret is never shown back to you once saved.
 - **You can now delete a user**: the Users screen could create and list accounts but there was no
   way to remove one. There is now. The panel refuses to delete the last account that can manage
   users and roles, so you cannot empty out your own administrators, and it refuses to let you
@@ -111,6 +116,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `client/src/locales/README.md`.
 
 ### Fixed
+- **The French wording for "Wipe server" said "reset", not "erase"**: the dialog title, the
+  confirm button and both menu entries used *Réinitialiser* - the word this panel uses for ordinary,
+  recoverable resets elsewhere - directly above body text correctly warning that the action deletes
+  everything permanently. A French-speaking operator read a reassuring title over an alarming
+  description. It now says *Effacer*. The same mismatch on the "Wipe the world" permission label is
+  fixed too. Delete-old-backups and chunk deletion were checked and were already correct.
+
+- **The rights matrix is readable at full size**: with 27 permissions across 12 groups, scrolling
+  the table lost track of which column was which role and which row was which permission. The role
+  headings and the permission names now stay pinned while you scroll.
+
+- **"Test Connection" failures said "Action failed" instead of naming what failed**: a request that
+  the server answered with an explicit failure was being reported under a generic title, because the
+  code meant to handle that case could never run. The real reason was already shown underneath; now
+  the heading matches it.
 - **Crash Logs showed the wrong folder's logs if you had moved your data directory**: the Crash
   Logs tab looked for crash reports next to wherever the panel happened to be started from, rather
   than in the data directory you configured. If you have ever used the "move my data folder"
