@@ -270,8 +270,6 @@
     "serverFailedToStart": "Échec du démarrage du serveur.",
     "rconConnectFailedFallback": "La tentative de connexion RCON a échoué.",
     "backupFailedFallback": "Échec de la sauvegarde.",
-    "bridgeConfigFailedFallback": "Impossible de configurer le bridge.",
-    "sandboxRepairFailedFallback": "Échec de la réparation.",
     "checks": {
       "server": {
         "process": {

@@ -270,8 +270,6 @@
     "serverFailedToStart": "Server failed to start.",
     "rconConnectFailedFallback": "RCON connect attempt failed.",
     "backupFailedFallback": "Backup failed.",
-    "bridgeConfigFailedFallback": "Could not configure the bridge.",
-    "sandboxRepairFailedFallback": "Repair failed.",
     "checks": {
       "server": {
         "process": {

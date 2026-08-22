@@ -1006,12 +1006,10 @@ export default function Debug() {
           check.id === "bridge.configured" ||
           check.id === "worldmap.bridge.configured"
         ) {
+          // /panel-bridge/auto-configure always responds non-2xx on
+          // failure, so handleResponse() throws into this function's
+          // surrounding catch -- this never sees result.success === false.
           const result = await panelBridgeApi.autoConfigure();
-          if (!result?.success) {
-            throw new Error(
-              result?.message || t("diagnostics.bridgeConfigFailedFallback"),
-            );
-          }
           toast({
             title: t("diagnostics.bridgeConfiguredTitle"),
             description: t("diagnostics.bridgeConfiguredDesc", {
@@ -1027,12 +1025,11 @@ export default function Debug() {
             description: t("diagnostics.crashLogsOpenedDesc"),
           });
         } else if (check.id === "server.sandboxCorrupt") {
+          // /server-files/sandbox/repair always responds non-2xx on
+          // failure (404/422/500), so handleResponse() throws into this
+          // function's surrounding catch -- this never sees
+          // result.success === false.
           const result = await serverFilesApi.repairSandbox();
-          if (!result?.success) {
-            throw new Error(
-              result?.error || t("diagnostics.sandboxRepairFailedFallback"),
-            );
-          }
           if (result.alreadyValid) {
             toast({
               title: t("diagnostics.alreadyValidTitle"),
