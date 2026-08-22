@@ -4429,6 +4429,15 @@ const CLIENT_ERROR_MAX = 30; // max reports per minute per IP
 // left a permanent entry. Sweep expired ones once the map gets large.
 const CLIENT_ERROR_RATE_MAX_ENTRIES = 5000;
 
+// Deliberately unauthenticated -- no requirePermission gate at all, not
+// even "any logged-in role" (compare the file header above, which
+// undersells this). A frontend crash can happen before the client has
+// authenticated at all, most notably on the login page itself, where
+// there is no token to attach and no req.user to check -- gating this
+// route would silently delete exactly the crash reports an operator most
+// needs to see. What protects it instead: the per-IP rate limit right
+// below (CLIENT_ERROR_MAX = 30/min), plus the fact that it only ever
+// logs a message and mutates/exposes nothing sensitive.
 router.post("/client-errors", (req, res) => {
   try {
     // Simple per-IP rate limit to prevent abuse
