@@ -184,8 +184,12 @@ router.get("/download/:name", async (req, res) => {
   }
 });
 
-// Restore a backup
-router.post("/restore/:name", requireRole("admin", "technician"), async (req, res) => {
+// Restore a backup. Admin-only, deliberately narrower than the other backup
+// routes: deleting a backup destroys the operator's safety net (housekeeping),
+// but restoring one rolls the live world back over every player currently
+// standing in it -- a decision about other people's time, not routine server
+// operation, and invisible to the admin until someone complains.
+router.post("/restore/:name", requireRole("admin"), async (req, res) => {
   try {
     const activeServer = await getActiveServer();
     if (activeServer?.isRemote) {

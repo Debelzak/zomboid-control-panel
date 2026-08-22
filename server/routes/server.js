@@ -660,6 +660,14 @@ export LD_LIBRARY_PATH="\${INSTDIR}/natives/:\${INSTDIR}/natives/linux64/:\${INS
   return { bat: batchContent, sh: shellContent };
 }
 
+// Role sweep for this file: routes below are grouped into what's actually
+// operational duty (start/stop/restart/save the running process, install or
+// update the game, edit its .ini config, browse the filesystem to set that
+// up) vs. what's read-only status/info or in-game/GM authority that every
+// role legitimately uses. Wipe and delete-files stay admin-only, unchanged.
+// Everything left unguarded below is a deliberate decision, not an
+// oversight -- see the comments at each group.
+
 // Get server status
 router.get("/status", async (req, res) => {
   try {
@@ -694,7 +702,7 @@ router.get("/network-interfaces", async (req, res) => {
 });
 
 // Start server
-router.post("/start", async (req, res) => {
+router.post("/start", requireRole("admin", "technician"), async (req, res) => {
   try {
     const activeServer = await getActiveServer();
     log.info(
@@ -944,7 +952,7 @@ router.post("/start", async (req, res) => {
 });
 
 // Stop server (graceful via RCON)
-router.post("/stop", async (req, res) => {
+router.post("/stop", requireRole("admin", "technician"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
     const serverManager = req.app.get("serverManager");
@@ -1002,7 +1010,7 @@ router.post("/stop", async (req, res) => {
 });
 
 // Force stop server
-router.post("/force-stop", async (req, res) => {
+router.post("/force-stop", requireRole("admin", "technician"), async (req, res) => {
   try {
     log.info("POST /force-stop — force kill requested");
     const activeServer = await getActiveServer();
@@ -1046,7 +1054,7 @@ router.post("/force-stop", async (req, res) => {
 });
 
 // Restart server
-router.post("/restart", async (req, res) => {
+router.post("/restart", requireRole("admin", "technician"), async (req, res) => {
   try {
     const activeServer = await getActiveServer();
     if (activeServer?.isRemote) {
@@ -1084,7 +1092,7 @@ router.post("/restart", async (req, res) => {
 });
 
 // Save world
-router.post("/save", async (req, res) => {
+router.post("/save", requireRole("admin", "technician"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
     const result = await rconService.save();
@@ -1094,6 +1102,11 @@ router.post("/save", async (req, res) => {
     res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
+
+// Message/weather/events/alarm/removezombies/releasesafehouse below: open to
+// every role, deliberately -- these are in-game/GM authority (broadcast a
+// message, run a weather or zombie event, release an inactive player's
+// safehouse), the same territory as players.js, not server operation.
 
 // Send server message
 router.post("/message", async (req, res) => {
@@ -1263,7 +1276,7 @@ router.get("/steamcmd/detect", async (_req, res) => {
 });
 
 // Get available Steam branches for PZ Dedicated Server (App ID 380870)
-router.get("/branches", async (req, res) => {
+router.get("/branches", requireRole("admin", "technician"), async (req, res) => {
   try {
     const steamcmdPath =
       req.query.steamcmdPath || (await getSetting("steamcmdPath"));
@@ -1489,7 +1502,7 @@ export async function getSteamLoginArgs() {
 }
 
 // SteamCMD Installation endpoint
-router.post("/install", async (req, res) => {
+router.post("/install", requireRole("admin", "technician"), async (req, res) => {
   let activeOperationPath = null;
   try {
     const {
@@ -1944,7 +1957,7 @@ router.post("/install", async (req, res) => {
 });
 
 // Quick Setup - Create new server config using existing files (no SteamCMD download)
-router.post("/quick-setup", async (req, res) => {
+router.post("/quick-setup", requireRole("admin", "technician"), async (req, res) => {
   try {
     const {
       installPath,
@@ -2185,7 +2198,7 @@ router.post("/quick-setup", async (req, res) => {
 });
 
 // Configure RCON in server's .ini file
-router.post("/configure-rcon", async (req, res) => {
+router.post("/configure-rcon", requireRole("admin", "technician"), async (req, res) => {
   try {
     const { rconPassword, rconPort: rawRconPort = 27015 } = req.body;
     const rconPort = validateInt(rawRconPort, 1024, 65535, 27015);
@@ -2256,7 +2269,7 @@ router.post("/configure-rcon", async (req, res) => {
 });
 
 // Configure server network settings (port, UPnP) in .ini file
-router.post("/configure-network", async (req, res) => {
+router.post("/configure-network", requireRole("admin", "technician"), async (req, res) => {
   try {
     const { serverPort: rawServerPort = 16261, useUpnp = true } = req.body;
     const serverPort = validateInt(rawServerPort, 1024, 65535, 16261);
@@ -2362,7 +2375,7 @@ router.post("/removezombies", async (req, res) => {
 });
 
 // Reload Lua script
-router.post("/reloadlua", async (req, res) => {
+router.post("/reloadlua", requireRole("admin", "technician"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
     const { filename } = req.body;
@@ -2387,7 +2400,7 @@ router.post("/reloadlua", async (req, res) => {
 });
 
 // Set log level
-router.post("/log", async (req, res) => {
+router.post("/log", requireRole("admin", "technician"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
     const { type, level } = req.body;
@@ -2454,7 +2467,7 @@ router.post("/log", async (req, res) => {
 });
 
 // Server statistics
-router.post("/stats", async (req, res) => {
+router.post("/stats", requireRole("admin", "technician"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
     const { mode, period } = req.body;
@@ -2493,7 +2506,7 @@ router.post("/releasesafehouse", async (req, res) => {
 });
 
 // Update server using SteamCMD
-router.post("/steam-update", async (req, res) => {
+router.post("/steam-update", requireRole("admin", "technician"), async (req, res) => {
   let activeOperationPath = null;
   try {
     let {
@@ -2770,7 +2783,7 @@ router.post("/steam-update", async (req, res) => {
 });
 
 // Auto-download and install SteamCMD
-router.post("/steamcmd/download", async (req, res) => {
+router.post("/steamcmd/download", requireRole("admin", "technician"), async (req, res) => {
   try {
     log.info(`POST /steamcmd/download (platform=${process.platform})`);
     const defaultPath = isWindows
@@ -3043,7 +3056,7 @@ router.post("/steamcmd/download", async (req, res) => {
 });
 
 // Check if SteamCMD exists at a path
-router.get("/steamcmd/check", async (req, res) => {
+router.get("/steamcmd/check", requireRole("admin", "technician"), async (req, res) => {
   try {
     const { path: checkPath } = req.query;
 
@@ -3121,7 +3134,7 @@ router.post("/delete-files", requireRole("admin"), async (req, res) => {
 });
 
 // List directory contents for the in-app folder browser
-router.post("/list-directory", async (req, res) => {
+router.post("/list-directory", requireRole("admin", "technician"), async (req, res) => {
   try {
     const { dirPath } = req.body;
 
@@ -3241,7 +3254,7 @@ router.post("/list-directory", async (req, res) => {
 });
 
 // Open folder browser dialog (uses PowerShell on Windows, zenity/kdialog on Linux)
-router.post("/browse-folder", async (req, res) => {
+router.post("/browse-folder", requireRole("admin", "technician"), async (req, res) => {
   try {
     const { initialPath, description = "Select a folder" } = req.body;
 
@@ -3699,7 +3712,7 @@ router.get("/console-log/stream", async (req, res) => {
 });
 
 // Clear server console log
-router.post("/console-log/clear", async (req, res) => {
+router.post("/console-log/clear", requireRole("admin", "technician"), async (req, res) => {
   try {
     const activeServer = await getActiveServer();
     // server-console.txt is in zomboidDataPath (where Server/, Saves/, Logs/ are)
@@ -3766,7 +3779,7 @@ router.get("/update-check/status", async (req, res) => {
 });
 
 // Set update check interval
-router.post("/update-check/interval", async (req, res) => {
+router.post("/update-check/interval", requireRole("admin", "technician"), async (req, res) => {
   try {
     const updateChecker = req.app.get("updateChecker");
     if (!updateChecker) {
@@ -3791,8 +3804,10 @@ router.post("/update-check/interval", async (req, res) => {
 // Guard against concurrent wipe operations
 let wipeInProgress = false;
 
-// Preview what will be wiped (dry-run)
-router.post("/wipe/preview", async (req, res) => {
+// Preview what will be wiped (dry-run). Admin-only, same as /wipe itself --
+// this pairs with the actual wipe, so anyone who can't wipe has no reason
+// to preview one.
+router.post("/wipe/preview", requireRole("admin"), async (req, res) => {
   try {
     const serverManager = req.app.get("serverManager");
     await serverManager.loadConfig();

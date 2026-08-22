@@ -51,6 +51,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   existed beyond the first administrator, many of these were reachable by any signed-in user
   regardless of role, including the endpoints that back up and compact the panel database.
 
+- **Restoring a backup is now administrator-only**: previously any administrator or technician
+  account could roll the live world back to an older backup. Deleting, pruning or creating backups
+  is routine housekeeping and stays open to technicians, but restoring one discards everything since
+  that backup for every player currently on the server — a decision about other people's time, not a
+  maintenance task — so only an administrator can do it now.
+
+- **Server start, stop, install and configuration endpoints now enforce technician-or-above**:
+  starting, stopping, restarting or force-stopping the server; installing or updating it through
+  SteamCMD; editing its RCON or network settings; and browsing the host filesystem to set any of
+  that up were previously reachable by any signed-in account, including moderators — the same gap
+  the role-permissions review above closed for diagnostics and file management, just missed in this
+  file. In-game tools (weather, world events, server messages, releasing a safehouse) and read-only
+  status pages are unaffected and stay open to everyone signed in.
+
 - **Bans recorded that never happened**: banning, unbanning or voice-banning a player — by username
   or by SteamID — while the game server is offline or restarting no longer writes the action into
   the panel's own ban list and history as though it had succeeded. Previously the in-game command
