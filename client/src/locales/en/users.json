@@ -20,7 +20,15 @@
     "role": "Role",
     "created": "Created",
     "lastSignIn": "Last sign-in",
-    "never": "Never"
+    "never": "Never",
+    "actions": "Actions",
+    "removeTooltip": "Remove {{username}}"
+  },
+  "deleteDialog": {
+    "title": "Remove {{username}}?",
+    "description": "They will lose access to this panel immediately, on their very next request — not eventually. This can't be undone.",
+    "confirm": "Remove account",
+    "cancel": "Cancel"
   },
   "manageRolesLink": "Manage roles & permissions",
   "createDialog": {
@@ -44,6 +52,8 @@
     "userCreatedTitle": "Account created",
     "userCreatedDescription": "{{username}} can now sign in as \"{{role}}\".",
     "userCreatedRoleAssignFailedDescription": "{{username}} was created as \"moderator\", but assigning \"{{role}}\" failed: {{reason}}. Change it from Roles & Permissions.",
+    "userDeletedTitle": "Account removed",
+    "userDeletedDescription": "{{username}} can no longer sign in.",
     "actionFailedTitle": "Action failed"
   }
 }

@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
-import { UserPlus, ShieldAlert, Loader2, ArrowRight } from 'lucide-react'
+import { UserPlus, ShieldAlert, Loader2, ArrowRight, Trash2 } from 'lucide-react'
+import { useAuth } from '@/contexts/AuthContext'
+import { useConfirm } from '@/contexts/ConfirmContext'
 import { PageHeader } from '@/components/PageHeader'
 import { EmptyState } from '@/components/EmptyState'
 import { Button } from '@/components/ui/button'
@@ -44,9 +46,22 @@ function isLegacyUserRole(name: string): name is LegacyUserRole {
   return (LEGACY_USER_ROLES as readonly string[]).includes(name)
 }
 
+// Mirrors server/services/permissions.js's RECOVERY_CAPABILITIES, checked in
+// the same order -- lets the client fill in the {{action}} placeholder in
+// errors:ROLE_LOCKOUT_LAST_MANAGER when deleting a user would remove the
+// last holder of one of these two capabilities.
+function recoveryActionKeyForRole(role: RoleInfo | undefined): 'lockout.actionManageRoles' | 'lockout.actionManageUsers' | null {
+  if (!role) return null
+  if (role.capabilities.includes('roles.manage')) return 'lockout.actionManageRoles'
+  if (role.capabilities.includes('users.manage')) return 'lockout.actionManageUsers'
+  return null
+}
+
 export default function Users() {
   const { t } = useTranslation(['users', 'errors'])
   const { toast } = useToast()
+  const { user: currentUser } = useAuth()
+  const confirm = useConfirm()
 
   const [users, setUsers] = useState<ManagedUserAccount[] | null>(null)
   const [roles, setRoles] = useState<RoleInfo[]>([])
@@ -61,6 +76,8 @@ export default function Users() {
   const [roleId, setRoleId] = useState('')
   const [formBusy, setFormBusy] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+
+  const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set())
 
   const fetchAll = useCallback(async () => {
     setLoading(true)
@@ -99,6 +116,60 @@ export default function Users() {
 
   function describeError(error: unknown): string {
     return error instanceof Error ? error.message : String(error)
+  }
+
+  function getRoleForUser(user: ManagedUserAccount): RoleInfo | undefined {
+    return roles.find((r) => (user.roleId ? r.id === user.roleId : r.name === user.role))
+  }
+
+  async function handleDelete(user: ManagedUserAccount) {
+    const ok = await confirm({
+      title: t('deleteDialog.title', { username: user.username }),
+      description: t('deleteDialog.description'),
+      confirmLabel: t('deleteDialog.confirm'),
+      cancelLabel: t('deleteDialog.cancel'),
+      destructive: true,
+    })
+    if (!ok) return
+
+    setDeletingIds((prev) => new Set(prev).add(user.id))
+    try {
+      await usersApi.remove(user.id)
+      setUsers((prev) => (prev ? prev.filter((u) => u.id !== user.id) : prev))
+      toast({
+        title: t('toasts.userDeletedTitle'),
+        description: t('toasts.userDeletedDescription', { username: user.username }),
+        variant: 'success',
+      })
+    } catch (error) {
+      if (error instanceof ApiError && error.code === 'ROLE_LOCKOUT_LAST_MANAGER') {
+        const actionKey = recoveryActionKeyForRole(getRoleForUser(user))
+        const action = actionKey ? t(actionKey) : ''
+        toast({
+          title: t('toasts.actionFailedTitle'),
+          description: t('errors:ROLE_LOCKOUT_LAST_MANAGER', { action }),
+          variant: 'destructive',
+        })
+      } else if (error instanceof ApiError && error.code === 'USER_SELF_DELETE_REFUSED') {
+        toast({
+          title: t('toasts.actionFailedTitle'),
+          description: t('errors:USER_SELF_DELETE_REFUSED'),
+          variant: 'destructive',
+        })
+      } else {
+        toast({
+          title: t('toasts.actionFailedTitle'),
+          description: describeError(error),
+          variant: 'destructive',
+        })
+      }
+    } finally {
+      setDeletingIds((prev) => {
+        const next = new Set(prev)
+        next.delete(user.id)
+        return next
+      })
+    }
   }
 
   async function handleCreate() {
@@ -215,23 +286,47 @@ export default function Users() {
                     <th className="px-4 py-2.5">{t('table.role')}</th>
                     <th className="px-4 py-2.5">{t('table.created')}</th>
                     <th className="px-4 py-2.5">{t('table.lastSignIn')}</th>
+                    <th className="px-4 py-2.5 text-right">
+                      <span className="sr-only">{t('table.actions')}</span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {(users || []).map((user) => (
-                    <tr key={user.id} className="border-b border-border/30 last:border-0">
-                      <td className="px-4 py-2.5 font-medium">{user.username}</td>
-                      <td className="px-4 py-2.5">
-                        <Badge variant="outline">{user.role}</Badge>
-                      </td>
-                      <td className="px-4 py-2.5 text-muted-foreground">
-                        {new Date(user.createdAt).toLocaleString()}
-                      </td>
-                      <td className="px-4 py-2.5 text-muted-foreground">
-                        {user.lastLogin ? new Date(user.lastLogin).toLocaleString() : t('table.never')}
-                      </td>
-                    </tr>
-                  ))}
+                  {(users || []).map((user) => {
+                    const isSelf = user.id === currentUser?.id
+                    const deleting = deletingIds.has(user.id)
+                    return (
+                      <tr key={user.id} className="border-b border-border/30 last:border-0">
+                        <td className="px-4 py-2.5 font-medium">{user.username}</td>
+                        <td className="px-4 py-2.5">
+                          <Badge variant="outline">{user.role}</Badge>
+                        </td>
+                        <td className="px-4 py-2.5 text-muted-foreground">
+                          {new Date(user.createdAt).toLocaleString()}
+                        </td>
+                        <td className="px-4 py-2.5 text-muted-foreground">
+                          {user.lastLogin ? new Date(user.lastLogin).toLocaleString() : t('table.never')}
+                        </td>
+                        <td className="px-4 py-2.5 text-right">
+                          {!isSelf && (
+                            deleting ? (
+                              <Loader2 className="ml-auto h-4 w-4 animate-spin text-muted-foreground" />
+                            ) : (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-destructive hover:text-destructive"
+                                title={t('table.removeTooltip', { username: user.username })}
+                                onClick={() => handleDelete(user)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            )
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>

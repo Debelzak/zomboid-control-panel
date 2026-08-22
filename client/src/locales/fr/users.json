@@ -20,7 +20,15 @@
     "role": "Rôle",
     "created": "Créé le",
     "lastSignIn": "Dernière connexion",
-    "never": "Jamais"
+    "never": "Jamais",
+    "actions": "Actions",
+    "removeTooltip": "Supprimer {{username}}"
+  },
+  "deleteDialog": {
+    "title": "Supprimer {{username}} ?",
+    "description": "Cette personne perdra l'accès à ce panneau immédiatement, dès sa prochaine requête — pas éventuellement. Cette action est définitive.",
+    "confirm": "Supprimer le compte",
+    "cancel": "Annuler"
   },
   "manageRolesLink": "Gérer les rôles et permissions",
   "createDialog": {
@@ -44,6 +52,8 @@
     "userCreatedTitle": "Compte créé",
     "userCreatedDescription": "{{username}} peut maintenant se connecter en tant que « {{role}} ».",
     "userCreatedRoleAssignFailedDescription": "{{username}} a été créé en tant que « moderator », mais l'attribution de « {{role}} » a échoué : {{reason}}. Modifiez-le depuis Rôles et permissions.",
+    "userDeletedTitle": "Compte supprimé",
+    "userDeletedDescription": "{{username}} ne peut plus se connecter.",
     "actionFailedTitle": "Échec de l'action"
   }
 }

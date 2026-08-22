@@ -3141,6 +3141,11 @@ export const usersApi = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ roleId }),
     }).then((response) => handleResponse(response)),
+
+  remove: (
+    userId: string,
+  ): Promise<{ success: boolean; user: { id: string; username: string } }> =>
+    apiDelete(`/auth/users/${encodeURIComponent(userId)}`),
 };
 
 // OIDC settings (server/routes/oidc.js "Settings" section, gated on
