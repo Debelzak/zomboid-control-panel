@@ -116,6 +116,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `client/src/locales/README.md`.
 
 ### Fixed
+- **A role that could only manage scheduled tasks could actually run any server command**: the
+  "manage scheduled tasks" permission let someone save a task containing any command at all and
+  then run it - including shutting the server down or banning players - and those runs did not
+  appear in the command history. Anyone who built a limited role such as a backup operator was
+  granting far more than the permission's name suggested. Saving, editing or running a task whose
+  command is not one of the ordinary ones (restart, save, broadcast) now also requires the
+  permission for running server commands directly.
+
+- **Accents were stripped from ban reasons before they reached the server**: a ban reason written
+  in French was recorded intact in the panel's own log but arrived at the game server with the
+  accented letters removed entirely - *répété* became *rpt* - so the two records disagreed and
+  nothing told you. Accented letters are now converted to their closest plain equivalent
+  (*repete*), which the server can carry, and the same conversion is used for broadcasts.
+
+- **"Restart now" no longer files its failures under "Auto Restart"**: a restart you triggered by
+  hand was recorded in Schedule History as though it had been automatic, so a failure looked like a
+  scheduled job misbehaving.
 - **Error messages that mention a specific thing now say it in French too**: messages that name a
   permission, a role, a count or a reason - such as refusing a change that would leave nobody able
   to manage roles - previously fell back to English, because the panel had no way to carry that
