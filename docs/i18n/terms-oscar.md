@@ -123,6 +123,64 @@ prose. Term choices below as reported by the fork.)
   against the English source, which is itself duplicated the same way by
   design. Not a bug.
 
+## Mods.tsx
+(Converted by a forked sub-agent under my direction, reviewed and verified
+by me before commit: independent key-parity check [627/627], i18n-check.mjs
+run [clean, 4 flagged pairs all benign], both gates re-run clean [server
+gate's only failure across two runs was the known pre-existing
+supervisor-restart flake, unrelated], tsc clean for Mods.tsx, the line-911
+comment-bug fix cross-checked by me directly against
+server/routes/mods.js:4570-4610, and the page read as prose. Term choices
+below as reported by the fork.)
+
+- **THE COMMENT BUG (line ~911, `handleApplyPreset`)**: the original
+  comment on the `fetchData()` resync call read `// Always resync state —
+  preset may have partially applied`, implying `POST /presets/:id/apply`
+  can fail halfway through. Verified against the actual route
+  (`server/routes/mods.js:4570-4610`): it merges both the `WorkshopItems=`
+  and `Mods=` INI lines into one in-memory string and calls
+  `fs.writeFileSync` exactly once — genuinely all-or-nothing, so "may have
+  partially applied" was never possible for this endpoint. Comment fixed
+  to explain the real reason for the resync (reflect confirmed
+  server-side state, not a local guess) instead of a failure mode that
+  doesn't exist. Code (the resync call itself) was correct and unchanged
+  — only the comment's reasoning was wrong.
+- "mod" → **mod** (untranslated, reused from roles.json: "les mods du
+  Workshop" — never "modification" or "extension").
+- "Workshop" (Steam Workshop) → **Workshop**, untranslated proper noun.
+- "workshop ID" → **ID Workshop**; "mod ID" (PZ's own per-mod identifier,
+  distinct from workshop ID — one Workshop item can expose several mod
+  IDs) → **ID de mod**. Kept this distinction sharp since the whole page's
+  mental model depends on workshop-ID vs. mod-ID being two different
+  things.
+- "Enable"/"Disable" → **Activer**/**Désactiver** (reused from
+  players.json).
+- "duplicate" → **doublon** (noun, e.g. a badge) vs. **en double**
+  (adjectival, e.g. "{{count}} ID en double") — used contextually, not
+  interchangeably.
+- Destructive confirm "This cannot be undone" → **Cette action est
+  irréversible** (same precedent as Servers.tsx/Templates.tsx).
+- Real French-grammar bug caught and fixed during the pass (not from the
+  automated checker): `genericNameNotice` originally shared one
+  `{{plural}}` interpolation token between a noun ("mod{{plural}}") and a
+  verb ("affiche{{plural}}") — French verb agreement doesn't take a bare
+  "s" the way the noun does ("affiches" is wrong, "affichent" is
+  correct). Rewritten as proper i18next `_one`/`_other` plural keys in
+  both languages instead of one shared token.
+- SCOPE GAP (bigger than the Templates.tsx one, worth a deliberate
+  decision): three substantial rendering surfaces reached from Mods.tsx
+  are page-adjacent components, not the page file itself, so they're
+  untouched and still English-only even though Mods.tsx is now bilingual:
+  `client/src/components/mods/ConflictsPanel.tsx` (1675 lines — the
+  entire Conflicts tab body), `client/src/components/mods/ModRow.tsx`
+  (158 lines — the shared row primitive every mod list uses), and
+  `client/src/components/WorkshopCollectionPanel.tsx` (1074 lines — the
+  entire Collection tab body). Together ~2900 lines. Two of Mods.tsx's
+  nine nav destinations (Conflicts, Collection) are effectively still
+  fully English for a French operator. Per god's heads-up earlier
+  tonight, these are expected to come to me as a follow-up task rather
+  than to Jim, since I already hold the mod/workshop-ID vocabulary.
+
 ## Templates.tsx
 - Page title "Simulation Templates" → **Modèles de simulation**.
 - Scope note: TemplateCard, TemplatePreviewDialog, CreateTemplateDialog,
