@@ -61,7 +61,7 @@
     "createBackup": "Créer une sauvegarde",
     "bridgeSettings": "Paramètres du bridge",
     "connectRcon": "Connecter le RCON",
-    "wipeServer": "Réinitialiser le serveur",
+    "wipeServer": "Effacer le serveur",
     "moreActionsAria": "Plus d'actions serveur",
     "addServerFirst": "Ajoutez ou sélectionnez d'abord un serveur",
     "notAvailableRemote": "Non disponible pour les serveurs distants (RCON uniquement)",
@@ -194,8 +194,8 @@
     "heading": "Maintenance",
     "refreshStatus": "Actualiser l'état",
     "createBackup": "Créer une sauvegarde",
-    "wipeServer": "Réinitialiser le serveur",
-    "wipeTooltipOnline": "Arrêtez le serveur avant de le réinitialiser",
+    "wipeServer": "Effacer le serveur",
+    "wipeTooltipOnline": "Arrêtez le serveur avant de l'effacer",
     "wipeTooltipOffline": "Supprimer la carte / les joueurs / l'état du monde",
     "autoStartLabel": "Démarrage automatique au lancement"
   },
@@ -256,7 +256,7 @@
     "inDays_other": "dans {{count}} j"
   },
   "wipeDialog": {
-    "title": "Réinitialiser le serveur",
+    "title": "Effacer le serveur",
     "description": "Sélectionnez les données à supprimer de <b>{{serverName}}</b>. Le serveur doit être arrêté.",
     "defaultServerName": "le serveur actif",
     "targets": {
@@ -280,12 +280,12 @@
     "total": "Total : {{count}} fichiers ({{mb}} Mo)",
     "cancel": "Annuler",
     "preview": "Aperçu",
-    "wipeNow": "Réinitialiser maintenant",
+    "wipeNow": "Effacer maintenant",
     "previewFailedTitle": "Échec de l'aperçu",
     "previewFailedFallback": "Impossible d'analyser le dossier de sauvegarde",
-    "wipedTitle": "Serveur réinitialisé",
+    "wipedTitle": "Serveur effacé",
     "wipedDesc": "Supprimé : {{targets}}",
-    "wipeFailedTitle": "Échec de la réinitialisation",
+    "wipeFailedTitle": "Échec de l'effacement",
     "wipeFailedFallback": "Erreur inconnue"
   }
 }
