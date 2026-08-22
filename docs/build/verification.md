@@ -8,6 +8,81 @@ not edited.
 Environment: Windows 11, Node v24.12.0, npm 11.6.2, repo at commit `49263c86` (HEAD at time
 of writing), panel version 1.1.55.
 
+## Update — end-to-end result (same evening, after Phyllis's commit `7344c47`)
+
+The `Debug.tsx` blocker in §1 was resolved by Phyllis's commit; the client build (and
+therefore the rest of the pipeline) is unblocked. This section is the answer to the
+follow-up question: does `node build.js` work **in sequence, from a clean start** — not
+just as isolated stages (§2 below proved the stages separately; this proves the whole
+pipeline together).
+
+```
+$ node build.js
+Building client...              (tsc -b && vite build — 2.73s, no errors)
+Client built successfully
+Building server bundle...       (esbuild → dist-exe/server.cjs, PanelBridge.lua v1.7.38 embedded)
+Server bundled successfully
+Creating executables for: win   (npx pkg — two expected non-fatal warnings, see §2)
+Creating release package...
+Release package created successfully
+```
+Wall clock: **37.7s** end to end. Exit code: **0**.
+
+**Artifact produced**: `release/ZomboidControlPanel.exe`, exactly **66,411,729 bytes**
+(63.3 MiB), sha256 `907c25a0ed57ca704b65803e5a03d3ff6dce8b9004163544264118e06296fba7`
+(also written to `release/checksums.txt` and `release/release-manifest.json` by the build
+itself), plus the full release tree: `client/dist/`, `data/` (scaffold only —
+`db.example.json`, `README.txt`, empty `backups/`), `logs/`, `pz-mod/`,
+`browser-extension/` (+ its zip), `sql-wasm.wasm`, `Start.bat`, `start.sh`,
+`zomboid-panel.service`, `docker-compose.install.yml`, `README.txt`.
+
+**Does the .exe actually launch?** Yes, verified live — with one real wrinkle worth
+recording. Launching it directly (`.\ZomboidControlPanel.exe`, no env overrides) does
+**not** run the server in that process: `server/index.js`'s own
+`maybeReexecViaSupervisor()` (lines 69–109) detects it's a packaged Windows build with no
+`PANEL_SUPERVISOR_V=2` set, so it spawns `Start.bat` in a new detached console and exits(0)
+immediately — by design, so every future in-app update always goes through the supervisor's
+rename-and-relaunch path. Running it that way three times in a row (not realizing the first
+call had already hand off to a persistent supervised instance) left three orphaned
+`cmd /K Start.bat` windows behind, one of which logged a real
+`Apply: ERROR could not back up running .exe (still locked?)` — an artifact of stacking
+multiple direct launches on top of each other, not a defect in a normal single launch or
+double-click. All three were found (`Get-CimInstance Win32_Process` showing
+`cmd.exe /K ...\Start.bat`) and killed during cleanup.
+
+For a clean, single-process check, relaunched with the documented escape hatch
+(`PANEL_NO_SUPERVISOR=1`), which skips the hand-off and runs the server directly in the
+foreground as normal for a service/automated context:
+```
+$ PORT=3097 PANEL_NO_SUPERVISOR=1 .\ZomboidControlPanel.exe
+  ╔═════════════════════════════════════════════════╗
+  ║         Zomboid Control Panel  v1.1.55          ║
+  ╚═════════════════════════════════════════════════╝
+16:32:10 • [DB] Running DB migrations: v1 → v3
+16:32:10 • [Auth] Generated new JWT secret
+16:32:10 • [Panel] No users found — first-run setup required
+...
+  Local:    http://localhost:3097
+```
+```
+$ curl http://localhost:3097/api/health
+{"status":"ok","version":"1.1.55","timestamp":"2026-08-22T20:32:18.417Z"}
+$ curl http://localhost:3097/api/auth/status
+{"needsSetup":true,"authEnabled":false}
+$ curl -I http://localhost:3097/
+200, text/html — serves the built client/dist correctly
+```
+Real DB migration ran, real JWT secret generated, real HTTP responses from the actual
+compiled binary — not inferred from the bundle succeeding. Killed the process afterward,
+then deleted both `dist-exe/` and `release/` (gitignored, nothing to commit).
+
+**Answer to the actual question asked**: yes — from a clean `dist-exe`/`release`, one
+command (`node build.js`), 38 seconds, produces a working, launchable, HTTP-serving
+Windows executable. Sequencing the steps together doesn't surface anything the isolated
+runs in §2 missed; the one real finding (repeated direct-launches contending with the
+supervisor hand-off) is about *how this binary is invoked for scripted/automated testing*,
+not about the pipeline or the shipped artifact.
+
 ## 1. Client production build — `npm run build` (= `tsc -b && vite build`)
 
 **Result: FAILS today.** Root cause is in-flight, uncommitted work, not a real regression.
@@ -170,6 +245,7 @@ mine to make unilaterally.
 
 | Check | Result |
 |---|---|
-| `npm run build` (client) | **Fails** — 1 remaining `noUnusedLocals` error in uncommitted `Debug.tsx` (in-flight translation work, not at HEAD). `npx vite build` alone succeeds. |
-| `node build.js` (+ `--windows`, `--linux`) | **Fails**, same root cause (blocked before reaching the server/pkg steps). Steps 3–5 (esbuild bundle → pkg packaging, both win and linux targets) verified healthy in isolation. |
+| `npm run build` (client) | Failed at first check — 1 remaining `noUnusedLocals` error in uncommitted `Debug.tsx` (in-flight translation work, not at HEAD). **Resolved once Phyllis's `7344c47` landed** — now builds clean in 2.7s. |
+| `node build.js` (default, i.e. Windows on this host) | **Verified working end-to-end from a clean start**: 37.7s, exit 0, produces a real, launchable, HTTP-serving `ZomboidControlPanel.exe` (66,411,729 bytes, sha256 `907c25a0...`). Isolated stage checks (esbuild bundle, `pkg` for both win and linux targets) were also independently healthy before the client blocker cleared. |
+| `node build.js --linux` | Packaging step alone verified healthy (produces an 83 MB binary via `pkg` cross-compilation from Windows) — not run end-to-end and not executed, since there's no Linux host here to run a Linux binary on. |
 | `package-lock.json` Linux/libc gap | **Real, confirmed structurally** (no `libc` field on gnu/musl split optional deps). **Already neutralized for Docker** via `npm install` instead of `npm ci` (see Dockerfile comments). **Still live in 3 GitHub Actions workflows** that use `npm ci` on Linux — unverified whether it has actually broken them (no remote/CI access from here). Zero runtime risk to the shipped binary either way (the affected packages are build-only devDependencies). No lockfile change made, per instruction. |
