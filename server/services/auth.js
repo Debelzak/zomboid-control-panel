@@ -128,6 +128,36 @@ async function countOtherUsersWithCapability(capability, excludingUserId) {
   return count;
 }
 
+// Refuses a per-user capability change that would leave zero OTHER users
+// able to roles.manage or users.manage. Shared by changeUserRoleById
+// (moving a user to a DIFFERENT role) and deleteUser (moving a user to NO
+// role at all -- nextCapabilities: []) -- one rule, one place, not one
+// copy per caller. Same shared RECOVERY_CAPABILITIES policy
+// services/permissions.js's own role-EDIT lockout check uses; this is the
+// per-user-exclusion analog of that per-role-exclusion rule (see
+// countOtherUsersWithCapability's own comment for why the counting itself
+// has to differ).
+async function assertNoRecoveryLockout(userId, currentCapabilities, nextCapabilities) {
+  for (const capability of RECOVERY_CAPABILITIES) {
+    const currentlyGrants = currentCapabilities.includes(capability);
+    const willStillGrant = nextCapabilities.includes(capability);
+    // Nothing is being taken away for this capability — either this user's
+    // current role never granted it, or the next state still does.
+    if (!currentlyGrants || willStillGrant) continue;
+
+    const others = await countOtherUsersWithCapability(capability, userId);
+    if (others === 0) {
+      throw makeRoleError(
+        ErrorCode.ROLE_LOCKOUT_LAST_MANAGER,
+        `This change would leave no user able to ${
+          capability === "roles.manage" ? "manage roles" : "manage user accounts"
+        }.`,
+        409,
+      );
+    }
+  }
+}
+
 class AuthService {
   constructor() {
     this.jwtSecret = null;
@@ -496,24 +526,7 @@ class AuthService {
       const currentCapabilities = currentRole?.capabilities || [];
       const nextCapabilities = targetRole.capabilities || [];
 
-      for (const capability of RECOVERY_CAPABILITIES) {
-        const currentlyGrants = currentCapabilities.includes(capability);
-        const willStillGrant = nextCapabilities.includes(capability);
-        // Nothing is being taken away for this capability — either this
-        // user's current role never granted it, or the new one still does.
-        if (!currentlyGrants || willStillGrant) continue;
-
-        const others = await countOtherUsersWithCapability(capability, userId);
-        if (others === 0) {
-          throw makeRoleError(
-            ErrorCode.ROLE_LOCKOUT_LAST_MANAGER,
-            `This change would leave no user able to ${
-              capability === "roles.manage" ? "manage roles" : "manage user accounts"
-            }.`,
-            409,
-          );
-        }
-      }
+      await assertNoRecoveryLockout(userId, currentCapabilities, nextCapabilities);
 
       user.role = targetRole.name;
       user.roleId = targetRole.id;
@@ -528,6 +541,67 @@ class AuthService {
         role: user.role,
         roleId: user.roleId,
       };
+    });
+  }
+
+  /**
+   * Delete a user account outright.
+   *
+   * Self-deletion: refused, no override. Editing your OWN role's
+   * capabilities (ROLE_SELF_CAPABILITY_LOSS_CONFIRM, permissions.js) still
+   * leaves you signed in with reduced access, recoverable by asking someone
+   * else to re-grant it. Deleting your own account is strictly worse: the
+   * very next request you make fails to find your user row (see
+   * authenticateAccessToken/refreshAccessToken, both do a fresh lookup by
+   * id on every call), so you are logged out mid-action with no account
+   * left to log back into. There is no routine reason an operator needs to
+   * delete their own account while signed in as it — another admin doing
+   * it instead is a deliberate two-party action, not a one-click accident.
+   *
+   * Lockout: reuses assertNoRecoveryLockout, the exact same rule
+   * changeUserRoleById enforces — deletion is that function's
+   * nextCapabilities: [] case (a user who is deleted keeps none of their
+   * former role's capabilities, same as one moved to a role that grants
+   * neither roles.manage nor users.manage). Refuses to delete the last
+   * user able to manage roles or manage users.
+   *
+   * Sessions: deleting the row is the whole mechanism — no separate
+   * tokenGen bump or session-revocation step is needed. Both
+   * authenticateAccessToken (every authenticated request) and
+   * refreshAccessToken look the user up by id fresh, every call, and
+   * already refuse when no row matches; there is nothing left to check
+   * once the row is gone. Takes effect on the deleted user's very next
+   * request, not at their access token's natural expiry.
+   */
+  async deleteUser(userId, { actingUserId } = {}) {
+    return this._withMutex(async () => {
+      if (actingUserId && String(actingUserId) === String(userId)) {
+        throw makeRoleError(
+          ErrorCode.USER_SELF_DELETE_REFUSED,
+          "You cannot delete your own account. Ask another administrator to do it instead.",
+          400,
+        );
+      }
+
+      const db = await getDb();
+      const users = db.data.users || [];
+      const user = users.find((u) => u.id === userId);
+      if (!user) {
+        throw new Error("User not found");
+      }
+
+      const currentRole = user.roleId
+        ? await getRoleById(user.roleId)
+        : await getRoleByName(user.role);
+      const currentCapabilities = currentRole?.capabilities || [];
+
+      await assertNoRecoveryLockout(userId, currentCapabilities, []);
+
+      db.data.users = users.filter((u) => u.id !== userId);
+      await commitNow();
+
+      log.info(`Deleted user: ${user.username} (${user.id})`);
+      return { id: user.id, username: user.username };
     });
   }
 

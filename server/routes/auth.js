@@ -501,6 +501,35 @@ router.patch(
 );
 
 /**
+ * DELETE /api/auth/users/:id
+ * Remove an account outright. Gated on users.manage, matching GET/POST
+ * /users and PATCH /users/:id/role beside it. Refuses to delete the
+ * caller's own account (see authService.deleteUser's own comment for why —
+ * unlike a capability edit, self-deletion logs the caller out mid-action
+ * with no account left to log back into) and refuses to delete the last
+ * user able to manage roles or users, reusing the exact same lockout rule
+ * PATCH .../role already enforces rather than a second copy of it.
+ * Deletion alone handles session invalidation: authService.
+ * authenticateAccessToken/refreshAccessToken both look the user up by id
+ * fresh on every call, so a deleted user's existing tokens stop working on
+ * their very next request, not at natural token expiry.
+ */
+router.delete("/users/:id", requirePermission("users.manage"), async (req, res) => {
+  try {
+    const user = await authService.deleteUser(req.params.id, {
+      actingUserId: req.user?.userId,
+    });
+    log.info(`User deleted by admin: ${user.username}`);
+    res.json({ success: true, user });
+  } catch (error) {
+    log.warn(`User deletion failed: ${error.message}`);
+    const body = { error: sanitizeError(error.message) };
+    if (error.code) body.code = error.code;
+    res.status(error.status || 400).json(body);
+  }
+});
+
+/**
  * POST /api/auth/regenerate-jwt-secret
  * Deliberately still requireRole("admin"), not requirePermission — the one
  * survivor of the users.manage sweep left as a CHOICE, not an oversight.
