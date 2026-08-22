@@ -294,17 +294,16 @@ export default function Backups() {
     setRestoreDialog({ open: false, backupName: null })
     setRestoringBackup(name)
     try {
+      // POST /backup/restore/:name always responds non-2xx on failure, so
+      // handleResponse() throws into the catch below -- this never sees
+      // result.success === false.
       const result = await backupApi.restoreBackup(name, { createPreRestoreBackup: true })
-      if (result.success) {
-        toast({
-          title: t('toasts.restoredTitle'),
-          description: t('toasts.restoredDesc', { name, seconds: (result.duration || 0).toFixed(1) }),
-          variant: 'success' as const,
-        })
-        await fetchBackups()
-      } else {
-        throw new Error(result.message || t('toasts.restoreFailedFallback'))
-      }
+      toast({
+        title: t('toasts.restoredTitle'),
+        description: t('toasts.restoredDesc', { name, seconds: (result.duration || 0).toFixed(1) }),
+        variant: 'success' as const,
+      })
+      await fetchBackups()
     } catch (error) {
       toast({
         title: t('toasts.restoreFailedTitle'),
@@ -338,12 +337,10 @@ export default function Backups() {
       let failCount = 0
       for (const name of names) {
         try {
-          const result = await backupApi.deleteBackup(name)
-          if (result.success) {
-            successCount++
-          } else {
-            failCount++
-          }
+          // DELETE /backup/:name always responds non-2xx on failure, so
+          // handleResponse() throws -- result.success is always true here.
+          await backupApi.deleteBackup(name)
+          successCount++
         } catch {
           failCount++
         }
@@ -382,21 +379,20 @@ export default function Backups() {
     setDeleteOlderDialog(false)
     setDeletingOlder(true)
     try {
+      // POST /backup/delete-older-than relays backupService's result as-is
+      // over HTTP 200, and that service CAN return { success: false, ... }
+      // on a partial failure -- but handleResponse() throws on any 200
+      // body with success: false (see lib/api.ts), so that case lands in
+      // the catch below too, never in a result.success === false branch
+      // here. Confirmed no other codepath in this handler returns
+      // success: false with a 2xx status.
       const result = await backupApi.deleteOlderThan(deleteOlderDays)
-      if (result.success) {
-        toast({
-          title: t('toasts.oldBackupsRemovedTitle'),
-          description: result.message || t('toasts.oldBackupsRemovedFallback', { count: result.deleted || 0 }),
-          variant: 'success' as const,
-        })
-        await fetchBackups()
-      } else {
-        toast({
-          title: t('toasts.deleteFailedTitle'),
-          description: result.message || t('toasts.deleteOldFailedFallback'),
-          variant: 'destructive',
-        })
-      }
+      toast({
+        title: t('toasts.oldBackupsRemovedTitle'),
+        description: result.message || t('toasts.oldBackupsRemovedFallback', { count: result.deleted || 0 }),
+        variant: 'success' as const,
+      })
+      await fetchBackups()
     } catch (error) {
       toast({
         title: t('toasts.deleteFailedTitle'),
