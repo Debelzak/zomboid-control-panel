@@ -177,6 +177,54 @@ describe("players routes: persistent records only written on RCON success", () =
         error: "Server is not running",
       });
     });
+
+    // Regression for the mismatch god verified directly: banPlayer() (see
+    // services/rcon.js) folds/transliterates the reason before it reaches
+    // RCON and returns what actually went out as `sentReason` -- this route
+    // used to log the raw, pre-fold `reason` instead, so an accented French
+    // reason like "répété" ("repeated") would be recorded in the panel's
+    // own activity log even though RCON actually received the folded
+    // "repete". The operator reading their own log would believe that's
+    // what was sent when it wasn't.
+    it("logs sentReason (what RCON actually received), not the raw requested reason, when they differ", async () => {
+      const rconService = {
+        banPlayer: vi.fn(async () => ({
+          success: true,
+          response: "ok",
+          sentReason: "repete",
+        })),
+      };
+      const response = createResponse();
+
+      await getRouteHandler("post", "/ban")(
+        createRequest({ username: "Bob", banIp: false, reason: "répété" }, rconService),
+        response,
+      );
+
+      expect(logPlayerAction).toHaveBeenCalledWith(
+        "Bob",
+        "ban",
+        "IP: false, Reason: repete",
+      );
+    });
+
+    it("falls back to the raw reason if banPlayer() doesn't return sentReason at all", async () => {
+      const rconService = {
+        banPlayer: vi.fn(async () => ({ success: true, response: "ok" })),
+      };
+      const response = createResponse();
+
+      await getRouteHandler("post", "/ban")(
+        createRequest({ username: "Bob", banIp: false, reason: "griefing" }, rconService),
+        response,
+      );
+
+      expect(logPlayerAction).toHaveBeenCalledWith(
+        "Bob",
+        "ban",
+        "IP: false, Reason: griefing",
+      );
+    });
   });
 
   describe("POST /unban", () => {

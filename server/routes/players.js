@@ -208,12 +208,24 @@ router.post('/ban', requirePermission("players.moderate"), async (req, res) => {
     }
 
     const result = await rconService.banPlayer(username, banIp, reason);
-    log.info(`POST /ban: ${username} (banIp=${banIp}, reason=${reason || 'none'})`);
+    // banPlayer() folds/transliterates `reason` before it reaches RCON (see
+    // services/rcon.js's sanitizeForBanReason) -- sentReason is what
+    // actually went to the server, and can differ from what was typed.
+    // Logging the raw `reason` here would leave the panel's own record
+    // (both this debug line and the persisted activity log below)
+    // disagreeing with reality, which is exactly the mismatch Kevin's fix
+    // existed to close (docs/qa/kevin-adversarial-findings.md Finding 2).
+    // Fallback to `reason` covers a path that somehow doesn't return
+    // sentReason, so this never logs "undefined".
+    const sentReason = result?.sentReason ?? reason;
+    log.info(
+      `POST /ban: ${username} (banIp=${banIp}, reason=${sentReason || 'none'}${sentReason !== reason ? ` [requested: ${reason}]` : ''})`,
+    );
     // Same unconditional-write shape as /unban: only log the action if RCON
     // actually performed it, so the activity log doesn't claim a ban
     // happened when the server never received it.
     if (result?.success) {
-      await logPlayerAction(username, 'ban', `IP: ${banIp}, Reason: ${reason}`);
+      await logPlayerAction(username, 'ban', `IP: ${banIp}, Reason: ${sentReason}`);
     }
 
     res.json(result);
