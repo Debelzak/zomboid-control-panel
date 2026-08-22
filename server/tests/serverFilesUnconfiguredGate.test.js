@@ -70,6 +70,7 @@ describe("server-files router: unconfigured-server gate", () => {
     expect(response.status).toHaveBeenCalledWith(404);
     expect(response.json).toHaveBeenCalledWith({
       error: "No active server configured",
+      code: "SERVER_NOT_CONFIGURED",
     });
     expect(next).not.toHaveBeenCalled();
   });

@@ -20,6 +20,7 @@ import {
 } from "../services/remoteConfigFiles.js";
 import { requireStoppedForLocalConfigMutation } from "../services/configMutationGuard.js";
 import { requireRole } from "../services/auth.js";
+import { ErrorCode } from "../utils/errorCodes.js";
 
 const router = express.Router();
 
@@ -40,7 +41,7 @@ router.use(requireRole("admin", "technician"));
 export class ServerNotConfiguredError extends Error {
   constructor() {
     super("No active server configured");
-    this.code = "SERVER_NOT_CONFIGURED";
+    this.code = ErrorCode.SERVER_NOT_CONFIGURED;
   }
 }
 
@@ -70,7 +71,7 @@ router.use(async (req, res, next) => {
     await getServerConfigPath();
   } catch (err) {
     if (err instanceof ServerNotConfiguredError) {
-      return res.status(404).json({ error: err.message });
+      return res.status(404).json({ error: err.message, code: err.code });
     }
     return next(err);
   }

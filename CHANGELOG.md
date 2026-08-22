@@ -43,6 +43,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `client/src/locales/README.md`.
 
 ### Fixed
+- **Groundwork for error messages in your own language**: the panel's screens are translated but the
+  messages the server sends back are still English, which is exactly when a non-English speaker most
+  needs their own language. Every error the server reports now carries a stable machine-readable code
+  from a single list, and a check fails the build if anyone adds a new one without registering it.
+  Nothing visible changes yet - this is the plumbing the translated messages will sit on.
 - **The login signing key no longer lives inside `db.json`**: the key the panel uses to sign your
   login sessions has moved into its own file, so it is no longer copied along every time `db.json` is
   backed up. Existing installs move it automatically on the first start after upgrading - it is the
