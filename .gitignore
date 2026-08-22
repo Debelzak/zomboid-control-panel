@@ -58,3 +58,8 @@ _artifacts/
 # Also written by server/tests/vitest.globalSetup.mjs for the duration of a test run.
 paths.config.json
 data/*.lock
+
+# Secrets relocated out of db.json (jwt.secret, *.secret, per-server RCON store)
+data/jwt.secret
+data/*.secret
+data/server-secrets/

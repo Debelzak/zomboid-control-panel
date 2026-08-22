@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Roles are becoming editable, not fixed**: the panel now stores roles in its database with a list
+  of what each one is allowed to do, instead of three names hard-coded into the program. Upgrading
+  changes nothing you can see - your existing administrator, technician and moderator accounts keep
+  exactly the permissions they have today - but it is the foundation for creating your own roles and
+  editing what each may do. The screen for that comes next.
 
 - **French language support (phase 1)**: sign-in, first-run setup and the sidebar navigation can now
   be switched between English and French, with the choice remembered in your browser. The remaining
@@ -43,6 +48,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `client/src/locales/README.md`.
 
 ### Fixed
+- **Error codes now reach the browser by default**: the server's error handler passes a registered
+  error code along automatically instead of relying on a hand-written line at every point an error is
+  caught. Internal codes from the filesystem, the network or third-party libraries are never passed
+  on - only codes the panel has explicitly registered. Not visible yet; it is what translated error
+  messages will run on.
+
+- **Credential files can no longer be committed by accident**: the relocated signing key and the
+  per-server RCON password files are now excluded from version control.
 - **RCON password, Discord bot token and Steam session moved out of `db.json`**: these credentials now
   live in their own files rather than inside the database, so none of them are swept into a database
   backup by accident. Existing installs move them automatically on the first start after upgrading -

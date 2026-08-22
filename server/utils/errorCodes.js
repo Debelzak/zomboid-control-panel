@@ -72,6 +72,37 @@ export const ErrorCode = Object.freeze({
   /** server/services/configMutationGuard.js -- server is confirmed running;
    * local config mutation refused until it's stopped. */
   SERVER_RUNNING: "SERVER_RUNNING",
+  /** server/services/permissions.js -- requirePermission() refused: the
+   * caller's role doesn't grant the capability, the role couldn't be
+   * resolved at all, or the capability string itself isn't a registered
+   * one. Deliberately one code for all three -- the middleware fails closed
+   * the same way regardless of which one occurred, and the response never
+   * says which (an unrecognized-capability detail belongs in the server
+   * log, not in a message an unauthorized caller can read). */
+  PERMISSION_DENIED: "PERMISSION_DENIED",
+  /** server/routes/permissions.js -- GET/PUT/DELETE .../roles/:id, no role
+   * with that id exists. */
+  ROLE_NOT_FOUND: "ROLE_NOT_FOUND",
+  /** server/routes/permissions.js -- POST/PUT .../roles, the requested name
+   * already belongs to another role. */
+  ROLE_NAME_TAKEN: "ROLE_NAME_TAKEN",
+  /** server/routes/permissions.js -- POST/PUT .../roles, the capabilities
+   * array contains a key that isn't in the catalogue. */
+  INVALID_CAPABILITY: "INVALID_CAPABILITY",
+  /** server/services/permissions.js -- lockout rule 1: this change would
+   * leave zero users able to manage roles or manage users. Hard refusal,
+   * no override. */
+  ROLE_LOCKOUT_LAST_MANAGER: "ROLE_LOCKOUT_LAST_MANAGER",
+  /** server/services/permissions.js -- lockout rule 2: the acting user is
+   * about to remove their own ability to manage roles/users (other users
+   * still hold it, so not a full lockout under ROLE_LOCKOUT_LAST_MANAGER --
+   * but the acting user would lose their own way to undo this). Refused
+   * unless the request explicitly sets confirmSelfCapabilityLoss: true. */
+  ROLE_SELF_CAPABILITY_LOSS_CONFIRM: "ROLE_SELF_CAPABILITY_LOSS_CONFIRM",
+  /** server/services/permissions.js -- lockout rule 3: DELETE on a role
+   * that users still hold, with no reassignTo given -- refused rather than
+   * orphaning them. */
+  ROLE_HAS_MEMBERS: "ROLE_HAS_MEMBERS",
 
   // --- legacy: wire value frozen (client compares it with === today),
   //     constant name invented only so a locale key exists ---

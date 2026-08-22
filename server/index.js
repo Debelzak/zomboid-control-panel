@@ -55,6 +55,7 @@ import authRoutes from "./routes/auth.js";
 import oidcRoutes from "./routes/oidc.js";
 import { loadOrCreateCerts } from "./utils/certs.js";
 import { sanitizeError } from "./utils/sanitize.js";
+import { ErrorCode } from "./utils/errorCodes.js";
 import { getSftpCachePath } from "./services/panelBridgeSftp.js";
 import {
   getEmbeddedPanelBridgeLua,
@@ -243,6 +244,7 @@ import mapProxyRoutes from "./routes/mapProxy.js";
 import systemRoutes from "./routes/system.js";
 import templatesRoutes from "./routes/templates.js";
 import dockerRoutes from "./routes/docker.js";
+import permissionsRoutes from "./routes/permissions.js";
 import panelBridge from "./services/panelBridge.js";
 
 dotenv.config();
@@ -1147,6 +1149,7 @@ app.use("/api/map", mapProxyRoutes);
 app.use("/api/system", systemRoutes);
 app.use("/api/templates", templatesRoutes);
 app.use("/api/docker", dockerRoutes);
+app.use("/api/permissions", permissionsRoutes);
 
 // Health check + panel version
 // In exe builds, PANEL_VERSION is injected by esbuild at compile time.
@@ -1492,10 +1495,14 @@ app.get("/api/panel/update-apply-log", (req, res) => {
   }
 });
 
-app.post(
-  "/api/panel/update-download",
-  requireRole("admin"),
-  async (req, res) => {
+// Exported (not just inline) so server/tests/errorCodeReachability.test.js
+// can call it directly with a fake req/res and assert on the actual res.json
+// body -- the three non-Docker-running branches below (already_downloading,
+// no_update, and the pass-through for anything else including
+// docker_updater_not_configured) hand `result` straight to res.json()
+// unmodified; that pass-through, not any single code literal, is the thing
+// a future refactor could quietly break.
+export async function handlePanelUpdateDownload(req, res) {
     try {
       const checker = req.app.get("panelUpdateChecker");
       if (!checker)
@@ -1556,7 +1563,12 @@ app.post(
       log.error(`Panel update download failed: ${error.message}`);
       res.status(500).json({ error: sanitizeError(error.message) });
     }
-  },
+}
+
+app.post(
+  "/api/panel/update-download",
+  requireRole("admin"),
+  handlePanelUpdateDownload,
 );
 
 // Serve static files in production
@@ -1589,11 +1601,35 @@ app.use(
 
 // Global API error handler — sanitize internal details from error responses
 // Must be defined before the catch-all route but after all API routes
-app.use("/api", (err, req, res, next) => {
+//
+// err.code is forwarded ONLY when it's a member of the ErrorCode registry
+// (server/utils/errorCodes.js) — deliberately, not by omission. Without the
+// allowlist, forwarding err.code unconditionally would leak Node/third-party
+// internals to the browser (ENOENT, ECONNREFUSED, ETIMEDOUT, whatever a
+// library happens to throw) — a new exposure nobody asked for. With it, a
+// thrown error carrying a REGISTERED code reaches the client with that code
+// by default, so every future coded throw doesn't need its own hand-written
+// forwarding check at whatever catch block happens to be between it and
+// here (see server/tests/errorCodeReachability.test.js for why that
+// mattered: it was the difference between the ServerNotConfiguredError bug
+// -- code set, silently dropped here -- and the apply_in_progress code that
+// only survived because index.js had a manual `err.code === "..."` check
+// upstream of this handler). An unregistered code is dropped exactly as
+// before this change -- do not "fix" that by widening the allowlist to
+// everything; that's the leak this exists to prevent.
+const REGISTERED_ERROR_CODES = new Set(Object.values(ErrorCode));
+// Exported so server/tests/errorCodeReachability.test.js can assert the
+// allowlist both ways directly against the real handler, not a reimplementation.
+export function apiErrorHandler(err, req, res, next) {
   log.error(`Unhandled API error on ${req.method} ${req.path}: ${err.message}`);
   const status = err.status || 500;
-  res.status(status).json({ error: sanitizeError(err.message) });
-});
+  const body = { error: sanitizeError(err.message) };
+  if (typeof err.code === "string" && REGISTERED_ERROR_CODES.has(err.code)) {
+    body.code = err.code;
+  }
+  res.status(status).json(body);
+}
+app.use("/api", apiErrorHandler);
 
 // SPA catch-all: serves index.html for any unmatched GET route so React
 // Router can handle client-side routing. Uses a path-less app.use()
