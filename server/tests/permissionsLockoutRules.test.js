@@ -30,11 +30,17 @@ vi.mock("../database/init.js", () => ({
   getUsersForRole: async (role) =>
     users.filter((u) => u.roleId === role.id || (role.isSeeded && u.role === role.name)),
   getUsersForRoleAccounting: async () => users,
+  // Mirrors database/init.js's real reassignRoleMembers -- must set .role
+  // unconditionally (no isSeeded check), see reassignRoleMembers.test.js
+  // for why: requirePermission() resolves capabilities via
+  // getRoleByName(req.user.role), so a stale .role after reassigning to a
+  // custom role kept authorizing the user against their old one forever.
   reassignRoleMembers: async (fromRole, toRole) => {
     let count = 0;
     for (const u of users) {
       if (u.roleId === fromRole.id || (fromRole.isSeeded && u.role === fromRole.name)) {
         u.roleId = toRole.id;
+        u.role = toRole.name;
         count++;
       }
     }
@@ -178,7 +184,20 @@ describe("deleteRole -- lockout rule 3 (must not orphan members)", () => {
 
     expect(result).toEqual({ deleted: true, reassigned: 1, reassignedTo: "role-tech" });
     expect(users[0].roleId).toBe("role-tech");
+    expect(users[0].role).toBe("technician");
     expect(rolesById.has("role-custom")).toBe(false);
+  });
+
+  it("updates user.role to the target's name when reassignTo is ANOTHER CUSTOM role -- the branch the isSeeded-only bug lived in", async () => {
+    seedRole("role-old", "Old Custom", ["players.view"]);
+    seedRole("role-new", "New Custom", ["players.view", "players.gm_tools"]);
+    users = [{ id: "u1", role: "Old Custom", roleId: "role-old" }];
+
+    await deleteRole("role-old", { reassignTo: "role-new" });
+
+    expect(users[0]).toEqual(
+      expect.objectContaining({ roleId: "role-new", role: "New Custom" }),
+    );
   });
 
   it("deletes with no members and no reassignTo needed", async () => {

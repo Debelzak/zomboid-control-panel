@@ -29,11 +29,14 @@ vi.mock("../database/init.js", () => ({
   getUsersForRole: async (role) =>
     users.filter((u) => u.roleId === role.id || (role.isSeeded && u.role === role.name)),
   getUsersForRoleAccounting: async () => users,
+  // Must set .role unconditionally (no isSeeded check) -- see
+  // reassignRoleMembers.test.js for why.
   reassignRoleMembers: async (fromRole, toRole) => {
     let count = 0;
     for (const u of users) {
       if (u.roleId === fromRole.id) {
         u.roleId = toRole.id;
+        u.role = toRole.name;
         count++;
       }
     }
