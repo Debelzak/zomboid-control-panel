@@ -23,6 +23,7 @@
     "renameTooltip": "Renommer le rôle",
     "deleteTooltip": "Supprimer le rôle",
     "deleteSeededTooltip": "Les rôles intégrés ne peuvent pas être supprimés depuis cet écran.",
+    "recoveryCapabilityHint": "Retirer le dernier détenteur de cette capacité verrouillerait les administrateurs hors du panneau — celui-ci refuse ce changement et vous explique pourquoi.",
     "savingCell": "Enregistrement…"
   },
   "roleFormDialog": {
@@ -142,7 +143,7 @@
         "description": "Modifier les paramètres .ini du serveur, les informations de connexion RCON, et la configuration réseau/chemins."
       },
       "wipe": {
-        "label": "Réinitialiser le monde",
+        "label": "Effacer le monde",
         "description": "Supprimer irréversiblement les données de carte, de joueurs ou de sauvegarde du monde."
       },
       "world_events": {

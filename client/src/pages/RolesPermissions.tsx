@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ShieldCheck, ShieldAlert, Plus, Pencil, Trash2, Loader2 } from 'lucide-react'
+import { ShieldCheck, ShieldAlert, Plus, Pencil, Trash2, Loader2, Lock } from 'lucide-react'
 import { PageHeader } from '@/components/PageHeader'
 import { EmptyState } from '@/components/EmptyState'
 import { Button } from '@/components/ui/button'
@@ -35,6 +35,12 @@ import {
   type RoleInfo,
   type ManagedUserAccount,
 } from '@/lib/api'
+
+// Mirrors server/services/permissions.js's RECOVERY_CAPABILITIES -- the two
+// capabilities the matrix's own lockout row header flags, since unchecking
+// the last holder's box on one of these two rows is the one action on this
+// screen that can lock an administrator out of the panel.
+const RECOVERY_CAPABILITY_KEYS = new Set(['roles.manage', 'users.manage'])
 
 // Which of the two recovery capabilities (server/services/permissions.js
 // RECOVERY_CAPABILITIES) a pending capability change would remove -- lets
@@ -418,15 +424,15 @@ export default function RolesPermissions() {
         <>
           <Card>
             <CardContent className="p-0">
-              <div className="overflow-x-auto">
+              <div className="max-h-[70vh] overflow-auto">
                 <table className="w-full min-w-[720px] border-collapse text-sm">
                   <thead>
-                    <tr className="border-b border-border/60 bg-muted/40">
-                      <th className="sticky left-0 z-10 bg-muted/40 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    <tr className="border-b border-border/60">
+                      <th className="sticky left-0 top-0 z-30 border-b border-border/60 bg-muted px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                         {t('matrix.capabilityColumnHeader')}
                       </th>
                       {roles.map((role) => (
-                        <th key={role.id} className="min-w-[170px] px-3 py-2 text-left align-top">
+                        <th key={role.id} className="sticky top-0 z-20 min-w-[170px] border-b border-border/60 bg-muted px-3 py-2 text-left align-top">
                           <div className="flex items-center gap-1.5">
                             <span className="font-semibold text-foreground">{role.name}</span>
                             {role.isSeeded && (
@@ -489,7 +495,17 @@ export default function RolesPermissions() {
                         {group.capabilities.map((cap) => (
                           <tr key={cap.key} className="border-b border-border/30 last:border-0 hover:bg-muted/10">
                             <td className="sticky left-0 z-10 bg-card px-3 py-2 align-top">
-                              <div className="font-medium text-foreground">{capabilityLabel(cap)}</div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-medium text-foreground">{capabilityLabel(cap)}</span>
+                                {RECOVERY_CAPABILITY_KEYS.has(cap.key) && (
+                                  <span title={t('matrix.recoveryCapabilityHint')}>
+                                    <Lock
+                                      className="h-3 w-3 shrink-0 text-warning"
+                                      aria-label={t('matrix.recoveryCapabilityHint')}
+                                    />
+                                  </span>
+                                )}
+                              </div>
                               <div className="text-xs text-muted-foreground">{capabilityDescription(cap)}</div>
                             </td>
                             {roles.map((role) => {
