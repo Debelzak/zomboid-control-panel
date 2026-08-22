@@ -84,3 +84,43 @@ against Angela's and the other translator's choices.
   folder — these are two different folders in this app (raw PZ saves vs. zipped panel
   backups) and collapsing them to the same French phrase would be exactly the
   "two different concepts, one phrase" bug the brief warned about.
+
+## Scheduler.tsx (namespace: `scheduler`)
+
+Per the brief, this is the page where time/interval/recurrence phrasing goes wrong
+easiest — I read every countdown/frequency string out loud before committing.
+
+- Countdown buttons ("Restart in 15m/10m/5m/1m") → **"Redémarrer dans 15 min"** etc.,
+  using "min" rather than a bare "m" — French doesn't abbreviate minutes to a bare "m"
+  the way English UI shorthand does; "15m" would misread as meters/months to a French
+  reader in a way "15m" doesn't in English UI shorthand.
+- Two toast strings interpolate a live minute count that can legitimately be 1
+  ("Server will restart in {{minutes}} minutes", "Restart in {{count}} minute(s)?") —
+  added explicit `_one`/`_other` plural forms to both languages so a 1-minute restart
+  doesn't read as the grammatically broken "redémarrera dans 1 minutes". The English
+  source didn't bother pluralizing these (always says "minutes" even for 1), but French
+  can't get away with that, so I fixed it in both rather than carrying the English
+  looseness into French.
+- "Weekday" (cron-help column header) and "Day of the week" (simple-builder form label)
+  both translate to **"Jour de la semaine"** — this is the same underlying concept at two
+  levels of terseness in the English source too (a compact table header vs. a full form
+  label), not two different concepts colliding on one phrase, so I did not force them
+  apart.
+- The four Quick Broadcast messages (maintenance start/end, save warning, welcome) are
+  real chat text sent to players, so I translated the actual message content, not just
+  the button labels. Kept "MODE MAINTENANCE" and the "Merci de..." opening consistent
+  with the *separate* maintenance-broadcast preset Angela already translated in
+  console.json, since it's the same in-game announcement concept appearing in two
+  different quick-broadcast UIs — even though this page's English source wording differs
+  slightly from console.json's ("Please save and disconnect" vs "Please disconnect"), I
+  aligned the French phrasing/tone rather than letting two independently-invented French
+  versions of "server entering maintenance" exist side by side.
+- Did NOT translate the message text embedded inside two `commonCommands` dropdown
+  *values* (`servermsg Server maintenance in progress`, `bridge:sendToServerChat
+  {"message":"Scheduled broadcast"}`). Only the dropdown option's visible label is
+  translated. These embedded strings are default/example RCON command bodies the
+  operator is expected to inspect and edit in the Command field before saving — unlike
+  Chat.tsx's quick-broadcast presets (finished, ready-to-send text) these are starting
+  templates for a technical command string, so changing them per-locale would be editing
+  code-adjacent content rather than UI copy, and risks a French operator not recognizing
+  the underlying `servermsg`/`bridge:` syntax if the embedded example text moved.
