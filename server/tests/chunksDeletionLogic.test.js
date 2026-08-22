@@ -1,0 +1,407 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import fs from "fs";
+import os from "os";
+import path from "path";
+import initSqlJs from "sql.js";
+import { mockGetRoleByName } from "./helpers/mockPermissionsDb.js";
+
+// chunksRoutesCapability.test.js proves the requirePermission gate on
+// delete-chunks/delete-region. It deliberately never executes the deletion
+// logic behind that gate. THIS file proves the deletion logic itself is
+// correct -- that it deletes the right files and only the right files.
+// These are the two routes in this app that destroy player world data
+// irreversibly.
+//
+// Real temp directories, not fs mocking -- chunks.js pulls in the logger,
+// which does real fs.mkdirSync + winston file transports at module load
+// time, so mocking "fs" wholesale breaks logger import for the whole file.
+// chunksBrowse.test.js already established real temp dirs as this
+// codebase's answer to that; this file follows the same convention.
+//
+// Two things verified empirically before relying on them (see the git
+// history of this file's task): chmod'ing a file read-only does NOT block
+// fs.promises.unlink on this Windows/Node combination, and neither does an
+// open r+ handle held in the same process -- both silently succeed. A
+// directory in place of the expected file DOES reliably throw a real,
+// non-ENOENT error (EPERM) on unlink, so that's what the partial-failure
+// tests use to force a genuine failure deterministically.
+
+vi.mock("../database/init.js", () => ({
+  getActiveServer: vi.fn(),
+  getRoleByName: mockGetRoleByName,
+}));
+
+const { getActiveServer } = await import("../database/init.js");
+const { default: router } = await import("../routes/chunks.js");
+
+// ── sql.js setup for a real vehicles.db fixture ────────────────────────────
+let sqlPromise = null;
+function getSQL() {
+  if (!sqlPromise) {
+    sqlPromise = initSqlJs({
+      locateFile: () => path.resolve(process.cwd(), "node_modules/sql.js/dist/sql-wasm.wasm"),
+    });
+  }
+  return sqlPromise;
+}
+
+async function createVehiclesDb(dbPath, rows) {
+  const SQL = await getSQL();
+  const db = new SQL.Database();
+  db.run(
+    "CREATE TABLE vehicles (id INTEGER PRIMARY KEY AUTOINCREMENT, wx INTEGER, wy INTEGER, x FLOAT, y FLOAT, worldversion INTEGER, data BLOB)",
+  );
+  const stmt = db.prepare(
+    "INSERT INTO vehicles (wx, wy, x, y, worldversion, data) VALUES (?, ?, ?, ?, ?, ?)",
+  );
+  for (const r of rows) {
+    stmt.run([r.wx, r.wy, r.x, r.y, r.worldversion ?? 1, r.data ?? null]);
+  }
+  stmt.free();
+  fs.writeFileSync(dbPath, Buffer.from(db.export()));
+  db.close();
+}
+
+async function readVehicleIds(dbPath) {
+  const SQL = await getSQL();
+  const db = new SQL.Database(fs.readFileSync(dbPath));
+  const stmt = db.prepare("SELECT id, x, y, wx, wy FROM vehicles ORDER BY id");
+  const rows = [];
+  while (stmt.step()) rows.push(stmt.getAsObject());
+  stmt.free();
+  db.close();
+  return rows;
+}
+
+// ── fixture helpers ─────────────────────────────────────────────────────
+function writeFileDeep(p, content = "x") {
+  fs.mkdirSync(path.dirname(p), { recursive: true });
+  fs.writeFileSync(p, content);
+}
+
+function writeDirDeep(p) {
+  fs.mkdirSync(p, { recursive: true });
+}
+
+// ── request/response plumbing (same shape as chunksRoutesCapability.test.js) ──
+function createResponse() {
+  const response = { status: () => response, json: () => response };
+  let statusCode = 200;
+  let body = null;
+  response.status = (code) => {
+    statusCode = code;
+    return response;
+  };
+  response.json = (payload) => {
+    body = payload;
+    return response;
+  };
+  response.getStatusCode = () => statusCode;
+  response.getBody = () => body;
+  return response;
+}
+
+// Deliberately does NOT walk chunks.js's router.use() remote-server guard
+// (unlike chunksRoutesCapability.test.js's gate-only helper, or
+// permissionsRoutes.test.js's whole-stack walk) -- that middleware calls
+// `next()` without returning/awaiting it, which is fine for Express's real
+// callback-driven dispatch but breaks a hand-rolled recursive-next chain: an
+// un-awaited next() call is a promise nobody in the chain waits on, so the
+// outer await resolves as soon as that one layer's own body finishes, not
+// after the real handler (which does the actual file I/O) has run to
+// completion. requirePermission's gate and every handler in chunks.js
+// properly `return next()` / return their own promise, so stitching just
+// the matched route's own two-handler stack together is both correct and
+// sufficient here -- the remote-server guard isn't what this file exists to
+// prove, and getActiveServer is already fixed to isRemote:false throughout.
+function getRouteHandlers(routePath, method) {
+  const layer = router.stack.find(
+    (entry) => entry.route?.path === routePath && entry.route.methods[method],
+  );
+  if (!layer) throw new Error(`No ${method.toUpperCase()} ${routePath} route registered`);
+  return layer.route.stack.map((s) => s.handle);
+}
+
+async function runRoute(routePath, method, req) {
+  const handlers = getRouteHandlers(routePath, method);
+  const res = createResponse();
+  let idx = -1;
+  const next = async (err) => {
+    idx++;
+    if (err) throw err;
+    if (idx < handlers.length) await handlers[idx](req, res, next);
+  };
+  await next();
+  return res;
+}
+
+function postAs(routePath, body) {
+  return runRoute(routePath, "post", {
+    user: { role: "technician" },
+    body: { force: true, createBackup: false, deleteVehicles: false, ...body },
+  });
+}
+
+const SAVE_NAME = "TestSave";
+let dataRoot;
+let savePath;
+
+beforeEach(() => {
+  dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), "chunks-deletion-"));
+  savePath = path.join(dataRoot, "Saves", "Multiplayer", SAVE_NAME);
+  fs.mkdirSync(savePath, { recursive: true });
+  getActiveServer.mockReset().mockResolvedValue({
+    id: "server-1",
+    zomboidDataPath: dataRoot,
+    isRemote: false,
+  });
+});
+
+afterEach(() => {
+  fs.rmSync(dataRoot, { recursive: true, force: true });
+});
+
+describe("delete-chunks: files that must survive (B42)", () => {
+  it("a partial cell deletion leaves the untouched sibling chunk, an unrelated cell's chunk, and the cell's aux files intact -- then finishing the cell off removes the aux files without touching the unrelated cell", async () => {
+    // Cell (0,0) spans chunk coords [0,31]x[0,31] at the B42 divisor of 32.
+    const chunkA = path.join(savePath, "map", "0", "0.bin"); // cell (0,0) -- deleted first
+    const chunkB = path.join(savePath, "map", "0", "1.bin"); // cell (0,0) -- survives phase 1, deleted phase 2
+    const chunkC = path.join(savePath, "map", "40", "5.bin"); // cell (1,0) -- must NEVER be touched
+    writeFileDeep(chunkA, "a");
+    writeFileDeep(chunkB, "b");
+    writeFileDeep(chunkC, "c");
+
+    const auxFiles = [
+      path.join(savePath, "chunkdata", "chunkdata_0_0.bin"),
+      path.join(savePath, "zpop", "zpop_0_0.bin"),
+      path.join(savePath, "metagrid", "metacell_0_0.bin"),
+      path.join(savePath, "apop", "apop_0_0.bin"),
+    ];
+    for (const f of auxFiles) writeFileDeep(f, "aux");
+
+    // Phase 1: delete only chunk A. Cell (0,0) is NOT empty (chunk B survives
+    // in it), so its aux files must survive too.
+    const res1 = await postAs("/delete-chunks", {
+      saveName: SAVE_NAME,
+      chunks: [{ file: "0/0.bin", x: 0, y: 0 }],
+    });
+    expect(res1.getStatusCode()).toBe(200);
+    expect(res1.getBody()).toEqual(expect.objectContaining({ success: true, deleted: 1 }));
+
+    expect(fs.existsSync(chunkA)).toBe(false); // the one we asked for -- gone
+    expect(fs.existsSync(chunkB)).toBe(true); // sibling in the same cell -- must survive
+    expect(fs.existsSync(chunkC)).toBe(true); // different cell entirely -- must survive
+    for (const f of auxFiles) {
+      expect(fs.existsSync(f), `${f} should still exist -- cell (0,0) is not empty yet`).toBe(true);
+    }
+
+    // Phase 2: delete the last surviving chunk in cell (0,0). NOW the cell
+    // is empty, so its aux files must be swept -- but the unrelated cell's
+    // chunk must still never be touched.
+    const res2 = await postAs("/delete-chunks", {
+      saveName: SAVE_NAME,
+      chunks: [{ file: "0/1.bin", x: 0, y: 1 }],
+    });
+    expect(res2.getStatusCode()).toBe(200);
+    expect(res2.getBody()).toEqual(
+      expect.objectContaining({ success: true, deleted: 1, cellFilesRemoved: 4 }),
+    );
+
+    expect(fs.existsSync(chunkB)).toBe(false);
+    expect(fs.existsSync(chunkC)).toBe(true); // still untouched
+    for (const f of auxFiles) {
+      expect(fs.existsSync(f), `${f} should be gone -- cell (0,0) is now empty`).toBe(false);
+    }
+  });
+});
+
+describe("B42 vs B41 layout detection", () => {
+  it("delete-chunks on a B41 flat save deletes the flat file and never runs B42 cell-aux cleanup on it", async () => {
+    // Flat file directly inside map/ -- no numeric subdirectories, and no
+    // B42 indicator files at the save root, so detectSaveIsB42Sync must
+    // read this as B41.
+    const flatChunk = path.join(savePath, "map", "0_0.bin");
+    writeFileDeep(flatChunk, "b41");
+
+    // A B42-shaped aux file that would be wrongly swept by
+    // cleanupEmptyCellFiles if (and only if) this save were misdetected as
+    // B42 -- cell math for (0,0) at the B41 divisor (30) would still cover
+    // chunk (0,0), so this is a real regression trap, not a decoy.
+    const spuriousAux = path.join(savePath, "chunkdata", "chunkdata_0_0.bin");
+    writeFileDeep(spuriousAux, "aux");
+
+    const res = await postAs("/delete-chunks", {
+      saveName: SAVE_NAME,
+      chunks: [{ file: "0_0.bin", x: 0, y: 0 }],
+    });
+
+    expect(res.getStatusCode()).toBe(200);
+    expect(res.getBody()).toEqual(
+      expect.objectContaining({ success: true, deleted: 1, cellFilesRemoved: 0 }),
+    );
+    expect(fs.existsSync(flatChunk)).toBe(false);
+    expect(fs.existsSync(spuriousAux), "B41 saves must never run B42 cell-aux cleanup").toBe(true);
+  });
+
+  it("delete-region on a B42 save only deletes chunks inside the region (both directions of invert)", async () => {
+    const inRegion = path.join(savePath, "map", "2", "2.bin"); // x=2,y=2 -- inside [0,5]x[0,5]
+    const outRegionSameDir = path.join(savePath, "map", "2", "8.bin"); // x=2,y=8 -- outside
+    const outRegionOtherDir = path.join(savePath, "map", "9", "9.bin"); // x=9,y=9 -- outside
+    writeFileDeep(inRegion, "a");
+    writeFileDeep(outRegionSameDir, "b");
+    writeFileDeep(outRegionOtherDir, "c");
+
+    const res = await postAs("/delete-region", {
+      saveName: SAVE_NAME,
+      minX: 0,
+      maxX: 5,
+      minY: 0,
+      maxY: 5,
+      invert: false,
+    });
+
+    expect(res.getStatusCode()).toBe(200);
+    expect(res.getBody()).toEqual(expect.objectContaining({ success: true, deleted: 1 }));
+    expect(fs.existsSync(inRegion)).toBe(false);
+    expect(fs.existsSync(outRegionSameDir)).toBe(true);
+    expect(fs.existsSync(outRegionOtherDir)).toBe(true);
+  });
+
+  it("delete-region with invert:true deletes everything OUTSIDE the region instead", async () => {
+    const inRegion = path.join(savePath, "map", "2", "2.bin");
+    const outRegionSameDir = path.join(savePath, "map", "2", "8.bin");
+    const outRegionOtherDir = path.join(savePath, "map", "9", "9.bin");
+    writeFileDeep(inRegion, "a");
+    writeFileDeep(outRegionSameDir, "b");
+    writeFileDeep(outRegionOtherDir, "c");
+
+    const res = await postAs("/delete-region", {
+      saveName: SAVE_NAME,
+      minX: 0,
+      maxX: 5,
+      minY: 0,
+      maxY: 5,
+      invert: true,
+    });
+
+    expect(res.getStatusCode()).toBe(200);
+    expect(res.getBody()).toEqual(expect.objectContaining({ success: true, deleted: 2 }));
+    expect(fs.existsSync(inRegion), "inside the region -- must survive an inverted delete").toBe(true);
+    expect(fs.existsSync(outRegionSameDir)).toBe(false);
+    expect(fs.existsSync(outRegionOtherDir)).toBe(false);
+  });
+
+  it("delete-region on a B41 flat save (files directly in map/, no subdirectories) uses the flat-file branch, not the B42 subdirectory scan", async () => {
+    const inRegion = path.join(savePath, "map", "3_3.bin"); // x=3,y=3 -- inside [0,5]x[0,5]
+    const outRegion = path.join(savePath, "map", "20_20.bin"); // outside
+    writeFileDeep(inRegion, "a");
+    writeFileDeep(outRegion, "b");
+
+    const res = await postAs("/delete-region", {
+      saveName: SAVE_NAME,
+      minX: 0,
+      maxX: 5,
+      minY: 0,
+      maxY: 5,
+    });
+
+    expect(res.getStatusCode()).toBe(200);
+    expect(res.getBody()).toEqual(expect.objectContaining({ success: true, deleted: 1 }));
+    expect(fs.existsSync(inRegion)).toBe(false);
+    expect(fs.existsSync(outRegion)).toBe(true);
+  });
+});
+
+describe("partial failure: does the response report what actually happened?", () => {
+  it("delete-chunks: an undeletable chunk is excluded from the deleted count, surfaced in errors, and left on disk -- not silently counted as gone", async () => {
+    const goodChunk = path.join(savePath, "map", "0", "0.bin"); // cell (0,0) -- really deletable
+    const badChunkPath = path.join(savePath, "map", "40", "0.bin"); // cell (1,0) -- forced failure
+    writeFileDeep(goodChunk, "a");
+    // A directory where the route expects a file is a deterministic,
+    // OS-independent way to force a real (non-ENOENT) unlink failure --
+    // chmod-readonly and an open r+ handle both silently failed to block
+    // fs.promises.unlink when checked directly against this environment.
+    writeDirDeep(badChunkPath);
+
+    const res = await postAs("/delete-chunks", {
+      saveName: SAVE_NAME,
+      chunks: [
+        { file: "0/0.bin", x: 0, y: 0 },
+        { file: "40/0.bin", x: 40, y: 0 },
+      ],
+    });
+
+    expect(res.getStatusCode()).toBe(200);
+    const body = res.getBody();
+    // Documenting existing behaviour, not asserting it's the ideal shape:
+    // the top-level `success: true` here means "the request was processed",
+    // not "everything requested was deleted" -- the honest signal is the
+    // accurate `deleted` count plus a populated `errors` array, both of
+    // which delete-chunks does provide.
+    expect(body.success).toBe(true);
+    expect(body.deleted).toBe(1);
+    expect(body.errors).toEqual(
+      expect.arrayContaining([expect.stringContaining("40/0.bin")]),
+    );
+    expect(fs.existsSync(goodChunk)).toBe(false);
+    expect(fs.existsSync(badChunkPath), "the chunk that failed to delete must still be there").toBe(true);
+  });
+
+  it("delete-region: an undeletable chunk is excluded from the deleted count and left on disk, but -- unlike delete-chunks -- the response carries no errors field at all to say so", async () => {
+    const goodChunk = path.join(savePath, "map", "2", "2.bin");
+    const badChunkPath = path.join(savePath, "map", "2", "3.bin");
+    writeFileDeep(goodChunk, "a");
+    writeDirDeep(badChunkPath);
+
+    const res = await postAs("/delete-region", {
+      saveName: SAVE_NAME,
+      minX: 0,
+      maxX: 5,
+      minY: 0,
+      maxY: 5,
+    });
+
+    expect(res.getStatusCode()).toBe(200);
+    const body = res.getBody();
+    expect(body.success).toBe(true);
+    // Both chunks matched the region and were attempted; only one actually
+    // succeeded. The count correctly reflects that --
+    expect(body.deleted).toBe(1);
+    expect(fs.existsSync(goodChunk)).toBe(false);
+    expect(fs.existsSync(badChunkPath), "the chunk that failed to delete must still be there").toBe(true);
+    // -- but nothing in the response says a second chunk was even attempted
+    // and failed. delete-chunks (see the test above) surfaces this via an
+    // `errors` array; delete-region has no equivalent field at all here.
+    // An operator who asked to clear a region and got `deleted: 1` back has
+    // no way to tell "1 chunk matched" from "2 matched, 1 failed" without
+    // reading the server log. Flagged to god rather than changed here.
+    expect(body.errors).toBeUndefined();
+  });
+});
+
+describe("vehicles.db pruning", () => {
+  it("deleting a chunk prunes vehicles matching it by tile coords OR by drifted chunk coords, and leaves an unrelated vehicle alone", async () => {
+    const chunk = path.join(savePath, "map", "0", "0.bin"); // chunk (0,0), B42 tilesPerChunk=8 -> tile box [0,8)x[0,8)
+    writeFileDeep(chunk, "a");
+
+    const dbPath = path.join(savePath, "vehicles.db");
+    await createVehiclesDb(dbPath, [
+      { wx: 0, wy: 0, x: 3, y: 3 }, // tile coords land inside the deleted chunk's box -- prune
+      { wx: 0, wy: 0, x: 999, y: 999 }, // tile coords drifted out, but chunk coords still match -- prune via the fallback pass
+      { wx: 5, wy: 5, x: 500, y: 500 }, // neither tile nor chunk coords match -- must survive
+    ]);
+
+    const res = await postAs("/delete-chunks", {
+      saveName: SAVE_NAME,
+      chunks: [{ file: "0/0.bin", x: 0, y: 0 }],
+      deleteVehicles: true,
+    });
+
+    expect(res.getStatusCode()).toBe(200);
+    expect(res.getBody()).toEqual(expect.objectContaining({ success: true, deleted: 1, vehiclesDeleted: 2 }));
+
+    const remaining = await readVehicleIds(dbPath);
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]).toEqual(expect.objectContaining({ wx: 5, wy: 5 }));
+  });
+});
