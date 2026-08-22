@@ -662,6 +662,49 @@
             "message": "Within {{skew}} of Steam time."
           }
         }
+      },
+      "update": {
+        "steamApi": {
+          "ok": {
+            "label": "Steam Workshop API reachable",
+            "message": "api.steampowered.com responded in {{latencyMs}} ms (HTTP {{statusCode}})."
+          },
+          "warn": {
+            "label": "Steam Workshop API unreachable",
+            "message": "Could not reach api.steampowered.com ({{reason}}). Mod-update polling and the Workshop crash detector will both go blind.",
+            "hint": "Check the panel host's outbound HTTPS access."
+          }
+        },
+        "panel": {
+          "info": {
+            "label": "Panel update available",
+            "message": "{{latest}} is newer than your installed v{{version}}.",
+            "hint": "Settings → Updates"
+          },
+          "ok": {
+            "label": "Panel up to date",
+            "message": "Running v{{version}}."
+          }
+        },
+        "mods": {
+          "info": {
+            "label": "Mod updates available",
+            "message": "{{count}} mod(s) have updates on Steam Workshop.",
+            "hint": "Mods → Update Subscriptions"
+          },
+          "ok": {
+            "label": "All mods current",
+            "message": "{{count}} tracked, none flagged for update."
+          }
+        }
+      },
+      "updates": {
+        "error": {
+          "warn": {
+            "label": "Update checks errored",
+            "message": "Update checks could not run: {{reason}}"
+          }
+        }
       }
     }
   },

@@ -662,6 +662,49 @@
             "message": "À {{skew}} près de l'heure Steam."
           }
         }
+      },
+      "update": {
+        "steamApi": {
+          "ok": {
+            "label": "API Steam Workshop accessible",
+            "message": "api.steampowered.com a répondu en {{latencyMs}} ms (HTTP {{statusCode}})."
+          },
+          "warn": {
+            "label": "API Steam Workshop inaccessible",
+            "message": "Impossible d'atteindre api.steampowered.com ({{reason}}). L'interrogation des mises à jour de mods et le détecteur de plantage du Workshop seront tous deux aveugles.",
+            "hint": "Vérifiez l'accès HTTPS sortant de l'hôte du panneau."
+          }
+        },
+        "panel": {
+          "info": {
+            "label": "Mise à jour du panneau disponible",
+            "message": "{{latest}} est plus récent que votre version installée v{{version}}.",
+            "hint": "Paramètres → Mises à jour"
+          },
+          "ok": {
+            "label": "Panneau à jour",
+            "message": "Exécute la v{{version}}."
+          }
+        },
+        "mods": {
+          "info": {
+            "label": "Mises à jour de mods disponibles",
+            "message": "{{count}} mod(s) ont des mises à jour sur le Steam Workshop.",
+            "hint": "Mods → Mises à jour des abonnements"
+          },
+          "ok": {
+            "label": "Tous les mods à jour",
+            "message": "{{count}} suivis, aucun signalé pour mise à jour."
+          }
+        }
+      },
+      "updates": {
+        "error": {
+          "warn": {
+            "label": "Erreur lors des vérifications de mises à jour",
+            "message": "Les vérifications de mises à jour n'ont pas pu s'exécuter : {{reason}}"
+          }
+        }
       }
     }
   },

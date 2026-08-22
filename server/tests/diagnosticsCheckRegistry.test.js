@@ -61,6 +61,11 @@ const KNOWN_TRANSLATED_IDS = new Set([
   "runtime.uptime",
   "runtime.error",
   "runtime.timeSkew",
+  // Batch 5: Updates
+  "update.steamApi",
+  "update.panel",
+  "update.mods",
+  "updates.error",
 ]);
 
 /**

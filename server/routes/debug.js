@@ -3635,18 +3635,23 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
             "update.steamApi",
             "Steam Workshop API reachable",
             `api.steampowered.com responded in ${steamProbe.latencyMs} ms (HTTP ${steamProbe.statusCode}).`,
-            { category: "updates" },
+            {
+              category: "updates",
+              params: { latencyMs: steamProbe.latencyMs, statusCode: steamProbe.statusCode },
+            },
           ),
         );
       } else {
+        const reason = steamProbe.error || `HTTP ${steamProbe.statusCode}`;
         checks.push(
           diagWarn(
             "update.steamApi",
             "Steam Workshop API unreachable",
-            `Could not reach api.steampowered.com (${steamProbe.error || `HTTP ${steamProbe.statusCode}`}). Mod-update polling and the Workshop crash detector will both go blind.`,
+            `Could not reach api.steampowered.com (${reason}). Mod-update polling and the Workshop crash detector will both go blind.`,
             {
               category: "updates",
               hint: "Check the panel host's outbound HTTPS access.",
+              params: { reason },
             },
           ),
         );
@@ -3753,21 +3758,27 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
           panelUpdateChecker.latestRelease?.tag_name ||
           panelUpdateChecker.latestRelease?.name ||
           "newer version";
+        const currentVersion = panelUpdateChecker.currentVersion || "?";
         checks.push(
           diagInfo(
             "update.panel",
             "Panel update available",
-            `${latest} is newer than your installed v${panelUpdateChecker.currentVersion || "?"}.`,
-            { category: "updates", hint: "Settings → Updates" },
+            `${latest} is newer than your installed v${currentVersion}.`,
+            {
+              category: "updates",
+              hint: "Settings → Updates",
+              params: { latest, version: currentVersion },
+            },
           ),
         );
       } else if (panelUpdateChecker) {
+        const currentVersion = panelUpdateChecker.currentVersion || "?";
         checks.push(
           diagOk(
             "update.panel",
             "Panel up to date",
-            `Running v${panelUpdateChecker.currentVersion || "?"}.`,
-            { category: "updates" },
+            `Running v${currentVersion}.`,
+            { category: "updates", params: { version: currentVersion } },
           ),
         );
       }
@@ -3782,7 +3793,7 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
               "update.mods",
               "Mod updates available",
               `${outdated} mod${outdated === 1 ? "" : "s"} have updates on Steam Workshop.`,
-              { category: "updates", hint: "Mods → Update Subscriptions" },
+              { category: "updates", hint: "Mods → Update Subscriptions", params: { count: outdated } },
             ),
           );
         } else if ((trackedMods || []).length > 0) {
@@ -3791,18 +3802,19 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
               "update.mods",
               "All mods current",
               `${trackedMods.length} tracked, none flagged for update.`,
-              { category: "updates" },
+              { category: "updates", params: { count: trackedMods.length } },
             ),
           );
         }
       }
     } catch (e) {
+      const reason = e?.message || "unknown";
       checks.push(
         diagWarn(
           "updates.error",
           "Update checks errored",
-          `Update checks could not run: ${e?.message || "unknown"}`,
-          { category: "updates" },
+          `Update checks could not run: ${reason}`,
+          { category: "updates", params: { reason } },
         ),
       );
     }

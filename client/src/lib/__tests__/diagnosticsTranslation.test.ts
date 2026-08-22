@@ -364,4 +364,45 @@ describe('translateDiagnosticCheck', () => {
     }
     expect(translateDiagnosticCheck(check).message).toBe('À 2s près de l\'heure Steam.')
   })
+
+  it('interpolates numeric params for update.steamApi.ok', () => {
+    const check = {
+      id: 'update.steamApi',
+      status: 'ok',
+      label: 'Steam Workshop API reachable',
+      message: 'api.steampowered.com responded in 142 ms (HTTP 200).',
+      params: { latencyMs: 142, statusCode: 200 },
+    }
+    expect(translateDiagnosticCheck(check).message).toBe('api.steampowered.com a répondu en 142 ms (HTTP 200).')
+  })
+
+  it('distinguishes "update" (singular) from "updates" (plural) as separate ids sharing no locale entries', () => {
+    const singular = translateDiagnosticCheck({
+      id: 'update.panel',
+      status: 'ok',
+      label: 'Panel up to date',
+      message: 'Running v1.1.55.',
+      params: { version: '1.1.55' },
+    })
+    const plural = translateDiagnosticCheck({
+      id: 'updates.error',
+      status: 'warn',
+      label: 'Update checks errored',
+      message: 'Update checks could not run: timeout',
+      params: { reason: 'timeout' },
+    })
+    expect(singular.message).toBe('Exécute la v1.1.55.')
+    expect(plural.message).toBe('Les vérifications de mises à jour n\'ont pas pu s\'exécuter : timeout')
+  })
+
+  it('falls back to server text when update.mods params are missing (guard still fires for the last batch too)', () => {
+    const check = {
+      id: 'update.mods',
+      status: 'info',
+      label: 'Mod updates available',
+      message: '3 mods have updates on Steam Workshop.',
+      // no params
+    }
+    expect(translateDiagnosticCheck(check).message).toBe('3 mods have updates on Steam Workshop.')
+  })
 })
