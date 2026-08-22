@@ -19,6 +19,7 @@ import {
   invalidateCandidatePathsCache,
   inspectZomboidPath,
 } from "../utils/zomboidPaths.js";
+import { ErrorCode } from "../utils/errorCodes.js";
 
 // Re-export for tests / other modules that still pull these from chunks.js.
 export { normalizeUserPath, getCandidateZomboidPaths };
@@ -582,7 +583,10 @@ router.post("/save-path", requirePermission("chunks.manage"), async (req, res) =
   try {
     const { path: rawPath } = req.body || {};
     if (!rawPath || typeof rawPath !== "string") {
-      return res.status(400).json({ error: "Missing path." });
+      return res.status(400).json({
+        error: "Missing path.",
+        code: ErrorCode.CHUNKS_SAVE_PATH_MISSING,
+      });
     }
     let validated;
     try {
@@ -595,9 +599,10 @@ router.post("/save-path", requirePermission("chunks.manage"), async (req, res) =
       return res.status(e.statusCode || 400).json(payload);
     }
     if (!validated) {
-      return res
-        .status(400)
-        .json({ error: "Path is empty after normalization." });
+      return res.status(400).json({
+        error: "Path is empty after normalization.",
+        code: ErrorCode.CHUNKS_SAVE_PATH_EMPTY,
+      });
     }
 
     const activeServer = await getActiveServer();
@@ -651,7 +656,10 @@ router.get("/chunks/:saveName", async (req, res) => {
     // Sanitize saveName to prevent path traversal
     const sanitizedSaveName = path.basename(saveName);
     if (!sanitizedSaveName || sanitizedSaveName !== saveName) {
-      return res.status(400).json({ error: "Invalid save name" });
+      return res.status(400).json({
+        error: "Invalid save name",
+        code: ErrorCode.CHUNKS_INVALID_SAVE_NAME,
+      });
     }
 
     let zomboidDataPath;
@@ -662,7 +670,10 @@ router.get("/chunks/:saveName", async (req, res) => {
     }
 
     if (!zomboidDataPath) {
-      return res.status(400).json({ error: "Zomboid data path not set" });
+      return res.status(400).json({
+        error: "Zomboid data path not set",
+        code: ErrorCode.CHUNKS_DATA_PATH_NOT_SET,
+      });
     }
 
     // Resolve the saves path the same way as /saves
@@ -1101,9 +1112,10 @@ router.post("/delete-chunks", requirePermission("chunks.manage"), async (req, re
     }
 
     if (!saveName || !chunks || !Array.isArray(chunks) || chunks.length === 0) {
-      return res
-        .status(400)
-        .json({ error: "Save name and chunks array required" });
+      return res.status(400).json({
+        error: "Save name and chunks array required",
+        code: ErrorCode.DELETE_CHUNKS_FIELDS_REQUIRED,
+      });
     }
 
     // Cap chunk count explicitly. Express body-parser already rejects >1MB
@@ -1112,39 +1124,51 @@ router.post("/delete-chunks", requirePermission("chunks.manage"), async (req, re
     if (chunks.length > 100000) {
       return res.status(400).json({
         error: `Too many chunks (${chunks.length.toLocaleString()}). Maximum is 100,000 per request — split into smaller batches.`,
+        code: ErrorCode.DELETE_CHUNKS_TOO_MANY,
       });
     }
 
     // Sanitize saveName to prevent path traversal
     const sanitizedSaveName = path.basename(saveName);
     if (!sanitizedSaveName || sanitizedSaveName !== saveName) {
-      return res.status(400).json({ error: "Invalid save name" });
+      return res.status(400).json({
+        error: "Invalid save name",
+        code: ErrorCode.CHUNKS_INVALID_SAVE_NAME,
+      });
     }
 
     // Validate chunk files and coordinates
     for (const chunk of chunks) {
       if (!chunk.file) {
-        return res.status(400).json({ error: "Invalid chunk file name" });
+        return res.status(400).json({
+          error: "Invalid chunk file name",
+          code: ErrorCode.DELETE_CHUNKS_INVALID_FILE_NAME,
+        });
       }
       const normalized = path.normalize(chunk.file);
       if (normalized.includes("..") || path.isAbsolute(normalized)) {
-        return res.status(400).json({ error: "Invalid chunk file path" });
+        return res.status(400).json({
+          error: "Invalid chunk file path",
+          code: ErrorCode.DELETE_CHUNKS_INVALID_FILE_PATH,
+        });
       }
       if (chunk.x !== undefined && chunk.x !== null) {
         const nx = Number(chunk.x);
         if (!Number.isFinite(nx) || !Number.isInteger(nx)) {
-          return res
-            .status(400)
-            .json({ error: "Invalid chunk x coordinate — must be an integer" });
+          return res.status(400).json({
+            error: "Invalid chunk x coordinate — must be an integer",
+            code: ErrorCode.DELETE_CHUNKS_INVALID_X,
+          });
         }
         chunk.x = nx;
       }
       if (chunk.y !== undefined && chunk.y !== null) {
         const ny = Number(chunk.y);
         if (!Number.isFinite(ny) || !Number.isInteger(ny)) {
-          return res
-            .status(400)
-            .json({ error: "Invalid chunk y coordinate — must be an integer" });
+          return res.status(400).json({
+            error: "Invalid chunk y coordinate — must be an integer",
+            code: ErrorCode.DELETE_CHUNKS_INVALID_Y,
+          });
         }
         chunk.y = ny;
       }
@@ -1154,14 +1178,20 @@ router.post("/delete-chunks", requirePermission("chunks.manage"), async (req, re
       ? resolveCustomOrDefaultDataPath(String(customPath))
       : await getZomboidDataPath();
     if (!zomboidDataPath) {
-      return res.status(400).json({ error: "Zomboid data path not set" });
+      return res.status(400).json({
+        error: "Zomboid data path not set",
+        code: ErrorCode.CHUNKS_DATA_PATH_NOT_SET,
+      });
     }
 
     const savesPath = resolveSavesPath(zomboidDataPath);
     const savePath = path.join(savesPath, sanitizedSaveName);
 
     if (!fs.existsSync(savePath)) {
-      return res.status(404).json({ error: "Save not found" });
+      return res.status(404).json({
+        error: "Save not found",
+        code: ErrorCode.CHUNKS_SAVE_NOT_FOUND,
+      });
     }
 
     // B42 vs B41 detection — filesystem-based, not filename-based.
@@ -1488,15 +1518,19 @@ router.post("/delete-region", requirePermission("chunks.manage"), async (req, re
       minY === undefined ||
       maxY === undefined
     ) {
-      return res
-        .status(400)
-        .json({ error: "Save name and region bounds required" });
+      return res.status(400).json({
+        error: "Save name and region bounds required",
+        code: ErrorCode.DELETE_REGION_FIELDS_REQUIRED,
+      });
     }
 
     // Sanitize saveName to prevent path traversal
     const sanitizedSaveName = path.basename(saveName);
     if (!sanitizedSaveName || sanitizedSaveName !== saveName) {
-      return res.status(400).json({ error: "Invalid save name" });
+      return res.status(400).json({
+        error: "Invalid save name",
+        code: ErrorCode.CHUNKS_INVALID_SAVE_NAME,
+      });
     }
 
     // Validate bounds are numbers
@@ -1510,23 +1544,28 @@ router.post("/delete-region", requirePermission("chunks.manage"), async (req, re
       !Number.isFinite(minY) ||
       !Number.isFinite(maxY)
     ) {
-      return res
-        .status(400)
-        .json({ error: "Region bounds must be finite numbers" });
+      return res.status(400).json({
+        error: "Region bounds must be finite numbers",
+        code: ErrorCode.DELETE_REGION_BOUNDS_NOT_FINITE,
+      });
     }
     // Reject swapped bounds — otherwise a non-invert selection silently
     // matches nothing and the caller sees an unhelpful "0 deleted".
     if (minX > maxX || minY > maxY) {
-      return res
-        .status(400)
-        .json({ error: "Region bounds inverted (minX > maxX or minY > maxY)" });
+      return res.status(400).json({
+        error: "Region bounds inverted (minX > maxX or minY > maxY)",
+        code: ErrorCode.DELETE_REGION_BOUNDS_INVERTED,
+      });
     }
 
     const zomboidDataPath = customPath
       ? resolveCustomOrDefaultDataPath(String(customPath))
       : await getZomboidDataPath();
     if (!zomboidDataPath) {
-      return res.status(400).json({ error: "Zomboid data path not set" });
+      return res.status(400).json({
+        error: "Zomboid data path not set",
+        code: ErrorCode.CHUNKS_DATA_PATH_NOT_SET,
+      });
     }
 
     const savesPath = resolveSavesPath(zomboidDataPath);
@@ -1534,7 +1573,10 @@ router.post("/delete-region", requirePermission("chunks.manage"), async (req, re
     const mapPath = path.join(savePath, "map");
 
     if (!fs.existsSync(savePath)) {
-      return res.status(404).json({ error: "Save not found" });
+      return res.status(404).json({
+        error: "Save not found",
+        code: ErrorCode.CHUNKS_SAVE_NOT_FOUND,
+      });
     }
 
     const mapExists = fs.existsSync(mapPath);
@@ -1651,6 +1693,7 @@ router.post("/delete-region", requirePermission("chunks.manage"), async (req, re
     if (chunksToDelete.length > 100000) {
       return res.status(400).json({
         error: `Region too large (${chunksToDelete.length.toLocaleString()} chunks). Maximum is 100,000 at a time.`,
+        code: ErrorCode.DELETE_REGION_TOO_LARGE,
       });
     }
 
@@ -1825,7 +1868,10 @@ router.get("/stats/:saveName", async (req, res) => {
     // Sanitize saveName to prevent path traversal
     const sanitizedSaveName = path.basename(saveName);
     if (!sanitizedSaveName || sanitizedSaveName !== saveName) {
-      return res.status(400).json({ error: "Invalid save name" });
+      return res.status(400).json({
+        error: "Invalid save name",
+        code: ErrorCode.CHUNKS_INVALID_SAVE_NAME,
+      });
     }
 
     let zomboidDataPath;
@@ -1838,7 +1884,10 @@ router.get("/stats/:saveName", async (req, res) => {
     }
 
     if (!zomboidDataPath) {
-      return res.status(400).json({ error: "Zomboid data path not set" });
+      return res.status(400).json({
+        error: "Zomboid data path not set",
+        code: ErrorCode.CHUNKS_DATA_PATH_NOT_SET,
+      });
     }
 
     // Resolve the saves path the same way as /saves
@@ -1847,7 +1896,10 @@ router.get("/stats/:saveName", async (req, res) => {
     const savePath = path.join(savesPath, sanitizedSaveName);
 
     if (!fs.existsSync(savePath)) {
-      return res.status(404).json({ error: "Save not found" });
+      return res.status(404).json({
+        error: "Save not found",
+        code: ErrorCode.CHUNKS_SAVE_NOT_FOUND,
+      });
     }
 
     const stats = {
@@ -2029,9 +2081,10 @@ router.get("/browse", async (req, res) => {
     }
 
     if (!zomboidDataPath) {
-      return res
-        .status(400)
-        .json({ error: "No Zomboid data path configured to browse" });
+      return res.status(400).json({
+        error: "No Zomboid data path configured to browse",
+        code: ErrorCode.BROWSE_CHUNKS_DATA_PATH_NOT_SET,
+      });
     }
 
     const allowedRoots = [path.resolve(zomboidDataPath)];
@@ -2039,16 +2092,23 @@ router.get("/browse", async (req, res) => {
     if (!resolved) {
       return res.status(403).json({
         error: "Access denied: path is outside the server's save directory",
+        code: ErrorCode.BROWSE_CHUNKS_ACCESS_DENIED,
       });
     }
 
     if (!fs.existsSync(resolved)) {
-      return res.status(400).json({ error: "Path does not exist" });
+      return res.status(400).json({
+        error: "Path does not exist",
+        code: ErrorCode.BROWSE_CHUNKS_PATH_NOT_FOUND,
+      });
     }
 
     const stat = await fs.promises.stat(resolved);
     if (!stat.isDirectory()) {
-      return res.status(400).json({ error: "Path is not a directory" });
+      return res.status(400).json({
+        error: "Path is not a directory",
+        code: ErrorCode.BROWSE_CHUNKS_PATH_NOT_DIRECTORY,
+      });
     }
 
     const entries = await fs.promises.readdir(resolved, {

@@ -613,6 +613,77 @@ export const ErrorCode = Object.freeze({
    * `confirm: true`. */
   WIPE_CONFIRM_REQUIRED: "WIPE_CONFIRM_REQUIRED",
 
+  /** server/routes/chunks.js -- POST /save-path, no `path` string in the body. */
+  CHUNKS_SAVE_PATH_MISSING: "CHUNKS_SAVE_PATH_MISSING",
+  /** server/routes/chunks.js -- POST /save-path, the validated path resolved
+   * to an empty string after normalization. */
+  CHUNKS_SAVE_PATH_EMPTY: "CHUNKS_SAVE_PATH_EMPTY",
+  /** server/routes/chunks.js (4 sites: GET /chunks/:saveName, POST
+   * /delete-chunks, POST /delete-region, GET /stats/:saveName) -- :saveName
+   * fails the path.basename() round-trip check. Identical wording/meaning
+   * all four, shared code. */
+  CHUNKS_INVALID_SAVE_NAME: "CHUNKS_INVALID_SAVE_NAME",
+  /** server/routes/chunks.js (4 sites: GET /chunks/:saveName, POST
+   * /delete-chunks, POST /delete-region, GET /stats/:saveName) -- no
+   * zomboidDataPath resolved (active server, custom path, or legacy
+   * setting). Identical wording/meaning all four, shared code. Distinct
+   * from BROWSE_CHUNKS_DATA_PATH_NOT_SET below (GET /browse's own wording,
+   * kept separate). */
+  CHUNKS_DATA_PATH_NOT_SET: "CHUNKS_DATA_PATH_NOT_SET",
+  /** server/routes/chunks.js -- POST /delete-chunks, `saveName` missing or
+   * `chunks` missing/not an array/empty. */
+  DELETE_CHUNKS_FIELDS_REQUIRED: "DELETE_CHUNKS_FIELDS_REQUIRED",
+  /** server/routes/chunks.js -- POST /delete-chunks, `chunks.length` exceeds
+   * the 100,000 request cap. PARTIAL: the message embeds the actual count
+   * and the fixed cap -- server can't send structured params yet, so the
+   * locale text below covers the fixed frame only; {{count}} is a
+   * placeholder nothing sends today. */
+  DELETE_CHUNKS_TOO_MANY: "DELETE_CHUNKS_TOO_MANY",
+  /** server/routes/chunks.js -- POST /delete-chunks, a chunk entry has no
+   * `file`. */
+  DELETE_CHUNKS_INVALID_FILE_NAME: "DELETE_CHUNKS_INVALID_FILE_NAME",
+  /** server/routes/chunks.js -- POST /delete-chunks, a chunk's `file`
+   * normalizes to an absolute path or contains "..". */
+  DELETE_CHUNKS_INVALID_FILE_PATH: "DELETE_CHUNKS_INVALID_FILE_PATH",
+  /** server/routes/chunks.js -- POST /delete-chunks, a chunk's `x` isn't a
+   * finite integer. */
+  DELETE_CHUNKS_INVALID_X: "DELETE_CHUNKS_INVALID_X",
+  /** server/routes/chunks.js -- POST /delete-chunks, a chunk's `y` isn't a
+   * finite integer. */
+  DELETE_CHUNKS_INVALID_Y: "DELETE_CHUNKS_INVALID_Y",
+  /** server/routes/chunks.js (3 sites: POST /delete-chunks, POST
+   * /delete-region, GET /stats/:saveName) -- the resolved save directory
+   * doesn't exist. Identical wording/meaning all three, shared code. */
+  CHUNKS_SAVE_NOT_FOUND: "CHUNKS_SAVE_NOT_FOUND",
+  /** server/routes/chunks.js -- POST /delete-region, `saveName` missing or
+   * one of minX/maxX/minY/maxY missing. */
+  DELETE_REGION_FIELDS_REQUIRED: "DELETE_REGION_FIELDS_REQUIRED",
+  /** server/routes/chunks.js -- POST /delete-region, a bound isn't a finite
+   * number. */
+  DELETE_REGION_BOUNDS_NOT_FINITE: "DELETE_REGION_BOUNDS_NOT_FINITE",
+  /** server/routes/chunks.js -- POST /delete-region, minX > maxX or
+   * minY > maxY. */
+  DELETE_REGION_BOUNDS_INVERTED: "DELETE_REGION_BOUNDS_INVERTED",
+  /** server/routes/chunks.js -- POST /delete-region, the matched chunk count
+   * exceeds the 100,000 cap. PARTIAL: same params-not-wired-yet gap as
+   * DELETE_CHUNKS_TOO_MANY above -- {{count}} is a placeholder nothing sends
+   * today. */
+  DELETE_REGION_TOO_LARGE: "DELETE_REGION_TOO_LARGE",
+  /** server/routes/chunks.js -- GET /browse, no zomboidDataPath configured.
+   * Own wording ("configured to browse") from CHUNKS_DATA_PATH_NOT_SET
+   * above -- kept separate rather than merged. */
+  BROWSE_CHUNKS_DATA_PATH_NOT_SET: "BROWSE_CHUNKS_DATA_PATH_NOT_SET",
+  /** server/routes/chunks.js -- GET /browse, confineToRoots() rejected the
+   * requested path. Own wording ("the server's save directory") from
+   * serverFiles.js's BROWSE_ACCESS_DENIED -- different file, different
+   * phrasing, own code. */
+  BROWSE_CHUNKS_ACCESS_DENIED: "BROWSE_CHUNKS_ACCESS_DENIED",
+  /** server/routes/chunks.js -- GET /browse, resolved path doesn't exist. */
+  BROWSE_CHUNKS_PATH_NOT_FOUND: "BROWSE_CHUNKS_PATH_NOT_FOUND",
+  /** server/routes/chunks.js -- GET /browse, resolved path exists but isn't
+   * a directory. */
+  BROWSE_CHUNKS_PATH_NOT_DIRECTORY: "BROWSE_CHUNKS_PATH_NOT_DIRECTORY",
+
   // --- legacy: wire value frozen (client compares it with === today),
   //     constant name invented only so a locale key exists ---
 
