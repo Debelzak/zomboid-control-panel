@@ -143,11 +143,10 @@ describe("panelBridge.js: POST /command stays admin-only (unchanged, whitelist-f
   });
 });
 
-describe("panelBridge.js: /status, /ping, /server-info, /commands stay outside the matrix entirely", () => {
+describe("panelBridge.js: /status, /ping, /commands stay outside the matrix entirely", () => {
   const TRULY_UNGATED = [
     ["/status", "get"],
     ["/ping", "get"],
-    ["/server-info", "get"],
     ["/commands", "get"],
   ];
 
@@ -158,6 +157,31 @@ describe("panelBridge.js: /status, /ping, /server-info, /commands stay outside t
     );
     expect(layer.route.stack.length).toBe(1);
   });
+});
+
+// /server-info used to sit in TRULY_UNGATED above -- it returned every
+// online player's exact x/y/z position and current health with no gate at
+// all. Now requirePermission("players.view"), same capability players.js
+// uses for reading player details/status. All three default roles hold it,
+// so this is a zero-behaviour-change addition for every legitimate caller
+// (both client call sites -- WorldMap and Debug -- only render post-login,
+// behind App.tsx's auth gate, and always send whatever token they have).
+describe("panelBridge.js: GET /server-info -- players.view (previously wide open)", () => {
+  it("has a requirePermission gate ahead of its handler", async () => {
+    const { default: router } = await import("../routes/panelBridge.js");
+    const layer = router.stack.find(
+      (entry) => entry.route?.path === "/server-info" && entry.route.methods.get,
+    );
+    expect(layer.route.stack.length).toBe(2);
+  });
+
+  for (const role of ["admin", "technician", "moderator"]) {
+    it(`does not refuse a ${role}`, async () => {
+      const { default: router } = await import("../routes/panelBridge.js");
+      const { calledNext } = await runGate(router, "/server-info", "get", role);
+      expect(calledNext).toBe(true);
+    });
+  }
 });
 
 describe("panelBridge.js: server.world_events (world-wide GM effects, folded in from previously-ungated) -- open to every role", () => {

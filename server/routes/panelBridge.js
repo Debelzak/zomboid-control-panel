@@ -243,8 +243,15 @@ function isValidBridgePath(inputPath) {
 // -- the same capability players.js's own teleport/give-item-equivalent
 // routes use. Both default to admin+technician+moderator, so this is a
 // zero-behaviour-change addition (adding a capability, not restricting
-// one). /status, /ping, /server-info and /commands stay deliberately
-// outside the matrix -- see server.js's equivalent comment for why.
+// one). /status, /ping and /commands stay deliberately outside the matrix
+// -- see server.js's equivalent comment for why: dashboard-wide reads (or,
+// for /commands, static route metadata) that protect nothing if gated and
+// can break a screen for a role if mis-set.
+// /server-info is NOT in that class: handlers.getServerInfo returns every
+// online player's exact x/y/z position and current health, unauthenticated,
+// to anyone who can reach the panel. Gated requirePermission("players.view")
+// -- same capability players.js uses for reading player details/status, and
+// held by all three default roles, so no legitimate caller loses access.
 
 // Get bridge status
 router.get("/status", async (req, res) => {
@@ -1309,7 +1316,7 @@ router.get("/weather", requirePermission("server.world_events"), async (req, res
 });
 
 // Get server info
-router.get("/server-info", async (req, res) => {
+router.get("/server-info", requirePermission("players.view"), async (req, res) => {
   if (!bridge.bridgePath) {
     return res.status(400).json({ error: "Bridge not configured" });
   }
