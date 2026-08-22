@@ -28,9 +28,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the three built-in ones. Users and Roles & Permissions have moved out of Settings & Tools into
   their own Access Control section, since managing who can do what is not a tool.
 
-  **There is still no way to delete a user from this screen** - the server has no endpoint for it
-  yet, and a button that does nothing is worse than no button. It is being built next.
-
 - **Single sign-on can be set up from the panel instead of environment variables**: OIDC (Google,
   Authentik, Keycloak, Azure AD and anything else that speaks the standard) previously had to be
   configured by editing environment variables and restarting. It can now be configured from
@@ -43,6 +40,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   never sent back to the browser, not even masked. If you had already set any of this through
   environment variables, those still win, per field, so nothing you pinned deliberately gets
   overridden.
+- **Debug > Diagnostics now reports in French**: 46 of the 47 health checks - their titles, their
+  verdicts and the specific details they carry, such as how many mods are affected or which folder
+  is missing - are now written in French rather than falling back to English. Checks whose wording
+  changes with the situation, not just the numbers, get a properly written French sentence for each
+  case instead of a translated sentence with an English word dropped into it.
+
+  One check is still English: the configuration-drift check, which stitches together a variable
+  number of separate findings into one sentence. Translating it correctly means changing what the
+  server sends, not just the wording, so it was left alone rather than half-done.
+
+  A test now enforces that every check the panel can produce has both an English and a French
+  entry, and that no leftover entry survives for a check that was removed - so this cannot quietly
+  rot the next time someone adds a health check.
 - **The parts of the panel that appear on every screen are now in French too**: the
   connection-status indicator, the server and PanelBridge status badges, the disk-space warning
   banner, both crash-recovery screens, the keyboard shortcuts dialog, the folder browser, the
