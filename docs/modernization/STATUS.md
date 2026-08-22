@@ -119,13 +119,18 @@ network. **Recommended fix, awaiting your decision:** hoist the import into a on
 for that describe block and its 10 sibling call sites. Explicitly *not* recommended: bumping this
 one timeout (symptom) or raising the global default (would mask real slow-test regressions).
 
-**DISC-002 / RISK-007 — critical, open, NOT fixed.** `pwsh -File ... -AllowedPath a,b` binds the
-comma list as a **single string**, so `check-owned-paths.ps1` silently discards every allowed path.
-Proven: `elements=1`, `["a,b,c"]`. FND-001's earlier `PASS` came from the script's hardcoded
-`$initialHandoff` fallback, not from the argument — **the guard has been reporting PASS without
-reading its input.** FND-005 is the first package owning a path outside that fallback and therefore
-the first to get a wrong answer. Correct form uses `-Command` with a real array; FND-005 re-checked
-that way passes at `changed=12`. Three options in `DECISIONS.md`.
+**DISC-002 / RISK-007 — critical, open.** `pwsh -File ... -AllowedPath a,b` binds the comma list as
+a **single string**, so `check-owned-paths.ps1` silently discards every allowed path. Proven:
+`elements=1`, `["a,b,c"]`. FND-001's earlier `PASS` came from the script's hardcoded
+`$initialHandoff` fallback, not from the argument — **the guard reports PASS without reading its
+input.** Independently reproduced by the verifier with his own script before reading my writeup.
+Being fixed as FND-006 (user chose: harden the script *and* correct the plan text).
+
+**DISC-002b — WITHDRAWN, my error.** I claimed a short `current_sha` made the staleness check
+no-op silently. It does not: it prints `WARN STATUS.md has no concrete current_sha`. I had filtered
+my own output with a pattern that omitted `WARN`, then reported the absence as a finding — and my
+first reproduction attempt silently failed on CRLF, appearing to confirm it. `bootstrap-plan.ps1`
+needs no change. **There is one broken guard, not two.** Full retraction in `DECISIONS.md`.
 
 ## Independent Verification
 

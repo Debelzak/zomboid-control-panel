@@ -1660,6 +1660,22 @@ pwsh -NoProfile -ExecutionPolicy Bypass `
         -AllowedPath docs/modernization/,scripts/modernization/
 ```
 
+> **Note (FND-006, DISC-002).** This comma form works only because
+> `check-owned-paths.ps1` now splits `-AllowedPath` on commas itself. **`pwsh -File` binds a comma
+> list as a single string, not an array** — before that split existed, every allowed path was
+> silently discarded and the script still printed `PASS`, matching only via its internal
+> `$initialHandoff` fallback. FND-001's original check passed without ever evaluating this argument.
+>
+> Do not remove the split. If you prefer an explicit array, use `-Command` instead of `-File`:
+>
+> ```powershell
+> pwsh -NoProfile -ExecutionPolicy Bypass -Command `
+>   "& '.\scripts\modernization\check-owned-paths.ps1' -Id FND-001 -AllowedPath @('docs/modernization/','scripts/modernization/')"
+> ```
+>
+> The script now refuses an argument that yields no usable entries rather than proceeding with an
+> empty allow-list, so this class of failure is loud instead of silent.
+
 FND-001 owns only baseline/program-control artifacts:
 
 1. Instantiate `README.md`, `STATUS.md`, `STATUS_ARCHIVE.md`,

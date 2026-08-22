@@ -13,7 +13,22 @@ function Normalize([string]$Value) {
     return $Value.Replace('\', '/').TrimStart('./')
 }
 
-$allowed = @($AllowedPath | ForEach-Object { Normalize $_ })
+# DISC-002 / RISK-007. `pwsh -File script.ps1 -AllowedPath a,b` binds the whole comma list as ONE
+# string, not an array, so every allowed path was silently discarded and the script still printed
+# PASS - passing only via the $initialHandoff fallback below, never via the caller's argument. A
+# guard that cannot tell "checked and fine" from "did not check" is worse than no guard, because it
+# carries authority. Split on commas so both invocation styles work, and refuse an argument that
+# yields nothing usable rather than proceeding with an empty allow-list.
+$allowed = @(
+    $AllowedPath |
+        ForEach-Object { $_ -split ',' } |
+        ForEach-Object { $_.Trim() } |
+        Where-Object { $_ -ne '' } |
+        ForEach-Object { Normalize $_ }
+)
+if ($allowed.Count -eq 0) {
+    throw "-AllowedPath produced no usable entries. Pass at least one path; a silently empty allow-list would make this check meaningless."
+}
 $trackedChanged = @()
 $trackedChanged += & git -C $Root diff --name-only
 $trackedChanged += & git -C $Root diff --cached --name-only

@@ -207,25 +207,47 @@ pwsh -NoProfile -ExecutionPolicy Bypass -Command `
 correct invocation, so its result is sound; the plan's documented command remains wrong. Recorded
 as RISK-007.
 
-### DISC-002b — a second instance of the same shape, found the same day
+### DISC-002b — WITHDRAWN. I was wrong, and the guard is correct.
 
-While recording the checkpoint SHA I briefly wrote the **abbreviated** form (`2ae02c4`) into
-`STATUS.md`'s `current_sha`. `bootstrap-plan.ps1` then emitted **neither** `PASS status-current-sha`
-**nor** the `WARN ... commit(s) behind HEAD` it produces on genuine drift — the check simply
-produced no line at all, and `RESULT=PASS` still appeared. Restoring the full 40-character SHA made
-`PASS status-current-sha=2ae02c43911c0e84ca6d6bd8f8f64cbac63d180c` reappear.
+**RETRACTED 2026-08-22, same day it was filed. There is no defect here.**
 
-So the staleness guard **silently no-ops on a short SHA**. Combined with DISC-002, that is two
-guards in one session that report success while not actually evaluating their input.
+I claimed that an abbreviated `current_sha` in `STATUS.md` made `bootstrap-plan.ps1` skip its
+staleness check silently, emitting neither PASS nor WARN. **That is false.** Reproduced properly,
+with the substitution confirmed before the run and the output left unfiltered, the script prints:
 
-**The pattern is worth naming, because it is what makes both dangerous:** neither guard fails
-loudly on a malformed input — one discards its argument, the other skips its own check — and both
-leave `RESULT=PASS` intact. A guard that cannot distinguish "checked and fine" from "did not check"
-is indistinguishable from no guard, while carrying more authority than one.
+```
+WARN STATUS.md has no concrete current_sha; coordinator must reconcile it before integration.
+```
 
-**Recommended, alongside the DISC-002 options:** make both checks *fail* on unusable input rather
-than skip it. A `current_sha` that is not 40 hex characters should be an error, not a silent pass.
+That is exactly the right behaviour: `bootstrap-plan.ps1:32` requires `[0-9a-f]{40}`, and the
+`else` branch at line 46 reports the miss in plain language. The guard checked, failed to find a
+usable value, and said so.
 
-**Status: open, folded into the DISC-002 decision. Not fixed.** No harm occurred — the value was
-corrected within minutes and the full SHA is now recorded — but the class of defect is the finding,
-not this instance.
+**How I got it wrong.** I ran the script through
+`Select-String -Pattern "RESULT|status-current|runtime-db"`. That pattern does not contain `WARN`.
+The warning was printed and my own filter removed it — then I reported the absence as a finding.
+
+**Two compounding mistakes, both worth naming:**
+
+1. **I treated filtered output as complete output.** The evidence for "the line was missing" was
+   produced by a command that could not have shown that line.
+2. **My first attempt to reproduce it silently did nothing.** The regex ended in `"$`, and the file
+   has CRLF endings, so `$` never matched past the ``. The substitution failed, the run exercised
+   the 40-char path, and it *appeared* to confirm the bug. I only caught it by printing the
+   substituted line before running — which is the check I should have had from the start.
+
+**The irony is the lesson.** DISC-002b was supposed to be a second example of "a check that reports
+success without evaluating its input." It turned out to be *me* doing exactly that, twice: a grep
+that could not observe what I claimed, and a mutation that never applied. **A verification that
+cannot fail proves nothing, whoever runs it.**
+
+**Consequences of the retraction:**
+
+- `bootstrap-plan.ps1` needs **no change**. It is not part of FND-006.
+- DISC-002 stands unaffected. It is real, reproduced twice by me and independently by the verifier
+  with his own script before reading my writeup.
+- The "two guards" framing in earlier commit messages and STATUS text was wrong. **There is one
+  broken guard, not two.**
+
+**Kept rather than deleted**, because a withdrawn finding that leaves no trace teaches nobody, and
+the next reader deserves to know this claim was made and why it failed.

@@ -2,6 +2,12 @@ import { describe, it, expect, vi } from "vitest";
 import fs from "fs";
 import os from "os";
 import path from "path";
+// FND-007 / RISK-001: imported STATICALLY, not with `await import()` inside a test body.
+// discord.js is ~4.2 MB across 478 files. A dynamic import is memoised per specifier, so the
+// FIRST test to call it absorbed the whole cold transform cost inside its own 5000 ms
+// testTimeout - which made "forwards ordinary Say chat" fail on a cold run and pass warm.
+// A collection-time import is not gated by testTimeout at all. Do not move this back inline.
+import { DiscordBot } from "../services/discordBot.js";
 import {
   createLocalResetResponse,
   isLocalPanelRequest,
@@ -655,7 +661,6 @@ describe("backup restore guards against a running server", () => {
 
 describe("Discord chat relay scope", () => {
   const relay = async (data, scope = "public") => {
-    const { DiscordBot } = await import("../services/discordBot.js");
     const bot = Object.create(DiscordBot.prototype);
     bot.chatRelayEnabled = true;
     bot.isRunning = true;
@@ -798,7 +803,6 @@ describe("PZ shout detection from the chat log", () => {
 
 describe("Discord circuit breaker is per channel", () => {
   const makeBot = async (failingChannelId) => {
-    const { DiscordBot } = await import("../services/discordBot.js");
     const bot = Object.create(DiscordBot.prototype);
     bot._channelBreakers = new Map();
     const sent = [];
@@ -928,7 +932,6 @@ describe("LogTailer chunk boundaries", () => {
 
 describe("Discord chat relay queue", () => {
   const makeBot = async () => {
-    const { DiscordBot } = await import("../services/discordBot.js");
     const bot = Object.create(DiscordBot.prototype);
     bot._chatRelayChain = Promise.resolve();
     bot._chatRelayPending = 0;
@@ -973,7 +976,6 @@ describe("Discord chat relay queue", () => {
 
 describe("Discord event notifications", () => {
   const makeBot = async (webhookEvents) => {
-    const { DiscordBot } = await import("../services/discordBot.js");
     const bot = Object.create(DiscordBot.prototype);
     bot.isRunning = true;
     bot.channelId = "123456789012345678";
@@ -1049,7 +1051,6 @@ describe("Discord event notifications", () => {
 
 describe("Discord player presence", () => {
   it("shows the current player count when RCON is connected", async () => {
-    const { DiscordBot } = await import("../services/discordBot.js");
     const setActivity = vi.fn();
     const bot = Object.create(DiscordBot.prototype);
     bot.isRunning = true;
@@ -1071,7 +1072,6 @@ describe("Discord player presence", () => {
   });
 
   it("does not query RCON while it is disconnected", async () => {
-    const { DiscordBot } = await import("../services/discordBot.js");
     const getPlayers = vi.fn();
     const setActivity = vi.fn();
     const bot = Object.create(DiscordBot.prototype);
@@ -1093,7 +1093,6 @@ describe("Discord player presence", () => {
 
 describe("Discord slash command visibility", () => {
   const makeBot = async (roles) => {
-    const { DiscordBot } = await import("../services/discordBot.js");
     const bot = Object.create(DiscordBot.prototype);
     bot.adminRoleId = roles.adminRoleId ?? null;
     bot.modRoleId = roles.modRoleId ?? null;
@@ -1123,7 +1122,6 @@ describe("Discord slash command visibility", () => {
 
 describe("Discord /stop", () => {
   const makeBot = async (saveResult) => {
-    const { DiscordBot } = await import("../services/discordBot.js");
     const bot = Object.create(DiscordBot.prototype);
     const calls = [];
     bot.serverManager = { checkServerRunning: async () => true };
@@ -1170,7 +1168,6 @@ describe("Discord /stop", () => {
 
 describe("Discord chat relay escaping", () => {
   const makeBot = async () => {
-    const { DiscordBot } = await import("../services/discordBot.js");
     const bot = Object.create(DiscordBot.prototype);
     bot.chatRelayEnabled = true;
     bot.isRunning = true;
@@ -1294,7 +1291,6 @@ describe("LogTailer chat parsing", () => {
 
 describe("Discord /restart", () => {
   const makeBot = async (restartResult) => {
-    const { DiscordBot } = await import("../services/discordBot.js");
     const bot = Object.create(DiscordBot.prototype);
     const serverMessages = [];
     bot.serverManager = { checkServerRunning: async () => true };
@@ -1374,7 +1370,6 @@ describe("Discord /restart", () => {
 
 describe("Discord /start", () => {
   it("reports a failed start instead of claiming the server is starting", async () => {
-    const { DiscordBot } = await import("../services/discordBot.js");
     const bot = Object.create(DiscordBot.prototype);
     bot.serverManager = {
       checkServerRunning: async () => false,
