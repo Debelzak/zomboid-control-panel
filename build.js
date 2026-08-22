@@ -283,7 +283,7 @@ echo.
   call :stamp "Launching !TARGET!"
   echo Launching !TARGET!
   echo.
-  "!TARGET!"
+  "%INSTALL_DIR%!TARGET!"
   set "EXITCODE=!ERRORLEVEL!"
   call :stamp "Panel exited with code !EXITCODE!"
 
