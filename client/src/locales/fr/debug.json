@@ -933,6 +933,90 @@
             }
           }
         }
+      },
+      "worldmap": {
+        "activeServer": {
+          "warn": {
+            "label": "Aucun serveur actif",
+            "message": "Aucun serveur n'est actuellement actif dans le panneau. La carte chargera les tuiles mais ne pourra pas afficher les joueurs, véhicules ou refuges.",
+            "hint": "Serveurs → sélectionnez-en un et cliquez sur « Définir comme actif »."
+          }
+        },
+        "tiles": {
+          "b42": {
+            "ok": {
+              "label": "CDN de tuiles B42 accessible",
+              "message": "Le build {{build}} a répondu en {{latencyMs}} ms (HTTP {{statusCode}})."
+            },
+            "fail": {
+              "label": "CDN de tuiles B42 inaccessible",
+              "message": "Impossible de contacter pzmap.org pour les tuiles B42 ({{detail}}). La carte de base B42 ne se chargera pas.",
+              "hint": "Vérifiez l'accès HTTPS sortant de l'hôte du panneau. Le proxy /api/map/tiles récupère les tuiles côté serveur."
+            }
+          },
+          "b41": {
+            "ok": {
+              "label": "CDN de tuiles B41 accessible",
+              "message": "pzmap.org a répondu en {{latencyMs}} ms (HTTP {{statusCode}})."
+            },
+            "warn": {
+              "label": "CDN de tuiles B41 inaccessible",
+              "message": "Impossible de contacter pzmap.org ({{detail}}). Les tuiles de secours B41 ne se chargeront pas.",
+              "hint": "Pertinent uniquement si vous exécutez un serveur B41. Un accès HTTPS sortant vers pzmap.org est requis."
+            }
+          },
+          "b42Top": {
+            "ok": {
+              "label": "Tuiles B42 vue de dessus accessibles",
+              "message": "Le build {{build}} sert des tuiles vue de dessus au format .{{format}} (HTTP {{statusCode}}, {{latencyMs}} ms)."
+            },
+            "fail": {
+              "label": "Tuiles B42 vue de dessus indisponibles",
+              "message": "Le build {{build}} n'a pas servi de tuile vue de dessus .{{format}} ({{detail}}). La page de nettoyage de la carte affichera des cellules sans carte de base.",
+              "hint": "L'amont a peut-être republié ce build dans un format d'image différent. Relancez les diagnostics dans quelques minutes ; le panneau relit le format depuis base_top/layer0.dzi toutes les 24h ou au redémarrage."
+            },
+            "warn": {
+              "label": "Format des tuiles B42 vue de dessus non résolu",
+              "message": "Impossible de lire base_top/layer0.dzi pour déterminer le format des tuiles vue de dessus.",
+              "hint": "Vérifiez l'accès HTTPS sortant depuis l'hôte du panneau."
+            }
+          },
+          "error": {
+            "warn": {
+              "label": "Échec de la sonde d'accessibilité des tuiles",
+              "message": "La sonde de tuiles n'a pas pu se terminer : {{reason}}"
+            }
+          }
+        },
+        "runtime": {
+          "fail": {
+            "label": "Le proxy de tuiles nécessite Node 18+",
+            "message": "AbortSignal.timeout n'est pas disponible sur ce runtime. Chaque récupération de tuile échouera et renverra 502.",
+            "hint": "Mettez à niveau l'hôte du panneau vers Node 18+ (l'exécutable fourni l'inclut déjà)."
+          }
+        },
+        "bridge": {
+          "configured": {
+            "fail": {
+              "label": "PanelBridge non configuré",
+              "message": "La carte obtient les positions des joueurs, véhicules et refuges en direct via PanelBridge. Sans cela, la carte n'affichera que les tuiles de base statiques.",
+              "hint": "Configurez le chemin de données Zomboid du serveur actif pour que le dossier du bridge puisse être localisé."
+            }
+          },
+          "running": {
+            "warn": {
+              "label": "Service PanelBridge non démarré",
+              "message": "Le service du bridge est configuré mais n'interroge pas actuellement. Les données de carte en direct seront vides."
+            }
+          },
+          "mod": {
+            "warn": {
+              "label": "Mod non connecté",
+              "message": "PanelBridge est en cours d'exécution mais le mod en jeu n'a pas encore écrit status.json. Les joueurs, véhicules et refuges n'apparaîtront pas.",
+              "hint": "Démarrez le serveur PZ et vérifiez que le mod PanelBridge est dans la liste des mods actifs."
+            }
+          }
+        }
       }
     }
   },

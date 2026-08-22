@@ -933,6 +933,90 @@
             }
           }
         }
+      },
+      "worldmap": {
+        "activeServer": {
+          "warn": {
+            "label": "No active server",
+            "message": "No server is currently active in the panel. The map will load tiles but cannot show players, vehicles, or safehouses.",
+            "hint": "Servers → select one and click “Set active”."
+          }
+        },
+        "tiles": {
+          "b42": {
+            "ok": {
+              "label": "B42 tile CDN reachable",
+              "message": "Build {{build}} responded in {{latencyMs}} ms (HTTP {{statusCode}})."
+            },
+            "fail": {
+              "label": "B42 tile CDN unreachable",
+              "message": "Could not reach pzmap.org for B42 tiles ({{detail}}). The B42 base map will not load.",
+              "hint": "Check the panel host's outbound HTTPS access. The /api/map/tiles proxy fetches tiles server-side."
+            }
+          },
+          "b41": {
+            "ok": {
+              "label": "B41 tile CDN reachable",
+              "message": "pzmap.org responded in {{latencyMs}} ms (HTTP {{statusCode}})."
+            },
+            "warn": {
+              "label": "B41 tile CDN unreachable",
+              "message": "Could not reach pzmap.org ({{detail}}). B41 fallback tiles will not load.",
+              "hint": "Only relevant if you run a B41 server. Outbound HTTPS to pzmap.org is required."
+            }
+          },
+          "b42Top": {
+            "ok": {
+              "label": "B42 top-down tiles reachable",
+              "message": "Build {{build}} serves .{{format}} top-down tiles (HTTP {{statusCode}}, {{latencyMs}} ms)."
+            },
+            "fail": {
+              "label": "B42 top-down tiles unavailable",
+              "message": "Build {{build}} did not serve a .{{format}} top-down tile ({{detail}}). The Map Cleanup page will show chunks with no base map.",
+              "hint": "Upstream may have republished this build in a different image format. Re-run diagnostics after a few minutes; the panel re-reads the format from base_top/layer0.dzi every 24h or on restart."
+            },
+            "warn": {
+              "label": "B42 top-down format unresolved",
+              "message": "Could not read base_top/layer0.dzi to determine the top-down tile format.",
+              "hint": "Check outbound HTTPS access from the panel host."
+            }
+          },
+          "error": {
+            "warn": {
+              "label": "Tile reachability probe failed",
+              "message": "Tile probe could not complete: {{reason}}"
+            }
+          }
+        },
+        "runtime": {
+          "fail": {
+            "label": "Tile proxy needs Node 18+",
+            "message": "AbortSignal.timeout is unavailable on this runtime. Every tile fetch will throw and return 502.",
+            "hint": "Upgrade the panel host to Node 18+ (the bundled .exe already ships with this)."
+          }
+        },
+        "bridge": {
+          "configured": {
+            "fail": {
+              "label": "PanelBridge not configured",
+              "message": "The map gets live player positions, vehicles and safehouses from PanelBridge. Without it, the map will show only the static base tiles.",
+              "hint": "Configure the active server's Zomboid Data Path so the bridge folder can be located."
+            }
+          },
+          "running": {
+            "warn": {
+              "label": "PanelBridge service not running",
+              "message": "The bridge service is configured but not currently polling. Live map data will be empty."
+            }
+          },
+          "mod": {
+            "warn": {
+              "label": "Mod not connected",
+              "message": "PanelBridge is running but the in-game mod has not written status.json yet. Players, vehicles and safehouses will not appear.",
+              "hint": "Start the PZ server and confirm the PanelBridge mod is in the active mod list."
+            }
+          }
+        }
       }
     }
   },

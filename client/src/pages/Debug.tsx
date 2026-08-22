@@ -2641,6 +2641,9 @@ export default function Debug() {
               sortedChecks.find((c) => c.status === "fail") ||
               sortedChecks.find((c) => c.status === "warn") ||
               null;
+            const firstFixTranslated = firstFix
+              ? translateDiagnosticCheck(firstFix)
+              : null;
             const copyPath = async (label: string, value: string) => {
               const ok = await copyText(value);
               toast({
@@ -2701,8 +2704,9 @@ export default function Debug() {
               lines.push("");
               lines.push("Checks:");
               for (const c of sortedChecks) {
+                const translated = translateDiagnosticCheck(c);
                 lines.push(
-                  `  [${c.status.toUpperCase()}] ${c.label} — ${c.message}${c.hint ? `  Fix: ${c.hint}` : ""}`,
+                  `  [${c.status.toUpperCase()}] ${translated.label} — ${translated.message}${translated.hint ? `  Fix: ${translated.hint}` : ""}`,
                 );
               }
               const ok = await copyText(lines.join("\n"));
@@ -2872,17 +2876,17 @@ export default function Debug() {
                                 {firstFix.status === "fail"
                                   ? t("worldMapTab.actionNeeded")
                                   : t("worldMapTab.headsUp")}
-                                : {firstFix.label}
+                                : {firstFixTranslated?.label}
                               </div>
                               <div className="text-xs text-muted-foreground mt-0.5">
-                                {firstFix.message}
+                                {firstFixTranslated?.message}
                               </div>
-                              {firstFix.hint && (
+                              {firstFixTranslated?.hint && (
                                 <div className="text-xs mt-1.5">
                                   <span className="font-semibold text-primary">
                                     {t("common.fixLabel")}
                                   </span>{" "}
-                                  {firstFix.hint}
+                                  {firstFixTranslated.hint}
                                 </div>
                               )}
                             </div>
@@ -3831,6 +3835,7 @@ export default function Debug() {
                                     : c.status === "ok"
                                       ? "text-primary"
                                       : "text-muted-foreground";
+                              const translated = translateDiagnosticCheck(c);
                               return (
                                 <div
                                   key={c.id}
@@ -3844,17 +3849,17 @@ export default function Debug() {
                                   />
                                   <div className="min-w-0 flex-1">
                                     <div className="text-sm font-medium">
-                                      {c.label}
+                                      {translated.label}
                                     </div>
                                     <div className="text-xs text-muted-foreground">
-                                      {c.message}
+                                      {translated.message}
                                     </div>
-                                    {c.hint && (
+                                    {translated.hint && (
                                       <div className="text-xs mt-1 text-primary/80">
                                         <span className="font-semibold">
                                           {t("common.fixLabel")}
                                         </span>{" "}
-                                        {c.hint}
+                                        {translated.hint}
                                       </div>
                                     )}
                                   </div>

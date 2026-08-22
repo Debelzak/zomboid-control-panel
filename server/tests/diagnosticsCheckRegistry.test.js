@@ -239,7 +239,18 @@ function flattenLocaleChecks(checksNode) {
 
 function loadChecksNode(localePath) {
   const raw = JSON.parse(fs.readFileSync(localePath, "utf8"));
-  return raw?.diagnostics?.checks ?? {};
+  const checks = { ...(raw?.diagnostics?.checks ?? {}) };
+  // The "worldmap" branch belongs to GET /worldmap, scanned and enforced
+  // separately by server/tests/worldMapCheckRegistry.test.js -- it shares
+  // this same locale file/tree (translateDiagnosticCheck() hardcodes the
+  // "debug" namespace and "diagnostics.checks" prefix for every check id,
+  // worldmap.* included, so there's no separate file to put it in) but this
+  // test's source scan deliberately stops at `router.get("/worldmap")` and
+  // will never see a worldmap.* id -- so it must not treat that branch as
+  // stale here either. Delete it before flattening so the two tests' id
+  // sets never overlap or collide.
+  delete checks.worldmap;
+  return checks;
 }
 
 const debugJsSource = fs.readFileSync(DEBUG_JS_PATH, "utf8");

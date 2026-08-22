@@ -4159,7 +4159,14 @@ router.get("/worldmap", requirePermission("diagnostics.manage"), async (req, res
             "worldmap.tiles.b42",
             "B42 tile CDN reachable",
             `Build ${b42Dir || "42.19.0"} responded in ${b42Probe.latencyMs} ms (HTTP ${b42Probe.statusCode}).`,
-            { category: "worldmap" },
+            {
+              category: "worldmap",
+              params: {
+                build: b42Dir || "42.19.0",
+                latencyMs: b42Probe.latencyMs,
+                statusCode: b42Probe.statusCode,
+              },
+            },
           ),
         );
       } else {
@@ -4171,6 +4178,7 @@ router.get("/worldmap", requirePermission("diagnostics.manage"), async (req, res
             {
               category: "worldmap",
               hint: "Check the panel host's outbound HTTPS access. The /api/map/tiles proxy fetches tiles server-side.",
+              params: { detail: b42Probe.error || `HTTP ${b42Probe.statusCode}` },
             },
           ),
         );
@@ -4182,7 +4190,10 @@ router.get("/worldmap", requirePermission("diagnostics.manage"), async (req, res
             "worldmap.tiles.b41",
             "B41 tile CDN reachable",
             `pzmap.org responded in ${b41Probe.latencyMs} ms (HTTP ${b41Probe.statusCode}).`,
-            { category: "worldmap" },
+            {
+              category: "worldmap",
+              params: { latencyMs: b41Probe.latencyMs, statusCode: b41Probe.statusCode },
+            },
           ),
         );
       } else {
@@ -4194,6 +4205,7 @@ router.get("/worldmap", requirePermission("diagnostics.manage"), async (req, res
             {
               category: "worldmap",
               hint: "Only relevant if you run a B41 server. Outbound HTTPS to pzmap.org is required.",
+              params: { detail: b41Probe.error || `HTTP ${b41Probe.statusCode}` },
             },
           ),
         );
@@ -4209,7 +4221,15 @@ router.get("/worldmap", requirePermission("diagnostics.manage"), async (req, res
             "worldmap.tiles.b42Top",
             "B42 top-down tiles reachable",
             `Build ${b42Dir} serves .${b42TopFormat} top-down tiles (HTTP ${b42TopProbe.statusCode}, ${b42TopProbe.latencyMs} ms).`,
-            { category: "worldmap" },
+            {
+              category: "worldmap",
+              params: {
+                build: b42Dir,
+                format: b42TopFormat,
+                statusCode: b42TopProbe.statusCode,
+                latencyMs: b42TopProbe.latencyMs,
+              },
+            },
           ),
         );
       } else if (b42TopProbe) {
@@ -4221,6 +4241,11 @@ router.get("/worldmap", requirePermission("diagnostics.manage"), async (req, res
             {
               category: "worldmap",
               hint: "Upstream may have republished this build in a different image format. Re-run diagnostics after a few minutes; the panel re-reads the format from base_top/layer0.dzi every 24h or on restart.",
+              params: {
+                build: b42Dir,
+                format: b42TopFormat,
+                detail: b42TopProbe.error || `HTTP ${b42TopProbe.statusCode}`,
+              },
             },
           ),
         );
@@ -4256,12 +4281,13 @@ router.get("/worldmap", requirePermission("diagnostics.manage"), async (req, res
         );
       }
     } catch (e) {
+      const reason = e?.message || "unknown";
       checks.push(
         diagWarn(
           "worldmap.tiles.error",
           "Tile reachability probe failed",
-          `Tile probe could not complete: ${e?.message || "unknown"}`,
-          { category: "worldmap" },
+          `Tile probe could not complete: ${reason}`,
+          { category: "worldmap", params: { reason } },
         ),
       );
     }
@@ -4432,11 +4458,17 @@ router.get("/worldmap", requirePermission("diagnostics.manage"), async (req, res
     const overall =
       summary.fail > 0 ? "fail" : summary.warn > 0 ? "warn" : "ok";
 
+    // Same params redaction pass as GET /diagnostics — see the comment
+    // there (client/src/lib/diagnosticsTranslation.ts is the consumer).
+    const sanitizedChecks = checks.map((c) =>
+      c.params ? { ...c, params: sanitizeErrorParams(c.params) } : c,
+    );
+
     res.json({
       timestamp: new Date().toISOString(),
       overall,
       summary,
-      checks,
+      checks: sanitizedChecks,
       durationMs: Date.now() - t0,
       // Extra structured data the UI surfaces in dedicated panels.
       tileSources: {
