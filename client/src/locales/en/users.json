@@ -1,5 +1,6 @@
 {
   "pageHeader": {
+    "eyebrow": "Accounts",
     "title": "Users",
     "description": "The accounts that can sign in to this panel. Add one for anyone who needs their own login, then set what they can do from Roles & Permissions."
   },

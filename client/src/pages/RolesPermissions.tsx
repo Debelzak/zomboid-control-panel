@@ -61,7 +61,7 @@ function recoveryActionKey(
 }
 
 export default function RolesPermissions() {
-  const { t } = useTranslation(['roles', 'errors', 'shell'])
+  const { t } = useTranslation(['roles', 'errors'])
   const { toast } = useToast()
   const confirm = useConfirm()
 
@@ -386,7 +386,7 @@ export default function RolesPermissions() {
   return (
     <div className="space-y-6 page-transition">
       <PageHeader
-        eyebrow={t('shell:nav.sections.access')}
+        eyebrow={t('pageHeader.eyebrow')}
         title={t('pageHeader.title')}
         description={t('pageHeader.description')}
         icon={<ShieldCheck className="h-6 w-6" />}

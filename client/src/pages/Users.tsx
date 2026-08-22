@@ -59,7 +59,7 @@ function recoveryActionKeyForRole(role: RoleInfo | undefined): 'lockout.actionMa
 }
 
 export default function Users() {
-  const { t } = useTranslation(['users', 'errors', 'shell'])
+  const { t } = useTranslation(['users', 'errors'])
   const { toast } = useToast()
   const { user: currentUser } = useAuth()
   const confirm = useConfirm()
@@ -241,7 +241,7 @@ export default function Users() {
   return (
     <div className="space-y-6 page-transition">
       <PageHeader
-        eyebrow={t('shell:nav.sections.access')}
+        eyebrow={t('pageHeader.eyebrow')}
         title={t('pageHeader.title')}
         description={t('pageHeader.description')}
         icon={<UsersIcon className="h-6 w-6" />}

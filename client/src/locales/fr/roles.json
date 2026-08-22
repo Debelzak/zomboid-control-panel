@@ -1,5 +1,6 @@
 {
   "pageHeader": {
+    "eyebrow": "Permissions",
     "title": "Rôles et permissions",
     "description": "Chaque rôle est une colonne, chaque capacité une ligne. Cochez une case pour l'accorder, décochez pour la retirer — les changements sont enregistrés immédiatement et s'appliquent à la prochaine requête de l'utilisateur concerné."
   },

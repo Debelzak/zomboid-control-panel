@@ -30,7 +30,7 @@ const FIELD_KEYS = ['issuerUrl', 'clientId', 'redirectUri', 'scope', 'providerNa
 type FieldKey = (typeof FIELD_KEYS)[number]
 
 export default function OidcSettings() {
-  const { t } = useTranslation(['oidcSettings', 'shell'])
+  const { t } = useTranslation('oidcSettings')
   const { toast } = useToast()
 
   const [settings, setSettings] = useState<OidcSettingsWithEnv | null>(null)
@@ -167,7 +167,7 @@ export default function OidcSettings() {
   return (
     <div className="space-y-6 page-transition">
       <PageHeader
-        eyebrow={t('shell:nav.sections.access')}
+        eyebrow={t('pageHeader.eyebrow')}
         title={t('pageHeader.title')}
         description={t('pageHeader.description')}
         icon={<KeyRound className="h-6 w-6" />}
@@ -211,11 +211,12 @@ export default function OidcSettings() {
               <CardDescription>{t('status.notConfiguredHint')}</CardDescription>
             )}
           </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="space-y-5">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                {t('sections.provider')}
-              </p>
+          <CardContent className="space-y-4">
+            <div className="space-y-5 rounded-xl border border-border/70 bg-background/40 p-4">
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-foreground">{t('sections.provider')}</p>
+                <p className="text-xs text-muted-foreground">{t('sections.providerDescription')}</p>
+              </div>
               <div className="space-y-1.5">
                 <Label htmlFor="oidc-issuer-url">{t('fields.issuerUrl')}</Label>
                 <Input
@@ -310,10 +311,11 @@ export default function OidcSettings() {
               </div>
             </div>
 
-            <div className="space-y-5 border-t border-border/50 pt-6">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                {t('sections.advanced')}
-              </p>
+            <div className="space-y-5 rounded-xl border border-border/70 bg-background/40 p-4">
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-foreground">{t('sections.advanced')}</p>
+                <p className="text-xs text-muted-foreground">{t('sections.advancedDescription')}</p>
+              </div>
               <div className="space-y-1.5">
                 <Label htmlFor="oidc-scope">{t('fields.scope')}</Label>
                 <Input

@@ -1,5 +1,6 @@
 {
   "pageHeader": {
+    "eyebrow": "Permissions",
     "title": "Roles & Permissions",
     "description": "Every role as a column, every capability as a row. Tick a box to grant it, untick to take it away — changes save immediately and apply on the affected user's next request."
   },

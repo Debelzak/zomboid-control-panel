@@ -1,5 +1,6 @@
 {
   "pageHeader": {
+    "eyebrow": "Comptes",
     "title": "Utilisateurs",
     "description": "Les comptes qui peuvent se connecter à ce panneau. Ajoutez-en un pour toute personne ayant besoin de sa propre connexion, puis définissez ce qu'elle peut faire depuis Rôles et permissions."
   },

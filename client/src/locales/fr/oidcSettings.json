@@ -1,5 +1,6 @@
 {
   "pageHeader": {
+    "eyebrow": "Identité",
     "title": "Connexion",
     "description": "Permettez aux gens de se connecter avec un compte existant d'un fournisseur d'identité (Google Workspace, Okta, Authentik, et similaires), en plus — jamais à la place — d'un nom d'utilisateur et d'un mot de passe. La connexion locale continue toujours de fonctionner."
   },
@@ -20,7 +21,9 @@
   "envPinnedNote": "Défini via une variable d'environnement sur cette installation — modifiez-la là-bas, pas ici.",
   "sections": {
     "provider": "Fournisseur",
-    "advanced": "Avancé"
+    "providerDescription": "Comment ce panneau se connecte à votre fournisseur d'identité, et ce qu'il faut y enregistrer.",
+    "advanced": "Avancé",
+    "advancedDescription": "Options de portée et de transport — laissez tel quel sauf si votre fournisseur exige autre chose."
   },
   "fields": {
     "issuerUrl": "URL de l'émetteur",
