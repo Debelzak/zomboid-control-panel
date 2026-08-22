@@ -155,8 +155,18 @@ router.delete("/:name", requirePermission("backups.manage"), async (req, res) =>
   }
 });
 
-// Download a backup
-router.get("/download/:name", async (req, res) => {
+// Download a backup archive off the machine. Its own capability, not
+// folded into backups.manage: creating, deleting or restoring a backup
+// manipulates data on this machine, but downloading EXFILTRATES a full
+// copy of it -- world save data, and if includeDb was ever turned on,
+// db.json's bcrypt password hashes too. A role trusted to manage backups
+// day-to-day is not automatically a role that should be able to walk
+// away with an offline copy of everything.
+// /list and /history stay deliberately ungated (read-only status routes
+// are outside the matrix on purpose), but that pair is what makes this
+// exposure trivially reachable without the gate below: enumerate the
+// filenames, then download.
+router.get("/download/:name", requirePermission("backups.download"), async (req, res) => {
   try {
     const backupService = req.app.get("backupService");
     const backupsPath = await backupService.getBackupsPath();

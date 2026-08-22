@@ -75,6 +75,7 @@ describe("backup.js: everything else stays admin+technician (restore is the only
     ["/delete-older-than", "post"],
     ["/upload", "post"],
     ["/:name/snapshot", "get"],
+    ["/download/:name", "get"],
   ];
 
   it.each(STILL_TECHNICIAN)("does not refuse a technician on %s %s", async (routePath, method) => {

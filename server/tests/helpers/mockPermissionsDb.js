@@ -25,6 +25,7 @@ const ADMIN_CAPABILITIES = [
   "users.manage",
   "roles.manage",
   "backups.manage",
+  "backups.download",
   "backups.restore",
   "server.control",
   "server.install",
@@ -53,6 +54,7 @@ const ADMIN_CAPABILITIES = [
 
 const TECHNICIAN_CAPABILITIES = [
   "backups.manage",
+  "backups.download",
   "server.control",
   "server.install",
   "server.configure",

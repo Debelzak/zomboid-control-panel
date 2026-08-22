@@ -105,6 +105,7 @@ const CURRENT_SCHEMA_VERSION = 2;
 // instead of silently drifting.
 const MIGRATION_V2_TECHNICIAN_CAPABILITIES = [
   "backups.manage",
+  "backups.download",
   "server.control",
   "server.install",
   "server.configure",
@@ -134,6 +135,7 @@ const MIGRATION_V2_ADMIN_CAPABILITIES = [
   "users.manage",
   "roles.manage",
   "backups.manage",
+  "backups.download",
   "backups.restore",
   "server.control",
   "server.install",

@@ -68,6 +68,13 @@ export const CAPABILITIES = [
       "Create manual backups, delete or prune old ones, upload external backups, and change the backup schedule.",
   },
   {
+    key: "backups.download",
+    group: "Backups",
+    label: "Download a backup archive",
+    description:
+      "Download a backup .zip off the machine -- a full copy of the world save and, if database backups are turned on, the panel's own account data. A different act from creating, deleting or restoring one: this one leaves the machine.",
+  },
+  {
     key: "backups.restore",
     group: "Backups",
     label: "Restore a backup",
@@ -273,8 +280,18 @@ const RECOVERY_CAPABILITIES = ["roles.manage", "users.manage"];
 // Default role seed (migration snapshot -- see file header)
 // ============================================
 
+// backups.download joins here even though it is a brand new capability
+// with no prior requireRole call site to snapshot: GET /download/:name
+// had NO gate at all before it (see routes/backup.js), so technician
+// already had unrestricted access to it on every existing install, and
+// technician already holds backups.manage -- the same trust level. Not
+// granting it here would silently take away something this role could
+// already do. moderator, which never held backups.manage and never had
+// a deliberate grant to this route either, does NOT get it -- that gap
+// is the actual vulnerability this capability closes.
 const TECHNICIAN_CAPABILITIES = [
   "backups.manage",
+  "backups.download",
   "server.control",
   "server.install",
   "server.configure",
