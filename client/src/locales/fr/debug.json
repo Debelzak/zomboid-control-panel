@@ -283,6 +283,121 @@
             "message": "Le serveur est arrêté. Démarrez-le depuis le tableau de bord.",
             "hint": "Tableau de bord → Démarrer le serveur"
           }
+        },
+        "active": {
+          "fail": {
+            "label": "Aucun serveur actif",
+            "message": "Configurez un serveur pour activer la plupart des fonctionnalités du panneau.",
+            "hint": "Serveurs → Ajouter un serveur"
+          },
+          "ok": {
+            "label": "Serveur actif",
+            "message": "{{name}}."
+          }
+        },
+        "installPath": {
+          "fail": {
+            "label": "Chemin d'installation manquant",
+            "message": "Le serveur actif n'a pas de chemin d'installation configuré.",
+            "hint": "Serveurs → Modifier → Chemin d'installation",
+            "netMount": {
+              "label": "Chemin d'installation introuvable",
+              "message": "Partage réseau ou point de montage inaccessible. Vérifiez le VPN, le montage ou la disponibilité du partage.",
+              "hint": "Vérifiez que le partage est monté et que les identifiants sont valides"
+            },
+            "local": {
+              "label": "Chemin d'installation introuvable",
+              "message": "Le chemin d'installation configuré n'existe pas ou n'est pas lisible.",
+              "hint": "Vérifiez le chemin dans Serveurs → Modifier"
+            }
+          },
+          "ok": {
+            "label": "Chemin d'installation accessible",
+            "message": "Le répertoire d'installation du serveur est accessible."
+          }
+        },
+        "zomboidData": {
+          "warn": {
+            "label": "Chemin de données Zomboid non défini",
+            "message": "Définissez le dossier de données utilisateur Zomboid pour que les sauvegardes et la configuration puissent être localisées.",
+            "hint": "Serveurs → Modifier → Chemin de données Zomboid"
+          },
+          "ok": {
+            "label": "Chemin de données Zomboid accessible",
+            "message": "Le répertoire des sauvegardes et de la configuration du serveur est accessible."
+          },
+          "fail": {
+            "label": "Chemin de données Zomboid introuvable",
+            "message": "Le chemin de sauvegardes/configuration configuré n'existe pas.",
+            "hint": "Sous {{platform}}, il s'agit généralement de {{typicalPath}}"
+          }
+        },
+        "startScript": {
+          "warn": {
+            "notExecutable": {
+              "label": "Script de démarrage non exécutable",
+              "message": "{{script}} existe mais n'a pas le bit exécutable. Le panneau ne peut pas le lancer.",
+              "hint": "Exécutez : chmod +x {{script}}"
+            },
+            "notFound": {
+              "label": "Script de démarrage introuvable",
+              "message": "Aucun {{pattern}} dans le chemin d'installation. Le serveur ne peut pas être démarré depuis le panneau."
+            }
+          },
+          "ok": {
+            "label": "Script de démarrage trouvé",
+            "message": "Utilisation de {{script}}."
+          }
+        },
+        "jre": {
+          "ok": {
+            "label": "JRE embarqué présent",
+            "message": "{{path}} trouvé."
+          },
+          "warn": {
+            "linux": {
+              "label": "JRE embarqué introuvable",
+              "message": "Impossible de localiser jre64/bin/{{javaBin}} dans le chemin d'installation. Le serveur risque de ne pas démarrer sauf si Java système est dans le PATH.",
+              "hint": "La plupart des installations embarquent un JRE sous jre64/. Relancez SteamCMD s'il est manquant."
+            },
+            "windows": {
+              "label": "JRE embarqué introuvable",
+              "message": "Impossible de localiser jre64/bin/{{javaBin}} dans le chemin d'installation. Le serveur risque de ne pas démarrer sauf si Java système est dans le PATH.",
+              "hint": "Relancez SteamCMD pour restaurer le JRE embarqué"
+            }
+          }
+        },
+        "ini": {
+          "ok": {
+            "label": "server.ini trouvé",
+            "message": "{{serverName}}.ini est en place."
+          },
+          "warn": {
+            "label": "server.ini introuvable",
+            "message": "{{serverName}}.ini n'est pas dans <zomboidData>/Server/. Le serveur créera les valeurs par défaut au premier lancement."
+          }
+        },
+        "rconPassword": {
+          "warn": {
+            "label": "Mot de passe RCON non défini",
+            "message": "Aucun mot de passe RCON configuré. Les commandes RCON échoueront.",
+            "hint": "Serveurs → Modifier → Mot de passe RCON (doit correspondre à server.ini)"
+          },
+          "ok": {
+            "label": "Mot de passe RCON configuré",
+            "message": "Le mot de passe RCON est défini dans la configuration du panneau."
+          }
+        },
+        "bridgeMod": {
+          "ok": {
+            "label": "Mod PanelBridge présent",
+            "message": "PanelBridge.lua est déployé sur le serveur."
+          },
+          "warn": {
+            "label": "Mod PanelBridge non détecté",
+            "message": "Impossible de trouver PanelBridge.lua sur le serveur. Les fonctionnalités avancées (téléportation, météo, export de personnage) seront indisponibles.",
+            "hint": "Copiez pz-mod/PanelBridge dans le dossier media/lua/server du serveur"
+          }
         }
       },
       "rcon": {

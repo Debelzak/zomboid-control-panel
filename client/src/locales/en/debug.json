@@ -283,6 +283,121 @@
             "message": "Server is stopped. Start it from the dashboard.",
             "hint": "Dashboard → Start Server"
           }
+        },
+        "active": {
+          "fail": {
+            "label": "No active server",
+            "message": "Configure a server to enable most panel features.",
+            "hint": "Servers → Add Server"
+          },
+          "ok": {
+            "label": "Active server",
+            "message": "{{name}}."
+          }
+        },
+        "installPath": {
+          "fail": {
+            "label": "Install path missing",
+            "message": "Active server has no installPath configured.",
+            "hint": "Servers → Edit → Install Path",
+            "netMount": {
+              "label": "Install path not found",
+              "message": "Network share or mount not reachable. Check VPN, mount, or share availability.",
+              "hint": "Verify the share is mounted and credentials are valid"
+            },
+            "local": {
+              "label": "Install path not found",
+              "message": "Configured install path does not exist or is unreadable.",
+              "hint": "Check the path in Servers → Edit"
+            }
+          },
+          "ok": {
+            "label": "Install path exists",
+            "message": "Server installation directory is accessible."
+          }
+        },
+        "zomboidData": {
+          "warn": {
+            "label": "Zomboid data path not set",
+            "message": "Set the Zomboid user data folder so saves and config can be located.",
+            "hint": "Servers → Edit → Zomboid Data Path"
+          },
+          "ok": {
+            "label": "Zomboid data path exists",
+            "message": "Saves and server config directory is accessible."
+          },
+          "fail": {
+            "label": "Zomboid data path not found",
+            "message": "Configured saves/config path does not exist.",
+            "hint": "On {{platform}} this is usually {{typicalPath}}"
+          }
+        },
+        "startScript": {
+          "warn": {
+            "notExecutable": {
+              "label": "Start script not executable",
+              "message": "{{script}} exists but has no executable bit. The panel cannot launch it.",
+              "hint": "Run: chmod +x {{script}}"
+            },
+            "notFound": {
+              "label": "Start script not found",
+              "message": "No {{pattern}} in install path. Server can't be started from the panel."
+            }
+          },
+          "ok": {
+            "label": "Start script found",
+            "message": "Using {{script}}."
+          }
+        },
+        "jre": {
+          "ok": {
+            "label": "Bundled JRE present",
+            "message": "Found {{path}}."
+          },
+          "warn": {
+            "linux": {
+              "label": "Bundled JRE not found",
+              "message": "Could not locate jre64/bin/{{javaBin}} under the install path. Server may fail to start unless system Java is on PATH.",
+              "hint": "Most installs ship a JRE under jre64/. Re-run SteamCMD if missing."
+            },
+            "windows": {
+              "label": "Bundled JRE not found",
+              "message": "Could not locate jre64/bin/{{javaBin}} under the install path. Server may fail to start unless system Java is on PATH.",
+              "hint": "Re-run SteamCMD to restore the bundled JRE"
+            }
+          }
+        },
+        "ini": {
+          "ok": {
+            "label": "server.ini found",
+            "message": "{{serverName}}.ini is in place."
+          },
+          "warn": {
+            "label": "server.ini not found",
+            "message": "{{serverName}}.ini is not in <zomboidData>/Server/. The server will create defaults on first run."
+          }
+        },
+        "rconPassword": {
+          "warn": {
+            "label": "RCON password not set",
+            "message": "No RCON password configured. RCON commands will fail.",
+            "hint": "Servers → Edit → RCON Password (must match server.ini)"
+          },
+          "ok": {
+            "label": "RCON password configured",
+            "message": "RCON password is set in panel config."
+          }
+        },
+        "bridgeMod": {
+          "ok": {
+            "label": "PanelBridge mod present",
+            "message": "PanelBridge.lua is deployed on the server."
+          },
+          "warn": {
+            "label": "PanelBridge mod not detected",
+            "message": "Couldn't find PanelBridge.lua under the server. Advanced features (teleport, weather, character export) will be unavailable.",
+            "hint": "Copy pz-mod/PanelBridge into the server's media/lua/server folder"
+          }
         }
       },
       "rcon": {

@@ -113,4 +113,82 @@ describe('translateDiagnosticCheck', () => {
       hint: undefined,
     })
   })
+
+  it('interpolates a name param (server.active)', () => {
+    const check = {
+      id: 'server.active',
+      status: 'ok',
+      label: 'Active server',
+      message: 'My Zomboid Server.',
+      params: { name: 'My Zomboid Server' },
+    }
+    expect(translateDiagnosticCheck(check).message).toBe('My Zomboid Server.')
+  })
+
+  it('resolves the netMount variant to its own label/message/hint, not the plain (missing) entry', () => {
+    const check = {
+      id: 'server.installPath',
+      status: 'fail',
+      label: 'Install path not found',
+      message: 'Network share or mount not reachable. Check VPN, mount, or share availability.',
+      hint: 'Verify the share is mounted and credentials are valid',
+      variant: 'netMount',
+    }
+    const translated = translateDiagnosticCheck(check)
+    expect(translated.message).toBe('Partage réseau ou point de montage inaccessible. Vérifiez le VPN, le montage ou la disponibilité du partage.')
+    expect(translated.hint).toBe('Vérifiez que le partage est monté et que les identifiants sont valides')
+  })
+
+  it('resolves the local variant differently from the netMount variant for the same id+status', () => {
+    const check = {
+      id: 'server.installPath',
+      status: 'fail',
+      label: 'Install path not found',
+      message: 'Configured install path does not exist or is unreadable.',
+      hint: 'Check the path in Servers → Edit',
+      variant: 'local',
+    }
+    const translated = translateDiagnosticCheck(check)
+    expect(translated.message).toBe("Le chemin d'installation configuré n'existe pas ou n'est pas lisible.")
+    expect(translated.hint).toBe('Vérifiez le chemin dans Serveurs → Modifier')
+  })
+
+  it('the plain (non-variant) entry for the same id+status is still independently reachable', () => {
+    const check = {
+      id: 'server.installPath',
+      status: 'fail',
+      label: 'Install path missing',
+      message: 'Active server has no installPath configured.',
+      hint: 'Servers → Edit → Install Path',
+      // no variant -- this is the "missing entirely" case
+    }
+    const translated = translateDiagnosticCheck(check)
+    expect(translated.message).toBe("Le serveur actif n'a pas de chemin d'installation configuré.")
+  })
+
+  it('combines a variant selection with param interpolation (server.jre)', () => {
+    const check = {
+      id: 'server.jre',
+      status: 'warn',
+      label: 'Bundled JRE not found',
+      message: 'Could not locate jre64/bin/java under the install path. Server may fail to start unless system Java is on PATH.',
+      hint: 'Most installs ship a JRE under jre64/. Re-run SteamCMD if missing.',
+      params: { javaBin: 'java' },
+      variant: 'linux',
+    }
+    const translated = translateDiagnosticCheck(check)
+    expect(translated.message).toBe('Impossible de localiser jre64/bin/java dans le chemin d\'installation. Le serveur risque de ne pas démarrer sauf si Java système est dans le PATH.')
+    expect(translated.hint).toBe('La plupart des installations embarquent un JRE sous jre64/. Relancez SteamCMD s\'il est manquant.')
+  })
+
+  it('falls back to the server English text when the variant is missing/unregistered', () => {
+    const check = {
+      id: 'server.installPath',
+      status: 'fail',
+      label: 'Install path not found',
+      message: 'Some brand new scenario text.',
+      variant: 'someFutureVariantNotYetTranslated',
+    }
+    expect(translateDiagnosticCheck(check).message).toBe('Some brand new scenario text.')
+  })
 })

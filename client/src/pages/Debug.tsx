@@ -197,6 +197,7 @@ interface DiagCheck {
   category: string;
   meta?: Record<string, unknown>;
   params?: Record<string, string | number>;
+  variant?: string;
 }
 
 interface DiagSummary {

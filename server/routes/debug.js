@@ -2118,12 +2118,13 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
           ),
         );
       } else {
+        const activeServerName = activeServer.name || activeServer.serverName || "Unnamed";
         checks.push(
           diagOk(
             "server.active",
             "Active server",
-            `${activeServer.name || activeServer.serverName || "Unnamed"}.`,
-            { category: "server" },
+            `${activeServerName}.`,
+            { category: "server", params: { name: activeServerName } },
           ),
         );
 
@@ -2153,21 +2154,39 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
             isUnc ||
             installPath.startsWith("/mnt/") ||
             installPath.startsWith("/media/");
-          checks.push(
-            diagFail(
-              "server.installPath",
-              "Install path not found",
-              isNetMount
-                ? "Network share or mount not reachable. Check VPN, mount, or share availability."
-                : "Configured install path does not exist or is unreadable.",
-              {
-                category: "server",
-                hint: isNetMount
-                  ? "Verify the share is mounted and credentials are valid"
-                  : "Check the path in Servers → Edit",
-              },
-            ),
-          );
+          // Two literal branches, not one call with a ternary message/hint --
+          // `variant` (below) must be a call-site string literal so the
+          // self-enforcing registry test (server/tests/
+          // diagnosticsCheckRegistry.test.js) can statically find every
+          // (id, status, variant) the handler can actually emit, the same
+          // way errorCodeRegistry.test.js requires literal `code:` values.
+          if (isNetMount) {
+            checks.push(
+              diagFail(
+                "server.installPath",
+                "Install path not found",
+                "Network share or mount not reachable. Check VPN, mount, or share availability.",
+                {
+                  category: "server",
+                  hint: "Verify the share is mounted and credentials are valid",
+                  variant: "netMount",
+                },
+              ),
+            );
+          } else {
+            checks.push(
+              diagFail(
+                "server.installPath",
+                "Install path not found",
+                "Configured install path does not exist or is unreadable.",
+                {
+                  category: "server",
+                  hint: "Check the path in Servers → Edit",
+                  variant: "local",
+                },
+              ),
+            );
+          }
         }
 
         const zPath = activeServer.zomboidDataPath;
@@ -2193,6 +2212,7 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
             ),
           );
         } else {
+          const isLinuxPlatform = process.platform === "linux";
           checks.push(
             diagFail(
               "server.zomboidData",
@@ -2200,10 +2220,17 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
               "Configured saves/config path does not exist.",
               {
                 category: "server",
-                hint:
-                  process.platform === "linux"
-                    ? "On Linux this is usually ~/Zomboid"
-                    : "On Windows this is usually %USERPROFILE%/Zomboid",
+                hint: isLinuxPlatform
+                  ? "On Linux this is usually ~/Zomboid"
+                  : "On Windows this is usually %USERPROFILE%/Zomboid",
+                // Same substitution in every language ("On {{platform}}
+                // this is usually {{typicalPath}}") -- a param, not a
+                // variant, since only the filled-in values change, not the
+                // sentence's structure or informational content.
+                params: {
+                  platform: isLinuxPlatform ? "Linux" : "Windows",
+                  typicalPath: isLinuxPlatform ? "~/Zomboid" : "%USERPROFILE%/Zomboid",
+                },
               },
             ),
           );
@@ -2241,12 +2268,21 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
             // On Linux, verify the executable bit. On Windows, mode bits are
             // meaningless so we just confirm presence.
             if (!isWin && scriptStat && (scriptStat.mode & 0o111) === 0) {
+              // Two different "warn" scenarios for this id (not-executable
+              // vs not-found below) need distinct label/message text, not
+              // just different data in the same template -- variant, not
+              // params, same reasoning as server.installPath above.
               checks.push(
                 diagWarn(
                   "server.startScript",
                   "Start script not executable",
                   `${foundScript} exists but has no executable bit. The panel cannot launch it.`,
-                  { category: "server", hint: `Run: chmod +x ${foundScript}` },
+                  {
+                    category: "server",
+                    hint: `Run: chmod +x ${foundScript}`,
+                    params: { script: foundScript },
+                    variant: "notExecutable",
+                  },
                 ),
               );
             } else {
@@ -2255,17 +2291,18 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
                   "server.startScript",
                   "Start script found",
                   `Using ${foundScript}.`,
-                  { category: "server" },
+                  { category: "server", params: { script: foundScript } },
                 ),
               );
             }
           } else {
+            const scriptPattern = isWin ? "StartServer*.bat" : "start-server*.sh";
             checks.push(
               diagWarn(
                 "server.startScript",
                 "Start script not found",
-                `No ${isWin ? "StartServer*.bat" : "start-server*.sh"} in install path. Server can't be started from the panel.`,
-                { category: "server" },
+                `No ${scriptPattern} in install path. Server can't be started from the panel.`,
+                { category: "server", params: { pattern: scriptPattern }, variant: "notFound" },
               ),
             );
           }
@@ -2289,23 +2326,45 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
                 "server.jre",
                 "Bundled JRE present",
                 `Found ${foundJre}.`,
-                { category: "server" },
+                { category: "server", params: { path: foundJre } },
               ),
             );
           } else {
-            checks.push(
-              diagWarn(
-                "server.jre",
-                "Bundled JRE not found",
-                `Could not locate jre64/bin/${isWin ? "java.exe" : "java"} under the install path. Server may fail to start unless system Java is on PATH.`,
-                {
-                  category: "server",
-                  hint: isLinux
-                    ? "Most installs ship a JRE under jre64/. Re-run SteamCMD if missing."
-                    : "Re-run SteamCMD to restore the bundled JRE",
-                },
-              ),
-            );
+            const javaBin = isWin ? "java.exe" : "java";
+            const jreNotFoundMessage = `Could not locate jre64/bin/${javaBin} under the install path. Server may fail to start unless system Java is on PATH.`;
+            // hint's content genuinely differs by platform (not just a
+            // filled-in value) -- variant, not params, for the hint; two
+            // literal-variant branches so the registry test can statically
+            // find both, same reasoning as server.installPath above.
+            if (isLinux) {
+              checks.push(
+                diagWarn(
+                  "server.jre",
+                  "Bundled JRE not found",
+                  jreNotFoundMessage,
+                  {
+                    category: "server",
+                    hint: "Most installs ship a JRE under jre64/. Re-run SteamCMD if missing.",
+                    params: { javaBin },
+                    variant: "linux",
+                  },
+                ),
+              );
+            } else {
+              checks.push(
+                diagWarn(
+                  "server.jre",
+                  "Bundled JRE not found",
+                  jreNotFoundMessage,
+                  {
+                    category: "server",
+                    hint: "Re-run SteamCMD to restore the bundled JRE",
+                    params: { javaBin },
+                    variant: "windows",
+                  },
+                ),
+              );
+            }
           }
         }
 
@@ -2322,7 +2381,7 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
                 "server.ini",
                 "server.ini found",
                 `${activeServer.serverName}.ini is in place.`,
-                { category: "server" },
+                { category: "server", params: { serverName: activeServer.serverName } },
               ),
             );
           } else {
@@ -2331,7 +2390,7 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
                 "server.ini",
                 "server.ini not found",
                 `${activeServer.serverName}.ini is not in <zomboidData>/Server/. The server will create defaults on first run.`,
-                { category: "server" },
+                { category: "server", params: { serverName: activeServer.serverName } },
               ),
             );
           }
