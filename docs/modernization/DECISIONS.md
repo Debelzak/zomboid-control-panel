@@ -101,8 +101,47 @@ override mechanism works, so the pattern is established rather than invented. Be
 a module-load-time side effect, the isolation must wrap *any* command that imports
 `server/database/init.js`, not the test script alone.
 
-**Status: open, awaiting user decision.** No option has been implemented; only the generated
-artifacts were removed. Cross-referenced as RISK-006.
+**Status: DECIDED by the user on 2026-08-22 (option 2, isolate the data root) and RESOLVED by
+work package FND-005 the same day.** Cross-referenced as RISK-006, now resolved.
+
+**Proof the defect is actually closed**, rather than merely worked around: a second consecutive
+`npm run test:server` followed immediately by `bootstrap-plan.ps1` now returns
+`PASS runtime-db-absent`, exit 0. Before FND-005 that exact sequence threw. The suite still reports
+**535 tests across 51 files** — unchanged — so the newly introduced root `vitest.config.js` did not
+alter test discovery, which was the main risk of the fix.
+
+### Implementation as built (FND-005)
+
+Two facts found while scoping the fix, both of which constrain it:
+
+1. **There is no environment-variable override.** `server/utils/paths.js:30` `getDataPaths()`
+   resolves only from a `paths.config.json` file at the project root, and **memoizes the result in
+   a module-level `currentPaths`**. The override must therefore exist on disk *before* the first
+   import, not be set at runtime. This is why the plan's perf step writes a temp file rather than
+   exporting a variable.
+2. **There is no server-side vitest config.** `npm run test:server` is bare
+   `vitest run server/tests` on vitest defaults; the only config in the repo is
+   `client/vite.config.ts`. So the fix must *create* a root `vitest.config.js`.
+
+Shape as built — test infrastructure only, **no production file touched**:
+
+- a root `vitest.config.js` setting `test.globalSetup` and nothing else, so existing default
+  behavior is preserved;
+- a global setup that **refuses to run if `paths.config.json` already exists** (never clobber a
+  real user override), writes one pointing at a temporary root, and removes it in teardown.
+
+`globalSetup` runs in the main process before workers spawn, which satisfies the
+memoization constraint in fact 1.
+
+**Risk to watch, and the reason this needs its own gates:** introducing a root `vitest.config.js`
+where none existed can change how the existing 535 tests are discovered or run. The acceptance
+check is therefore not merely "the artifacts stop appearing" but "the suite still reports 535
+tests" — a changed test count would mean the config altered discovery, which would be a worse
+regression than the defect being fixed.
+
+**Sequencing note (historical):** the fix was deliberately held until the concurrent RISK-001 investigation finished, because changing the test harness underneath an agent running that exact suite would have invalidated the investigation. It was implemented immediately after that report landed.
+exact suite; changing the harness underneath that investigation would invalidate it. The fix waits
+for that report.
 
 **Discovery record.** Found independently twice: by the coordinator when a post-ledger re-run of
 `bootstrap-plan.ps1` threw, and by the independent verifier before reading the coordinator's
@@ -110,3 +149,60 @@ evidence. The verifier's `VERIFICATION.md` returned **FAIL** on this finding, wh
 verdict — FND-001 cannot be accepted while its own precondition fails. The verifier also traced
 the cause to the exact lines. Two independent discoveries of the same defect, from different
 starting points, is the reason this is recorded as a plan defect rather than a local mishap.
+
+### DISC-002 — the owned-path guard reports PASS without reading its argument
+
+**Severity: high. A check that cannot fail is worse than no check, because it is trusted.**
+
+The plan documents this invocation (`V2_MODERNIZATION_PLAN.md`, FND-001 section):
+
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass `
+        -File .\scripts\modernization\check-owned-paths.ps1 `
+        -Id FND-001 `
+        -AllowedPath docs/modernization/,scripts/modernization/
+```
+
+**`pwsh -File` binds a comma-separated value as ONE string, not an array.** Demonstrated directly:
+
+```
+pwsh -File ... -AllowedPath a,b,c   ->   elements=1   ["a,b,c"]
+```
+
+`check-owned-paths.ps1` then tests `$path.StartsWith("docs/modernization/,scripts/modernization/")`,
+which matches nothing. **Every `-AllowedPath` passed this way is silently discarded.**
+
+**Why nobody noticed.** The script carries a hardcoded `$initialHandoff` fallback allowing
+`V2_MODERNIZATION_PLAN.md`, `AGENTS.md`, `docs/modernization/`, and `scripts/modernization/` for
+*untracked* files. FND-001's paths are exactly those, so it returned `PASS work-package=FND-001
+changed=55` **via the fallback, having never evaluated the argument at all.** The guard appeared to
+work because the package under test happened to need nothing beyond the fallback.
+
+**How it surfaced.** FND-005 owns `vitest.config.js` and `server/tests/vitest.globalSetup.mjs` —
+paths outside the fallback. The check returned `FAIL ... UNOWNED vitest.config.js`, which is the
+correct answer for the wrong reason: not because ownership was violated, but because the allowance
+never parsed. Re-running with a genuine array returns `PASS work-package=FND-005 changed=12`.
+
+**This is the dangerous shape:** the first package that actually depends on the argument is the
+first package that gets a wrong answer, and by then the check has a track record of passing.
+
+**Correct invocation** — pass a real array, which requires `-Command`, not `-File`:
+
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -Command `
+  "& '.\scripts\modernization\check-owned-paths.ps1' -Id FND-005 " +
+  "-AllowedPath @('vitest.config.js','server/tests/vitest.globalSetup.mjs')"
+```
+
+**Options for the user:**
+
+1. **Fix the documented command** in the plan to the `-Command` form above. Smallest change; the
+   script itself is correct.
+2. **Make the script defensive** — split any element containing a comma, so both invocation styles
+   work. Slightly more code, but removes a foot-gun every future package would otherwise re-arm.
+3. **Both.** Recommended: the script stops accepting a malformed argument silently, and the
+   documented command stops producing one.
+
+**Status: open, awaiting user decision. Not fixed.** FND-005's own scope was verified with the
+correct invocation, so its result is sound; the plan's documented command remains wrong. Recorded
+as RISK-007.

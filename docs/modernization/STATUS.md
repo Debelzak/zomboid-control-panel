@@ -1,14 +1,41 @@
 ---
 plan_version: "2.0"
 baseline_sha: "8642dc467938a47ca8aac76fc44fc1875446c88b"
-current_sha: "8642dc467938a47ca8aac76fc44fc1875446c88b"
-active_work_package: "FND-001"
-state: "blocked"
+current_sha: "e966fe94c7d6aca60986c7704a80e576bc1fa9f3"
+active_work_package: "none - Foundation review gate"
+state: "accepted"
 owner: "coordinator"
-updated_at: "2026-08-22T13:10:00.0000000Z"
+updated_at: "2026-08-22T13:58:00.0000000Z"
 ---
 
 # Modernization Status
+
+## Checkpoint
+
+- **Local-only checkpoint commit:** `e966fe94c7d6aca60986c7704a80e576bc1fa9f3` on `main`
+- **Authorized by:** the user, explicitly, on 2026-08-22
+- **Not pushed, not tagged, no remote created.** `git remote -v` shows only `v1-source` (the
+  read-only V1 reference). There is no `origin`, so there is no default push target.
+- **Contents:** 55 files, 4484 insertions — handoff, toolkit, 8 ledgers, FND-001 evidence.
+  Verified to contain no `data/db.json`, no `data/backups/`, no `logs/`, no `node_modules`, and no
+  `client/dist`.
+- **No V1 source file is modified by this commit.**
+
+Worktree creation is now unblocked (RISK-005 cleared): the handoff files are tracked, so
+`create-worktree.ps1` will find them.
+
+## Operator Grant (2026-08-22)
+
+The user widened the working latitude inside this fork: **running the panel, running a PZ server,
+and creating a real database in `D:\Projects\Zomboid_Control_Panel_Modernized` are all permitted.**
+
+Unchanged and still binding: `D:\Zomboid_dev_panel\GitHub` and `D:\Projects\Zomboid_dev_panel V2`
+are strictly read-only; no push, tag, publish, or remote; no deployment to the existing Tower V1
+container (a *new* container is the eventual target, and only with explicit approval).
+
+Note the interaction with DISC-001: the operator being content to have a database in this fork does
+**not** dissolve the defect. `bootstrap-plan.ps1` still throws, so the sequence still cannot run
+twice — and the operator separately chose the isolation remediation.
 
 ## Current Package
 
@@ -27,10 +54,12 @@ updated_at: "2026-08-22T13:10:00.0000000Z"
 
 ## Last Green Full Gate
 
-- **Git SHA:** `8642dc467938a47ca8aac76fc44fc1875446c88b` (working tree; no commit created)
+- **Git SHA:** `e966fe94c7d6aca60986c7704a80e576bc1fa9f3` + uncommitted FND-005
 - **Date:** 2026-08-22
-- **Server tests:** 535 passed / 535, exit 0 — **on the second run.** The first, cold run was
-  534/535 exit 1. Both are recorded; see RISK-001.
+- **Server tests:** 535 passed / 535 across 51 files, exit 0. Run twice consecutively post-FND-005,
+  green both times, with `bootstrap-plan.ps1` passing after each — the repeatability that DISC-001
+  used to prevent. (During FND-001, before the fix, a *cold* run was 534/535 exit 1; cause now
+  diagnosed as RISK-001.)
 - **Client tests:** 90 passed / 90 across 14 files, exit 0
 - **Typecheck/build/lint/diff:** `tsc -b` exit 0 no diagnostics; `npm run build` exit 0;
   `lint:server --max-warnings=0` exit 0; `git diff --check` exit 0
@@ -40,75 +69,107 @@ updated_at: "2026-08-22T13:10:00.0000000Z"
 
 | Work package | Owner | Paths | State |
 | --- | --- | --- | --- |
-| FND-001 | coordinator | `docs/modernization/*.md` (8 ledgers), `docs/modernization/evidence/FND-001/**`, `scripts/modernization/**` | review |
-| FND-001 | independent verifier | `docs/modernization/evidence/FND-001/VERIFICATION.md` **only** | in progress |
+| _none_ | — | All FND-001 and FND-005 reservations released on acceptance | — |
 
 The verifier holds `VERIFICATION.md` exclusively. The coordinator implemented FND-001 and must not
 author its sign-off.
 
 ## Blockers
 
-**BLOCKER 1 — DISC-001 / RISK-006. Needs a user decision. This is what blocks acceptance.**
+~~**BLOCKER 1 — DISC-001 / RISK-006.**~~ **RESOLVED by FND-005.**
 
-The plan's mandatory baseline gate breaks the plan's mandatory preflight.
-`server/database/init.js:43-50` is a bare top-level `for` loop of `fs.mkdirSync`, so **importing**
-the module creates `data/` and `data/backups/` and writes a default `data/db.json` whenever no
-`paths.config.json` override is present. The FND-001 sequence wraps only the perf step in that
-override. `bootstrap-plan.ps1` then throws, so **the documented sequence cannot be run twice.**
+*What it was:* `server/database/init.js:43-50` is a bare top-level `for` loop of `fs.mkdirSync`, so
+**importing** the module created `data/`, `data/backups/`, and a default `data/db.json`.
+`bootstrap-plan.ps1` then threw, meaning the documented sequence could not be run twice. Found
+independently twice (coordinator and verifier); independent verification returned **FAIL** on it,
+correctly.
 
-Found independently twice — coordinator and verifier. Independent verification returned **FAIL** on
-this, correctly. Four options and a recommendation are in `DECISIONS.md`; option 1 was withdrawn
-because `init.js:42` records that `db.json` holds an RCON password and JWT secret.
+**Fixed and proven.** A second consecutive `npm run test:server` followed immediately by
+`bootstrap-plan.ps1` now returns `PASS runtime-db-absent`, exit 0 — the exact sequence that threw
+before. The suite still reports 535 tests across 51 files, so test discovery was not altered by the
+new root `vitest.config.js`.
 
-The generated artifacts have been removed and the preflight is green again, but **the defect is
-not fixed** — the clean fix edits test infrastructure FND-001 does not own.
+~~**BLOCKER 2 — RISK-005.**~~ **CLEARED** by checkpoint `e966fe9`. The handoff files are tracked,
+so worktrees can now be created and FND-002 / FND-003 / DB-001 may run in parallel once FND-001 is
+accepted.
 
-**BLOCKER 2 — RISK-005, expected, no decision needed yet.** Worktree creation is prohibited until
-a user-authorized local checkpoint commit exists (`WORKTREE_LIFECYCLE.md`). FND-002, FND-003, and
-DB-001 cannot start in parallel until then. This is the plan's own sequencing.
+**Both user decisions are in:**
 
-Awaiting: (1) user decision on DISC-001, (2) user authorization for the checkpoint commit.
+1. **DISC-001 → isolate the data root.** **DONE** as work package FND-005 (in review).
+2. **Checkpoint commit → authorized and created** as `e966fe9`, local only, not pushed.
+3. **RISK-001 → investigate now.** **DONE.** Verdict (A), tight timeout, cause located. See below.
+
+**The remaining open questions for the user are DISC-002 and the RISK-001 fix — both listed under
+Next Exact Action.**
+
+
+## New This Session
+
+**FND-005 (review)** — the DISC-001 remediation. Two new test-infrastructure files; **no production
+file touched**. Full gate green. Awaiting independent verification.
+
+**RISK-001 — DIAGNOSED, fix not applied.** Verdict (A): a tight timeout, not a race.
+`bugfixes.test.js:658` does `await import("../services/discordBot.js")` *inside the test body*.
+`import()` memoises per specifier, so the **first** caller absorbs the whole cold transform cost of
+discord.js (478 files / 4.2 MB) inside its own 5000 ms budget — and the first caller is exactly the
+failing test at line 671. Confirmed on a warm box: that one test runs 1488 ms against 0-5 ms for
+every neighbour, a 300-1000x outlier that is purely import-bound. (B) was ruled out **on code
+grounds** — `handleGameChat` was read end to end: no timers, no retry, no circuit breaker, no
+network. **Recommended fix, awaiting your decision:** hoist the import into a one-time `beforeAll`
+for that describe block and its 10 sibling call sites. Explicitly *not* recommended: bumping this
+one timeout (symptom) or raising the global default (would mask real slow-test regressions).
+
+**DISC-002 / RISK-007 — critical, open, NOT fixed.** `pwsh -File ... -AllowedPath a,b` binds the
+comma list as a **single string**, so `check-owned-paths.ps1` silently discards every allowed path.
+Proven: `elements=1`, `["a,b,c"]`. FND-001's earlier `PASS` came from the script's hardcoded
+`$initialHandoff` fallback, not from the argument — **the guard has been reporting PASS without
+reading its input.** FND-005 is the first package owning a path outside that fallback and therefore
+the first to get a wrong answer. Correct form uses `-Command` with a real array; FND-005 re-checked
+that way passes at `changed=12`. Three options in `DECISIONS.md`.
 
 ## Independent Verification
 
-Completed by a different agent, read-only, owning `VERIFICATION.md` exclusively.
-**Verdict: FAIL**, on Blocker 1.
+Both packages verified by a different agent, read-only, owning only the two `VERIFICATION.md` files.
 
-Independently re-confirmed: baseline SHA/tag/remote identity, zero tracked source changes,
-`validate-handoff.ps1` / `validate-evidence.mjs` / `check-owned-paths.ps1` all exit 0, no secrets in
-the evidence directory, and every inventory count recounted from source and matching exactly —
-21 route files, 21 router mounts, 404 handlers, 51 socket events, 19 collections.
+**FND-005: PASS.** The verifier independently reproduced the repeatability proof — two consecutive
+`test:server` runs, both **exactly 535/535 across 51 files** (matching the FND-001 baseline, so the
+new root config did not narrow discovery), both leaving `data/db.json`, `data/backups/`, and
+`paths.config.json` absent, with `bootstrap-plan.ps1` passing immediately after the second. Client
+suite unaffected at 90/90. Judged the RISK-008 safety branch the correct trade.
 
-Could not reproduce RISK-001 (both of the verifier's `test:server` runs passed 535/535). Recorded
-as informational, not refuted — the verifier's environment was not a cold checkout, which is the
-condition under which it was observed.
+**FND-001: FAIL → PASS.** The verifier kept the round-1 FAIL text intact and *appended* a round-2
+section rather than erasing history — the right call. Confirmed HEAD is `e966fe9`, RISK-005 now
+appears in `RESULTS.json`, and `SUMMARY.md` carries the full disclosure. He also noted that
+SUMMARY.md's interim **BLOCK** recommendation was correct ordering rather than staleness, since
+FND-005 was still unverified when it was written.
 
-Two coordinator errors found and both corrected: `RESULTS.json.known_risks` omitted RISK-005, and
-`SUMMARY.md` did not disclose DISC-001 at all.
+**DISC-002 independently confirmed.** He reproduced the argument-binding defect with **his own
+throwaway script before reading my writeup** — `-File` binds `count=1`, `-Command` with a real array
+binds `count=3` — and confirmed the implication against himself: his own round-1 `PASS` for
+FND-001 was accidentally correct via the hardcoded fallback, never via his argument.
 
 ## Next Exact Action
 
-**Stop and wait for the user on two questions. Do not start FND-002, FND-003, or DB-001.**
+**Stop. Two open questions for the user; nothing else proceeds.**
 
-1. **DISC-001:** which remediation? Recommended option 2 — isolate the data root for any command
-   that imports `server/database/init.js`, as a small package before FND-002.
-2. **Checkpoint commit:** authorize a local-only commit? Required before any worktree exists.
+1. **DISC-002 / RISK-007 (critical).** `check-owned-paths.ps1` as the plan documents it discards its
+   `-AllowedPath` argument silently. Fix the plan text, harden the script, or both? Recommended:
+   both — so the script stops accepting a malformed argument *and* the documented command stops
+   producing one.
+2. **RISK-001 fix.** Apply the recommended hoist of the `discordBot.js` import into `beforeAll`?
+   Test-only, low risk, would make the suite deterministic on a cold run.
 
-Only after both are answered:
+Also awaiting: acceptance of FND-001 and FND-005, both pending independent verification (dispatched).
+
+Once those land, the Foundation review gate applies before FND-002 / FND-003 / DB-001 begin — the
+plan requires a coordinator review at that boundary, and agents must not assume approval from
+silence.
 
 ```powershell
-# Never run without explicit user approval. Never push. There is no 'origin' by design.
-git add AGENTS.md V2_MODERNIZATION_PLAN.md docs/ scripts/modernization/
-git commit -m "modernization: handoff toolkit and FND-001 baseline"
-
-# Then re-run both validators and record the checkpoint SHA here.
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\modernization\bootstrap-plan.ps1
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\modernization\validate-handoff.ps1
+# Verify current state at any time. Safe to re-run; FND-005 made this repeatable.
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\modernizationootstrap-plan.ps1
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\modernizationalidate-handoff.ps1
 ```
-
-**Before any future gate run:** expect `data/db.json` and `data/backups/` to reappear and the
-preflight to throw. See `README.md` for the two-line cleanup. Never delete a `data/db.json` holding
-real records.
 
 ## Recent Accepted Packages
 
@@ -116,10 +177,12 @@ Keep only the latest three here. Move older entries to `STATUS_ARCHIVE.md`.
 
 | Package | SHA | Accepted at | Evidence |
 | --- | --- | --- | --- |
-| _none yet_ | — | — | — |
+| FND-001 | `e966fe9` (+ evidence uncommitted at accept time) | 2026-08-22 | `evidence/FND-001/` |
+| FND-005 | uncommitted working tree at accept time | 2026-08-22 | `evidence/FND-005/` |
 
-FND-001 is in `review`, not `accepted`. Only the coordinator marks acceptance, and only after
-independent verification.
+Both accepted by the coordinator **after** independent verification returned PASS, which is the
+only order the plan permits. FND-001's first verification returned FAIL; it was fixed, re-verified,
+and only then accepted.
 
 ## Accepted Decisions
 
