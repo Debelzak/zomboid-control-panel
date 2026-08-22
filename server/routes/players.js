@@ -211,7 +211,12 @@ router.post('/unban', async (req, res) => {
 
     const result = await rconService.unbanPlayer(username);
     log.info(`POST /unban: ${username}`);
-    await logPlayerAction(username, 'unban', null);
+    // Same unconditional-write shape as /banid: only log the action if RCON
+    // actually performed it, so the activity log (GET /activity) doesn't
+    // claim an unban happened when the server never received it.
+    if (result?.success) {
+      await logPlayerAction(username, 'unban', null);
+    }
 
     res.json(result);
   } catch (error) {
@@ -612,8 +617,16 @@ router.post('/banid', async (req, res) => {
 
     const result = await rconService.banSteamId(steamId);
     log.info(`POST /banid: SteamID ${steamId}`);
-    await addSteamIdBan(steamId, normalizedReason || null);
-    await logPlayerAction(steamId, 'banid', normalizedReason || null);
+    // Only record the ban if RCON actually applied it. execute() resolves
+    // {success:false} rather than throwing when the server is offline or
+    // mid-restart, so an unconditional write here used to leave the panel's
+    // own ban list permanently disagreeing with the server whenever that
+    // happened -- exactly when an operator is most likely to be banning
+    // someone.
+    if (result?.success) {
+      await addSteamIdBan(steamId, normalizedReason || null);
+      await logPlayerAction(steamId, 'banid', normalizedReason || null);
+    }
 
     res.json(result);
   } catch (error) {
@@ -638,8 +651,13 @@ router.post('/unbanid', async (req, res) => {
 
     const result = await rconService.unbanSteamId(steamId);
     log.info(`POST /unbanid: SteamID ${steamId}`);
-    await removeSteamIdBan(steamId);
-    await logPlayerAction(steamId, 'unbanid', null);
+    // Same shape as /banid above: only clear the local ban record if RCON
+    // actually removed it. Otherwise the panel would report someone as
+    // no-longer-banned while the server still enforces the ban.
+    if (result?.success) {
+      await removeSteamIdBan(steamId);
+      await logPlayerAction(steamId, 'unbanid', null);
+    }
 
     res.json(result);
   } catch (error) {
@@ -664,7 +682,9 @@ router.post('/voiceban', async (req, res) => {
 
     const result = await rconService.voiceBan(username, enabled);
     log.info(`POST /voiceban: ${username} → ${enabled ? 'ON' : 'OFF'}`);
-    await logPlayerAction(username, 'voiceban', enabled ? 'enabled' : 'disabled');
+    if (result?.success) {
+      await logPlayerAction(username, 'voiceban', enabled ? 'enabled' : 'disabled');
+    }
 
     res.json(result);
   } catch (error) {
