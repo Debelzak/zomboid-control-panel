@@ -683,7 +683,6 @@
     "sftpBridgeStarted": { "title": "Bridge SFTP démarré", "description": "PanelBridge se synchronise via le cache local." },
     "modConnected": { "title": "Mod connecté !", "description": "Connecté à {{server}}", "fallbackServer": "serveur" },
     "modNoResponse": { "title": "Le mod n'a pas répondu", "fallback": "Aucune réponse de PanelBridge.lua. Assurez-vous que le serveur de jeu est en cours d'exécution et que le mod est activé.", "openBridge": "Ouvrir Bridge", "openBridgeAlt": "Ouvrir les paramètres PanelBridge" },
-    "pingFailed": { "title": "Échec du ping", "fallback": "Le panneau n'a pas pu pinguer le mod. Confirmez que le serveur est en cours d'exécution avec PanelBridge activé." },
     "passwordsDontMatch": { "title": "Les mots de passe ne correspondent pas" },
     "passwordTooShort": { "title": "Le mot de passe doit comporter au moins 6 caractères" },
     "passwordChanged": { "title": "Mot de passe modifié", "description": "Votre mot de passe a été mis à jour." },

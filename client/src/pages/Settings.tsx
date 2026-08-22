@@ -84,6 +84,7 @@ import {
   serverApi,
   panelUpdateApi,
   modsApi,
+  ApiError,
   BackupStatus,
   BackupFile,
   PanelUpdateStatus,
@@ -999,13 +1000,10 @@ export default function Settings() {
         );
       }
 
+      // POST /panel/update-download always responds non-2xx on failure, so
+      // handleResponse() throws into the catch below -- this never sees
+      // result.success === false.
       const result = await panelUpdateApi.download(isDockerPanelUpdate);
-      if (!result.success) {
-        if (result.preflight) setPanelUpdatePreflight(result.preflight);
-        throw new Error(
-          result.error || result.message || t("errors.updateDownloadFailed"),
-        );
-      }
 
       if (!isDockerPanelUpdate) setPanelUpdateReady(true);
       toast({
@@ -1019,6 +1017,12 @@ export default function Settings() {
       });
       await fetchPanelUpdateStatus();
     } catch (error) {
+      // The route can fail with a body carrying `preflight` blockers
+      // (ApiError.data holds the full payload -- see lib/api.ts) so the
+      // preflight UI still updates on a real failure, not just on the
+      // pre-flight check above.
+      const data = error instanceof ApiError ? (error.data as { preflight?: PanelUpdatePreflight } | undefined) : undefined;
+      if (data?.preflight) setPanelUpdatePreflight(data.preflight);
       toast({
         title: t("toasts.downloadFailed.title"),
         description:
@@ -1360,17 +1364,16 @@ export default function Settings() {
 
   const handleDeleteBackup = async (name: string) => {
     try {
-      const result = await backupApi.deleteBackup(name);
-      if (result.success) {
-        toast({
-          title: t("toasts.backupDeleted.title"),
-          description: t("toasts.backupDeleted.description", { name }),
-          variant: "success" as const,
-        });
-        await fetchBackups();
-      } else {
-        throw new Error(result.message || t("toasts.deleteFailed.fallback"));
-      }
+      // DELETE /backup/:name always responds non-2xx on failure, so
+      // handleResponse() throws into the catch below -- this never sees
+      // result.success === false.
+      await backupApi.deleteBackup(name);
+      toast({
+        title: t("toasts.backupDeleted.title"),
+        description: t("toasts.backupDeleted.description", { name }),
+        variant: "success" as const,
+      });
+      await fetchBackups();
     } catch (error) {
       toast({
         title: t("toasts.deleteFailed.title"),
@@ -1384,19 +1387,18 @@ export default function Settings() {
   const handleRestoreBackup = async (name: string) => {
     setRestoringBackup(name);
     try {
+      // POST /backup/restore/:name always responds non-2xx on failure, so
+      // handleResponse() throws into the catch below -- this never sees
+      // result.success === false.
       const result = await backupApi.restoreBackup(name, {
         createPreRestoreBackup: true,
       });
-      if (result.success) {
-        toast({
-          title: t("toasts.backupRestored.title"),
-          description: t("toasts.backupRestored.description", { name, seconds: (result.duration || 0).toFixed(1) }),
-          variant: "success" as const,
-        });
-        await fetchBackups();
-      } else {
-        throw new Error(result.message || t("toasts.restoreFailed.fallback"));
-      }
+      toast({
+        title: t("toasts.backupRestored.title"),
+        description: t("toasts.backupRestored.description", { name, seconds: (result.duration || 0).toFixed(1) }),
+        variant: "success" as const,
+      });
+      await fetchBackups();
     } catch (error) {
       toast({
         title: t("toasts.restoreFailed.title"),
@@ -1581,17 +1583,17 @@ export default function Settings() {
     setBridgeLoading(true);
     setBridgeError(null);
     try {
+      // handleResponse() throws on a non-2xx status or an HTTP 200 body
+      // with success: false, so this route's failures (always non-2xx --
+      // see panelBridge.js's /auto-configure) never reach a
+      // result.success === false branch here, only the catch below.
       const result = await panelBridgeApi.autoConfigure();
-      if (result.success) {
-        toast({
-          title: t("toasts.bridgeAutoConfigured.title"),
-          description: t("toasts.bridgeAutoConfigured.description", { server: result.serverName }),
-          variant: "success" as const,
-        });
-        await fetchBridgeStatus();
-      } else {
-        setBridgeError(result.error || t("errors.couldNotAutoConfigure"));
-      }
+      toast({
+        title: t("toasts.bridgeAutoConfigured.title"),
+        description: t("toasts.bridgeAutoConfigured.description", { server: result.serverName }),
+        variant: "success" as const,
+      });
+      await fetchBridgeStatus();
     } catch (error) {
       setBridgeError(
         error instanceof Error ? error.message : t("errors.couldNotAutoConfigure"),
@@ -1631,18 +1633,17 @@ export default function Settings() {
     setBridgeLoading(true);
     setBridgeError(null);
     try {
+      // Same shape as handleAutoConfigure above: /configure-direct's
+      // failures are always non-2xx, so they throw into the catch below,
+      // never into a result.success === false branch here.
       const result = await panelBridgeApi.configureDirect(trimmed);
-      if (result.success) {
-        toast({
-          title: t("toasts.bridgeConfigured.title"),
-          description: t("toasts.bridgeConfigured.description", { path: result.bridgePath }),
-          variant: "success" as const,
-        });
-        setManualBridgePath("");
-        await fetchBridgeStatus();
-      } else {
-        setBridgeError(result.error || t("errors.couldNotConfigureBridge"));
-      }
+      toast({
+        title: t("toasts.bridgeConfigured.title"),
+        description: t("toasts.bridgeConfigured.description", { path: result.bridgePath }),
+        variant: "success" as const,
+      });
+      setManualBridgePath("");
+      await fetchBridgeStatus();
     } catch (error) {
       setBridgeError(
         error instanceof Error
@@ -1791,32 +1792,25 @@ export default function Settings() {
     setPinging(true);
     try {
       const result = await panelBridgeApi.ping();
-      if (result.success) {
-        toast({
-          title: t("toasts.modConnected.title"),
-          description: t("toasts.modConnected.description", { server: result.modStatus?.serverName || t("toasts.modConnected.fallbackServer") }),
-          variant: "success" as const,
-        });
-      } else {
-        toast({
-          title: t("toasts.modNoResponse.title"),
-          description:
-            result.error || t("toasts.modNoResponse.fallback"),
-          variant: "destructive",
-          action: (
-            <ToastAction altText={t("toasts.modNoResponse.openBridgeAlt")} onClick={() => handleTabChange("bridge")}>
-              {t("toasts.modNoResponse.openBridge")}
-            </ToastAction>
-          ),
-        });
-      }
+      // apiGet's shared handleResponse() throws on an HTTP 200 body with
+      // `success: false` (this codebase's other way of saying "this
+      // failed" -- see lib/api.ts) rather than resolving with it. The
+      // bridge service's ping() returns exactly that shape for "bridge not
+      // running" and "mod not connected" -- its two most common failure
+      // modes -- so those always land in the catch below, never in a
+      // `result.success === false` branch here.
+      toast({
+        title: t("toasts.modConnected.title"),
+        description: t("toasts.modConnected.description", { server: result.modStatus?.serverName || t("toasts.modConnected.fallbackServer") }),
+        variant: "success" as const,
+      });
     } catch (error) {
       toast({
-        title: t("toasts.pingFailed.title"),
+        title: t("toasts.modNoResponse.title"),
         description:
           error instanceof Error
             ? error.message
-            : t("toasts.pingFailed.fallback"),
+            : t("toasts.modNoResponse.fallback"),
         variant: "destructive",
         action: (
           <ToastAction altText={t("toasts.modNoResponse.openBridgeAlt")} onClick={() => handleTabChange("bridge")}>
