@@ -134,6 +134,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `client/src/locales/README.md`.
 
 ### Fixed
+- **The panel would not start at all on some Windows machines**: the launcher started the panel by
+  its bare filename, which relies on Windows searching the folder the launcher is sitting in. That
+  search is switched off by a setting some corporate and security-hardened Windows images apply, and
+  when it is off the panel never starts - you get "is not recognized as an internal or external
+  command", five retry attempts, and a "Panel crashed" banner that tells you nothing useful. The
+  launcher now uses the full path. The rest of the launcher was checked for the same mistake; this
+  was the only place it occurred.
+
 - **A built-in role could be deleted, despite the screen saying it could not**: the Roles &
   Permissions screen greys out delete for the built-in administrator, technician and moderator
   roles and says they cannot be removed. Only the button was stopping it - the server never
