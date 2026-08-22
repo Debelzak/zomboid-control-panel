@@ -66,6 +66,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   backup by accident. Existing installs move them automatically on the first start after upgrading -
   same values, safer location, nothing to re-enter. **Any backup taken before this upgrade still
   contains all three in plain text inside `db.json`**, and those are not fixed retroactively.
+- **Every server error code now has an English and a French entry**: the second half of the
+  groundwork below. A check that was previously skipped - because the translation file did not exist
+  yet - now runs on every build and fails if a new server error code ships without a translation.
+  Server responses still show English text until the screens are wired to use these.
+
 - **Groundwork for error messages in your own language**: the panel's screens are translated but the
   messages the server sends back are still English, which is exactly when a non-English speaker most
   needs their own language. Every error the server reports now carries a stable machine-readable code
