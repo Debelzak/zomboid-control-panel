@@ -25,7 +25,7 @@ import {
   getTrackedMods,
   getAllSettings,
 } from "../database/init.js";
-import { sanitizeError, SENSITIVE_FIELD_RE } from "../utils/sanitize.js";
+import { sanitizeError, sanitizeErrorParams, SENSITIVE_FIELD_RE } from "../utils/sanitize.js";
 import { checkSandboxBraceBalance } from "./serverFiles.js";
 import panelBridgeService from "../services/panelBridge.js";
 import {
@@ -1976,12 +1976,14 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
       }
 
       if (rconService?.isConnected?.()) {
+        const rconHost = rconService.config?.host || "127.0.0.1";
+        const rconPort = rconService.config?.port || 27015;
         checks.push(
           diagOk(
             "rcon.connected",
             "RCON connected",
-            `Connected to ${rconService.config?.host || "127.0.0.1"}:${rconService.config?.port || 27015}.`,
-            { category: "services" },
+            `Connected to ${rconHost}:${rconPort}.`,
+            { category: "services", params: { host: rconHost, port: rconPort } },
           ),
         );
       } else if (!serverRunning) {
@@ -2014,7 +2016,7 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
             "modChecker",
             "Mod update checker",
             `Polling Steam Workshop every ${interval || "?"} min.`,
-            { category: "services" },
+            { category: "services", params: { interval: interval || "?" } },
           ),
         );
       } else if (!modChecker?.workshopAcfPath) {
@@ -2049,7 +2051,7 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
               "scheduler",
               "Scheduler",
               `${enabledTasks} enabled task${enabledTasks === 1 ? "" : "s"}.`,
-              { category: "services" },
+              { category: "services", params: { count: enabledTasks } },
             ),
           );
         } else {
@@ -2066,12 +2068,13 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
 
       if (discordBot?.token || settings?.discordBotToken) {
         if (discordBot?.isRunning && discordBot?.client?.user) {
+          const botTag = discordBot.client.user.tag;
           checks.push(
             diagOk(
               "discord.bot",
               "Discord bot connected",
-              `Logged in as ${discordBot.client.user.tag}.`,
-              { category: "services" },
+              `Logged in as ${botTag}.`,
+              { category: "services", params: { tag: botTag } },
             ),
           );
         } else {
@@ -2092,12 +2095,13 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
         );
       }
     } catch (e) {
+      const reason = e?.message || "unknown";
       checks.push(
         diagWarn(
           "services.error",
           "Service checks errored",
-          `Some service checks could not run: ${e?.message || "unknown"}`,
-          { category: "services" },
+          `Some service checks could not run: ${reason}`,
+          { category: "services", params: { reason } },
         ),
       );
     }
@@ -3628,12 +3632,20 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
     const overall =
       summary.fail > 0 ? "fail" : summary.warn > 0 ? "warn" : "ok";
 
+    // Every check's optional `params` (interpolation data for the client's
+    // translated version of `message`/`label`/`hint` — see
+    // client/src/lib/diagnosticsTranslation.ts) goes through the same
+    // path-redaction as any other error param before it leaves the server.
+    const sanitizedChecks = checks.map((c) =>
+      c.params ? { ...c, params: sanitizeErrorParams(c.params) } : c,
+    );
+
     res.json({
       timestamp: new Date().toISOString(),
       overall,
       summary,
       categories: DIAG_CATEGORIES,
-      checks,
+      checks: sanitizedChecks,
       durationMs: Date.now() - t0,
     });
   } catch (error) {

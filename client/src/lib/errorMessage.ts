@@ -1,5 +1,6 @@
 import { ApiError } from './api'
-import i18n, { getCurrentLanguage } from '@/i18n'
+import i18n from '@/i18n'
+import { extractTranslationParams, resolveRegisteredTranslation, type TranslationParams } from './paramTranslation'
 
 // server/utils/errorCodes.js: 8 pre-i18n error codes ship a frozen
 // lower_snake_case wire value that client code already compares with ===
@@ -30,34 +31,14 @@ function extractErrorCode(error: unknown): string | undefined {
   return undefined
 }
 
-const PLACEHOLDER_NAME_RE = /\{\{\s*(\w+)\s*\}\}/g
-
-function requiredParamNames(template: string): string[] {
-  const names = new Set<string>()
-  for (const match of template.matchAll(PLACEHOLDER_NAME_RE)) {
-    names.add(match[1])
-  }
-  return [...names]
-}
-
 // Extracts the optional structured `params` sibling the server sends
 // alongside `error`/`code` for the handful of errors.json entries that
 // carry a {{placeholder}} (a role name, a capability, a save-failure
-// reason, ...). Deliberately strict: any shape other than a flat
-// string|number map is treated as absent, never partially trusted — see
-// getRegisteredTranslation for why a param that's present but wrong-typed
-// must behave exactly like a missing one.
-function extractErrorParams(error: unknown): Record<string, string | number> | undefined {
+// reason, ...).
+function extractErrorParams(error: unknown): TranslationParams | undefined {
   const data = error instanceof ApiError ? error.data : undefined
   if (!data || typeof data !== 'object' || !('params' in data)) return undefined
-  const candidate = (data as { params?: unknown }).params
-  if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return undefined
-
-  const out: Record<string, string | number> = {}
-  for (const [key, value] of Object.entries(candidate as Record<string, unknown>)) {
-    if (typeof value === 'string' || typeof value === 'number') out[key] = value
-  }
-  return out
+  return extractTranslationParams((data as { params?: unknown }).params)
 }
 
 // A small, closed set of param names whose value is a stable capability
@@ -79,34 +60,9 @@ function resolveParamValue(name: string, value: string | number): string | numbe
   return i18n.t(labelKey, { ns: 'roles' })
 }
 
-// Only trust the registered translation when it needs no interpolation
-// data we don't have. A handful of errors.json entries carry a
-// {{placeholder}} for data the server didn't always send as structured
-// params — translating one without a value would put the literal text
-// "{{name}}" in front of a user, which is worse than the English
-// passthrough it would replace. This guard is the backstop: a code with no
-// placeholders translates unconditionally; a code with placeholders only
-// translates once every required name is present in `params` with a
-// usable value, and falls through to the server's English text (today's
-// behavior, unchanged) otherwise.
-function getRegisteredTranslation(code: string, params: Record<string, string | number> | undefined): string | null {
+function getRegisteredTranslation(code: string, params: TranslationParams | undefined): string | null {
   const key = LEGACY_WIRE_CODE_TO_LOCALE_KEY[code] ?? code
-  if (!i18n.exists(key, { ns: 'errors' })) return null
-
-  const template = i18n.getResource(getCurrentLanguage(), 'errors', key)
-  if (typeof template !== 'string') return null
-
-  const required = requiredParamNames(template)
-  if (required.length === 0) return i18n.t(key, { ns: 'errors' })
-
-  const available = params ?? {}
-  if (!required.every((name) => Object.prototype.hasOwnProperty.call(available, name))) return null
-
-  const resolved: Record<string, string | number> = {}
-  for (const name of required) {
-    resolved[name] = resolveParamValue(name, available[name])
-  }
-  return i18n.t(key, { ns: 'errors', ...resolved })
+  return resolveRegisteredTranslation('errors', key, params, resolveParamValue)
 }
 
 export function getUserErrorMessage(error: unknown, fallback: string): string {

@@ -271,7 +271,93 @@
     "rconConnectFailedFallback": "La tentative de connexion RCON a échoué.",
     "backupFailedFallback": "Échec de la sauvegarde.",
     "bridgeConfigFailedFallback": "Impossible de configurer le bridge.",
-    "sandboxRepairFailedFallback": "Échec de la réparation."
+    "sandboxRepairFailedFallback": "Échec de la réparation.",
+    "checks": {
+      "server": {
+        "process": {
+          "skip": {
+            "label": "Processus du serveur distant",
+            "message": "Géré par l'hébergeur ; la surveillance locale du processus n'est pas disponible. Les commandes RCON restent disponibles."
+          },
+          "ok": {
+            "label": "Processus du serveur en cours d'exécution",
+            "message": "Le serveur dédié Project Zomboid est actif."
+          },
+          "warn": {
+            "label": "Processus du serveur",
+            "message": "Le serveur est arrêté. Démarrez-le depuis le tableau de bord.",
+            "hint": "Tableau de bord → Démarrer le serveur"
+          }
+        }
+      },
+      "rcon": {
+        "connected": {
+          "ok": {
+            "label": "RCON connecté",
+            "message": "Connecté à {{host}}:{{port}}."
+          },
+          "skip": {
+            "label": "RCON",
+            "message": "Le serveur est hors ligne — RCON se connectera à son démarrage."
+          },
+          "fail": {
+            "label": "RCON déconnecté",
+            "message": "Le serveur est en cours d'exécution mais RCON n'est pas connecté. Vérifiez le port et le mot de passe RCON.",
+            "hint": "Paramètres → RCON · server.ini → RCONPassword"
+          }
+        }
+      },
+      "modChecker": {
+        "ok": {
+          "label": "Vérificateur de mises à jour de mods",
+          "message": "Interroge le Steam Workshop toutes les {{interval}} min."
+        },
+        "skip": {
+          "label": "Vérificateur de mises à jour de mods",
+          "message": "En attente du dossier Steam Workshop — le vérificateur démarre une fois le chemin d'installation du serveur configuré.",
+          "hint": "Paramètres → Chemin du serveur"
+        },
+        "warn": {
+          "label": "Vérificateur de mises à jour de mods arrêté",
+          "message": "L'interrogation du Workshop n'est pas active — les mises à jour de mods ne seront pas détectées."
+        }
+      },
+      "scheduler": {
+        "ok": {
+          "label": "Planificateur",
+          "message": "{{count}} tâche(s) activée(s)."
+        },
+        "warn": {
+          "label": "Planificateur indisponible",
+          "message": "Le service de planification n'a pas pu s'initialiser."
+        }
+      },
+      "discord": {
+        "bot": {
+          "ok": {
+            "label": "Bot Discord connecté",
+            "message": "Connecté en tant que {{tag}}."
+          },
+          "fail": {
+            "label": "Bot Discord hors ligne",
+            "message": "Jeton du bot configuré mais non connecté. Le jeton est peut-être invalide.",
+            "hint": "Paramètres → Discord"
+          },
+          "skip": {
+            "label": "Bot Discord",
+            "message": "Non configuré (facultatif)."
+          }
+        }
+      },
+      "services": {
+        "error": {
+          "warn": {
+            "label": "Erreur lors des vérifications de service",
+            "message": "Certaines vérifications de service n'ont pas pu s'exécuter : {{reason}}"
+          }
+        }
+      }
+    }
   },
   "worldMapTab": {
     "overallFail": "Carte du monde dégradée",

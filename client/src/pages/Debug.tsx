@@ -63,6 +63,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { reportClientError } from "@/lib/client-errors";
+import { translateDiagnosticCheck } from "@/lib/diagnosticsTranslation";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
@@ -195,6 +196,7 @@ interface DiagCheck {
   hint?: string;
   category: string;
   meta?: Record<string, unknown>;
+  params?: Record<string, string | number>;
 }
 
 interface DiagSummary {
@@ -2443,7 +2445,12 @@ export default function Debug() {
                                   : check.status === "info"
                                     ? "text-primary/70"
                                     : "text-muted-foreground";
+                          // Fix-action matching (below) keys off check.id and
+                          // sniffs check.hint's ENGLISH text — must run
+                          // against the raw, untranslated check, never the
+                          // translated display copy.
                           const fixAction = getDiagnosticsFixAction(check, t);
+                          const translated = translateDiagnosticCheck(check);
                           return (
                             <li
                               key={check.id}
@@ -2458,7 +2465,7 @@ export default function Debug() {
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2 flex-wrap">
                                   <span className="text-sm font-medium">
-                                    {check.label}
+                                    {translated.label}
                                   </span>
                                   {check.status === "skip" && (
                                     <Badge
@@ -2470,14 +2477,14 @@ export default function Debug() {
                                   )}
                                 </div>
                                 <p className="text-xs text-muted-foreground mt-0.5 break-words">
-                                  {check.message}
+                                  {translated.message}
                                 </p>
-                                {check.hint && (
+                                {translated.hint && (
                                   <p className="text-xs mt-1 text-foreground/70">
                                     <span className="font-medium text-foreground/90">
                                       {t("common.fixLabel")}
                                     </span>{" "}
-                                    {check.hint}
+                                    {translated.hint}
                                   </p>
                                 )}
                                 {fixAction && (
