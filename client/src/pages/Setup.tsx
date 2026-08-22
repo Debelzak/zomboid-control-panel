@@ -6,7 +6,7 @@ import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Checkbox } from '../components/ui/checkbox'
 import { AuthScreenLayout } from '../components/AuthScreenLayout'
-import { AlertTriangle, ArrowRight, CheckCircle, Eye, EyeOff, KeyRound, Loader2, RadioTower, Server, ShieldCheck, XCircle } from 'lucide-react'
+import { AlertTriangle, ArrowRight, CheckCircle, Eye, EyeOff, KeyRound, Loader2, RadioTower, Server, ShieldCheck, ShieldAlert, XCircle } from 'lucide-react'
 
 type StrengthKey = 'tooShort' | 'weak' | 'fair' | 'good' | 'strong'
 
@@ -38,6 +38,7 @@ export default function Setup() {
   const { t } = useTranslation('setup')
   const { setup } = useAuth()
   const [username, setUsername] = useState('admin')
+  const [setupToken, setSetupToken] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [panelPort, setPanelPort] = useState('3001')
@@ -69,6 +70,10 @@ export default function Setup() {
     e.preventDefault()
     setError('')
 
+    if (!setupToken.trim()) {
+      setError(t('errors.setupTokenRequired'))
+      return
+    }
     if (!usernameValid) {
       setError(t('errors.invalidUsername'))
       return
@@ -88,9 +93,14 @@ export default function Setup() {
 
     setLoading(true)
     try {
-      await setup(username, password, rememberMe, panelPort)
+      await setup(username, password, rememberMe, panelPort, setupToken.trim())
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('errors.setupFailed'))
+      const message = err instanceof Error ? err.message : ''
+      setError(
+        message === 'SETUP_TOKEN_REQUIRED'
+          ? t('errors.invalidSetupToken')
+          : message || t('errors.setupFailed'),
+      )
     } finally {
       setLoading(false)
     }
@@ -143,6 +153,27 @@ export default function Setup() {
             <span>{error}</span>
           </div>
         )}
+
+        <div className="space-y-2 rounded-lg border border-primary/25 bg-primary/5 p-3">
+          <Label htmlFor="setupToken" className="flex items-center gap-1.5">
+            <ShieldAlert className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
+            {t('setupToken.label')}
+          </Label>
+          <Input
+            id="setupToken"
+            type="text"
+            value={setupToken}
+            onChange={(e) => setSetupToken(e.target.value)}
+            placeholder={t('setupToken.placeholder')}
+            autoComplete="off"
+            disabled={loading}
+            aria-describedby="setup-token-hint"
+            required
+          />
+          <p id="setup-token-hint" className="text-xs leading-5 text-muted-foreground">
+            {t('setupToken.help')}
+          </p>
+        </div>
 
         <div className="space-y-2">
           <Label htmlFor="username">{t('username.label')}</Label>
@@ -339,7 +370,7 @@ export default function Setup() {
         <Button
           type="submit"
           className="w-full onboarding-cta"
-          disabled={loading || !usernameValid || !passwordLongEnough || !passwordsMatch}
+          disabled={loading || !setupToken.trim() || !usernameValid || !passwordLongEnough || !passwordsMatch}
         >
           {loading ? (
             <>

@@ -11,6 +11,11 @@
     "server": "Serveur",
     "online": "En ligne"
   },
+  "setupToken": {
+    "label": "Jeton de configuration",
+    "placeholder": "Coller le jeton affiché dans le journal de démarrage",
+    "help": "Affiché dans le journal de démarrage ou la sortie console du panneau lors de son premier démarrage, pour prouver que c'est bien vous qui le configurez. Redémarrez le panneau pour l'afficher à nouveau si vous l'avez perdu."
+  },
   "username": {
     "label": "Nom d'utilisateur",
     "placeholder": "admin",
@@ -46,6 +51,8 @@
   "submit": "Créer le compte et continuer",
   "submitting": "Création du compte administrateur...",
   "errors": {
+    "setupTokenRequired": "Saisissez le jeton de configuration affiché dans le journal de démarrage ou la sortie console du panneau.",
+    "invalidSetupToken": "Jeton de configuration invalide ou manquant. Consultez le journal de démarrage ou la sortie console du panneau pour trouver le jeton à usage unique.",
     "invalidUsername": "Le nom d'utilisateur doit comporter 3 à 32 caractères (lettres, chiffres, _ ou -)",
     "passwordTooShort": "Le mot de passe doit comporter au moins 6 caractères",
     "passwordsDontMatch": "Les mots de passe ne correspondent pas",

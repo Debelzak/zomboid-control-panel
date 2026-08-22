@@ -11,6 +11,11 @@
     "server": "Server",
     "online": "Online"
   },
+  "setupToken": {
+    "label": "Setup Token",
+    "placeholder": "Paste the token from the startup log",
+    "help": "Printed to the panel's startup log or console output the first time it runs, to prove you're the one setting it up. Restart the panel to print it again if you've lost it."
+  },
   "username": {
     "label": "Username",
     "placeholder": "admin",
@@ -46,6 +51,8 @@
   "submit": "Create account & continue",
   "submitting": "Creating admin account...",
   "errors": {
+    "setupTokenRequired": "Enter the setup token printed to the panel's startup log or console output.",
+    "invalidSetupToken": "Invalid or missing setup token. Check the panel's startup log or console output for the one-time token.",
     "invalidUsername": "Username must be 3-32 characters (letters, numbers, _ or -)",
     "passwordTooShort": "Password must be at least 6 characters",
     "passwordsDontMatch": "Passwords do not match",

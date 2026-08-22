@@ -18,6 +18,7 @@ vi.mock("../database/init.js", () => ({
 const { default: authService, USER_ROLES } = await import(
   "../services/auth.js"
 );
+const { getOrCreateSetupToken } = await import("../utils/setupToken.js");
 
 describe("USER_ROLES", () => {
   it("is exactly admin, technician, moderator", () => {
@@ -147,11 +148,13 @@ describe("OIDC seam — refuse by default", () => {
 
   it("bootstraps the first account as admin from an external identity", async () => {
     db.data.users = [];
+    const setupToken = await getOrCreateSetupToken();
     const user = await authService.bootstrapAdminFromExternalIdentity({
       issuer: "https://accounts.example.com",
       subject: "ext-sub-1",
       email: "owner@example.com",
       username: "owner",
+      setupToken,
     });
     expect(user.role).toBe("admin");
     expect(db.data.users[0].externalIdentities).toEqual([

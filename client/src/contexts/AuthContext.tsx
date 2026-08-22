@@ -17,7 +17,7 @@ interface AuthState {
 
 interface AuthContextType extends AuthState {
   login: (username: string, password: string, rememberMe?: boolean) => Promise<void>
-  setup: (username: string, password: string, rememberMe?: boolean, panelPort?: string) => Promise<void>
+  setup: (username: string, password: string, rememberMe?: boolean, panelPort?: string, setupToken?: string) => Promise<void>
   logout: () => Promise<void>
   getToken: () => string | null
 }
@@ -172,16 +172,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  const setup = useCallback(async (username: string, password: string, rememberMe = true, panelPort = '3001') => {
+  const setup = useCallback(async (username: string, password: string, rememberMe = true, panelPort = '3001', setupToken = '') => {
     const res = await fetch('/api/auth/setup', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ username, password, rememberMe, panelPort }),
+      body: JSON.stringify({ username, password, rememberMe, panelPort, setupToken }),
     })
 
     if (!res.ok) {
       const data = await res.json()
+      // Setup.tsx recognizes this exact message and swaps in a localized,
+      // token-specific explanation instead of the generic setup-failed copy.
+      if (data.code === 'SETUP_TOKEN_REQUIRED') {
+        throw new Error('SETUP_TOKEN_REQUIRED')
+      }
       throw new Error(data.error || "We couldn't create the admin account. Try again.")
     }
 

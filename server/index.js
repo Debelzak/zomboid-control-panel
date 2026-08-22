@@ -3,6 +3,8 @@ import compression from "compression";
 import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
+import { permissionsPolicy } from "./middleware/permissionsPolicy.js";
+import { logSetupTokenIfNeeded } from "./utils/setupToken.js";
 import { createServer } from "http";
 import { createServer as createHttpsServer } from "https";
 import { Server } from "socket.io";
@@ -50,6 +52,7 @@ import { DiskMonitor } from "./services/diskMonitor.js";
 import authService from "./services/auth.js";
 import { requireRole } from "./services/auth.js";
 import authRoutes from "./routes/auth.js";
+import oidcRoutes from "./routes/oidc.js";
 import { loadOrCreateCerts } from "./utils/certs.js";
 import { sanitizeError } from "./utils/sanitize.js";
 import { getSftpCachePath } from "./services/panelBridgeSftp.js";
@@ -553,6 +556,7 @@ app.use(
     crossOriginEmbedderPolicy: false, // Allow loading resources
   }),
 );
+app.use(permissionsPolicy());
 
 app.use(
   cors({
@@ -569,6 +573,16 @@ app.use(
     credentials: true,
   }),
 );
+
+// Tighter body limit for the one route meant to be reachable without a
+// login (see the client-errors rate limiter below for the full reasoning):
+// message/error/url are truncated to under 2kb server-side regardless, so
+// nothing legitimate needs more than a small multiple of that. MUST be
+// registered before the app-wide express.json() two lines down — Express
+// runs body parsers in registration order, and whichever one reads the
+// request stream first is the one whose limit actually applies; a
+// path-scoped parser registered after the app-wide one would never run.
+app.use("/api/debug/client-errors", express.json({ limit: "16kb" }));
 
 // Body parser with explicit size limit
 app.use(express.json({ limit: "1mb" }));
@@ -672,6 +686,25 @@ const panelBridgeCommandLimiter = rateLimit({
   message: { error: "Too many PanelBridge commands, please slow down." },
 });
 app.use("/api/panel-bridge/command", panelBridgeCommandLimiter);
+
+// server/routes/debug.js's client-errors handler is meant to be reachable
+// WITHOUT a login — a crash on the login screen itself is exactly the case
+// it exists for — which makes it the one API route that genuinely needs an
+// auth exemption on a public panel (that exemption itself lives in
+// authService.middleware(), server/services/auth.js). An anonymous,
+// always-open endpoint is an obvious abuse target — unbounded writes, log
+// flooding, disk exhaustion — so it gets its own tight layer here on top of
+// the route's existing per-IP counter and field-length truncation, rather
+// than relying on either alone.
+const clientErrorLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000,
+  max: 10, // 10 reports per minute per IP — a real crash storm from one tab
+  // still gets through slowly enough to see; sustained abuse does not.
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many error reports, please slow down." },
+});
+app.use("/api/debug/client-errors", clientErrorLimiter);
 
 // Initialize services
 const rconService = new RconService();
@@ -1088,6 +1121,7 @@ app.set("diskMonitor", diskMonitor);
 
 // Auth routes (must be before other API routes)
 app.use("/api/auth", authRoutes);
+app.use("/api/auth/oidc", oidcRoutes);
 
 // API Routes
 app.use("/api/server", serverRoutes);
@@ -2132,6 +2166,53 @@ export async function probeRconFallbackIfConfigured(
   return rconPortOccupied;
 }
 
+// Every /api/* route (except /api/auth/*, /api/health, and the two <img>-tag
+// proxy allowlists) is unauthenticated while first-run setup is pending —
+// see authService.middleware(). That's necessary so the setup wizard can run
+// before any password exists, and on a LAN it closes in the seconds it takes
+// to open the setup page. Exposed to the internet, it's a race: whoever
+// reaches the panel first can complete setup and claim the admin account —
+// or use any other route — before the real operator does. This can't be
+// fixed by code alone (the panel can't know its own reachability), so it's
+// surfaced as loudly as possible instead, at the exact moment an operator
+// would otherwise assume "it's running, so it's protected".
+// Exported for testing; authServiceInstance and loggerInstance are injected
+// so tests don't need a real database or to reach into the shared Winston
+// singleton (createLogger() returns a fresh child logger per call, so a test
+// spying on its own instance would never see calls made through this file's
+// own module-level `log`). Production always calls it with authService/log.
+export async function logExposureWarningIfNeeded({
+  needsSetup,
+  boundPort,
+  localIp,
+  authServiceInstance = authService,
+  loggerInstance = log,
+}) {
+  const reachableUrl =
+    localIp && localIp !== "127.0.0.1"
+      ? `http://${localIp}:${boundPort}`
+      : `http://<this-machine>:${boundPort}`;
+
+  if (needsSetup) {
+    loggerInstance.warn(
+      "SECURITY: no admin account exists yet. Every API route is open to " +
+        `anyone who can reach ${reachableUrl} until first-run setup completes. ` +
+        "If this port reaches the internet, complete setup immediately or " +
+        "block the port at your firewall/router until you have.",
+    );
+    return;
+  }
+
+  const authEnabled = await authServiceInstance.isAuthEnabled();
+  if (!authEnabled) {
+    loggerInstance.warn(
+      "SECURITY: authentication is disabled. Every API route is open to " +
+        `anyone who can reach ${reachableUrl}. Re-enable authentication ` +
+        "before exposing this port beyond a trusted LAN.",
+    );
+  }
+}
+
 // Initialize and start server
 async function start() {
   try {
@@ -2616,6 +2697,8 @@ async function start() {
           });
         }
         logReady(urls);
+        await logExposureWarningIfNeeded({ needsSetup, boundPort, localIp });
+        await logSetupTokenIfNeeded(needsSetup);
 
         // If PZ server files were bind-mounted in but no server profile has
         // been created yet, point the user at Settings instead of leaving

@@ -14,6 +14,7 @@ import { createLogger } from "../utils/logger.js";
 import { sanitizeError } from "../utils/sanitize.js";
 import { getDataPaths } from "../utils/paths.js";
 import { setSetting } from "../database/init.js";
+import { verifySetupToken, clearSetupToken } from "../utils/setupToken.js";
 
 const log = createLogger("Auth");
 const router = Router();
@@ -225,6 +226,18 @@ router.post("/setup", setupLimiter, async (req, res) => {
         .json({ error: "Setup already completed. Use login instead." });
     }
 
+    // "Zero users exist" is the dangerous state on a publicly reachable
+    // panel, not this route specifically — see server/utils/setupToken.js.
+    // Checked before touching anything else so a wrong/missing token never
+    // gets as far as writing panelPort or creating an account.
+    const { setupToken } = req.body || {};
+    if (!(await verifySetupToken(setupToken))) {
+      return res.status(403).json({
+        error: "Invalid or missing setup token",
+        code: "SETUP_TOKEN_REQUIRED",
+      });
+    }
+
     const { username, password, rememberMe = false, panelPort = 3001 } = req.body || {};
     if (!isNonEmptyString(username) || !isNonEmptyString(password)) {
       return res
@@ -237,6 +250,7 @@ router.post("/setup", setupLimiter, async (req, res) => {
     }
     await setSetting("panelPort", normalizedPanelPort);
     await authService.createUser(username, password);
+    await clearSetupToken();
 
     // Auto-login after setup — generate tokens
     const result = await authService.login(

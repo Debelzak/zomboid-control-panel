@@ -15,6 +15,7 @@ import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import { createLogger } from "../utils/logger.js";
 import { getSetting, setSetting, getDb, commitNow } from "../database/init.js";
+import { verifySetupToken, clearSetupToken } from "../utils/setupToken.js";
 
 const log = createLogger("Auth");
 
@@ -617,14 +618,41 @@ class AuthService {
    * password path (whoever gets there first, while the panel has zero
    * users, owns it). Refuses once any user exists; an admin must link the
    * identity to an existing account via linkExternalIdentity() instead.
+   *
+   * setupToken is required here for the same reason it's required by the
+   * password path: "zero users exist" is the dangerous state, not any one
+   * route that happens to be reachable from it. This function IS the state
+   * transition out of that state, so gating it here — rather than only on
+   * /api/auth/setup — means a second bootstrap door (OIDC, or whatever
+   * comes next) can't be used to route around the guard.
    */
   async bootstrapAdminFromExternalIdentity({
     issuer,
     subject,
     email,
     username,
+    setupToken,
   } = {}) {
     return this._withMutex(async () => {
+      // Same information hierarchy as the /api/auth/setup route: check
+      // WHETHER bootstrap is even still possible before checking WHETHER
+      // this particular caller is allowed to do it. A stale/reused token
+      // after a real admin already exists should report "already done",
+      // not "bad token" — the two mean different things to whoever is
+      // reading the error, and only one of them is actionable.
+      const db = await getDb();
+      if (!db.data.users) {
+        db.data.users = [];
+      }
+      if (db.data.users.length > 0) {
+        throw new Error(
+          "Setup already completed. An admin must link this identity instead.",
+        );
+      }
+
+      if (!(await verifySetupToken(setupToken))) {
+        throw new Error("Invalid or missing setup token");
+      }
       if (!issuer || !subject) {
         throw new Error("issuer and subject are required");
       }
@@ -637,16 +665,6 @@ class AuthService {
       if (!/^[a-zA-Z0-9_-]+$/.test(username)) {
         throw new Error(
           "Username can only contain letters, numbers, underscores and hyphens",
-        );
-      }
-
-      const db = await getDb();
-      if (!db.data.users) {
-        db.data.users = [];
-      }
-      if (db.data.users.length > 0) {
-        throw new Error(
-          "Setup already completed. An admin must link this identity instead.",
         );
       }
 
@@ -669,6 +687,7 @@ class AuthService {
 
       db.data.users.push(user);
       await commitNow();
+      await clearSetupToken();
 
       log.info(`First admin account bootstrapped via OIDC: ${username}`);
       return { id: user.id, username: user.username, role: user.role };
@@ -929,10 +948,30 @@ class AuthService {
           return next();
         }
 
-        // Skip auth if no users exist (setup needed)
+        // Client-side crash reporting must work even before/during login —
+        // that is precisely when a broken auth flow needs to be visible —
+        // so it gets its own narrow exemption rather than inheriting one.
+        // Its own rate limit and body-size cap live in server/index.js;
+        // nothing here trusts its content.
+        if (req.path === "/api/debug/client-errors") {
+          return next();
+        }
+
+        // While no admin account exists, do NOT blanket-exempt every route
+        // the way this used to. That let an unauthenticated stranger reach
+        // /api/debug/system (leaking real filesystem paths) and every other
+        // route during the window before first-run setup completes — fine
+        // on a LAN, a real race-to-become-admin risk on the internet.
+        // /api/auth/* already has its own permanent exemption above for
+        // exactly what the setup wizard needs; nothing outside /api/auth/*
+        // is called during first-run setup (verified against
+        // client/src/pages/Setup.tsx and App.tsx's needsSetup gate), so
+        // nothing else needs to be reachable here either.
         const needsSetup = await this.needsSetup();
         if (needsSetup) {
-          return next();
+          return res
+            .status(401)
+            .json({ error: "First-run setup required", code: "SETUP_REQUIRED" });
         }
 
         // Skip auth if it's been explicitly disabled

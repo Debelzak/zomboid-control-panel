@@ -25,6 +25,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fallback even if SSO is unavailable. An external sign-in must already be linked to a local
   account to succeed; unrecognised identities are refused rather than automatically given access.
 
+- **First-run setup now requires a setup token**: the very first account can no longer be claimed by
+  whoever reaches the panel first. On a fresh install the panel prints a one-time setup token to its
+  startup log, and the setup screen asks for it before creating the administrator account. Restarting
+  the panel reprints the same token if it is lost, so this cannot lock anyone out. Previously a panel
+  reachable over the network before setup was completed could be taken over by any stranger who found
+  the port, and every page answered without a login until setup finished - now everything except the
+  setup screen itself refuses until an account exists.
+
+- **Exposure warning on startup**: a panel still awaiting first-run setup that is reachable on a
+  network address now says so loudly in its startup log, naming the address, rather than leaving the
+  window silently open.
+
 ### Fixed
 
 - **Bans recorded that never happened**: banning, unbanning or voice-banning a player — by username
