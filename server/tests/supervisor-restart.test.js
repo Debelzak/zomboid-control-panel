@@ -163,6 +163,27 @@ function readSupervisorLog(dir) {
   return fs.existsSync(p) ? fs.readFileSync(p, "utf8") : "";
 }
 
+// Real elapsed seconds between the FIRST log line matching `pattern` and
+// the next line after it -- used to prove a backoff wait actually happened
+// (not just that the log line claiming it did exists). :stamp's timestamps
+// are whole-second (`Get-Date -Format 'yyyy-MM-dd HH:mm:ss'`), not
+// millisecond, so this is a coarse measurement -- good enough to tell "it
+// waited approximately N seconds" from "it didn't wait at all", which is
+// all this needs to prove.
+function secondsBetweenLogLine(log, pattern) {
+  const lines = log.split("\n").filter(Boolean);
+  const idx = lines.findIndex((l) => pattern.test(l));
+  if (idx === -1 || idx + 1 >= lines.length) return null;
+  const stampOf = (line) => {
+    const m = line.match(/^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]/);
+    return m ? new Date(m[1].replace(" ", "T")) : null;
+  };
+  const from = stampOf(lines[idx]);
+  const to = stampOf(lines[idx + 1]);
+  if (!from || !to) return null;
+  return (to.getTime() - from.getTime()) / 1000;
+}
+
 function freshScenarioDir(name) {
   const dir = path.join(sharedDir, name);
   fs.rmSync(dir, { recursive: true, force: true });
@@ -241,6 +262,41 @@ describe.skipIf(!!skipReason)(
         expect(log).not.toMatch(/Gave up/);
       },
       50000,
+    );
+
+    it(
+      "a non-zero backoff actually waits, not just claims to in the log -- the branch every other test in this file sets to 0 and skips",
+      async () => {
+        // Every other scenario here uses PANEL_SUPERVISOR_BACKOFF_SECONDS=0
+        // to stay fast, which means none of them could ever catch a
+        // regression that broke the real Start-Sleep wait -- including the
+        // build.js change that made BACKOFF=0 skip the powershell spawn
+        // entirely: a bug in that change's `if !BACKOFF! GTR 0` condition
+        // could just as easily skip a REAL backoff, and every existing
+        // test would still go green. A real operator relies on this
+        // branch, not the zero-second one.
+        const dir = freshScenarioDir("real-backoff-wait");
+        await writeStartBatInto(dir);
+        setupStub(dir, [7, 0], [0, 0]);
+
+        const result = await runSupervisor(dir, { PANEL_SUPERVISOR_BACKOFF_SECONDS: "3" }, 30000);
+
+        expect(countLaunches(result.stdout)).toBe(2);
+        expect(result.status).toBe(0);
+        const log = readSupervisorLog(dir);
+        expect(log).toMatch(/relaunch attempt 1 of 5, waiting 3s/);
+        // The measured gap includes the 3s sleep plus the next iteration's
+        // own binary-pick/timestamp overhead (a couple more real
+        // powershell spawns), so it will usually run a bit over 3 -- the
+        // floor at 2 (not 3) is only to absorb :stamp's whole-second
+        // timestamp rounding at a worst-case boundary, the same margin
+        // reasoning already used by the crash-counter-reset test above. If
+        // the wait were skipped entirely, this would measure 0-1, not 2+.
+        const gapSeconds = secondsBetweenLogLine(log, /relaunch attempt 1 of 5, waiting 3s/);
+        expect(gapSeconds, "measured gap between the wait message and the next launch").not.toBeNull();
+        expect(gapSeconds).toBeGreaterThanOrEqual(2);
+      },
+      35000,
     );
 
     it(

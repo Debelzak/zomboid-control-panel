@@ -344,7 +344,16 @@ echo.
   echo.
   echo Panel exited unexpectedly, code !EXITCODE!. Relaunch attempt !CRASH_COUNT! of !MAX_RAPID_CRASHES! in !BACKOFF!s...
   echo.
-  powershell -NoProfile -Command "Start-Sleep -Seconds !BACKOFF!" >nul 2>&1
+  rem A 0-second backoff (the default override every test in this file uses,
+  rem and a real operator could set too) still waited zero seconds before
+  rem this -- but paid for a whole powershell.exe startup to do it, adding
+  rem one more source of unpredictable subprocess-spawn latency to a script
+  rem whose whole job here is recovering quickly. Skipping the spawn changes
+  rem no observable timing: same zero seconds waited, same log line, same
+  rem relaunch order.
+  if !BACKOFF! GTR 0 (
+    powershell -NoProfile -Command "Start-Sleep -Seconds !BACKOFF!" >nul 2>&1
+  )
   goto run_loop
 
 
