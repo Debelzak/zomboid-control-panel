@@ -26,3 +26,27 @@ against Angela's and the other translator's choices.
   broadcast into the game, so I translated the 5 default quick messages into natural
   French rather than leaving them as English placeholders an operator would have to
   rewrite before their first use.
+
+## ServerFinder.tsx (namespace: `serverFinder`)
+
+- No existing glossary hit for pagination controls (First/Prev/Next/Last, Page X of Y,
+  Ascending/Descending). Chose: **Première / Précédent / Suivant / Dernière**, matching
+  the existing standalone "Dernière" and "Première connexion" already used elsewhere in
+  the app rather than "Premier(e) page" / "Page précédente" (more verbose, no existing
+  precedent for the longer form). **Croissant / Décroissant** for sort direction.
+- "Ping" (both the sort-column label and the "ping this server" button) is left as
+  literal "Ping" in French — it's an accepted, widely used networking term as-is in
+  French gaming/tech contexts; no established French equivalent is in common use for a
+  server ping button.
+- "VAC Secured" → **Sécurisé VAC** (adjective-first per French word order, kept "VAC" as
+  the untranslated Valve trademark/acronym).
+- "Steam API key missing" appears in three different UI locations (the warning banner
+  title, a toast, and an empty-state title) — deliberately reused the *same* French
+  string in all three, matching the fact that the English source also reuses the same
+  wording. That's correct reuse, not the "two different concepts, one French phrase"
+  bug — the underlying English concept genuinely is identical in all three spots.
+- "Recharger depuis Steam" (Reload from Steam) vs "Actualiser la liste" (Refresh List) —
+  kept these as two distinct French verbs since they're two distinct actions in the UI
+  (client-side refresh of the cached list vs. forcing a fresh master-server query),
+  matching the English button pair using two different verbs (Refresh vs Reload) for the
+  same reason.
