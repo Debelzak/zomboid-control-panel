@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Invented server on an unconfigured panel**: the Server Configuration page and its sibling
+  file, sandbox and spawn-point pages no longer present a fabricated `servertest` server — fully
+  populated and fully editable — when no server has actually been added through Server Setup or My
+  Servers. Those pages now correctly report that nothing is configured; a genuinely configured
+  server, including one relying on settings carried over from an older install, still loads exactly
+  as before.
+
 - **Stuck "stop in progress" after a wedged kill**: force-stopping the server no longer hangs
   forever if the operating system's own kill command stalls — for example under antivirus
   interference. The panel gives up waiting after a bounded time, stays able to start, stop and

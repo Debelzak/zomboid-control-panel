@@ -22,6 +22,19 @@ import { requireStoppedForLocalConfigMutation } from "../services/configMutation
 
 const router = express.Router();
 
+// Thrown by getServerConfigPath()/getServerName() when no server is
+// configured at all (no active server row, and no legacy settings fallback
+// either) — every route below operates on a specific server's config
+// directory (even /templates, which lives under it), so there is no
+// meaningful response to give except "nothing is configured", never a
+// fabricated default.
+export class ServerNotConfiguredError extends Error {
+  constructor() {
+    super("No active server configured");
+    this.code = "SERVER_NOT_CONFIGURED";
+  }
+}
+
 // These read or write the panel host's own filesystem, so an SFTP mirror of
 // the remote Server/ folder cannot stand in for them.
 const LOCAL_ONLY_PATHS = new Set(["/browse-files", "/image-preview"]);
@@ -37,6 +50,23 @@ async function resolveRemoteConfigTransport() {
     configPath: settings[SFTP_CONFIG_PATH_KEY],
   });
 }
+
+// Every route below resolves a specific server's config directory (directly,
+// or via /templates living under it). Gate on that up front so an unconfigured
+// panel says so once, here, instead of each of the 25 handlers below silently
+// falling through to a fabricated default and reporting invented data as real.
+// Matches the sibling GET /api/servers/active's 404 shape/message.
+router.use(async (req, res, next) => {
+  try {
+    await getServerConfigPath();
+  } catch (err) {
+    if (err instanceof ServerNotConfiguredError) {
+      return res.status(404).json({ error: err.message });
+    }
+    return next(err);
+  }
+  next();
+});
 
 // A remote server has no local filesystem, but its Server/ folder is reachable
 // over the SFTP credentials PanelBridge already uses. Mirror it in before the
@@ -188,7 +218,7 @@ function unescapeLuaString(value) {
 }
 
 // Get the server config directory path
-async function getServerConfigPath() {
+export async function getServerConfigPath() {
   const activeServer = await getActiveServer();
 
   // A remote server's Server/ folder lives on the host; the handlers below
@@ -219,8 +249,13 @@ async function getServerConfigPath() {
     return path.join(settings.zomboidDataPath, "Server");
   }
 
-  // Default path: ~/Zomboid/Server
-  return path.join(os.homedir(), "Zomboid", "Server");
+  // Nothing configured anywhere — no active server row and no legacy
+  // settings fallback either. Do NOT default to ~/Zomboid/Server: that is
+  // the vanilla path Project Zomboid itself uses, so on a machine that
+  // happens to have a real (unrelated, never-added-to-the-panel) install
+  // there, this would present its real data as the panel's "active server"
+  // — invented, not merely empty.
+  throw new ServerNotConfiguredError();
 }
 
 // Get server name from active server. serverName is interpolated directly
@@ -237,7 +272,14 @@ export async function getServerName() {
     raw = activeServer.serverName;
   } else {
     const settings = await getAllSettings();
-    raw = settings.serverName || "servertest";
+    raw = settings.serverName;
+  }
+  if (!raw) {
+    // No active server and no legacy settings name either — there is no
+    // real server this could refer to. "servertest" used to fill in here,
+    // which is how an empty database ended up presenting a fully-populated,
+    // fully-editable server that was never configured.
+    throw new ServerNotConfiguredError();
   }
 
   const safe = path.basename(raw);
@@ -1218,11 +1260,18 @@ export async function persistSandboxValues(values) {
     }
   }
 
-  return writeSandboxValues(
-    entries,
-    await getServerConfigPath(),
-    await getServerName(),
-  );
+  try {
+    return await writeSandboxValues(
+      entries,
+      await getServerConfigPath(),
+      await getServerName(),
+    );
+  } catch (err) {
+    if (err instanceof ServerNotConfiguredError) {
+      return { persisted: false, reason: "no server configured" };
+    }
+    throw err;
+  }
 }
 
 async function writeSandboxValues(entries, configPath, serverName) {
