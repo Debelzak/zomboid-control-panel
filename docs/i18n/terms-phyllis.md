@@ -37,3 +37,40 @@ badge, B41/B42 map version label), which lives in `ctx.fillText()` calls inside 
 Destructive-action copy (delete confirmation dialog title/description, "No backup will be
 created" warning, the server-running override dialog) was translated at least as blunt as
 the English source, per the brief — none of it was softened.
+
+## WorldMap.tsx (namespace `worldMap`)
+
+**Reused `players.json`'s exact "cible.acquise" for the dossier panel's "target.acquired"
+line, not a fresh translation.** WorldMap has its own player-info side panel styled
+identically to (and clearly modeled on) Players.tsx's dossier panel — same "dossier" header
+word, same stylized `label.status` mono format. Since it's visibly the same UI concept
+reused across two pages, translating "target.acquired" independently risked exactly the
+two-translators-two-words problem: I checked Angela's players.json first and matched her
+term rather than inventing my own.
+
+**Deliberately left short technical HUD abbreviations untranslated: `x`, `y`, `z`, `zm`,
+`hp`, `fuel`, `batt`, `ctrl`.** WorldMap has a tight "tactical control room" aesthetic with
+a lot of tiny monospace readouts (a bottom-left coordinate bar, a vehicle-info panel in the
+right-click menu, etc.) where these appear as compact 1-4 character labels next to numbers,
+not as prose. Two things drove this: (1) space — these widgets are literally built to a
+fixed pixel width and French equivalents (e.g. "carburant" for fuel, "batterie" for batt)
+would either overflow or need re-abbreviating into something just as opaque; (2) legibility
+— these are the same terse gaming-HUD shorthand a French PZ player already reads in English
+in dozens of other tools (fuel/hp/batt gauges are near-universal), so leaving them is not a
+loss of localization quality the way leaving a real English sentence would be. Every actual
+*word* in the same HUD (floor, layers, roster, live/offline, target, vehicle, teleport,
+effects, drops, ground) IS translated — only the cryptic 2-3 char codes are not. Logged here
+in case a QA pass flags "x"/"y"/"hp" etc. as untranslated — it's a deliberate call, not a
+miss.
+
+**City/landmark names (Muldraugh, West Point, Rosewood, etc.) are proper nouns and stay
+as-is**, matching the identical decision already made in ChunkCleaner's PZ_LANDMARKS list
+(same reasoning: these are real in-game place names, not translatable UI copy).
+
+**Airdrop preset labels/descriptions (Military, Medical, Food, Building, Weapons, Tools)
+were moved out of the `AIRDROP_PRESETS` module-level const and into the locale file**,
+since the const is defined outside the component and has no access to `t()`. The const now
+only carries `id` + the lucide icon; a `presetLabel(id)`/`presetDesc(id)` pair of
+`useCallback`s inside the component do the lookup. Mentioning this because it's a slightly
+unusual refactor shape and a future translator touching this file should know why the array
+looks stripped-down compared to a typical preset list.
