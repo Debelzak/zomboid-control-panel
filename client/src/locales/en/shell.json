@@ -21,6 +21,7 @@
     },
     "items": {
       "users": "Users",
+      "signIn": "Sign-in",
       "serverConsole": "Server Console",
       "onlinePlayers": "Online Players",
       "inGameChat": "In-Game Chat",

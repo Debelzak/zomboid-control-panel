@@ -3142,3 +3142,43 @@ export const usersApi = {
       body: JSON.stringify({ roleId }),
     }).then((response) => handleResponse(response)),
 };
+
+// OIDC settings (server/routes/oidc.js "Settings" section, gated on
+// panel.settings) -- built by Kevin to the shape agreed in advance. Every
+// field here mirrors the server's own publicSettingsShape() exactly.
+export interface OidcSettingsFields {
+  issuerUrl: string;
+  clientId: string;
+  redirectUri: string;
+  scope: string;
+  providerName: string;
+  allowInsecureHttp: boolean;
+}
+
+export interface OidcSettings extends OidcSettingsFields {
+  clientSecretConfigured: boolean;
+  configured: boolean;
+}
+
+export interface OidcSettingsWithEnv extends OidcSettings {
+  envOverrides: Record<keyof OidcSettingsFields | "clientSecret", boolean>;
+  suggestedRedirectUri: string;
+}
+
+export type OidcSettingsUpdate = Partial<OidcSettingsFields> & { clientSecret?: string };
+
+export const oidcSettingsApi = {
+  get: (): Promise<OidcSettingsWithEnv> => apiGet("/auth/oidc/settings"),
+
+  update: (updates: OidcSettingsUpdate): Promise<{ success: boolean } & OidcSettings> =>
+    apiFetch("/auth/oidc/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updates),
+    }).then((response) => handleResponse(response)),
+
+  testConnection: (
+    updates: OidcSettingsUpdate,
+  ): Promise<{ success: boolean; error?: string }> =>
+    apiPost("/auth/oidc/test-connection", updates),
+};

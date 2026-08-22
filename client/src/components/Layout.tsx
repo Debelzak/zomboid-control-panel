@@ -34,7 +34,8 @@ import {
   LogOut,
   ShieldCheck,
   Users as UsersIcon,
-  Lock
+  Lock,
+  KeyRound
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ConnectionStatus } from './ConnectionStatus'
@@ -156,6 +157,7 @@ const navSections: NavSection[] = [
     items: [
       { to: '/users', icon: UsersIcon, label: 'Users', labelKey: 'nav.items.users' },
       { to: '/roles', icon: ShieldCheck, label: 'Roles & Permissions', labelKey: 'nav.items.rolesPermissions' },
+      { to: '/sso', icon: KeyRound, label: 'Sign-in', labelKey: 'nav.items.signIn' },
     ]
   },
   {

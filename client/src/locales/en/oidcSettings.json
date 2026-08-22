@@ -1,0 +1,54 @@
+{
+  "pageHeader": {
+    "title": "Sign-in",
+    "description": "Let people sign in with an existing account from an identity provider (Google Workspace, Okta, Authentik, and similar), instead of — never instead of — a username and password. Local sign-in always keeps working."
+  },
+  "loading": "Loading sign-in settings…",
+  "permissionDenied": {
+    "title": "You can't manage sign-in settings",
+    "description": "Your account's role doesn't include \"Manage panel-wide settings\". Ask an administrator to grant it if you need access to this screen."
+  },
+  "loadError": {
+    "title": "Couldn't load sign-in settings",
+    "retry": "Try again"
+  },
+  "status": {
+    "configured": "Single sign-on is configured",
+    "notConfigured": "Single sign-on is not configured yet",
+    "notConfiguredHint": "Fill in the provider details below and save to turn it on."
+  },
+  "envPinnedNote": "Set via an environment variable on this install — edit it there, not here.",
+  "fields": {
+    "issuerUrl": "Issuer URL",
+    "issuerUrlPlaceholder": "https://accounts.example.com",
+    "issuerUrlHelp": "The base URL your identity provider gave you for OpenID Connect — the panel discovers everything else from it.",
+    "clientId": "Client ID",
+    "clientSecret": "Client secret",
+    "clientSecretPlaceholderConfigured": "Leave unchanged to keep the current secret",
+    "clientSecretPlaceholderEmpty": "Enter the client secret",
+    "providerName": "Display name",
+    "providerNamePlaceholder": "e.g. Google, Okta, Authentik",
+    "providerNameHelp": "Shown on the login screen's button — \"Continue with {{name}}\".",
+    "redirectUri": "Redirect URI",
+    "redirectUriHelp": "Paste this exact URL into your identity provider's app registration:",
+    "useAndCopy": "Use & copy",
+    "scope": "Scope",
+    "scopeHelp": "Advanced. Leave as-is unless your provider needs something different.",
+    "allowInsecureHttp": "Allow plain HTTP for this provider",
+    "allowInsecureHttpHelp": "Only for a self-hosted identity provider reachable solely over a private, HTTP-only address (e.g. behind a VPN). Never enable this for a provider reachable from the internet."
+  },
+  "actions": {
+    "save": "Save",
+    "saving": "Saving…",
+    "testConnection": "Test Connection",
+    "testing": "Testing…"
+  },
+  "toasts": {
+    "settingsSavedTitle": "Sign-in settings saved",
+    "settingsSavedDescription": "The panel will use the new settings for the next sign-in attempt.",
+    "testSuccessTitle": "Connection successful",
+    "testSuccessDescription": "The panel could reach the identity provider and read its configuration.",
+    "testFailedTitle": "Connection failed",
+    "actionFailedTitle": "Action failed"
+  }
+}

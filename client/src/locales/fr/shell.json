@@ -21,6 +21,7 @@
     },
     "items": {
       "users": "Utilisateurs",
+      "signIn": "Connexion",
       "serverConsole": "Console du serveur",
       "onlinePlayers": "Joueurs en ligne",
       "inGameChat": "Chat en jeu",

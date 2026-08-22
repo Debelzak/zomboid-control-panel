@@ -1,0 +1,54 @@
+{
+  "pageHeader": {
+    "title": "Connexion",
+    "description": "Permettez aux gens de se connecter avec un compte existant d'un fournisseur d'identité (Google Workspace, Okta, Authentik, et similaires), en plus — jamais à la place — d'un nom d'utilisateur et d'un mot de passe. La connexion locale continue toujours de fonctionner."
+  },
+  "loading": "Chargement des paramètres de connexion…",
+  "permissionDenied": {
+    "title": "Vous ne pouvez pas gérer les paramètres de connexion",
+    "description": "Le rôle de votre compte n'inclut pas « Gérer les paramètres du panneau ». Demandez à un administrateur de vous l'accorder si vous avez besoin d'accéder à cet écran."
+  },
+  "loadError": {
+    "title": "Impossible de charger les paramètres de connexion",
+    "retry": "Réessayer"
+  },
+  "status": {
+    "configured": "La connexion unique est configurée",
+    "notConfigured": "La connexion unique n'est pas encore configurée",
+    "notConfiguredHint": "Renseignez les informations du fournisseur ci-dessous et enregistrez pour l'activer."
+  },
+  "envPinnedNote": "Défini via une variable d'environnement sur cette installation — modifiez-la là-bas, pas ici.",
+  "fields": {
+    "issuerUrl": "URL de l'émetteur",
+    "issuerUrlPlaceholder": "https://accounts.exemple.com",
+    "issuerUrlHelp": "L'URL de base fournie par votre fournisseur d'identité pour OpenID Connect — le panneau découvre tout le reste à partir de celle-ci.",
+    "clientId": "ID client",
+    "clientSecret": "Secret client",
+    "clientSecretPlaceholderConfigured": "Laissez inchangé pour conserver le secret actuel",
+    "clientSecretPlaceholderEmpty": "Saisissez le secret client",
+    "providerName": "Nom d'affichage",
+    "providerNamePlaceholder": "ex. Google, Okta, Authentik",
+    "providerNameHelp": "Affiché sur le bouton de l'écran de connexion — « Continuer avec {{name}} ».",
+    "redirectUri": "URI de redirection",
+    "redirectUriHelp": "Collez cette URL exacte dans l'enregistrement d'application de votre fournisseur d'identité :",
+    "useAndCopy": "Utiliser et copier",
+    "scope": "Scope",
+    "scopeHelp": "Avancé. Laissez tel quel sauf si votre fournisseur exige autre chose.",
+    "allowInsecureHttp": "Autoriser le HTTP simple pour ce fournisseur",
+    "allowInsecureHttpHelp": "Uniquement pour un fournisseur d'identité auto-hébergé accessible seulement via une adresse privée en HTTP (par ex. derrière un VPN). N'activez jamais ceci pour un fournisseur accessible depuis Internet."
+  },
+  "actions": {
+    "save": "Enregistrer",
+    "saving": "Enregistrement…",
+    "testConnection": "Tester la connexion",
+    "testing": "Test en cours…"
+  },
+  "toasts": {
+    "settingsSavedTitle": "Paramètres de connexion enregistrés",
+    "settingsSavedDescription": "Le panneau utilisera les nouveaux paramètres à la prochaine tentative de connexion.",
+    "testSuccessTitle": "Connexion réussie",
+    "testSuccessDescription": "Le panneau a pu joindre le fournisseur d'identité et lire sa configuration.",
+    "testFailedTitle": "Échec de la connexion",
+    "actionFailedTitle": "Échec de l'action"
+  }
+}

@@ -160,6 +160,13 @@ const ROUTE_LOADERS: Record<string, RouteLoaderMeta> = {
     variant: 'list',
     metrics: ['accounts', 'roles'],
   },
+  '/sso': {
+    title: 'Sign-in',
+    description: 'Loading single sign-on settings.',
+    eyebrow: '// ACCESS · SIGN-IN',
+    variant: 'form',
+    metrics: ['provider', 'redirect', 'status'],
+  },
   '/debug': {
     title: 'Debug Logs',
     description: 'Preparing diagnostics, probes, logs, and support bundle tools.',
@@ -188,6 +195,7 @@ const Discord = lazy(() => import('./pages/Discord'))
 const Settings = lazy(() => import('./pages/Settings'))
 const RolesPermissions = lazy(() => import('./pages/RolesPermissions'))
 const Users = lazy(() => import('./pages/Users'))
+const OidcSettings = lazy(() => import('./pages/OidcSettings'))
 const ServerSetup = lazy(() => import('./pages/ServerSetup'))
 const Servers = lazy(() => import('./pages/Servers'))
 const ServerConfig = lazy(() => import('./pages/ServerConfig'))
@@ -584,6 +592,7 @@ function AppContent() {
               <Route path="/settings" element={<FeatureErrorBoundary featureName={t('nav.items.panelSettings')}><Settings /></FeatureErrorBoundary>} />
               <Route path="/roles" element={<FeatureErrorBoundary featureName={t('nav.items.rolesPermissions')}><RolesPermissions /></FeatureErrorBoundary>} />
               <Route path="/users" element={<FeatureErrorBoundary featureName={t('nav.items.users')}><Users /></FeatureErrorBoundary>} />
+              <Route path="/sso" element={<FeatureErrorBoundary featureName={t('nav.items.signIn')}><OidcSettings /></FeatureErrorBoundary>} />
               <Route path="/server-setup" element={<FeatureErrorBoundary featureName={t('nav.items.serverSetup')}><ServerSetup /></FeatureErrorBoundary>} />
               <Route path="/servers" element={<FeatureErrorBoundary featureName={t('nav.items.myServers')}><Servers /></FeatureErrorBoundary>} />
               <Route path="/server-config" element={<FeatureErrorBoundary featureName={t('nav.items.serverConfiguration')}><ServerConfig /></FeatureErrorBoundary>} />
