@@ -209,6 +209,197 @@ export const ErrorCode = Object.freeze({
    * FOUND (download path, status 404) -- different route, different wording. */
   BACKUPS_FOLDER_UNAVAILABLE: "BACKUPS_FOLDER_UNAVAILABLE",
 
+  /** server/routes/server.js -- POST /api/server/start, active server is remote. */
+  SERVER_START_REMOTE_REFUSED: "SERVER_START_REMOTE_REFUSED",
+  /** server/routes/server.js -- POST /api/server/force-stop, active server is
+   * remote. Own wording/code, not reused across start/force-stop/restart --
+   * same reasoning as SERVER_RUNNING_RCON_UNAVAILABLE above: which action was
+   * refused is itself useful information to keep. */
+  SERVER_FORCE_STOP_REMOTE_REFUSED: "SERVER_FORCE_STOP_REMOTE_REFUSED",
+  /** server/routes/server.js -- POST /api/server/restart, active server is remote. */
+  SERVER_RESTART_REMOTE_REFUSED: "SERVER_RESTART_REMOTE_REFUSED",
+  /** server/routes/server.js -- POST /api/server/stop, RCON isn't connected
+   * so the graceful (save-then-quit) shutdown can't happen. */
+  SERVER_STOP_RCON_NOT_CONNECTED: "SERVER_STOP_RCON_NOT_CONNECTED",
+  /** server/routes/server.js -- POST /api/server/stop, the pre-quit world
+   * save itself failed; server was left running. */
+  SERVER_STOP_SAVE_FAILED: "SERVER_STOP_SAVE_FAILED",
+  /** server/routes/server.js -- POST /api/server/stop, world saved but the
+   * managed container failed to stop. */
+  SERVER_STOP_CONTAINER_STOP_FAILED: "SERVER_STOP_CONTAINER_STOP_FAILED",
+  /** server/routes/server.js -- POST /api/server/message, no message body. */
+  SERVER_MESSAGE_REQUIRED: "SERVER_MESSAGE_REQUIRED",
+  /** server/routes/server.js -- POST /api/server/message, message isn't a
+   * string or exceeds 1000 characters. */
+  SERVER_MESSAGE_TOO_LONG: "SERVER_MESSAGE_TOO_LONG",
+  /** server/routes/server.js (3 sites: lightning, thunder, horde) -- optional
+   * `username` isn't a string or exceeds 64 characters. */
+  EVENTS_INVALID_USERNAME: "EVENTS_INVALID_USERNAME",
+  /** server/routes/server.js (3 sites: /branches, /install, /steam-update) --
+   * steamcmdPath fails isValidPath(). */
+  STEAMCMD_PATH_INVALID: "STEAMCMD_PATH_INVALID",
+  /** server/routes/server.js (3 sites: /install, /quick-setup, /steam-update) --
+   * installPath fails isValidPath(). */
+  INSTALL_PATH_INVALID: "INSTALL_PATH_INVALID",
+  /** server/routes/server.js -- POST /api/server/install, missing
+   * steamcmdPath/installPath/serverName. Own code from the /quick-setup and
+   * /steam-update variants below, which require different field sets. */
+  INSTALL_MISSING_FIELDS: "INSTALL_MISSING_FIELDS",
+  /** server/routes/server.js (2 sites: /install, /quick-setup) -- serverName
+   * fails isValidServerName() (letters/numbers/underscore/hyphen/space, max
+   * 64 chars). Distinct from WIPE_INVALID_SERVER_NAME below, which is a
+   * bare no-path-separators check on the already-configured server name. */
+  SERVER_NAME_FORMAT_INVALID: "SERVER_NAME_FORMAT_INVALID",
+  /** server/routes/server.js (2 sites: /install, /quick-setup) -- optional
+   * zomboidDataPath fails isValidPath(). */
+  ZOMBOID_DATA_PATH_INVALID: "ZOMBOID_DATA_PATH_INVALID",
+  /** server/routes/server.js -- formatWritablePathError(), 4 call sites
+   * across /install and /quick-setup (installPath, then the Zomboid data
+   * folder). The underlying message has two English-only variants (bare-metal
+   * vs Docker-detected) composed by formatWritablePathError() itself; the
+   * locale text below covers the common non-container wording only -- the
+   * Docker-specific addendum stays English-only in the `error` fallback
+   * text, a known partial-translation gap, not a bug. */
+  WRITABLE_PATH_ERROR: "WRITABLE_PATH_ERROR",
+  /** server/routes/server.js (2 sites: /install, /steam-update) -- steamcmd
+   * executable missing on Windows (no auto-download there). */
+  STEAMCMD_NOT_FOUND_AT_PATH: "STEAMCMD_NOT_FOUND_AT_PATH",
+  /** server/routes/server.js (2 sites: /install, /steam-update) -- Linux
+   * auto-download of steamcmd (ensureSteamCmdLinux) itself failed. */
+  STEAMCMD_AUTO_DOWNLOAD_FAILED: "STEAMCMD_AUTO_DOWNLOAD_FAILED",
+  /** server/routes/server.js -- POST /api/server/install, another Steam
+   * operation already running for this install path. Own code from the
+   * /steam-update variant below -- "for this path" vs "for this server" are
+   * different wordings kept separate, not merged. */
+  STEAM_OPERATION_IN_PROGRESS_PATH: "STEAM_OPERATION_IN_PROGRESS_PATH",
+  /** server/routes/server.js -- POST /api/server/quick-setup, missing
+   * installPath/serverName. */
+  QUICK_SETUP_MISSING_FIELDS: "QUICK_SETUP_MISSING_FIELDS",
+  /** server/routes/server.js -- POST /api/server/quick-setup, none of the
+   * expected PZ server marker files/folders found at installPath. */
+  QUICK_SETUP_SERVER_FILES_NOT_FOUND: "QUICK_SETUP_SERVER_FILES_NOT_FOUND",
+  /** server/routes/server.js -- POST /api/server/configure-rcon, no
+   * rconPassword in the body. Own code from rcon.js's RCON_* codes -- this
+   * is the server-config route, not the live rcon.js connection routes. */
+  CONFIGURE_RCON_PASSWORD_REQUIRED: "CONFIGURE_RCON_PASSWORD_REQUIRED",
+  /** server/routes/server.js (2 sites: /configure-rcon, /configure-network) --
+   * no serverConfigPath resolved (install never run). */
+  SERVER_CONFIG_PATH_NOT_SET: "SERVER_CONFIG_PATH_NOT_SET",
+  /** server/routes/server.js (2 sites: /configure-rcon, /configure-network) --
+   * serverConfigPath resolved but the .ini file doesn't exist yet. */
+  SERVER_CONFIG_FILE_NOT_FOUND: "SERVER_CONFIG_FILE_NOT_FOUND",
+  /** server/routes/server.js -- POST /api/server/reloadlua, no filename. */
+  RELOAD_LUA_FILENAME_REQUIRED: "RELOAD_LUA_FILENAME_REQUIRED",
+  /** server/routes/server.js -- POST /api/server/reloadlua, filename fails
+   * the .lua path-traversal-safe format check. */
+  RELOAD_LUA_INVALID_FILENAME: "RELOAD_LUA_INVALID_FILENAME",
+  /** server/routes/server.js -- POST /api/server/log, missing type or level. */
+  LOG_TYPE_LEVEL_REQUIRED: "LOG_TYPE_LEVEL_REQUIRED",
+  /** server/routes/server.js -- POST /api/server/log, `type` not in the
+   * known PZ log-type list. */
+  LOG_INVALID_TYPE: "LOG_INVALID_TYPE",
+  /** server/routes/server.js -- POST /api/server/log, `level` not in the
+   * known PZ log-level list. */
+  LOG_INVALID_LEVEL: "LOG_INVALID_LEVEL",
+  /** server/routes/server.js -- POST /api/server/stats, no mode. */
+  STATS_MODE_REQUIRED: "STATS_MODE_REQUIRED",
+  /** server/routes/server.js -- POST /api/server/stats, `mode` not one of
+   * none/file/console/all. */
+  STATS_INVALID_MODE: "STATS_INVALID_MODE",
+  /** server/routes/server.js -- POST /api/server/steam-update, missing
+   * steamcmdPath/installPath. */
+  STEAM_UPDATE_MISSING_FIELDS: "STEAM_UPDATE_MISSING_FIELDS",
+  /** server/routes/server.js -- POST /api/server/steam-update, the target
+   * server process is currently running. */
+  STEAM_UPDATE_SERVER_RUNNING: "STEAM_UPDATE_SERVER_RUNNING",
+  /** server/routes/server.js -- POST /api/server/steam-update, another Steam
+   * operation already running for this server. See STEAM_OPERATION_IN_
+   * PROGRESS_PATH above for why this stays a separate code. */
+  STEAM_OPERATION_IN_PROGRESS_SERVER: "STEAM_OPERATION_IN_PROGRESS_SERVER",
+  /** server/routes/server.js -- POST /api/server/steamcmd/download,
+   * installPath fails isValidPath(). Own wording ("installation path") from
+   * INSTALL_PATH_INVALID/STEAMCMD_PATH_INVALID above -- different route,
+   * different phrasing. */
+  STEAMCMD_DOWNLOAD_INVALID_PATH: "STEAMCMD_DOWNLOAD_INVALID_PATH",
+  /** server/routes/server.js (4 sites: /delete-files x2, /list-directory,
+   * /wipe) -- a path argument fails isValidPath() or a post-normalize `..`
+   * check. All four sites emit the bare, already-generic "Invalid path"
+   * with no route-specific detail to lose, so they share one code. */
+  INVALID_PATH: "INVALID_PATH",
+  /** server/routes/server.js (2 sites: /delete-files, /list-directory) --
+   * fs.existsSync() false for the given path. */
+  PATH_NOT_FOUND: "PATH_NOT_FOUND",
+  /** server/routes/server.js -- POST /api/server/delete-files, path exists
+   * but none of the known PZ server marker files are present -- refusing to
+   * delete a folder that might not be a PZ install. */
+  DELETE_FILES_NOT_PZ_INSTALL: "DELETE_FILES_NOT_PZ_INSTALL",
+  /** server/routes/server.js -- POST /api/server/list-directory, path exists
+   * but isn't a directory. */
+  PATH_NOT_A_DIRECTORY: "PATH_NOT_A_DIRECTORY",
+  /** server/routes/server.js -- POST /api/server/list-directory,
+   * fs.readdirSync() threw (permissions). Message embeds an OS error code
+   * and a platform-specific English guidance sentence composed at the call
+   * site -- the locale text below covers the fixed frame around them;
+   * {{guidance}} itself stays English, same known gap as WRITABLE_PATH_ERROR
+   * above. */
+  DIRECTORY_READ_FAILED: "DIRECTORY_READ_FAILED",
+  /** server/routes/server.js -- POST /api/server/browse-folder, `description`
+   * fails its alphanumeric/punctuation format check. */
+  BROWSE_FOLDER_INVALID_DESCRIPTION: "BROWSE_FOLDER_INVALID_DESCRIPTION",
+  /** server/routes/server.js -- POST /api/server/browse-folder (Linux), no
+   * GUI file-picker (zenity/kdialog) available. */
+  BROWSE_FOLDER_NO_DIALOG_AVAILABLE: "BROWSE_FOLDER_NO_DIALOG_AVAILABLE",
+  /** server/routes/server.js -- POST /api/server/browse-folder (Windows),
+   * the PowerShell folder-browser process itself errored. */
+  BROWSE_FOLDER_OPEN_FAILED: "BROWSE_FOLDER_OPEN_FAILED",
+  /** server/routes/server.js (3 sites: /console-log, /console-log/stream,
+   * /console-log/clear) -- no zomboidDataPath resolved anywhere (active
+   * server, settings, or serverPath fallback). */
+  SERVER_DATA_PATH_NOT_CONFIGURED: "SERVER_DATA_PATH_NOT_CONFIGURED",
+  /** server/routes/server.js (3 sites: /update-check, /update-check/status,
+   * /update-check/interval) -- app.get("updateChecker") not registered. */
+  UPDATE_CHECKER_NOT_AVAILABLE: "UPDATE_CHECKER_NOT_AVAILABLE",
+  /** server/routes/server.js -- GET /api/server/update-check?force=true,
+   * checkForUpdates() resolved falsy. */
+  UPDATE_CHECK_NO_RESULT: "UPDATE_CHECK_NO_RESULT",
+  /** server/routes/server.js -- POST /api/server/update-check/interval,
+   * `minutes` missing or not a number. */
+  UPDATE_CHECK_INTERVAL_INVALID: "UPDATE_CHECK_INTERVAL_INVALID",
+  /** server/routes/server.js (2 sites: /wipe/preview, /wipe) -- `targets`
+   * missing/empty/not an array. Identical wording both sites, shared code. */
+  WIPE_TARGETS_REQUIRED: "WIPE_TARGETS_REQUIRED",
+  /** server/routes/server.js -- POST /api/server/wipe/preview, `targets`
+   * contains an unrecognized value. Own code from WIPE_INVALID_TARGETS below
+   * -- the preview route's message additionally lists the allowed values,
+   * the execute route's does not; different wording, kept separate rather
+   * than flattened to one. */
+  WIPE_PREVIEW_INVALID_TARGETS: "WIPE_PREVIEW_INVALID_TARGETS",
+  /** server/routes/server.js -- POST /api/server/wipe, `targets` contains an
+   * unrecognized value. See WIPE_PREVIEW_INVALID_TARGETS above for why this
+   * is a separate code rather than reused. */
+  WIPE_INVALID_TARGETS: "WIPE_INVALID_TARGETS",
+  /** server/routes/server.js (2 sites: /wipe/preview, /wipe) -- serverManager
+   * has no savePath configured. */
+  WIPE_ZOMBOID_DATA_PATH_NOT_CONFIGURED: "WIPE_ZOMBOID_DATA_PATH_NOT_CONFIGURED",
+  /** server/routes/server.js (2 sites: /wipe/preview, /wipe) -- the
+   * configured server name contains a path separator. Distinct from
+   * SERVER_NAME_FORMAT_INVALID above (that one validates a *submitted* name
+   * against the full format rule at install time; this one is a bare
+   * traversal guard on the *already-configured* name). */
+  WIPE_INVALID_SERVER_NAME: "WIPE_INVALID_SERVER_NAME",
+  /** server/routes/server.js (2 sites: /wipe/preview, /wipe) -- the resolved
+   * Saves/Multiplayer/<serverName> directory doesn't exist. */
+  WIPE_SAVE_DIRECTORY_NOT_FOUND: "WIPE_SAVE_DIRECTORY_NOT_FOUND",
+  /** server/routes/server.js -- POST /api/server/wipe, another wipe is
+   * already running (module-level guard). */
+  WIPE_IN_PROGRESS: "WIPE_IN_PROGRESS",
+  /** server/routes/server.js -- POST /api/server/wipe, the server process is
+   * currently running (wipe requires it stopped). */
+  WIPE_SERVER_RUNNING: "WIPE_SERVER_RUNNING",
+  /** server/routes/server.js -- POST /api/server/wipe, caller didn't pass
+   * `confirm: true`. */
+  WIPE_CONFIRM_REQUIRED: "WIPE_CONFIRM_REQUIRED",
+
   // --- legacy: wire value frozen (client compares it with === today),
   //     constant name invented only so a locale key exists ---
 

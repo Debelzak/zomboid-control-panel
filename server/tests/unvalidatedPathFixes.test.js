@@ -65,7 +65,10 @@ describe("GET /api/server/branches rejects an unvalidated steamcmdPath", () => {
       res,
     );
     expect(res.getStatusCode()).toBe(400);
-    expect(res.getBody()).toEqual({ error: "Invalid SteamCMD path" });
+    expect(res.getBody()).toEqual({
+      error: "Invalid SteamCMD path",
+      code: "STEAMCMD_PATH_INVALID",
+    });
   });
 
   it("falls back normally for a valid absolute path that just doesn't exist", async () => {
