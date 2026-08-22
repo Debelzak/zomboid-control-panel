@@ -32,7 +32,9 @@ import {
   PanelLeftClose,
   PanelLeft,
   LogOut,
-  ShieldCheck
+  ShieldCheck,
+  Users as UsersIcon,
+  Lock
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ConnectionStatus } from './ConnectionStatus'
@@ -146,6 +148,17 @@ const navSections: NavSection[] = [
     ]
   },
   {
+    id: 'access',
+    label: 'Access Control',
+    labelKey: 'nav.sections.access',
+    icon: Lock,
+    color: 'destructive',
+    items: [
+      { to: '/users', icon: UsersIcon, label: 'Users', labelKey: 'nav.items.users' },
+      { to: '/roles', icon: ShieldCheck, label: 'Roles & Permissions', labelKey: 'nav.items.rolesPermissions' },
+    ]
+  },
+  {
     id: 'system',
     label: 'Settings & Tools',
     labelKey: 'nav.sections.settingsAndTools',
@@ -154,7 +167,6 @@ const navSections: NavSection[] = [
     items: [
       { to: '/discord', icon: MessageSquare, label: 'Discord', labelKey: 'nav.items.discord' },
       { to: '/settings', icon: Settings, label: 'Panel Settings', labelKey: 'nav.items.panelSettings' },
-      { to: '/roles', icon: ShieldCheck, label: 'Roles & Permissions', labelKey: 'nav.items.rolesPermissions' },
       { to: '/debug', icon: Bug, label: 'Debug Logs', labelKey: 'nav.items.debugLogs' },
     ]
   },
@@ -214,6 +226,15 @@ const sectionToneStyles = {
     childActive: 'border-border/80 bg-muted/60',
     childDot: 'bg-muted-foreground',
     childBorder: 'border-border/70',
+  },
+  destructive: {
+    triggerActive: 'bg-destructive/12 border-destructive/35',
+    iconActive: 'border-destructive/45 bg-destructive/14 text-destructive',
+    iconIdle: 'text-foreground/86 group-hover:text-destructive',
+    labelActive: 'text-destructive',
+    childActive: 'border-destructive/45 bg-destructive/10',
+    childDot: 'bg-destructive',
+    childBorder: 'border-destructive/35',
   },
 } as const
 

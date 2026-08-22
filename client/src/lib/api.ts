@@ -3125,6 +3125,13 @@ export interface ManagedUserAccount {
 export const usersApi = {
   list: (): Promise<{ users: ManagedUserAccount[] }> => apiGet("/auth/users"),
 
+  create: (data: {
+    username: string;
+    password: string;
+    role: "admin" | "technician" | "moderator";
+  }): Promise<{ success: boolean; user: ManagedUserAccount }> =>
+    apiPost("/auth/users", data),
+
   assignRole: (
     userId: string,
     roleId: string,

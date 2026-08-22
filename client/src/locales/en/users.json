@@ -1,0 +1,49 @@
+{
+  "pageHeader": {
+    "title": "Users",
+    "description": "The accounts that can sign in to this panel. Add one for anyone who needs their own login, then set what they can do from Roles & Permissions."
+  },
+  "loading": "Loading accounts…",
+  "permissionDenied": {
+    "title": "You can't manage user accounts",
+    "description": "Your account's role doesn't include \"Manage user accounts\". Ask an administrator to grant it if you need access to this screen."
+  },
+  "loadError": {
+    "title": "Couldn't load accounts",
+    "retry": "Try again"
+  },
+  "toolbar": {
+    "addUser": "Add User"
+  },
+  "table": {
+    "account": "Account",
+    "role": "Role",
+    "created": "Created",
+    "lastSignIn": "Last sign-in",
+    "never": "Never"
+  },
+  "manageRolesLink": "Manage roles & permissions",
+  "createDialog": {
+    "title": "Add a user",
+    "description": "Create a login for someone else. They'll use this username and password to sign in.",
+    "usernameLabel": "Username",
+    "usernamePlaceholder": "e.g. jsmith",
+    "passwordLabel": "Password",
+    "confirmPasswordLabel": "Confirm password",
+    "roleLabel": "Role",
+    "rolePlaceholder": "Choose a role…",
+    "cancel": "Cancel",
+    "create": "Create account",
+    "creating": "Creating…",
+    "usernameRequired": "Enter a username.",
+    "passwordRequired": "Enter a password.",
+    "passwordsDontMatch": "Passwords do not match.",
+    "roleRequired": "Choose a role."
+  },
+  "toasts": {
+    "userCreatedTitle": "Account created",
+    "userCreatedDescription": "{{username}} can now sign in as \"{{role}}\".",
+    "userCreatedRoleAssignFailedDescription": "{{username}} was created as \"moderator\", but assigning \"{{role}}\" failed: {{reason}}. Change it from Roles & Permissions.",
+    "actionFailedTitle": "Action failed"
+  }
+}

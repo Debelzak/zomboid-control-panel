@@ -149,9 +149,16 @@ const ROUTE_LOADERS: Record<string, RouteLoaderMeta> = {
   '/roles': {
     title: 'Roles & Permissions',
     description: 'Loading the capability matrix, roles, and user assignments.',
-    eyebrow: '// SYSTEM · ACCESS',
+    eyebrow: '// ACCESS · ROLES',
     variant: 'list',
     metrics: ['roles', 'capabilities', 'users'],
+  },
+  '/users': {
+    title: 'Users',
+    description: 'Loading user accounts.',
+    eyebrow: '// ACCESS · USERS',
+    variant: 'list',
+    metrics: ['accounts', 'roles'],
   },
   '/debug': {
     title: 'Debug Logs',
@@ -180,6 +187,7 @@ const ChunkCleaner = lazy(() => import('./pages/ChunkCleaner'))
 const Discord = lazy(() => import('./pages/Discord'))
 const Settings = lazy(() => import('./pages/Settings'))
 const RolesPermissions = lazy(() => import('./pages/RolesPermissions'))
+const Users = lazy(() => import('./pages/Users'))
 const ServerSetup = lazy(() => import('./pages/ServerSetup'))
 const Servers = lazy(() => import('./pages/Servers'))
 const ServerConfig = lazy(() => import('./pages/ServerConfig'))
@@ -575,6 +583,7 @@ function AppContent() {
               <Route path="/discord" element={<FeatureErrorBoundary featureName={t('nav.items.discord')}><Discord /></FeatureErrorBoundary>} />
               <Route path="/settings" element={<FeatureErrorBoundary featureName={t('nav.items.panelSettings')}><Settings /></FeatureErrorBoundary>} />
               <Route path="/roles" element={<FeatureErrorBoundary featureName={t('nav.items.rolesPermissions')}><RolesPermissions /></FeatureErrorBoundary>} />
+              <Route path="/users" element={<FeatureErrorBoundary featureName={t('nav.items.users')}><Users /></FeatureErrorBoundary>} />
               <Route path="/server-setup" element={<FeatureErrorBoundary featureName={t('nav.items.serverSetup')}><ServerSetup /></FeatureErrorBoundary>} />
               <Route path="/servers" element={<FeatureErrorBoundary featureName={t('nav.items.myServers')}><Servers /></FeatureErrorBoundary>} />
               <Route path="/server-config" element={<FeatureErrorBoundary featureName={t('nav.items.serverConfiguration')}><ServerConfig /></FeatureErrorBoundary>} />
