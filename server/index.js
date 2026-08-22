@@ -526,6 +526,116 @@ const io = new Server(httpServer, {
   },
 });
 
+// Sets up the optional HTTPS listener from stored settings. Extracted out
+// of start() so it can be exercised directly in tests (server/tests/
+// httpsSetup.test.js) without booting the rest of the panel (player
+// polling, watchdogs, update checkers, etc.) -- the load-bearing case is
+// that a bad customKeyPath/customCertPath/httpsPort must degrade to "HTTPS
+// off, HTTP unaffected" rather than crashing the whole process, and a
+// GOOD config must still actually bring HTTPS up (a fix that merely
+// disabled HTTPS unconditionally would also "pass" the negative case).
+// Mutates the module-level `httpsServer` binding directly (both here and,
+// asynchronously, from the "error" handler below) rather than only
+// returning a value, because the async failure case can only be observed
+// after this function has already returned its initial result.
+export function setupHttpsServer({
+  httpsEnabled,
+  httpsPort,
+  customKeyPath,
+  customCertPath,
+}) {
+  if (!httpsEnabled) return null;
+
+  // loadOrCreateCerts() no longer throws on a bad custom cert/key path
+  // (see utils/certs.js), but this try/catch is a second, independent
+  // guard against anything unexpected in that path ever taking the whole
+  // panel down again -- HTTPS is optional; nothing in here may ever be
+  // allowed to reach the global uncaughtException handler and kill the
+  // process.
+  let certs = null;
+  try {
+    certs = loadOrCreateCerts(customKeyPath, customCertPath);
+  } catch (error) {
+    log.error(
+      `HTTPS certificate setup failed unexpectedly: ${error.message} — running HTTP only`,
+    );
+    return null;
+  }
+  if (!certs) {
+    log.warn(
+      "HTTPS enabled but certificate generation failed — running HTTP only",
+    );
+    return null;
+  }
+
+  httpsServer = createHttpsServer(certs, app);
+  // Add HTTPS origin to allowed list dynamically
+  addAllowedOrigin(`https://localhost:${httpsPort}`);
+  // Attach the SAME Socket.IO instance to the HTTPS server too, instead of
+  // creating a second `Server`. A second instance would have its own auth
+  // middleware, rooms, and connection handlers — every `.emit()` in this
+  // app targets the module-level `io` (bound only to the HTTP server), so
+  // WSS clients would authenticate successfully and then receive NO events
+  // at all (no server:status, players:update, perf:snapshot, log:entry,
+  // chat:message, panelBridge:*, etc). `io.attach()` binds the existing
+  // engine (with its middleware and event handlers already registered) to
+  // this additional http.Server.
+  io.attach(httpsServer, {
+    cors: {
+      origin: (origin, callback) => {
+        if (isAllowedOrigin(origin)) {
+          callback(null, true);
+        } else {
+          callback(new Error(CORS_DENY_MESSAGE));
+        }
+      },
+      methods: ["GET", "POST"],
+      credentials: true,
+    },
+  });
+
+  // Registered BEFORE .listen() -- a listen failure (bad/colliding port,
+  // permission denied on a privileged port, etc.) emits 'error'
+  // asynchronously, and an httpsServer with no listener for it would
+  // otherwise become an uncaught exception that reaches index.js's global
+  // handler and calls process.exit(1) (same root cause as the cert-path
+  // crash this whole fix addresses, just via .listen() instead of
+  // loadOrCreateCerts()). Unlike httpServer's own "error" handler in
+  // start(), this one never retries or picks a different port -- HTTPS is
+  // the optional, secondary listener here; on any failure it just stays
+  // off while HTTP keeps serving on its own already-bound port, loudly
+  // logged so the operator can fix the setting.
+  httpsServer.on("error", (err) => {
+    if (err.code === "EADDRINUSE") {
+      log.error(
+        `HTTPS port ${httpsPort} is already in use. Find the offender with: ${process.platform === "win32" ? `netstat -ano | findstr :${httpsPort}` : `ss -tlnp | grep :${httpsPort}  (or: lsof -i :${httpsPort})`}`,
+      );
+    }
+    log.error(
+      `HTTPS server error: ${err.message} — HTTPS disabled, HTTP is unaffected and continues starting normally`,
+    );
+    httpsServer = null;
+  });
+
+  // .listen() also validates its `port` argument SYNCHRONOUSLY before ever
+  // reaching the socket layer -- an out-of-range or non-numeric value
+  // throws a RangeError/TypeError immediately, which the "error" handler
+  // above never sees (it only covers ASYNC failures like EADDRINUSE). Both
+  // must be guarded; this is the synchronous half.
+  try {
+    httpsServer.listen(httpsPort, () => {
+      log.info(`HTTPS server listening on port ${httpsPort}`);
+    });
+  } catch (error) {
+    log.error(
+      `Invalid HTTPS port ${JSON.stringify(httpsPort)}: ${error.message} — HTTPS disabled, HTTP is unaffected`,
+    );
+    httpsServer = null;
+  }
+
+  return httpsServer;
+}
+
 // Security middleware
 // HSTS and upgrade-insecure-requests are conditionally enabled:
 // - On LAN/HTTP setups: disabled (would break plain HTTP access)
@@ -2692,44 +2802,7 @@ async function start() {
     const customKeyPath = await getSetting("httpsKeyPath");
     const customCertPath = await getSetting("httpsCertPath");
 
-    if (httpsEnabled) {
-      const certs = loadOrCreateCerts(customKeyPath, customCertPath);
-      if (certs) {
-        httpsServer = createHttpsServer(certs, app);
-        // Add HTTPS origin to allowed list dynamically
-        addAllowedOrigin(`https://localhost:${httpsPort}`);
-        // Attach the SAME Socket.IO instance to the HTTPS server too, instead
-        // of creating a second `Server`. A second instance would have its own
-        // auth middleware, rooms, and connection handlers — every `.emit()`
-        // in this app targets the module-level `io` (bound only to the HTTP
-        // server), so WSS clients would authenticate successfully and then
-        // receive NO events at all (no server:status, players:update,
-        // perf:snapshot, log:entry, chat:message, panelBridge:*, etc).
-        // `io.attach()` binds the existing engine (with its middleware and
-        // event handlers already registered) to this additional http.Server.
-        io.attach(httpsServer, {
-          cors: {
-            origin: (origin, callback) => {
-              if (isAllowedOrigin(origin)) {
-                callback(null, true);
-              } else {
-                callback(new Error(CORS_DENY_MESSAGE));
-              }
-            },
-            methods: ["GET", "POST"],
-            credentials: true,
-          },
-        });
-
-        httpsServer.listen(httpsPort, () => {
-          log.info(`HTTPS server listening on port ${httpsPort}`);
-        });
-      } else {
-        log.warn(
-          "HTTPS enabled but certificate generation failed — running HTTP only",
-        );
-      }
-    }
+    setupHttpsServer({ httpsEnabled, httpsPort, customKeyPath, customCertPath });
 
     // Retry logic for EADDRINUSE (nodemon restarts can overlap)
     let listenRetries = 0;

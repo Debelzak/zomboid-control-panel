@@ -1,8 +1,9 @@
 import express from "express";
+import fs from "fs";
 import path from "path";
 import { createLogger } from "../utils/logger.js";
 const log = createLogger("API:Config");
-import { getAllSettings, setSetting } from "../database/init.js";
+import { getAllSettings, getSetting, setSetting } from "../database/init.js";
 import {
   sanitizeError,
   SENSITIVE_FIELD_RE,
@@ -303,6 +304,72 @@ router.put("/app-settings", requirePermission("panel.settings"), async (req, res
         typeof value !== "boolean"
       ) {
         return res.status(400).json({ error: `${key} must be true or false` });
+      }
+
+      // httpsCertPath/httpsKeyPath used to be accepted as any string and
+      // only ever checked at panel BOOT (utils/certs.js), where a bad value
+      // (directory instead of file, unreadable) crashed the whole process
+      // via an unguarded fs.readFileSync -- see that file's own fix for the
+      // other half of this. Rejecting a bad value here, immediately, is
+      // what actually prevents an operator from saving one in the first
+      // place; the boot-time fix alone only stops the crash for a value
+      // that goes bad AFTER being saved (moved/deleted/permissions changed
+      // later), which is a real but separate case this can't catch.
+      if (
+        (key === "httpsCertPath" || key === "httpsKeyPath") &&
+        value !== ""
+      ) {
+        if (typeof value !== "string") {
+          return res.status(400).json({ error: `${key} must be a string` });
+        }
+        let stat;
+        try {
+          stat = fs.statSync(value);
+        } catch {
+          return res.status(400).json({
+            error: `${key} does not point to a file that exists: ${value}`,
+          });
+        }
+        if (!stat.isFile()) {
+          return res.status(400).json({
+            error: `${key} must be a file, not a directory: ${value}`,
+          });
+        }
+        try {
+          fs.accessSync(value, fs.constants.R_OK);
+        } catch {
+          return res.status(400).json({
+            error: `${key} exists but is not readable by the panel: ${value}`,
+          });
+        }
+      }
+
+      if (key === "httpsPort") {
+        const port = Number(value);
+        if (!Number.isInteger(port) || port < 1 || port > 65535) {
+          return res.status(400).json({
+            error: "httpsPort must be a whole number from 1 to 65535",
+          });
+        }
+        const panelPort = await getSetting("panelPort");
+        if (panelPort && port === Number(panelPort)) {
+          return res.status(400).json({
+            error: `httpsPort cannot be the same as the panel's HTTP port (${panelPort})`,
+          });
+        }
+      }
+
+      // Same missing-range-check shape as httpsPort above, but the worst
+      // case if it slips through is a too-fast/too-slow reconnect timer,
+      // not a lockout -- worth closing anyway since it's one check in the
+      // same loop, not worth its own investigation.
+      if (key === "reconnectInterval") {
+        const interval = Number(value);
+        if (!Number.isInteger(interval) || interval < 1 || interval > 60) {
+          return res.status(400).json({
+            error: "reconnectInterval must be a whole number from 1 to 60",
+          });
+        }
       }
 
       if (key === "chatPresets") {
