@@ -50,6 +50,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rather than as more rows. No colours, fonts or components were invented for this - every change
   reuses something the panel already does elsewhere.
 
+- **Server install and update progress now reports in French**: the running commentary while the
+  panel installs or updates a server - downloading, extracting, verifying, saving RCON settings,
+  installing the PanelBridge mod, and the completion and failure lines - is now written in French
+  instead of English.
+
+  **SteamCMD's own output is deliberately left exactly as SteamCMD prints it.** Those lines are the
+  tool's words, not the panel's, and translating them would mean showing you French that SteamCMD
+  never produced and that would not match a real SteamCMD log if you compared them. The two kinds of
+  line were previously indistinguishable to the panel; they now travel differently, and a raw
+  SteamCMD line is structurally incapable of being translated by accident.
+
 - **Debug > World Map now reports in French too**: the fourteen health checks behind the World Map
   tab - whether the map tiles were found, which game build they came from, whether the PanelBridge
   mod is running and heard from recently, and which save the panel is reading - are now written in
