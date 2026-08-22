@@ -38,6 +38,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   window silently open.
 
 ### Fixed
+- **Role permissions now actually restrict access everywhere**: every panel route has been reviewed
+  and now enforces the role that matches what it does. Diagnostics and database maintenance are
+  administrator-only; mods, server files, scheduling and integrations are administrator and
+  technician; in-game player actions - kick, ban, whitelist, teleport - are open to moderators as
+  intended, and read-only status pages stay open to everyone signed in. Previously, once any account
+  existed beyond the first administrator, many of these were reachable by any signed-in user
+  regardless of role, including the endpoints that back up and compact the panel database.
 
 - **Bans recorded that never happened**: banning, unbanning or voice-banning a player — by username
   or by SteamID — while the game server is offline or restarting no longer writes the action into

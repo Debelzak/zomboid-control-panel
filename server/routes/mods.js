@@ -48,8 +48,19 @@ import {
   listAvailableBrowsers,
   extractSteamCookies,
 } from "../utils/browserCookies.js";
+import { requireRole } from "../services/auth.js";
 
 const router = express.Router();
+
+// Every route in this file is admin+technician: "mods" and "config" are
+// explicitly the technician's job per the role brief, and moderator's job
+// is player/in-game authority, not workshop or INI management. Applied
+// once at the router level (this file has ~70 endpoints) rather than
+// per-route, so a route added here later is admin+technician by default
+// instead of silently inheriting the central-login-gate-only exposure this
+// whole file had before (any logged-in role — including moderator — could
+// previously edit sandbox vars, mod lists, or workshop collections).
+router.use(requireRole("admin", "technician"));
 
 // ─── INI write mutex ────────────────────────────────────────────────────────
 // Serialises write operations to the same INI file so concurrent requests

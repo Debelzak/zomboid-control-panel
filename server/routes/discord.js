@@ -2,9 +2,18 @@ import express from "express";
 import { createLogger } from "../utils/logger.js";
 import { sanitizeError } from "../utils/sanitize.js";
 import { normalizeChatRelayScope } from "../services/discordBot.js";
+import { requireRole } from "../services/auth.js";
 const log = createLogger("API:Discord");
 
 const router = express.Router();
+
+// Bot config/lifecycle/permissions — "config" is technician's job per the
+// role brief; moderator has no need to reconfigure the Discord integration.
+// Applied once at the router level (matches panelBridge.js's identical
+// integration-config routes, already admin+technician) rather than
+// per-route. Previously any logged-in role could reach every route here,
+// including reconfiguring the webhook and bot permissions.
+router.use(requireRole("admin", "technician"));
 
 // Get Discord bot status
 router.get("/status", async (req, res) => {

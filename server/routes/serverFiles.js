@@ -19,8 +19,17 @@ import {
   validateRemoteConfigTransport,
 } from "../services/remoteConfigFiles.js";
 import { requireStoppedForLocalConfigMutation } from "../services/configMutationGuard.js";
+import { requireRole } from "../services/auth.js";
 
 const router = express.Router();
+
+// INI/sandbox/spawn config editing, file backups/restore, and templates —
+// "config" and "backups" are explicitly technician's job per the role
+// brief; moderator has no server-config editing role. Applied once at the
+// router level rather than per-route (25 endpoints). Previously any
+// logged-in role, including moderator, could edit sandbox vars or restore
+// a server file backup.
+router.use(requireRole("admin", "technician"));
 
 // Thrown by getServerConfigPath()/getServerName() when no server is
 // configured at all (no active server row, and no legacy settings fallback

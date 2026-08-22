@@ -9,6 +9,21 @@ const log = createLogger("API:MapProxy");
 
 const router = express.Router();
 
+// ROLE NOTE (role-sweep, not this file's original author): no requireRole
+// anywhere in this file, deliberately, on two different grounds:
+//   - /tiles/:level/:tile, /toptiles/:level/:tile, /b41tiles/:level/:tile
+//     are already exempted from the central login gate entirely (see
+//     authService.middleware(), which matches /api/map/tiles/,
+//     /api/map/toptiles/, /api/map/b41tiles/ before req.user is ever set —
+//     they're loaded via <img> tags, which can't send an auth header). A
+//     role check here would be dead code: req.user is never populated for
+//     these paths in the first place.
+//   - /resolve and /vehicles ARE behind the login gate (any authenticated
+//     request reaches them) and stay open to every role on purpose: viewing
+//     the world map and live vehicle positions is exactly the kind of thing
+//     a moderator wants for locating a reported incident, and neither
+//     returns anything sensitive or mutates any state.
+//
 // ─── Persistent disk-backed tile cache ───────────────────────────────────
 // A given PZ map build's tiles never change once published, so unlike a
 // typical HTTP cache these never need to expire — once a tile has been

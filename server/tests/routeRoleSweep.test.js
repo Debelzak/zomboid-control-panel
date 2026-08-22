@@ -1,0 +1,250 @@
+import { describe, expect, it } from "vitest";
+
+// Covers the "12 unguarded files" sweep: routes that relied on the central
+// login gate alone (any authenticated role reached them) now have an
+// explicit role decision, one way or the other. The important property per
+// god's brief is NOT just "a moderator is refused" -- a sweep that locks
+// everything to admin passes every refusal test while quietly making
+// technician and moderator useless. So every describe block below checks
+// BOTH directions: the excluded role is refused, and the role that's
+// supposed to be able to do the thing is NOT refused at the gate.
+
+function createResponse() {
+  const response = { status: () => response, json: () => response, set: () => response };
+  let statusCode = 200;
+  response.status = (code) => {
+    statusCode = code;
+    return response;
+  };
+  response.json = () => response;
+  response.set = () => response;
+  response.getStatusCode = () => statusCode;
+  return response;
+}
+
+// For router.use(requireRole(...)) gates: grabs the first non-route layer
+// (that's always where this sweep put its guard, ahead of any route-
+// specific handler and, in serverFiles.js's case, ahead of that file's own
+// pre-existing unconfigured-server gate too) and runs it directly.
+async function runFirstUseLayer(router, req) {
+  const res = createResponse();
+  const layer = router.stack.find((entry) => !entry.route);
+  let calledNext = false;
+  await layer.handle(req, res, () => {
+    calledNext = true;
+  });
+  return { res, calledNext };
+}
+
+// For per-route requireRole(...) (rcon.js's mixed file): same
+// route-stack-walking approach as roles.test.js.
+function getRouteLayer(router, routePath, method) {
+  return router.stack.find(
+    (entry) => entry.route?.path === routePath && entry.route.methods[method],
+  );
+}
+async function runRoute(router, routePath, method, req) {
+  const res = createResponse();
+  const layer = getRouteLayer(router, routePath, method);
+  if (!layer) throw new Error(`No ${method.toUpperCase()} ${routePath} route registered`);
+  const handlers = layer.route.stack.map((s) => s.handle);
+  let idx = -1;
+  const next = async (err) => {
+    idx++;
+    if (err) throw err;
+    if (idx < handlers.length) await handlers[idx](req, res, next);
+  };
+  await next();
+  return res;
+}
+
+describe("mods.js: admin+technician (mods/config is technician's job, not moderator's)", () => {
+  it("refuses a moderator", async () => {
+    const { default: router } = await import("../routes/mods.js");
+    const { res } = await runFirstUseLayer(router, { user: { role: "moderator" } });
+    expect(res.getStatusCode()).toBe(403);
+  });
+  it("does not refuse a technician", async () => {
+    const { default: router } = await import("../routes/mods.js");
+    const { calledNext } = await runFirstUseLayer(router, { user: { role: "technician" } });
+    expect(calledNext).toBe(true);
+  });
+});
+
+describe("discord.js: admin+technician (integration config, not player authority)", () => {
+  it("refuses a moderator", async () => {
+    const { default: router } = await import("../routes/discord.js");
+    const { res } = await runFirstUseLayer(router, { user: { role: "moderator" } });
+    expect(res.getStatusCode()).toBe(403);
+  });
+  it("does not refuse a technician", async () => {
+    const { default: router } = await import("../routes/discord.js");
+    const { calledNext } = await runFirstUseLayer(router, { user: { role: "technician" } });
+    expect(calledNext).toBe(true);
+  });
+});
+
+describe("scheduler.js: admin+technician (task automation operates the server)", () => {
+  it("refuses a moderator", async () => {
+    const { default: router } = await import("../routes/scheduler.js");
+    const { res } = await runFirstUseLayer(router, { user: { role: "moderator" } });
+    expect(res.getStatusCode()).toBe(403);
+  });
+  it("does not refuse a technician", async () => {
+    const { default: router } = await import("../routes/scheduler.js");
+    const { calledNext } = await runFirstUseLayer(router, { user: { role: "technician" } });
+    expect(calledNext).toBe(true);
+  });
+});
+
+describe("serverFiles.js: admin+technician (config/backups), ahead of the file's own unconfigured-server gate", () => {
+  it("refuses a moderator", async () => {
+    const { default: router } = await import("../routes/serverFiles.js");
+    const { res } = await runFirstUseLayer(router, { user: { role: "moderator" } });
+    expect(res.getStatusCode()).toBe(403);
+  });
+  it("does not refuse a technician", async () => {
+    const { default: router } = await import("../routes/serverFiles.js");
+    const { calledNext } = await runFirstUseLayer(router, { user: { role: "technician" } });
+    expect(calledNext).toBe(true);
+  });
+});
+
+describe("serverFinder.js: admin+technician (setup/verification diagnostic)", () => {
+  it("refuses a moderator", async () => {
+    const { default: router } = await import("../routes/serverFinder.js");
+    const { res } = await runFirstUseLayer(router, { user: { role: "moderator" } });
+    expect(res.getStatusCode()).toBe(403);
+  });
+  it("does not refuse a technician", async () => {
+    const { default: router } = await import("../routes/serverFinder.js");
+    const { calledNext } = await runFirstUseLayer(router, { user: { role: "technician" } });
+    expect(calledNext).toBe(true);
+  });
+});
+
+describe("players.js: open to admin+technician+moderator (in-game/player authority is moderator's job)", () => {
+  it("does not refuse a moderator", async () => {
+    const { default: router } = await import("../routes/players.js");
+    const { calledNext } = await runFirstUseLayer(router, { user: { role: "moderator" } });
+    expect(calledNext).toBe(true);
+  });
+  it("does not refuse a technician", async () => {
+    const { default: router } = await import("../routes/players.js");
+    const { calledNext } = await runFirstUseLayer(router, { user: { role: "technician" } });
+    expect(calledNext).toBe(true);
+  });
+  it("does not refuse an admin", async () => {
+    const { default: router } = await import("../routes/players.js");
+    const { calledNext } = await runFirstUseLayer(router, { user: { role: "admin" } });
+    expect(calledNext).toBe(true);
+  });
+});
+
+describe("rcon.js: mixed -- /execute and connection lifecycle are admin+technician, status/reference stays open to everyone", () => {
+  const RESTRICTED = [
+    ["/execute", "post"],
+    ["/connect", "post"],
+    ["/test", "post"],
+    ["/disconnect", "post"],
+  ];
+  const OPEN = [
+    ["/status", "get"],
+    ["/health", "get"],
+    ["/history", "get"],
+    ["/commands", "get"],
+    ["/commands/:category", "get"],
+  ];
+
+  it.each(RESTRICTED)("refuses a moderator on %s %s", async (routePath, method) => {
+    const { default: router } = await import("../routes/rcon.js");
+    const res = await runRoute(router, routePath, method, {
+      user: { role: "moderator" },
+      body: {},
+      params: {},
+      query: {},
+    });
+    expect(res.getStatusCode()).toBe(403);
+  });
+
+  it.each(RESTRICTED)("does not refuse a technician at the gate on %s %s", async (routePath, method) => {
+    const { default: router } = await import("../routes/rcon.js");
+    // Minimal stub so a technician reaching past the role gate exercises
+    // real (if trivial) downstream logic instead of crashing on
+    // `undefined.connect()` -- a crash isn't a 403 either, but a real
+    // response proves the gate itself, not just an accident of the fake.
+    const stubRconService = {
+      connect: async () => false,
+      disconnect: async () => {},
+      execute: async () => ({ success: true, response: "" }),
+      getUserFriendlyError: () => "stub error",
+    };
+    const res = await runRoute(router, routePath, method, {
+      user: { role: "technician" },
+      body: {},
+      params: {},
+      query: {},
+      app: { get: () => stubRconService },
+    });
+    // 403 would mean the gate refused a technician; anything else means
+    // the gate let them through, which is the only thing this checks.
+    expect(res.getStatusCode()).not.toBe(403);
+  });
+
+  it.each(OPEN)("stays open to a moderator on %s %s (read-only, nothing sensitive)", async (routePath, method) => {
+    const { default: router } = await import("../routes/rcon.js");
+    const stubRconService = {
+      getConfig: () => ({ host: "127.0.0.1", port: 27015 }),
+      healthCheck: async () => ({ healthy: true }),
+    };
+    const res = await runRoute(router, routePath, method, {
+      user: { role: "moderator" },
+      body: {},
+      params: {},
+      query: {},
+      app: { get: () => stubRconService },
+    });
+    expect(res.getStatusCode()).not.toBe(403);
+  });
+});
+
+describe("mapProxy.js / serverStatus.js / system.js: deliberately open to every role", () => {
+  it("mapProxy /resolve and /vehicles do not refuse a moderator", async () => {
+    const { default: router } = await import("../routes/mapProxy.js");
+    for (const [routePath, method] of [
+      ["/resolve", "get"],
+      ["/vehicles", "get"],
+    ]) {
+      const res = await runRoute(router, routePath, method, {
+        user: { role: "moderator" },
+        params: {},
+        query: {},
+        app: { get: () => undefined },
+      });
+      expect(res.getStatusCode()).not.toBe(403);
+    }
+  });
+
+  it("serverStatus GET /active/status does not refuse a moderator", async () => {
+    const { default: router } = await import("../routes/serverStatus.js");
+    const res = await runRoute(router, "/active/status", "get", {
+      user: { role: "moderator" },
+      app: { get: () => undefined },
+    });
+    expect(res.getStatusCode()).not.toBe(403);
+  });
+
+  it("system GET /disk-space and /storage-health do not refuse a moderator", async () => {
+    const { default: router } = await import("../routes/system.js");
+    for (const [routePath, method] of [
+      ["/disk-space", "get"],
+      ["/storage-health", "get"],
+    ]) {
+      const res = await runRoute(router, routePath, method, {
+        user: { role: "moderator" },
+        app: { get: () => undefined },
+      });
+      expect(res.getStatusCode()).not.toBe(403);
+    }
+  });
+});

@@ -13,8 +13,17 @@ import {
   getActiveServer,
   getServer
 } from '../database/init.js';
+import { requireRole } from '../services/auth.js';
 
 const router = express.Router();
+
+// Task automation (create/edit/delete/run scheduled commands, trigger an
+// immediate restart) is "operate the server" — technician's job per the
+// role brief, not player-facing, so moderator is excluded. Applied once at
+// the router level rather than per-route. Previously any logged-in role,
+// including moderator, could create or run a scheduled task — including
+// /restart-now.
+router.use(requireRole('admin', 'technician'));
 
 /**
  * Check if a cron expression runs more frequently than every 5 minutes.

@@ -30,12 +30,18 @@ function createResponse() {
   return response;
 }
 
-// The gate is the very first router.use() in the file — it must run before
-// anything else, including the existing remote-mirror middleware, so an
-// unconfigured panel never reaches a handler that could invent data.
+// The unconfigured-server gate is the SECOND router.use() in the file, not
+// the first: requireRole("admin", "technician") (role sweep) now runs
+// ahead of it, deliberately — authorization has to happen before any data-
+// availability check, so a role that has no business touching server files
+// at all gets a 403 rather than a 404 that would still confirm whether a
+// server is configured. The gate itself must still run before anything
+// else FOR AN ALLOWED ROLE, including the existing remote-mirror
+// middleware, so an unconfigured panel never reaches a handler that could
+// invent data.
 function getGateMiddleware() {
-  const layer = router.stack.find((entry) => !entry.route);
-  return layer.handle;
+  const nonRouteLayers = router.stack.filter((entry) => !entry.route);
+  return nonRouteLayers[1].handle;
 }
 
 function getRouteHandler(method, routePath) {

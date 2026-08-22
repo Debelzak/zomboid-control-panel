@@ -19,8 +19,23 @@ import { VEHICLES, PERKS, PERK_CATALOG, ACCESS_LEVELS } from '../utils/commands.
 import { sanitizeError } from '../utils/sanitize.js';
 import bridge from '../services/panelBridge.js';
 import { listWhitelistAccounts } from '../utils/whitelistDb.js';
+import { requireRole } from '../services/auth.js';
 
 const router = express.Router();
+
+// Deliberately open to every role, including moderator: this whole file —
+// kick/ban/whitelist, teleport/GM commands, notes, exports — IS "in-game/
+// player authority", the thing the moderator role exists for per the role
+// brief. Currently equivalent to "any authenticated user" (there are only
+// three roles and all three are listed), but written explicitly rather
+// than left as a silent central-gate-only route, per the standing
+// instruction: an explicit "every role may reach this" is a decision,
+// omitting the check is how a route ends up unintentionally open. Also
+// future-proofs against a role being added later that should NOT reach
+// player actions (e.g. a read-only "viewer" role) — an explicit allowlist
+// would correctly exclude it, a bare central-gate-only route would not.
+router.use(requireRole('admin', 'technician', 'moderator'));
+
 const MAX_EXPORT_FILE_BYTES = 5 * 1024 * 1024;
 
 export function parsePlayerExportFile(filePath) {
