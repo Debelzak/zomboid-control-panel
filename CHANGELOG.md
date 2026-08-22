@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Stuck "stop in progress" after a wedged kill**: force-stopping the server no longer hangs
+  forever if the operating system's own kill command stalls — for example under antivirus
+  interference. The panel gives up waiting after a bounded time, stays able to start, stop and
+  restart the server afterwards, and tells you plainly when it could not confirm the process
+  actually exited instead of silently reporting success.
+
 - **Windows panel recovery after a crash**: on Windows the panel launcher only restarted the panel
   when an update was being applied, so any other crash left it stopped — waiting on a keypress —
   while the game server carried on running unattended. It now relaunches automatically, backing off

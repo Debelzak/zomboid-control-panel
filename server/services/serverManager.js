@@ -23,6 +23,15 @@ const isWindows = process.platform === "win32";
 // dashboard would show a stale, no-longer-yours address indefinitely.
 const PUBLIC_IP_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 
+// Matches the timeout already used by the process-scan exec calls in
+// _scanDedicatedServerProcesses below. taskkill/kill/pkill must never be
+// allowed to hang indefinitely (AV interference, a wedged syscall): if they
+// do, the awaiting stopServer() never returns, so its `finally` never runs,
+// so this._stopping never clears, and the server becomes permanently
+// un-start/stop/restartable until the whole panel is restarted. See
+// stopServer()'s handling of the { timedOut } result below.
+const KILL_EXEC_TIMEOUT_MS = 8000;
+
 function getConfiguredIpv4Address(variableName) {
   const address = process.env[variableName]?.trim();
   return address && net.isIP(address) === 4 ? address : null;
@@ -238,6 +247,10 @@ export class ServerManager {
     this.publicIp = null;
     this.gamePort = null;
     this.fetchingIp = false;
+    // Instance field (not just the module constant) so tests can exercise
+    // the real timeout wiring in _killPids/_genericForceStop without
+    // waiting out the full production value.
+    this._killTimeoutMs = KILL_EXEC_TIMEOUT_MS;
   }
 
   // Reload config (called when active server changes)
@@ -1098,8 +1111,22 @@ export class ServerManager {
         log.info(
           `stopServer: force killing PID(s) for "${this.serverName}": ${pids.join(", ")}`,
         );
-        await this._killPids(pids);
+        const { timedOut } = await this._killPids(pids);
         this._clearRunState();
+        if (timedOut) {
+          log.warn(
+            `stopServer: kill command for "${this.serverName}" (PIDs: ${pids.join(", ")}) did not finish within ${this._killTimeoutMs}ms — could not confirm the process actually exited`,
+          );
+          await logServerEvent(
+            "server_stop",
+            `Server stop timed out waiting for kill confirmation (PIDs: ${pids.join(", ")})`,
+          ).catch((e) => log.warn(`Failed to log event: ${e.message}`));
+          return {
+            success: true,
+            message:
+              "Stop signal sent, but confirmation timed out — check whether the server actually exited before starting it again",
+          };
+        }
         await logServerEvent(
           "server_stop",
           `Server force stopped (killed PIDs: ${pids.join(", ")})`,
@@ -1128,7 +1155,21 @@ export class ServerManager {
         "stopServer: process detection failed. Falling back to generic force stop.",
       );
       this._clearRunState();
-      await this._genericForceStop();
+      const { timedOut } = await this._genericForceStop();
+      if (timedOut) {
+        log.warn(
+          `stopServer: generic force stop did not finish within ${this._killTimeoutMs}ms — could not confirm the process actually exited`,
+        );
+        await logServerEvent(
+          "server_stop",
+          "Server stop timed out waiting for kill confirmation (generic fallback)",
+        ).catch((e) => log.warn(`Failed to log event: ${e.message}`));
+        return {
+          success: true,
+          message:
+            "Stop signal sent, but confirmation timed out — check whether the server actually exited before starting it again",
+        };
+      }
       await logServerEvent("server_stop", "Server force stopped").catch((e) =>
         log.warn(`Failed to log event: ${e.message}`),
       );
@@ -1161,45 +1202,83 @@ export class ServerManager {
     }
   }
 
+  // Resolves to { timedOut }. `timedOut` is true when at least one
+  // taskkill/kill call didn't finish on its own and had to be aborted by
+  // the exec timeout below -- meaning we could NOT confirm the process
+  // actually exited, only that we stopped waiting. Distinguished from an
+  // ordinary fast kill error (e.g. "process already exited", already
+  // treated as harmless) via killErr.killed, which Node sets specifically
+  // when its own timeout is what ended the child -- not on a normal
+  // nonzero-exit failure.
   _killPids(pids) {
     return new Promise((resolve) => {
       if (isWindows) {
         let remaining = pids.length;
+        let timedOut = false;
         for (const pid of pids) {
-          execFile("taskkill", ["/PID", pid, "/F"], (killErr) => {
-            if (killErr) log.debug(`taskkill ${pid}: ${killErr.message}`);
-            if (--remaining === 0) resolve();
-          });
+          execFile(
+            "taskkill",
+            ["/PID", pid, "/F"],
+            { timeout: this._killTimeoutMs },
+            (killErr) => {
+              if (killErr) {
+                if (killErr.killed) timedOut = true;
+                log.debug(`taskkill ${pid}: ${killErr.message}`);
+              }
+              if (--remaining === 0) resolve({ timedOut });
+            },
+          );
         }
         return;
       }
 
-      execFile("kill", ["-9", ...pids], (killErr) => {
-        if (killErr) {
-          log.warn(
-            `Kill returned error (may be normal if process already exited): ${killErr.message}`,
-          );
-        }
-        resolve();
-      });
+      execFile(
+        "kill",
+        ["-9", ...pids],
+        { timeout: this._killTimeoutMs },
+        (killErr) => {
+          let timedOut = false;
+          if (killErr) {
+            timedOut = Boolean(killErr.killed);
+            log.warn(
+              `Kill returned error (may be normal if process already exited): ${killErr.message}`,
+            );
+          }
+          resolve({ timedOut });
+        },
+      );
     });
   }
 
+  // Resolves to { timedOut }, same meaning as _killPids above.
   _genericForceStop() {
     return new Promise((resolve) => {
       if (isWindows) {
-        exec("taskkill /IM ProjectZomboid64.exe /F", () => {
-          exec(
-            "powershell -Command \"Get-CimInstance Win32_Process -Filter \\\"Name='java.exe'\\\" | Where-Object { $_.CommandLine -like '*zombie.network.gameserver*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }\"",
-            () => resolve(),
-          );
-        });
+        let timedOut = false;
+        exec(
+          "taskkill /IM ProjectZomboid64.exe /F",
+          { timeout: this._killTimeoutMs },
+          (err1) => {
+            if (err1?.killed) timedOut = true;
+            exec(
+              "powershell -Command \"Get-CimInstance Win32_Process -Filter \\\"Name='java.exe'\\\" | Where-Object { $_.CommandLine -like '*zombie.network.gameserver*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }\"",
+              { timeout: this._killTimeoutMs },
+              (err2) => {
+                if (err2?.killed) timedOut = true;
+                resolve({ timedOut });
+              },
+            );
+          },
+        );
         return;
       }
 
       exec(
         "pkill -9 -f 'zombie.network.[Gg]ame[Ss]erver|[Pp]roject[Zz]omboid64|[Pp]roject[Zz]omboid32'",
-        () => resolve(),
+        { timeout: this._killTimeoutMs },
+        (err) => {
+          resolve({ timedOut: Boolean(err?.killed) });
+        },
       );
     });
   }
