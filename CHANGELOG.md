@@ -116,6 +116,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `client/src/locales/README.md`.
 
 ### Fixed
+- **Error messages that mention a specific thing now say it in French too**: messages that name a
+  permission, a role, a count or a reason - such as refusing a change that would leave nobody able
+  to manage roles - previously fell back to English, because the panel had no way to carry that
+  detail across in a translatable form. It does now, and the permission is named using the same
+  wording the Roles & Permissions screen uses.
 - **The French wording for "Wipe server" said "reset", not "erase"**: the dialog title, the
   confirm button and both menu entries used *Réinitialiser* - the word this panel uses for ordinary,
   recoverable resets elsewhere - directly above body text correctly warning that the action deletes
