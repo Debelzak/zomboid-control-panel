@@ -153,13 +153,18 @@ describe("requirePermission() fails closed", () => {
     expect(calledNext).toBe(true);
   });
 
-  it("passes through when req.user is absent -- matches requireRole's behavior for auth-disabled/setup-pending, not a permission decision", async () => {
+  it("refuses (401) when req.user is absent -- this used to pass through and was the exact shape of a real, live, unauthenticated-admin-creation bug (2026-08-22) once authService.middleware() started exempting a whole URL prefix from authentication without also exempting it from this gate. middleware() now always sets an explicit req.user (real or an explicit auth-disabled sentinel), so absence can only ever mean 'not authenticated' here", async () => {
     const { requirePermission } = await import("../services/permissions.js");
     rolesById.clear();
 
     const gate = requirePermission("server.control");
-    const { calledNext } = await runGate(gate, undefined);
+    const { res, calledNext } = await runGate(gate, undefined);
 
-    expect(calledNext).toBe(true);
+    expect(calledNext).toBe(false);
+    expect(res.getStatusCode()).toBe(401);
+    expect(res.getBody()).toEqual({
+      error: "Authentication required",
+      code: "AUTH_REQUIRED",
+    });
   });
 });

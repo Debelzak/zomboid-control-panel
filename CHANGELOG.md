@@ -65,6 +65,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `client/src/locales/README.md`.
 
 ### Fixed
+- **Permission checks now refuse by default instead of allowing by default**: underneath the
+  account-management bug above sat the reason it was possible - if the panel could not tell who was
+  making a request, the permission checks treated that as "nothing to check" and let it through. That
+  was written when it was safe, and it quietly stopped being safe. Every request now has an identity
+  attached before any check runs, and if one is ever missing, the panel now refuses by default. The
+  practical difference: a future mistake of this kind produces a door that will not open, which
+  someone reports the same day, instead of one that is open to everybody, which went unnoticed for
+  months.
 - **Anyone who could reach the panel could create an administrator account, with no password**:
   requests to the account-management endpoints were not checking who was calling them. On any panel
   that had finished setup, a request with no credentials at all could list every account, create a

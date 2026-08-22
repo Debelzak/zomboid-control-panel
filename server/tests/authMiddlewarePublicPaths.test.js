@@ -23,7 +23,8 @@ vi.mock("../database/init.js", () => ({
   commitNow: async () => {},
 }));
 
-const { default: authService } = await import("../services/auth.js");
+const { default: authService, requireRole } = await import("../services/auth.js");
+const { default: authRouter } = await import("../routes/auth.js");
 
 describe("authService.middleware() — /api/auth/* is no longer a blanket exemption", () => {
   let middleware;
@@ -107,5 +108,90 @@ describe("authService.middleware() — /api/auth/* is no longer a blanket exempt
     // requirePermission to read — this is the actual thing that was
     // broken (never set at all under the old blanket exemption).
     expect(req.user).toMatchObject({ username: "admin", role: "admin" });
+  });
+
+  it("auth explicitly disabled (authEnabled=false): req.user is set to an explicit synthetic full-access user, not left absent", async () => {
+    settings.set("authEnabled", false);
+    const { req, next, res } = await run("/api/auth/users"); // no token at all
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(res.status).not.toHaveBeenCalled();
+    expect(req.user).toMatchObject({ role: "admin", authDisabled: true });
+  });
+});
+
+describe("requireRole() — the guard itself fails closed, independent of middleware()", () => {
+  function createResponse() {
+    const res = { status: vi.fn(), json: vi.fn() };
+    res.status.mockReturnValue(res);
+    return res;
+  }
+
+  it("refuses (401) when req.user is missing, rather than the old pass-through — the defense-in-depth half of the fix", () => {
+    const gate = requireRole("admin");
+    const req = {}; // no req.user at all — the exact shape a future exemption mistake would produce
+    const res = createResponse();
+    const next = vi.fn();
+
+    gate(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ code: "AUTH_REQUIRED" }),
+    );
+  });
+
+  it("still checks the role normally when req.user IS present — unaffected by the fail-closed change", () => {
+    const gate = requireRole("admin");
+    const res = createResponse();
+    const next = vi.fn();
+
+    gate({ user: { role: "admin" } }, res, next);
+    expect(next).toHaveBeenCalledTimes(1);
+
+    const res2 = createResponse();
+    gate({ user: { role: "technician" } }, res2, vi.fn());
+    expect(res2.status).toHaveBeenCalledWith(403);
+  });
+});
+
+describe("/me, /change-password, /recovery-codes — independently safe, pinned so nobody 'simplifies' them onto req.user later", () => {
+  // These three call getAuthenticatedUser(req) themselves instead of
+  // trusting req.user — proven here by invoking their route handlers
+  // DIRECTLY with no req.user set at all (the exact shape they'd see if
+  // someone accidentally re-added their path to PUBLIC_AUTH_PATHS above).
+  // If a future change ever makes them trust req.user instead, this fails.
+  function getLayer(routePath, method) {
+    return authRouter.stack.find(
+      (entry) => entry.route?.path === routePath && entry.route.methods[method],
+    );
+  }
+
+  async function runHandlerDirect(routePath, method, req) {
+    const layer = getLayer(routePath, method);
+    const handler = layer.route.stack[layer.route.stack.length - 1].handle;
+    const res = { status: vi.fn(), json: vi.fn() };
+    res.status.mockReturnValue(res);
+    await handler(req, res, () => {});
+    return res;
+  }
+
+  it("GET /me refuses with no Authorization header even when req.user was never set by middleware", async () => {
+    const res = await runHandlerDirect("/me", "get", { headers: {} });
+    expect(res.status).toHaveBeenCalledWith(401);
+  });
+
+  it("POST /change-password refuses with no Authorization header the same way", async () => {
+    const res = await runHandlerDirect("/change-password", "post", {
+      headers: {},
+      body: {},
+    });
+    expect(res.status).toHaveBeenCalledWith(401);
+  });
+
+  it("GET /recovery-codes refuses with no Authorization header the same way", async () => {
+    const res = await runHandlerDirect("/recovery-codes", "get", { headers: {} });
+    expect(res.status).toHaveBeenCalledWith(401);
   });
 });

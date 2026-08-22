@@ -325,8 +325,18 @@ export const DEFAULT_ROLE_CAPABILITIES = Object.freeze({
  * that falls through to next() on anything other than a confirmed grant:
  *   - capability not in the catalogue -> refuse (logged as a bug, not an
  *     access decision -- this should only happen from a typo at a call site)
- *   - req.user missing -> pass through (matches requireRole: auth
- *     disabled / setup pending already let the request through upstream)
+ *   - req.user missing -> refuse (401). This used to pass through on the
+ *     theory that authService.middleware() only ever left req.user unset
+ *     when auth was intentionally off (setup pending / auth disabled),
+ *     so there was nothing left to check. That precondition silently
+ *     stopped being true for a whole URL prefix -- middleware() started
+ *     exempting /api/auth/* from authentication entirely without also
+ *     exempting it from this gate, so "no req.user" started meaning
+ *     "nobody checked" instead of "auth is off", and every
+ *     requirePermission-gated route under that prefix admitted every
+ *     request. middleware() now sets an explicit req.user even when auth
+ *     is disabled (see services/auth.js), so this function no longer
+ *     needs -- or trusts -- an implicit meaning for absence.
  *   - no role row matches req.user.role -> refuse (role renamed/deleted
  *     out from under an active session)
  *   - role.capabilities is missing or not an array -> refuse
@@ -352,7 +362,12 @@ export function requirePermission(capability) {
   }
 
   return async (req, res, next) => {
-    if (!req.user) return next();
+    if (!req.user) {
+      return res.status(401).json({
+        error: "Authentication required",
+        code: ErrorCode.AUTH_REQUIRED,
+      });
+    }
 
     try {
       const role = await getRoleByName(req.user.role);

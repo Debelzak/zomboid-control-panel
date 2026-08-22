@@ -105,7 +105,7 @@ describe("PUT /api/config/app-settings", () => {
     );
   });
 
-  it("passes through with no req.user when auth is not configured yet", async () => {
+  it("rejects with no req.user at all — requirePermission fails closed now, this is no longer a pass-through case (2026-08-22 fix)", async () => {
     setSetting.mockReset();
     const response = createResponse();
 
@@ -113,6 +113,25 @@ describe("PUT /api/config/app-settings", () => {
       "/app-settings",
       "put",
       { body: { settings: { corsAllowAll: true } }, app: makeApp() },
+      response,
+    );
+
+    expect(response.status).toHaveBeenCalledWith(401);
+    expect(setSetting).not.toHaveBeenCalled();
+  });
+
+  it("auth explicitly disabled: authService.middleware() now sets an explicit synthetic admin req.user (not an absent one), which still works here", async () => {
+    setSetting.mockReset();
+    const response = createResponse();
+
+    await runRoute(
+      "/app-settings",
+      "put",
+      {
+        body: { settings: { corsAllowAll: true } },
+        user: { role: "admin", authDisabled: true },
+        app: makeApp(),
+      },
       response,
     );
 
@@ -131,6 +150,7 @@ describe("PUT /api/config", () => {
       "put",
       {
         body: { config: { serverName: "DoomerZ" } },
+        user: { role: "admin" },
         app: {
           get: (key) =>
             key === "serverManager"
