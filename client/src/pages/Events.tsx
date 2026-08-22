@@ -1239,12 +1239,12 @@ export default function Events() {
   }, [toast, pushActivity, t])
 
   const executeCommand = useCallback(async (command: string) => {
-    const result = await rconApi.execute(command)
-    if (!result.success) {
-      throw new Error(result.error || t('toasts.commandFailedFallback'))
-    }
-    return result
-  }, [t])
+    // rconService.execute()'s failures resolve { success: false, error }
+    // rather than throwing, but handleResponse() throws on any 200 body
+    // with success: false anyway (see lib/api.ts) -- this never sees
+    // result.success === false, the throw below is unreachable.
+    return rconApi.execute(command)
+  }, [])
 
   const handleAction = useCallback(async (action: string, fn: () => Promise<unknown>) => {
     setLoading(action)
