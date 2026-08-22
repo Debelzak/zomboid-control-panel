@@ -364,6 +364,16 @@ async function handleResponse<T = any>(response: Response): Promise<T> {
       code: "INVALID_RESPONSE",
     });
   }
+  // An HTTP 200 with an explicit `success: false` body is this codebase's
+  // other way of saying "this failed" -- RCON/bridge/game actions routinely
+  // resolve this way when the underlying server or connector isn't
+  // reachable, and a caller that only checks "did the fetch throw" reports
+  // success anyway. Strict equality: a response with no `success` field at
+  // all (most GETs, many POSTs that just return the created/updated
+  // resource) is untouched by this check and returns exactly as before.
+  if ((data as { success?: unknown }).success === false) {
+    throw buildResponseError(response, data);
+  }
   return data as T;
 }
 

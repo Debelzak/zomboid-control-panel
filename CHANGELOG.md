@@ -43,6 +43,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `client/src/locales/README.md`.
 
 ### Fixed
+- **"Success" messages that were not true**: 42 places in the panel showed a green success message
+  as soon as the request came back, without checking whether the action had actually worked. Banning
+  or unbanning a player, giving an item, spawning a vehicle, triggering a scheduled task, restarting
+  the server and sending a broadcast all reported success even when the game server was offline and
+  nothing had happened. The two worst were the restart and the broadcast: an operator would announce
+  a restart to players and walk away, or believe players had been warned, when neither had taken
+  place. All of these now show the real error the server returned.
 - **Role permissions now actually restrict access everywhere**: every panel route has been reviewed
   and now enforces the role that matches what it does. Diagnostics and database maintenance are
   administrator-only; mods, server files, scheduling and integrations are administrator and
