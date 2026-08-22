@@ -516,15 +516,40 @@ export default function Console() {
 
     setLoading(true)
     try {
-      const result = await rconApi.execute(command)
-      
+      // handleResponse() throws on a non-2xx status or an HTTP 200 body
+      // with success: false -- rconService.execute() resolves
+      // { success: false, error } for "server not running"/"unknown
+      // command"/etc rather than rejecting, so every RCON failure used to
+      // arrive as a caught exception here, skipping the live-log/command-
+      // cache/connection-status handling below entirely (a failed command
+      // just vanished instead of showing up in the console like a real
+      // terminal would). Reconstruct the { success, error } shape from the
+      // caught error so failures go through the same handling as successes.
+      let result: { success: boolean; response?: string; error?: string }
+      try {
+        result = await rconApi.execute(command)
+      } catch (error) {
+        result = {
+          success: false,
+          error: error instanceof Error ? error.message : t('toasts.commandFailedFallback'),
+        }
+      }
+
       // Update connection status based on result
       if (result.error?.includes('Server is not running') || result.error?.includes('ECONNREFUSED')) {
         setRconConnected(false)
       } else if (result.success) {
         setRconConnected(true)
       }
-      
+
+      if (!result.success) {
+        toast({
+          title: t('toasts.errorTitle'),
+          description: result.error || t('toasts.commandFailedFallback'),
+          variant: 'destructive',
+        })
+      }
+
       // Add to live log only when socket updates are unavailable to avoid duplicates.
       if (!socket?.connected) {
         setLiveLog(prev => [...prev, {
@@ -540,10 +565,10 @@ export default function Console() {
       setCommandCache(prev => [...prev.slice(-99), command])
       setCommandHistoryIndex(-1)
       setCommand('')
-      
+
       // Re-focus input after command execution
       inputRef.current?.focus()
-      
+
       fetchHistory()
     } catch (error) {
       setRconConnected(false)
@@ -601,7 +626,20 @@ export default function Console() {
       const cmd = selectedChannel === 'all'
         ? `servermsg "${cleaned}"`
         : `servermsg "[${selectedChannel.toUpperCase()}] ${cleaned}"`
-      const result = await rconApi.execute(cmd)
+      // Same shape as executeCommand above: rconService.execute() resolves
+      // { success: false, error } for a genuine RCON failure rather than
+      // rejecting, so handleResponse() throws before this ever sees
+      // result.success === false. Reconstruct it here too, so a failed
+      // broadcast still gets logged instead of silently vanishing.
+      let result: { success: boolean; response?: string; error?: string }
+      try {
+        result = await rconApi.execute(cmd)
+      } catch (error) {
+        result = {
+          success: false,
+          error: error instanceof Error ? error.message : t('toasts.broadcastFailedFallback'),
+        }
+      }
 
       setLiveLog(prev => [...prev, {
         command: cmd,
@@ -622,7 +660,11 @@ export default function Console() {
         setAnnouncement('')
         setRconConnected(true)
       } else {
-        throw new Error(result.error || t('toasts.broadcastFailedFallback'))
+        toast({
+          title: t('toasts.errorTitle'),
+          description: result.error || t('toasts.broadcastFailedFallback'),
+          variant: 'destructive',
+        })
       }
     } catch (error) {
       toast({
