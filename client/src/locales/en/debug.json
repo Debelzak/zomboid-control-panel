@@ -1015,6 +1015,54 @@
               "message": "PanelBridge is running but the in-game mod has not written status.json yet. Players, vehicles and safehouses will not appear.",
               "hint": "Start the PZ server and confirm the PanelBridge mod is in the active mod list."
             }
+          },
+          "heartbeat": {
+            "warn": {
+              "label": "Mod heartbeat stale",
+              "message": "Last status.json update was {{ageSeconds}}s ago. Live map data may be stale."
+            }
+          },
+          "ok": {
+            "withHeartbeat": {
+              "label": "Live data feed healthy",
+              "message": "PanelBridge running, mod connected, last heartbeat {{ageSeconds}}s ago."
+            },
+            "withoutHeartbeat": {
+              "label": "Live data feed healthy",
+              "message": "PanelBridge running, mod connected."
+            }
+          }
+        },
+        "save": {
+          "none": {
+            "info": {
+              "label": "No save found yet",
+              "message": "No save folder under <zomboidData>/Saves. The server hasn't generated a world yet — the map will still render but without chunk data."
+            }
+          },
+          "build": {
+            "ok": {
+              "b42": {
+                "label": "B42 save detected",
+                "message": "{{saveCount}} save(s); using {{saveName}} for build detection (map/X/Y.bin layout)."
+              },
+              "b41": {
+                "label": "B41 save detected",
+                "message": "{{saveCount}} save(s); using {{saveName}} (map_X_Y.bin layout). Map will switch to B41 tile source."
+              }
+            },
+            "warn": {
+              "label": "Save build not detected",
+              "message": "Found {{saveCount}} save folder(s) but couldn't identify B41 vs B42 layout. Map will default to B42 origin and player coords may render off-screen on a B41 save.",
+              "hint": "Start the server once to materialise chunk files."
+            }
+          },
+          "dataPath": {
+            "warn": {
+              "label": "No Zomboid data path set",
+              "message": "Cannot locate save folders. Map auto-detection of B41/B42 will be skipped.",
+              "hint": "Servers → Edit → Zomboid Data Path"
+            }
           }
         }
       }

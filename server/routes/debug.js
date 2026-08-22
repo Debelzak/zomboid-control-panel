@@ -4332,12 +4332,27 @@ router.get("/worldmap", requirePermission("diagnostics.manage"), async (req, res
         ),
       );
     } else if (statusAge !== null && statusAge > 15_000) {
+      const ageSeconds = Math.round(statusAge / 1000);
       checks.push(
         diagWarn(
           "worldmap.bridge.heartbeat",
           "Mod heartbeat stale",
-          `Last status.json update was ${Math.round(statusAge / 1000)}s ago. Live map data may be stale.`,
-          { category: "worldmap" },
+          `Last status.json update was ${ageSeconds}s ago. Live map data may be stale.`,
+          { category: "worldmap", params: { ageSeconds } },
+        ),
+      );
+    } else if (statusAge !== null) {
+      // Two genuinely different sentences (a trailing heartbeat-age clause
+      // that either exists or doesn't), not a hole to fill in one sentence
+      // -- variant, not params. See worldMapCheckRegistry.test.js's header
+      // comment for the params-vs-variant rule.
+      const ageSeconds = Math.round(statusAge / 1000);
+      checks.push(
+        diagOk(
+          "worldmap.bridge",
+          "Live data feed healthy",
+          `PanelBridge running, mod connected, last heartbeat ${ageSeconds}s ago.`,
+          { category: "worldmap", variant: "withHeartbeat", params: { ageSeconds } },
         ),
       );
     } else {
@@ -4345,8 +4360,8 @@ router.get("/worldmap", requirePermission("diagnostics.manage"), async (req, res
         diagOk(
           "worldmap.bridge",
           "Live data feed healthy",
-          `PanelBridge running, mod connected${statusAge !== null ? `, last heartbeat ${Math.round(statusAge / 1000)}s ago` : ""}.`,
-          { category: "worldmap" },
+          "PanelBridge running, mod connected.",
+          { category: "worldmap", variant: "withoutHeartbeat" },
         ),
       );
     }
@@ -4410,7 +4425,11 @@ router.get("/worldmap", requirePermission("diagnostics.manage"), async (req, res
               "worldmap.save.build",
               "B42 save detected",
               `${saveCount} save(s); using ${saveName} for build detection (map/X/Y.bin layout).`,
-              { category: "worldmap" },
+              {
+                category: "worldmap",
+                variant: "b42",
+                params: { saveCount, saveName },
+              },
             ),
           );
         } else if (saveBuild === "b41") {
@@ -4419,7 +4438,11 @@ router.get("/worldmap", requirePermission("diagnostics.manage"), async (req, res
               "worldmap.save.build",
               "B41 save detected",
               `${saveCount} save(s); using ${saveName} (map_X_Y.bin layout). Map will switch to B41 tile source.`,
-              { category: "worldmap" },
+              {
+                category: "worldmap",
+                variant: "b41",
+                params: { saveCount, saveName },
+              },
             ),
           );
         } else {
@@ -4431,6 +4454,7 @@ router.get("/worldmap", requirePermission("diagnostics.manage"), async (req, res
               {
                 category: "worldmap",
                 hint: "Start the server once to materialise chunk files.",
+                params: { saveCount },
               },
             ),
           );

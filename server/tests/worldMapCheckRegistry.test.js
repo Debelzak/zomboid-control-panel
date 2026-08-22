@@ -98,6 +98,14 @@ const KNOWN_TRANSLATED_IDS = new Set([
   "worldmap.bridge.configured",
   "worldmap.bridge.running",
   "worldmap.bridge.mod",
+  // Batch 2 (final): heartbeat + the bare "healthy" state (2-way
+  // with/without-heartbeat-clause variant), and save detection
+  // (2-way b42/b41 variant + a plain not-detected warn).
+  "worldmap.bridge.heartbeat",
+  "worldmap.bridge",
+  "worldmap.save.none",
+  "worldmap.save.build",
+  "worldmap.save.dataPath",
 ]);
 
 /**
@@ -223,11 +231,13 @@ const en = flattenWorldMapLocaleChecks(loadWorldMapChecksNode(EN_DEBUG_JSON_PATH
 const fr = flattenWorldMapLocaleChecks(loadWorldMapChecksNode(FR_DEBUG_JSON_PATH));
 
 describe("world map check locale registry (self-enforcing, scoped to GET /worldmap only)", () => {
-  it("found at least worldmap.tiles.b42's ok and fail arms (sanity check on the scan itself)", () => {
+  it("found at least worldmap.tiles.b42's ok/fail arms and worldmap.save.build's b42 variant (sanity check on the scan itself)", () => {
     // If this fails, the regex/boundary scan broke, not the translations --
     // fix extractWorldMapChecks() before trusting any other test below.
     expect(source.plain.has("worldmap.tiles.b42::ok")).toBe(true);
     expect(source.plain.has("worldmap.tiles.b42::fail")).toBe(true);
+    expect(source.withVariant.has("worldmap.save.build::ok::b42")).toBe(true);
+    expect(source.withVariant.has("worldmap.bridge::ok::withHeartbeat")).toBe(true);
   });
 
   for (const id of KNOWN_TRANSLATED_IDS) {

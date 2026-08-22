@@ -1015,6 +1015,54 @@
               "message": "PanelBridge est en cours d'exécution mais le mod en jeu n'a pas encore écrit status.json. Les joueurs, véhicules et refuges n'apparaîtront pas.",
               "hint": "Démarrez le serveur PZ et vérifiez que le mod PanelBridge est dans la liste des mods actifs."
             }
+          },
+          "heartbeat": {
+            "warn": {
+              "label": "Battement du mod obsolète",
+              "message": "Dernière mise à jour de status.json il y a {{ageSeconds}} s. Les données de carte en direct peuvent être obsolètes."
+            }
+          },
+          "ok": {
+            "withHeartbeat": {
+              "label": "Flux de données en direct sain",
+              "message": "PanelBridge en cours d'exécution, mod connecté, dernier battement il y a {{ageSeconds}} s."
+            },
+            "withoutHeartbeat": {
+              "label": "Flux de données en direct sain",
+              "message": "PanelBridge en cours d'exécution, mod connecté."
+            }
+          }
+        },
+        "save": {
+          "none": {
+            "info": {
+              "label": "Aucune sauvegarde trouvée pour l'instant",
+              "message": "Aucun dossier de sauvegarde sous <zomboidData>/Saves. Le serveur n'a pas encore généré de monde — la carte s'affichera quand même mais sans données de cellules."
+            }
+          },
+          "build": {
+            "ok": {
+              "b42": {
+                "label": "Sauvegarde B42 détectée",
+                "message": "{{saveCount}} sauvegarde(s) ; utilisation de {{saveName}} pour la détection du build (disposition map/X/Y.bin)."
+              },
+              "b41": {
+                "label": "Sauvegarde B41 détectée",
+                "message": "{{saveCount}} sauvegarde(s) ; utilisation de {{saveName}} (disposition map_X_Y.bin). La carte passera à la source de tuiles B41."
+              }
+            },
+            "warn": {
+              "label": "Build de la sauvegarde non détecté",
+              "message": "{{saveCount}} dossier(s) de sauvegarde trouvé(s) mais impossible d'identifier la disposition B41 ou B42. La carte utilisera par défaut l'origine B42 et les coordonnées des joueurs peuvent s'afficher hors écran sur une sauvegarde B41.",
+              "hint": "Démarrez le serveur une fois pour matérialiser les fichiers de cellules."
+            }
+          },
+          "dataPath": {
+            "warn": {
+              "label": "Aucun chemin de données Zomboid défini",
+              "message": "Impossible de localiser les dossiers de sauvegarde. La détection automatique B41/B42 de la carte sera ignorée.",
+              "hint": "Serveurs → Modifier → Chemin de données Zomboid"
+            }
           }
         }
       }
