@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **You can now delete a user**: the Users screen could create and list accounts but there was no
+  way to remove one. There is now. The panel refuses to delete the last account that can manage
+  users and roles, so you cannot empty out your own administrators, and it refuses to let you
+  delete your own account - ask another administrator to do that, since deleting yourself would
+  sign you out mid-action with nothing left to sign back in to.
+
+  **Deleting someone takes effect immediately, not whenever their session would have expired.** If
+  they are signed in right now on another machine, their very next click fails. This was verified
+  by signing a real session in and deleting the account underneath it, not by reading the code.
 - **A Users screen, and a new Access Control section in the menu**: there is now a screen listing
   everyone who can sign in to the panel, and a form to add someone. The role picker offers every
   role that actually exists on your panel, including ones you created yourself, rather than only
@@ -102,6 +111,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `client/src/locales/README.md`.
 
 ### Fixed
+- **The panel could refuse to start while tests were running on the same machine**: the panel and
+  its test suite both worked out where to keep their data from one shared file, and each could
+  overwrite the other's answer. When that happened the panel would read a temporary folder as its
+  real data directory, then refuse to start because it believed another copy of itself was already
+  running. Each now keeps its own separate answer, so they cannot collide. This only affected
+  machines where the panel's own test suite runs - not a normal installation.
 - **The panel was quietly deleting backups you uploaded yourself**: automatic cleanup kept only the
   most recent backups and treated an archive you had uploaded by hand exactly like one the panel
   made on a schedule. On the default settings that meant a backup you deliberately saved was deleted
