@@ -20,6 +20,7 @@ import {
   buildOidcAuthorizationRequest,
   handleOidcCallback,
 } from "../services/oidc.js";
+import { getRefreshCookieOptions } from "../utils/refreshCookie.js";
 
 const log = createLogger("OIDC");
 const router = Router();
@@ -44,25 +45,6 @@ const callbackRateLimiter = makeOidcLimiter();
 
 const FLOW_COOKIE_NAME = "oidcFlow";
 const FLOW_COOKIE_MAX_AGE_MS = 10 * 60 * 1000; // 10 minutes — enough for an IdP login + MFA, short enough to limit exposure.
-
-// Mirrors routes/auth.js's getRefreshCookieOptions (kept local rather than
-// imported — that file is owned by another agent's in-flight work on
-// roles). If that ever changes shape, this needs to change with it; flagged
-// to the integrator in the accompanying report rather than silently risking
-// drift.
-function getRefreshCookieOptions(req) {
-  const forceSecureCookies =
-    process.env.HTTPS === "true" || process.env.FORCE_HSTS === "true";
-  const requestIsSecure =
-    req.secure || req.headers["x-forwarded-proto"] === "https";
-  return {
-    httpOnly: true,
-    secure: forceSecureCookies || requestIsSecure,
-    sameSite: "strict",
-    path: "/api/auth",
-    maxAge: 30 * 24 * 60 * 60 * 1000,
-  };
-}
 
 // The state/nonce/PKCE cookie deliberately uses SameSite=Lax, not Strict:
 // unlike the refresh-token cookie above (only ever sent by same-site XHR
