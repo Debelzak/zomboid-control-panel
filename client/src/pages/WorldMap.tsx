@@ -2219,33 +2219,34 @@ export default function WorldMap() {
       actionLoadingRef.current = 'airdrop'
       setActionLoading('airdrop')
       try {
+        // /panel-bridge/command's generic passthrough (bridge.sendCommand())
+        // only ever resolves with { success: true, ... } -- an in-game
+        // failure rejects the promise instead (see processResult()'s
+        // pending.reject branch in services/panelBridge.js) -- so this
+        // never sees res.success === false, only the catch below.
         const res = await panelBridgeApi.triggerAirdrop({ x, y, preset, announce: true, attractZombies: true })
         if (!mountedRef.current) return
-        if (res.success) {
-          const presetDef = AIRDROP_PRESETS.find((p) => p.id === preset)
-          const label = presetDef ? presetLabel(presetDef.id) : preset
-          const data = res.data as Record<string, unknown> | undefined
-          const itemCount = typeof data?.itemCount === 'number' ? data.itemCount : undefined
-          const failed = typeof data?.failed === 'number' ? data.failed : 0
-          const coords = `${Math.round(x)}, ${Math.round(y)}`
-          let desc = itemCount
-            ? t('toasts.itemsDropped', { count: itemCount, coords })
-            : t('toasts.supplyDrop', { coords })
-          if (failed > 0) {
-            desc += t('toasts.failedSuffix', { count: failed })
-          }
-          toast({ title: t('toasts.airdropDeployedTitle', { label }), description: desc })
-          setAirdropMarkers((prev) => {
-            const next = [...prev, { x, y, preset, time: Date.now() }]
-            return next.length > 50 ? next.slice(-50) : next // cap at 50 markers
-          })
-        } else {
-          toast({ title: t('toasts.airdropFailedTitle'), description: res.error || t('toasts.areaNotLoaded'), variant: 'destructive' })
+        const presetDef = AIRDROP_PRESETS.find((p) => p.id === preset)
+        const label = presetDef ? presetLabel(presetDef.id) : preset
+        const data = res.data as Record<string, unknown> | undefined
+        const itemCount = typeof data?.itemCount === 'number' ? data.itemCount : undefined
+        const failed = typeof data?.failed === 'number' ? data.failed : 0
+        const coords = `${Math.round(x)}, ${Math.round(y)}`
+        let desc = itemCount
+          ? t('toasts.itemsDropped', { count: itemCount, coords })
+          : t('toasts.supplyDrop', { coords })
+        if (failed > 0) {
+          desc += t('toasts.failedSuffix', { count: failed })
         }
+        toast({ title: t('toasts.airdropDeployedTitle', { label }), description: desc })
+        setAirdropMarkers((prev) => {
+          const next = [...prev, { x, y, preset, time: Date.now() }]
+          return next.length > 50 ? next.slice(-50) : next // cap at 50 markers
+        })
       } catch (err) {
         if (!mountedRef.current) return
-        const msg = err instanceof Error ? err.message : t('toasts.airdropErrorFallback')
-        toast({ title: t('toasts.airdropErrorTitle'), description: msg, variant: 'destructive' })
+        const msg = err instanceof Error ? err.message : t('toasts.areaNotLoaded')
+        toast({ title: t('toasts.airdropFailedTitle'), description: msg, variant: 'destructive' })
       } finally {
         actionLoadingRef.current = null
         if (mountedRef.current) {
@@ -2311,6 +2312,9 @@ export default function WorldMap() {
       actionLoadingRef.current = 'drop'
       setActionLoading('drop')
       try {
+        // Same shape as callAirdrop above: the generic /panel-bridge/command
+        // passthrough only ever resolves on success, so this never sees
+        // res.success === false, only the catch below.
         const res = await panelBridgeApi.triggerAirdrop({
           x: opts.x,
           y: opts.y,
@@ -2320,39 +2324,35 @@ export default function WorldMap() {
           soundRadius: Math.max(10, Math.min(500, Math.floor(opts.soundRadius))),
         })
         if (!mountedRef.current) return
-        if (res.success) {
-          const data = res.data as Record<string, unknown> | undefined
-          const failed = typeof data?.failed === 'number' ? data.failed : 0
-          const totalQty = cleaned.reduce((sum, it) => sum + it.count, 0)
-          const coords = `${Math.round(opts.x)}, ${Math.round(opts.y)}`
-          const title = opts.label ? t('toasts.droppedTitle', { label: opts.label }) : t('toasts.dropDeployed')
-          let desc =
-            cleaned.length === 1
-              ? t('toasts.singleItemDesc', {
-                  item: cleaned[0].itemType.replace(/^[^.]+\./, ''),
-                  qtySuffix: cleaned[0].count > 1 ? t('toasts.qtySuffix', { count: cleaned[0].count }) : '',
-                  coords,
-                })
-              : t('toasts.multiItemDesc', { count: cleaned.length, total: totalQty, coords })
-          if (failed > 0) desc += t('toasts.failedSuffix', { count: failed })
-          if (!opts.silent) toast({ title, description: desc })
-          setAirdropMarkers((prev) => {
-            const next = [...prev, { x: opts.x, y: opts.y, preset: 'custom', time: Date.now() }]
-            return next.length > 50 ? next.slice(-50) : next
-          })
-          setLastDrop({
-            items: cleaned,
-            label: opts.label || (cleaned.length === 1
-              ? cleaned[0].itemType.replace(/^[^.]+\./, '')
-              : t('toasts.itemPackageFallback', { count: cleaned.length })),
-          })
-        } else {
-          toast({ title: t('toasts.dropFailedTitle'), description: res.error || t('toasts.areaNotLoaded'), variant: 'destructive' })
-        }
+        const data = res.data as Record<string, unknown> | undefined
+        const failed = typeof data?.failed === 'number' ? data.failed : 0
+        const totalQty = cleaned.reduce((sum, it) => sum + it.count, 0)
+        const coords = `${Math.round(opts.x)}, ${Math.round(opts.y)}`
+        const title = opts.label ? t('toasts.droppedTitle', { label: opts.label }) : t('toasts.dropDeployed')
+        let desc =
+          cleaned.length === 1
+            ? t('toasts.singleItemDesc', {
+                item: cleaned[0].itemType.replace(/^[^.]+\./, ''),
+                qtySuffix: cleaned[0].count > 1 ? t('toasts.qtySuffix', { count: cleaned[0].count }) : '',
+                coords,
+              })
+            : t('toasts.multiItemDesc', { count: cleaned.length, total: totalQty, coords })
+        if (failed > 0) desc += t('toasts.failedSuffix', { count: failed })
+        if (!opts.silent) toast({ title, description: desc })
+        setAirdropMarkers((prev) => {
+          const next = [...prev, { x: opts.x, y: opts.y, preset: 'custom', time: Date.now() }]
+          return next.length > 50 ? next.slice(-50) : next
+        })
+        setLastDrop({
+          items: cleaned,
+          label: opts.label || (cleaned.length === 1
+            ? cleaned[0].itemType.replace(/^[^.]+\./, '')
+            : t('toasts.itemPackageFallback', { count: cleaned.length })),
+        })
       } catch (err) {
         if (!mountedRef.current) return
-        const msg = err instanceof Error ? err.message : t('toasts.dropErrorFallback')
-        toast({ title: t('toasts.dropErrorTitle'), description: msg, variant: 'destructive' })
+        const msg = err instanceof Error ? err.message : t('toasts.areaNotLoaded')
+        toast({ title: t('toasts.dropFailedTitle'), description: msg, variant: 'destructive' })
       } finally {
         actionLoadingRef.current = null
         if (mountedRef.current) {
@@ -2368,26 +2368,23 @@ export default function WorldMap() {
     async (username: string, x: number, y: number, z: number) => {
       setActionLoading('teleport')
       try {
-        const res = await panelBridgeApi.sendCommand('teleportPlayer', {
+        // bridge.sendCommand() (services/panelBridge.js) only ever resolves
+        // with { success: true, ... } -- an in-game failure rejects the
+        // promise instead (see processResult()'s pending.reject branch), so
+        // handleResponse() throws into the catch below either way. This
+        // never sees res.success === false.
+        await panelBridgeApi.sendCommand('teleportPlayer', {
           username,
           x: Math.round(x),
           y: Math.round(y),
           z: Math.round(z),
         })
         if (!mountedRef.current) return
-        if (res.success) {
-          toast({
-            title: t('toasts.teleportedTitle'),
-            description: t('toasts.teleportedDesc', { username, x: Math.round(x), y: Math.round(y) }),
-          })
-          fetchPlayerPositions()
-        } else {
-          toast({
-            title: t('toasts.teleportFailedTitle'),
-            description: res.error || t('toasts.teleportFailedFallback'),
-            variant: 'destructive',
-          })
-        }
+        toast({
+          title: t('toasts.teleportedTitle'),
+          description: t('toasts.teleportedDesc', { username, x: Math.round(x), y: Math.round(y) }),
+        })
+        fetchPlayerPositions()
       } catch (err) {
         if (!mountedRef.current) return
         const msg = err instanceof Error ? err.message : t('toasts.teleportErrorFallback')
@@ -2954,16 +2951,15 @@ export default function WorldMap() {
                       loading={actionLoading === 'vehicle-repair'}
                       onClick={() => {
                     setActionLoading('vehicle-repair')
+                    // Generic /panel-bridge/command passthrough only ever
+                    // resolves on success (see teleportPlayerTo above for
+                    // why), so .then() never sees res.success === false.
                     panelBridgeApi.sendCommand('vehicleRepair', { vehicleId: contextMenu.vehicle!.id })
-                      .then((res) => {
-                        if (res.success) {
-                          toast({ title: t('toasts.vehicleRepaired') })
-                          fetchOverlays()
-                        } else {
-                          toast({ title: t('toasts.repairFailed'), description: res.error || t('toasts.unknownError'), variant: 'destructive' })
-                        }
+                      .then(() => {
+                        toast({ title: t('toasts.vehicleRepaired') })
+                        fetchOverlays()
                       })
-                      .catch(() => toast({ title: t('errorTitle'), variant: 'destructive' }))
+                      .catch((err) => toast({ title: t('toasts.repairFailed'), description: err instanceof Error ? err.message : t('toasts.unknownError'), variant: 'destructive' }))
                       .finally(() => { setActionLoading(null); setContextMenu(null) })
                       }}
                     />
@@ -2975,15 +2971,11 @@ export default function WorldMap() {
                   onClick={() => {
                     setActionLoading('vehicle-fuel')
                     panelBridgeApi.sendCommand('vehicleSetFuel', { vehicleId: contextMenu.vehicle!.id, percent: 100 })
-                      .then((res) => {
-                        if (res.success) {
-                          toast({ title: t('toasts.fuelFilled') })
-                          fetchOverlays()
-                        } else {
-                          toast({ title: t('toasts.fuelFailed'), description: res.error || t('toasts.unknownError'), variant: 'destructive' })
-                        }
+                      .then(() => {
+                        toast({ title: t('toasts.fuelFilled') })
+                        fetchOverlays()
                       })
-                      .catch(() => toast({ title: t('errorTitle'), variant: 'destructive' }))
+                      .catch((err) => toast({ title: t('toasts.fuelFailed'), description: err instanceof Error ? err.message : t('toasts.unknownError'), variant: 'destructive' }))
                       .finally(() => { setActionLoading(null); setContextMenu(null) })
                       }}
                     />
@@ -2995,15 +2987,11 @@ export default function WorldMap() {
                   onClick={() => {
                     setActionLoading('vehicle-battery')
                     panelBridgeApi.sendCommand('vehicleSetBattery', { vehicleId: contextMenu.vehicle!.id, charge: 100 })
-                      .then((res) => {
-                        if (res.success) {
-                          toast({ title: t('toasts.batteryCharged') })
-                          fetchOverlays()
-                        } else {
-                          toast({ title: t('toasts.batteryFailed'), description: res.error || t('toasts.unknownError'), variant: 'destructive' })
-                        }
+                      .then(() => {
+                        toast({ title: t('toasts.batteryCharged') })
+                        fetchOverlays()
                       })
-                      .catch(() => toast({ title: t('errorTitle'), variant: 'destructive' }))
+                      .catch((err) => toast({ title: t('toasts.batteryFailed'), description: err instanceof Error ? err.message : t('toasts.unknownError'), variant: 'destructive' }))
                       .finally(() => { setActionLoading(null); setContextMenu(null) })
                       }}
                     />
@@ -3015,15 +3003,11 @@ export default function WorldMap() {
                   onClick={() => {
                     setActionLoading('vehicle-remove')
                     panelBridgeApi.sendCommand('removeVehicle', { vehicleId: contextMenu.vehicle!.id })
-                      .then((res) => {
-                        if (res.success) {
-                          toast({ title: t('toasts.vehicleRemoved') })
-                          fetchOverlays()
-                        } else {
-                          toast({ title: t('toasts.removeFailed'), description: res.error || t('toasts.unknownError'), variant: 'destructive' })
-                        }
+                      .then(() => {
+                        toast({ title: t('toasts.vehicleRemoved') })
+                        fetchOverlays()
                       })
-                      .catch(() => toast({ title: t('errorTitle'), variant: 'destructive' }))
+                      .catch((err) => toast({ title: t('toasts.removeFailed'), description: err instanceof Error ? err.message : t('toasts.unknownError'), variant: 'destructive' }))
                       .finally(() => { setActionLoading(null); setContextMenu(null) })
                       }}
                     />
@@ -3035,14 +3019,10 @@ export default function WorldMap() {
                   onClick={() => {
                     setActionLoading('vehicle-hotwire')
                     panelBridgeApi.sendCommand('vehicleHotwire', { vehicleId: contextMenu.vehicle!.id })
-                      .then((res) => {
-                        if (res.success) {
-                          toast({ title: t('toasts.vehicleHotwired'), description: t('toasts.engineStarted') })
-                        } else {
-                          toast({ title: t('toasts.hotwireFailed'), description: res.error || t('toasts.unknownError'), variant: 'destructive' })
-                        }
+                      .then(() => {
+                        toast({ title: t('toasts.vehicleHotwired'), description: t('toasts.engineStarted') })
                       })
-                      .catch(() => toast({ title: t('errorTitle'), variant: 'destructive' }))
+                      .catch((err) => toast({ title: t('toasts.hotwireFailed'), description: err instanceof Error ? err.message : t('toasts.unknownError'), variant: 'destructive' }))
                       .finally(() => { setActionLoading(null); setContextMenu(null) })
                       }}
                     />
@@ -3271,22 +3251,24 @@ export default function WorldMap() {
               onClick={() => {
                 if (!spawnDialog || !spawnVehicleId) return
                 setActionLoading('spawn-vehicle')
+                // /players/add-vehicle-at relays rconService.execute()'s
+                // result, which resolves { success: false, error } for a
+                // failed RCON command rather than throwing -- but
+                // handleResponse() throws on ANY 200 body with
+                // success: false too (see lib/api.ts), so this still never
+                // sees res.success === false, only the catch below.
                 playersApi.addVehicleAt(
                   spawnVehicleId,
                   spawnDialog.x,
                   spawnDialog.y,
                   spawnDialog.z,
                 )
-                  .then((res) => {
-                    if (res.success) {
-                      toast({ title: t('toasts.vehicleSpawnedTitle'), description: t('toasts.vehicleSpawnedDesc', { vehicle: spawnVehicleId.split('.').pop(), x: spawnDialog.x, y: spawnDialog.y }) })
-                      fetchOverlays()
-                      setSpawnDialog(null)
-                    } else {
-                      toast({ title: t('toasts.spawnFailedTitle'), description: res.error || t('toasts.unknownError'), variant: 'destructive' })
-                    }
+                  .then(() => {
+                    toast({ title: t('toasts.vehicleSpawnedTitle'), description: t('toasts.vehicleSpawnedDesc', { vehicle: spawnVehicleId.split('.').pop(), x: spawnDialog.x, y: spawnDialog.y }) })
+                    fetchOverlays()
+                    setSpawnDialog(null)
                   })
-                  .catch(() => toast({ title: t('errorTitle'), variant: 'destructive' }))
+                  .catch((err) => toast({ title: t('toasts.spawnFailedTitle'), description: err instanceof Error ? err.message : t('toasts.unknownError'), variant: 'destructive' }))
                   .finally(() => setActionLoading(null))
               }}
             >
