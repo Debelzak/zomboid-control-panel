@@ -69,6 +69,21 @@ function findCodeLiterals() {
 // for that code. That last mile is the same one the locales README already
 // names for the fr/en parity test (the shipped nav.items.serverSetup
 // incident): a human has to read the rendered string, this test cannot.
+//
+// A CONSTRAINT THIS EXACT-MATCH CHECK IMPOSES ON errors.json: it compares
+// each ErrorCode CONSTANT NAME to a locale key with `===`, so i18next's
+// `_one`/`_other` plural-suffixed key convention (e.g. splitting
+// ROLE_HAS_MEMBERS into ROLE_HAS_MEMBERS_one / ROLE_HAS_MEMBERS_other)
+// fails this test -- the bare constant-name key it looks for is missing,
+// even though a real, working pair of plural keys exists. Angela hit this
+// for ROLE_HAS_MEMBERS and correctly kept the source text's manual
+// "user(s)" style instead, documenting it as a constraint rather than
+// fighting the test. This is intentional, not a gap to fix: exact-match is
+// what makes this check catch a missing/misspelled key at all, and a
+// looser match (prefix, or ignoring _one/_other suffixes) would let a
+// genuinely missing bare key hide behind an unrelated plural pair. If a
+// future code needs real plural forms, it needs a second, explicit
+// mechanism -- not a loosening of this one.
 describe("server error codes: registry membership (structure, not meaning)", () => {
   it("every `code:` literal used in server/routes, server/services, server/middleware and server/index.js is a registered ErrorCode value", () => {
     const registryValues = new Set(Object.values(ErrorCode));

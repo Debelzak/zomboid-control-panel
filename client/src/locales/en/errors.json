@@ -23,5 +23,6 @@
   "NO_UPDATE_LEGACY": "No update available",
   "CONFIRMATION_REQUIRED_LEGACY": "Confirm the Docker update before recreating the all-in-one container.",
   "SAVE_FAILED_LEGACY": "The world could not be saved ({{reason}}), so the server was left running. Applying the update now would lose everything since the last save.",
-  "STOP_FAILED_LEGACY": "The world was saved, but the server could not be shut down ({{reason}}). It is still running, so the update was not applied."
+  "STOP_FAILED_LEGACY": "The world was saved, but the server could not be shut down ({{reason}}). It is still running, so the update was not applied.",
+  "SERVER_RUNNING_RCON_UNAVAILABLE": "Stop the Project Zomboid server before applying a Docker update. RCON is not connected, so the panel cannot safely stop it for you."
 }

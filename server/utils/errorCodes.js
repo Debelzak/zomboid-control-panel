@@ -103,13 +103,31 @@ export const ErrorCode = Object.freeze({
    * that users still hold, with no reassignTo given -- refused rather than
    * orphaning them. */
   ROLE_HAS_MEMBERS: "ROLE_HAS_MEMBERS",
+  /** server/index.js -- Docker-update apply path ONLY: server is running
+   * and RCON isn't connected, so the panel can't stop it automatically
+   * before applying the update. Split out from SERVER_RUNNING_LEGACY
+   * (2026-08-22 ruling) rather than reusing it or interpolating a shared
+   * message: chunks.js's refusal means "a running server holds save files
+   * open and will overwrite your changes on shutdown" and this one means
+   * "RCON is unavailable so the panel can't stop it for you" -- two
+   * different, specific, useful reasons that a single shared string (or a
+   * template-substituted one) would flatten into one generic "server is
+   * running" message, throwing away whichever half didn't get picked.
+   * A NEW call site, not yet wired -- server/index.js was dirty (Kevin's
+   * CSP work, Dwight's route sweep) when this was added, so the actual
+   * `code: "server_running"` -> `code: ErrorCode.SERVER_RUNNING_RCON_
+   * UNAVAILABLE` swap at that one site is pending sequencing. */
+  SERVER_RUNNING_RCON_UNAVAILABLE: "SERVER_RUNNING_RCON_UNAVAILABLE",
 
   // --- legacy: wire value frozen (client compares it with === today),
   //     constant name invented only so a locale key exists ---
 
-  /** server/routes/chunks.js, server/index.js (Docker-update apply path) --
-   * wire value "server_running", already compared exactly by
-   * client/src/pages/ChunkCleaner.tsx. Do not rename the value. */
+  /** server/routes/chunks.js (4 sites) -- wire value "server_running",
+   * already compared exactly by client/src/pages/ChunkCleaner.tsx. Do not
+   * rename the value. NOT used by server/index.js's Docker-update path any
+   * more as of the 2026-08-22 split -- see SERVER_RUNNING_RCON_UNAVAILABLE
+   * above for that one; it carries a different, more specific reason and
+   * was deliberately given its own code rather than reusing this one. */
   SERVER_RUNNING_LEGACY: "server_running",
   /** server/services/dockerUpdateProxy.js -- Docker update controller not configured. */
   DOCKER_UPDATER_NOT_CONFIGURED_LEGACY: "docker_updater_not_configured",

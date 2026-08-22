@@ -1551,7 +1551,7 @@ export async function handlePanelUpdateDownload(req, res) {
             return res.status(409).json({
               error:
                 "Stop the Project Zomboid server before applying a Docker update. RCON is not connected, so the panel cannot safely stop it for you.",
-              code: "server_running",
+              code: ErrorCode.SERVER_RUNNING_RCON_UNAVAILABLE,
             });
           }
 

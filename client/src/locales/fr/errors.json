@@ -23,5 +23,6 @@
   "NO_UPDATE_LEGACY": "Aucune mise à jour disponible",
   "CONFIRMATION_REQUIRED_LEGACY": "Confirmez la mise à jour Docker avant de recréer le conteneur tout-en-un.",
   "SAVE_FAILED_LEGACY": "Le monde n'a pas pu être sauvegardé ({{reason}}), le serveur a donc été laissé en cours d'exécution. Appliquer la mise à jour maintenant ferait perdre tout ce qui a été fait depuis la dernière sauvegarde.",
-  "STOP_FAILED_LEGACY": "Le monde a été sauvegardé, mais le serveur n'a pas pu être arrêté ({{reason}}). Il est toujours en cours d'exécution, donc la mise à jour n'a pas été appliquée."
+  "STOP_FAILED_LEGACY": "Le monde a été sauvegardé, mais le serveur n'a pas pu être arrêté ({{reason}}). Il est toujours en cours d'exécution, donc la mise à jour n'a pas été appliquée.",
+  "SERVER_RUNNING_RCON_UNAVAILABLE": "Arrêtez le serveur Project Zomboid avant d'appliquer une mise à jour Docker. RCON n'est pas connecté, le panneau ne peut donc pas l'arrêter en toute sécurité à votre place."
 }
