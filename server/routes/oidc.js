@@ -13,14 +13,19 @@ import { Router } from "express";
 import rateLimit from "express-rate-limit";
 import authService from "../services/auth.js";
 import { createLogger } from "../utils/logger.js";
-import { sanitizeError } from "../utils/sanitize.js";
+import { sanitizeError, isMaskedSecret } from "../utils/sanitize.js";
 import {
   getOidcSettings,
+  getOidcEnvOverrides,
+  setOidcSettings,
   isOidcConfigured,
   buildOidcAuthorizationRequest,
   handleOidcCallback,
+  resetOidcConfigCache,
+  testOidcDiscovery,
 } from "../services/oidc.js";
 import { getRefreshCookieOptions } from "../utils/refreshCookie.js";
+import { requirePermission } from "../services/permissions.js";
 
 const log = createLogger("OIDC");
 const router = Router();
@@ -72,8 +77,8 @@ function getFlowCookieOptions(req) {
 
 // GET /api/auth/oidc/status — public, no secrets. Lets the login screen
 // decide whether to offer an SSO option at all.
-router.get("/status", (_req, res) => {
-  const settings = getOidcSettings();
+router.get("/status", async (_req, res) => {
+  const settings = await getOidcSettings();
   res.json({
     configured: isOidcConfigured(settings),
     providerName: settings.providerName,
@@ -82,7 +87,8 @@ router.get("/status", (_req, res) => {
 
 // GET /api/auth/oidc/login — starts the flow.
 router.get("/login", loginRateLimiter, async (req, res) => {
-  if (!isOidcConfigured()) {
+  const settings = await getOidcSettings();
+  if (!isOidcConfigured(settings)) {
     return res.status(404).json({ error: "OIDC is not configured" });
   }
 
@@ -116,7 +122,8 @@ router.get("/login", loginRateLimiter, async (req, res) => {
 // reason code only — never a raw error message — for whichever future UI
 // work wants to surface it.
 router.get("/callback", callbackRateLimiter, async (req, res) => {
-  if (!isOidcConfigured()) {
+  const settings = await getOidcSettings();
+  if (!isOidcConfigured(settings)) {
     return res.redirect("/?oidcError=not_configured");
   }
 
@@ -135,7 +142,6 @@ router.get("/callback", callbackRateLimiter, async (req, res) => {
     return res.redirect("/?oidcError=expired_flow");
   }
 
-  const settings = getOidcSettings();
   const currentUrl = new URL(settings.redirectUri);
   const queryIndex = req.url.indexOf("?");
   currentUrl.search = queryIndex === -1 ? "" : req.url.slice(queryIndex);
@@ -196,6 +202,181 @@ router.get("/callback", callbackRateLimiter, async (req, res) => {
   res.cookie("refreshToken", result.refreshToken, getRefreshCookieOptions(req));
   log.info(`OIDC sign-in: ${result.user.username} (sub=${claims.sub})`);
   res.redirect("/");
+});
+
+// ---------------------------------------------------------------------------
+// Settings (Settings screen) — gated on panel.settings, the capability that
+// already owns every other panel-wide setting. Not a new capability.
+// ---------------------------------------------------------------------------
+
+const MAX_SCOPE_LENGTH = 500;
+const MAX_PROVIDER_NAME_LENGTH = 100;
+
+function looksLikeUrl(value, { allowHttp }) {
+  try {
+    const url = new URL(value);
+    if (url.protocol === "https:") return true;
+    if (url.protocol === "http:" && allowHttp) return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+function publicSettingsShape(settings) {
+  return {
+    issuerUrl: settings.issuerUrl,
+    clientId: settings.clientId,
+    // Same category as the JWT secret: a GET says only whether it's
+    // configured, never the value, masked or otherwise. Never echoed back.
+    clientSecretConfigured: Boolean(settings.clientSecret),
+    redirectUri: settings.redirectUri,
+    scope: settings.scope,
+    providerName: settings.providerName,
+    allowInsecureHttp: settings.allowInsecureHttp,
+    configured: isOidcConfigured(settings),
+  };
+}
+
+// GET /api/auth/oidc/settings — the settings screen's own read.
+router.get("/settings", requirePermission("panel.settings"), async (req, res) => {
+  const settings = await getOidcSettings();
+  res.json({
+    ...publicSettingsShape(settings),
+    // Which fields are currently pinned by an environment variable, so the
+    // UI can show "set via environment variable" instead of accepting an
+    // edit that env would silently win over anyway.
+    envOverrides: getOidcEnvOverrides(),
+    // Derived from THIS request's own origin, not guessed from other
+    // settings -- guaranteed to match whatever the operator is actually
+    // browsing the panel through right now (reverse proxy, port-forward,
+    // custom domain, whatever), for pasting into the identity provider.
+    suggestedRedirectUri: `${req.protocol}://${req.get("host")}/api/auth/oidc/callback`,
+  });
+});
+
+// PUT /api/auth/oidc/settings — partial update: only fields present in the
+// body are touched, same shape as PUT /api/servers/:id.
+router.put("/settings", requirePermission("panel.settings"), async (req, res) => {
+  try {
+    const body = req.body || {};
+    const current = await getOidcSettings();
+    const updates = {};
+
+    if (body.issuerUrl !== undefined) {
+      const value = String(body.issuerUrl).trim();
+      if (value) {
+        const allowHttp =
+          body.allowInsecureHttp !== undefined
+            ? Boolean(body.allowInsecureHttp)
+            : current.allowInsecureHttp;
+        if (!looksLikeUrl(value, { allowHttp })) {
+          return res.status(400).json({
+            error: allowHttp
+              ? "issuerUrl must be a valid URL"
+              : "issuerUrl must be a valid https:// URL (enable allowInsecureHttp to permit http://)",
+          });
+        }
+      }
+      updates.issuerUrl = value;
+    }
+
+    if (body.clientId !== undefined) {
+      updates.clientId = String(body.clientId).trim();
+    }
+
+    if (body.clientSecret !== undefined) {
+      // A resubmitted masked placeholder means "leave it as-is" -- same
+      // round-trip convention as every other secret field in this app.
+      if (!isMaskedSecret(body.clientSecret)) {
+        updates.clientSecret = String(body.clientSecret);
+      }
+    }
+
+    if (body.redirectUri !== undefined) {
+      const value = String(body.redirectUri).trim();
+      if (value) {
+        try {
+          new URL(value);
+        } catch {
+          return res.status(400).json({ error: "redirectUri must be a valid URL" });
+        }
+      }
+      updates.redirectUri = value;
+    }
+
+    if (body.scope !== undefined) {
+      const value = String(body.scope).trim();
+      if (value.length > MAX_SCOPE_LENGTH) {
+        return res
+          .status(400)
+          .json({ error: `scope must be ${MAX_SCOPE_LENGTH} characters or fewer` });
+      }
+      updates.scope = value;
+    }
+
+    if (body.providerName !== undefined) {
+      const value = String(body.providerName).trim();
+      if (value.length > MAX_PROVIDER_NAME_LENGTH) {
+        return res
+          .status(400)
+          .json({ error: `providerName must be ${MAX_PROVIDER_NAME_LENGTH} characters or fewer` });
+      }
+      updates.providerName = value;
+    }
+
+    if (body.allowInsecureHttp !== undefined) {
+      updates.allowInsecureHttp = Boolean(body.allowInsecureHttp);
+    }
+
+    await setOidcSettings(updates);
+
+    // THE TRAP: getOidcConfig() memoizes discovery process-wide and only a
+    // FAILED discovery clears it. Without this line, a save reports
+    // success and the panel keeps authenticating against the OLD provider
+    // config until the process restarts -- the panel asserting something
+    // false about itself on the exact screen built to fix a broken login.
+    resetOidcConfigCache();
+
+    const settings = await getOidcSettings();
+    log.info(
+      `OIDC settings updated (fields: ${Object.keys(updates).join(", ") || "none"})`,
+    );
+    res.json({ success: true, ...publicSettingsShape(settings) });
+  } catch (error) {
+    log.error(`Failed to update OIDC settings: ${error.message}`);
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
+// POST /api/auth/oidc/test-connection — runs discovery only (no login round
+// trip, nothing persisted, the live memoized config is untouched) against
+// either the values in the body or, for any field left out, whatever is
+// currently saved -- so the operator can test a partial edit (e.g. just a
+// rotated client secret) without retyping everything, and test BEFORE
+// committing a change that might be wrong.
+router.post("/test-connection", requirePermission("panel.settings"), async (req, res) => {
+  const body = req.body || {};
+  const current = await getOidcSettings();
+
+  const clientSecret =
+    body.clientSecret !== undefined && !isMaskedSecret(body.clientSecret)
+      ? String(body.clientSecret)
+      : current.clientSecret;
+
+  const result = await testOidcDiscovery({
+    issuerUrl:
+      body.issuerUrl !== undefined ? String(body.issuerUrl).trim() : current.issuerUrl,
+    clientId:
+      body.clientId !== undefined ? String(body.clientId).trim() : current.clientId,
+    clientSecret,
+    allowInsecureHttp:
+      body.allowInsecureHttp !== undefined
+        ? Boolean(body.allowInsecureHttp)
+        : current.allowInsecureHttp,
+  });
+
+  res.json(result);
 });
 
 export default router;

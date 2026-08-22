@@ -41,15 +41,25 @@ const log = createLogger("Auth");
 // auth-disabled case) then admitted EVERY request, authenticated or not.
 // Confirmed live: an unauthenticated POST /api/auth/users with
 // role:"admin" created a real admin account on a fully set-up install.
-// /api/auth/oidc/* is handled separately (see middleware() below) — a
-// self-contained pre-auth flow (Dwight's), kept as its own prefix rather
-// than enumerated, since login/callback are inherently pre-session by
-// design and neither uses requireRole/requirePermission. /me,
-// /change-password and /recovery-codes are deliberately NOT in this list
-// even though they used to be exempt too — they already verify the
-// Bearer token themselves via getAuthenticatedUser() and are safe either
-// way, but leaving them exempt would keep the same blanket-prefix shape
-// that caused this in the first place for the next route someone adds.
+// /api/auth/oidc/status, /login and /callback are the ONLY OIDC paths in
+// here — genuinely pre-session by design (the login screen checks status
+// before auth exists; login/callback ARE the act of becoming authenticated)
+// and neither uses requireRole/requirePermission. This used to be the
+// whole `/api/auth/oidc/` prefix, exempted as a block on the reasoning that
+// nothing under it would ever need a gate — that stopped being true the
+// moment /settings and /test-connection were added (both authenticated,
+// both requirePermission("panel.settings")): a blanket prefix exemption
+// would have made them permanently unusable (req.user never set, so the
+// gate always sees an absence and fails closed to 401) rather than
+// insecure, but it is the exact same "add a route under an exempted
+// prefix and get its assumption for free, whether wanted or not" shape
+// that caused the live incident above. Enumerated explicitly for the same
+// reason the rest of this list is. /me, /change-password and
+// /recovery-codes are deliberately NOT in this list even though they used
+// to be exempt too — they already verify the Bearer token themselves via
+// getAuthenticatedUser() and are safe either way, but leaving them exempt
+// would keep the same blanket-prefix shape that caused this in the first
+// place for the next route someone adds.
 const PUBLIC_AUTH_PATHS = new Set([
   "/api/auth/status",
   "/api/auth/setup",
@@ -61,6 +71,9 @@ const PUBLIC_AUTH_PATHS = new Set([
   "/api/auth/reset-password",
   "/api/auth/recovery-status",
   "/api/auth/recover-with-code",
+  "/api/auth/oidc/status",
+  "/api/auth/oidc/login",
+  "/api/auth/oidc/callback",
 ]);
 
 // The three roles the operator asked for. admin = everything, including user
@@ -1129,12 +1142,10 @@ class AuthService {
           return next();
         }
 
-        // Only these specific /api/auth/* paths run before req.user is
-        // set — NOT the whole prefix (see PUBLIC_AUTH_PATHS above for why).
-        if (
-          PUBLIC_AUTH_PATHS.has(req.path) ||
-          req.path.startsWith("/api/auth/oidc/")
-        ) {
+        // Only these specific /api/auth/* paths (including the three
+        // /api/auth/oidc/* ones) run before req.user is set — NOT any
+        // whole prefix (see PUBLIC_AUTH_PATHS above for why).
+        if (PUBLIC_AUTH_PATHS.has(req.path)) {
           return next();
         }
 

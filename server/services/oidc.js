@@ -16,6 +16,8 @@
 // belt-and-braces per the operator's "good security" ask.
 import * as client from "openid-client";
 import { createLogger } from "../utils/logger.js";
+import { getSetting, setSetting } from "../database/init.js";
+import { readUiSecretFile, writeUiSecretFile } from "../utils/uiSecretFile.js";
 
 const log = createLogger("OIDC");
 
@@ -28,27 +30,101 @@ function readEnv(name) {
   return typeof value === "string" && value.trim() ? value.trim() : "";
 }
 
-export function getOidcSettings() {
+// The six non-secret fields, keyed by [envVar, dbSettingKey, defaultValue].
+// clientSecret is handled separately below — it's UI-entered like the
+// Discord bot token/Steam session cookie, so it lives in its own sibling
+// file via utils/uiSecretFile.js rather than db.json (same reasoning as
+// those: not panel-generated like jwt.secret, so it must stay editable
+// through Settings, but a credential all the same).
+const ENV_BACKED_FIELDS = [
+  ["PANEL_OIDC_ISSUER_URL", "oidcIssuerUrl", ""],
+  ["PANEL_OIDC_CLIENT_ID", "oidcClientId", ""],
+  ["PANEL_OIDC_REDIRECT_URI", "oidcRedirectUri", ""],
+  ["PANEL_OIDC_SCOPE", "oidcScope", "openid email profile"],
+  // Optional, cosmetic only (e.g. "Sign in with Authentik" on a future
+  // login button) — never used for any security decision.
+  ["PANEL_OIDC_PROVIDER_NAME", "oidcProviderName", "SSO"],
+];
+
+/**
+ * Resolves stored + env-backed OIDC settings. An env var, when set, WINS
+ * over whatever is stored in the DB/secret file for that specific field —
+ * an operator who has set one in the environment (Docker/systemd/compose)
+ * is making a deployment-level choice that a UI edit must not silently
+ * override. Each of the 7 fields is resolved independently, so an operator
+ * can fix everything through the UI except the one field they deliberately
+ * pinned via env.
+ */
+export async function getOidcSettings() {
+  const resolved = {};
+  for (const [envVar, settingKey, defaultValue] of ENV_BACKED_FIELDS) {
+    const envValue = readEnv(envVar);
+    if (envValue) {
+      resolved[settingKey] = envValue;
+    } else {
+      const stored = await getSetting(settingKey);
+      resolved[settingKey] =
+        typeof stored === "string" && stored ? stored : defaultValue;
+    }
+  }
+
+  const envClientSecret = readEnv("PANEL_OIDC_CLIENT_SECRET");
+  const clientSecret =
+    envClientSecret || readUiSecretFile("oidcClientSecret", log) || "";
+
+  const envAllowInsecureHttp = readEnv("PANEL_OIDC_ALLOW_INSECURE_HTTP");
+  // Off by default: openid-client refuses plain HTTP for discovery and
+  // every subsequent request, which is the right default for a panel
+  // exposed to the internet. Only needed for a self-hosted IdP reachable
+  // solely over a private HTTP-only origin (e.g. behind a VPN/reverse
+  // proxy that terminates TLS elsewhere) — and for this module's own
+  // tests, which run a local HTTP mock IdP.
+  const allowInsecureHttp = envAllowInsecureHttp
+    ? envAllowInsecureHttp === "true"
+    : Boolean(await getSetting("oidcAllowInsecureHttp"));
+
   return {
-    issuerUrl: readEnv("PANEL_OIDC_ISSUER_URL"),
-    clientId: readEnv("PANEL_OIDC_CLIENT_ID"),
-    clientSecret: readEnv("PANEL_OIDC_CLIENT_SECRET"),
-    redirectUri: readEnv("PANEL_OIDC_REDIRECT_URI"),
-    scope: readEnv("PANEL_OIDC_SCOPE") || "openid email profile",
-    // Optional, cosmetic only (e.g. "Sign in with Authentik" on a future
-    // login button) — never used for any security decision.
-    providerName: readEnv("PANEL_OIDC_PROVIDER_NAME") || "SSO",
-    // Off by default: openid-client refuses plain HTTP for discovery and
-    // every subsequent request, which is the right default for a panel
-    // exposed to the internet. Only needed for a self-hosted IdP reachable
-    // solely over a private HTTP-only origin (e.g. behind a VPN/reverse
-    // proxy that terminates TLS elsewhere) — and for this module's own
-    // tests, which run a local HTTP mock IdP.
-    allowInsecureHttp: readEnv("PANEL_OIDC_ALLOW_INSECURE_HTTP") === "true",
+    issuerUrl: resolved.oidcIssuerUrl,
+    clientId: resolved.oidcClientId,
+    clientSecret,
+    redirectUri: resolved.oidcRedirectUri,
+    scope: resolved.oidcScope,
+    providerName: resolved.oidcProviderName,
+    allowInsecureHttp,
   };
 }
 
-export function isOidcConfigured(settings = getOidcSettings()) {
+/**
+ * Which fields are currently pinned by an environment variable and are
+ * therefore NOT editable through the settings UI — surfaced by GET
+ * /api/auth/oidc/settings so the panel can show "set via environment
+ * variable" instead of silently accepting an edit that env would win over
+ * anyway. Same false-guarantee shape as everything else found tonight:
+ * a save that reports success but has no effect is exactly the bug this
+ * whole feature exists to avoid one layer up (see resetOidcConfigCache).
+ */
+export function getOidcEnvOverrides() {
+  const overrides = {};
+  for (const [envVar, settingKey] of ENV_BACKED_FIELDS) {
+    overrides[settingKey.replace(/^oidc/, "").replace(/^./, (c) => c.toLowerCase())] =
+      Boolean(readEnv(envVar));
+  }
+  overrides.clientSecret = Boolean(readEnv("PANEL_OIDC_CLIENT_SECRET"));
+  overrides.allowInsecureHttp = Boolean(readEnv("PANEL_OIDC_ALLOW_INSECURE_HTTP"));
+  return overrides;
+}
+
+export async function setOidcSettings(updates) {
+  if (updates.issuerUrl !== undefined) await setSetting("oidcIssuerUrl", updates.issuerUrl);
+  if (updates.clientId !== undefined) await setSetting("oidcClientId", updates.clientId);
+  if (updates.redirectUri !== undefined) await setSetting("oidcRedirectUri", updates.redirectUri);
+  if (updates.scope !== undefined) await setSetting("oidcScope", updates.scope);
+  if (updates.providerName !== undefined) await setSetting("oidcProviderName", updates.providerName);
+  if (updates.allowInsecureHttp !== undefined) await setSetting("oidcAllowInsecureHttp", updates.allowInsecureHttp);
+  if (updates.clientSecret !== undefined) writeUiSecretFile("oidcClientSecret", updates.clientSecret);
+}
+
+export function isOidcConfigured(settings) {
   return Boolean(
     settings.issuerUrl &&
       settings.clientId &&
@@ -67,7 +143,7 @@ export function isOidcConfigured(settings = getOidcSettings()) {
 let _configPromise = null;
 
 export async function getOidcConfig() {
-  const settings = getOidcSettings();
+  const settings = await getOidcSettings();
   if (!isOidcConfigured(settings)) return null;
 
   if (!_configPromise) {
@@ -100,10 +176,61 @@ export async function getOidcConfig() {
   return _configPromise;
 }
 
-// Test-only: force the next getOidcConfig() call to re-run discovery
-// instead of reusing a memoized Configuration from an earlier test.
-export function _resetOidcConfigCacheForTests() {
+// Forces the next getOidcConfig() call to re-run discovery instead of
+// reusing a memoized Configuration. MUST be called by the settings save
+// path (see routes/oidc.js's PUT /settings) -- without this, the trap is:
+// an operator corrects a wrong issuer URL or rotates the client secret,
+// the save reports success, and the panel keeps authenticating against
+// the OLD provider config until the process restarts, because a
+// discovery that never fails never re-runs. Previously only a FAILED
+// discovery cleared this cache; a successful SAVE must clear it too.
+export function resetOidcConfigCache() {
   _configPromise = null;
+}
+
+// Same function, kept under its original name so existing tests don't need
+// to change -- this IS the real, non-test-only cache reset now.
+export const _resetOidcConfigCacheForTests = resetOidcConfigCache;
+
+/**
+ * Runs discovery against a CANDIDATE config the operator is about to save,
+ * without touching the live memoized Configuration and without requiring a
+ * full login round trip -- lets Settings offer a "Test Connection" button
+ * that answers "is this issuer URL/client reachable and does it look like
+ * a real OIDC provider" before the operator commits to it. redirectUri/
+ * scope/providerName are irrelevant to discovery itself, so only issuerUrl/
+ * clientId/clientSecret/allowInsecureHttp are needed here.
+ */
+export async function testOidcDiscovery({
+  issuerUrl,
+  clientId,
+  clientSecret,
+  allowInsecureHttp,
+}) {
+  if (!issuerUrl || !clientId || !clientSecret) {
+    return {
+      success: false,
+      error: "issuerUrl, clientId and clientSecret are all required to test a connection.",
+    };
+  }
+
+  let issuer;
+  try {
+    issuer = new URL(issuerUrl);
+  } catch {
+    return { success: false, error: "issuerUrl is not a valid URL." };
+  }
+
+  const execute = [client.enableNonRepudiationChecks];
+  if (allowInsecureHttp) execute.push(client.allowInsecureRequests);
+
+  try {
+    await client.discovery(issuer, clientId, clientSecret, undefined, { execute });
+    return { success: true };
+  } catch (error) {
+    log.warn(`OIDC test-connection discovery against ${issuerUrl} failed: ${error.message}`);
+    return { success: false, error: error.message };
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -120,7 +247,7 @@ export async function buildOidcAuthorizationRequest() {
   if (!config) {
     throw new Error("OIDC is not configured");
   }
-  const settings = getOidcSettings();
+  const settings = await getOidcSettings();
 
   const codeVerifier = client.randomPKCECodeVerifier();
   const codeChallenge = await client.calculatePKCECodeChallenge(codeVerifier);

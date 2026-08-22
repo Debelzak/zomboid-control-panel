@@ -64,10 +64,31 @@ describe("authService.middleware() — /api/auth/* is no longer a blanket exempt
     expect(res.status).not.toHaveBeenCalled();
   });
 
-  it("still lets /api/auth/oidc/* through with no token — Dwight's pre-session flow", async () => {
-    const { next } = await run("/api/auth/oidc/login");
-    expect(next).toHaveBeenCalledTimes(1);
-  });
+  it.each(["/api/auth/oidc/status", "/api/auth/oidc/login", "/api/auth/oidc/callback"])(
+    "still lets %s through with no token — genuinely pre-session (login screen status check, or the act of becoming authenticated)",
+    async (path) => {
+      const { next } = await run(path);
+      expect(next).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  // /api/auth/oidc/settings and /api/auth/oidc/test-connection were added
+  // later (OIDC settings screen work) and are authenticated + requirePermission
+  // -gated -- this used to be a blanket `startsWith("/api/auth/oidc/")`
+  // exemption, which would have made both of these permanently unusable
+  // (req.user never set under the exemption, so the gate always fails
+  // closed) rather than insecure, but was the exact same "route added under
+  // an exempted prefix inherits its exemption whether wanted or not" shape
+  // as the original incident. Pinned here so nobody "simplifies" the OIDC
+  // exemption back into a prefix and reintroduces it.
+  it.each(["/api/auth/oidc/settings", "/api/auth/oidc/test-connection"])(
+    "%s is NOT exempt — it requires a token like any other authenticated route",
+    async (path) => {
+      const { next, res } = await run(path);
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(401);
+    },
+  );
 
   const FORMERLY_VULNERABLE_PATHS = [
     "/api/auth/users",

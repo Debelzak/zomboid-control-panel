@@ -29,15 +29,15 @@ describe('OIDC: unconfigured (the non-negotiable property)', () => {
   beforeEach(clearOidcEnv);
   afterEach(clearOidcEnv);
 
-  it('reports not configured with no env vars set', () => {
-    expect(isOidcConfigured()).toBe(false);
+  it('reports not configured with no env vars set', async () => {
+    expect(isOidcConfigured(await getOidcSettings())).toBe(false);
   });
 
-  it('reports not configured when only some env vars are set', () => {
+  it('reports not configured when only some env vars are set', async () => {
     process.env.PANEL_OIDC_ISSUER_URL = 'https://idp.example.com';
     process.env.PANEL_OIDC_CLIENT_ID = 'panel';
     // client secret and redirect URI intentionally left unset
-    expect(isOidcConfigured()).toBe(false);
+    expect(isOidcConfigured(await getOidcSettings())).toBe(false);
   });
 
   it('getOidcConfig() resolves to null rather than throwing or making a network call', async () => {
@@ -58,13 +58,13 @@ describe('OIDC: unconfigured (the non-negotiable property)', () => {
     ).rejects.toThrow(/not configured/i);
   });
 
-  it('module import itself never touches the network — settings are read lazily per call, not cached at import time', () => {
+  it('module import itself never touches the network — settings are read lazily per call, not cached at import time', async () => {
     // If this module made a network call (or read env vars) at import time,
     // it would have already happened by the time this test file's imports
     // resolved, long before any env var was set above. Re-reading settings
     // here and getting the CURRENT env proves reads are lazy per call.
     process.env.PANEL_OIDC_PROVIDER_NAME = 'Just Set This';
-    expect(getOidcSettings().providerName).toBe('Just Set This');
+    expect((await getOidcSettings()).providerName).toBe('Just Set This');
   });
 });
 
