@@ -116,6 +116,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `client/src/locales/README.md`.
 
 ### Fixed
+- **A wrong HTTPS certificate path or port could stop the panel starting at all, permanently**:
+  Settings accepted any text in the HTTPS certificate path, key path and port fields without
+  checking them, and saved it with a success message. Nothing went wrong until the next restart -
+  possibly days later - at which point the whole panel failed to start, not just HTTPS, and stayed
+  down until someone edited the stored setting from the filesystem. Anyone without that access was
+  locked out of their own panel by a single save. Those fields are now checked when you save, with
+  a message naming the problem; and if a path that was valid later becomes invalid - moved, deleted
+  or permissions changed - the panel now starts with HTTPS switched off and says so, instead of
+  refusing to start.
 - **Failed actions showed a blank or generic error instead of saying what went wrong**: on the world
   map, every vehicle action - repair, refuel, replace battery, remove, hotwire - reported failure as
   a bare "Error" with no explanation at all. Teleporting a player, calling an airdrop and spawning a
