@@ -39,13 +39,43 @@ async function runRoute(router, routePath, method, req) {
   return res;
 }
 
-describe("requireRole wiring — user management is admin-only", () => {
+describe("user management gate — users.manage capability, not a role name", () => {
+  // GET/POST /users and PATCH /users/:id/role are all gated on the
+  // users.manage capability (requirePermission), not requireRole("admin").
+  // These tests exercise the real, unmocked services/permissions.js against
+  // this suite's real (test-isolated) database, so "admin passes" here is
+  // proof the seeded admin role's real capability grant includes
+  // users.manage — not an assumption about role names.
+  it("refuses a technician listing users (GET /users)", async () => {
+    const res = await runRoute(authRouter, "/users", "get", {
+      user: { role: "technician" },
+    });
+    expect(res.getStatusCode()).toBe(403);
+  });
+
+  it("admits an admin listing users (GET /users)", async () => {
+    const res = await runRoute(authRouter, "/users", "get", {
+      user: { role: "admin" },
+    });
+    expect(res.getStatusCode()).toBe(200);
+  });
+
   it("refuses a technician creating a new user", async () => {
     const res = await runRoute(authRouter, "/users", "post", {
       body: { username: "x", password: "password123", role: "moderator" },
       user: { role: "technician" },
     });
     expect(res.getStatusCode()).toBe(403);
+  });
+
+  it("does not refuse an admin creating a user (may still fail downstream on a missing body)", async () => {
+    const res = await runRoute(authRouter, "/users", "post", {
+      body: {},
+      user: { role: "admin" },
+    });
+    // Reaches the username/password validation, which 400s — the point
+    // here is it is NOT a 403, i.e. the capability gate let admin through.
+    expect(res.getStatusCode()).not.toBe(403);
   });
 
   it("refuses a moderator changing a user's role", async () => {

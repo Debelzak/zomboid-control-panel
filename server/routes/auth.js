@@ -405,11 +405,17 @@ router.post("/change-password", async (req, res) => {
 
 /**
  * GET /api/auth/users
- * List all local accounts. Admin-only — usernames, roles and login history
- * for every account are exactly the kind of thing a technician or moderator
- * account must not be able to enumerate.
+ * List all local accounts. Gated on users.manage — the same capability
+ * PATCH /users/:id/role already requires — rather than a hardcoded
+ * admin-only check. Without this, an operator could grant a custom role
+ * users.manage (the matrix would show it granted, the server would store
+ * it), and that role still couldn't list users or populate a role picker,
+ * because this route checked a literal role name instead of the
+ * capability it was gating. Usernames, roles and login history for every
+ * account are exactly the kind of thing a role without users.manage must
+ * not be able to enumerate.
  */
-router.get("/users", requireRole("admin"), async (req, res) => {
+router.get("/users", requirePermission("users.manage"), async (req, res) => {
   try {
     const users = await authService.getUsers();
     res.json({ users });
@@ -421,11 +427,14 @@ router.get("/users", requireRole("admin"), async (req, res) => {
 
 /**
  * POST /api/auth/users
- * Create an additional account with an explicit role. Admin-only. Unlike
- * /api/auth/setup, this does not auto-login or set a session cookie for the
- * caller — it creates an account for someone else to log in with.
+ * Create an additional account with an explicit role. Gated on
+ * users.manage, consistent with GET /users and PATCH /users/:id/role
+ * beside it — see the comment on GET /users for why this moved off
+ * requireRole("admin"). Unlike /api/auth/setup, this does not auto-login
+ * or set a session cookie for the caller — it creates an account for
+ * someone else to log in with.
  */
-router.post("/users", requireRole("admin"), async (req, res) => {
+router.post("/users", requirePermission("users.manage"), async (req, res) => {
   try {
     const { username, password, role } = req.body || {};
     if (!isNonEmptyString(username) || !isNonEmptyString(password)) {
@@ -493,13 +502,34 @@ router.patch(
 
 /**
  * POST /api/auth/regenerate-jwt-secret
- * Admin-only. Immediately invalidates EVERY existing session — access and
- * refresh tokens, every user, every device, including the caller's own.
+ * Deliberately still requireRole("admin"), not requirePermission — the one
+ * survivor of the users.manage sweep left as a CHOICE, not an oversight.
  *
- * Exists for an operator who has ever shared or offsited a backup taken
- * before the JWT secret moved out of db.json (older backups still contain
- * the old key in plaintext — see CHANGELOG). There is no automatic or
- * scheduled rotation by design; this is a deliberate, rare, explicit action.
+ * Immediately invalidates EVERY existing session — access and refresh
+ * tokens, every user, every device, including the caller's own. Exists for
+ * an operator who has ever shared or offsited a backup taken before the
+ * JWT secret moved out of db.json (older backups still contain the old key
+ * in plaintext — see CHANGELOG). There is no automatic or scheduled
+ * rotation by design; this is a deliberate, rare, explicit action.
+ *
+ * Why it stays admin-only rather than becoming a delegable capability:
+ * every other entry in the matrix (including roles.manage/users.manage,
+ * the permission model's own root) governs something with routine,
+ * operational use. This has none — it exists purely as incident response
+ * for one specific historical exposure — and unlike a capability edit or
+ * removal, there is no RECOVERY_CAPABILITIES-style protection possible for
+ * it: the harm isn't "nobody can recover a locked-out role" (which has a
+ * safety net), it's "every other admin, including the seeded one, is
+ * logged out right now, by someone else, with no cooldown." Delegating it
+ * would hand a lesser role the power to unilaterally sever the real
+ * admin's access to their own panel, which is a different risk category
+ * from "this role can also run the server" or "this role can also manage
+ * accounts." If a future multi-admin operator genuinely needs to delegate
+ * this, it should get its own capability (something like
+ * "security.rotate_secrets") rather than be folded into users.manage,
+ * which is scoped to accounts and role assignment, not session/security
+ * infrastructure — but that is a decision for whoever needs it, not a
+ * default this sweep should make silently.
  */
 router.post(
   "/regenerate-jwt-secret",
