@@ -684,6 +684,275 @@ export const ErrorCode = Object.freeze({
    * a directory. */
   BROWSE_CHUNKS_PATH_NOT_DIRECTORY: "BROWSE_CHUNKS_PATH_NOT_DIRECTORY",
 
+  /** server/routes/mods.js -- POST /add-mod-advanced, neither selectedModIds nor includeAllModIds given. */
+  MODS_ADD_ADVANCED_SELECTION_REQUIRED: "MODS_ADD_ADVANCED_SELECTION_REQUIRED",
+  /** server/routes/mods.js -- POST /add-all-resolved-deps, `deps` missing/empty/not an array. */
+  MODS_ADD_ALL_DEPS_REQUIRED: "MODS_ADD_ALL_DEPS_REQUIRED",
+  /** server/routes/mods.js -- POST /add-all-resolved-deps, deps.length exceeds 200. */
+  MODS_ADD_ALL_DEPS_TOO_MANY: "MODS_ADD_ALL_DEPS_TOO_MANY",
+  /** server/routes/mods.js -- POST /add-missing-dep, workshopId missing or fails /^\d{1,15}$/. */
+  MODS_ADD_MISSING_DEP_WORKSHOP_ID_REQUIRED: "MODS_ADD_MISSING_DEP_WORKSHOP_ID_REQUIRED",
+  /** server/routes/mods.js -- POST /add-to-ini, serverConfigPath unresolved. Own wording ("...in
+   * Settings.") from MODS_CONFIG_PATH_NOT_SET_GUIDANCE above -- kept separate. */
+  MODS_ADD_TO_INI_CONFIG_PATH_NOT_SET: "MODS_ADD_TO_INI_CONFIG_PATH_NOT_SET",
+  /** server/routes/mods.js -- POST /auto-restart, `enabled` not a boolean. */
+  MODS_AUTO_RESTART_ENABLED_REQUIRED: "MODS_AUTO_RESTART_ENABLED_REQUIRED",
+  /** server/routes/mods.js -- POST /batch-remove, iniEditApplied came back false from the batch removal
+   * helper -- own wording ("...no mods were removed."), a 200-status response
+   * with success:iniEditApplied and this error attached. Distinct from
+   * MODS_INI_NOT_ACCESSIBLE and MODS_PURGE_INI_NOT_ACCESSIBLE below -- three
+   * different call sites' own phrasing for the same underlying condition, kept
+   * separate per the createBackup()-style rule (don't collapse distinguishable
+   * outcomes into one shared code just because the cause is the same). */
+  MODS_BATCH_REMOVE_INI_NOT_ACCESSIBLE: "MODS_BATCH_REMOVE_INI_NOT_ACCESSIBLE",
+  /** server/routes/mods.js -- POST /batch-remove, workshopIds.length exceeds 500. */
+  MODS_BATCH_REMOVE_TOO_MANY: "MODS_BATCH_REMOVE_TOO_MANY",
+  /** server/routes/mods.js -- POST /batch-remove, `workshopIds` missing/empty/not an array. */
+  MODS_BATCH_REMOVE_WORKSHOP_IDS_ARRAY_REQUIRED: "MODS_BATCH_REMOVE_WORKSHOP_IDS_ARRAY_REQUIRED",
+  /** server/routes/mods.js -- POST /batch-toggle-mod-ids, `changes` missing/empty/not an array. */
+  MODS_BATCH_TOGGLE_CHANGES_REQUIRED: "MODS_BATCH_TOGGLE_CHANGES_REQUIRED",
+  /** server/routes/mods.js -- POST /batch-toggle-mod-ids, a change entry's enabled isn't a boolean. */
+  MODS_BATCH_TOGGLE_ENABLED_BOOLEAN_REQUIRED: "MODS_BATCH_TOGGLE_ENABLED_BOOLEAN_REQUIRED",
+  /** server/routes/mods.js -- POST /batch-toggle-mod-ids, a change entry's modId isn't a string. */
+  MODS_BATCH_TOGGLE_MODID_STRING_REQUIRED: "MODS_BATCH_TOGGLE_MODID_STRING_REQUIRED",
+  /** server/routes/mods.js -- POST /batch-toggle-mod-ids, changes.length exceeds 500. */
+  MODS_BATCH_TOGGLE_TOO_MANY: "MODS_BATCH_TOGGLE_TOO_MANY",
+  /** server/routes/mods.js -- POST /batch-toggle-mod-ids, one or more ENABLEs target workshop-ID-shaped
+   * modIds. PARTIAL: the message embeds a live count and a manually-picked
+   * singular/plural suffix ("entry"/"entries") -- server can't send structured
+   * params yet, so {{count}} is an unwired placeholder and the locale text
+   * approximates the plural the way ROLE_HAS_MEMBERS does elsewhere in this
+   * file. */
+  MODS_BATCH_TOGGLE_WORKSHOP_ID_IN_MODS: "MODS_BATCH_TOGGLE_WORKSHOP_ID_IN_MODS",
+  /** server/routes/mods.js -- POST /check-interval, intervalMs not a whole number of minutes in [60000,
+   * 7200000]. Own wording ("Interval") from
+   * MODS_RESTART_CHECK_INTERVAL_INVALID below (that route's field is named
+   * checkInterval) -- kept separate. */
+  MODS_CHECK_INTERVAL_INVALID: "MODS_CHECK_INTERVAL_INVALID",
+  /** server/routes/mods.js -- (4 sites: POST/DELETE /collection/items(+/:id), /collection/sync,
+   * /collection/test) -- workshopCollectionId setting not set. Identical
+   * wording, shared code. */
+  MODS_COLLECTION_ID_NOT_CONFIGURED: "MODS_COLLECTION_ID_NOT_CONFIGURED",
+  /** server/routes/mods.js -- (9 sites incl. the GET /current-config 200-status `configured:false`
+   * shape) -- resolved .ini path doesn't exist, bare wording (no guidance).
+   * Identical wording everywhere, shared code. */
+  MODS_CONFIG_FILE_NOT_FOUND: "MODS_CONFIG_FILE_NOT_FOUND",
+  /** server/routes/mods.js -- (2 sites: POST /write-to-ini, POST /add-to-ini) -- resolved .ini path
+   * doesn't exist, with "start the server once" guidance. Identical wording
+   * both sites, shared code. Distinct from the bare MODS_CONFIG_FILE_NOT_FOUND
+   * below (no guidance sentence). */
+  MODS_CONFIG_FILE_NOT_FOUND_GUIDANCE: "MODS_CONFIG_FILE_NOT_FOUND_GUIDANCE",
+  /** server/routes/mods.js -- (2 sites) -- "Server config file not found." with a trailing period,
+   * distinct literal from the bare MODS_CONFIG_FILE_NOT_FOUND above (no
+   * period). Identical wording both sites, shared code. */
+  MODS_CONFIG_FILE_NOT_FOUND_PERIOD: "MODS_CONFIG_FILE_NOT_FOUND_PERIOD",
+  /** server/routes/mods.js -- (10 sites incl. the GET /current-config 200-status `configured:false`
+   * shape) -- serverConfigPath unresolved, bare wording. Identical wording
+   * everywhere, shared code. */
+  MODS_CONFIG_PATH_NOT_SET: "MODS_CONFIG_PATH_NOT_SET",
+  /** server/routes/mods.js -- (2 sites: POST /write-to-ini, and the sync-from-server success:false path
+   * shares this exact wording) -- serverConfigPath unresolved. Own wording
+   * ("Please configure the server first.", no "in Settings") from
+   * MODS_ADD_TO_INI_CONFIG_PATH_NOT_SET and MODS_CONFIG_PATH_NOT_SET below --
+   * kept separate per call site's own phrasing. */
+  MODS_CONFIG_PATH_NOT_SET_GUIDANCE: "MODS_CONFIG_PATH_NOT_SET_GUIDANCE",
+  /** server/routes/mods.js -- GET /conflicts/diff, one or both mods' copies of the file weren't found on
+   * disk. */
+  MODS_CONFLICTS_DIFF_FILES_NOT_FOUND: "MODS_CONFLICTS_DIFF_FILES_NOT_FOUND",
+  /** server/routes/mods.js -- GET /conflicts/diff, modA/modB fail the safe-character regex. */
+  MODS_CONFLICTS_DIFF_MOD_ID_INVALID: "MODS_CONFLICTS_DIFF_MOD_ID_INVALID",
+  /** server/routes/mods.js -- GET /conflicts/diff, file/modA/modB query params missing. */
+  MODS_CONFLICTS_DIFF_PARAMS_REQUIRED: "MODS_CONFLICTS_DIFF_PARAMS_REQUIRED",
+  /** server/routes/mods.js -- GET /conflicts/diff, `file` looks like a path-traversal attempt or exceeds
+   * 500 chars. */
+  MODS_CONFLICTS_DIFF_PATH_INVALID: "MODS_CONFLICTS_DIFF_PATH_INVALID",
+  /** server/routes/mods.js -- (2 sites: GET /conflicts, GET /conflicts/stream) -- acquireScanLock()
+   * failed, another scan is running. Identical wording, shared code. */
+  MODS_CONFLICT_SCAN_ALREADY_RUNNING: "MODS_CONFLICT_SCAN_ALREADY_RUNNING",
+  /** server/routes/mods.js -- POST /discover-mod-ids, neither workshopId nor a parseable workshopUrl
+   * given. */
+  MODS_DISCOVER_WORKSHOP_ID_OR_URL_REQUIRED: "MODS_DISCOVER_WORKSHOP_ID_OR_URL_REQUIRED",
+  /** server/routes/mods.js -- POST /collection/extension-push, cookie value contains
+   * CR/LF/NUL/semicolon. */
+  MODS_EXTENSION_COOKIES_CONTROL_CHARS: "MODS_EXTENSION_COOKIES_CONTROL_CHARS",
+  /** server/routes/mods.js -- POST /collection/extension-push, sessionid/steamLoginSecure missing. */
+  MODS_EXTENSION_COOKIES_REQUIRED: "MODS_EXTENSION_COOKIES_REQUIRED",
+  /** server/routes/mods.js -- POST /collection/extension-push, cookie value exceeds 4096 chars. */
+  MODS_EXTENSION_COOKIES_TOO_LONG: "MODS_EXTENSION_COOKIES_TOO_LONG",
+  /** server/routes/mods.js -- GET /collection/extension-bundle, neither a prebuilt zip nor the
+   * browser-extension/ source folder exists on this install. */
+  MODS_EXTENSION_FILES_MISSING: "MODS_EXTENSION_FILES_MISSING",
+  /** server/routes/mods.js -- POST /get-mod-info, Steam's GetPublishedFileDetails returned result !== 1. */
+  MODS_GET_MOD_INFO_NOT_FOUND: "MODS_GET_MOD_INFO_NOT_FOUND",
+  /** server/routes/mods.js -- DELETE /ignored-pairs, modIdA/modIdB missing or fail MOD_ID_RE. Own
+   * wording from MODS_IGNORED_PAIR_INVALID_IDS above (POST route's fuller
+   * message) -- kept separate. */
+  MODS_IGNORED_PAIR_IDS_REQUIRED: "MODS_IGNORED_PAIR_IDS_REQUIRED",
+  /** server/routes/mods.js -- POST /ignored-pairs, addIgnoredModPair() returned falsy. */
+  MODS_IGNORED_PAIR_INVALID: "MODS_IGNORED_PAIR_INVALID",
+  /** server/routes/mods.js -- POST /ignored-pairs, modIdA/modIdB missing or fail MOD_ID_RE. */
+  MODS_IGNORED_PAIR_INVALID_IDS: "MODS_IGNORED_PAIR_INVALID_IDS",
+  /** server/routes/mods.js -- DELETE /ignored-pairs, no matching row to remove. */
+  MODS_IGNORED_PAIR_NOT_FOUND: "MODS_IGNORED_PAIR_NOT_FOUND",
+  /** server/routes/mods.js -- POST /ignored-pairs, modIdA === modIdB. */
+  MODS_IGNORED_PAIR_SAME_ID: "MODS_IGNORED_PAIR_SAME_ID",
+  /** server/routes/mods.js -- DELETE /ignored/:workshopId, no ignore-list row for that id. */
+  MODS_IGNORE_ENTRY_NOT_FOUND: "MODS_IGNORE_ENTRY_NOT_FOUND",
+  /** server/routes/mods.js -- POST /import-collection, extracted collection id fails /^\d{1,15}$/. */
+  MODS_IMPORT_COLLECTION_ID_INVALID: "MODS_IMPORT_COLLECTION_ID_INVALID",
+  /** server/routes/mods.js -- POST /import-collection, Steam returned no collectiondetails entry. */
+  MODS_IMPORT_COLLECTION_NOT_FOUND: "MODS_IMPORT_COLLECTION_NOT_FOUND",
+  /** server/routes/mods.js -- POST /import-collection, collection.result !== 1 (private or deleted). */
+  MODS_IMPORT_COLLECTION_PRIVATE: "MODS_IMPORT_COLLECTION_PRIVATE",
+  /** server/routes/mods.js -- POST /import-collection, the Steam GetCollectionDetails fetch aborted
+   * after 10s. */
+  MODS_IMPORT_COLLECTION_TIMEOUT: "MODS_IMPORT_COLLECTION_TIMEOUT",
+  /** server/routes/mods.js -- POST /import-collection, no collectionUrl. */
+  MODS_IMPORT_COLLECTION_URL_REQUIRED: "MODS_IMPORT_COLLECTION_URL_REQUIRED",
+  /** server/routes/mods.js -- (2 sites: POST /delete-disk-mod, POST /batch-delete-disk-mods) --
+   * deleteModFromDiskAndIni()'s iniEditApplied came back false. Identical bare
+   * wording both sites, shared code. Distinct from
+   * MODS_BATCH_REMOVE_INI_NOT_ACCESSIBLE and MODS_PURGE_INI_NOT_ACCESSIBLE --
+   * see the note on that code for why these three stay separate. NOT shared
+   * with the internal `error` field deleteModFromDiskAndIni() itself returns
+   * on its object (server/routes/mods.js ~line 7519 as of this commit) -- that
+   * field is dead: no caller ever reads result.error, so it carries no code
+   * and isn't part of this conversion. */
+  MODS_INI_NOT_ACCESSIBLE: "MODS_INI_NOT_ACCESSIBLE",
+  /** server/routes/mods.js -- POST /collection/extract-cookies, `browser` not one of the allowed list.
+   * PARTIAL: the message embeds the allowed-browser list -- server can't send
+   * structured params yet, so {{browsers}} is a placeholder nothing sends
+   * today. */
+  MODS_INVALID_BROWSER: "MODS_INVALID_BROWSER",
+  /** server/routes/mods.js -- (2 sites: POST /toggle-mod-id, POST /add-missing-deps) -- modId contains a
+   * CR/LF/;/= or exceeds 200 chars. Identical wording, shared code. */
+  MODS_INVALID_MOD_ID_FORMAT: "MODS_INVALID_MOD_ID_FORMAT",
+  /** server/routes/mods.js -- (2 sites: POST /batch-toggle-mod-ids per-entry validation, POST
+   * /apply-preset per-entry validation) -- a submitted modId fails the
+   * CR/LF/;/=/length check. Identical template (same prefix + 50-char
+   * truncation) both sites, shared code. PARTIAL: embeds the offending id --
+   * {{modId}} is an unwired placeholder. */
+  MODS_INVALID_MOD_ID_FORMAT_TEMPLATE: "MODS_INVALID_MOD_ID_FORMAT_TEMPLATE",
+  /** server/routes/mods.js -- (2 sites: PUT /presets/:id, DELETE-ish) -- no :id param. */
+  MODS_INVALID_PRESET_ID: "MODS_INVALID_PRESET_ID",
+  /** server/routes/mods.js -- (19 sites across nearly every route that resolves an INI path) --
+   * configured serverName fails the path.basename() round-trip / ".." check.
+   * Identical wording/meaning everywhere, shared code. */
+  MODS_INVALID_SERVER_NAME: "MODS_INVALID_SERVER_NAME",
+  /** server/routes/mods.js -- (5 sites: POST /add-to-ini, /purge-mod dependents, /discover-mod-ids,
+   * /add-mod-advanced, GET /mod-details) -- workshopId fails /^\d{1,15}$/,
+   * capitalized wire text "Invalid Workshop ID" (distinct literal from the
+   * lower-case MODS_INVALID_WORKSHOP_ID_LOWER above -- both exist verbatim in
+   * this file, kept separate rather than normalized). Identical wording across
+   * these 5 sites, shared code. */
+  MODS_INVALID_WORKSHOP_ID_CAP: "MODS_INVALID_WORKSHOP_ID_CAP",
+  /** server/routes/mods.js -- (2 sites: POST /track, /get-mod-info) -- workshopId present but fails
+   * /^\d{1,15}$/. Identical wording, shared code. */
+  MODS_INVALID_WORKSHOP_ID_FORMAT: "MODS_INVALID_WORKSHOP_ID_FORMAT",
+  /** server/routes/mods.js -- (8 sites: DELETE /track/:id, /ignored/:id, /collection/items(+/:id),
+   * /collection/tracking/:id, /delete-disk-mod, /purge-mod, GET /mod-details)
+   * -- :workshopId param fails /^\d{1,15}$/. Wire value is lower-case
+   * "workshop"; kept separate from the capitalized
+   * MODS_INVALID_WORKSHOP_ID_CAP variant below since that is genuinely
+   * different literal text elsewhere in this file, not a typo to normalize
+   * away. */
+  MODS_INVALID_WORKSHOP_ID_LOWER: "MODS_INVALID_WORKSHOP_ID_LOWER",
+  /** server/routes/mods.js -- (2 sites: POST /write-to-ini per-mod validation, POST /add-missing-deps
+   * per-dependency validation) -- a submitted workshopId fails /^\d{1,15}$/.
+   * Identical template (same "Invalid Workshop ID: " prefix and 20-char
+   * truncation) both sites, shared code. PARTIAL: embeds the offending id --
+   * {{workshopId}} is an unwired placeholder. */
+  MODS_INVALID_WORKSHOP_ID_TEMPLATE: "MODS_INVALID_WORKSHOP_ID_TEMPLATE",
+  /** server/routes/mods.js -- (2 sites: PUT /presets/:id modIds field, POST /save-order) -- `modIds`
+   * present but not an array. Identical wording, shared code. */
+  MODS_MOD_IDS_ARRAY_REQUIRED: "MODS_MOD_IDS_ARRAY_REQUIRED",
+  /** server/routes/mods.js -- (3 sites: POST /batch-remove, /batch-delete-disk-mods, /batch-purge) --
+   * after filtering to /^\d{1,15}$/, zero ids survived. Identical wording,
+   * shared code. */
+  MODS_NO_VALID_WORKSHOP_IDS: "MODS_NO_VALID_WORKSHOP_IDS",
+  /** server/routes/mods.js -- POST /presets, trimmed name is empty or exceeds 100 chars. */
+  MODS_PRESET_NAME_LENGTH_INVALID: "MODS_PRESET_NAME_LENGTH_INVALID",
+  /** server/routes/mods.js -- POST /presets, `name` missing or not a string. */
+  MODS_PRESET_NAME_REQUIRED: "MODS_PRESET_NAME_REQUIRED",
+  /** server/routes/mods.js -- (3 sites: PUT/DELETE /presets/:id, POST /apply-preset) -- no stored preset
+   * with that id. Identical wording, shared code. */
+  MODS_PRESET_NOT_FOUND: "MODS_PRESET_NOT_FOUND",
+  /** server/routes/mods.js -- PUT /presets/:id, trimmed name empty or exceeds 100 chars. Own wording
+   * ("name must be...", no "Preset" prefix) from
+   * MODS_PRESET_NAME_LENGTH_INVALID above -- kept separate. */
+  MODS_PRESET_UPDATE_NAME_LENGTH_INVALID: "MODS_PRESET_UPDATE_NAME_LENGTH_INVALID",
+  /** server/routes/mods.js -- PUT /presets/:id, body.name present but not a string. */
+  MODS_PRESET_UPDATE_NAME_STRING_REQUIRED: "MODS_PRESET_UPDATE_NAME_STRING_REQUIRED",
+  /** server/routes/mods.js -- PUT /presets/:id, body.workshopIds present but not an array. */
+  MODS_PRESET_UPDATE_WORKSHOP_IDS_ARRAY: "MODS_PRESET_UPDATE_WORKSHOP_IDS_ARRAY",
+  /** server/routes/mods.js -- POST /purge-mod, iniEditApplied came back false -- own wording ("...the
+   * mod was not removed from the server."). See
+   * MODS_BATCH_REMOVE_INI_NOT_ACCESSIBLE above for why this isn't merged with
+   * the other two INI-not-accessible codes. */
+  MODS_PURGE_INI_NOT_ACCESSIBLE: "MODS_PURGE_INI_NOT_ACCESSIBLE",
+  /** server/routes/mods.js -- POST /resolve-missing-deps, `deps` missing or not an array. Own wording
+   * ("Dependencies array") from MODS_ADD_ALL_DEPS_REQUIRED above ("No
+   * dependencies provided") -- different route, different phrasing, kept
+   * separate. */
+  MODS_RESOLVE_DEPS_ARRAY_REQUIRED: "MODS_RESOLVE_DEPS_ARRAY_REQUIRED",
+  /** server/routes/mods.js -- PUT /restart-options, checkInterval outside the same 60000-7200000ms range
+   * as /check-interval above but through a differently-named field and its own
+   * wording -- own code, not merged. */
+  MODS_RESTART_CHECK_INTERVAL_INVALID: "MODS_RESTART_CHECK_INTERVAL_INVALID",
+  /** server/routes/mods.js -- PUT /restart-options, delayIfPlayersOnline not a boolean. */
+  MODS_RESTART_DELAY_IF_PLAYERS_ONLINE_INVALID: "MODS_RESTART_DELAY_IF_PLAYERS_ONLINE_INVALID",
+  /** server/routes/mods.js -- PUT /restart-options, maxDelayMinutes outside 0-1440. */
+  MODS_RESTART_MAX_DELAY_MINUTES_INVALID: "MODS_RESTART_MAX_DELAY_MINUTES_INVALID",
+  /** server/routes/mods.js -- PUT /restart-options, warningMinutes outside 0-1440. */
+  MODS_RESTART_WARNING_MINUTES_INVALID: "MODS_RESTART_WARNING_MINUTES_INVALID",
+  /** server/routes/mods.js -- POST /save-order, an entry isn't a string or exceeds 200 chars. */
+  MODS_SAVE_ORDER_MODID_STRING_REQUIRED: "MODS_SAVE_ORDER_MODID_STRING_REQUIRED",
+  /** server/routes/mods.js -- POST /save-order, modIds.length exceeds 2000. */
+  MODS_SAVE_ORDER_TOO_MANY: "MODS_SAVE_ORDER_TOO_MANY",
+  /** server/routes/mods.js -- POST /search-workshop-mods, query under 2 characters. */
+  MODS_SEARCH_QUERY_TOO_SHORT: "MODS_SEARCH_QUERY_TOO_SHORT",
+  /** server/routes/mods.js -- (5 sites: POST /presets, POST /apply-preset x2, POST /save-order, GET-ish)
+   * -- resolved .ini path doesn't exist. Identical wording across all 5
+   * (status code varies 400/404 by route but the text and meaning are
+   * identical), shared code. */
+  MODS_SERVER_INI_NOT_FOUND: "MODS_SERVER_INI_NOT_FOUND",
+  /** server/routes/mods.js -- (3 sites: GET /conflicts, GET /conflicts/stream via SSE `send("error",
+   * {...})`, GET /conflicts/diff) -- getServerPath() returned null. Identical
+   * wording across all three (including the SSE-shaped one), shared code. */
+  MODS_SERVER_INSTALL_PATH_NOT_SET: "MODS_SERVER_INSTALL_PATH_NOT_SET",
+  /** server/routes/mods.js -- (3 sites: dependency-resolution routes reading getServerPath()) -- with
+   * trailing period, distinct literal from
+   * MODS_SERVER_PATH_NOT_CONFIGURED_NOPERIOD above. Identical wording across
+   * these 3, shared code. */
+  MODS_SERVER_PATH_NOT_CONFIGURED: "MODS_SERVER_PATH_NOT_CONFIGURED",
+  /** server/routes/mods.js -- GET /mod-details/:workshopId, getServerPath() returned null. Bare wording,
+   * no trailing period -- distinct literal from
+   * MODS_SERVER_PATH_NOT_CONFIGURED below (which does have one), kept
+   * separate. */
+  MODS_SERVER_PATH_NOT_CONFIGURED_NOPERIOD: "MODS_SERVER_PATH_NOT_CONFIGURED_NOPERIOD",
+  /** server/routes/mods.js -- POST /collection/test, sessionId/loginSecure not stored. */
+  MODS_STEAM_SESSION_COOKIES_NOT_CONFIGURED: "MODS_STEAM_SESSION_COOKIES_NOT_CONFIGURED",
+  /** server/routes/mods.js -- POST /toggle-mod-id, `enabled` not a boolean. */
+  MODS_TOGGLE_ENABLED_REQUIRED: "MODS_TOGGLE_ENABLED_REQUIRED",
+  /** server/routes/mods.js -- POST /toggle-mod-id, no modId. */
+  MODS_TOGGLE_MOD_ID_REQUIRED: "MODS_TOGGLE_MOD_ID_REQUIRED",
+  /** server/routes/mods.js -- POST /toggle-mod-id, an ENABLE targets a workshop-ID-shaped modId.
+   * Singular-toggle counterpart of MODS_BATCH_TOGGLE_WORKSHOP_ID_IN_MODS below
+   * -- own wording (this route names the specific ID), kept separate. */
+  MODS_TOGGLE_WORKSHOP_ID_IN_MODID: "MODS_TOGGLE_WORKSHOP_ID_IN_MODID",
+  /** server/routes/mods.js -- (2 sites: POST /batch-delete-disk-mods, POST /batch-purge) --
+   * `workshopIds` missing/empty/not an array. Identical wording, shared code. */
+  MODS_WORKSHOP_IDS_ARRAY_REQUIRED: "MODS_WORKSHOP_IDS_ARRAY_REQUIRED",
+  /** server/routes/mods.js -- (6 sites: POST /track, /get-mod-info, /add-to-ini, /write-to-ini,
+   * /add-mod-advanced, GET-ish helpers) -- no workshopId in the body.
+   * Identical wording, shared code. */
+  MODS_WORKSHOP_ID_REQUIRED: "MODS_WORKSHOP_ID_REQUIRED",
+  /** server/routes/mods.js -- POST /write-to-ini, `mods` missing or not an array. */
+  MODS_WRITE_TO_INI_MODS_ARRAY_REQUIRED: "MODS_WRITE_TO_INI_MODS_ARRAY_REQUIRED",
+  /** server/routes/mods.js -- getModChecker() helper (many GET/POST routes) -- req.app.get("modChecker")
+   * returned nothing. */
+  MOD_CHECKER_NOT_INITIALIZED: "MOD_CHECKER_NOT_INITIALIZED",
+
   // --- legacy: wire value frozen (client compares it with === today),
   //     constant name invented only so a locale key exists ---
 
