@@ -53,6 +53,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `client/src/locales/README.md`.
 
 ### Fixed
+- **Only the panel's own startup script may run inline**: the browser was previously told to allow
+  any inline script on the page, which weakens the main defence against a script being injected into
+  it. It is now restricted to the exact fingerprint of the panel's own theme bootstrap, recalculated
+  on every start so it can never go stale. **Inline styles are still permitted** - that half is
+  scoped as separate work and is not fixed by this change.
 - **Error codes now reach the browser by default**: the server's error handler passes a registered
   error code along automatically instead of relying on a hand-written line at every point an error is
   caught. Internal codes from the filesystem, the network or third-party libraries are never passed

@@ -5,6 +5,7 @@ import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import { permissionsPolicy } from "./middleware/permissionsPolicy.js";
 import { logSetupTokenIfNeeded } from "./utils/setupToken.js";
+import { computeInlineScriptCspHash } from "./utils/cspScriptHash.js";
 import { createServer } from "http";
 import { createServer as createHttpsServer } from "https";
 import { Server } from "socket.io";
@@ -531,12 +532,36 @@ const io = new Server(httpServer, {
 // - On VPS/HTTPS setups: enabled (browser enforces HTTPS)
 const httpsDetected =
   process.env.HTTPS === "true" || process.env.FORCE_HSTS === "true";
+
+// Resolved again here (duplicated from the client-dist static-serving setup
+// further down this file) because CSP has to be registered before that
+// point — this is the one thing both need, computed early rather than
+// reordering the rest of the file around it.
+const cspClientDistPath =
+  typeof process.pkg !== "undefined"
+    ? path.join(path.dirname(process.execPath), "client", "dist")
+    : path.join(__dirname, "../client/dist");
+// See utils/cspScriptHash.js: computed at startup by hashing the real
+// shipped file rather than a hardcoded hash, so this can never go stale.
+// Returns null if the script can't be found (dist not built, the tag
+// renamed/restructured) — script-src deliberately does NOT fall back to
+// 'unsafe-inline' in that case. A missing build is a build problem, not a
+// security event, so the right failure shape is the page visibly breaking
+// (blocked inline script, no theme flash prevention) rather than the
+// protection silently loosening on exactly the deployments where
+// something is already unusual.
+const inlineScriptCspSource = computeInlineScriptCspHash(
+  cspClientDistPath,
+  log,
+);
 app.use(
   helmet({
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'"],
+        scriptSrc: inlineScriptCspSource
+          ? ["'self'", inlineScriptCspSource]
+          : ["'self'"],
         styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         // blob: is required by the World Map tile loader: it fetches each
         // tile, converts the response to a Blob and decodes it through
