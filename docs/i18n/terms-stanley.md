@@ -115,6 +115,48 @@ easiest — I read every countdown/frequency string out loud before committing.
   slightly from console.json's ("Please save and disconnect" vs "Please disconnect"), I
   aligned the French phrasing/tone rather than letting two independently-invented French
   versions of "server entering maintenance" exist side by side.
+## ServerSetup.tsx (namespace: `serverSetup`)
+
+Per the brief, this is the first-run flow a brand-new operator sees before they've
+learned any of the app's vocabulary, so plain unjargoned French mattered more here than
+anywhere else in my set. Read every label out loud as a first-time user would.
+
+- Found and reused exact-match glossary hits from servers.json (the Servers page's
+  edit-server dialog, which configures the same fields for an existing server) BEFORE
+  writing anything new: **Port du jeu** (Game Port), **Port RCON** (RCON Port),
+  **Mot de passe RCON** (RCON Password), **Mot de passe admin** (Admin Password),
+  **Mémoire min./max. (Go)** confirmed "Go" (not "GB") is this app's established French
+  memory-unit abbreviation, and **Chemin d'installation du serveur** / **Chemin de
+  données Zomboid** / **Chemin de SteamCMD** for the three folder-path concepts. A
+  first-time operator configuring their first server and later visiting the Servers
+  page to edit it must see the same words for the same fields both places.
+- "Fresh Install" → **Nouvelle installation** rather than a literal "Installation
+  fraîche" (not idiomatic French) or "Installation complète" (loses the "from scratch,
+  never touched before" sense of "fresh"). "from scratch" → **de A à Z**, a plain
+  everyday French idiom rather than a stiffer literal translation.
+- "No Steam" toggle → **Sans Steam** (short label matching the English toggle's
+  terseness) with description text aligned to servers.json's longer established
+  "Lancer sans Steam" (Launch without Steam) phrasing, so the concept reads the same
+  even though this toggle uses a shorter label than the edit-dialog's.
+- "Debug" toggle → **Débogage** rather than leaving the English word bare. Per the
+  brief's plain-French instruction for this page specifically: "Débogage" is an
+  ordinary, well-understood French word (unlike "intents" in Discord.tsx, which had no
+  natural French equivalent and stayed English) — a first-time operator with no
+  technical background reads "Débogage" more easily than "Debug".
+- Full-install Step 3 (RCON/Memory/Advanced Options) and Quick-setup Step 2 render
+  near-identical UI blocks with the exact same field labels — used the SAME locale keys
+  (`common.*`) for both rather than duplicating them per-flow, since they are the
+  literal same concept (RCON password, memory sliders, UPnP/No-Steam/Debug toggles)
+  presented twice in the wizard depending which path the operator took. Kept the two
+  genuinely different bits (Full's RCON Port field has no default-port hint; Quick's
+  says "Port par défaut : 27015" since Quick reuses an existing server's RCON setup) as
+  separate keys rather than forcing them together.
+- Caught three progress/status strings that update live during SteamCMD download
+  ("Downloading...", "Validating files...", "Verifying installation...", "Complete!",
+  plus "Starting download...") that aren't obvious on a first read of the JSX — they're
+  only set inside a socket log-parsing regex handler, easy to miss. Translated them
+  too since an operator watching their first install progress bar needs to read them.
+
 - Did NOT translate the message text embedded inside two `commonCommands` dropdown
   *values* (`servermsg Server maintenance in progress`, `bridge:sendToServerChat
   {"message":"Scheduled broadcast"}`). Only the dropdown option's visible label is
