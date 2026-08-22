@@ -1857,6 +1857,15 @@ function fmtMB(bytes) {
   if (!Number.isFinite(bytes)) return "?";
   return `${(bytes / 1024 / 1024).toFixed(0)} MB`;
 }
+
+// Extracted from the inline template it used to be so this specific
+// formatting can be unit tested directly, rather than only reachable
+// through the whole /diagnostics handler's many other dependencies.
+export function formatDbAccessibleMessage(dbStats) {
+  const collectionCount = dbStats ? Object.keys(dbStats.collections).length : "?";
+  return `${collectionCount} collections, ${fmtMB(dbStats?.fileSizeBytes)}.`;
+}
+
 function fmtGB(bytes) {
   if (!Number.isFinite(bytes)) return "?";
   return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`;
@@ -3153,7 +3162,13 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
           diagOk(
             "db.writable",
             "Database accessible",
-            `${dbStats?.collections?.length || "?"} collections, ${fmtMB(dbStats?.size || 0)}.`,
+            // dbStats.collections is a { name: count } map, not an array --
+            // .length was always undefined, and .size was never a field on
+            // this object at all (it's fileSizeBytes) -- so this check was
+            // structurally incapable of ever printing anything but "?
+            // collections, 0 MB", on the one screen whose whole purpose is
+            // being trustworthy about the panel's own state.
+            formatDbAccessibleMessage(dbStats),
             { category: "storage" },
           ),
         );
@@ -4296,12 +4311,19 @@ router.get("/crash-logs", requirePermission("diagnostics.manage"), async (req, r
     const serverManager = req.app.get("serverManager");
     const serverPath = serverManager?.serverPath || "";
 
-    // Look for crash logs in common locations
+    // Look for crash logs in common locations. The panel's own logs dir
+    // must come from getDataPaths(), not process.cwd() -- the panel has a
+    // "move data/logs directory" setting, and cwd is wherever the process
+    // happened to be launched from, not that configured location. Using
+    // cwd here meant a moved instance would scan (and this route would
+    // then present as "crash logs") whatever unrelated logs/ directory
+    // happened to sit next to the executable -- on a shared dev machine,
+    // that included another process's error.log, test-mock strings and
+    // all.
     const crashDirs = [
       serverPath,
       path.join(serverPath, "logs"),
-      process.cwd(),
-      path.join(process.cwd(), "logs"),
+      getDataPaths().logsDir,
     ].filter(Boolean);
 
     const crashLogs = [];
@@ -4385,8 +4407,7 @@ router.get("/crash-logs/:filename", requirePermission("diagnostics.manage"), asy
     const searchDirs = [
       serverPath,
       path.join(serverPath, "logs"),
-      process.cwd(),
-      path.join(process.cwd(), "logs"),
+      getDataPaths().logsDir,
     ].filter(Boolean);
 
     for (const dir of searchDirs) {
