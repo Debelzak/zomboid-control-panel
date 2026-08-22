@@ -209,6 +209,25 @@ const VALID_ACTIONS = new Set([
 // Allow normal in-game names (spaces/symbols) while blocking control chars and quote/backslash.
 const BRIDGE_USERNAME_REGEX = /^(?=.*\S)[^\x00-\x1F\x7F"\\]{1,64}$/;
 
+// Shared path safety check for /configure, /configure-direct and
+// /auto-detect: bridge.configure()/autoDetect() (services/panelBridge.js)
+// perform no validation of their own -- whatever path reaches them becomes
+// this.bridgePath, which mkdirSync/writeFileSync/readFileSync then act on
+// directly once the bridge starts polling. Must be absolute (path.resolve
+// also collapses any ".." traversal) and not a protected system directory.
+const BLOCKED_BRIDGE_PATH_PREFIXES =
+  process.platform === "win32"
+    ? ["c:\\windows", "c:\\program files"]
+    : ["/etc", "/usr", "/bin", "/sbin", "/proc", "/sys", "/dev"];
+
+function isValidBridgePath(inputPath) {
+  if (!inputPath || typeof inputPath !== "string") return false;
+  const resolved = path.resolve(inputPath);
+  if (!path.isAbsolute(resolved)) return false;
+  const lower = process.platform === "win32" ? resolved.toLowerCase() : resolved;
+  return !BLOCKED_BRIDGE_PATH_PREFIXES.some((p) => lower.startsWith(p));
+}
+
 // Get bridge status
 router.get("/status", async (req, res) => {
   const status = bridge.getStatus();
@@ -245,7 +264,7 @@ router.get("/status", async (req, res) => {
 });
 
 // Auto-configure bridge from server settings (optionally specify serverId)
-router.post("/auto-configure", async (req, res) => {
+router.post("/auto-configure", requireRole("admin", "technician"), async (req, res) => {
   try {
     const { serverId } = req.body;
     log.info(`POST /auto-configure (serverId=${serverId || "active"})`);
@@ -541,7 +560,7 @@ router.post("/auto-configure", async (req, res) => {
 });
 
 // Scan for bridge paths for a specific server (preview before applying)
-router.get("/scan-server/:serverId", async (req, res) => {
+router.get("/scan-server/:serverId", requireRole("admin", "technician"), async (req, res) => {
   try {
     const { serverId } = req.params;
     const targetServer = await getServer(serverId);
@@ -692,11 +711,15 @@ router.get("/scan-server/:serverId", async (req, res) => {
 });
 
 // Auto-detect bridge path from server name
-router.post("/auto-detect", async (req, res) => {
+router.post("/auto-detect", requireRole("admin", "technician"), async (req, res) => {
   const { serverName, zomboidUserFolder } = req.body;
 
   if (!serverName) {
     return res.status(400).json({ error: "serverName is required" });
+  }
+
+  if (zomboidUserFolder && !isValidBridgePath(zomboidUserFolder)) {
+    return res.status(400).json({ error: "Invalid zomboidUserFolder path" });
   }
 
   try {
@@ -718,11 +741,15 @@ router.post("/auto-detect", async (req, res) => {
 });
 
 // Configure the bridge with Zomboid save path
-router.post("/configure", async (req, res) => {
+router.post("/configure", requireRole("admin", "technician"), async (req, res) => {
   const { zomboidSavePath } = req.body;
 
   if (!zomboidSavePath) {
     return res.status(400).json({ error: "zomboidSavePath is required" });
+  }
+
+  if (!isValidBridgePath(zomboidSavePath)) {
+    return res.status(400).json({ error: "Invalid zomboidSavePath" });
   }
 
   try {
@@ -745,7 +772,7 @@ router.post("/configure", async (req, res) => {
 });
 
 // Configure the bridge with a direct panelbridge folder path (manual override)
-router.post("/configure-direct", async (req, res) => {
+router.post("/configure-direct", requireRole("admin", "technician"), async (req, res) => {
   const { bridgePath: reqPath } = req.body;
 
   if (!reqPath || typeof reqPath !== "string") {
@@ -761,11 +788,7 @@ router.post("/configure-direct", async (req, res) => {
   // Block obvious system dirs
   const lower =
     process.platform === "win32" ? resolved.toLowerCase() : resolved;
-  const blocked =
-    process.platform === "win32"
-      ? ["c:\\windows", "c:\\program files"]
-      : ["/etc", "/usr", "/bin", "/sbin", "/proc", "/sys", "/dev"];
-  if (blocked.some((p) => lower.startsWith(p))) {
+  if (BLOCKED_BRIDGE_PATH_PREFIXES.some((p) => lower.startsWith(p))) {
     return res
       .status(400)
       .json({ error: "Path targets a protected system directory" });
@@ -861,7 +884,7 @@ router.post("/sftp/config/list", requireRole("admin", "technician"), async (req,
 });
 
 // Start the bridge polling
-router.post("/start", (req, res) => {
+router.post("/start", requireRole("admin", "technician"), (req, res) => {
   try {
     bridge.start();
     res.json({ success: true, message: "Bridge started" });
@@ -871,7 +894,7 @@ router.post("/start", (req, res) => {
 });
 
 // Stop the bridge
-router.post("/stop", async (req, res) => {
+router.post("/stop", requireRole("admin", "technician"), async (req, res) => {
   try {
     await bridge.stopSftp();
     bridge.stop();
@@ -882,7 +905,7 @@ router.post("/stop", async (req, res) => {
 });
 
 // Scan for all panelbridge folders across known locations
-router.get("/scan-paths", async (req, res) => {
+router.get("/scan-paths", requireRole("admin", "technician"), async (req, res) => {
   try {
     const activeServer = await getActiveServer();
     const foundBridges = [];
@@ -1019,7 +1042,7 @@ router.get("/scan-paths", async (req, res) => {
 });
 
 // Force refresh - restart bridge with fresh state
-router.post("/refresh", (req, res) => {
+router.post("/refresh", requireRole("admin", "technician"), (req, res) => {
   try {
     if (bridge.isRunning) {
       bridge.stop(); // stop() already resets all internal state
@@ -1718,8 +1741,9 @@ router.get("/world/stats", async (req, res) => {
   }
 });
 
-// Save world
-router.post("/world/save", async (req, res) => {
+// Save world. admin+technician, matching /api/server/save -- an operational
+// action, not player-facing GM authority.
+router.post("/world/save", requireRole("admin", "technician"), async (req, res) => {
   if (!bridge.isRunning) {
     return res
       .status(400)
@@ -2471,7 +2495,7 @@ router.get("/commands", (req, res) => {
 });
 
 // Get mod installation path (for copying mod to server)
-router.get("/mod-path", async (req, res) => {
+router.get("/mod-path", requireRole("admin", "technician"), async (req, res) => {
   // Path to the bundled mod - check multiple locations for packaged exe
   const possiblePaths = [
     path.join(process.cwd(), "pz-mod", "PanelBridge"),
@@ -3486,7 +3510,7 @@ router.post("/chat/alert", async (req, res) => {
 // ============================================
 
 // Get mod debug log
-router.get("/debug/log", async (req, res) => {
+router.get("/debug/log", requireRole("admin", "technician"), async (req, res) => {
   if (!bridge.isRunning) {
     return res.status(400).json({ error: "Bridge not running" });
   }
@@ -3504,7 +3528,7 @@ router.get("/debug/log", async (req, res) => {
 });
 
 // Get mod statistics
-router.get("/debug/stats", async (req, res) => {
+router.get("/debug/stats", requireRole("admin", "technician"), async (req, res) => {
   if (!bridge.isRunning) {
     return res.status(400).json({ error: "Bridge not running" });
   }
@@ -3517,7 +3541,7 @@ router.get("/debug/stats", async (req, res) => {
 });
 
 // Set debug mode
-router.post("/debug/mode", async (req, res) => {
+router.post("/debug/mode", requireRole("admin", "technician"), async (req, res) => {
   if (!bridge.isRunning) {
     return res.status(400).json({ error: "Bridge not running" });
   }
@@ -3533,7 +3557,7 @@ router.post("/debug/mode", async (req, res) => {
 });
 
 // Check API availability
-router.get("/debug/api", async (req, res) => {
+router.get("/debug/api", requireRole("admin", "technician"), async (req, res) => {
   if (!bridge.isRunning) {
     return res.status(400).json({ error: "Bridge not running" });
   }
@@ -3560,7 +3584,7 @@ router.get("/debug/api", async (req, res) => {
 });
 
 // Get available handlers
-router.get("/debug/handlers", async (req, res) => {
+router.get("/debug/handlers", requireRole("admin", "technician"), async (req, res) => {
   if (!bridge.isRunning) {
     return res.status(400).json({ error: "Bridge not running" });
   }
@@ -3573,7 +3597,7 @@ router.get("/debug/handlers", async (req, res) => {
 });
 
 // Clear mod errors
-router.post("/debug/clear-errors", async (req, res) => {
+router.post("/debug/clear-errors", requireRole("admin", "technician"), async (req, res) => {
   if (!bridge.isRunning) {
     return res.status(400).json({ error: "Bridge not running" });
   }
@@ -3618,7 +3642,7 @@ router.get("/catalog/vehicles", async (req, res) => {
 });
 
 // Scan items from running server via PanelBridge, cache result
-router.post("/catalog/scan-items", async (req, res) => {
+router.post("/catalog/scan-items", requireRole("admin", "technician"), async (req, res) => {
   if (!bridge.isRunning) {
     return res.status(400).json({
       error: "Bridge not running — server must be online to scan items",
@@ -3649,7 +3673,7 @@ router.post("/catalog/scan-items", async (req, res) => {
 });
 
 // Scan vehicles from running server via PanelBridge, cache result
-router.post("/catalog/scan-vehicles", async (req, res) => {
+router.post("/catalog/scan-vehicles", requireRole("admin", "technician"), async (req, res) => {
   if (!bridge.isRunning) {
     return res.status(400).json({
       error: "Bridge not running — server must be online to scan vehicles",
@@ -3680,7 +3704,7 @@ router.post("/catalog/scan-vehicles", async (req, res) => {
 });
 
 // Debug: probe item script methods to find working category API
-router.post("/catalog/debug-item-script", async (req, res) => {
+router.post("/catalog/debug-item-script", requireRole("admin", "technician"), async (req, res) => {
   if (!bridge.isRunning) {
     return res.status(400).json({ error: "Bridge not running" });
   }

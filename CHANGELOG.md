@@ -43,6 +43,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `client/src/locales/README.md`.
 
 ### Fixed
+- **The login signing key no longer lives inside `db.json`**: the key the panel uses to sign your
+  login sessions has moved into its own file, so it is no longer copied along every time `db.json` is
+  backed up. Existing installs move it automatically on the first start after upgrading - it is the
+  same key in a new place, so nobody is signed out. **Any backup taken before this upgrade still
+  contains the old key in plain text**; those are not fixed retroactively. If one of them may have
+  been exposed, an administrator can regenerate the key, which immediately signs out every user on
+  every device. There is no button for this yet - it is available to administrators through the
+  panel's API at `POST /api/auth/regenerate-jwt-secret`, and a Settings control is coming.
+
+- **A settings field could run any program on the host**: the branch-listing screen took a SteamCMD
+  folder straight from the request and launched whatever executable it pointed at, without the path
+  check every other route in that file applies. It now validates the path like its siblings do.
 - **"Success" messages that were not true**: 42 places in the panel showed a green success message
   as soon as the request came back, without checking whether the action had actually worked. Banning
   or unbanning a player, giving an item, spawning a vehicle, triggering a scheduled task, restarting
@@ -71,6 +83,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the role-permissions review above closed for diagnostics and file management, just missed in this
   file. In-game tools (weather, world events, server messages, releasing a safehouse) and read-only
   status pages are unaffected and stay open to everyone signed in.
+
+- **PanelBridge integration and panel configuration endpoints now enforce technician-or-above**:
+  connecting or reconfiguring the PanelBridge mod link, its own diagnostics and item/vehicle catalog
+  scans, saving the game world through it, editing the panel's server config or RCON settings, and
+  CORS diagnostics were previously reachable by any signed-in account, including moderators. In-game
+  GM tools that live in this same file — weather, zombie and player events, sound, chat, utilities,
+  character import/export — are unaffected and stay open to every role, same as the equivalent tools
+  elsewhere in the panel.
 
 - **Bans recorded that never happened**: banning, unbanning or voice-banning a player — by username
   or by SteamID — while the game server is offline or restarting no longer writes the action into

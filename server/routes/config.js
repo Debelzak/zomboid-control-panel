@@ -1,4 +1,5 @@
 import express from "express";
+import path from "path";
 import { createLogger } from "../utils/logger.js";
 const log = createLogger("API:Config");
 import { getAllSettings, setSetting } from "../database/init.js";
@@ -150,7 +151,7 @@ router.get("/", async (req, res) => {
 });
 
 // Update server configuration
-router.put("/", requireStoppedForLocalConfigMutation, async (req, res) => {
+router.put("/", requireRole("admin", "technician"), requireStoppedForLocalConfigMutation, async (req, res) => {
   try {
     log.info("PUT /config — saving server config");
     const serverManager = req.app.get("serverManager");
@@ -174,7 +175,7 @@ router.put("/", requireStoppedForLocalConfigMutation, async (req, res) => {
 });
 
 // Reload server options via RCON
-router.post("/reload", async (req, res) => {
+router.post("/reload", requireRole("admin", "technician"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
     const result = await rconService.reloadOptions();
@@ -198,7 +199,7 @@ router.get("/options", async (req, res) => {
 });
 
 // Change a specific option via RCON
-router.post("/option", async (req, res) => {
+router.post("/option", requireRole("admin", "technician"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
     const { name, value } = req.body;
@@ -432,8 +433,11 @@ router.put("/app-settings", requireRole("admin"), async (req, res) => {
   }
 });
 
-// CORS diagnostics for remote access troubleshooting
-router.get("/cors-debug", async (req, res) => {
+// CORS diagnostics for remote access troubleshooting. Admin-only, same tier
+// as debug.js: this is internal panel/network diagnostic surface, not a
+// server-operation task, and can mutate CORS state (clearing the blocked
+// list, forcing a reload).
+router.get("/cors-debug", requireRole("admin"), async (req, res) => {
   try {
     const getCorsDebugSnapshot = req.app.get("getCorsDebugSnapshot");
     if (typeof getCorsDebugSnapshot !== "function") {
@@ -448,7 +452,7 @@ router.get("/cors-debug", async (req, res) => {
   }
 });
 
-router.post("/cors-debug/reload", async (req, res) => {
+router.post("/cors-debug/reload", requireRole("admin"), async (req, res) => {
   try {
     const refreshCorsConfig = req.app.get("refreshCorsConfig");
     if (typeof refreshCorsConfig !== "function") {
@@ -464,7 +468,7 @@ router.post("/cors-debug/reload", async (req, res) => {
   }
 });
 
-router.delete("/cors-debug/blocked", async (req, res) => {
+router.delete("/cors-debug/blocked", requireRole("admin"), async (req, res) => {
   try {
     const clearCorsBlockedOrigins = req.app.get("clearCorsBlockedOrigins");
     const getCorsDebugSnapshot = req.app.get("getCorsDebugSnapshot");
@@ -502,30 +506,32 @@ router.get("/paths", async (req, res) => {
   }
 });
 
+// serverManager.savePath set here is what server.js's /wipe and
+// /wipe/preview join with "Saves/Multiplayer/{serverName}" before recursively
+// deleting -- the previous check here only rejected a literal ".." and never
+// required an absolute path, so a relative value would resolve against
+// whatever the panel process's cwd happens to be at wipe time instead of the
+// real Zomboid data folder. Matches server.js's own isValidPath: absolute,
+// no traversal.
+function isValidConfigPath(inputPath) {
+  if (typeof inputPath !== "string" || inputPath.length > 500) return false;
+  const normalized = path.normalize(inputPath);
+  if (normalized.includes("..")) return false;
+  return path.isAbsolute(normalized);
+}
+
 // Update paths (runtime only - doesn't persist to .env)
-router.put("/paths", async (req, res) => {
+router.put("/paths", requireRole("admin", "technician"), async (req, res) => {
   try {
     const serverManager = req.app.get("serverManager");
     const { serverPath, savePath } = req.body;
 
     // Validate paths
-    if (serverPath !== undefined) {
-      if (
-        typeof serverPath !== "string" ||
-        serverPath.length > 500 ||
-        serverPath.includes("..")
-      ) {
-        return res.status(400).json({ error: "Invalid server path" });
-      }
+    if (serverPath !== undefined && !isValidConfigPath(serverPath)) {
+      return res.status(400).json({ error: "Invalid server path" });
     }
-    if (savePath !== undefined) {
-      if (
-        typeof savePath !== "string" ||
-        savePath.length > 500 ||
-        savePath.includes("..")
-      ) {
-        return res.status(400).json({ error: "Invalid save path" });
-      }
+    if (savePath !== undefined && !isValidConfigPath(savePath)) {
+      return res.status(400).json({ error: "Invalid save path" });
     }
 
     serverManager.updatePaths(serverPath, savePath);
@@ -553,7 +559,7 @@ const RCON_HOST_REGEX = /^[a-zA-Z0-9.-]{1,255}$/;
 const RCON_PASSWORD_MAX_LENGTH = 256;
 
 // Update RCON configuration
-router.put("/rcon", async (req, res) => {
+router.put("/rcon", requireRole("admin", "technician"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
     const { host, port, password } = req.body;
@@ -595,7 +601,7 @@ router.put("/rcon", async (req, res) => {
 });
 
 // Test RCON connection
-router.post("/test-rcon", async (req, res) => {
+router.post("/test-rcon", requireRole("admin", "technician"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
 

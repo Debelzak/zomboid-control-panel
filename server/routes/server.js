@@ -1293,6 +1293,15 @@ router.get("/branches", requireRole("admin", "technician"), async (req, res) => 
       });
     }
 
+    // Unlike every other route in this file that derives an executable path
+    // from user input, this one skipped isValidPath() -- steamcmdPath comes
+    // straight off the query string, and getSteamCmdExe() + spawn() below
+    // would run whatever binary exists at the caller-chosen path. Validate
+    // it the same way /install and /steam-update do before it's ever used.
+    if (!isValidPath(steamcmdPath)) {
+      return res.status(400).json({ error: "Invalid SteamCMD path" });
+    }
+
     const steamcmdExe = getSteamCmdExe(steamcmdPath);
     if (!fs.existsSync(steamcmdExe)) {
       return res.json({
