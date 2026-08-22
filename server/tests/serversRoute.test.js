@@ -6,6 +6,8 @@ const getServers = vi.fn();
 const getSetting = vi.fn();
 const testRconConnection = vi.fn();
 
+import { mockGetRoleByName } from "./helpers/mockPermissionsDb.js";
+
 vi.mock("../database/init.js", () => ({
   getServers,
   getSetting,
@@ -15,6 +17,7 @@ vi.mock("../database/init.js", () => ({
   updateServer,
   deleteServer: vi.fn(),
   setActiveServer: vi.fn(),
+  getRoleByName: mockGetRoleByName,
 }));
 
 vi.mock("../services/rcon.js", () => ({

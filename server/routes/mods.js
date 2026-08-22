@@ -49,7 +49,7 @@ import {
   listAvailableBrowsers,
   extractSteamCookies,
 } from "../utils/browserCookies.js";
-import { requireRole } from "../services/auth.js";
+import { requirePermission } from "../services/permissions.js";
 
 const router = express.Router();
 
@@ -61,7 +61,7 @@ const router = express.Router();
 // instead of silently inheriting the central-login-gate-only exposure this
 // whole file had before (any logged-in role — including moderator — could
 // previously edit sandbox vars, mod lists, or workshop collections).
-router.use(requireRole("admin", "technician"));
+router.use(requirePermission("mods.manage"));
 
 // ─── INI write mutex ────────────────────────────────────────────────────────
 // Serialises write operations to the same INI file so concurrent requests

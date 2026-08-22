@@ -4,7 +4,7 @@ import { createLogger } from '../utils/logger.js';
 const log = createLogger('API:Finder');
 import { getSteamApiKey } from '../services/steamApiKey.js';
 import { sanitizeError } from '../utils/sanitize.js';
-import { requireRole } from '../services/auth.js';
+import { requirePermission } from '../services/permissions.js';
 
 const router = express.Router();
 
@@ -13,7 +13,7 @@ const router = express.Router();
 // server-operations feature — admin+technician, not moderator, matching
 // this program's default for "operate/configure the server" tooling.
 // Applied once at the router level (4 endpoints).
-router.use(requireRole('admin', 'technician'));
+router.use(requirePermission('server.install'));
 
 // Block private/reserved IP ranges to prevent SSRF
 function isPrivateIp(ip) {

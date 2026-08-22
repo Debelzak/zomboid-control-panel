@@ -1,4 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
+import fs from "fs";
+import { EventEmitter } from "events";
+
+// spawn() is mocked at module scope (not per-test) because server.js binds
+// it as a live import at module load time; a mock installed after import
+// wouldn't be seen. exec is left as the real implementation via
+// importOriginal -- nothing under test here calls it.
+const { spawnMock } = vi.hoisted(() => ({ spawnMock: vi.fn() }));
+vi.mock("child_process", async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, spawn: (...args) => spawnMock(...args) };
+});
 
 // GET /api/server/branches derived an executable path from
 // req.query.steamcmdPath and spawned it directly -- the only path-taking
@@ -70,6 +82,49 @@ describe("GET /api/server/branches rejects an unvalidated steamcmdPath", () => {
     expect(res.getBody()).toEqual(
       expect.objectContaining({ source: "fallback" }),
     );
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  // The validation gate above only proves an invalid path never reaches
+  // getSteamCmdExe()/spawn() -- it does not prove a VALID path still does.
+  // A check that's too strict would silently break every legitimate branch
+  // lookup while looking identical in the refusal tests. Mock fs.existsSync
+  // so the derived executable path "exists" and mock spawn so nothing real
+  // runs, then assert spawn was actually invoked with it.
+  it("a valid, existing steamcmd path still reaches the spawn call", async () => {
+    const validPath =
+      process.platform === "win32" ? "C:\\steamcmd" : "/opt/steamcmd";
+    const existsSpy = vi
+      .spyOn(fs, "existsSync")
+      .mockImplementation((p) => String(p).toLowerCase().includes("steamcmd"));
+
+    const fakeProc = new EventEmitter();
+    fakeProc.stdout = new EventEmitter();
+    fakeProc.stderr = new EventEmitter();
+    spawnMock.mockReset();
+    spawnMock.mockImplementation(() => {
+      queueMicrotask(() => fakeProc.emit("close", 0));
+      return fakeProc;
+    });
+
+    try {
+      const { default: router } = await import("../routes/server.js");
+      const res = createResponse();
+      await getRouteHandler(router, "/branches", "get")(
+        { query: { steamcmdPath: validPath }, app: { get: () => undefined } },
+        res,
+      );
+
+      expect(spawnMock).toHaveBeenCalledTimes(1);
+      expect(spawnMock).toHaveBeenCalledWith(
+        expect.stringContaining("steamcmd"),
+        expect.arrayContaining(["+login", "anonymous"]),
+        expect.any(Object),
+      );
+    } finally {
+      existsSpy.mockRestore();
+      spawnMock.mockReset();
+    }
   });
 });
 

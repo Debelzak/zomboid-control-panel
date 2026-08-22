@@ -37,14 +37,14 @@ import {
   getCandidateZomboidPaths,
   inspectZomboidPath,
 } from "../utils/zomboidPaths.js";
-import { requireRole } from "../services/auth.js";
+import { requirePermission } from "../services/permissions.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const router = express.Router();
 
-// Every endpoint in this file is admin-only (requireRole("admin") is
+// Every endpoint in this file is admin-only (requirePermission("diagnostics.manage") is
 // applied to each route below), with one deliberate exception:
 // POST /client-errors is client-side crash/error telemetry. ANY logged-in
 // role's browser can hit a frontend bug, and locking this to admin would
@@ -79,7 +79,7 @@ export function addLogToBuffer(level, message, source = "server") {
 }
 
 // Get system RAM info for auto-configuration
-router.get("/ram", requireRole("admin"), async (req, res) => {
+router.get("/ram", requirePermission("diagnostics.manage"), async (req, res) => {
   try {
     const totalMemBytes = os.totalmem();
     const freeMemBytes = os.freemem();
@@ -105,7 +105,7 @@ router.get("/ram", requireRole("admin"), async (req, res) => {
 });
 
 // Get system information
-router.get("/system", requireRole("admin"), async (req, res) => {
+router.get("/system", requirePermission("diagnostics.manage"), async (req, res) => {
   try {
     const paths = getDataPaths();
 
@@ -145,7 +145,7 @@ router.get("/system", requireRole("admin"), async (req, res) => {
 });
 
 // Get recent logs from buffer
-router.get("/logs", requireRole("admin"), async (req, res) => {
+router.get("/logs", requirePermission("diagnostics.manage"), async (req, res) => {
   try {
     const limit = parseInt(req.query.limit, 10) || 200;
     res.json({
@@ -998,7 +998,7 @@ async function getSupportBundleEntries() {
 }
 
 // List available log files
-router.get("/logs/files", requireRole("admin"), async (req, res) => {
+router.get("/logs/files", requirePermission("diagnostics.manage"), async (req, res) => {
   try {
     const paths = getDataPaths();
     const logsDir = paths.logsDir;
@@ -1020,7 +1020,7 @@ router.get("/logs/files", requireRole("admin"), async (req, res) => {
 });
 
 // Download combined log file
-router.get("/logs/download", requireRole("admin"), async (req, res) => {
+router.get("/logs/download", requirePermission("diagnostics.manage"), async (req, res) => {
   try {
     const paths = getDataPaths();
     const logsPath = path.join(paths.logsDir, "combined.log");
@@ -1047,7 +1047,7 @@ router.get("/logs/download", requireRole("admin"), async (req, res) => {
 });
 
 // Download all log files as a zip archive
-router.get("/logs/download-zip", requireRole("admin"), async (req, res) => {
+router.get("/logs/download-zip", requirePermission("diagnostics.manage"), async (req, res) => {
   try {
     log.info("GET /logs/download-zip");
 
@@ -1131,7 +1131,7 @@ router.get("/logs/download-zip", requireRole("admin"), async (req, res) => {
 });
 
 // Download specific log file by name
-router.get("/logs/download/:filename", requireRole("admin"), async (req, res) => {
+router.get("/logs/download/:filename", requirePermission("diagnostics.manage"), async (req, res) => {
   try {
     const paths = getDataPaths();
     const filename = req.params.filename;
@@ -1174,7 +1174,7 @@ router.get("/logs/download/:filename", requireRole("admin"), async (req, res) =>
 });
 
 // Clear in-memory log buffer
-router.post("/logs/clear", requireRole("admin"), async (req, res) => {
+router.post("/logs/clear", requirePermission("diagnostics.manage"), async (req, res) => {
   try {
     log.info("POST /logs/clear");
     logBuffer.length = 0;
@@ -1185,7 +1185,7 @@ router.post("/logs/clear", requireRole("admin"), async (req, res) => {
 });
 
 // Update data paths (database and logs location)
-router.post("/paths", requireRole("admin"), async (req, res) => {
+router.post("/paths", requirePermission("diagnostics.manage"), async (req, res) => {
   try {
     const { dataDir, logsDir, moveFiles } = req.body;
 
@@ -1230,7 +1230,7 @@ router.post("/paths", requireRole("admin"), async (req, res) => {
 });
 
 // Health check with details
-router.get("/health", requireRole("admin"), async (req, res) => {
+router.get("/health", requirePermission("diagnostics.manage"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
     const serverManager = req.app.get("serverManager");
@@ -1869,7 +1869,7 @@ function fmtAge(ms) {
   return `${Math.round(h / 24)}d ago`;
 }
 
-router.get("/diagnostics", requireRole("admin"), async (req, res) => {
+router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, res) => {
   const t0 = Date.now();
   try {
     const rconService = req.app.get("rconService");
@@ -3685,7 +3685,7 @@ async function detectSaveBuild(savePath) {
   return "unknown";
 }
 
-router.get("/worldmap", requireRole("admin"), async (req, res) => {
+router.get("/worldmap", requirePermission("diagnostics.manage"), async (req, res) => {
   const t0 = Date.now();
   const checks = [];
 
@@ -4065,7 +4065,7 @@ router.get("/worldmap", requireRole("admin"), async (req, res) => {
     res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
-router.get("/performance-history", requireRole("admin"), async (req, res) => {
+router.get("/performance-history", requirePermission("diagnostics.manage"), async (req, res) => {
   try {
     const limit = parseInt(req.query.limit, 10) || 60;
     const history = await getPerformanceHistory(limit);
@@ -4077,7 +4077,7 @@ router.get("/performance-history", requireRole("admin"), async (req, res) => {
 });
 
 // Record current performance snapshot (called periodically)
-router.post("/performance-snapshot", requireRole("admin"), async (req, res) => {
+router.post("/performance-snapshot", requirePermission("diagnostics.manage"), async (req, res) => {
   try {
     const { memoryUsed, memoryTotal, cpuUsage, playerCount, serverRunning } =
       req.body || {};
@@ -4110,7 +4110,7 @@ router.post("/performance-snapshot", requireRole("admin"), async (req, res) => {
 });
 
 // Database stats
-router.get("/database", requireRole("admin"), async (req, res) => {
+router.get("/database", requirePermission("diagnostics.manage"), async (req, res) => {
   try {
     const stats = await getDatabaseStats();
     res.json(stats);
@@ -4121,7 +4121,7 @@ router.get("/database", requireRole("admin"), async (req, res) => {
 });
 
 // Create manual database backup
-router.post("/database/backup", requireRole("admin"), async (req, res) => {
+router.post("/database/backup", requirePermission("diagnostics.manage"), async (req, res) => {
   try {
     log.info("POST /database/backup");
     const result = await createDatabaseBackup();
@@ -4133,7 +4133,7 @@ router.post("/database/backup", requireRole("admin"), async (req, res) => {
 });
 
 // Compact database (apply retention policies)
-router.post("/database/compact", requireRole("admin"), async (req, res) => {
+router.post("/database/compact", requirePermission("diagnostics.manage"), async (req, res) => {
   try {
     log.info("POST /database/compact");
     const result = await compactDatabase();
@@ -4148,7 +4148,7 @@ router.post("/database/compact", requireRole("admin"), async (req, res) => {
 // while the server is still alive so we don't yank a lock the JVM still
 // holds open. Only deletes files older than 1 hour (matches the
 // diagnostics threshold in scanSaveStats).
-router.post("/clear-stale-locks", requireRole("admin"), async (req, res) => {
+router.post("/clear-stale-locks", requirePermission("diagnostics.manage"), async (req, res) => {
   try {
     log.info("POST /clear-stale-locks");
     const serverManager = req.app.get("serverManager");
@@ -4288,7 +4288,7 @@ router.post("/clear-stale-locks", requireRole("admin"), async (req, res) => {
 });
 
 // Get crash logs (hs_err files from Java crashes)
-router.get("/crash-logs", requireRole("admin"), async (req, res) => {
+router.get("/crash-logs", requirePermission("diagnostics.manage"), async (req, res) => {
   try {
     const serverManager = req.app.get("serverManager");
     const serverPath = serverManager?.serverPath || "";
@@ -4364,7 +4364,7 @@ router.get("/crash-logs", requireRole("admin"), async (req, res) => {
 });
 
 // Get crash log content
-router.get("/crash-logs/:filename", requireRole("admin"), async (req, res) => {
+router.get("/crash-logs/:filename", requirePermission("diagnostics.manage"), async (req, res) => {
   try {
     const { filename } = req.params;
     const serverManager = req.app.get("serverManager");
@@ -4477,7 +4477,7 @@ router.post("/client-errors", (req, res) => {
 // ============================================
 
 // GET /api/debug/activity — Merge all log sources into a single chronological feed
-router.get("/activity", requireRole("admin"), async (req, res) => {
+router.get("/activity", requirePermission("diagnostics.manage"), async (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit, 10) || 200, 500);
     const source = req.query.source || "all"; // 'all' | 'rcon' | 'bridge' | 'player' | 'server'

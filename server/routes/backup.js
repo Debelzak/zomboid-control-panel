@@ -4,7 +4,7 @@ import fs from "fs";
 import { createLogger } from "../utils/logger.js";
 import { sanitizeError } from "../utils/sanitize.js";
 import { getActiveServer } from "../database/init.js";
-import { requireRole } from "../services/auth.js";
+import { requirePermission } from "../services/permissions.js";
 import { listBackupRecords } from "../services/backupRecords.js";
 const log = createLogger("API:Backup");
 
@@ -60,7 +60,7 @@ router.get("/history", async (req, res) => {
   }
 });
 
-router.get("/:name/snapshot", requireRole("admin", "technician"), async (req, res) => {
+router.get("/:name/snapshot", requirePermission("backups.manage"), async (req, res) => {
   try {
     const backupService = req.app.get("backupService");
     const result = await backupService.getBackupSnapshot(req.params.name);
@@ -73,7 +73,7 @@ router.get("/:name/snapshot", requireRole("admin", "technician"), async (req, re
 });
 
 // Update backup settings
-router.post("/settings", requireRole("admin", "technician"), async (req, res) => {
+router.post("/settings", requirePermission("backups.manage"), async (req, res) => {
   try {
     const backupService = req.app.get("backupService");
     const scheduler = req.app.get("scheduler");
@@ -107,7 +107,7 @@ router.post("/settings", requireRole("admin", "technician"), async (req, res) =>
 });
 
 // Create a manual backup
-router.post("/create", requireRole("admin", "technician"), async (req, res) => {
+router.post("/create", requirePermission("backups.manage"), async (req, res) => {
   try {
     log.info("POST /create — creating manual backup");
     const activeServer = await getActiveServer();
@@ -138,7 +138,7 @@ router.post("/create", requireRole("admin", "technician"), async (req, res) => {
 });
 
 // Delete a backup
-router.delete("/:name", requireRole("admin", "technician"), async (req, res) => {
+router.delete("/:name", requirePermission("backups.manage"), async (req, res) => {
   try {
     log.info(`DELETE /${req.params.name}`);
     const backupService = req.app.get("backupService");
@@ -189,7 +189,7 @@ router.get("/download/:name", async (req, res) => {
 // but restoring one rolls the live world back over every player currently
 // standing in it -- a decision about other people's time, not routine server
 // operation, and invisible to the admin until someone complains.
-router.post("/restore/:name", requireRole("admin"), async (req, res) => {
+router.post("/restore/:name", requirePermission("backups.restore"), async (req, res) => {
   try {
     const activeServer = await getActiveServer();
     if (activeServer?.isRemote) {
@@ -234,7 +234,7 @@ router.post("/restore/:name", requireRole("admin"), async (req, res) => {
 });
 
 // Delete backups older than X days
-router.post("/delete-older-than", requireRole("admin", "technician"), async (req, res) => {
+router.post("/delete-older-than", requirePermission("backups.manage"), async (req, res) => {
   try {
     const { days } = req.body;
 
@@ -263,7 +263,7 @@ router.post("/delete-older-than", requireRole("admin", "technician"), async (req
 const MAX_UPLOAD_BYTES = 4 * 1024 * 1024 * 1024; // 4 GB ceiling
 router.post(
   "/upload",
-  requireRole("admin", "technician"),
+  requirePermission("backups.manage"),
   express.raw({ type: "application/zip", limit: MAX_UPLOAD_BYTES }),
   async (req, res) => {
     try {

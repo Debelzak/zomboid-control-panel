@@ -2,7 +2,7 @@ import express from "express";
 import { createLogger } from "../utils/logger.js";
 import { sanitizeError } from "../utils/sanitize.js";
 import { normalizeChatRelayScope } from "../services/discordBot.js";
-import { requireRole } from "../services/auth.js";
+import { requirePermission } from "../services/permissions.js";
 const log = createLogger("API:Discord");
 
 const router = express.Router();
@@ -13,7 +13,7 @@ const router = express.Router();
 // integration-config routes, already admin+technician) rather than
 // per-route. Previously any logged-in role could reach every route here,
 // including reconfiguring the webhook and bot permissions.
-router.use(requireRole("admin", "technician"));
+router.use(requirePermission("integrations.manage"));
 
 // Get Discord bot status
 router.get("/status", async (req, res) => {

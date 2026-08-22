@@ -1,4 +1,17 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { mockGetRoleByName } from "./helpers/mockPermissionsDb.js";
+
+// debug.js now gates with requirePermission (DB-backed) instead of
+// requireRole -- getRoleByName needs mocking. The admin-passthrough test
+// below lets a request continue into REAL handler logic (real database
+// backup/compact/clear-stale-locks calls, since nothing else in this file
+// is mocked), so this uses importActual to keep every other real export
+// working rather than replacing the whole module and leaving those
+// functions undefined.
+vi.mock("../database/init.js", async () => {
+  const actual = await vi.importActual("../database/init.js");
+  return { ...actual, getRoleByName: mockGetRoleByName };
+});
 
 // debug.js was, until now, guarded only by the central login gate: ANY
 // authenticated role (including moderator) could trigger a database

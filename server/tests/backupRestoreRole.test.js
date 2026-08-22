@@ -1,4 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { mockGetRoleByName } from "./helpers/mockPermissionsDb.js";
+
+vi.mock("../database/init.js", () => ({
+  getRoleByName: mockGetRoleByName,
+}));
 
 // Restore is deliberately narrower than the rest of backup.js: deleting a
 // backup destroys the operator's own safety net (housekeeping), but
@@ -24,7 +29,7 @@ function getGate(router, routePath, method) {
     (entry) => entry.route?.path === routePath && entry.route.methods[method],
   );
   if (!layer) throw new Error(`No ${method.toUpperCase()} ${routePath} route registered`);
-  // requireRole is always the first handler in backup.js's per-route stacks.
+  // requirePermission is always the first handler in backup.js's per-route stacks.
   return layer.route.stack[0].handle;
 }
 

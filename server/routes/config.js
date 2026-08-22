@@ -10,7 +10,7 @@ import {
   maskSensitiveObject,
 } from "../utils/sanitize.js";
 import net from "net";
-import { requireRole } from "../services/auth.js";
+import { requirePermission } from "../services/permissions.js";
 import {
   MOD_CHECK_INTERVAL_MINUTES_MAX,
   MOD_CHECK_INTERVAL_MINUTES_MIN,
@@ -151,7 +151,7 @@ router.get("/", async (req, res) => {
 });
 
 // Update server configuration
-router.put("/", requireRole("admin", "technician"), requireStoppedForLocalConfigMutation, async (req, res) => {
+router.put("/", requirePermission("server.configure"), requireStoppedForLocalConfigMutation, async (req, res) => {
   try {
     log.info("PUT /config — saving server config");
     const serverManager = req.app.get("serverManager");
@@ -175,7 +175,7 @@ router.put("/", requireRole("admin", "technician"), requireStoppedForLocalConfig
 });
 
 // Reload server options via RCON
-router.post("/reload", requireRole("admin", "technician"), async (req, res) => {
+router.post("/reload", requirePermission("server.configure"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
     const result = await rconService.reloadOptions();
@@ -199,7 +199,7 @@ router.get("/options", async (req, res) => {
 });
 
 // Change a specific option via RCON
-router.post("/option", requireRole("admin", "technician"), async (req, res) => {
+router.post("/option", requirePermission("server.configure"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
     const { name, value } = req.body;
@@ -250,7 +250,7 @@ router.get("/app-settings", async (req, res) => {
 // corsAllowAll (disables CORS origin checking panel-wide) and other
 // security-relevant settings, so any authenticated-but-unprivileged
 // account must not be able to write it.
-router.put("/app-settings", requireRole("admin"), async (req, res) => {
+router.put("/app-settings", requirePermission("panel.settings"), async (req, res) => {
   try {
     const { settings } = req.body;
     log.info(
@@ -437,7 +437,7 @@ router.put("/app-settings", requireRole("admin"), async (req, res) => {
 // as debug.js: this is internal panel/network diagnostic surface, not a
 // server-operation task, and can mutate CORS state (clearing the blocked
 // list, forcing a reload).
-router.get("/cors-debug", requireRole("admin"), async (req, res) => {
+router.get("/cors-debug", requirePermission("diagnostics.manage"), async (req, res) => {
   try {
     const getCorsDebugSnapshot = req.app.get("getCorsDebugSnapshot");
     if (typeof getCorsDebugSnapshot !== "function") {
@@ -452,7 +452,7 @@ router.get("/cors-debug", requireRole("admin"), async (req, res) => {
   }
 });
 
-router.post("/cors-debug/reload", requireRole("admin"), async (req, res) => {
+router.post("/cors-debug/reload", requirePermission("diagnostics.manage"), async (req, res) => {
   try {
     const refreshCorsConfig = req.app.get("refreshCorsConfig");
     if (typeof refreshCorsConfig !== "function") {
@@ -468,7 +468,7 @@ router.post("/cors-debug/reload", requireRole("admin"), async (req, res) => {
   }
 });
 
-router.delete("/cors-debug/blocked", requireRole("admin"), async (req, res) => {
+router.delete("/cors-debug/blocked", requirePermission("diagnostics.manage"), async (req, res) => {
   try {
     const clearCorsBlockedOrigins = req.app.get("clearCorsBlockedOrigins");
     const getCorsDebugSnapshot = req.app.get("getCorsDebugSnapshot");
@@ -521,7 +521,7 @@ function isValidConfigPath(inputPath) {
 }
 
 // Update paths (runtime only - doesn't persist to .env)
-router.put("/paths", requireRole("admin", "technician"), async (req, res) => {
+router.put("/paths", requirePermission("server.configure"), async (req, res) => {
   try {
     const serverManager = req.app.get("serverManager");
     const { serverPath, savePath } = req.body;
@@ -559,7 +559,7 @@ const RCON_HOST_REGEX = /^[a-zA-Z0-9.-]{1,255}$/;
 const RCON_PASSWORD_MAX_LENGTH = 256;
 
 // Update RCON configuration
-router.put("/rcon", requireRole("admin", "technician"), async (req, res) => {
+router.put("/rcon", requirePermission("server.configure"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
     const { host, port, password } = req.body;
@@ -601,7 +601,7 @@ router.put("/rcon", requireRole("admin", "technician"), async (req, res) => {
 });
 
 // Test RCON connection
-router.post("/test-rcon", requireRole("admin", "technician"), async (req, res) => {
+router.post("/test-rcon", requirePermission("server.configure"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
 

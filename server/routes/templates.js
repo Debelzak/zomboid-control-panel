@@ -1,7 +1,7 @@
 import express from "express";
 import { createLogger } from "../utils/logger.js";
 import { sanitizeError } from "../utils/sanitize.js";
-import { requireRole } from "../services/auth.js";
+import { requirePermission } from "../services/permissions.js";
 import { getActiveServer } from "../database/init.js";
 import {
   listTemplates,
@@ -37,7 +37,7 @@ router.get("/:id", async (req, res) => {
   }
 });
 
-router.post("/", requireRole("admin", "technician"), async (req, res) => {
+router.post("/", requirePermission("templates.manage"), async (req, res) => {
   try {
     const result = await saveTemplate(req.body);
     if (!result.success) return res.status(400).json({ error: result.error });
@@ -48,7 +48,7 @@ router.post("/", requireRole("admin", "technician"), async (req, res) => {
   }
 });
 
-router.post("/import", requireRole("admin", "technician"), async (req, res) => {
+router.post("/import", requirePermission("templates.manage"), async (req, res) => {
   try {
     const result = await importTemplate(req.body?.template ?? req.body);
     if (!result.success) return res.status(400).json({ error: result.error });
@@ -86,7 +86,7 @@ router.post("/:id/preview", async (req, res) => {
   }
 });
 
-router.post("/:id/apply", requireRole("admin", "technician"), async (req, res) => {
+router.post("/:id/apply", requirePermission("templates.manage"), async (req, res) => {
   try {
     const { serverId, options } = req.body || {};
     if (!serverId) return res.status(400).json({ error: "serverId is required" });
@@ -122,7 +122,7 @@ router.post("/:id/apply", requireRole("admin", "technician"), async (req, res) =
   }
 });
 
-router.delete("/:id", requireRole("admin", "technician"), async (req, res) => {
+router.delete("/:id", requirePermission("templates.manage"), async (req, res) => {
   try {
     const result = await deleteTemplate(req.params.id);
     if (!result.success) return res.status(400).json({ error: result.error });

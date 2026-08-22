@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { mockGetRoleByName } from "./helpers/mockPermissionsDb.js";
 
 vi.mock("../database/init.js", () => ({
   getActiveServer: vi.fn(),
@@ -8,6 +9,7 @@ vi.mock("../database/init.js", () => ({
   getDb: vi.fn(),
   commitNow: vi.fn(),
   logBridgeCommand: vi.fn(),
+  getRoleByName: mockGetRoleByName,
 }));
 
 const { default: router } = await import("../routes/panelBridge.js");

@@ -21,7 +21,7 @@ import {
 } from "../database/init.js";
 import { sanitizeError, isMaskedSecret } from "../utils/sanitize.js";
 import { persistSandboxValues } from "./serverFiles.js";
-import { requireRole } from "../services/auth.js";
+import { requirePermission } from "../services/permissions.js";
 import {
   getEmbeddedPanelBridgeLua,
   compareModVersions,
@@ -267,7 +267,7 @@ router.get("/status", async (req, res) => {
 });
 
 // Auto-configure bridge from server settings (optionally specify serverId)
-router.post("/auto-configure", requireRole("admin", "technician"), async (req, res) => {
+router.post("/auto-configure", requirePermission("bridge.setup"), async (req, res) => {
   try {
     const { serverId } = req.body;
     log.info(`POST /auto-configure (serverId=${serverId || "active"})`);
@@ -563,7 +563,7 @@ router.post("/auto-configure", requireRole("admin", "technician"), async (req, r
 });
 
 // Scan for bridge paths for a specific server (preview before applying)
-router.get("/scan-server/:serverId", requireRole("admin", "technician"), async (req, res) => {
+router.get("/scan-server/:serverId", requirePermission("bridge.setup"), async (req, res) => {
   try {
     const { serverId } = req.params;
     const targetServer = await getServer(serverId);
@@ -714,7 +714,7 @@ router.get("/scan-server/:serverId", requireRole("admin", "technician"), async (
 });
 
 // Auto-detect bridge path from server name
-router.post("/auto-detect", requireRole("admin", "technician"), async (req, res) => {
+router.post("/auto-detect", requirePermission("bridge.setup"), async (req, res) => {
   const { serverName, zomboidUserFolder } = req.body;
 
   if (!serverName) {
@@ -744,7 +744,7 @@ router.post("/auto-detect", requireRole("admin", "technician"), async (req, res)
 });
 
 // Configure the bridge with Zomboid save path
-router.post("/configure", requireRole("admin", "technician"), async (req, res) => {
+router.post("/configure", requirePermission("bridge.setup"), async (req, res) => {
   const { zomboidSavePath } = req.body;
 
   if (!zomboidSavePath) {
@@ -775,7 +775,7 @@ router.post("/configure", requireRole("admin", "technician"), async (req, res) =
 });
 
 // Configure the bridge with a direct panelbridge folder path (manual override)
-router.post("/configure-direct", requireRole("admin", "technician"), async (req, res) => {
+router.post("/configure-direct", requirePermission("bridge.setup"), async (req, res) => {
   const { bridgePath: reqPath } = req.body;
 
   if (!reqPath || typeof reqPath !== "string") {
@@ -817,7 +817,7 @@ router.post("/configure-direct", requireRole("admin", "technician"), async (req,
   }
 });
 
-router.post("/sftp/test", requireRole("admin", "technician"), async (req, res) => {
+router.post("/sftp/test", requirePermission("bridge.setup"), async (req, res) => {
   try {
     const config = await resolveSftpConfig(req.body);
     const result = await testSftpBridge(config);
@@ -827,7 +827,7 @@ router.post("/sftp/test", requireRole("admin", "technician"), async (req, res) =
   }
 });
 
-router.post("/sftp/configure", requireRole("admin", "technician"), async (req, res) => {
+router.post("/sftp/configure", requirePermission("bridge.setup"), async (req, res) => {
   try {
     const config = await resolveSftpConfig(req.body);
     const cachePath = getSftpCachePath(config);
@@ -842,7 +842,7 @@ router.post("/sftp/configure", requireRole("admin", "technician"), async (req, r
   }
 });
 
-router.post("/sftp/logs/list", requireRole("admin", "technician"), async (req, res) => {
+router.post("/sftp/logs/list", requirePermission("bridge.setup"), async (req, res) => {
   try {
     const config = await resolveSftpLogConfig(req.body);
     const result = await listSftpLogs(config);
@@ -853,7 +853,7 @@ router.post("/sftp/logs/list", requireRole("admin", "technician"), async (req, r
   }
 });
 
-router.post("/sftp/logs/tail", requireRole("admin", "technician"), async (req, res) => {
+router.post("/sftp/logs/tail", requirePermission("bridge.setup"), async (req, res) => {
   try {
     const config = await resolveSftpLogConfig(req.body);
     const result = await readSftpLogTail(config, req.body?.name, req.body?.maxBytes);
@@ -864,7 +864,7 @@ router.post("/sftp/logs/tail", requireRole("admin", "technician"), async (req, r
 });
 
 // Verify the remote Server/ folder the config editor mirrors for a remote server.
-router.post("/sftp/config/list", requireRole("admin", "technician"), async (req, res) => {
+router.post("/sftp/config/list", requirePermission("bridge.setup"), async (req, res) => {
   try {
     const settings = await getAllSettings();
     const password =
@@ -890,7 +890,7 @@ router.post("/sftp/config/list", requireRole("admin", "technician"), async (req,
 });
 
 // Start the bridge polling
-router.post("/start", requireRole("admin", "technician"), (req, res) => {
+router.post("/start", requirePermission("bridge.setup"), (req, res) => {
   try {
     bridge.start();
     res.json({ success: true, message: "Bridge started" });
@@ -900,7 +900,7 @@ router.post("/start", requireRole("admin", "technician"), (req, res) => {
 });
 
 // Stop the bridge
-router.post("/stop", requireRole("admin", "technician"), async (req, res) => {
+router.post("/stop", requirePermission("bridge.setup"), async (req, res) => {
   try {
     await bridge.stopSftp();
     bridge.stop();
@@ -911,7 +911,7 @@ router.post("/stop", requireRole("admin", "technician"), async (req, res) => {
 });
 
 // Scan for all panelbridge folders across known locations
-router.get("/scan-paths", requireRole("admin", "technician"), async (req, res) => {
+router.get("/scan-paths", requirePermission("bridge.setup"), async (req, res) => {
   try {
     const activeServer = await getActiveServer();
     const foundBridges = [];
@@ -1048,7 +1048,7 @@ router.get("/scan-paths", requireRole("admin", "technician"), async (req, res) =
 });
 
 // Force refresh - restart bridge with fresh state
-router.post("/refresh", requireRole("admin", "technician"), (req, res) => {
+router.post("/refresh", requirePermission("bridge.setup"), (req, res) => {
   try {
     if (bridge.isRunning) {
       bridge.stop(); // stop() already resets all internal state
@@ -1093,7 +1093,7 @@ router.get("/ping", async (req, res) => {
 // curated preset buttons in the Events UI. Every account is currently
 // created as 'admin' (see auth.js), so this has no effect today, but keeps
 // the route safe if a lower-privilege role is ever introduced.
-router.post("/command", requireRole("admin"), async (req, res) => {
+router.post("/command", requirePermission("bridge.command"), async (req, res) => {
   const activeServer = await getActiveServer();
   if (activeServer?.isRemote && !bridge.isSftpRunning() && !bridge.isRunning) {
     return res.status(400).json({
@@ -1749,7 +1749,7 @@ router.get("/world/stats", async (req, res) => {
 
 // Save world. admin+technician, matching /api/server/save -- an operational
 // action, not player-facing GM authority.
-router.post("/world/save", requireRole("admin", "technician"), async (req, res) => {
+router.post("/world/save", requirePermission("server.control"), async (req, res) => {
   if (!bridge.isRunning) {
     return res
       .status(400)
@@ -2501,7 +2501,7 @@ router.get("/commands", (req, res) => {
 });
 
 // Get mod installation path (for copying mod to server)
-router.get("/mod-path", requireRole("admin", "technician"), async (req, res) => {
+router.get("/mod-path", requirePermission("bridge.setup"), async (req, res) => {
   // Path to the bundled mod - check multiple locations for packaged exe
   const possiblePaths = [
     path.join(process.cwd(), "pz-mod", "PanelBridge"),
@@ -2548,7 +2548,7 @@ router.get("/mod-path", requireRole("admin", "technician"), async (req, res) => 
 // Explicitly install/update PanelBridge.lua on the active server's local
 // filesystem (bind mount / same-host install). See services/panelBridgeInstaller.js
 // — this is the manual counterpart to the auto-install run on activation.
-router.post("/install-local", requireRole("admin", "technician"), async (req, res) => {
+router.post("/install-local", requirePermission("bridge.setup"), async (req, res) => {
   try {
     const server = await getActiveServer();
     if (!server) {
@@ -2583,7 +2583,7 @@ router.post("/install-local", requireRole("admin", "technician"), async (req, re
 });
 
 // Auto-install mod to server's Lua folder (optionally specify serverId)
-router.post("/install-mod-auto", requireRole("admin", "technician"), async (req, res) => {
+router.post("/install-mod-auto", requirePermission("bridge.setup"), async (req, res) => {
   try {
     const { serverId } = req.body;
 
@@ -2632,7 +2632,7 @@ router.post("/install-mod-auto", requireRole("admin", "technician"), async (req,
 });
 
 // Copy mod to server Lua folder (manual path)
-router.post("/install-mod", requireRole("admin", "technician"), (req, res) => {
+router.post("/install-mod", requirePermission("bridge.setup"), (req, res) => {
   const { serverLuaPath } = req.body;
 
   // Support legacy field name
@@ -3516,7 +3516,7 @@ router.post("/chat/alert", async (req, res) => {
 // ============================================
 
 // Get mod debug log
-router.get("/debug/log", requireRole("admin", "technician"), async (req, res) => {
+router.get("/debug/log", requirePermission("bridge.diagnostics"), async (req, res) => {
   if (!bridge.isRunning) {
     return res.status(400).json({ error: "Bridge not running" });
   }
@@ -3534,7 +3534,7 @@ router.get("/debug/log", requireRole("admin", "technician"), async (req, res) =>
 });
 
 // Get mod statistics
-router.get("/debug/stats", requireRole("admin", "technician"), async (req, res) => {
+router.get("/debug/stats", requirePermission("bridge.diagnostics"), async (req, res) => {
   if (!bridge.isRunning) {
     return res.status(400).json({ error: "Bridge not running" });
   }
@@ -3547,7 +3547,7 @@ router.get("/debug/stats", requireRole("admin", "technician"), async (req, res) 
 });
 
 // Set debug mode
-router.post("/debug/mode", requireRole("admin", "technician"), async (req, res) => {
+router.post("/debug/mode", requirePermission("bridge.diagnostics"), async (req, res) => {
   if (!bridge.isRunning) {
     return res.status(400).json({ error: "Bridge not running" });
   }
@@ -3563,7 +3563,7 @@ router.post("/debug/mode", requireRole("admin", "technician"), async (req, res) 
 });
 
 // Check API availability
-router.get("/debug/api", requireRole("admin", "technician"), async (req, res) => {
+router.get("/debug/api", requirePermission("bridge.diagnostics"), async (req, res) => {
   if (!bridge.isRunning) {
     return res.status(400).json({ error: "Bridge not running" });
   }
@@ -3590,7 +3590,7 @@ router.get("/debug/api", requireRole("admin", "technician"), async (req, res) =>
 });
 
 // Get available handlers
-router.get("/debug/handlers", requireRole("admin", "technician"), async (req, res) => {
+router.get("/debug/handlers", requirePermission("bridge.diagnostics"), async (req, res) => {
   if (!bridge.isRunning) {
     return res.status(400).json({ error: "Bridge not running" });
   }
@@ -3603,7 +3603,7 @@ router.get("/debug/handlers", requireRole("admin", "technician"), async (req, re
 });
 
 // Clear mod errors
-router.post("/debug/clear-errors", requireRole("admin", "technician"), async (req, res) => {
+router.post("/debug/clear-errors", requirePermission("bridge.diagnostics"), async (req, res) => {
   if (!bridge.isRunning) {
     return res.status(400).json({ error: "Bridge not running" });
   }
@@ -3648,7 +3648,7 @@ router.get("/catalog/vehicles", async (req, res) => {
 });
 
 // Scan items from running server via PanelBridge, cache result
-router.post("/catalog/scan-items", requireRole("admin", "technician"), async (req, res) => {
+router.post("/catalog/scan-items", requirePermission("bridge.diagnostics"), async (req, res) => {
   if (!bridge.isRunning) {
     return res.status(400).json({
       error: "Bridge not running — server must be online to scan items",
@@ -3679,7 +3679,7 @@ router.post("/catalog/scan-items", requireRole("admin", "technician"), async (re
 });
 
 // Scan vehicles from running server via PanelBridge, cache result
-router.post("/catalog/scan-vehicles", requireRole("admin", "technician"), async (req, res) => {
+router.post("/catalog/scan-vehicles", requirePermission("bridge.diagnostics"), async (req, res) => {
   if (!bridge.isRunning) {
     return res.status(400).json({
       error: "Bridge not running — server must be online to scan vehicles",
@@ -3710,7 +3710,7 @@ router.post("/catalog/scan-vehicles", requireRole("admin", "technician"), async 
 });
 
 // Debug: probe item script methods to find working category API
-router.post("/catalog/debug-item-script", requireRole("admin", "technician"), async (req, res) => {
+router.post("/catalog/debug-item-script", requirePermission("bridge.diagnostics"), async (req, res) => {
   if (!bridge.isRunning) {
     return res.status(400).json({ error: "Bridge not running" });
   }

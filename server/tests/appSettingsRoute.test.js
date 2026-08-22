@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { mockGetRoleByName } from "./helpers/mockPermissionsDb.js";
 
 const getAllSettings = vi.fn();
 const setSetting = vi.fn();
@@ -8,6 +9,7 @@ vi.mock("../database/init.js", () => ({
   getAllSettings,
   setSetting,
   getActiveServer,
+  getRoleByName: mockGetRoleByName,
 }));
 
 const { default: router } = await import("../routes/config.js");

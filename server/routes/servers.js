@@ -21,7 +21,7 @@ import {
   getAllSettings,
 } from "../database/init.js";
 import { isRemoteConfigConfigured } from "../services/remoteConfigFiles.js";
-import { requireRole } from "../services/auth.js";
+import { requirePermission } from "../services/permissions.js";
 import {
   canAutoInstall,
   checkBridgeInstalled,
@@ -235,7 +235,7 @@ function scanForPzPaths(rootPath, maxDepth = 3) {
 // Reads arbitrary local server .ini files and returns their RCON passwords
 // in plaintext to prefill the "create server" form — admin-only, same
 // sensitivity tier as chunks delete / panel-bridge command execution.
-router.post("/auto-scan", requireRole("admin"), async (req, res) => {
+router.post("/auto-scan", requirePermission("servers.discover"), async (req, res) => {
   try {
     const { scanPath, maxDepth = 3 } = req.body;
 
@@ -347,7 +347,7 @@ router.post("/auto-scan", requireRole("admin"), async (req, res) => {
 
 // Detect server settings from data path (folder containing Server/, Saves/, Logs/)
 // Same as /auto-scan: exposes RCON passwords read straight off disk.
-router.post("/detect", requireRole("admin"), async (req, res) => {
+router.post("/detect", requirePermission("servers.discover"), async (req, res) => {
   try {
     const { dataPath, installPath } = req.body;
     log.info(
@@ -618,7 +618,7 @@ router.get("/:id", async (req, res) => {
 });
 
 // Create a new server
-router.post("/", requireRole("admin", "technician"), async (req, res) => {
+router.post("/", requirePermission("servers.manage"), async (req, res) => {
   try {
     const config = req.body;
     log.info(
@@ -739,7 +739,7 @@ const ALLOWED_SERVER_UPDATE_FIELDS = [
 ];
 
 // Update a server
-router.put("/:id", requireRole("admin", "technician"), async (req, res) => {
+router.put("/:id", requirePermission("servers.manage"), async (req, res) => {
   try {
     const id = req.params.id;
     if (!id) {
@@ -900,7 +900,7 @@ router.put("/:id", requireRole("admin", "technician"), async (req, res) => {
 });
 
 // Delete a server
-router.delete("/:id", requireRole("admin", "technician"), async (req, res) => {
+router.delete("/:id", requirePermission("servers.manage"), async (req, res) => {
   try {
     const id = req.params.id;
     if (!id) {
@@ -930,7 +930,7 @@ router.delete("/:id", requireRole("admin", "technician"), async (req, res) => {
 });
 
 // Set active server
-router.post("/:id/activate", requireRole("admin", "technician"), async (req, res) => {
+router.post("/:id/activate", requirePermission("servers.manage"), async (req, res) => {
   try {
     const id = req.params.id;
     if (!id) {

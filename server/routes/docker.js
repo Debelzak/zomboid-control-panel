@@ -1,5 +1,5 @@
 import express from "express";
-import { requireRole } from "../services/auth.js";
+import { requirePermission } from "../services/permissions.js";
 import { sanitizeError } from "../utils/sanitize.js";
 import { getServer } from "../database/init.js";
 import { RconService } from "../services/rcon.js";
@@ -19,7 +19,7 @@ async function mapWithConcurrency(items, limit, mapper) {
   return results;
 }
 
-router.get("/status", requireRole("admin", "technician"), async (req, res) => {
+router.get("/status", requirePermission("docker.manage"), async (req, res) => {
   try {
     const dockerClient = req.app.get("dockerClient");
     if (!dockerClient?.enabled) {
@@ -45,7 +45,7 @@ router.get("/status", requireRole("admin", "technician"), async (req, res) => {
   }
 });
 
-router.get("/stats", requireRole("admin", "technician"), async (req, res) => {
+router.get("/stats", requirePermission("docker.manage"), async (req, res) => {
   try {
     const dockerClient = req.app.get("dockerClient");
     if (!dockerClient?.enabled || !dockerClient.available) return res.json({ containers: {} });
@@ -67,7 +67,7 @@ router.get("/stats", requireRole("admin", "technician"), async (req, res) => {
   }
 });
 
-router.post("/containers/:id/:action", requireRole("admin", "technician"), async (req, res) => {
+router.post("/containers/:id/:action", requirePermission("docker.manage"), async (req, res) => {
   let rconService = null;
   try {
     const dockerClient = req.app.get("dockerClient");

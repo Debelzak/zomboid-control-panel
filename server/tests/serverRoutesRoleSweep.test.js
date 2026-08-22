@@ -1,4 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { mockGetRoleByName } from "./helpers/mockPermissionsDb.js";
+
+// server.js now gates with requirePermission (DB-backed) instead of
+// requireRole -- these are gate-only tests, so a minimal mock is enough.
+vi.mock("../database/init.js", () => ({
+  getRoleByName: mockGetRoleByName,
+}));
 
 // server.js is the headline gap: 44 routes, only 2 had a requireRole call.
 // /start, /stop, /restart, /install, /configure-rcon etc. were reachable by

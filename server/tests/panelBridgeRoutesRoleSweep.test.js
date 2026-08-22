@@ -1,4 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { mockGetRoleByName } from "./helpers/mockPermissionsDb.js";
+
+// panelBridge.js now gates with requirePermission (DB-backed) instead of
+// requireRole -- these are gate-only tests (never proceed into a real
+// handler), so a minimal getRoleByName-only mock is enough.
+vi.mock("../database/init.js", () => ({
+  getRoleByName: mockGetRoleByName,
+}));
 
 // panelBridge.js: 89 routes, only 8 had a requireRole call (all SFTP/mod-
 // install, from an earlier pass) plus /command. Everything else was

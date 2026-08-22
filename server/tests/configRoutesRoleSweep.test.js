@@ -1,4 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { mockGetRoleByName } from "./helpers/mockPermissionsDb.js";
+
+vi.mock("../database/init.js", () => ({
+  getRoleByName: mockGetRoleByName,
+}));
 
 // config.js: 15 routes, only PUT /app-settings had a requireRole call.
 // PUT / (writes the server's .ini config), PUT /rcon (writes the RCON

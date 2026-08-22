@@ -19,7 +19,7 @@ import {
   validateRemoteConfigTransport,
 } from "../services/remoteConfigFiles.js";
 import { requireStoppedForLocalConfigMutation } from "../services/configMutationGuard.js";
-import { requireRole } from "../services/auth.js";
+import { requirePermission } from "../services/permissions.js";
 import { ErrorCode } from "../utils/errorCodes.js";
 
 const router = express.Router();
@@ -30,7 +30,7 @@ const router = express.Router();
 // router level rather than per-route (25 endpoints). Previously any
 // logged-in role, including moderator, could edit sandbox vars or restore
 // a server file backup.
-router.use(requireRole("admin", "technician"));
+router.use(requirePermission("serverfiles.manage"));
 
 // Thrown by getServerConfigPath()/getServerName() when no server is
 // configured at all (no active server row, and no legacy settings fallback

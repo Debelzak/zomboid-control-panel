@@ -13,7 +13,7 @@ import {
   getActiveServer,
   getServer
 } from '../database/init.js';
-import { requireRole } from '../services/auth.js';
+import { requirePermission } from '../services/permissions.js';
 
 const router = express.Router();
 
@@ -23,7 +23,7 @@ const router = express.Router();
 // the router level rather than per-route. Previously any logged-in role,
 // including moderator, could create or run a scheduled task — including
 // /restart-now.
-router.use(requireRole('admin', 'technician'));
+router.use(requirePermission('automation.manage'));
 
 /**
  * Check if a cron expression runs more frequently than every 5 minutes.
