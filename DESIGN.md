@@ -9,8 +9,14 @@ following.
 ## Page header
 
 Every page opens with `<PageHeader>` (`components/PageHeader.tsx`): `title`, `description`, `icon`,
-optional `eyebrow`, `tone`, `actions`. `eyebrow` is a small uppercase label naming the page's
-category ("Configuration", "Fleet", "Workshop") — used on 6 V1 pages, not every page needs one.
+optional `eyebrow`, `tone`, `actions`. `eyebrow` is a small uppercase label naming *that page*, not
+a shared section header — 6 V1 pages pass one (`Settings.tsx` → "Configuration",
+`Servers.tsx` → "Fleet", `Mods.tsx` → "Workshop", `Scheduler.tsx` → "Maintenance",
+`Events.tsx` → "world control", `ServerConfig.tsx` → "config") and every single value is distinct.
+Even the two conceptually closest pages, `Settings.tsx` and `ServerConfig.tsx`, use "Configuration"
+and "config" rather than sharing one string. **Don't reuse an eyebrow across sibling pages** — each
+page names itself; there is no grouping label meant to appear on more than one page's header. Not
+every page needs an eyebrow at all (`Players.tsx`'s header has none).
 `tone` (`'ops' | 'world' | 'maintain' | 'config' | 'servers'`) sets the header's accent per page
 type via `data-tone`. Primary page action (Save, Refresh) goes in `actions`, right-aligned.
 
