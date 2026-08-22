@@ -47,6 +47,14 @@ const KNOWN_TRANSLATED_IDS = new Set([
   "server.ini",
   "server.rconPassword",
   "server.bridgeMod",
+  // Batch 3: Storage & Database
+  "db.exists",
+  "db.writable",
+  "db.backup",
+  "logs.writable",
+  "disk.free",
+  "storage.saveSize",
+  "storage.error",
 ]);
 
 /**

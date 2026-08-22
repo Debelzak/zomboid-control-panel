@@ -3206,20 +3206,36 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
           ),
         );
       } else if (!(await safePathWritable(paths.dbPath))) {
-        checks.push(
-          diagFail(
-            "db.writable",
-            "Database not writable",
-            "db.json exists but is read-only. Settings changes will fail.",
-            {
-              category: "storage",
-              hint:
-                process.platform === "linux"
-                  ? "Run: chmod u+w data/db.json (and check the data/ directory is owned by the panel user)"
-                  : "Check file permissions on data/db.json",
-            },
-          ),
-        );
+        // hint's content genuinely differs by platform (a real command vs a
+        // generic phrase) -- variant, not params; message is identical
+        // either way, so it's written once per variant rather than shared.
+        if (process.platform === "linux") {
+          checks.push(
+            diagFail(
+              "db.writable",
+              "Database not writable",
+              "db.json exists but is read-only. Settings changes will fail.",
+              {
+                category: "storage",
+                hint: "Run: chmod u+w data/db.json (and check the data/ directory is owned by the panel user)",
+                variant: "linux",
+              },
+            ),
+          );
+        } else {
+          checks.push(
+            diagFail(
+              "db.writable",
+              "Database not writable",
+              "db.json exists but is read-only. Settings changes will fail.",
+              {
+                category: "storage",
+                hint: "Check file permissions on data/db.json",
+                variant: "other",
+              },
+            ),
+          );
+        }
       } else {
         checks.push(
           diagOk(
@@ -3232,17 +3248,24 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
             // collections, 0 MB", on the one screen whose whole purpose is
             // being trustworthy about the panel's own state.
             formatDbAccessibleMessage(dbStats),
-            { category: "storage" },
+            {
+              category: "storage",
+              params: {
+                count: dbStats ? Object.keys(dbStats.collections).length : "?",
+                size: fmtMB(dbStats?.fileSizeBytes),
+              },
+            },
           ),
         );
       }
     } catch (e) {
+      const reason = e?.message || "unknown error";
       checks.push(
         diagWarn(
           "db.exists",
           "Database check failed",
-          `Could not inspect db.json: ${e?.message || "unknown error"}`,
-          { category: "storage" },
+          `Could not inspect db.json: ${reason}`,
+          { category: "storage", params: { reason } },
         ),
       );
     }
@@ -3252,12 +3275,16 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
       if (await safePathExists(backupsDir)) {
         const files = await safeReaddir(backupsDir);
         if (!files) {
+          // Same "warn" status as the unreadable-directory catch below and
+          // the no-backups/old-backup branches further down -- four
+          // genuinely different sentences under one id+status, so each
+          // gets its own variant rather than colliding at one locale key.
           checks.push(
             diagWarn(
               "db.backup",
               "Backup status unknown",
               "Could not read the backup directory (timeout or permission denied).",
-              { category: "storage" },
+              { category: "storage", variant: "unreadable" },
             ),
           );
         } else {
@@ -3280,27 +3307,32 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
                 {
                   category: "storage",
                   hint: "Debug → Database → Create Backup",
+                  variant: "none",
                 },
               ),
             );
           } else if (age < 24 * 3600_000) {
+            const ageText = fmtAge(age);
             checks.push(
               diagOk(
                 "db.backup",
                 "Database backup recent",
-                `Newest backup ${fmtAge(age)}.`,
-                { category: "storage" },
+                `Newest backup ${ageText}.`,
+                { category: "storage", params: { age: ageText } },
               ),
             );
           } else {
+            const ageText = fmtAge(age);
             checks.push(
               diagWarn(
                 "db.backup",
                 "Database backup old",
-                `Newest backup ${fmtAge(age)}. Consider creating a fresh one.`,
+                `Newest backup ${ageText}. Consider creating a fresh one.`,
                 {
                   category: "storage",
                   hint: "Debug → Database → Create Backup",
+                  params: { age: ageText },
+                  variant: "old",
                 },
               ),
             );
@@ -3317,12 +3349,13 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
         );
       }
     } catch (e) {
+      const reason = e?.message || "unknown error";
       checks.push(
         diagWarn(
           "db.backup",
           "Backup status unknown",
-          `Could not inspect backups: ${e?.message || "unknown error"}`,
-          { category: "storage" },
+          `Could not inspect backups: ${reason}`,
+          { category: "storage", params: { reason }, variant: "error" },
         ),
       );
     }
@@ -3360,33 +3393,40 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
             ),
           );
         } else if (disk.free < 500 * 1024 * 1024) {
+          const freeText = fmtGB(disk.free);
+          const totalText = fmtGB(disk.total);
           checks.push(
             diagFail(
               "disk.free",
               "Disk almost full",
-              `Only ${fmtGB(disk.free)} free of ${fmtGB(disk.total)} on data drive.`,
+              `Only ${freeText} free of ${totalText} on data drive.`,
               {
                 category: "storage",
                 hint: "Free up disk space — saves and backups will fail",
+                params: { free: freeText, total: totalText },
               },
             ),
           );
         } else if (disk.free < 5 * 1024 * 1024 * 1024) {
+          const freeText = fmtGB(disk.free);
+          const totalText = fmtGB(disk.total);
           checks.push(
             diagWarn(
               "disk.free",
               "Low disk space",
-              `${fmtGB(disk.free)} free of ${fmtGB(disk.total)} on data drive.`,
-              { category: "storage" },
+              `${freeText} free of ${totalText} on data drive.`,
+              { category: "storage", params: { free: freeText, total: totalText } },
             ),
           );
         } else {
+          const freeText = fmtGB(disk.free);
+          const totalText = fmtGB(disk.total);
           checks.push(
             diagOk(
               "disk.free",
               "Disk space healthy",
-              `${fmtGB(disk.free)} free of ${fmtGB(disk.total)}.`,
-              { category: "storage" },
+              `${freeText} free of ${totalText}.`,
+              { category: "storage", params: { free: freeText, total: totalText } },
             ),
           );
         }
@@ -3407,6 +3447,16 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
             truncated: ss.truncated,
             saveDir: ss.saveDirUsed,
           };
+          // Same three params for all three statuses below -- "chunk(s)"
+          // follows this codebase's existing count-suffix convention (see
+          // errors.json's ROLE_HAS_MEMBERS) rather than real i18next
+          // pluralization; truncatedSuffix is "" when not truncated, a
+          // valid param value (present, just empty), not treated as missing.
+          const sizeParams = {
+            size: fmtGB(ss.totalBytes),
+            chunks: ss.chunks.toLocaleString(),
+            truncatedSuffix: ss.truncated ? " (scan truncated)" : "",
+          };
           if (sizeGb > 30) {
             checks.push(
               diagWarn(
@@ -3417,6 +3467,7 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
                   category: "storage",
                   hint: "Run the Chunk Cleaner to trim unloaded cells, or archive old saves.",
                   meta,
+                  params: sizeParams,
                 },
               ),
             );
@@ -3425,6 +3476,7 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
               diagInfo("storage.saveSize", "Save folder large", `${summary}.`, {
                 category: "storage",
                 meta,
+                params: sizeParams,
               }),
             );
           } else {
@@ -3432,18 +3484,20 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
               diagOk("storage.saveSize", "Save folder healthy", `${summary}.`, {
                 category: "storage",
                 meta,
+                params: sizeParams,
               }),
             );
           }
         }
       }
     } catch (e) {
+      const reason = e?.message || "unknown";
       checks.push(
         diagWarn(
           "storage.error",
           "Storage checks errored",
-          `Logs/disk checks could not run: ${e?.message || "unknown"}`,
-          { category: "storage" },
+          `Logs/disk checks could not run: ${reason}`,
+          { category: "storage", params: { reason } },
         ),
       );
     }

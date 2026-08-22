@@ -466,6 +466,122 @@
             "message": "Certaines vérifications de service n'ont pas pu s'exécuter : {{reason}}"
           }
         }
+      },
+      "db": {
+        "exists": {
+          "fail": {
+            "label": "Fichier de base de données manquant",
+            "message": "data/db.json n'existe pas. Le panneau ne peut persister aucun paramètre."
+          },
+          "warn": {
+            "label": "Échec de la vérification de la base de données",
+            "message": "Impossible d'inspecter db.json : {{reason}}"
+          }
+        },
+        "writable": {
+          "fail": {
+            "linux": {
+              "label": "Base de données non accessible en écriture",
+              "message": "db.json existe mais est en lecture seule. Les modifications de paramètres échoueront.",
+              "hint": "Exécutez : chmod u+w data/db.json (et vérifiez que le dossier data/ appartient à l'utilisateur du panneau)"
+            },
+            "other": {
+              "label": "Base de données non accessible en écriture",
+              "message": "db.json existe mais est en lecture seule. Les modifications de paramètres échoueront.",
+              "hint": "Vérifiez les permissions du fichier data/db.json"
+            }
+          },
+          "ok": {
+            "label": "Base de données accessible",
+            "message": "{{count}} collections, {{size}}."
+          }
+        },
+        "backup": {
+          "warn": {
+            "unreadable": {
+              "label": "État de la sauvegarde inconnu",
+              "message": "Impossible de lire le dossier de sauvegarde (délai dépassé ou permission refusée)."
+            },
+            "none": {
+              "label": "Aucune sauvegarde de base de données",
+              "message": "Aucune sauvegarde de db.json trouvée. Une sauvegarde manuelle est recommandée avant des changements risqués.",
+              "hint": "Débogage → Base de données → Créer une sauvegarde"
+            },
+            "old": {
+              "label": "Sauvegarde de base de données ancienne",
+              "message": "Dernière sauvegarde {{age}}. Envisagez d'en créer une nouvelle.",
+              "hint": "Débogage → Base de données → Créer une sauvegarde"
+            },
+            "error": {
+              "label": "État de la sauvegarde inconnu",
+              "message": "Impossible d'inspecter les sauvegardes : {{reason}}"
+            }
+          },
+          "ok": {
+            "label": "Sauvegarde de base de données récente",
+            "message": "Dernière sauvegarde {{age}}."
+          },
+          "info": {
+            "label": "Dossier de sauvegarde pas encore créé",
+            "message": "Sera créé lors de la première sauvegarde."
+          }
+        }
+      },
+      "logs": {
+        "writable": {
+          "ok": {
+            "label": "Dossier de journaux accessible en écriture",
+            "message": "Le panneau peut écrire des journaux."
+          },
+          "fail": {
+            "label": "Dossier de journaux non accessible en écriture",
+            "message": "Impossible d'écrire dans le dossier de journaux — la capture et le téléchargement des journaux échoueront."
+          }
+        }
+      },
+      "disk": {
+        "free": {
+          "skip": {
+            "label": "Espace disque",
+            "message": "La vérification de l'espace libre n'est pas prise en charge sur cette plateforme."
+          },
+          "fail": {
+            "label": "Disque presque plein",
+            "message": "Seulement {{free}} libres sur {{total}} sur le disque de données.",
+            "hint": "Libérez de l'espace disque — les sauvegardes et les restaurations échoueront"
+          },
+          "warn": {
+            "label": "Espace disque faible",
+            "message": "{{free}} libres sur {{total}} sur le disque de données."
+          },
+          "ok": {
+            "label": "Espace disque sain",
+            "message": "{{free}} libres sur {{total}}."
+          }
+        }
+      },
+      "storage": {
+        "saveSize": {
+          "warn": {
+            "label": "Dossier de sauvegarde très volumineux",
+            "message": "{{size}} répartis sur {{chunks}} chunk(s){{truncatedSuffix}}. Les sauvegardes, restaurations et nettoyages de chunks seront lents.",
+            "hint": "Lancez le Nettoyage de la carte pour réduire les cellules non chargées, ou archivez les anciennes sauvegardes."
+          },
+          "info": {
+            "label": "Dossier de sauvegarde volumineux",
+            "message": "{{size}} répartis sur {{chunks}} chunk(s){{truncatedSuffix}}."
+          },
+          "ok": {
+            "label": "Dossier de sauvegarde sain",
+            "message": "{{size}} répartis sur {{chunks}} chunk(s){{truncatedSuffix}}."
+          }
+        },
+        "error": {
+          "warn": {
+            "label": "Erreur lors des vérifications de stockage",
+            "message": "Les vérifications journaux/disque n'ont pas pu s'exécuter : {{reason}}"
+          }
+        }
       }
     }
   },

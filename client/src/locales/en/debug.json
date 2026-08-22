@@ -466,6 +466,122 @@
             "message": "Some service checks could not run: {{reason}}"
           }
         }
+      },
+      "db": {
+        "exists": {
+          "fail": {
+            "label": "Database file missing",
+            "message": "data/db.json does not exist. Panel cannot persist any settings."
+          },
+          "warn": {
+            "label": "Database check failed",
+            "message": "Could not inspect db.json: {{reason}}"
+          }
+        },
+        "writable": {
+          "fail": {
+            "linux": {
+              "label": "Database not writable",
+              "message": "db.json exists but is read-only. Settings changes will fail.",
+              "hint": "Run: chmod u+w data/db.json (and check the data/ directory is owned by the panel user)"
+            },
+            "other": {
+              "label": "Database not writable",
+              "message": "db.json exists but is read-only. Settings changes will fail.",
+              "hint": "Check file permissions on data/db.json"
+            }
+          },
+          "ok": {
+            "label": "Database accessible",
+            "message": "{{count}} collections, {{size}}."
+          }
+        },
+        "backup": {
+          "warn": {
+            "unreadable": {
+              "label": "Backup status unknown",
+              "message": "Could not read the backup directory (timeout or permission denied)."
+            },
+            "none": {
+              "label": "No database backups",
+              "message": "No db.json backups found. Manual backup recommended before risky changes.",
+              "hint": "Debug → Database → Create Backup"
+            },
+            "old": {
+              "label": "Database backup old",
+              "message": "Newest backup {{age}}. Consider creating a fresh one.",
+              "hint": "Debug → Database → Create Backup"
+            },
+            "error": {
+              "label": "Backup status unknown",
+              "message": "Could not inspect backups: {{reason}}"
+            }
+          },
+          "ok": {
+            "label": "Database backup recent",
+            "message": "Newest backup {{age}}."
+          },
+          "info": {
+            "label": "Backup directory not yet created",
+            "message": "Will be created on first backup."
+          }
+        }
+      },
+      "logs": {
+        "writable": {
+          "ok": {
+            "label": "Logs directory writable",
+            "message": "Panel can write logs."
+          },
+          "fail": {
+            "label": "Logs directory not writable",
+            "message": "Cannot write to logs folder — log capture and downloads will fail."
+          }
+        }
+      },
+      "disk": {
+        "free": {
+          "skip": {
+            "label": "Disk space",
+            "message": "Free space check not supported on this platform."
+          },
+          "fail": {
+            "label": "Disk almost full",
+            "message": "Only {{free}} free of {{total}} on data drive.",
+            "hint": "Free up disk space — saves and backups will fail"
+          },
+          "warn": {
+            "label": "Low disk space",
+            "message": "{{free}} free of {{total}} on data drive."
+          },
+          "ok": {
+            "label": "Disk space healthy",
+            "message": "{{free}} free of {{total}}."
+          }
+        }
+      },
+      "storage": {
+        "saveSize": {
+          "warn": {
+            "label": "Save folder very large",
+            "message": "{{size}} across {{chunks}} chunk(s){{truncatedSuffix}}. Backups, restores, and chunk cleanups will be slow.",
+            "hint": "Run the Chunk Cleaner to trim unloaded cells, or archive old saves."
+          },
+          "info": {
+            "label": "Save folder large",
+            "message": "{{size}} across {{chunks}} chunk(s){{truncatedSuffix}}."
+          },
+          "ok": {
+            "label": "Save folder healthy",
+            "message": "{{size}} across {{chunks}} chunk(s){{truncatedSuffix}}."
+          }
+        },
+        "error": {
+          "warn": {
+            "label": "Storage checks errored",
+            "message": "Logs/disk checks could not run: {{reason}}"
+          }
+        }
       }
     }
   },

@@ -191,4 +191,112 @@ describe('translateDiagnosticCheck', () => {
     }
     expect(translateDiagnosticCheck(check).message).toBe('Some brand new scenario text.')
   })
+
+  it('interpolates a relative-path param (server.jre.ok)', () => {
+    const check = {
+      id: 'server.jre',
+      status: 'ok',
+      label: 'Bundled JRE present',
+      message: 'Found jre64/bin/java.exe.',
+      params: { path: 'jre64/bin/java.exe' },
+    }
+    expect(translateDiagnosticCheck(check).message).toBe('jre64/bin/java.exe trouvé.')
+  })
+
+  it('db.writable.ok interpolates count and size params', () => {
+    const check = {
+      id: 'db.writable',
+      status: 'ok',
+      label: 'Database accessible',
+      message: '7 collections, 4 MB.',
+      params: { count: 7, size: '4 MB' },
+    }
+    expect(translateDiagnosticCheck(check).message).toBe('7 collections, 4 MB.')
+  })
+
+  it('resolves 4 distinct variants for the same id+status (db.backup warn)', () => {
+    const unreadable = translateDiagnosticCheck({
+      id: 'db.backup',
+      status: 'warn',
+      label: 'Backup status unknown',
+      message: 'Could not read the backup directory (timeout or permission denied).',
+      variant: 'unreadable',
+    })
+    const none = translateDiagnosticCheck({
+      id: 'db.backup',
+      status: 'warn',
+      label: 'No database backups',
+      message: 'No db.json backups found. Manual backup recommended before risky changes.',
+      hint: 'Debug → Database → Create Backup',
+      variant: 'none',
+    })
+    const old = translateDiagnosticCheck({
+      id: 'db.backup',
+      status: 'warn',
+      label: 'Database backup old',
+      message: 'Newest backup 3d ago. Consider creating a fresh one.',
+      hint: 'Debug → Database → Create Backup',
+      params: { age: '3d ago' },
+      variant: 'old',
+    })
+    const error = translateDiagnosticCheck({
+      id: 'db.backup',
+      status: 'warn',
+      label: 'Backup status unknown',
+      message: 'Could not inspect backups: disk full',
+      params: { reason: 'disk full' },
+      variant: 'error',
+    })
+
+    expect(unreadable.message).toBe('Impossible de lire le dossier de sauvegarde (délai dépassé ou permission refusée).')
+    expect(none.message).toBe('Aucune sauvegarde de db.json trouvée. Une sauvegarde manuelle est recommandée avant des changements risqués.')
+    expect(old.message).toBe('Dernière sauvegarde 3d ago. Envisagez d\'en créer une nouvelle.')
+    expect(error.message).toBe('Impossible d\'inspecter les sauvegardes : disk full')
+    // All four are genuinely distinct -- prove none of them collapsed onto another.
+    const messages = [unreadable.message, none.message, old.message, error.message]
+    expect(new Set(messages).size).toBe(4)
+  })
+
+  it('interpolates an empty-string param without treating it as missing (storage.saveSize, non-truncated)', () => {
+    const check = {
+      id: 'storage.saveSize',
+      status: 'ok',
+      label: 'Save folder healthy',
+      message: '2 GB across 150 chunks.',
+      params: { size: '2 GB', chunks: '150', truncatedSuffix: '' },
+    }
+    expect(translateDiagnosticCheck(check).message).toBe('2 GB répartis sur 150 chunk(s).')
+  })
+
+  it('interpolates a non-empty truncatedSuffix param (storage.saveSize, truncated scan)', () => {
+    const check = {
+      id: 'storage.saveSize',
+      status: 'warn',
+      label: 'Save folder very large',
+      message: '35 GB across 9,000 chunks (scan truncated). Backups, restores, and chunk cleanups will be slow.',
+      params: { size: '35 GB', chunks: '9,000', truncatedSuffix: ' (scan truncated)' },
+    }
+    expect(translateDiagnosticCheck(check).message).toBe(
+      '35 GB répartis sur 9,000 chunk(s) (scan truncated). Les sauvegardes, restaurations et nettoyages de chunks seront lents.',
+    )
+  })
+
+  it('disk.free interpolates free/total params identically across ok/warn/fail statuses', () => {
+    const fail = translateDiagnosticCheck({
+      id: 'disk.free',
+      status: 'fail',
+      label: 'Disk almost full',
+      message: 'Only 300 MB free of 500 GB on data drive.',
+      params: { free: '300 MB', total: '500 GB' },
+    })
+    const ok = translateDiagnosticCheck({
+      id: 'disk.free',
+      status: 'ok',
+      label: 'Disk space healthy',
+      message: '50 GB free of 500 GB.',
+      params: { free: '50 GB', total: '500 GB' },
+    })
+    expect(fail.message).toBe('Seulement 300 MB libres sur 500 GB sur le disque de données.')
+    expect(ok.message).toBe('50 GB libres sur 500 GB.')
+  })
 })
