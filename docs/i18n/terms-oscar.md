@@ -80,10 +80,23 @@ prose. Term choices below as reported by the fork.)
   all page chrome (tabs, dialogs, toasts, search/filter, backups,
   templates, mod-settings furniture, row furniture) is bilingual, but the
   actual PZ setting names/descriptions throughout the INI and Sandbox tabs
-  stay English-only. This is a separate, materially larger task
-  (internationalizing the schema file that defines every PZ setting) —
-  needs a deliberate decision on ownership, same shape as the
-  components/templates/*.tsx gap but bigger.
+  stay English-only.
+  RULING FROM GOD (2026-08-22, do not re-litigate): this is a deliberate
+  SPLIT, not all-or-nothing, and it is a separate task assigned to someone
+  else, not me.
+    - `setting.label` (the setting NAME, e.g. "PVP", "PauseEmpty") stays in
+      English PERMANENTLY AND DELIBERATELY, on both languages. These
+      mirror Project Zomboid's own INI/sandbox keys; an operator comparing
+      the panel against their servertest.ini file, or following any guide
+      on the internet, needs the exact same word in both places.
+      Translating the setting name would actively harm the person we are
+      translating for.
+    - `setting.description` (the explanatory prose under each setting)
+      SHOULD be translated -- that's exactly the "what does this setting
+      actually do" text a non-technical French operator needs in their own
+      language, and is the whole point of the exercise. This is a
+      sizeable, separate task god will staff, not part of tonight's four
+      pages.
 - Two real bugs found and fixed (not translation issues — code bugs the
   translation pass surfaced): (1) a `.map((t) => (...))` inside the tab
   strip's `TabsList` render used `t` as its lambda parameter, silently
@@ -92,6 +105,15 @@ prose. Term choices below as reported by the fork.)
   `handleDeleteTemplate`'s `.filter(t => ...)`, renamed to `tpl`. (2) None
   found beyond that on this page — no comment/code mismatch like the
   Mods.tsx:911 one.
+- The `.map((t) => ...)` shadowing bug turned out to be a class, not a
+  one-off: god swept all 42 translated files for it after seeing this
+  report. Both of mine were confirmed fixed. Five more live candidates
+  found, all in Phyllis's in-flight Debug.tsx/WorldMap.tsx. Two
+  already-committed instances (Players.tsx:186, and ServerConfig.tsx:1083
+  itself) were read personally by god and confirmed SAFE -- a local `t` in
+  a scope that never calls the translator `t()`, just confusingly named,
+  not actually broken. CreateTemplateDialog.tsx:59 is a live one for
+  whoever converts that component later (Jim notified).
 - i18n-check.mjs flagged 2 remaining "duplicate" French pairs after fixing
   2 real ones (see verification note above): an aria-label paired with its
   own button's visible tooltip, deliberately worded identically so a
