@@ -1,5 +1,20 @@
 # Dwight's Packaged-.exe First-Run Findings
 
+**CORRECTION (added after this doc was signed off, before any code changes it prompted
+were made):** Finding 2 below overstates its own cause. What I called a confirmed,
+reproducible "double-click a second time" crash-loop was actually a false positive caused
+by my own test session's `NoDefaultCurrentDirectoryInExePath=1` environment variable, not
+a real product bug -- it propagated through every launch method I used that night,
+including the ones I trusted as genuine double-click equivalents (Shell.Application
+`InvokeVerb`, Explorer UI Automation `Invoke`). Rerun with that variable correctly
+stripped: the real product behavior is that pidLock's refusal message displays correctly
+and immediately on a genuine second launch. The real, narrower bug -- Start.bat then
+retries that deliberate refusal 5 times as if it were a crash, because the refusal used a
+generic exit code -- was fixed in c15231e (dedicated exit code 78). Finding 1 was
+confirmed and fixed as originally described, unaffected by this. Left the section below
+unedited as a record of what was actually observed at the time; see c15231e's commit
+message for the full corrected diagnosis.
+
 Objective handed down in board.md: be the non-technical operator who has never seen a
 terminal, downloads the release zip, and double-clicks. Toby covered the setup wizard
 running from source; nobody had reached the actual packaged `.exe`/`Start.bat` launch
