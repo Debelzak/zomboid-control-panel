@@ -307,6 +307,7 @@
     "sftpUsernameLabel": "Username",
     "sftpPasswordLabel": "Password",
     "sftpPasswordPlaceholder": "Stored securely",
+    "sftpPasswordAria": "SFTP password",
     "remoteBridgeFolderLabel": "Remote bridge folder on the VPS",
     "remoteBridgeFolderHelp": "Use the path as seen by this SFTP account. Do not enter a Windows path or a path from your local computer.",
     "syncIntervalLabel": "Sync interval (seconds)",

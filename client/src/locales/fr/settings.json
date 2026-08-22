@@ -307,6 +307,7 @@
     "sftpUsernameLabel": "Nom d'utilisateur",
     "sftpPasswordLabel": "Mot de passe",
     "sftpPasswordPlaceholder": "Stocké en sécurité",
+    "sftpPasswordAria": "Mot de passe SFTP",
     "remoteBridgeFolderLabel": "Dossier bridge distant sur le VPS",
     "remoteBridgeFolderHelp": "Utilisez le chemin tel que vu par ce compte SFTP. Ne saisissez pas un chemin Windows ou un chemin de votre ordinateur local.",
     "syncIntervalLabel": "Intervalle de synchronisation (secondes)",
