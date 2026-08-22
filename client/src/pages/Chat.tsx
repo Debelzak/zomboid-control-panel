@@ -162,48 +162,49 @@ export default function Chat() {
       //   server  → yellow broadcast banner (RCON servermsg)
       //   admin   → red admin-only chat (visible only to admins in-game)
       //   general → posts as a custom author into the public chat stream
-      let result: { success?: boolean; error?: string } | undefined
+      // Every branch below posts through the generic /panel-bridge/command
+      // passthrough (or its chat-specific siblings), which only ever
+      // resolves on success -- an in-game failure rejects the promise
+      // instead (see teleportPlayerTo in WorldMap.tsx for the full
+      // explanation) -- so this never sees result.success === false, only
+      // the catch below.
       let localType: ChatMessage['type'] = 'server'
       let localAuthor = 'Server'
       if (channel === 'admin') {
-        result = await panelBridgeApi.sendToAdminChat(message)
+        await panelBridgeApi.sendToAdminChat(message)
         localType = 'admin'
         localAuthor = 'Admin'
       } else if (channel === 'general') {
-        result = await panelBridgeApi.sendToGeneralChat(message, 'Admin')
+        await panelBridgeApi.sendToGeneralChat(message, 'Admin')
         localType = 'general'
         localAuthor = 'Admin'
       } else {
-        result = await panelBridgeApi.sendToServerChat(message, false)
+        await panelBridgeApi.sendToServerChat(message, false)
       }
 
-      if (result?.success) {
-        const sentAt = new Date()
-        setChatHistory(prev => [...prev, {
-          id: `local-${sentAt.getTime()}-${Math.random().toString(36).slice(2, 8)}`,
-          type: localType,
-          author: localAuthor,
-          message: message,
-          timestamp: sentAt
-        }].slice(-200))
-        // Sending always pins the user back to the bottom — they just
-        // posted, so they want to see the result.
-        stickToBottomRef.current = true
-        setMessage('')
-        toast({
-          title:
-            channel === 'admin' ? t('toasts.adminSentTitle')
-            : channel === 'general' ? t('toasts.generalSentTitle')
-            : t('toasts.broadcastSentTitle'),
-          description:
-            channel === 'admin' ? t('toasts.adminSentDesc')
-            : channel === 'general' ? t('toasts.generalSentDesc')
-            : t('toasts.broadcastSentDesc'),
-          variant: 'success' as const,
-        })
-      } else {
-        throw new Error(result?.error || t('toasts.sendFailedFallback'))
-      }
+      const sentAt = new Date()
+      setChatHistory(prev => [...prev, {
+        id: `local-${sentAt.getTime()}-${Math.random().toString(36).slice(2, 8)}`,
+        type: localType,
+        author: localAuthor,
+        message: message,
+        timestamp: sentAt
+      }].slice(-200))
+      // Sending always pins the user back to the bottom — they just
+      // posted, so they want to see the result.
+      stickToBottomRef.current = true
+      setMessage('')
+      toast({
+        title:
+          channel === 'admin' ? t('toasts.adminSentTitle')
+          : channel === 'general' ? t('toasts.generalSentTitle')
+          : t('toasts.broadcastSentTitle'),
+        description:
+          channel === 'admin' ? t('toasts.adminSentDesc')
+          : channel === 'general' ? t('toasts.generalSentDesc')
+          : t('toasts.broadcastSentDesc'),
+        variant: 'success' as const,
+      })
     } catch (error) {
       toast({
         title: t('toasts.errorTitle'),
