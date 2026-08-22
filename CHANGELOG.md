@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exactly the permissions they have today - but it is the foundation for creating your own roles and
   editing what each may do. The screen for that comes next.
 
+- **French, phase 2 - Dashboard and Console**: the dashboard and the whole Console page - server log
+  viewer, RCON console, quick commands, broadcasts and command history - are now available in French
+  alongside sign-in, first-run setup and the navigation. Project Zomboid's own log level tags
+  (ERROR, WARN, LOG) stay as the game server writes them. Players and the remaining screens follow.
+
 - **French language support (phase 1)**: sign-in, first-run setup and the sidebar navigation can now
   be switched between English and French, with the choice remembered in your browser. The remaining
   screens are still English only and will be translated in stages.
