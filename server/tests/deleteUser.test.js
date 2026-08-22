@@ -104,7 +104,13 @@ describe("authService.deleteUser", () => {
   it("LOCKOUT: refuses to delete the only user with users.manage", async () => {
     await expect(
       authService.deleteUser("u-admin"),
-    ).rejects.toMatchObject({ code: "ROLE_LOCKOUT_LAST_MANAGER", status: 409 });
+    ).rejects.toMatchObject({
+      code: "ROLE_LOCKOUT_LAST_MANAGER",
+      status: 409,
+      // roles.manage is checked before users.manage (RECOVERY_CAPABILITIES'
+      // fixed order) and u-admin is the sole holder of both.
+      params: { action: "roles.manage" },
+    });
     expect(db.data.users.find((u) => u.id === "u-admin")).toBeTruthy(); // unchanged
   });
 
@@ -140,7 +146,11 @@ describe("authService.deleteUser", () => {
 
     await expect(
       authService.deleteUser("u-steward"),
-    ).rejects.toMatchObject({ code: "ROLE_LOCKOUT_LAST_MANAGER", status: 409 });
+    ).rejects.toMatchObject({
+      code: "ROLE_LOCKOUT_LAST_MANAGER",
+      status: 409,
+      params: { action: "roles.manage" },
+    });
   });
 
   it("deletes a user holding a CUSTOM role with no recovery capabilities", async () => {

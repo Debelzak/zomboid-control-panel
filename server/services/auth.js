@@ -98,10 +98,11 @@ const LOCKOUT_DURATION_MS = 15 * 60 * 1000;
 const DUMMY_BCRYPT_HASH =
   "$2a$12$CwTycUXWue0Thq9StjUM0uJ8u2H8ekjqOGWjF/9JMlSlL5C.tZgqe";
 
-function makeRoleError(code, message, status) {
+function makeRoleError(code, message, status = 400, params) {
   const err = new Error(message);
   err.code = code;
   err.status = status;
+  if (params) err.params = params;
   return err;
 }
 
@@ -153,6 +154,12 @@ async function assertNoRecoveryLockout(userId, currentCapabilities, nextCapabili
           capability === "roles.manage" ? "manage roles" : "manage user accounts"
         }.`,
         409,
+        // Same convention as services/permissions.js's own copy of this
+        // check: `action` carries the stable capability key, not English
+        // prose -- the client resolves it through capabilities.<key>.label
+        // (client/src/locales/*/roles.json) via errorMessage.ts's
+        // CAPABILITY_KEY_PARAM_NAMES.
+        { action: capability },
       );
     }
   }

@@ -173,7 +173,15 @@ describe("DELETE /api/auth/users/:id — lockout surfaces its error code through
     await runRoute("/users/:id", "delete", req, res);
     expect(res.status).toHaveBeenCalledWith(409);
     expect(res.json).toHaveBeenCalledWith(
-      expect.objectContaining({ code: "ROLE_LOCKOUT_LAST_MANAGER" }),
+      // roles.manage is checked before users.manage (RECOVERY_CAPABILITIES'
+      // fixed order in services/permissions.js) and u-admin is the sole
+      // holder of both, so that's the capability the lockout trips on
+      // first. Also proves params reach the wire, not just the code --
+      // previously dropped silently by makeRoleError/this route's catch.
+      expect.objectContaining({
+        code: "ROLE_LOCKOUT_LAST_MANAGER",
+        params: { action: "roles.manage" },
+      }),
     );
     expect(db.data.users.find((u) => u.id === "u-admin")).toBeTruthy(); // untouched
   });

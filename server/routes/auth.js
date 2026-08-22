@@ -11,7 +11,7 @@ import crypto from "crypto";
 import os from "os";
 import authService, { USER_ROLES, requireRole } from "../services/auth.js";
 import { createLogger } from "../utils/logger.js";
-import { sanitizeError } from "../utils/sanitize.js";
+import { sanitizeError, sanitizeErrorParams } from "../utils/sanitize.js";
 import { getDataPaths } from "../utils/paths.js";
 import { setSetting } from "../database/init.js";
 import { verifySetupToken, clearSetupToken } from "../utils/setupToken.js";
@@ -527,6 +527,7 @@ router.patch(
       log.warn(`Role change failed: ${error.message}`);
       const body = { error: sanitizeError(error.message) };
       if (error.code) body.code = error.code;
+      if (error.params) body.params = sanitizeErrorParams(error.params);
       res.status(error.status || 400).json(body);
     }
   },
@@ -557,6 +558,7 @@ router.delete("/users/:id", requirePermission("users.manage"), async (req, res) 
     log.warn(`User deletion failed: ${error.message}`);
     const body = { error: sanitizeError(error.message) };
     if (error.code) body.code = error.code;
+    if (error.params) body.params = sanitizeErrorParams(error.params);
     res.status(error.status || 400).json(body);
   }
 });

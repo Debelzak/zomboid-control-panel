@@ -302,9 +302,14 @@ export const ErrorCode = Object.freeze({
   /** server/routes/permissions.js -- POST/PUT .../roles, the capabilities
    * array contains a key that isn't in the catalogue. */
   INVALID_CAPABILITY: "INVALID_CAPABILITY",
-  /** server/services/permissions.js -- lockout rule 1: this change would
-   * leave zero users able to manage roles or manage users. Hard refusal,
-   * no override. */
+  /** server/services/permissions.js (role-EDIT lockout) and
+   * server/services/auth.js (per-user role-reassignment/deletion lockout,
+   * assertNoRecoveryLockout) -- this change would leave zero users able to
+   * manage roles or manage users. Hard refusal, no override. Both sites
+   * pass the same `{ action: capability }` param -- `action` carries the
+   * stable capability key, not English prose, resolved client-side via
+   * capabilities.<key>.label (client/src/locales/{en,fr}/roles.json)
+   * through errorMessage.ts's CAPABILITY_KEY_PARAM_NAMES. */
   ROLE_LOCKOUT_LAST_MANAGER: "ROLE_LOCKOUT_LAST_MANAGER",
   /** server/services/permissions.js -- lockout rule 2: the acting user is
    * about to remove their own ability to manage roles/users (other users

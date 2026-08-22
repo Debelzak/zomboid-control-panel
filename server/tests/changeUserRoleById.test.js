@@ -121,10 +121,17 @@ describe("authService.changeUserRoleById", () => {
   it("LOCKOUT: refuses to move the only user with users.manage away from it", async () => {
     // u-admin is the only user whose role grants users.manage; moving them
     // to technician (no users.manage) would leave zero users able to
-    // manage users at all.
+    // manage users at all. u-admin's role also grants roles.manage, and
+    // RECOVERY_CAPABILITIES checks roles.manage first, so that's the
+    // action the lockout actually reports (u-admin is the sole holder of
+    // both, so either check alone would refuse the move).
     await expect(
       authService.changeUserRoleById("u-admin", "role-technician"),
-    ).rejects.toMatchObject({ code: "ROLE_LOCKOUT_LAST_MANAGER", status: 409 });
+    ).rejects.toMatchObject({
+      code: "ROLE_LOCKOUT_LAST_MANAGER",
+      status: 409,
+      params: { action: "roles.manage" },
+    });
     const stored = db.data.users.find((u) => u.id === "u-admin");
     expect(stored.roleId).toBe("role-admin"); // unchanged
   });
@@ -162,7 +169,11 @@ describe("authService.changeUserRoleById", () => {
 
     await expect(
       authService.changeUserRoleById("u-steward", "role-technician"),
-    ).rejects.toMatchObject({ code: "ROLE_LOCKOUT_LAST_MANAGER", status: 409 });
+    ).rejects.toMatchObject({
+      code: "ROLE_LOCKOUT_LAST_MANAGER",
+      status: 409,
+      params: { action: "roles.manage" },
+    });
   });
 
   it("does NOT trip the lockout when the target role still grants every recovery capability the user currently has", async () => {
