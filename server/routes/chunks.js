@@ -9,7 +9,7 @@ import {
   getActiveServer,
   updateServer,
 } from "../database/init.js";
-import { sanitizeError } from "../utils/sanitize.js";
+import { sanitizeError, sanitizeErrorParams } from "../utils/sanitize.js";
 import { requirePermission } from "../services/permissions.js";
 import { deleteVehiclesInBoxes } from "../utils/vehiclesDb.js";
 import { confineToRoots } from "../utils/browseRoots.js";
@@ -1125,6 +1125,7 @@ router.post("/delete-chunks", requirePermission("chunks.manage"), async (req, re
       return res.status(400).json({
         error: `Too many chunks (${chunks.length.toLocaleString()}). Maximum is 100,000 per request — split into smaller batches.`,
         code: ErrorCode.DELETE_CHUNKS_TOO_MANY,
+        params: sanitizeErrorParams({ count: chunks.length }),
       });
     }
 
@@ -1694,6 +1695,7 @@ router.post("/delete-region", requirePermission("chunks.manage"), async (req, re
       return res.status(400).json({
         error: `Region too large (${chunksToDelete.length.toLocaleString()} chunks). Maximum is 100,000 at a time.`,
         code: ErrorCode.DELETE_REGION_TOO_LARGE,
+        params: sanitizeErrorParams({ count: chunksToDelete.length }),
       });
     }
 

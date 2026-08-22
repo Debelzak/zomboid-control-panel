@@ -30,6 +30,7 @@ import { getDataPaths } from "../utils/paths.js";
 import { getSteamApiKey } from "../services/steamApiKey.js";
 import {
   sanitizeError,
+  sanitizeErrorParams,
   sanitizeIniValue,
   sanitizeIniList,
   sanitizeModIdList,
@@ -1407,6 +1408,7 @@ router.post("/collection/extract-cookies", async (req, res) => {
       return res.status(400).json({
         error: "Invalid browser. Must be one of: " + allowed.join(", "),
         code: ErrorCode.MODS_INVALID_BROWSER,
+        params: sanitizeErrorParams({ browsers: allowed.join(", ") }),
       });
     }
     const result = await extractSteamCookies(browser);
@@ -1811,9 +1813,11 @@ router.post("/write-to-ini", async (req, res) => {
     // Validate all workshopId values are numeric to prevent path traversal
     for (const m of mods) {
       if (m.workshopId && !/^\d{1,15}$/.test(String(m.workshopId))) {
+        const workshopId = String(m.workshopId).substring(0, 20);
         return res.status(400).json({
-          error: `Invalid Workshop ID: ${String(m.workshopId).substring(0, 20)}`,
+          error: `Invalid Workshop ID: ${workshopId}`,
           code: ErrorCode.MODS_INVALID_WORKSHOP_ID_TEMPLATE,
+          params: sanitizeErrorParams({ workshopId }),
         });
       }
     }
@@ -2242,9 +2246,11 @@ router.post("/batch-toggle-mod-ids", async (req, res) => {
         });
       }
       if (/[\r\n;=]/.test(change.modId) || change.modId.length > 200) {
+        const modId = change.modId.substring(0, 50);
         return res.status(400).json({
-          error: `Invalid mod ID format: ${change.modId.substring(0, 50)}`,
+          error: `Invalid mod ID format: ${modId}`,
           code: ErrorCode.MODS_INVALID_MOD_ID_FORMAT_TEMPLATE,
+          params: sanitizeErrorParams({ modId }),
         });
       }
     }
@@ -2288,6 +2294,7 @@ router.post("/batch-toggle-mod-ids", async (req, res) => {
       return res.status(400).json({
         error: `Refusing to add ${badEnables.length} workshop-ID-shaped entr${badEnables.length === 1 ? "y" : "ies"} to Mods= (those belong in WorkshopItems=).`,
         code: ErrorCode.MODS_BATCH_TOGGLE_WORKSHOP_ID_IN_MODS,
+        params: sanitizeErrorParams({ count: badEnables.length }),
       });
     }
 
@@ -3867,9 +3874,11 @@ router.post("/add-all-resolved-deps", async (req, res) => {
     // Validate all workshop IDs
     for (const dep of deps) {
       if (!dep.workshopId || !/^\d{1,15}$/.test(String(dep.workshopId))) {
+        const workshopId = String(dep.workshopId).substring(0, 20);
         return res.status(400).json({
-          error: `Invalid Workshop ID: ${String(dep.workshopId).substring(0, 20)}`,
+          error: `Invalid Workshop ID: ${workshopId}`,
           code: ErrorCode.MODS_INVALID_WORKSHOP_ID_TEMPLATE,
+          params: sanitizeErrorParams({ workshopId }),
         });
       }
     }
@@ -5227,9 +5236,11 @@ router.post("/add-mod-advanced", async (req, res) => {
         /[\r\n;=]/.test(modId) ||
         modId.length > 200
       ) {
+        const truncatedModId = String(modId).substring(0, 50);
         return res.status(400).json({
-          error: `Invalid mod ID format: ${String(modId).substring(0, 50)}`,
+          error: `Invalid mod ID format: ${truncatedModId}`,
           code: ErrorCode.MODS_INVALID_MOD_ID_FORMAT_TEMPLATE,
+          params: sanitizeErrorParams({ modId: truncatedModId }),
         });
       }
     }

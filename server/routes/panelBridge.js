@@ -19,7 +19,7 @@ import {
   commitNow,
   logBridgeCommand,
 } from "../database/init.js";
-import { sanitizeError, isMaskedSecret } from "../utils/sanitize.js";
+import { sanitizeError, sanitizeErrorParams, isMaskedSecret } from "../utils/sanitize.js";
 import { persistSandboxValues } from "./serverFiles.js";
 import { requirePermission } from "../services/permissions.js";
 import {
@@ -307,6 +307,7 @@ router.post("/auto-configure", requirePermission("bridge.setup"), async (req, re
         return res.status(400).json({
           error: `Server with ID ${serverId} not found.`,
           code: ErrorCode.PANELBRIDGE_SERVER_ID_NOT_FOUND,
+          params: sanitizeErrorParams({ serverId }),
         });
       }
     } else {
@@ -606,6 +607,7 @@ router.get("/scan-server/:serverId", requirePermission("bridge.setup"), async (r
         success: false,
         error: `Server with ID ${serverId} not found.`,
         code: ErrorCode.PANELBRIDGE_SERVER_ID_NOT_FOUND,
+        params: sanitizeErrorParams({ serverId }),
       });
     }
 
@@ -1293,6 +1295,7 @@ router.post("/command", requirePermission("bridge.command"), async (req, res) =>
         .json({
       error: `Invalid preset. Valid: ${VALID_PRESETS.join(", ")}`,
       code: ErrorCode.PANELBRIDGE_AIRDROP_INVALID_PRESET,
+      params: sanitizeErrorParams({ presets: VALID_PRESETS.join(", ") }),
     });
     }
     if (args.items && (!Array.isArray(args.items) || args.items.length > 50)) {
@@ -1317,9 +1320,11 @@ router.post("/command", requirePermission("bridge.command"), async (req, res) =>
           typeof entry.itemType !== "string" ||
           !ITEM_TYPE_REGEX.test(entry.itemType)
         ) {
+          const itemType = String(entry.itemType).slice(0, 60);
           return res.status(400).json({
-            error: `Invalid item type format: ${String(entry.itemType).slice(0, 60)}`,
+            error: `Invalid item type format: ${itemType}`,
             code: ErrorCode.PANELBRIDGE_AIRDROP_ITEM_TYPE_INVALID,
+            params: sanitizeErrorParams({ itemType }),
           });
         }
         if (
@@ -2872,6 +2877,7 @@ router.post("/install-mod-auto", requirePermission("bridge.setup"), async (req, 
         return res.status(400).json({
           error: `Server with ID ${serverId} not found.`,
           code: ErrorCode.PANELBRIDGE_SERVER_ID_NOT_FOUND,
+          params: sanitizeErrorParams({ serverId }),
         });
       }
     } else {
@@ -3392,6 +3398,7 @@ router.post("/character/import", requirePermission("players.gm_tools"), async (r
         "Character data must contain at least one of: " +
         validSections.join(", "),
       code: ErrorCode.PANELBRIDGE_CHARACTER_DATA_NO_VALID_SECTION,
+      params: sanitizeErrorParams({ sections: validSections.join(", ") }),
     });
   }
   try {

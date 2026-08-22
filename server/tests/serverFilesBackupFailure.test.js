@@ -239,6 +239,13 @@ describe("POST /sandbox/repair (the ONE unrecoverable-operation site): refuses t
     const payload = res.json.mock.calls[0][0];
     expect(payload.success).toBe(false);
     expect(payload.error).toMatch(/could not back up/i);
+    expect(payload.code).toBe("SANDBOX_REPAIR_BACKUP_FAILED");
+    // The underlying fs error must reach the wire as params.reason -- not
+    // just embedded, unresolvable, in the English `error` string. Proves
+    // the withFileLock result object's params field survives the
+    // result.code-style threading through to res.json().
+    expect(payload.params).toEqual({ reason: expect.any(String) });
+    expect(payload.params.reason.length).toBeGreaterThan(0);
     // The file must be byte-for-byte untouched -- refusal, not a partial write.
     expect(
       fs.readFileSync(path.join(tmpDir, "TestServer_SandboxVars.lua"), "utf-8"),

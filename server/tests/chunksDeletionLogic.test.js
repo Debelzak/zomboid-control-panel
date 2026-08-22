@@ -398,6 +398,22 @@ describe("partial failure: does the response report what actually happened?", ()
   });
 });
 
+describe("DELETE_CHUNKS_TOO_MANY sends { count } on the wire, not just an unparameterized message", () => {
+  it("reports the actual submitted chunk count when it exceeds the 100,000 cap", async () => {
+    const chunks = Array.from({ length: 100001 }, (_, i) => ({
+      file: `${i}/0.bin`,
+      x: i,
+      y: 0,
+    }));
+    const res = await postAs("/delete-chunks", { saveName: SAVE_NAME, chunks });
+    expect(res.getStatusCode()).toBe(400);
+    expect(res.getBody()).toMatchObject({
+      code: "DELETE_CHUNKS_TOO_MANY",
+      params: { count: 100001 },
+    });
+  });
+});
+
 describe("vehicles.db pruning", () => {
   it("deleting a chunk prunes vehicles matching it by tile coords OR by drifted chunk coords, and leaves an unrelated vehicle alone", async () => {
     const chunk = path.join(savePath, "map", "0", "0.bin"); // chunk (0,0), B42 tilesPerChunk=8 -> tile box [0,8)x[0,8)

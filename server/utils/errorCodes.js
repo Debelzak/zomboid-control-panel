@@ -188,10 +188,9 @@ export const ErrorCode = Object.freeze({
   /** server/routes/serverFiles.js -- POST /sandbox/repair, a fix was found
    * but the pre-repair backup itself failed, so nothing was written. See
    * SANDBOX_REPAIR_PATTERN_UNKNOWN above for why this is a separate code.
-   * PARTIAL: the message embeds `${backup.error}` (the underlying fs error)
-   * -- server can't send structured params yet, so the locale text below
-   * covers the fixed frame only; {{reason}} is a placeholder nothing sends
-   * today (see server/utils/errorCodes.js header / hive note 2026-08-22). */
+   * Sends `{ reason: backup.error }` (the underlying fs error) -- threaded
+   * through the withFileLock result object's own `params` field, same
+   * pattern as its `code` field documented above. */
   SANDBOX_REPAIR_BACKUP_FAILED: "SANDBOX_REPAIR_BACKUP_FAILED",
   /** server/routes/serverFiles.js -- GET /spawnpoints, no
    * <serverName>_spawnpoints.lua at the resolved path. */
@@ -646,10 +645,7 @@ export const ErrorCode = Object.freeze({
    * `chunks` missing/not an array/empty. */
   DELETE_CHUNKS_FIELDS_REQUIRED: "DELETE_CHUNKS_FIELDS_REQUIRED",
   /** server/routes/chunks.js -- POST /delete-chunks, `chunks.length` exceeds
-   * the 100,000 request cap. PARTIAL: the message embeds the actual count
-   * and the fixed cap -- server can't send structured params yet, so the
-   * locale text below covers the fixed frame only; {{count}} is a
-   * placeholder nothing sends today. */
+   * the 100,000 request cap. Sends `{ count: chunks.length }`. */
   DELETE_CHUNKS_TOO_MANY: "DELETE_CHUNKS_TOO_MANY",
   /** server/routes/chunks.js -- POST /delete-chunks, a chunk entry has no
    * `file`. */
@@ -677,9 +673,8 @@ export const ErrorCode = Object.freeze({
    * minY > maxY. */
   DELETE_REGION_BOUNDS_INVERTED: "DELETE_REGION_BOUNDS_INVERTED",
   /** server/routes/chunks.js -- POST /delete-region, the matched chunk count
-   * exceeds the 100,000 cap. PARTIAL: same params-not-wired-yet gap as
-   * DELETE_CHUNKS_TOO_MANY above -- {{count}} is a placeholder nothing sends
-   * today. */
+   * exceeds the 100,000 cap. Sends `{ count: chunksToDelete.length }`, same
+   * shape as DELETE_CHUNKS_TOO_MANY above. */
   DELETE_REGION_TOO_LARGE: "DELETE_REGION_TOO_LARGE",
   /** server/routes/chunks.js -- GET /browse, no zomboidDataPath configured.
    * Own wording ("configured to browse") from CHUNKS_DATA_PATH_NOT_SET
@@ -730,11 +725,12 @@ export const ErrorCode = Object.freeze({
   /** server/routes/mods.js -- POST /batch-toggle-mod-ids, changes.length exceeds 500. */
   MODS_BATCH_TOGGLE_TOO_MANY: "MODS_BATCH_TOGGLE_TOO_MANY",
   /** server/routes/mods.js -- POST /batch-toggle-mod-ids, one or more ENABLEs target workshop-ID-shaped
-   * modIds. PARTIAL: the message embeds a live count and a manually-picked
-   * singular/plural suffix ("entry"/"entries") -- server can't send structured
-   * params yet, so {{count}} is an unwired placeholder and the locale text
+   * modIds. Sends `{ count: badEnables.length }` -- the locale text
    * approximates the plural the way ROLE_HAS_MEMBERS does elsewhere in this
-   * file. */
+   * file (a fixed "(s)"-style suffix, not real i18next pluralization). The
+   * English fallback `error` string keeps its own manual singular/plural
+   * suffix independently -- unaffected, still English-only, not this
+   * code's locale-resolution path. */
   MODS_BATCH_TOGGLE_WORKSHOP_ID_IN_MODS: "MODS_BATCH_TOGGLE_WORKSHOP_ID_IN_MODS",
   /** server/routes/mods.js -- POST /check-interval, intervalMs not a whole number of minutes in [60000,
    * 7200000]. Own wording ("Interval") from
@@ -832,9 +828,7 @@ export const ErrorCode = Object.freeze({
    * and isn't part of this conversion. */
   MODS_INI_NOT_ACCESSIBLE: "MODS_INI_NOT_ACCESSIBLE",
   /** server/routes/mods.js -- POST /collection/extract-cookies, `browser` not one of the allowed list.
-   * PARTIAL: the message embeds the allowed-browser list -- server can't send
-   * structured params yet, so {{browsers}} is a placeholder nothing sends
-   * today. */
+   * Sends `{ browsers: allowed.join(", ") }`. */
   MODS_INVALID_BROWSER: "MODS_INVALID_BROWSER",
   /** server/routes/mods.js -- (2 sites: POST /toggle-mod-id, POST /add-missing-deps) -- modId contains a
    * CR/LF/;/= or exceeds 200 chars. Identical wording, shared code. */
@@ -842,8 +836,8 @@ export const ErrorCode = Object.freeze({
   /** server/routes/mods.js -- (2 sites: POST /batch-toggle-mod-ids per-entry validation, POST
    * /apply-preset per-entry validation) -- a submitted modId fails the
    * CR/LF/;/=/length check. Identical template (same prefix + 50-char
-   * truncation) both sites, shared code. PARTIAL: embeds the offending id --
-   * {{modId}} is an unwired placeholder. */
+   * truncation) both sites, shared code. Sends `{ modId }` (the same
+   * 50-char-truncated value embedded in the English message). */
   MODS_INVALID_MOD_ID_FORMAT_TEMPLATE: "MODS_INVALID_MOD_ID_FORMAT_TEMPLATE",
   /** server/routes/mods.js -- (2 sites: PUT /presets/:id, DELETE-ish) -- no :id param. */
   MODS_INVALID_PRESET_ID: "MODS_INVALID_PRESET_ID",
@@ -872,8 +866,8 @@ export const ErrorCode = Object.freeze({
   /** server/routes/mods.js -- (2 sites: POST /write-to-ini per-mod validation, POST /add-missing-deps
    * per-dependency validation) -- a submitted workshopId fails /^\d{1,15}$/.
    * Identical template (same "Invalid Workshop ID: " prefix and 20-char
-   * truncation) both sites, shared code. PARTIAL: embeds the offending id --
-   * {{workshopId}} is an unwired placeholder. */
+   * truncation) both sites, shared code. Sends `{ workshopId }` (the same
+   * 20-char-truncated value embedded in the English message). */
   MODS_INVALID_WORKSHOP_ID_TEMPLATE: "MODS_INVALID_WORKSHOP_ID_TEMPLATE",
   /** server/routes/mods.js -- (2 sites: PUT /presets/:id modIds field, POST /save-order) -- `modIds`
    * present but not an array. Identical wording, shared code. */
@@ -1043,9 +1037,8 @@ export const ErrorCode = Object.freeze({
   BRIDGE_INVALID_OR_MISSING_USERNAME: "BRIDGE_INVALID_OR_MISSING_USERNAME",
   /** server/routes/panelBridge.js -- POST /auto-configure, GET
    * /scan-server/:serverId, POST /install/from-lua-path (3 sites) --
-   * `serverId` doesn't match a known server. PARTIAL: message embeds
-   * `${serverId}`; server can't send structured params to this route yet,
-   * {{serverId}} is a placeholder nothing sends today. */
+   * `serverId` doesn't match a known server. Sends `{ serverId }` at all
+   * three sites. */
   PANELBRIDGE_SERVER_ID_NOT_FOUND: "PANELBRIDGE_SERVER_ID_NOT_FOUND",
   /** server/routes/panelBridge.js (2 sites: POST /auto-configure, GET
    * /scan-server/:serverId) -- resolved server has no serverName/name set.
@@ -1106,9 +1099,7 @@ export const ErrorCode = Object.freeze({
    * of range. */
   PANELBRIDGE_AIRDROP_INVALID_COORDS: "PANELBRIDGE_AIRDROP_INVALID_COORDS",
   /** server/routes/panelBridge.js -- POST /command action=airdrop, `preset`
-   * not in VALID_PRESETS. PARTIAL: message embeds the allowed-presets list
-   * via `${VALID_PRESETS.join(", ")}`; {{presets}} is a placeholder
-   * nothing sends today. */
+   * not in VALID_PRESETS. Sends `{ presets: VALID_PRESETS.join(", ") }`. */
   PANELBRIDGE_AIRDROP_INVALID_PRESET: "PANELBRIDGE_AIRDROP_INVALID_PRESET",
   /** server/routes/panelBridge.js -- POST /command action=airdrop, `items`
    * provided but not an array of at most 50 entries. */
@@ -1117,9 +1108,8 @@ export const ErrorCode = Object.freeze({
    * `items` entry isn't an object. */
   PANELBRIDGE_AIRDROP_ITEM_INVALID: "PANELBRIDGE_AIRDROP_ITEM_INVALID",
   /** server/routes/panelBridge.js -- POST /command action=airdrop, an
-   * `items` entry's `itemType` fails ITEM_TYPE_REGEX. PARTIAL: message
-   * embeds the offending value via `${String(entry.itemType).slice(0,
-   * 60)}`; {{itemType}} is a placeholder nothing sends today. */
+   * `items` entry's `itemType` fails ITEM_TYPE_REGEX. Sends `{ itemType }`
+   * (the same 60-char-truncated value embedded in the English message). */
   PANELBRIDGE_AIRDROP_ITEM_TYPE_INVALID: "PANELBRIDGE_AIRDROP_ITEM_TYPE_INVALID",
   /** server/routes/panelBridge.js -- POST /command action=airdrop, an
    * `items` entry's `count` is outside 1-20. */
@@ -1223,9 +1213,8 @@ export const ErrorCode = Object.freeze({
    * isn't a plain object. */
   PANELBRIDGE_CHARACTER_DATA_NOT_OBJECT: "PANELBRIDGE_CHARACTER_DATA_NOT_OBJECT",
   /** server/routes/panelBridge.js -- same character-import route, `data`
-   * has none of the recognised sections. PARTIAL: message embeds the
-   * allowed-sections list via `${validSections.join(", ")}`; {{sections}}
-   * is a placeholder nothing sends today. */
+   * has none of the recognised sections. Sends
+   * `{ sections: validSections.join(", ") }`. */
   PANELBRIDGE_CHARACTER_DATA_NO_VALID_SECTION: "PANELBRIDGE_CHARACTER_DATA_NO_VALID_SECTION",
   /** server/routes/panelBridge.js -- POST /zombies/clear-near (or
    * similar), `count` outside 1-100. */

@@ -5,7 +5,7 @@ import os from "os";
 import { createLogger } from "../utils/logger.js";
 const log = createLogger("API:Files");
 import { getActiveServer, getAllSettings } from "../database/init.js";
-import { sanitizeError } from "../utils/sanitize.js";
+import { sanitizeError, sanitizeErrorParams } from "../utils/sanitize.js";
 import { withFileLock, writeFileAtomic } from "../utils/fileWriteQueue.js";
 import { escapeRegExp } from "../utils/regex.js";
 import { confineToRoots } from "../utils/browseRoots.js";
@@ -1498,6 +1498,7 @@ router.post("/sandbox/repair", async (req, res) => {
             `Could not back up SandboxVars.lua before repairing it, so nothing was changed: ${backup.error}. ` +
             "Free up disk space or fix the backups folder's permissions, or copy the file aside yourself, then try again.",
           code: ErrorCode.SANDBOX_REPAIR_BACKUP_FAILED,
+          params: { reason: backup.error },
         };
       }
 
@@ -1513,9 +1514,9 @@ router.post("/sandbox/repair", async (req, res) => {
       });
     }
     if (!result.repaired) {
-      return res
-        .status(422)
-        .json({ success: false, error: result.error, code: result.code });
+      const body = { success: false, error: result.error, code: result.code };
+      if (result.params) body.params = sanitizeErrorParams(result.params);
+      return res.status(422).json(body);
     }
 
     log.info(
