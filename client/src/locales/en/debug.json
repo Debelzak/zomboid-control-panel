@@ -422,6 +422,55 @@
               "hint": "Open the Logs page and read the stack trace around the timestamp."
             }
           }
+        },
+        "sandboxCorrupt": {
+          "fail": {
+            "label": "SandboxVars.lua is corrupt",
+            "message": "{{serverName}}_SandboxVars.lua has mismatched braces and will fail to load — the dedicated server exits immediately on boot with a Lua syntax error.",
+            "hint": "Use the automated repair below, or restore from a .bak backup in the same folder."
+          }
+        },
+        "sandboxVars": {
+          "ok": {
+            "label": "SandboxVars present",
+            "message": "{{serverName}}_SandboxVars.lua is in place."
+          },
+          "warn": {
+            "label": "SandboxVars missing",
+            "message": "{{serverName}}_SandboxVars.lua not found. Server will boot with built-in defaults; any custom sandbox tuning will be ignored.",
+            "hint": "Open Server Config → Sandbox to generate one, or copy from another server."
+          }
+        },
+        "staleLocks": {
+          "fail": {
+            "label": "Stale lock files in save folder",
+            "message": "{{count}} .lock file(s) older than 1 hour in {{dir}}. PZ will refuse to load the save until they are removed.",
+            "hint": "Stop the server, delete every *.lock file under the save folder, then restart."
+          }
+        },
+        "jreWorks": {
+          "ok": {
+            "label": "Bundled JRE runs",
+            "message": "{{version}}"
+          },
+          "fail": {
+            "withOutput": {
+              "label": "Bundled JRE failed to run",
+              "message": "java -version did not succeed: {{reason}}. Output: {{output}}",
+              "hint": "Re-run SteamCMD to reinstall the JRE, or ensure the bundled libraries are present alongside the binary."
+            },
+            "withoutOutput": {
+              "label": "Bundled JRE failed to run",
+              "message": "java -version did not succeed: {{reason}}.",
+              "hint": "Re-run SteamCMD to reinstall the JRE, or ensure the bundled libraries are present alongside the binary."
+            }
+          }
+        },
+        "error": {
+          "warn": {
+            "label": "Server checks errored",
+            "message": "Some active-server checks could not run: {{reason}}"
+          }
         }
       },
       "rcon": {

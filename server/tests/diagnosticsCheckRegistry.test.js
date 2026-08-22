@@ -80,6 +80,19 @@ const KNOWN_TRANSLATED_IDS = new Set([
   "mods.orphanWorkshop",
   "mods.duplicates",
   "mods.maps",
+  // Batch 8 (final): remaining server.* catch-alls, same try-block again.
+  // server.configDrift is DELIBERATELY NOT in this list -- its message is
+  // built by joining a variable-length array of independently-phrased
+  // clauses (up to 3 possible drift dimensions), which doesn't fit the
+  // params/variant mechanism without a wire-shape change (structured
+  // clauses instead of one joined string). Left on the English fallback,
+  // unchanged from before this file existed -- not a regression, a
+  // deliberately deferred id. See the wind-down report for the full reasoning.
+  "server.sandboxCorrupt",
+  "server.sandboxVars",
+  "server.staleLocks",
+  "server.jreWorks",
+  "server.error",
 ]);
 
 /**

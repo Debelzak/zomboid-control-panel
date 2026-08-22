@@ -3069,6 +3069,7 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
                   {
                     category: "server",
                     hint: "Use the automated repair below, or restore from a .bak backup in the same folder.",
+                    params: { serverName: activeServer.serverName },
                   },
                 ),
               );
@@ -3078,7 +3079,7 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
                   "server.sandboxVars",
                   "SandboxVars present",
                   `${activeServer.serverName}_SandboxVars.lua is in place.`,
-                  { category: "server" },
+                  { category: "server", params: { serverName: activeServer.serverName } },
                 ),
               );
             }
@@ -3091,6 +3092,7 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
                 {
                   category: "server",
                   hint: "Open Server Config → Sandbox to generate one, or copy from another server.",
+                  params: { serverName: activeServer.serverName },
                 },
               ),
             );
@@ -3137,6 +3139,17 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
                   category: "server",
                   hint: "Stop the server, delete every *.lock file under the save folder, then restart.",
                   meta: { staleLocks: saveStats.staleLocks.slice(0, 10) },
+                  // NOTE (flagged to god, not inherited by accident): `dir`
+                  // is the save folder's absolute path. The English fallback
+                  // `message` above already ships it unredacted (message/
+                  // label/hint were never sanitized, only `params` is) --
+                  // but sanitizeErrorParams() WILL redact this specific
+                  // param to "[path]" before a French client ever sees it,
+                  // since it's an absolute path. Net effect: French users
+                  // see strictly less detail here than English users for
+                  // this one check (a translation-richness gap, not a new
+                  // security exposure -- English was already unredacted).
+                  params: { count: saveStats.staleLocks.length, dir: saveDirUsed },
                 },
               ),
             );
@@ -3168,37 +3181,68 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
               error: "timeout",
             });
             if (probe.ok) {
+              // probe.version, when present, is raw `java -version` tool
+              // output -- language-agnostic, embedded as-is via a param.
+              // The fallback phrase for the rare case where nothing was
+              // captured stays untranslated English in that one case; not
+              // worth a variant for how narrow it is.
               checks.push(
                 diagOk(
                   "server.jreWorks",
                   "Bundled JRE runs",
                   probe.version || "java -version executed successfully.",
-                  { category: "server" },
-                ),
-              );
-            } else {
-              checks.push(
-                diagFail(
-                  "server.jreWorks",
-                  "Bundled JRE failed to run",
-                  `java -version did not succeed: ${probe.error || "unknown"}.${probe.output ? " Output: " + probe.output : ""}`,
                   {
                     category: "server",
-                    hint: "Re-run SteamCMD to reinstall the JRE, or ensure the bundled libraries are present alongside the binary.",
+                    params: { version: probe.version || "java -version executed successfully." },
                   },
                 ),
               );
+            } else {
+              const reason = probe.error || "unknown";
+              // Whether there's captured stdout/stderr to show is a
+              // structural difference (a whole extra clause), not just a
+              // data difference -- variant, two branches.
+              if (probe.output) {
+                checks.push(
+                  diagFail(
+                    "server.jreWorks",
+                    "Bundled JRE failed to run",
+                    `java -version did not succeed: ${reason}. Output: ${probe.output}`,
+                    {
+                      category: "server",
+                      hint: "Re-run SteamCMD to reinstall the JRE, or ensure the bundled libraries are present alongside the binary.",
+                      params: { reason, output: probe.output },
+                      variant: "withOutput",
+                    },
+                  ),
+                );
+              } else {
+                checks.push(
+                  diagFail(
+                    "server.jreWorks",
+                    "Bundled JRE failed to run",
+                    `java -version did not succeed: ${reason}.`,
+                    {
+                      category: "server",
+                      hint: "Re-run SteamCMD to reinstall the JRE, or ensure the bundled libraries are present alongside the binary.",
+                      params: { reason },
+                      variant: "withoutOutput",
+                    },
+                  ),
+                );
+              }
             }
           }
         }
       }
     } catch (e) {
+      const reason = e?.message || "unknown";
       checks.push(
         diagWarn(
           "server.error",
           "Server checks errored",
-          `Some active-server checks could not run: ${e?.message || "unknown"}`,
-          { category: "server" },
+          `Some active-server checks could not run: ${reason}`,
+          { category: "server", params: { reason } },
         ),
       );
     }

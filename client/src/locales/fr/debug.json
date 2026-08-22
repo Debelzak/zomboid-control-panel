@@ -422,6 +422,55 @@
               "hint": "Ouvrez la page Journaux et lisez la trace de pile autour de l'horodatage."
             }
           }
+        },
+        "sandboxCorrupt": {
+          "fail": {
+            "label": "SandboxVars.lua est corrompu",
+            "message": "{{serverName}}_SandboxVars.lua a des accolades mal équilibrées et ne se chargera pas — le serveur dédié se ferme immédiatement au démarrage avec une erreur de syntaxe Lua.",
+            "hint": "Utilisez la réparation automatique ci-dessous, ou restaurez depuis une sauvegarde .bak dans le même dossier."
+          }
+        },
+        "sandboxVars": {
+          "ok": {
+            "label": "SandboxVars présent",
+            "message": "{{serverName}}_SandboxVars.lua est en place."
+          },
+          "warn": {
+            "label": "SandboxVars manquant",
+            "message": "{{serverName}}_SandboxVars.lua introuvable. Le serveur démarrera avec les valeurs par défaut ; tout réglage sandbox personnalisé sera ignoré.",
+            "hint": "Ouvrez la configuration du serveur → Sandbox pour en générer un, ou copiez-le depuis un autre serveur."
+          }
+        },
+        "staleLocks": {
+          "fail": {
+            "label": "Fichiers de verrou périmés dans le dossier de sauvegarde",
+            "message": "{{count}} fichier(s) .lock de plus d'une heure dans {{dir}}. PZ refusera de charger la sauvegarde tant qu'ils ne sont pas supprimés.",
+            "hint": "Arrêtez le serveur, supprimez tous les fichiers *.lock du dossier de sauvegarde, puis redémarrez."
+          }
+        },
+        "jreWorks": {
+          "ok": {
+            "label": "Le JRE embarqué fonctionne",
+            "message": "{{version}}"
+          },
+          "fail": {
+            "withOutput": {
+              "label": "Le JRE embarqué a échoué à s'exécuter",
+              "message": "java -version a échoué : {{reason}}. Sortie : {{output}}",
+              "hint": "Relancez SteamCMD pour réinstaller le JRE, ou vérifiez que les bibliothèques embarquées sont présentes à côté du binaire."
+            },
+            "withoutOutput": {
+              "label": "Le JRE embarqué a échoué à s'exécuter",
+              "message": "java -version a échoué : {{reason}}.",
+              "hint": "Relancez SteamCMD pour réinstaller le JRE, ou vérifiez que les bibliothèques embarquées sont présentes à côté du binaire."
+            }
+          }
+        },
+        "error": {
+          "warn": {
+            "label": "Erreur lors des vérifications du serveur",
+            "message": "Certaines vérifications du serveur actif n'ont pas pu s'exécuter : {{reason}}"
+          }
         }
       },
       "rcon": {

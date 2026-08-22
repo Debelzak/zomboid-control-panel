@@ -526,4 +526,62 @@ describe('translateDiagnosticCheck', () => {
     }
     expect(translateDiagnosticCheck(check).message).toBe('some future scenario text')
   })
+
+  it('interpolates serverName for sandboxCorrupt/sandboxVars', () => {
+    const corrupt = translateDiagnosticCheck({
+      id: 'server.sandboxCorrupt',
+      status: 'fail',
+      label: 'SandboxVars.lua is corrupt',
+      message: 'MyServer_SandboxVars.lua has mismatched braces and will fail to load — the dedicated server exits immediately on boot with a Lua syntax error.',
+      hint: 'Use the automated repair below, or restore from a .bak backup in the same folder.',
+      params: { serverName: 'MyServer' },
+    })
+    expect(corrupt.message).toContain('MyServer_SandboxVars.lua')
+    expect(corrupt.message).toBe(
+      'MyServer_SandboxVars.lua a des accolades mal équilibrées et ne se chargera pas — le serveur dédié se ferme immédiatement au démarrage avec une erreur de syntaxe Lua.',
+    )
+  })
+
+  it('resolves the withOutput/withoutOutput variant for server.jreWorks.fail', () => {
+    const withOutput = translateDiagnosticCheck({
+      id: 'server.jreWorks',
+      status: 'fail',
+      label: 'Bundled JRE failed to run',
+      message: 'java -version did not succeed: exit code 1. Output: error loading libjvm.so',
+      hint: 'Re-run SteamCMD to reinstall the JRE, or ensure the bundled libraries are present alongside the binary.',
+      params: { reason: 'exit code 1', output: 'error loading libjvm.so' },
+      variant: 'withOutput',
+    })
+    const withoutOutput = translateDiagnosticCheck({
+      id: 'server.jreWorks',
+      status: 'fail',
+      label: 'Bundled JRE failed to run',
+      message: 'java -version did not succeed: timeout.',
+      hint: 'Re-run SteamCMD to reinstall the JRE, or ensure the bundled libraries are present alongside the binary.',
+      params: { reason: 'timeout' },
+      variant: 'withoutOutput',
+    })
+    expect(withOutput.message).toBe('java -version a échoué : exit code 1. Sortie : error loading libjvm.so')
+    expect(withoutOutput.message).toBe('java -version a échoué : timeout.')
+    // withoutOutput must never render a literal {{output}} placeholder --
+    // proves the variant genuinely omits the clause rather than leaving a
+    // blank hole in a shared template.
+    expect(withoutOutput.message).not.toMatch(/\{\{/)
+  })
+
+  it('falls back to server text for staleLocks when params are missing (dir would otherwise be sanitized server-side)', () => {
+    const check = {
+      id: 'server.staleLocks',
+      status: 'fail',
+      label: 'Stale lock files in save folder',
+      message: '3 .lock files older than 1 hour in [path]. PZ will refuse to load the save until they are removed.',
+      params: { count: 3, dir: '[path]' },
+    }
+    // Confirms interpolation still works even when the param VALUE is
+    // itself the server's redaction placeholder -- the guard only cares
+    // whether a param is present and is a string/number, not its content.
+    expect(translateDiagnosticCheck(check).message).toBe(
+      "3 fichier(s) .lock de plus d'une heure dans [path]. PZ refusera de charger la sauvegarde tant qu'ils ne sont pas supprimés.",
+    )
+  })
 })
