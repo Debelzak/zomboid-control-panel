@@ -31,7 +31,8 @@ import {
   Coffee,
   PanelLeftClose,
   PanelLeft,
-  LogOut
+  LogOut,
+  ShieldCheck
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ConnectionStatus } from './ConnectionStatus'
@@ -153,6 +154,7 @@ const navSections: NavSection[] = [
     items: [
       { to: '/discord', icon: MessageSquare, label: 'Discord', labelKey: 'nav.items.discord' },
       { to: '/settings', icon: Settings, label: 'Panel Settings', labelKey: 'nav.items.panelSettings' },
+      { to: '/roles', icon: ShieldCheck, label: 'Roles & Permissions', labelKey: 'nav.items.rolesPermissions' },
       { to: '/debug', icon: Bug, label: 'Debug Logs', labelKey: 'nav.items.debugLogs' },
     ]
   },

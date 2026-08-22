@@ -145,6 +145,13 @@ const ROUTE_LOADERS: Record<string, RouteLoaderMeta> = {
     variant: 'form',
     metrics: ['auth', 'paths', 'network'],
   },
+  '/roles': {
+    title: 'Roles & Permissions',
+    description: 'Loading the capability matrix, roles, and user assignments.',
+    eyebrow: '// SYSTEM · ACCESS',
+    variant: 'list',
+    metrics: ['roles', 'capabilities', 'users'],
+  },
   '/debug': {
     title: 'Debug Logs',
     description: 'Preparing diagnostics, probes, logs, and support bundle tools.',
@@ -171,6 +178,7 @@ const Mods = lazy(() => import('./pages/Mods'))
 const ChunkCleaner = lazy(() => import('./pages/ChunkCleaner'))
 const Discord = lazy(() => import('./pages/Discord'))
 const Settings = lazy(() => import('./pages/Settings'))
+const RolesPermissions = lazy(() => import('./pages/RolesPermissions'))
 const ServerSetup = lazy(() => import('./pages/ServerSetup'))
 const Servers = lazy(() => import('./pages/Servers'))
 const ServerConfig = lazy(() => import('./pages/ServerConfig'))
@@ -564,6 +572,7 @@ function AppContent() {
               <Route path="/chunk-cleaner" element={<Navigate to="/chunks" replace />} />
               <Route path="/discord" element={<FeatureErrorBoundary featureName="Discord Integration"><Discord /></FeatureErrorBoundary>} />
               <Route path="/settings" element={<FeatureErrorBoundary featureName="Settings"><Settings /></FeatureErrorBoundary>} />
+              <Route path="/roles" element={<FeatureErrorBoundary featureName="Roles & Permissions"><RolesPermissions /></FeatureErrorBoundary>} />
               <Route path="/server-setup" element={<FeatureErrorBoundary featureName="Server Setup"><ServerSetup /></FeatureErrorBoundary>} />
               <Route path="/servers" element={<FeatureErrorBoundary featureName="Server Manager"><Servers /></FeatureErrorBoundary>} />
               <Route path="/server-config" element={<FeatureErrorBoundary featureName="Server Configuration"><ServerConfig /></FeatureErrorBoundary>} />

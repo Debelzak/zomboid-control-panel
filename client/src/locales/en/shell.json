@@ -35,6 +35,7 @@
       "browsePublic": "Browse Public",
       "discord": "Discord",
       "panelSettings": "Panel Settings",
+      "rolesPermissions": "Roles & Permissions",
       "debugLogs": "Debug Logs"
     },
     "notAvailableRemote": "Not available for remote (RCON-only) servers",

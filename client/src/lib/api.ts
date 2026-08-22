@@ -3042,3 +3042,96 @@ export const systemApi = {
   getStorageHealth: (): Promise<StorageHealth> =>
     apiGet("/system/storage-health"),
 };
+
+// ============================================
+// Rights matrix -- roles & capabilities (server/routes/permissions.js).
+// Capability `key` values are load-bearing wire values shared with the
+// server's own CAPABILITIES catalogue (server/services/permissions.js) --
+// render them, never rename them client-side.
+// ============================================
+
+export interface CapabilityInfo {
+  key: string;
+  label: string;
+  description: string;
+}
+
+export interface CapabilityGroup {
+  group: string;
+  capabilities: CapabilityInfo[];
+}
+
+export interface RoleInfo {
+  id: string;
+  name: string;
+  capabilities: string[];
+  isSeeded: boolean;
+  createdAt: string;
+  updatedAt?: string;
+  memberCount: number;
+}
+
+export const permissionsApi = {
+  getCapabilities: (): Promise<{ groups: CapabilityGroup[] }> =>
+    apiGet("/permissions/capabilities"),
+
+  getRoles: (): Promise<{ roles: RoleInfo[] }> => apiGet("/permissions/roles"),
+
+  createRole: (data: {
+    name: string;
+    capabilities: string[];
+  }): Promise<{ success: boolean; role: RoleInfo }> =>
+    apiPost("/permissions/roles", data),
+
+  updateRole: (
+    id: string,
+    data: {
+      name?: string;
+      capabilities?: string[];
+      confirmSelfCapabilityLoss?: boolean;
+    },
+  ): Promise<{ success: boolean; role: RoleInfo }> =>
+    apiPut(`/permissions/roles/${encodeURIComponent(id)}`, data),
+
+  deleteRole: (
+    id: string,
+    reassignTo?: string,
+  ): Promise<{
+    success: boolean;
+    deleted: boolean;
+    reassigned: number;
+    reassignedTo: string | null;
+  }> =>
+    apiDelete(
+      `/permissions/roles/${encodeURIComponent(id)}${
+        reassignTo ? `?reassignTo=${encodeURIComponent(reassignTo)}` : ""
+      }`,
+    ),
+};
+
+// User account list + role assignment (server/routes/auth.js). Kept as its
+// own export rather than folded into authApi in place -- this whole block
+// was appended at end-of-file so it can't collide with concurrent edits
+// elsewhere in authApi.
+export interface ManagedUserAccount {
+  id: string;
+  username: string;
+  role: string;
+  roleId: string | null;
+  createdAt: string;
+  lastLogin: string | null;
+}
+
+export const usersApi = {
+  list: (): Promise<{ users: ManagedUserAccount[] }> => apiGet("/auth/users"),
+
+  assignRole: (
+    userId: string,
+    roleId: string,
+  ): Promise<{ success: boolean; user: ManagedUserAccount }> =>
+    apiFetch(`/auth/users/${encodeURIComponent(userId)}/role`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ roleId }),
+    }).then((response) => handleResponse(response)),
+};
