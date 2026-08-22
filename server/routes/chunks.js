@@ -1705,6 +1705,7 @@ router.post("/delete-region", requirePermission("chunks.manage"), async (req, re
 
     // Delete chunks
     let deleted = 0;
+    const errors = [];
     const touchedCells = new Set();
     const regionIsB42 = xDirs.length > 0;
     const regionCellDiv = cellDivisorFor(regionIsB42);
@@ -1722,8 +1723,10 @@ router.post("/delete-region", requirePermission("chunks.manage"), async (req, re
             `${Math.floor(chunk.x / regionCellDiv)},${Math.floor(chunk.y / regionCellDiv)}`,
           );
         } catch (err) {
-          if (err.code !== "ENOENT")
+          if (err.code !== "ENOENT") {
             log.warn(`Failed to delete chunk ${chunk.file}: ${err.message}`);
+            errors.push(`${chunk.file}: ${sanitizeError(err.message)}`);
+          }
         }
       }),
     );
@@ -1799,6 +1802,7 @@ router.post("/delete-region", requirePermission("chunks.manage"), async (req, re
       deleted,
       vehiclesDeleted: vehiclesResult.deleted || 0,
       cellFilesRemoved: cellCleanup.removed.length,
+      errors: errors.length > 0 ? errors : undefined,
       region: { minX, maxX, minY, maxY },
       inverted: invert,
     });
