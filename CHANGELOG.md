@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Sign in with SSO (OIDC)**: administrators can now enable sign-in through an external identity
+  provider — Google, Discord, Authentik, Keycloak, or any standards-compliant OpenID Connect
+  provider — alongside the existing username and password login, which always keeps working as a
+  fallback even if SSO is unavailable. An external sign-in must already be linked to a local
+  account to succeed; unrecognised identities are refused rather than automatically given access.
+
 ### Fixed
 
 - **Bans recorded that never happened**: banning, unbanning or voice-banning a player — by username
