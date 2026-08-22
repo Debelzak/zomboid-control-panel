@@ -347,7 +347,7 @@ describe("partial failure: does the response report what actually happened?", ()
     expect(fs.existsSync(badChunkPath), "the chunk that failed to delete must still be there").toBe(true);
   });
 
-  it("delete-region: an undeletable chunk is excluded from the deleted count and left on disk, but -- unlike delete-chunks -- the response carries no errors field at all to say so", async () => {
+  it("delete-region: an undeletable chunk is excluded from the deleted count, surfaced in errors, and left on disk -- fixed to match delete-chunks' shape (was previously silent; see git history)", async () => {
     const goodChunk = path.join(savePath, "map", "2", "2.bin");
     const badChunkPath = path.join(savePath, "map", "2", "3.bin");
     writeFileDeep(goodChunk, "a");
@@ -365,16 +365,35 @@ describe("partial failure: does the response report what actually happened?", ()
     const body = res.getBody();
     expect(body.success).toBe(true);
     // Both chunks matched the region and were attempted; only one actually
-    // succeeded. The count correctly reflects that --
+    // succeeded. The count correctly reflects that, and -- unlike before --
+    // the second one now shows up in errors instead of only a server log.
     expect(body.deleted).toBe(1);
+    expect(body.errors).toEqual(expect.arrayContaining([expect.stringContaining("2/3.bin")]));
     expect(fs.existsSync(goodChunk)).toBe(false);
     expect(fs.existsSync(badChunkPath), "the chunk that failed to delete must still be there").toBe(true);
-    // -- but nothing in the response says a second chunk was even attempted
-    // and failed. delete-chunks (see the test above) surfaces this via an
-    // `errors` array; delete-region has no equivalent field at all here.
-    // An operator who asked to clear a region and got `deleted: 1` back has
-    // no way to tell "1 chunk matched" from "2 matched, 1 failed" without
-    // reading the server log. Flagged to god rather than changed here.
+  });
+
+  it("delete-region: a clean delete with no failures omits errors entirely, not an empty array -- nothing in the client reads this response today (deleteRegion has zero callers), but the shape must still match delete-chunks' convention exactly", async () => {
+    const onlyChunk = path.join(savePath, "map", "2", "2.bin");
+    writeFileDeep(onlyChunk, "a");
+
+    const res = await postAs("/delete-region", {
+      saveName: SAVE_NAME,
+      minX: 0,
+      maxX: 5,
+      minY: 0,
+      maxY: 5,
+    });
+
+    expect(res.getStatusCode()).toBe(200);
+    const body = res.getBody();
+    expect(body.success).toBe(true);
+    expect(body.deleted).toBe(1);
+    // res.json() serializes through JSON.stringify in real Express, which
+    // drops a key whose value is undefined entirely -- a real client never
+    // sees an `errors: []` (or even an `errors` key at all) on a clean
+    // delete. This harness hands back the pre-serialization object, so
+    // `undefined` here is the correct, equivalent check.
     expect(body.errors).toBeUndefined();
   });
 });
