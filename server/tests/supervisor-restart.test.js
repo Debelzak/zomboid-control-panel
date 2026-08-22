@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { execFileSync, spawnSync } from "child_process";
+import { execFileSync, spawn } from "child_process";
 import fs from "fs";
 import os from "os";
 import path from "path";
@@ -85,6 +85,19 @@ function setupStub(dir, exitCodes, sleepMsList) {
   );
 }
 
+// Async, not spawnSync -- spawnSync's own timeout only SIGTERMs the direct
+// cmd.exe child. On Windows that child's own children (powershell.exe doing
+// a timestamp lookup or Start-Sleep, or the panel .exe itself mid-launch)
+// are NOT tied into a job object automatically, so killing cmd.exe orphans
+// them: they keep running and keep the panel .exe file locked. Confirmed
+// empirically while diagnosing this file's flake -- a spawnSync-timed-out
+// run's own scenario directory couldn't even be deleted afterward
+// (fs.rmSync raised EPERM on the panel .exe, still held open by a process
+// spawnSync had already reported as killed). An orphan surviving one test
+// also eats CPU/IO for every test that runs after it, compounding exactly
+// the kind of load-dependent slowness this file is trying not to be
+// sensitive to. taskkill /T kills the whole process tree, not just the one
+// PID Node knows about.
 function runSupervisor(dir, env, timeoutMs) {
   const childEnv = { ...process.env, ...env };
   // Strip any sandbox-imposed executable-search hardening from the child so
@@ -99,13 +112,45 @@ function runSupervisor(dir, env, timeoutMs) {
       delete childEnv[key];
     }
   }
-  return spawnSync("cmd.exe", ["/c", path.join(dir, "Start.bat")], {
-    cwd: dir,
-    env: childEnv,
-    input: "",
-    encoding: "utf8",
-    timeout: timeoutMs,
-    windowsHide: true,
+  return new Promise((resolve) => {
+    const child = spawn("cmd.exe", ["/c", path.join(dir, "Start.bat")], {
+      cwd: dir,
+      env: childEnv,
+      windowsHide: true,
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (d) => {
+      stdout += d;
+    });
+    child.stderr.on("data", (d) => {
+      stderr += d;
+    });
+    // Matches spawnSync's old `input: ""` -- no input, stdin closed
+    // immediately so a stray "Press any key to continue" doesn't hang.
+    child.stdin.end();
+
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      try {
+        execFileSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], {
+          stdio: "ignore",
+        });
+      } catch {
+        /* already gone */
+      }
+    }, timeoutMs);
+
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      resolve({
+        status: timedOut ? null : code,
+        signal: timedOut ? "SIGTERM" : null,
+        stdout,
+        stderr,
+      });
+    });
   });
 }
 
@@ -148,6 +193,18 @@ describe.skipIf(!!skipReason)(
       if (sharedDir) fs.rmSync(sharedDir, { recursive: true, force: true });
     });
 
+    // Every timeout in this file was widened together, not just the one
+    // scenario originally reported flaky. While diagnosing that one, three
+    // DIFFERENT tests in this same file failed in the same way (an
+    // undercounted launch total from a run that got killed by ITS OWN
+    // still-too-tight timeout) across a validation batch of ~20 runs under
+    // this floor's real concurrent load -- the tight-timeout vulnerability
+    // was never specific to the stable-run scenario, just most exposed by
+    // it (extra loop iterations, a mandatory real sleep). Every scenario
+    // here spawns several real powershell.exe processes per loop iteration
+    // (a binary-pick, a timestamp lookup, sometimes a backoff Start-Sleep),
+    // and this floor runs many agents' processes concurrently, so
+    // individual spawn latency is genuinely variable, not a fixed cost.
     it(
       "does not relaunch a clean exit (code 0)",
       async () => {
@@ -155,13 +212,13 @@ describe.skipIf(!!skipReason)(
         await writeStartBatInto(dir);
         setupStub(dir, [0], [0]);
 
-        const result = runSupervisor(dir, {}, 15000);
+        const result = await runSupervisor(dir, {}, 30000);
 
         expect(countLaunches(result.stdout)).toBe(1);
         expect(result.status).toBe(0);
         expect(readSupervisorLog(dir)).not.toMatch(/relaunch attempt/i);
       },
-      20000,
+      45000,
     );
 
     it(
@@ -171,10 +228,10 @@ describe.skipIf(!!skipReason)(
         await writeStartBatInto(dir);
         setupStub(dir, [7, 0], [0, 0]);
 
-        const result = runSupervisor(
+        const result = await runSupervisor(
           dir,
           { PANEL_SUPERVISOR_BACKOFF_SECONDS: "0" },
-          15000,
+          35000,
         );
 
         expect(countLaunches(result.stdout)).toBe(2);
@@ -183,7 +240,7 @@ describe.skipIf(!!skipReason)(
         expect(log).toMatch(/relaunch attempt 1 of 5/);
         expect(log).not.toMatch(/Gave up/);
       },
-      20000,
+      50000,
     );
 
     it(
@@ -193,13 +250,13 @@ describe.skipIf(!!skipReason)(
         await writeStartBatInto(dir);
         setupStub(dir, [7], [0]);
 
-        const result = runSupervisor(
+        const result = await runSupervisor(
           dir,
           {
             PANEL_SUPERVISOR_BACKOFF_SECONDS: "0",
             PANEL_SUPERVISOR_MAX_CRASHES: "3",
           },
-          20000,
+          35000,
         );
 
         // cap=3 allows 3 relaunches (4 total launches) before giving up on
@@ -212,7 +269,7 @@ describe.skipIf(!!skipReason)(
         expect(log).toMatch(/relaunch attempt 3 of 3/);
         expect(log).toMatch(/Gave up after 4 rapid crashes/);
       },
-      25000,
+      50000,
     );
 
     it(
@@ -222,10 +279,10 @@ describe.skipIf(!!skipReason)(
         await writeStartBatInto(dir);
         setupStub(dir, [75, 75, 0], [0, 0, 0]);
 
-        const result = runSupervisor(
+        const result = await runSupervisor(
           dir,
           { PANEL_SUPERVISOR_MAX_CRASHES: "1" },
-          15000,
+          30000,
         );
 
         expect(countLaunches(result.stdout)).toBe(3);
@@ -236,7 +293,7 @@ describe.skipIf(!!skipReason)(
         expect(log).not.toMatch(/relaunch attempt/);
         expect(log).not.toMatch(/Gave up/);
       },
-      20000,
+      45000,
     );
 
     it(
@@ -254,14 +311,31 @@ describe.skipIf(!!skipReason)(
         // a flaky test, not a bug in the supervisor.
         setupStub(dir, [7, 7, 0], [0, 2500, 0]);
 
-        const result = runSupervisor(
+        // Timeout, not the assertion, is what was flaky: diagnosed by
+        // instrumenting Start.bat itself (not this test) to log at every
+        // decision point, then running the real scenario several dozen
+        // times back to back outside vitest. The crash-counter-reset logic
+        // fired correctly, with an accurate uptime value, on every single
+        // run that finished -- never once a wrong reset or a missed one.
+        // What varied wildly was how long it took to get there: this
+        // scenario needs ~8-10 real powershell.exe subprocess spawns (a
+        // timestamp lookup and a binary pick each loop iteration, a
+        // Start-Sleep for backoff after each crash), and under this
+        // floor's actual concurrent load, measured total durations for
+        // IDENTICAL code and inputs ranged from ~7.3s up past the old
+        // 15000ms ceiling. 45000ms is 3x the worst completed run observed,
+        // not a number picked by trial and error -- and this test was not
+        // the only one in the file this actually affected; see the block
+        // comment above the first `it(` in this describe for what a full
+        // validation pass turned up.
+        const result = await runSupervisor(
           dir,
           {
             PANEL_SUPERVISOR_BACKOFF_SECONDS: "0",
             PANEL_SUPERVISOR_MAX_CRASHES: "1",
             PANEL_SUPERVISOR_MIN_STABLE_SECONDS: "1",
           },
-          15000,
+          45000,
         );
 
         expect(countLaunches(result.stdout)).toBe(3);
@@ -270,7 +344,7 @@ describe.skipIf(!!skipReason)(
         expect(log).toMatch(/resetting crash counter/);
         expect(log).not.toMatch(/Gave up/);
       },
-      20000,
+      60000,
     );
   },
 );
