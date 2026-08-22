@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
-import { UserPlus, ShieldAlert, Loader2, ArrowRight, Trash2 } from 'lucide-react'
+import { Users as UsersIcon, UserPlus, ShieldAlert, Loader2, ArrowRight, Trash2 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useConfirm } from '@/contexts/ConfirmContext'
 import { PageHeader } from '@/components/PageHeader'
@@ -59,7 +59,7 @@ function recoveryActionKeyForRole(role: RoleInfo | undefined): 'lockout.actionMa
 }
 
 export default function Users() {
-  const { t } = useTranslation(['users', 'errors'])
+  const { t } = useTranslation(['users', 'errors', 'shell'])
   const { toast } = useToast()
   const { user: currentUser } = useAuth()
   const confirm = useConfirm()
@@ -241,9 +241,10 @@ export default function Users() {
   return (
     <div className="space-y-6 page-transition">
       <PageHeader
+        eyebrow={t('shell:nav.sections.access')}
         title={t('pageHeader.title')}
         description={t('pageHeader.description')}
-        icon={<UserPlus className="h-6 w-6" />}
+        icon={<UsersIcon className="h-6 w-6" />}
         tone="config"
         actions={
           !permissionDenied && !loading ? (

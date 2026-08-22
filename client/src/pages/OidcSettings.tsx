@@ -30,7 +30,7 @@ const FIELD_KEYS = ['issuerUrl', 'clientId', 'redirectUri', 'scope', 'providerNa
 type FieldKey = (typeof FIELD_KEYS)[number]
 
 export default function OidcSettings() {
-  const { t } = useTranslation('oidcSettings')
+  const { t } = useTranslation(['oidcSettings', 'shell'])
   const { toast } = useToast()
 
   const [settings, setSettings] = useState<OidcSettingsWithEnv | null>(null)
@@ -167,6 +167,7 @@ export default function OidcSettings() {
   return (
     <div className="space-y-6 page-transition">
       <PageHeader
+        eyebrow={t('shell:nav.sections.access')}
         title={t('pageHeader.title')}
         description={t('pageHeader.description')}
         icon={<KeyRound className="h-6 w-6" />}
@@ -210,127 +211,137 @@ export default function OidcSettings() {
               <CardDescription>{t('status.notConfiguredHint')}</CardDescription>
             )}
           </CardHeader>
-          <CardContent className="space-y-5">
-            <div className="space-y-1.5">
-              <Label htmlFor="oidc-issuer-url">{t('fields.issuerUrl')}</Label>
-              <Input
-                id="oidc-issuer-url"
-                value={form.issuerUrl}
-                onChange={(e) => setForm((prev) => ({ ...prev, issuerUrl: e.target.value }))}
-                placeholder={t('fields.issuerUrlPlaceholder')}
-                disabled={envOverrides?.issuerUrl}
-              />
-              <p className="text-xs text-muted-foreground">
-                {envOverrides?.issuerUrl ? t('envPinnedNote') : t('fields.issuerUrlHelp')}
+          <CardContent className="space-y-6">
+            <div className="space-y-5">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                {t('sections.provider')}
               </p>
-            </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="oidc-issuer-url">{t('fields.issuerUrl')}</Label>
+                <Input
+                  id="oidc-issuer-url"
+                  value={form.issuerUrl}
+                  onChange={(e) => setForm((prev) => ({ ...prev, issuerUrl: e.target.value }))}
+                  placeholder={t('fields.issuerUrlPlaceholder')}
+                  disabled={envOverrides?.issuerUrl}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {envOverrides?.issuerUrl ? t('envPinnedNote') : t('fields.issuerUrlHelp')}
+                </p>
+              </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="oidc-redirect-uri">{t('fields.redirectUri')}</Label>
-              <Input
-                id="oidc-redirect-uri"
-                value={form.redirectUri}
-                onChange={(e) => setForm((prev) => ({ ...prev, redirectUri: e.target.value }))}
-                disabled={envOverrides?.redirectUri}
-              />
-              {envOverrides?.redirectUri ? (
-                <p className="text-xs text-muted-foreground">{t('envPinnedNote')}</p>
-              ) : (
-                <>
-                  <div className="flex flex-wrap items-center gap-2 rounded-md border border-primary/30 bg-primary/[0.04] px-2.5 py-2 text-xs">
-                    <span className="text-muted-foreground">{t('fields.redirectUriHelp')}</span>
-                    <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-foreground/85">
-                      {settings.suggestedRedirectUri}
-                    </code>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="ml-auto h-7 gap-1.5 px-2 text-xs"
-                      onClick={handleUseRedirectUri}
-                    >
-                      {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                      {t('fields.useAndCopy')}
-                    </Button>
-                  </div>
-                  <p className="text-xs text-muted-foreground">{t('fields.redirectUriConfirmNote')}</p>
-                </>
-              )}
-            </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="oidc-redirect-uri">{t('fields.redirectUri')}</Label>
+                <Input
+                  id="oidc-redirect-uri"
+                  value={form.redirectUri}
+                  onChange={(e) => setForm((prev) => ({ ...prev, redirectUri: e.target.value }))}
+                  disabled={envOverrides?.redirectUri}
+                />
+                {envOverrides?.redirectUri ? (
+                  <p className="text-xs text-muted-foreground">{t('envPinnedNote')}</p>
+                ) : (
+                  <>
+                    <div className="flex flex-wrap items-center gap-2 rounded-md border border-primary/30 bg-primary/[0.04] px-2.5 py-2 text-xs">
+                      <span className="text-muted-foreground">{t('fields.redirectUriHelp')}</span>
+                      <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-foreground/85">
+                        {settings.suggestedRedirectUri}
+                      </code>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="ml-auto h-7 gap-1.5 px-2 text-xs"
+                        onClick={handleUseRedirectUri}
+                      >
+                        {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                        {t('fields.useAndCopy')}
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">{t('fields.redirectUriConfirmNote')}</p>
+                  </>
+                )}
+              </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="oidc-client-id">{t('fields.clientId')}</Label>
-              <Input
-                id="oidc-client-id"
-                value={form.clientId}
-                onChange={(e) => setForm((prev) => ({ ...prev, clientId: e.target.value }))}
-                disabled={envOverrides?.clientId}
-              />
-              {envOverrides?.clientId && (
-                <p className="text-xs text-muted-foreground">{t('envPinnedNote')}</p>
-              )}
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="oidc-client-secret">{t('fields.clientSecret')}</Label>
-              <Input
-                id="oidc-client-secret"
-                type="password"
-                value={clientSecret}
-                onChange={(e) => setClientSecret(e.target.value)}
-                placeholder={
-                  settings.clientSecretConfigured
-                    ? t('fields.clientSecretPlaceholderConfigured')
-                    : t('fields.clientSecretPlaceholderEmpty')
-                }
-                disabled={envOverrides?.clientSecret}
-              />
-              {envOverrides?.clientSecret && (
-                <p className="text-xs text-muted-foreground">{t('envPinnedNote')}</p>
-              )}
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="oidc-provider-name">{t('fields.providerName')}</Label>
-              <Input
-                id="oidc-provider-name"
-                value={form.providerName}
-                onChange={(e) => setForm((prev) => ({ ...prev, providerName: e.target.value }))}
-                placeholder={t('fields.providerNamePlaceholder')}
-                disabled={envOverrides?.providerName}
-              />
-              <p className="text-xs text-muted-foreground">
-                {envOverrides?.providerName ? t('envPinnedNote') : t('fields.providerNameHelp')}
-              </p>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="oidc-scope">{t('fields.scope')}</Label>
-              <Input
-                id="oidc-scope"
-                value={form.scope}
-                onChange={(e) => setForm((prev) => ({ ...prev, scope: e.target.value }))}
-                disabled={envOverrides?.scope}
-              />
-              <p className="text-xs text-muted-foreground">
-                {envOverrides?.scope ? t('envPinnedNote') : t('fields.scopeHelp')}
-              </p>
-            </div>
-
-            <div className="flex items-start justify-between gap-4 rounded-md border border-border/60 p-3">
-              <div className="space-y-0.5">
-                <Label htmlFor="oidc-allow-insecure-http">{t('fields.allowInsecureHttp')}</Label>
-                <p className="text-xs text-muted-foreground">{t('fields.allowInsecureHttpHelp')}</p>
-                {envOverrides?.allowInsecureHttp && (
+              <div className="space-y-1.5">
+                <Label htmlFor="oidc-client-id">{t('fields.clientId')}</Label>
+                <Input
+                  id="oidc-client-id"
+                  value={form.clientId}
+                  onChange={(e) => setForm((prev) => ({ ...prev, clientId: e.target.value }))}
+                  disabled={envOverrides?.clientId}
+                />
+                {envOverrides?.clientId && (
                   <p className="text-xs text-muted-foreground">{t('envPinnedNote')}</p>
                 )}
               </div>
-              <Switch
-                id="oidc-allow-insecure-http"
-                checked={allowInsecureHttp}
-                onCheckedChange={setAllowInsecureHttp}
-                disabled={envOverrides?.allowInsecureHttp}
-              />
+
+              <div className="space-y-1.5">
+                <Label htmlFor="oidc-client-secret">{t('fields.clientSecret')}</Label>
+                <Input
+                  id="oidc-client-secret"
+                  type="password"
+                  value={clientSecret}
+                  onChange={(e) => setClientSecret(e.target.value)}
+                  placeholder={
+                    settings.clientSecretConfigured
+                      ? t('fields.clientSecretPlaceholderConfigured')
+                      : t('fields.clientSecretPlaceholderEmpty')
+                  }
+                  disabled={envOverrides?.clientSecret}
+                />
+                {envOverrides?.clientSecret && (
+                  <p className="text-xs text-muted-foreground">{t('envPinnedNote')}</p>
+                )}
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="oidc-provider-name">{t('fields.providerName')}</Label>
+                <Input
+                  id="oidc-provider-name"
+                  value={form.providerName}
+                  onChange={(e) => setForm((prev) => ({ ...prev, providerName: e.target.value }))}
+                  placeholder={t('fields.providerNamePlaceholder')}
+                  disabled={envOverrides?.providerName}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {envOverrides?.providerName ? t('envPinnedNote') : t('fields.providerNameHelp')}
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-5 border-t border-border/50 pt-6">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                {t('sections.advanced')}
+              </p>
+              <div className="space-y-1.5">
+                <Label htmlFor="oidc-scope">{t('fields.scope')}</Label>
+                <Input
+                  id="oidc-scope"
+                  value={form.scope}
+                  onChange={(e) => setForm((prev) => ({ ...prev, scope: e.target.value }))}
+                  disabled={envOverrides?.scope}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {envOverrides?.scope ? t('envPinnedNote') : t('fields.scopeHelp')}
+                </p>
+              </div>
+
+              <div className="flex items-start justify-between gap-4 rounded-md border border-border/60 p-3">
+                <div className="space-y-0.5">
+                  <Label htmlFor="oidc-allow-insecure-http">{t('fields.allowInsecureHttp')}</Label>
+                  <p className="text-xs text-muted-foreground">{t('fields.allowInsecureHttpHelp')}</p>
+                  {envOverrides?.allowInsecureHttp && (
+                    <p className="text-xs text-muted-foreground">{t('envPinnedNote')}</p>
+                  )}
+                </div>
+                <Switch
+                  id="oidc-allow-insecure-http"
+                  checked={allowInsecureHttp}
+                  onCheckedChange={setAllowInsecureHttp}
+                  disabled={envOverrides?.allowInsecureHttp}
+                />
+              </div>
             </div>
 
             {formError && <p className="text-sm text-destructive">{formError}</p>}

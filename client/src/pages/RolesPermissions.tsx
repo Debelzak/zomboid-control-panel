@@ -61,7 +61,7 @@ function recoveryActionKey(
 }
 
 export default function RolesPermissions() {
-  const { t } = useTranslation(['roles', 'errors'])
+  const { t } = useTranslation(['roles', 'errors', 'shell'])
   const { toast } = useToast()
   const confirm = useConfirm()
 
@@ -386,6 +386,7 @@ export default function RolesPermissions() {
   return (
     <div className="space-y-6 page-transition">
       <PageHeader
+        eyebrow={t('shell:nav.sections.access')}
         title={t('pageHeader.title')}
         description={t('pageHeader.description')}
         icon={<ShieldCheck className="h-6 w-6" />}
@@ -481,10 +482,10 @@ export default function RolesPermissions() {
                   <tbody>
                     {groups.map((group) => (
                       <Fragment key={group.group}>
-                        <tr className="bg-muted/20">
+                        <tr className="border-t border-border/50 bg-muted/30">
                           <td
                             colSpan={roles.length + 1}
-                            className="sticky left-0 bg-muted/20 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground/80"
+                            className="sticky left-0 bg-muted/30 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-foreground/70"
                           >
                             {groupLabel(group.group)}
                           </td>

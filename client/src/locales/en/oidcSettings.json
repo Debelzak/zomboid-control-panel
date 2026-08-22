@@ -18,6 +18,10 @@
     "notConfiguredHint": "Fill in the provider details below and save to turn it on."
   },
   "envPinnedNote": "Set via an environment variable on this install — edit it there, not here.",
+  "sections": {
+    "provider": "Provider",
+    "advanced": "Advanced"
+  },
   "fields": {
     "issuerUrl": "Issuer URL",
     "issuerUrlPlaceholder": "https://accounts.example.com",
