@@ -124,3 +124,45 @@ easiest — I read every countdown/frequency string out loud before committing.
   templates for a technical command string, so changing them per-locale would be editing
   code-adjacent content rather than UI copy, and risks a French operator not recognizing
   the underlying `servermsg`/`bridge:` syntax if the embedded example text moved.
+
+## Discord.tsx (namespace: `discord`)
+
+- Found and reused an existing exact-match glossary pair from settings.json before
+  writing anything new: en "Discord bot" / "Bot token, channels, event notifications,
+  and the chat bridge." → fr "Bot Discord" / "Jeton du bot, canaux, notifications
+  d'événements et pont de chat." This fixed several terms at once: **jeton** for
+  "token" (not "token" left untranslated, and not "clé"), **canal/canaux** for
+  "channel(s)" (not "salon", even though Discord's own French client uses "salon" —
+  this app's existing glossary already committed to "canal" in Chat.tsx and
+  settings.json, and in-app consistency wins over matching a third-party product's
+  wording), and **pont de chat** for the Discord↔game "chat bridge" feature name.
+  Also reused debug.json's "Check the bot token and intents in Discord settings." →
+  "Vérifiez le jeton du bot et les intents dans les paramètres Discord." to confirm
+  **intents stays untranslated** — it's the literal technical term shown on Discord's
+  own Developer Portal, no established French equivalent, and translating it would
+  send an operator looking for a UI element by the wrong name.
+- "Slash commands" → **commandes slash** (no existing precedent in this app; chose the
+  term Discord's own French client uses, since operators will see it there too).
+  "Moderator" tier → **Modérateur**, reusing the exact word already used in the
+  existing glossary. "Guild (Server) ID" → **ID du serveur (Guild)**, keeping the
+  parenthetical "Guild" in English since that is literally the field name in the
+  Discord Developer Portal an operator has to find — dropping it risks someone not
+  recognizing which portal field to copy from.
+- One flagged uncertainty for Angela/god to sanity-check: instructions that tell the
+  operator to right-click *inside the actual Discord client* (e.g. "Copy Server ID",
+  "Copy Channel ID", "Copy Role ID") were translated to match this app's own
+  canal/serveur/rôle vocabulary rather than guaranteed-current Discord French client
+  menu wording, since I don't have live access to verify Discord's actual current
+  French UI strings. If Discord's live menu differs, these instructional lines
+  specifically (not the rest of the page) may need a follow-up tweak from whoever can
+  check the real client.
+- Notification event templates (`events.*.defaultTemplate`, e.g. "🟢 **Server is
+  online**") are the actual default message bodies posted to the operator's Discord
+  channel, so — consistent with the Chat.tsx and Scheduler.tsx precedent for
+  operator-facing default content — I translated them, not just their labels. For
+  "{player} died at {location}" I used **"a péri à {location}"** instead of
+  "est mort/morte à" specifically to sidestep needing to guess the player's grammatical
+  gender in an automated bot message: the passé composé of "périr" with avoir doesn't
+  agree with the subject, so it's correct regardless of who died. All `{variable}`
+  placeholders (`{player}`, `{location}`, `{x}`, `{y}`, `{z}`, `{pvp}`, `{minutes}`)
+  were left untouched since the server backend substitutes them literally by name.
