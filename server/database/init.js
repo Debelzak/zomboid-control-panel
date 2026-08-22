@@ -6,6 +6,11 @@ import { randomUUID } from "crypto";
 import { getDataPaths } from "../utils/paths.js";
 import { createLogger } from "../utils/logger.js";
 import { normalizeMemoryGb } from "../utils/memory.js";
+import {
+  rehydrateRconSecrets,
+  redactRconSecretsForWrite,
+  deleteServerSecret,
+} from "../utils/serverRconSecrets.js";
 const log = createLogger("DB");
 
 // ============================================
@@ -40,7 +45,11 @@ const dbPath = paths.dbPath;
 const backupDir = path.join(dataDir, "backups");
 
 // Ensure directories exist with restrictive perms (POSIX). Mode is ignored on Windows.
-// 0o700 — these dirs hold db.json (RCON password + JWT secret) and rotating backups.
+// 0o700 — these dirs hold db.json, its rotating backups, and the sibling
+// secret files (jwt.secret, discordBotToken.secret, rconPassword.secret,
+// server-secrets/*.secret, ...) that keep those values out of db.json
+// itself — see utils/jwtSecret.js, utils/uiSecretFile.js,
+// utils/serverRconSecrets.js.
 for (const dir of [dataDir, backupDir]) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   try {
@@ -73,6 +82,7 @@ const defaultData = {
   bridge_logs: [],
   discord_webhooks: [],
   users: [],
+  roles: [],
   settings: {},
   _schemaVersion: 1,
 };
@@ -81,23 +91,121 @@ const defaultData = {
 // Schema Migrations
 // ============================================
 
-const CURRENT_SCHEMA_VERSION = 1;
+const CURRENT_SCHEMA_VERSION = 2;
+
+// Migration 2 seed: a SNAPSHOT of what every requireRole(...) call site in
+// the app actually granted at the moment this migration was written --
+// upgrade day must be a zero-behaviour-change event, so this seed follows
+// reality rather than making policy. Kept as its own local copy rather than
+// imported from services/permissions.js's DEFAULT_ROLE_CAPABILITIES to
+// avoid a circular import between this file and that one (permissions.js
+// imports getDb/getRoles/etc. from here); server/tests/
+// rolesMigrationMatchesSeed.test.js asserts the two copies stay identical,
+// so a future edit to one that isn't mirrored to the other fails loudly
+// instead of silently drifting.
+const MIGRATION_V2_TECHNICIAN_CAPABILITIES = [
+  "backups.manage",
+  "server.control",
+  "server.install",
+  "server.configure",
+  "rcon.execute",
+  "servers.manage",
+  "templates.manage",
+  "bridge.setup",
+  "bridge.diagnostics",
+  "players.moderate",
+  "players.gm_tools",
+  "players.view",
+  "mods.manage",
+  "automation.manage",
+  "integrations.manage",
+  "docker.manage",
+  "chunks.manage",
+  "serverfiles.manage",
+];
+const MIGRATION_V2_MODERATOR_CAPABILITIES = [
+  "players.moderate",
+  "players.gm_tools",
+  "players.view",
+];
+const MIGRATION_V2_ADMIN_CAPABILITIES = [
+  "users.manage",
+  "roles.manage",
+  "backups.manage",
+  "backups.restore",
+  "server.control",
+  "server.install",
+  "server.configure",
+  "server.wipe",
+  "rcon.execute",
+  "servers.manage",
+  "servers.discover",
+  "templates.manage",
+  "bridge.setup",
+  "bridge.diagnostics",
+  "bridge.command",
+  "players.moderate",
+  "players.gm_tools",
+  "players.view",
+  "mods.manage",
+  "automation.manage",
+  "integrations.manage",
+  "docker.manage",
+  "chunks.manage",
+  "serverfiles.manage",
+  "diagnostics.manage",
+  "panel.settings",
+];
 
 /**
  * Run any pending schema migrations.
  * Add new migrations as sequential `if (version < N)` blocks.
  * Each migration must be idempotent — safe to re-run if the write after
  * bumping the version failed.
+ * Exported for direct testing against a plain object (see
+ * server/tests/rolesMigration.test.js) -- getDb()'s dataDir is resolved
+ * once from paths.config.json and memoized process-wide (see
+ * vitest.globalSetup.mjs), so exercising a specific pre-migration db.json
+ * through the real getDb() singleton isn't practical from an individual
+ * test file; this function has no I/O of its own and needs none of that.
  */
-function runMigrations(data) {
+export function runMigrations(data) {
   const version = data._schemaVersion || 0;
   if (version >= CURRENT_SCHEMA_VERSION) return data;
 
   log.info(`Running DB migrations: v${version} → v${CURRENT_SCHEMA_VERSION}`);
 
   // Migration 1: stamp initial schema version (no data changes needed)
-  // Future migrations:
-  // if (version < 2) { /* rename fields, restructure collections, etc. */ }
+
+  if (version < 2) {
+    if (!data.roles) data.roles = [];
+
+    const seedRole = (id, name, capabilities) => {
+      if (data.roles.some((r) => r.id === id)) return; // idempotent re-run
+      data.roles.push({
+        id,
+        name,
+        capabilities: [...capabilities],
+        isSeeded: true,
+        createdAt: new Date().toISOString(),
+      });
+    };
+    seedRole("role-admin", "admin", MIGRATION_V2_ADMIN_CAPABILITIES);
+    seedRole("role-technician", "technician", MIGRATION_V2_TECHNICIAN_CAPABILITIES);
+    seedRole("role-moderator", "moderator", MIGRATION_V2_MODERATOR_CAPABILITIES);
+
+    // Dual-write: set roleId alongside the existing role string, which
+    // stays untouched and remains what requirePermission() resolves
+    // against today (see services/permissions.js). roleId is forward
+    // compatible for when auth.js's request-auth path starts resolving by
+    // id instead of by name -- not read by anything yet.
+    const roleIdByName = Object.fromEntries(data.roles.map((r) => [r.name, r.id]));
+    for (const user of data.users || []) {
+      if (!user.roleId && roleIdByName[user.role]) {
+        user.roleId = roleIdByName[user.role];
+      }
+    }
+  }
 
   data._schemaVersion = CURRENT_SCHEMA_VERSION;
   log.info(`DB migrated to schema v${CURRENT_SCHEMA_VERSION}`);
@@ -177,7 +285,10 @@ export async function flushWrites() {
     try {
       // Atomic write: write to temp file first, then rename
       // This prevents corruption on NFS/SMB mounts or if process is killed mid-write
-      // mode 0o600 — db.json contains plaintext RCON password & JWT secret.
+      // mode 0o600 — db.json still holds bcrypt password hashes and other
+      // settings that don't warrant world-readability, even though the JWT
+      // secret, rconPassword, and the Discord/Steam credentials have all
+      // moved to their own files (see the dataDir comment above).
       // We chmod the tmp file BEFORE rename because writeFileSync's `mode` option
       // is ignored when the file already exists (e.g. orphaned tmp from prior crash).
       // Unique tmp name per write — when two panel instances overlap (e.g.
@@ -185,7 +296,11 @@ export async function flushWrites() {
       // `.tmp` suffix causes the second rename to fail with ENOENT after the
       // first instance consumed it. PID + random suffix isolates them.
       const tmpPath = `${dbPath}.${process.pid}.${Math.random().toString(36).slice(2, 8)}.tmp`;
-      const data = JSON.stringify(db.data, null, 2);
+      // rconPassword (per server, plus the legacy settings mirror) is
+      // persisted to its own file and stripped from what actually lands on
+      // disk here — see utils/serverRconSecrets.js. db.data itself is
+      // never mutated by this call, only the object being serialized.
+      const data = JSON.stringify(redactRconSecretsForWrite(db.data), null, 2);
       fs.writeFileSync(tmpPath, data, { encoding: "utf-8", mode: 0o600 });
       try {
         fs.chmodSync(tmpPath, 0o600);
@@ -274,10 +389,12 @@ export async function commitNow() {
 // ============================================
 
 // A hard kill between writeFileSync and the rename in flushWrites() above
-// leaves `db.json.<pid>.<rand>.tmp` behind forever — and it's a complete
-// copy of db.json, plaintext RCON password and JWT secret included. Nothing
-// else reads or removes these, so an unswept crash leaks a secret-bearing
-// file that sits on disk indefinitely.
+// leaves `db.json.<pid>.<rand>.tmp` behind forever — a complete copy of
+// what flushWrites() serializes (the JWT secret, rconPassword and the
+// Discord/Steam credentials are already redacted out of that by this
+// point, but bcrypt password hashes and other settings are still in
+// there). Nothing else reads or removes these, so an unswept crash leaks
+// that file indefinitely.
 const TMP_FILE_RE = /^db\.json\.(\d+)\.[0-9a-z]+\.tmp$/i;
 
 // Extra margin beyond pid-liveness before a tmp file is touched: no real
@@ -651,6 +768,11 @@ export async function getDb() {
     db.data = validateData(db.data);
     db.data = runMigrations(db.data);
     db.data = compactData(db.data);
+    // Runs on EVERY load, unlike runMigrations() above (schema-version
+    // gated, only ever runs once) — db.json itself never carries
+    // rconPassword again once a single write has happened, so it has to be
+    // re-attached in memory on every restart, not just once at an upgrade.
+    db.data = rehydrateRconSecrets(db.data, log);
 
     // Use the atomic tmp+rename path instead of lowdb's non-atomic
     // adapter.write(). A crash during the startup write would otherwise
@@ -1490,6 +1612,10 @@ export async function deleteServer(id) {
     db.data.servers[0].isActive = true;
   }
 
+  // The password file is keyed by server id and outlives the record
+  // otherwise — nothing else ever removes it.
+  deleteServerSecret(serverId);
+
   scheduleWrite();
   return true;
 }
@@ -1521,6 +1647,102 @@ function syncServerToSettings(db, server) {
   db.data.settings.maxMemory = normalizedServer.maxMemory;
   db.data.settings.zomboidDataPath = server.zomboidDataPath;
   db.data.settings.serverConfigPath = server.serverConfigPath;
+}
+
+// ============================================
+// Roles & Capabilities
+// ============================================
+// Data-access layer only -- capability catalogue, requirePermission
+// middleware, default-seed content and lockout-rule enforcement all live in
+// services/permissions.js, which calls the functions below rather than
+// touching db.data.roles directly, matching every other collection in this
+// file.
+
+export async function getRoles() {
+  const db = await getDb();
+  return db.data.roles || [];
+}
+
+export async function getRoleById(id) {
+  const db = await getDb();
+  return (db.data.roles || []).find((r) => String(r.id) === String(id)) || null;
+}
+
+export async function getRoleByName(name) {
+  if (!name) return null;
+  const db = await getDb();
+  return (db.data.roles || []).find((r) => r.name === name) || null;
+}
+
+export async function insertRole(role) {
+  const db = await getDb();
+  if (!db.data.roles) db.data.roles = [];
+  db.data.roles.push(role);
+  scheduleWrite();
+  return role;
+}
+
+export async function replaceRoleById(id, updatedRole) {
+  const db = await getDb();
+  const roles = db.data.roles || [];
+  const index = roles.findIndex((r) => String(r.id) === String(id));
+  if (index === -1) return null;
+  roles[index] = updatedRole;
+  scheduleWrite();
+  return updatedRole;
+}
+
+export async function removeRoleById(id) {
+  const db = await getDb();
+  const roles = db.data.roles || [];
+  const index = roles.findIndex((r) => String(r.id) === String(id));
+  if (index === -1) return false;
+  roles.splice(index, 1);
+  scheduleWrite();
+  return true;
+}
+
+/**
+ * Every user currently resolving to `role` -- by roleId if set, otherwise
+ * by name for a seeded default role (matches how requirePermission()
+ * resolves a role today, since user records don't carry a live roleId
+ * until auth.js's login/role-change paths are updated to set one).
+ */
+export async function getUsersForRole(role) {
+  const db = await getDb();
+  const users = db.data.users || [];
+  return users.filter(
+    (u) => u.roleId === role.id || (role.isSeeded && u.role === role.name),
+  );
+}
+
+// Read-only, minimal shape (id, username, role, roleId) for lockout-rule
+// counting in services/permissions.js -- not the full user record (no
+// password hash or session state), since that's authService's territory.
+export async function getUsersForRoleAccounting() {
+  const db = await getDb();
+  return (db.data.users || []).map((u) => ({
+    id: u.id,
+    username: u.username,
+    role: u.role,
+    roleId: u.roleId,
+  }));
+}
+
+/** Move every member of `fromRole` onto `toRole`. Used by role deletion's reassignTo. */
+export async function reassignRoleMembers(fromRole, toRole) {
+  const db = await getDb();
+  let count = 0;
+  for (const user of db.data.users || []) {
+    const matches =
+      user.roleId === fromRole.id || (fromRole.isSeeded && user.role === fromRole.name);
+    if (!matches) continue;
+    user.roleId = toRole.id;
+    if (toRole.isSeeded) user.role = toRole.name;
+    count++;
+  }
+  if (count > 0) scheduleWrite();
+  return count;
 }
 
 // ============================================

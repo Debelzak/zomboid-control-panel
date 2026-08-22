@@ -43,6 +43,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `client/src/locales/README.md`.
 
 ### Fixed
+- **RCON password, Discord bot token and Steam session moved out of `db.json`**: these credentials now
+  live in their own files rather than inside the database, so none of them are swept into a database
+  backup by accident. Existing installs move them automatically on the first start after upgrading -
+  same values, safer location, nothing to re-enter. **Any backup taken before this upgrade still
+  contains all three in plain text inside `db.json`**, and those are not fixed retroactively.
 - **Groundwork for error messages in your own language**: the panel's screens are translated but the
   messages the server sends back are still English, which is exactly when a non-English speaker most
   needs their own language. Every error the server reports now carries a stable machine-readable code

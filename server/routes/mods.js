@@ -12,7 +12,6 @@ import {
   removeTrackedMod,
   clearModUpdates,
   getSetting,
-  setSetting,
   getActiveServer,
   getModPresets,
   createModPreset,
@@ -43,6 +42,8 @@ import {
   computeDiff as computeCollectionDiff,
   syncSingleChange as autoSyncCollection,
   fetchPublishedFileTitles,
+  getSteamSessionCredentials,
+  setSteamSessionCredentials,
 } from "../services/workshopCollectionSync.js";
 import {
   listAvailableBrowsers,
@@ -1081,8 +1082,8 @@ router.get("/collection/diff", async (req, res) => {
     // strings, of plausible length. Otherwise the UI would happily show
     // "configured" while the actual write endpoints fail with "Steam
     // session cookies not configured".
-    const sidVal = await getSetting("steamSessionId");
-    const lsVal = await getSetting("steamLoginSecure");
+    const { sessionId: sidVal, loginSecure: lsVal } =
+      await getSteamSessionCredentials();
     const looksMasked = (v) =>
       typeof v === "string" && (v.startsWith("••••••••") || /^[•*]+$/.test(v));
     const hasCredentials =
@@ -1275,8 +1276,7 @@ router.post("/collection/test", async (req, res) => {
     const collectionId = await getSetting("workshopCollectionId");
     if (!collectionId)
       return res.status(400).json({ error: "Collection ID not configured" });
-    const sessionId = await getSetting("steamSessionId");
-    const loginSecure = await getSetting("steamLoginSecure");
+    const { sessionId, loginSecure } = await getSteamSessionCredentials();
     if (!sessionId || !loginSecure)
       return res
         .status(400)
@@ -1380,8 +1380,7 @@ router.post("/collection/extension-push", async (req, res) => {
         .json({ error: "Cookie values are unexpectedly long" });
     }
 
-    await setSetting("steamSessionId", sessionid);
-    await setSetting("steamLoginSecure", loginSecure);
+    setSteamSessionCredentials(sessionid, loginSecure);
 
     log.info(
       `Steam cookies updated via browser extension (user: ${req.user?.username || "unknown"})`,
