@@ -17,6 +17,7 @@ import { setSetting } from "../database/init.js";
 import { verifySetupToken, clearSetupToken } from "../utils/setupToken.js";
 import { getRefreshCookieOptions } from "../utils/refreshCookie.js";
 import { requirePermission } from "../services/permissions.js";
+import { ErrorCode } from "../utils/errorCodes.js";
 
 const log = createLogger("Auth");
 const router = Router();
@@ -163,7 +164,10 @@ const loginLimiter = rateLimit({
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: "Too many login attempts. Please try again later." },
+  message: {
+    error: "Too many login attempts. Please try again later.",
+    code: ErrorCode.RATE_LIMIT_LOGIN,
+  },
 });
 
 /**
@@ -178,7 +182,10 @@ router.get("/status", async (req, res) => {
     res.json({ needsSetup, authEnabled });
   } catch (error) {
     log.error(`Failed to get auth status: ${error.message}`);
-    res.status(500).json({ error: "Failed to get auth status" });
+    res.status(500).json({
+      error: "Failed to get auth status",
+      code: ErrorCode.AUTH_STATUS_CHECK_FAILED,
+    });
   }
 });
 
@@ -188,7 +195,10 @@ const setupLimiter = rateLimit({
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: "Too many setup attempts. Please try again later." },
+  message: {
+    error: "Too many setup attempts. Please try again later.",
+    code: ErrorCode.RATE_LIMIT_SETUP,
+  },
 });
 
 /**
@@ -199,9 +209,10 @@ router.post("/setup", setupLimiter, async (req, res) => {
   try {
     const needsSetup = await authService.needsSetup();
     if (!needsSetup) {
-      return res
-        .status(400)
-        .json({ error: "Setup already completed. Use login instead." });
+      return res.status(400).json({
+        error: "Setup already completed. Use login instead.",
+        code: ErrorCode.SETUP_ALREADY_COMPLETED,
+      });
     }
 
     // "Zero users exist" is the dangerous state on a publicly reachable
@@ -218,13 +229,17 @@ router.post("/setup", setupLimiter, async (req, res) => {
 
     const { username, password, rememberMe = false, panelPort = 3001 } = req.body || {};
     if (!isNonEmptyString(username) || !isNonEmptyString(password)) {
-      return res
-        .status(400)
-        .json({ error: "Username and password are required" });
+      return res.status(400).json({
+        error: "Username and password are required",
+        code: ErrorCode.AUTH_USERNAME_PASSWORD_REQUIRED,
+      });
     }
     const normalizedPanelPort = Number(panelPort);
     if (!Number.isInteger(normalizedPanelPort) || normalizedPanelPort < 1024 || normalizedPanelPort > 65535) {
-      return res.status(400).json({ error: "Panel port must be a whole number between 1024 and 65535" });
+      return res.status(400).json({
+        error: "Panel port must be a whole number between 1024 and 65535",
+        code: ErrorCode.SETUP_PANEL_PORT_INVALID,
+      });
     }
     await setSetting("panelPort", normalizedPanelPort);
     await authService.createUser(username, password);
@@ -266,9 +281,10 @@ router.post("/login", loginLimiter, async (req, res) => {
   try {
     const { username, password, rememberMe = false } = req.body || {};
     if (!isNonEmptyString(username) || !isNonEmptyString(password)) {
-      return res
-        .status(400)
-        .json({ error: "Username and password are required" });
+      return res.status(400).json({
+        error: "Username and password are required",
+        code: ErrorCode.AUTH_USERNAME_PASSWORD_REQUIRED,
+      });
     }
     const result = await authService.login(
       username,
@@ -344,7 +360,10 @@ router.post("/refresh", async (req, res) => {
     } catch {
       // Headers may already be sent; the 401 below is what matters.
     }
-    res.status(401).json({ error: "Token refresh failed" });
+    res.status(401).json({
+      error: "Token refresh failed",
+      code: ErrorCode.TOKEN_REFRESH_FAILED,
+    });
   }
 });
 
@@ -366,14 +385,20 @@ router.get("/me", async (req, res) => {
   try {
     const user = await getAuthenticatedUser(req);
     if (!user) {
-      return res.status(401).json({ error: "Not authenticated" });
+      return res.status(401).json({
+        error: "Not authenticated",
+        code: ErrorCode.NOT_AUTHENTICATED,
+      });
     }
 
     res.json({
       user: { id: user.userId, username: user.username, role: user.role },
     });
   } catch (error) {
-    res.status(401).json({ error: "Authentication error" });
+    res.status(401).json({
+      error: "Authentication error",
+      code: ErrorCode.AUTHENTICATION_ERROR,
+    });
   }
 });
 
@@ -385,14 +410,18 @@ router.post("/change-password", async (req, res) => {
   try {
     const user = await getAuthenticatedUser(req);
     if (!user) {
-      return res.status(401).json({ error: "Not authenticated" });
+      return res.status(401).json({
+        error: "Not authenticated",
+        code: ErrorCode.NOT_AUTHENTICATED,
+      });
     }
 
     const { currentPassword, newPassword } = req.body || {};
     if (!isNonEmptyString(currentPassword) || !isNonEmptyString(newPassword)) {
-      return res
-        .status(400)
-        .json({ error: "Current and new password are required" });
+      return res.status(400).json({
+        error: "Current and new password are required",
+        code: ErrorCode.CHANGE_PASSWORD_FIELDS_REQUIRED,
+      });
     }
     await authService.changePassword(user.userId, currentPassword, newPassword);
     res.clearCookie("refreshToken", getRefreshCookieOptions(req, false));
@@ -438,14 +467,16 @@ router.post("/users", requirePermission("users.manage"), async (req, res) => {
   try {
     const { username, password, role } = req.body || {};
     if (!isNonEmptyString(username) || !isNonEmptyString(password)) {
-      return res
-        .status(400)
-        .json({ error: "Username and password are required" });
+      return res.status(400).json({
+        error: "Username and password are required",
+        code: ErrorCode.AUTH_USERNAME_PASSWORD_REQUIRED,
+      });
     }
     if (!USER_ROLES.includes(role)) {
-      return res
-        .status(400)
-        .json({ error: `role must be one of: ${USER_ROLES.join(", ")}` });
+      return res.status(400).json({
+        error: `role must be one of: ${USER_ROLES.join(", ")}`,
+        code: ErrorCode.AUTH_INVALID_ROLE,
+      });
     }
     const user = await authService.createUser(username, password, role);
     log.info(`User created by admin: ${username} (role: ${role})`);
@@ -483,9 +514,10 @@ router.patch(
         );
       } else {
         if (!USER_ROLES.includes(role)) {
-          return res
-            .status(400)
-            .json({ error: `role must be one of: ${USER_ROLES.join(", ")}` });
+          return res.status(400).json({
+            error: `role must be one of: ${USER_ROLES.join(", ")}`,
+            code: ErrorCode.AUTH_INVALID_ROLE,
+          });
         }
         user = await authService.changeUserRole(req.params.id, role);
       }
@@ -588,7 +620,10 @@ const resetLimiter = rateLimit({
   max: 3,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: "Too many reset attempts. Please try again later." },
+  message: {
+    error: "Too many reset attempts. Please try again later.",
+    code: ErrorCode.RATE_LIMIT_RESET,
+  },
 });
 
 /**
@@ -615,6 +650,7 @@ const localResetTokenLimiter = rateLimit({
   legacyHeaders: false,
   message: {
     error: "Too many local recovery attempts. Please try again later.",
+    code: ErrorCode.RATE_LIMIT_LOCAL_RECOVERY,
   },
 });
 
@@ -627,7 +663,11 @@ const localResetTokenLimiter = rateLimit({
 router.get("/recovery-codes", async (req, res) => {
   try {
     const user = await getAuthenticatedUser(req);
-    if (!user) return res.status(401).json({ error: "Not authenticated" });
+    if (!user)
+      return res.status(401).json({
+        error: "Not authenticated",
+        code: ErrorCode.NOT_AUTHENTICATED,
+      });
     res.json(await authService.getRecoveryCodeStatus());
   } catch (error) {
     res.status(500).json({ error: sanitizeError(error.message) });
@@ -637,7 +677,11 @@ router.get("/recovery-codes", async (req, res) => {
 router.post("/recovery-codes", async (req, res) => {
   try {
     const user = await getAuthenticatedUser(req);
-    if (!user) return res.status(401).json({ error: "Not authenticated" });
+    if (!user)
+      return res.status(401).json({
+        error: "Not authenticated",
+        code: ErrorCode.NOT_AUTHENTICATED,
+      });
     const result = await authService.generateRecoveryCodes(10);
     log.info("New recovery codes generated");
     res.json({ success: true, ...result });
@@ -659,9 +703,10 @@ router.post("/recover-with-code", resetLimiter, async (req, res) => {
   try {
     const { code, newPassword } = req.body || {};
     if (!isNonEmptyString(code) || !isNonEmptyString(newPassword)) {
-      return res
-        .status(400)
-        .json({ error: "A recovery code and a new password are required" });
+      return res.status(400).json({
+        error: "A recovery code and a new password are required",
+        code: ErrorCode.RECOVERY_CODE_FIELDS_REQUIRED,
+      });
     }
     const result = await authService.redeemRecoveryCode(code, newPassword);
     log.info(`Password recovered via recovery code for ${result.username}`);
@@ -690,6 +735,7 @@ router.post("/reset-token/local", localResetTokenLimiter, async (req, res) => {
       return res.status(403).json({
         error:
           "This recovery action is only available when the panel is opened from the server itself.",
+        code: ErrorCode.LOCAL_RESET_NOT_LOCAL,
       });
     }
 
@@ -732,9 +778,10 @@ router.post("/reset-token/local", localResetTokenLimiter, async (req, res) => {
     );
   } catch (error) {
     log.error(`Local recovery token creation failed: ${error.message}`);
-    res
-      .status(500)
-      .json({ error: "Could not create a recovery token on this server." });
+    res.status(500).json({
+      error: "Could not create a recovery token on this server.",
+      code: ErrorCode.LOCAL_RESET_TOKEN_CREATE_FAILED,
+    });
   }
 });
 
@@ -755,36 +802,38 @@ router.post("/reset-password", resetLimiter, async (req, res) => {
       typeof token !== "string" ||
       typeof newPassword !== "string"
     ) {
-      return res
-        .status(400)
-        .json({ error: "Token and new password are required" });
+      return res.status(400).json({
+        error: "Token and new password are required",
+        code: ErrorCode.RESET_PASSWORD_FIELDS_REQUIRED,
+      });
     }
 
     if (newPassword.length > 128) {
-      return res
-        .status(400)
-        .json({ error: "Password must be 128 characters or fewer" });
+      return res.status(400).json({
+        error: "Password must be 128 characters or fewer",
+        code: ErrorCode.RESET_PASSWORD_TOO_LONG,
+      });
     }
 
     const tokenPath = getResetTokenPath();
 
     if (!fs.existsSync(tokenPath)) {
       log.warn("Password reset attempted but no reset-token.txt exists");
-      return res
-        .status(403)
-        .json({
-          error:
-            "No reset token found. Create data/reset-token.txt on the server first.",
-        });
+      return res.status(403).json({
+        error:
+          "No reset token found. Create data/reset-token.txt on the server first.",
+        code: ErrorCode.RESET_TOKEN_NOT_FOUND,
+      });
     }
 
     // Guard against oversized token files
     const stat = fs.statSync(tokenPath);
     if (stat.size > RESET_TOKEN_MAX_BYTES) {
       log.warn("Password reset token file is too large");
-      return res
-        .status(403)
-        .json({ error: "Reset token file is invalid (too large). Max 1KB." });
+      return res.status(403).json({
+        error: "Reset token file is invalid (too large). Max 1KB.",
+        code: ErrorCode.RESET_TOKEN_TOO_LARGE,
+      });
     }
 
     // Token files older than 24h are rejected to prevent stale reset files from being abused.
@@ -796,23 +845,21 @@ router.post("/reset-password", resetLimiter, async (req, res) => {
       } catch (error) {
         log.warn(`Could not remove expired reset token file: ${error.message}`);
       }
-      return res
-        .status(403)
-        .json({
-          error:
-            "Reset token file is older than 24 hours. Recreate it on the server.",
-        });
+      return res.status(403).json({
+        error:
+          "Reset token file is older than 24 hours. Recreate it on the server.",
+        code: ErrorCode.RESET_TOKEN_EXPIRED,
+      });
     }
 
     const storedToken = fs.readFileSync(tokenPath, "utf-8").trim();
     if (!storedToken || storedToken.length < 8) {
       log.warn("Password reset attempted with invalid token file (too short)");
-      return res
-        .status(403)
-        .json({
-          error:
-            "Reset token file is invalid. It must contain at least 8 characters.",
-        });
+      return res.status(403).json({
+        error:
+          "Reset token file is invalid. It must contain at least 8 characters.",
+        code: ErrorCode.RESET_TOKEN_TOO_SHORT,
+      });
     }
 
     // Hash both sides to a constant-length digest before timing-safe comparison.
@@ -827,7 +874,10 @@ router.post("/reset-password", resetLimiter, async (req, res) => {
       .digest();
     if (!crypto.timingSafeEqual(candidateDigest, storedDigest)) {
       log.warn("Password reset attempted with incorrect token");
-      return res.status(403).json({ error: "Invalid reset token" });
+      return res.status(403).json({
+        error: "Invalid reset token",
+        code: ErrorCode.RESET_TOKEN_INVALID,
+      });
     }
 
     const result = await authService.resetPassword(newPassword);

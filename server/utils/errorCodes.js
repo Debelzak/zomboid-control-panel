@@ -54,6 +54,78 @@ export const ErrorCode = Object.freeze({
   NO_REFRESH_TOKEN: "NO_REFRESH_TOKEN",
   /** server/routes/auth.js -- POST /api/auth/refresh, refresh token present but invalid/expired. */
   INVALID_REFRESH_TOKEN: "INVALID_REFRESH_TOKEN",
+  /** server/routes/auth.js -- loginLimiter, POST /api/auth/login rate-limited (5/min per IP). */
+  RATE_LIMIT_LOGIN: "RATE_LIMIT_LOGIN",
+  /** server/routes/auth.js -- GET /api/auth/status, needsSetup()/isAuthEnabled() threw. */
+  AUTH_STATUS_CHECK_FAILED: "AUTH_STATUS_CHECK_FAILED",
+  /** server/routes/auth.js -- setupLimiter, POST /api/auth/setup rate-limited (5/15min per IP). */
+  RATE_LIMIT_SETUP: "RATE_LIMIT_SETUP",
+  /** server/routes/auth.js -- POST /api/auth/setup, setup already completed (needsSetup() false). */
+  SETUP_ALREADY_COMPLETED: "SETUP_ALREADY_COMPLETED",
+  /** server/routes/auth.js (3 sites: /setup, /login, POST /users) -- username
+   * and/or password missing. Identical wording, identical meaning across all
+   * three -- shared code rather than three copies, same reasoning as
+   * WIPE_TARGETS_REQUIRED elsewhere in this file. */
+  AUTH_USERNAME_PASSWORD_REQUIRED: "AUTH_USERNAME_PASSWORD_REQUIRED",
+  /** server/routes/auth.js -- POST /api/auth/setup, panelPort not an integer
+   * in [1024, 65535]. */
+  SETUP_PANEL_PORT_INVALID: "SETUP_PANEL_PORT_INVALID",
+  /** server/routes/auth.js -- POST /api/auth/refresh, refreshAccessToken()
+   * threw (not the "no token"/"invalid token" cases above, which return
+   * early with their own codes -- this is the catch-all for an unexpected
+   * failure, e.g. a DB error). */
+  TOKEN_REFRESH_FAILED: "TOKEN_REFRESH_FAILED",
+  /** server/routes/auth.js (4 sites: GET /me, POST /change-password, GET+POST
+   * /recovery-codes) -- getAuthenticatedUser() returned null. Own code from
+   * AUTH_REQUIRED (requireAuth middleware's "Authentication required") --
+   * different wording ("Not authenticated"), different call sites (route
+   * body checks, not middleware), kept separate rather than merged. */
+  NOT_AUTHENTICATED: "NOT_AUTHENTICATED",
+  /** server/routes/auth.js -- GET /api/auth/me, getAuthenticatedUser() threw. */
+  AUTHENTICATION_ERROR: "AUTHENTICATION_ERROR",
+  /** server/routes/auth.js -- POST /api/auth/change-password, currentPassword
+   * and/or newPassword missing. */
+  CHANGE_PASSWORD_FIELDS_REQUIRED: "CHANGE_PASSWORD_FIELDS_REQUIRED",
+  /** server/routes/auth.js (2 sites: POST /users, PATCH /users/:id/role) --
+   * `role` not one of USER_ROLES. Identical wording/meaning both sites,
+   * shared code -- same reasoning as AUTH_USERNAME_PASSWORD_REQUIRED above. */
+  AUTH_INVALID_ROLE: "AUTH_INVALID_ROLE",
+  /** server/routes/auth.js -- resetLimiter, POST /api/auth/recover-with-code
+   * and /reset-password rate-limited (3/15min per IP). */
+  RATE_LIMIT_RESET: "RATE_LIMIT_RESET",
+  /** server/routes/auth.js -- localResetTokenLimiter, POST
+   * /api/auth/reset-token/local rate-limited (5/15min per IP). */
+  RATE_LIMIT_LOCAL_RECOVERY: "RATE_LIMIT_LOCAL_RECOVERY",
+  /** server/routes/auth.js -- POST /api/auth/recover-with-code, recovery
+   * code and/or newPassword missing. */
+  RECOVERY_CODE_FIELDS_REQUIRED: "RECOVERY_CODE_FIELDS_REQUIRED",
+  /** server/routes/auth.js -- POST /api/auth/reset-token/local, request did
+   * not originate from the panel host itself. */
+  LOCAL_RESET_NOT_LOCAL: "LOCAL_RESET_NOT_LOCAL",
+  /** server/routes/auth.js -- POST /api/auth/reset-token/local, writing the
+   * token file itself failed. */
+  LOCAL_RESET_TOKEN_CREATE_FAILED: "LOCAL_RESET_TOKEN_CREATE_FAILED",
+  /** server/routes/auth.js -- POST /api/auth/reset-password, token and/or
+   * newPassword missing. */
+  RESET_PASSWORD_FIELDS_REQUIRED: "RESET_PASSWORD_FIELDS_REQUIRED",
+  /** server/routes/auth.js -- POST /api/auth/reset-password, newPassword
+   * exceeds 128 characters. */
+  RESET_PASSWORD_TOO_LONG: "RESET_PASSWORD_TOO_LONG",
+  /** server/routes/auth.js -- POST /api/auth/reset-password, no
+   * reset-token.txt exists on disk. */
+  RESET_TOKEN_NOT_FOUND: "RESET_TOKEN_NOT_FOUND",
+  /** server/routes/auth.js -- POST /api/auth/reset-password,
+   * reset-token.txt exceeds the 1KB size cap. */
+  RESET_TOKEN_TOO_LARGE: "RESET_TOKEN_TOO_LARGE",
+  /** server/routes/auth.js -- POST /api/auth/reset-password,
+   * reset-token.txt is older than 24h. */
+  RESET_TOKEN_EXPIRED: "RESET_TOKEN_EXPIRED",
+  /** server/routes/auth.js -- POST /api/auth/reset-password,
+   * reset-token.txt content is under 8 characters. */
+  RESET_TOKEN_TOO_SHORT: "RESET_TOKEN_TOO_SHORT",
+  /** server/routes/auth.js -- POST /api/auth/reset-password, submitted token
+   * does not match the stored token (timing-safe compare failed). */
+  RESET_TOKEN_INVALID: "RESET_TOKEN_INVALID",
   /** server/routes/serverFiles.js -- ServerNotConfiguredError, thrown by the
    * router-level gate when no server is configured at all. */
   SERVER_NOT_CONFIGURED: "SERVER_NOT_CONFIGURED",
