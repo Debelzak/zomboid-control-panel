@@ -9,10 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Bans recorded that never happened**: banning, unbanning or voice-banning a player while the
-  game server is offline or restarting no longer writes the action into the panel's own ban list
-  and history as though it had succeeded. Previously the in-game command silently did nothing while
-  the panel recorded it anyway, so its ban list could permanently disagree with the server.
+- **Bans recorded that never happened**: banning, unbanning or voice-banning a player — by username
+  or by SteamID — while the game server is offline or restarting no longer writes the action into
+  the panel's own ban list and history as though it had succeeded. Previously the in-game command
+  silently did nothing while the panel recorded it anyway, so its ban list could permanently
+  disagree with the server.
 
 - **Invented server on an unconfigured panel**: the Server Configuration page and its sibling
   file, sandbox and spawn-point pages no longer present a fabricated `servertest` server — fully

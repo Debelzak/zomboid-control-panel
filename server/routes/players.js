@@ -186,7 +186,12 @@ router.post('/ban', async (req, res) => {
 
     const result = await rconService.banPlayer(username, banIp, reason);
     log.info(`POST /ban: ${username} (banIp=${banIp}, reason=${reason || 'none'})`);
-    await logPlayerAction(username, 'ban', `IP: ${banIp}, Reason: ${reason}`);
+    // Same unconditional-write shape as /unban: only log the action if RCON
+    // actually performed it, so the activity log doesn't claim a ban
+    // happened when the server never received it.
+    if (result?.success) {
+      await logPlayerAction(username, 'ban', `IP: ${banIp}, Reason: ${reason}`);
+    }
 
     res.json(result);
   } catch (error) {

@@ -138,6 +138,47 @@ describe("players routes: persistent records only written on RCON success", () =
     });
   });
 
+  describe("POST /ban", () => {
+    it("logs the action when RCON succeeds", async () => {
+      const rconService = {
+        banPlayer: vi.fn(async () => ({ success: true, response: "ok" })),
+      };
+      const response = createResponse();
+
+      await getRouteHandler("post", "/ban")(
+        createRequest({ username: "Bob", banIp: false, reason: "griefing" }, rconService),
+        response,
+      );
+
+      expect(logPlayerAction).toHaveBeenCalledWith(
+        "Bob",
+        "ban",
+        "IP: false, Reason: griefing",
+      );
+    });
+
+    it("does not log the action when RCON reports failure (server offline)", async () => {
+      const rconService = {
+        banPlayer: vi.fn(async () => ({
+          success: false,
+          error: "Server is not running",
+        })),
+      };
+      const response = createResponse();
+
+      await getRouteHandler("post", "/ban")(
+        createRequest({ username: "Bob", banIp: false, reason: "griefing" }, rconService),
+        response,
+      );
+
+      expect(logPlayerAction).not.toHaveBeenCalled();
+      expect(response.json).toHaveBeenCalledWith({
+        success: false,
+        error: "Server is not running",
+      });
+    });
+  });
+
   describe("POST /unban", () => {
     it("logs the action when RCON succeeds", async () => {
       const rconService = {
