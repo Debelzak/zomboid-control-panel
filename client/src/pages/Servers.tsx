@@ -827,8 +827,10 @@ export default function Servers() {
       if (!server.isActive) {
         await serversApi.activate(server.id)
       }
-      const result = await serverApi.start()
-      if (result?.success === false) throw new Error(result.error || result.message || t('toasts.serverStartFailed'))
+      // /server/start always responds non-2xx on failure, so
+      // handleResponse() throws into the catch below -- this never sees
+      // result.success === false.
+      await serverApi.start()
       const confirmed = await waitForActionState(server.id, true)
       toast({
         title: confirmed ? t('toasts.serverStartedTitle') : t('toasts.serverStartRequestedTitle'),
@@ -853,8 +855,10 @@ export default function Servers() {
       if (!server.isActive) {
         await serversApi.activate(server.id)
       }
-      const result = await serverApi.stop()
-      if (result?.success === false) throw new Error(result.error || result.message || t('toasts.serverStopFailed'))
+      // Same shape as handleInlineStart above: /server/stop's failures all
+      // throw via handleResponse(), so this never sees
+      // result.success === false.
+      await serverApi.stop()
       const confirmed = await waitForActionState(server.id, false)
       toast({
         title: confirmed ? t('toasts.serverStoppedTitle') : t('toasts.serverStopRequestedTitle'),
