@@ -74,3 +74,49 @@ only carries `id` + the lucide icon; a `presetLabel(id)`/`presetDesc(id)` pair o
 `useCallback`s inside the component do the lookup. Mentioning this because it's a slightly
 unusual refactor shape and a future translator touching this file should know why the array
 looks stripped-down compared to a typical preset list.
+
+## Debug.tsx (namespace `debug`) — the developer-facing carve-out, applied for real
+
+This is the one page in my set where the brief explicitly says diagnostic identifiers should
+stay in English rather than being translated. Concretely, four categories of text in this
+file were left untranslated, and each is a distinct kind of "not prose" rather than a single
+blanket rule:
+
+1. **`reportClientError(message, error)` calls.** I read `client/src/lib/client-errors.ts`
+   before deciding: this function POSTs to `/api/debug/client-errors` and `console.error`s in
+   dev — the `message` string is never rendered in the UI, it's telemetry. Every
+   `reportClientError("Failed to fetch X.", error)` call in Debug.tsx keeps its English
+   first argument.
+2. **Backend-computed diagnostic fields.** `DiagCheck.label`/`.message`/`.hint`,
+   `WorldMapDiagnostics` check fields, and `ActivityEntry.action`/`.detail`/`.source` are
+   JSON payloads from the panel's own backend (a Node process, separate codebase), not
+   string literals in this React file. There is nothing here for me to translate — the
+   diagnostics engine that generates "Mods= contains 3 numeric IDs" runs server-side and is
+   out of scope for a client-side i18n pass. I translated everything *around* those fields
+   (labels, buttons, the fix-action copy) but the fields themselves render as whatever the
+   backend sent, in whatever language the backend was written in (English).
+3. **Clipboard export formats** — `copyReport()` in the World Map tab, the log-entry copy
+   template in `copyLogEntry`, and the activity-entry copy template in `copyActivityEntry`.
+   These build a structured text blob (`World Map diagnostics — <ts>`, `Overall: FAIL (...)`,
+   `[timestamp] [LEVEL] message`, etc.) meant to be pasted into a GitHub issue or a support
+   Discord — contexts that are English by convention regardless of the operator's own
+   language, and where the format is tightly interleaved with live status codes ("OK"/"FAIL",
+   "HTTP 500"). Translating the labels inside these blobs risked producing a mixed-language
+   report that's *harder* to paste into an English support channel, not easier. Left as-is,
+   deliberately, not missed.
+4. **PanelBridge handler names and `check.id` values** (e.g. `"mods.numericInMods"`,
+   `getVehiclesDetailed`) — literal identifiers, either React keys/switch cases that are
+   never rendered, or literal command names from the PanelBridge mod contract. Translating
+   these would break the contract, not localize anything.
+
+Everything else on this page — all eight tab labels, every card title/description, every
+toast, every dialog, and the ~35-case `getDiagnosticsFixAction()` switch's remediation copy
+(label/note/confirmMessage for each check) — is fully translated. The fix-action function
+is module-level and had no access to `t()`, so its signature grew a second `TFunction`
+parameter (`getDiagnosticsFixAction(check, t)`) and both call sites were updated to pass it.
+
+**Reused established terms:** "Refuge"→safehouses, "Véhicule(s)"→vehicles, "Sauvegarde"→backup
+(matches `db.backup`'s "Create database backup" fix action), and the airdrop preset names
+(Nourriture/Médical/Militaire/Armes/Construction/Outils) match WorldMap.tsx's `airdropPresets`
+exactly, since this page's "Test live actions" panel triggers literally the same PanelBridge
+airdrop call as the World Map page and must read identically to an operator using both.
