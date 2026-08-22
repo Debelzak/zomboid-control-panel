@@ -471,20 +471,76 @@ function ensureWritableDirectory(directoryPath) {
   fs.accessSync(directoryPath, fs.constants.W_OK);
 }
 
-function formatWritablePathError(label, directoryPath) {
+// `kind` selects which of the 4 WRITABLE_PATH_* codes applies -- "install"
+// vs "data" is a label word choice, isContainer is a full alternate
+// remediation sentence, and neither is a value to interpolate (2026-08-22
+// variant-vs-params correction). Returns {message, code, params} rather
+// than just the string so every call site can pass `code` and `params`
+// straight through to res.json() without recomputing isContainer itself --
+// the params-survive-the-formatter check this was built to satisfy.
+// platformIsWindows defaults to the module's own isWindows -- container
+// detection is Linux-only by design (containers aren't a Windows concept
+// for this app), so a real call site never overrides it; a test does, to
+// exercise the container branch on a Windows dev machine.
+const WRITABLE_PATH_LABELS = Object.freeze({
+  install: "Installation path",
+  data: "Zomboid data folder",
+});
+
+export function formatWritablePathError(
+  kind,
+  directoryPath,
+  platformIsWindows = isWindows,
+) {
+  const label = WRITABLE_PATH_LABELS[kind];
   const isContainer =
-    !isWindows &&
+    !platformIsWindows &&
     (fs.existsSync("/.dockerenv") || fs.existsSync("/run/.containerenv"));
   const baseMessage = `${label} is not writable: ${directoryPath}.`;
 
   if (isContainer) {
-    return (
-      `${baseMessage} In Docker, bind-mount a writable host folder at this path ` +
-      `and make it owned by the panel container UID/GID.`
-    );
+    return {
+      message:
+        `${baseMessage} In Docker, bind-mount a writable host folder at this path ` +
+        `and make it owned by the panel container UID/GID.`,
+      code:
+        kind === "install"
+          ? ErrorCode.WRITABLE_PATH_INSTALL_CONTAINER
+          : ErrorCode.WRITABLE_PATH_DATA_CONTAINER,
+      params: { path: directoryPath },
+    };
   }
 
-  return `${baseMessage} Choose a folder writable by the panel process.`;
+  return {
+    message: `${baseMessage} Choose a folder writable by the panel process.`,
+    code:
+      kind === "install"
+        ? ErrorCode.WRITABLE_PATH_INSTALL_BAREMETAL
+        : ErrorCode.WRITABLE_PATH_DATA_BAREMETAL,
+    params: { path: directoryPath },
+  };
+}
+
+// isWindows picks a full alternate remediation sentence, not a value to
+// interpolate -- same reasoning/shape as formatWritablePathError's
+// isContainer split (2026-08-22 variant-vs-params correction). Platform is
+// an explicit param (defaulting to the module's own isWindows) rather than
+// read from process.platform inline, so a test can exercise both branches
+// without mocking the platform for the whole module.
+export function formatDirectoryReadError(
+  directoryPath,
+  osCode,
+  platformIsWindows = isWindows,
+) {
+  return {
+    message: platformIsWindows
+      ? `Cannot read ${directoryPath} (${osCode}). Run the panel as an account that can read this folder.`
+      : `Cannot read ${directoryPath} (${osCode}). The panel service account needs read and execute permission on this folder and every parent folder.`,
+    code: platformIsWindows
+      ? ErrorCode.DIRECTORY_READ_FAILED_WINDOWS
+      : ErrorCode.DIRECTORY_READ_FAILED_POSIX,
+    params: { path: directoryPath, code: osCode },
+  };
 }
 
 // Security: INI sanitization imported from shared util
@@ -1613,18 +1669,22 @@ router.post("/install", requirePermission("server.install"), async (req, res) =>
     try {
       ensureWritableDirectory(installPath);
     } catch (directoryError) {
+      const writableError = formatWritablePathError("install", installPath);
       return res.status(400).json({
-        error: formatWritablePathError("Installation path", installPath),
-        code: ErrorCode.WRITABLE_PATH_ERROR,
+        error: writableError.message,
+        code: writableError.code,
+        params: writableError.params,
       });
     }
 
     try {
       ensureWritableDirectory(serverConfigPath);
     } catch (directoryError) {
+      const writableError = formatWritablePathError("data", zomboidPath);
       return res.status(400).json({
-        error: formatWritablePathError("Zomboid data folder", zomboidPath),
-        code: ErrorCode.WRITABLE_PATH_ERROR,
+        error: writableError.message,
+        code: writableError.code,
+        params: writableError.params,
       });
     }
 
@@ -2095,18 +2155,22 @@ router.post("/quick-setup", requirePermission("server.install"), async (req, res
     try {
       ensureWritableDirectory(installPath);
     } catch (directoryError) {
+      const writableError = formatWritablePathError("install", installPath);
       return res.status(400).json({
-        error: formatWritablePathError("Installation path", installPath),
-        code: ErrorCode.WRITABLE_PATH_ERROR,
+        error: writableError.message,
+        code: writableError.code,
+        params: writableError.params,
       });
     }
 
     try {
       ensureWritableDirectory(serverConfigPath);
     } catch (directoryError) {
+      const writableError = formatWritablePathError("data", zomboidPath);
       return res.status(400).json({
-        error: formatWritablePathError("Zomboid data folder", zomboidPath),
-        code: ErrorCode.WRITABLE_PATH_ERROR,
+        error: writableError.message,
+        code: writableError.code,
+        params: writableError.params,
       });
     }
 
@@ -3348,13 +3412,12 @@ router.post("/list-directory", requirePermission("server.install"), async (req, 
     try {
       items = fs.readdirSync(normalized, { withFileTypes: true });
     } catch (e) {
-      const code = e && typeof e === "object" && "code" in e ? e.code : "UNKNOWN";
-      const guidance = isWindows
-        ? "Run the panel as an account that can read this folder."
-        : "The panel service account needs read and execute permission on this folder and every parent folder.";
+      const osCode = e && typeof e === "object" && "code" in e ? e.code : "UNKNOWN";
+      const readError = formatDirectoryReadError(normalized, osCode);
       return res.status(403).json({
-        error: `Cannot read ${normalized} (${code}). ${guidance}`,
-        code: ErrorCode.DIRECTORY_READ_FAILED,
+        error: readError.message,
+        code: readError.code,
+        params: readError.params,
       });
     }
 

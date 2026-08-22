@@ -1253,6 +1253,42 @@ export const ErrorCode = Object.freeze({
   /** server/routes/panelBridge.js -- GET /vehicles/scan (or similar), same
    * reasoning as PANELBRIDGE_SCAN_ITEMS_NOT_RUNNING above for vehicles. */
   PANELBRIDGE_SCAN_VEHICLES_NOT_RUNNING: "PANELBRIDGE_SCAN_VEHICLES_NOT_RUNNING",
+
+  /** server/routes/server.js -- formatWritablePathError("install", ...),
+   * /install and /quick-setup, installPath fails the post-checks writable
+   * probe, not running in a container. Split from the single WRITABLE_PATH_
+   * ERROR above (2026-08-22 correction) -- that code covered 4 distinct
+   * English sentences (2 labels x 2 remediation branches) behind one
+   * locale key with an untranslatable {{label}}/addendum split, and never
+   * actually sent params, so every response silently fell back to English
+   * in both languages. label and isContainer are word/sentence choices,
+   * not values -- only the path is a real param. WRITABLE_PATH_ERROR itself
+   * stays registered (no longer emitted, kept for registry completeness --
+   * additive-only edit, nothing removed). */
+  WRITABLE_PATH_INSTALL_BAREMETAL: "WRITABLE_PATH_INSTALL_BAREMETAL",
+  /** server/routes/server.js -- same call site as ..._BAREMETAL above,
+   * Docker/container detected (bind-mount remediation instead). */
+  WRITABLE_PATH_INSTALL_CONTAINER: "WRITABLE_PATH_INSTALL_CONTAINER",
+  /** server/routes/server.js -- formatWritablePathError("data", ...),
+   * /install and /quick-setup, the Zomboid data folder fails the writable
+   * probe, not running in a container. See WRITABLE_PATH_INSTALL_BAREMETAL
+   * above for why this is a separate code from the install-path variants
+   * (label is a word choice, not a param). */
+  WRITABLE_PATH_DATA_BAREMETAL: "WRITABLE_PATH_DATA_BAREMETAL",
+  /** server/routes/server.js -- same call site as ..._BAREMETAL above,
+   * Docker/container detected. */
+  WRITABLE_PATH_DATA_CONTAINER: "WRITABLE_PATH_DATA_CONTAINER",
+  /** server/routes/server.js -- POST /api/server/list-directory,
+   * fs.readdirSync() threw (permissions), isWindows true. Split from the
+   * single DIRECTORY_READ_FAILED above (2026-08-22 correction, same
+   * reasoning as the WRITABLE_PATH_* split) -- the Windows/POSIX guidance
+   * are two full sentences, not a {{guidance}} hole. DIRECTORY_READ_FAILED
+   * itself stays registered (no longer emitted, kept for registry
+   * completeness -- additive-only edit, nothing removed). */
+  DIRECTORY_READ_FAILED_WINDOWS: "DIRECTORY_READ_FAILED_WINDOWS",
+  /** server/routes/server.js -- same call site as ..._WINDOWS above,
+   * isWindows false (Linux/macOS guidance). */
+  DIRECTORY_READ_FAILED_POSIX: "DIRECTORY_READ_FAILED_POSIX",
 });
 
 /**
