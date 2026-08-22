@@ -116,6 +116,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `client/src/locales/README.md`.
 
 ### Fixed
+- **Failed actions showed a blank or generic error instead of saying what went wrong**: on the world
+  map, every vehicle action - repair, refuel, replace battery, remove, hotwire - reported failure as
+  a bare "Error" with no explanation at all. Teleporting a player, calling an airdrop and spawning a
+  vehicle were the same. The specific messages had been written, but the code holding them could
+  never run, so nobody ever saw them. 29 of these unreachable failure paths were found across the
+  world map, Settings, Console, Debug, Backups, Servers, Chat and Events; 13 of them were showing
+  you meaningfully worse information than intended.
 - **A role that could only manage scheduled tasks could actually run any server command**: the
   "manage scheduled tasks" permission let someone save a task containing any command at all and
   then run it - including shutting the server down or banning players - and those runs did not
