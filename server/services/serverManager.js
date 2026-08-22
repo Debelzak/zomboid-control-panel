@@ -120,6 +120,37 @@ export function isWindowsDedicatedServerCommandLine(commandLine) {
   return false;
 }
 
+// Linux/macOS equivalent of isWindowsDedicatedServerCommandLine above. Kept
+// as a standalone module-level function (not just inline in the scan) so
+// the pidfile fast path can classify a single live command line with the
+// exact same rule the full OS scan uses, instead of a second copy that
+// could drift out of sync.
+function isLinuxDedicatedServerCommandLine(commandLine) {
+  const lower = String(commandLine || "").toLowerCase();
+  if (!lower) return false;
+  if (lower.includes("zombie.network.gameserver")) return true;
+  if (
+    lower.includes("projectzomboid64") ||
+    lower.includes("projectzomboid32")
+  ) {
+    if (
+      lower.includes("-server") ||
+      lower.includes("startserver") ||
+      lower.includes("-servername")
+    ) {
+      return true;
+    }
+    return false;
+  }
+  if (
+    lower.includes("zomboid") &&
+    (lower.includes("-server") || lower.includes("startserver"))
+  ) {
+    return true;
+  }
+  return false;
+}
+
 // Pull the value of a PZ launch argument (`-servername X`, `-cachedir="Y"`)
 // out of a raw command line.
 function extractLaunchArgValue(commandLine, flag) {
@@ -373,6 +404,17 @@ export class ServerManager {
    */
   async getServerProcessDetails() {
     await this.loadConfig(this._serverId);
+
+    // Fast path: if we recorded the PID we spawned and it's still alive
+    // with a command line that still looks like (and is attributable to)
+    // this server, skip the full host-wide OS scan. On ANY doubt at all —
+    // no pidfile, dead PID, or a live PID whose command line no longer
+    // matches (including PID reuse by an unrelated process) — this
+    // resolves to null and falls through to the exact same scan as before,
+    // which remains the ground truth for every uncertain case.
+    const fastPath = await this._tryPidFileFastPath();
+    if (fastPath) return fastPath;
+
     const scan = await this._scanDedicatedServerProcesses();
     const descriptor = this._getOwnershipDescriptor();
 
@@ -463,36 +505,11 @@ export class ServerManager {
         });
       } else {
         // Linux/macOS: pgrep first (faster, more reliable), fall back to ps aux -ww.
-        // Use the same dedicated-server heuristics as Windows so a player
-        // running the *game* (ProjectZomboid64) on the same box doesn't
-        // false-positive as a running dedicated server. Direct
-        // `zombie.network.GameServer` java invocations always qualify.
-        const isLinuxDedicatedServerCommandLine = (cmd) => {
-          const lower = String(cmd || "").toLowerCase();
-          if (!lower) return false;
-          if (lower.includes("zombie.network.gameserver")) return true;
-          if (
-            lower.includes("projectzomboid64") ||
-            lower.includes("projectzomboid32")
-          ) {
-            if (
-              lower.includes("-server") ||
-              lower.includes("startserver") ||
-              lower.includes("-servername")
-            ) {
-              return true;
-            }
-            return false;
-          }
-          if (
-            lower.includes("zomboid") &&
-            (lower.includes("-server") || lower.includes("startserver"))
-          ) {
-            return true;
-          }
-          return false;
-        };
-
+        // Use the same dedicated-server heuristics as Windows (module-level
+        // isLinuxDedicatedServerCommandLine above) so a player running the
+        // *game* (ProjectZomboid64) on the same box doesn't false-positive
+        // as a running dedicated server. Direct `zombie.network.GameServer`
+        // java invocations always qualify.
         log.debug("getServerProcessDetails: trying pgrep -af first...");
         exec(
           'pgrep -af "zombie.network.[Gg]ame[Ss]erver|[Pp]roject[Zz]omboid64|[Pp]roject[Zz]omboid32"',
@@ -570,6 +587,133 @@ export class ServerManager {
         );
       }
     });
+  }
+
+  // Pidfile path is scoped by server name, not a single shared file — this
+  // host can run several dedicated servers (see the two-server tests above),
+  // and a shared pidfile would let one server's start/stop clobber another's
+  // fast-path record. Sanitized because serverName can come from user-edited
+  // settings.
+  _pidFilePath() {
+    const safeName = String(this.serverName || "default").replace(
+      /[^a-zA-Z0-9_-]/g,
+      "_",
+    );
+    return path.join(getDataPaths().dataDir, `server-process-${safeName}.json`);
+  }
+
+  // Best-effort — a failure to persist the pidfile never blocks a start; it
+  // only means the next reacquisition falls through to the full OS scan,
+  // which is the existing, already-safe behavior.
+  _writePidFile(pid) {
+    try {
+      const data = {
+        pid: String(pid),
+        serverName: this.serverName,
+        writtenAt: Date.now(),
+      };
+      fs.writeFileSync(this._pidFilePath(), JSON.stringify(data), "utf-8");
+    } catch (e) {
+      log.debug(`Could not write server pidfile: ${e.message}`);
+    }
+  }
+
+  _readPidFile() {
+    try {
+      const raw = fs.readFileSync(this._pidFilePath(), "utf-8");
+      const data = JSON.parse(raw);
+      if (!data || !/^\d+$/.test(String(data.pid))) return null;
+      return data;
+    } catch {
+      return null; // Missing, corrupt, or unreadable — treated the same as "no pidfile".
+    }
+  }
+
+  _deletePidFile() {
+    try {
+      fs.unlinkSync(this._pidFilePath());
+    } catch {
+      /* already absent — fine, this is best-effort cleanup */
+    }
+  }
+
+  // Single-PID command-line lookup used only by the pidfile fast path — far
+  // cheaper than the full host-wide scan. Resolves to null (never throws)
+  // when the PID isn't alive or the lookup fails/times out, which the fast
+  // path treats identically to "no usable pidfile".
+  _getLiveCommandLine(pid) {
+    if (!/^\d+$/.test(String(pid || ""))) return Promise.resolve(null);
+
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (value) => {
+        if (settled) return;
+        settled = true;
+        resolve(value);
+      };
+      const timeout = setTimeout(() => finish(null), 3000);
+
+      if (isWindows) {
+        // Single quotes inside -Filter avoid the nested-double-quote
+        // escaping the full scan's exec calls need elsewhere; pid is
+        // pre-validated as digits-only above so this interpolation is safe.
+        const psCmd = `powershell -Command "Get-CimInstance Win32_Process -Filter 'ProcessId=${pid}' | Select-Object -ExpandProperty CommandLine"`;
+        exec(psCmd, { timeout: 2500 }, (err, stdout) => {
+          clearTimeout(timeout);
+          finish(err ? null : String(stdout || "").trim() || null);
+        });
+      } else {
+        execFile(
+          "ps",
+          ["-ww", "-o", "cmd=", "-p", String(pid)],
+          { timeout: 2500 },
+          (err, stdout) => {
+            clearTimeout(timeout);
+            finish(err ? null : String(stdout || "").trim() || null);
+          },
+        );
+      }
+    });
+  }
+
+  // Resolves to a getServerProcessDetails()-shaped result if the recorded
+  // pidfile checks out, or null on any doubt (caller then runs the full
+  // scan). Deliberately reuses the SAME classification
+  // (isWindowsDedicatedServerCommandLine / isLinuxDedicatedServerCommandLine)
+  // and the SAME ownership scoring (scoreServerProcessOwnership) as the full
+  // scan, rather than a second set of rules — a live PID whose command line
+  // no longer matches (e.g. reused by an unrelated process, or now belongs
+  // to a different configured server) is exactly the case this must not
+  // trust, which is why it falls through instead of reporting "not running".
+  async _tryPidFileFastPath() {
+    const recorded = this._readPidFile();
+    if (!recorded) return null;
+
+    const cmd = await this._getLiveCommandLine(recorded.pid);
+    if (!cmd) return null;
+
+    const looksLikeDedicatedServer = isWindows
+      ? isWindowsDedicatedServerCommandLine(cmd)
+      : isLinuxDedicatedServerCommandLine(cmd);
+    if (!looksLikeDedicatedServer) return null;
+
+    const score = scoreServerProcessOwnership(
+      cmd,
+      this._getOwnershipDescriptor(),
+    );
+    if (score === -1) return null; // Cmdline now proves this PID belongs to a different server.
+
+    log.debug(
+      `getServerProcessDetails: pidfile fast path hit for pid=${recorded.pid}, skipping full scan`,
+    );
+    this.isRunning = true;
+    const entry = { pid: String(recorded.pid), cmd: String(cmd) };
+    return {
+      running: true,
+      matched: [{ pid: entry.pid, cmd: entry.cmd.slice(0, 240) }],
+      owned: [entry],
+      scanFailed: false,
+    };
   }
 
   async getProcessUptimeSeconds(pid) {
@@ -772,6 +916,7 @@ export class ServerManager {
 
         await logServerEvent("server_start", "Server started via manager");
         log.info("Server start command executed");
+        this._writePidFile(this.serverProcess.pid);
 
         return { success: true, message: "Server start command executed" };
       }
@@ -845,6 +990,7 @@ export class ServerManager {
 
       await logServerEvent("server_start", "Server started via manager");
       log.info("Server start command executed");
+      this._writePidFile(this.serverProcess.pid);
 
       return { success: true, message: "Server start command executed" };
     } finally {
@@ -1002,6 +1148,7 @@ export class ServerManager {
     this.isRunning = false;
     this.serverProcess = null;
     this.startTime = null;
+    this._deletePidFile();
   }
 
   async _isOnlyLocalServer() {

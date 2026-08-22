@@ -270,6 +270,77 @@ export async function commitNow() {
 }
 
 // ============================================
+// Orphaned Temp File Cleanup
+// ============================================
+
+// A hard kill between writeFileSync and the rename in flushWrites() above
+// leaves `db.json.<pid>.<rand>.tmp` behind forever — and it's a complete
+// copy of db.json, plaintext RCON password and JWT secret included. Nothing
+// else reads or removes these, so an unswept crash leaks a secret-bearing
+// file that sits on disk indefinitely.
+const TMP_FILE_RE = /^db\.json\.(\d+)\.[0-9a-z]+\.tmp$/i;
+
+// Extra margin beyond pid-liveness before a tmp file is touched: no real
+// write of this file takes anywhere near this long, so a file this old
+// cannot still be an in-progress write even in a pid-reuse edge case.
+// Belt-and-suspenders alongside the pid check below, not a substitute for it.
+const MIN_ORPHAN_AGE_MS = 60_000;
+
+/**
+ * Same liveness judgement as pidLock.js's isProcessAlive() — signal 0:
+ * ESRCH (or other error) means dead, EPERM means alive but not ours, no
+ * error means alive. Duplicated locally rather than imported: pidLock.js is
+ * owned by another fix in flight right now and doesn't export it.
+ */
+function isPidAlive(pid) {
+  if (!pid || !Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    if (err.code === "EPERM") return true;
+    return false;
+  }
+}
+
+/**
+ * Remove orphaned write-temp files left by a crash, but only ones provably
+ * dead. Two panel processes can legitimately share a data dir for a moment
+ * during a restart — that's exactly why the tmp name is pid-qualified — so
+ * deleting one out from under a still-writing process would turn a harmless
+ * leak into the rename-ENOENT crash pidLock.js exists to prevent. If either
+ * check can't establish a file is safe to remove, it is left alone: an
+ * orphaned file is far cheaper than a corrupted write.
+ */
+export function sweepOrphanedTmpFiles() {
+  let entries;
+  try {
+    entries = fs.readdirSync(dataDir);
+  } catch (err) {
+    log.debug(`Tmp sweep: could not read ${dataDir}: ${err.message}`);
+    return;
+  }
+
+  for (const name of entries) {
+    const match = TMP_FILE_RE.exec(name);
+    if (!match) continue;
+
+    const pid = parseInt(match[1], 10);
+    if (isPidAlive(pid)) continue; // may still be mid-write — leave it
+
+    const filePath = path.join(dataDir, name);
+    try {
+      const stat = fs.statSync(filePath);
+      if (Date.now() - stat.mtimeMs < MIN_ORPHAN_AGE_MS) continue; // too fresh to be sure
+      fs.unlinkSync(filePath);
+      log.warn(`Removed orphaned tmp file from dead pid ${pid}: ${name}`);
+    } catch (err) {
+      log.debug(`Tmp sweep: could not inspect/remove ${name}: ${err.message}`);
+    }
+  }
+}
+
+// ============================================
 // Backup System
 // ============================================
 
@@ -501,6 +572,10 @@ function compactData(data) {
 
 export async function getDb() {
   if (!db) {
+    // Sweep secret-bearing tmp files orphaned by a prior crash before doing
+    // anything else. See sweepOrphanedTmpFiles() above for the dead-pid rule.
+    sweepOrphanedTmpFiles();
+
     // Tighten permissions on existing files left behind by prior installs that
     // wrote with the default umask (typically 0o644 on Linux). Idempotent.
     if (fs.existsSync(dbPath)) {

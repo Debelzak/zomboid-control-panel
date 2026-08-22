@@ -7,7 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Server-running detection after a panel restart**: the panel now remembers the process it started
+  and rechecks that one directly first, falling back to the full host-wide process scan whenever
+  there is any doubt — the process died, or its command line no longer matches. Recognizing an
+  already-running server after the panel restarts or updates is faster, and no longer depends solely
+  on scanning and pattern-matching every process on the machine.
+
 ### Security and maintenance
+
+- **Leftover database copies after a crash**: if the panel is killed while saving, a full copy of
+  the database file — including the RCON password and login secret — no longer lingers on disk
+  indefinitely. It is cleaned up automatically the next time the panel starts, once it can confirm
+  the process that left it behind is no longer running.
 
 - **GitHub release notes**: releases now publish the real changelog entries for their version. The
   matcher that pulled them out of this file depended on which `awk` the build runner happened to
