@@ -95,6 +95,7 @@ router.use(async (req, res, next) => {
     return res.status(400).json({
       error:
         "Browsing the server filesystem is not available for remote servers.",
+      code: ErrorCode.REMOTE_BROWSE_NOT_AVAILABLE,
     });
   }
 
@@ -1063,7 +1064,10 @@ router.get("/ini", async (req, res) => {
     const filePath = path.join(configPath, `${serverName}.ini`);
 
     if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ error: "INI file not found" });
+      return res.status(404).json({
+        error: "INI file not found",
+        code: ErrorCode.INI_FILE_NOT_FOUND,
+      });
     }
 
     const content = fs.readFileSync(filePath, "utf-8");
@@ -1088,7 +1092,10 @@ router.put("/ini", async (req, res) => {
     const { settings } = req.body;
 
     if (!settings || typeof settings !== "object") {
-      return res.status(400).json({ error: "Settings object required" });
+      return res.status(400).json({
+        error: "Settings object required",
+        code: ErrorCode.INI_SETTINGS_REQUIRED,
+      });
     }
 
     // Guard against prototype pollution
@@ -1097,7 +1104,10 @@ router.put("/ini", async (req, res) => {
       Object.prototype.hasOwnProperty.call(settings, "constructor") ||
       Object.prototype.hasOwnProperty.call(settings, "prototype")
     ) {
-      return res.status(400).json({ error: "Invalid settings" });
+      return res.status(400).json({
+        error: "Invalid settings",
+        code: ErrorCode.INI_SETTINGS_INVALID,
+      });
     }
 
     // Read original to preserve comments/structure. Locked per-path so two
@@ -1146,7 +1156,10 @@ router.get("/sandbox", async (req, res) => {
     const filePath = path.join(configPath, `${serverName}_SandboxVars.lua`);
 
     if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ error: "SandboxVars file not found" });
+      return res.status(404).json({
+        error: "SandboxVars file not found",
+        code: ErrorCode.SANDBOXVARS_FILE_NOT_FOUND,
+      });
     }
 
     const content = fs.readFileSync(filePath, "utf-8");
@@ -1169,7 +1182,10 @@ router.put("/sandbox", async (req, res) => {
     const { sandbox } = req.body;
 
     if (!sandbox || typeof sandbox !== "object") {
-      return res.status(400).json({ error: "Sandbox object required" });
+      return res.status(400).json({
+        error: "Sandbox object required",
+        code: ErrorCode.SANDBOX_OBJECT_REQUIRED,
+      });
     }
 
     // Guard against prototype pollution
@@ -1178,7 +1194,10 @@ router.put("/sandbox", async (req, res) => {
       Object.prototype.hasOwnProperty.call(sandbox, "constructor") ||
       Object.prototype.hasOwnProperty.call(sandbox, "prototype")
     ) {
-      return res.status(400).json({ error: "Invalid sandbox data" });
+      return res.status(400).json({
+        error: "Invalid sandbox data",
+        code: ErrorCode.SANDBOX_DATA_INVALID,
+      });
     }
 
     // Guard nested sections against prototype pollution
@@ -1189,7 +1208,10 @@ router.put("/sandbox", async (req, res) => {
           Object.prototype.hasOwnProperty.call(section, "constructor") ||
           Object.prototype.hasOwnProperty.call(section, "prototype")
         ) {
-          return res.status(400).json({ error: "Invalid sandbox data" });
+          return res.status(400).json({
+            error: "Invalid sandbox data",
+            code: ErrorCode.SANDBOX_DATA_INVALID,
+          });
         }
       }
     }
@@ -1197,9 +1219,10 @@ router.put("/sandbox", async (req, res) => {
     // Size limit: reject payloads > 1MB
     const payloadSize = JSON.stringify(sandbox).length;
     if (payloadSize > 1024 * 1024) {
-      return res
-        .status(400)
-        .json({ error: "Sandbox data too large (max 1MB)" });
+      return res.status(400).json({
+        error: "Sandbox data too large (max 1MB)",
+        code: ErrorCode.SANDBOX_DATA_TOO_LARGE,
+      });
     }
 
     // Modify an existing file in-place to preserve comments and structure.
@@ -1243,16 +1266,25 @@ router.put("/sandbox-option", async (req, res) => {
     const { name, value } = req.body || {};
 
     if (typeof name !== "string" || !name) {
-      return res.status(400).json({ error: "Option name required" });
+      return res.status(400).json({
+        error: "Option name required",
+        code: ErrorCode.SANDBOX_OPTION_NAME_REQUIRED,
+      });
     }
     if (!["string", "number", "boolean"].includes(typeof value)) {
-      return res.status(400).json({ error: "Option value must be a primitive" });
+      return res.status(400).json({
+        error: "Option value must be a primitive",
+        code: ErrorCode.SANDBOX_OPTION_VALUE_INVALID,
+      });
     }
 
     const parts = name.split(".");
     const isIdentifier = (p) => /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(p);
     if (parts.length > 2 || !parts.every(isIdentifier)) {
-      return res.status(400).json({ error: "Invalid option name" });
+      return res.status(400).json({
+        error: "Invalid option name",
+        code: ErrorCode.SANDBOX_OPTION_NAME_INVALID,
+      });
     }
     const block = parts.length === 2 ? parts[0] : null;
     const key = parts.length === 2 ? parts[1] : parts[0];
@@ -1265,6 +1297,7 @@ router.put("/sandbox-option", async (req, res) => {
       return res.status(404).json({
         error:
           "SandboxVars file not found. Start the server once to generate it.",
+        code: ErrorCode.SANDBOX_OPTION_FILE_NOT_FOUND,
       });
     }
 
@@ -1394,7 +1427,10 @@ router.get("/sandbox/validate", async (req, res) => {
     const filePath = path.join(configPath, `${serverName}_SandboxVars.lua`);
 
     if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ error: "SandboxVars file not found" });
+      return res.status(404).json({
+        error: "SandboxVars file not found",
+        code: ErrorCode.SANDBOXVARS_FILE_NOT_FOUND,
+      });
     }
 
     const content = fs.readFileSync(filePath, "utf-8");
@@ -1423,7 +1459,10 @@ router.post("/sandbox/repair", async (req, res) => {
     const filePath = path.join(configPath, `${serverName}_SandboxVars.lua`);
 
     if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ error: "SandboxVars file not found" });
+      return res.status(404).json({
+        error: "SandboxVars file not found",
+        code: ErrorCode.SANDBOXVARS_FILE_NOT_FOUND,
+      });
     }
 
     const result = await withFileLock(filePath, async () => {
@@ -1444,6 +1483,7 @@ router.post("/sandbox/repair", async (req, res) => {
           repaired: false,
           error:
             "Could not automatically repair this file — the corruption doesn't match a known pattern. Restore from a backup or fix it manually.",
+          code: ErrorCode.SANDBOX_REPAIR_PATTERN_UNKNOWN,
         };
       }
 
@@ -1457,6 +1497,7 @@ router.post("/sandbox/repair", async (req, res) => {
           error:
             `Could not back up SandboxVars.lua before repairing it, so nothing was changed: ${backup.error}. ` +
             "Free up disk space or fix the backups folder's permissions, or copy the file aside yourself, then try again.",
+          code: ErrorCode.SANDBOX_REPAIR_BACKUP_FAILED,
         };
       }
 
@@ -1472,7 +1513,9 @@ router.post("/sandbox/repair", async (req, res) => {
       });
     }
     if (!result.repaired) {
-      return res.status(422).json({ success: false, error: result.error });
+      return res
+        .status(422)
+        .json({ success: false, error: result.error, code: result.code });
     }
 
     log.info(
@@ -1498,9 +1541,11 @@ router.get("/spawnpoints", async (req, res) => {
     const filePath = path.join(configPath, `${serverName}_spawnpoints.lua`);
 
     if (!fs.existsSync(filePath)) {
-      return res
-        .status(404)
-        .json({ error: "Spawn points file not found", path: filePath });
+      return res.status(404).json({
+        error: "Spawn points file not found",
+        path: filePath,
+        code: ErrorCode.SPAWNPOINTS_FILE_NOT_FOUND,
+      });
     }
 
     const content = fs.readFileSync(filePath, "utf-8");
@@ -1523,9 +1568,10 @@ router.put("/spawnpoints", async (req, res) => {
     const { spawnpoints } = req.body;
 
     if (!spawnpoints || typeof spawnpoints !== "object") {
-      return res
-        .status(400)
-        .json({ error: "Spawn points object required (keyed by profession)" });
+      return res.status(400).json({
+        error: "Spawn points object required (keyed by profession)",
+        code: ErrorCode.SPAWNPOINTS_OBJECT_REQUIRED,
+      });
     }
 
     let backupWarning = null;
@@ -1560,9 +1606,11 @@ router.get("/spawnregions", async (req, res) => {
     const filePath = path.join(configPath, `${serverName}_spawnregions.lua`);
 
     if (!fs.existsSync(filePath)) {
-      return res
-        .status(404)
-        .json({ error: "Spawn regions file not found", path: filePath });
+      return res.status(404).json({
+        error: "Spawn regions file not found",
+        path: filePath,
+        code: ErrorCode.SPAWNREGIONS_FILE_NOT_FOUND,
+      });
     }
 
     const content = fs.readFileSync(filePath, "utf-8");
@@ -1584,7 +1632,10 @@ router.put("/spawnregions", async (req, res) => {
     const { spawnregions } = req.body;
 
     if (!Array.isArray(spawnregions)) {
-      return res.status(400).json({ error: "Spawn regions array required" });
+      return res.status(400).json({
+        error: "Spawn regions array required",
+        code: ErrorCode.SPAWNREGIONS_ARRAY_REQUIRED,
+      });
     }
 
     let backupWarning = null;
@@ -1627,13 +1678,19 @@ router.get("/raw/:type", async (req, res) => {
     };
 
     if (!fileMap[type]) {
-      return res.status(400).json({ error: "Invalid file type" });
+      return res.status(400).json({
+        error: "Invalid file type",
+        code: ErrorCode.RAW_FILE_INVALID_TYPE,
+      });
     }
 
     const filePath = path.join(configPath, fileMap[type]);
 
     if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ error: "File not found" });
+      return res.status(404).json({
+        error: "File not found",
+        code: ErrorCode.FILE_NOT_FOUND,
+      });
     }
 
     const content = fs.readFileSync(filePath, "utf-8");
@@ -1661,15 +1718,24 @@ router.put("/raw/:type", async (req, res) => {
     };
 
     if (!fileMap[type]) {
-      return res.status(400).json({ error: "Invalid file type" });
+      return res.status(400).json({
+        error: "Invalid file type",
+        code: ErrorCode.RAW_FILE_INVALID_TYPE,
+      });
     }
 
     if (typeof content !== "string") {
-      return res.status(400).json({ error: "Content string required" });
+      return res.status(400).json({
+        error: "Content string required",
+        code: ErrorCode.RAW_CONTENT_STRING_REQUIRED,
+      });
     }
 
     if (content.length > 512 * 1024) {
-      return res.status(400).json({ error: "Content too large (max 512KB)" });
+      return res.status(400).json({
+        error: "Content too large (max 512KB)",
+        code: ErrorCode.RAW_CONTENT_TOO_LARGE,
+      });
     }
 
     const filePath = path.join(configPath, fileMap[type]);
@@ -1756,19 +1822,28 @@ router.post("/restore/:filename", async (req, res) => {
     log.info(`POST /restore: filename=${filename}`);
 
     if (!filename.endsWith(".bak")) {
-      return res.status(400).json({ error: "Invalid backup file extension" });
+      return res.status(400).json({
+        error: "Invalid backup file extension",
+        code: ErrorCode.RESTORE_INVALID_EXTENSION,
+      });
     }
 
     const backupPath = path.join(backupDir, filename);
 
     if (!fs.existsSync(backupPath)) {
-      return res.status(404).json({ error: "Backup not found" });
+      return res.status(404).json({
+        error: "Backup not found",
+        code: ErrorCode.RESTORE_BACKUP_NOT_FOUND,
+      });
     }
 
     // Extract original filename from backup name (e.g., "servertest.ini.2024-01-01T12-00-00.bak")
     const parts = filename.split(".");
     if (parts.length < 3) {
-      return res.status(400).json({ error: "Invalid backup filename" });
+      return res.status(400).json({
+        error: "Invalid backup filename",
+        code: ErrorCode.RESTORE_INVALID_FILENAME,
+      });
     }
 
     // Get original filename (everything before the timestamp)
@@ -1812,9 +1887,10 @@ router.post("/save-and-reload", async (req, res) => {
     const rconService = req.app.get("rconService");
 
     if (!rconService || !rconService.isConnected()) {
-      return res
-        .status(400)
-        .json({ error: "RCON not connected. Changes saved but not reloaded." });
+      return res.status(400).json({
+        error: "RCON not connected. Changes saved but not reloaded.",
+        code: ErrorCode.SAVE_AND_RELOAD_RCON_NOT_CONNECTED,
+      });
     }
 
     const result = await rconService.reloadOptions();
@@ -1886,14 +1962,20 @@ router.get("/templates/:id", async (req, res) => {
     // Sanitize template ID to prevent path traversal
     const safeId = path.basename(req.params.id).replace(/[^a-z0-9_-]/gi, "");
     if (!safeId || safeId !== req.params.id) {
-      return res.status(400).json({ error: "Invalid template ID" });
+      return res.status(400).json({
+        error: "Invalid template ID",
+        code: ErrorCode.TEMPLATE_ID_INVALID,
+      });
     }
 
     const templatesPath = await getTemplatesPath();
     const templateFile = path.join(templatesPath, `${safeId}.json`);
 
     if (!fs.existsSync(templateFile)) {
-      return res.status(404).json({ error: "Template not found" });
+      return res.status(404).json({
+        error: "Template not found",
+        code: ErrorCode.TEMPLATE_NOT_FOUND,
+      });
     }
 
     const content = JSON.parse(fs.readFileSync(templateFile, "utf-8"));
@@ -1916,7 +1998,10 @@ router.post("/templates", async (req, res) => {
     } = req.body;
 
     if (!name) {
-      return res.status(400).json({ error: "Template name is required" });
+      return res.status(400).json({
+        error: "Template name is required",
+        code: ErrorCode.TEMPLATE_NAME_REQUIRED,
+      });
     }
 
     const templatesPath = await ensureTemplatesDir();
@@ -1933,9 +2018,10 @@ router.post("/templates", async (req, res) => {
     while (fs.existsSync(path.join(templatesPath, `${safeId}.json`))) {
       safeId = `${baseId}_${counter++}`;
       if (counter > 100) {
-        return res
-          .status(400)
-          .json({ error: "Too many templates with similar names" });
+        return res.status(400).json({
+          error: "Too many templates with similar names",
+          code: ErrorCode.TEMPLATE_NAME_CONFLICT_LIMIT,
+        });
       }
     }
     const templateFile = path.join(templatesPath, `${safeId}.json`);
@@ -1992,7 +2078,10 @@ router.post("/templates/:id/apply", async (req, res) => {
     // Sanitize template ID to prevent path traversal
     const safeId = path.basename(req.params.id).replace(/[^a-z0-9_-]/gi, "");
     if (!safeId || safeId !== req.params.id) {
-      return res.status(400).json({ error: "Invalid template ID" });
+      return res.status(400).json({
+        error: "Invalid template ID",
+        code: ErrorCode.TEMPLATE_ID_INVALID,
+      });
     }
 
     const { applyIni = true, applySandbox = true } = req.body;
@@ -2001,7 +2090,10 @@ router.post("/templates/:id/apply", async (req, res) => {
     const templateFile = path.join(templatesPath, `${safeId}.json`);
 
     if (!fs.existsSync(templateFile)) {
-      return res.status(404).json({ error: "Template not found" });
+      return res.status(404).json({
+        error: "Template not found",
+        code: ErrorCode.TEMPLATE_NOT_FOUND,
+      });
     }
 
     const template = JSON.parse(fs.readFileSync(templateFile, "utf-8"));
@@ -2047,9 +2139,10 @@ router.post("/templates/:id/apply", async (req, res) => {
     }
 
     if (applied.length === 0) {
-      return res
-        .status(400)
-        .json({ error: "No settings to apply from this template" });
+      return res.status(400).json({
+        error: "No settings to apply from this template",
+        code: ErrorCode.TEMPLATE_APPLY_NOTHING_TO_APPLY,
+      });
     }
 
     res.json({
@@ -2070,7 +2163,10 @@ router.put("/templates/:id", async (req, res) => {
     // Sanitize template ID to prevent path traversal
     const safeId = path.basename(req.params.id).replace(/[^a-z0-9_-]/gi, "");
     if (!safeId || safeId !== req.params.id) {
-      return res.status(400).json({ error: "Invalid template ID" });
+      return res.status(400).json({
+        error: "Invalid template ID",
+        code: ErrorCode.TEMPLATE_ID_INVALID,
+      });
     }
 
     const { name, description } = req.body;
@@ -2079,7 +2175,10 @@ router.put("/templates/:id", async (req, res) => {
     const templateFile = path.join(templatesPath, `${safeId}.json`);
 
     if (!fs.existsSync(templateFile)) {
-      return res.status(404).json({ error: "Template not found" });
+      return res.status(404).json({
+        error: "Template not found",
+        code: ErrorCode.TEMPLATE_NOT_FOUND,
+      });
     }
 
     const template = JSON.parse(fs.readFileSync(templateFile, "utf-8"));
@@ -2104,14 +2203,20 @@ router.delete("/templates/:id", async (req, res) => {
     // Sanitize template ID to prevent path traversal
     const safeId = path.basename(req.params.id).replace(/[^a-z0-9_-]/gi, "");
     if (!safeId || safeId !== req.params.id) {
-      return res.status(400).json({ error: "Invalid template ID" });
+      return res.status(400).json({
+        error: "Invalid template ID",
+        code: ErrorCode.TEMPLATE_ID_INVALID,
+      });
     }
 
     const templatesPath = await getTemplatesPath();
     const templateFile = path.join(templatesPath, `${safeId}.json`);
 
     if (!fs.existsSync(templateFile)) {
-      return res.status(404).json({ error: "Template not found" });
+      return res.status(404).json({
+        error: "Template not found",
+        code: ErrorCode.TEMPLATE_NOT_FOUND,
+      });
     }
 
     fs.unlinkSync(templateFile);
@@ -2178,6 +2283,7 @@ router.get("/browse-files", async (req, res) => {
       if (!targetPath) {
         return res.status(403).json({
           error: "Access denied: path is outside allowed server directories",
+          code: ErrorCode.BROWSE_ACCESS_DENIED,
         });
       }
     } else {
@@ -2187,18 +2293,25 @@ router.get("/browse-files", async (req, res) => {
     }
 
     if (!targetPath) {
-      return res
-        .status(400)
-        .json({ error: "No path provided and server config path not set" });
+      return res.status(400).json({
+        error: "No path provided and server config path not set",
+        code: ErrorCode.BROWSE_NO_PATH,
+      });
     }
 
     if (!fs.existsSync(targetPath)) {
-      return res.status(400).json({ error: "Path does not exist" });
+      return res.status(400).json({
+        error: "Path does not exist",
+        code: ErrorCode.BROWSE_PATH_NOT_FOUND,
+      });
     }
 
     const stat = await fs.promises.stat(targetPath);
     if (!stat.isDirectory()) {
-      return res.status(400).json({ error: "Path is not a directory" });
+      return res.status(400).json({
+        error: "Path is not a directory",
+        code: ErrorCode.BROWSE_PATH_NOT_DIRECTORY,
+      });
     }
 
     const entries = await fs.promises.readdir(targetPath, {
@@ -2260,7 +2373,10 @@ router.get("/image-preview", async (req, res) => {
   try {
     const filePath = req.query.path ? String(req.query.path) : null;
     if (!filePath) {
-      return res.status(400).json({ error: "Path is required" });
+      return res.status(400).json({
+        error: "Path is required",
+        code: ErrorCode.IMAGE_PREVIEW_PATH_REQUIRED,
+      });
     }
 
     const allowedRoots = await getAllowedBrowseRoots();
@@ -2268,21 +2384,31 @@ router.get("/image-preview", async (req, res) => {
     if (!resolved) {
       return res.status(403).json({
         error: "Access denied: path is outside allowed server directories",
+        code: ErrorCode.BROWSE_ACCESS_DENIED,
       });
     }
 
     if (!fs.existsSync(resolved)) {
-      return res.status(404).json({ error: "File not found" });
+      return res.status(404).json({
+        error: "File not found",
+        code: ErrorCode.FILE_NOT_FOUND,
+      });
     }
 
     const ext = path.extname(resolved).toLowerCase();
     if (!IMAGE_EXTENSIONS.has(ext)) {
-      return res.status(400).json({ error: "Not an image file" });
+      return res.status(400).json({
+        error: "Not an image file",
+        code: ErrorCode.IMAGE_PREVIEW_NOT_IMAGE,
+      });
     }
 
     const stat = await fs.promises.stat(resolved);
     if (stat.size > 5 * 1024 * 1024) {
-      return res.status(400).json({ error: "Image file exceeds 5MB limit" });
+      return res.status(400).json({
+        error: "Image file exceeds 5MB limit",
+        code: ErrorCode.IMAGE_PREVIEW_TOO_LARGE,
+      });
     }
 
     const mimeMap = {

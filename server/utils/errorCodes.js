@@ -132,6 +132,147 @@ export const ErrorCode = Object.freeze({
   /** server/routes/serverFiles.js -- a route that needs the remote-config
    * (SFTP) transport, but it isn't configured. */
   REMOTE_CONFIG_NOT_CONFIGURED: "REMOTE_CONFIG_NOT_CONFIGURED",
+  /** server/routes/serverFiles.js -- remote-mirror middleware, a
+   * LOCAL_ONLY_PATHS route (/browse-files, /image-preview) hit on a remote
+   * server -- these read the panel host's own filesystem, which an SFTP
+   * mirror can't stand in for. */
+  REMOTE_BROWSE_NOT_AVAILABLE: "REMOTE_BROWSE_NOT_AVAILABLE",
+  /** server/routes/serverFiles.js -- GET /ini, no <serverName>.ini at the
+   * resolved config path. */
+  INI_FILE_NOT_FOUND: "INI_FILE_NOT_FOUND",
+  /** server/routes/serverFiles.js -- PUT /ini, `settings` missing or not an
+   * object. */
+  INI_SETTINGS_REQUIRED: "INI_SETTINGS_REQUIRED",
+  /** server/routes/serverFiles.js -- PUT /ini, `settings` carries a
+   * __proto__/constructor/prototype key (prototype-pollution guard). */
+  INI_SETTINGS_INVALID: "INI_SETTINGS_INVALID",
+  /** server/routes/serverFiles.js (3 sites: GET /sandbox, GET
+   * /sandbox/validate, POST /sandbox/repair) -- no <serverName>_SandboxVars.
+   * lua at the resolved config path. Identical wording/meaning all three,
+   * shared code. Distinct from SANDBOX_OPTION_FILE_NOT_FOUND below (PUT
+   * /sandbox-option's own wording, with extra guidance, kept separate). */
+  SANDBOXVARS_FILE_NOT_FOUND: "SANDBOXVARS_FILE_NOT_FOUND",
+  /** server/routes/serverFiles.js -- PUT /sandbox, `sandbox` missing or not
+   * an object. */
+  SANDBOX_OBJECT_REQUIRED: "SANDBOX_OBJECT_REQUIRED",
+  /** server/routes/serverFiles.js (2 sites: top-level and per-section) --
+   * PUT /sandbox, `sandbox` (or a nested section) carries a __proto__/
+   * constructor/prototype key. Identical wording/meaning both sites, shared
+   * code. */
+  SANDBOX_DATA_INVALID: "SANDBOX_DATA_INVALID",
+  /** server/routes/serverFiles.js -- PUT /sandbox, JSON payload exceeds 1MB. */
+  SANDBOX_DATA_TOO_LARGE: "SANDBOX_DATA_TOO_LARGE",
+  /** server/routes/serverFiles.js -- PUT /sandbox-option, `name` missing or
+   * not a string. */
+  SANDBOX_OPTION_NAME_REQUIRED: "SANDBOX_OPTION_NAME_REQUIRED",
+  /** server/routes/serverFiles.js -- PUT /sandbox-option, `value` isn't a
+   * string/number/boolean. */
+  SANDBOX_OPTION_VALUE_INVALID: "SANDBOX_OPTION_VALUE_INVALID",
+  /** server/routes/serverFiles.js -- PUT /sandbox-option, `name` fails the
+   * "Block.Key" / "Key" identifier format check. */
+  SANDBOX_OPTION_NAME_INVALID: "SANDBOX_OPTION_NAME_INVALID",
+  /** server/routes/serverFiles.js -- PUT /sandbox-option, no SandboxVars.lua
+   * at the resolved path. Own wording (includes "Start the server once to
+   * generate it") from SANDBOXVARS_FILE_NOT_FOUND above -- kept separate
+   * rather than merged. */
+  SANDBOX_OPTION_FILE_NOT_FOUND: "SANDBOX_OPTION_FILE_NOT_FOUND",
+  /** server/routes/serverFiles.js -- POST /sandbox/repair, the file's brace
+   * corruption doesn't match any pattern repairSandboxSyntax() knows how to
+   * fix. Distinct from SANDBOX_REPAIR_BACKUP_FAILED below -- two different,
+   * specific reasons the repair didn't happen, kept as separate codes rather
+   * than one shared "repair failed" so the response says which. Threaded
+   * through as `code: result.code` (not a literal at the res.json() call
+   * site) -- the literal lives on the object returned from the withFileLock
+   * callback above it. */
+  SANDBOX_REPAIR_PATTERN_UNKNOWN: "SANDBOX_REPAIR_PATTERN_UNKNOWN",
+  /** server/routes/serverFiles.js -- POST /sandbox/repair, a fix was found
+   * but the pre-repair backup itself failed, so nothing was written. See
+   * SANDBOX_REPAIR_PATTERN_UNKNOWN above for why this is a separate code.
+   * PARTIAL: the message embeds `${backup.error}` (the underlying fs error)
+   * -- server can't send structured params yet, so the locale text below
+   * covers the fixed frame only; {{reason}} is a placeholder nothing sends
+   * today (see server/utils/errorCodes.js header / hive note 2026-08-22). */
+  SANDBOX_REPAIR_BACKUP_FAILED: "SANDBOX_REPAIR_BACKUP_FAILED",
+  /** server/routes/serverFiles.js -- GET /spawnpoints, no
+   * <serverName>_spawnpoints.lua at the resolved path. */
+  SPAWNPOINTS_FILE_NOT_FOUND: "SPAWNPOINTS_FILE_NOT_FOUND",
+  /** server/routes/serverFiles.js -- PUT /spawnpoints, `spawnpoints` missing
+   * or not an object. */
+  SPAWNPOINTS_OBJECT_REQUIRED: "SPAWNPOINTS_OBJECT_REQUIRED",
+  /** server/routes/serverFiles.js -- GET /spawnregions, no
+   * <serverName>_spawnregions.lua at the resolved path. */
+  SPAWNREGIONS_FILE_NOT_FOUND: "SPAWNREGIONS_FILE_NOT_FOUND",
+  /** server/routes/serverFiles.js -- PUT /spawnregions, `spawnregions` isn't
+   * an array. */
+  SPAWNREGIONS_ARRAY_REQUIRED: "SPAWNREGIONS_ARRAY_REQUIRED",
+  /** server/routes/serverFiles.js (2 sites: GET /raw/:type, PUT /raw/:type)
+   * -- `type` isn't one of ini/sandbox/spawnpoints/spawnregions. Identical
+   * wording/meaning both sites, shared code. */
+  RAW_FILE_INVALID_TYPE: "RAW_FILE_INVALID_TYPE",
+  /** server/routes/serverFiles.js (2 sites: GET /raw/:type, GET
+   * /image-preview) -- the resolved file doesn't exist on disk. Both sites
+   * emit the bare, already-generic "File not found" with no route-specific
+   * detail to lose, so they share one code -- same reasoning as INVALID_PATH
+   * in server.js. */
+  FILE_NOT_FOUND: "FILE_NOT_FOUND",
+  /** server/routes/serverFiles.js -- PUT /raw/:type, `content` isn't a
+   * string. */
+  RAW_CONTENT_STRING_REQUIRED: "RAW_CONTENT_STRING_REQUIRED",
+  /** server/routes/serverFiles.js -- PUT /raw/:type, `content` exceeds
+   * 512KB. */
+  RAW_CONTENT_TOO_LARGE: "RAW_CONTENT_TOO_LARGE",
+  /** server/routes/serverFiles.js -- POST /restore/:filename, sanitized
+   * filename doesn't end in .bak. */
+  RESTORE_INVALID_EXTENSION: "RESTORE_INVALID_EXTENSION",
+  /** server/routes/serverFiles.js -- POST /restore/:filename, no file at the
+   * resolved backup path. */
+  RESTORE_BACKUP_NOT_FOUND: "RESTORE_BACKUP_NOT_FOUND",
+  /** server/routes/serverFiles.js -- POST /restore/:filename, backup
+   * filename doesn't have the expected <name>.<timestamp>.bak shape (fewer
+   * than 3 dot-separated parts). */
+  RESTORE_INVALID_FILENAME: "RESTORE_INVALID_FILENAME",
+  /** server/routes/serverFiles.js -- POST /save-and-reload, no rconService
+   * or it isn't connected, so `reloadoptions` can't be sent. */
+  SAVE_AND_RELOAD_RCON_NOT_CONNECTED: "SAVE_AND_RELOAD_RCON_NOT_CONNECTED",
+  /** server/routes/serverFiles.js (4 sites: GET/PUT/DELETE /templates/:id,
+   * POST /templates/:id/apply) -- :id fails the path-traversal-safe
+   * basename/charset check. Identical wording/meaning all four, shared
+   * code. */
+  TEMPLATE_ID_INVALID: "TEMPLATE_ID_INVALID",
+  /** server/routes/serverFiles.js (4 sites: GET/PUT/DELETE /templates/:id,
+   * POST /templates/:id/apply) -- no <id>.json in the templates directory.
+   * Identical wording/meaning all four, shared code. */
+  TEMPLATE_NOT_FOUND: "TEMPLATE_NOT_FOUND",
+  /** server/routes/serverFiles.js -- POST /templates, `name` missing. */
+  TEMPLATE_NAME_REQUIRED: "TEMPLATE_NAME_REQUIRED",
+  /** server/routes/serverFiles.js -- POST /templates, 100 generated
+   * filename candidates for this name all already exist. */
+  TEMPLATE_NAME_CONFLICT_LIMIT: "TEMPLATE_NAME_CONFLICT_LIMIT",
+  /** server/routes/serverFiles.js -- POST /templates/:id/apply, neither
+   * applyIni nor applySandbox matched anything in the stored template. */
+  TEMPLATE_APPLY_NOTHING_TO_APPLY: "TEMPLATE_APPLY_NOTHING_TO_APPLY",
+  /** server/routes/serverFiles.js (2 sites: GET /browse-files, GET
+   * /image-preview) -- confineToRoots() rejected the requested path.
+   * Identical wording/meaning both sites, shared code. */
+  BROWSE_ACCESS_DENIED: "BROWSE_ACCESS_DENIED",
+  /** server/routes/serverFiles.js -- GET /browse-files, no path in the
+   * query string and no server config path to default to. */
+  BROWSE_NO_PATH: "BROWSE_NO_PATH",
+  /** server/routes/serverFiles.js -- GET /browse-files, resolved path
+   * doesn't exist. */
+  BROWSE_PATH_NOT_FOUND: "BROWSE_PATH_NOT_FOUND",
+  /** server/routes/serverFiles.js -- GET /browse-files, resolved path
+   * exists but isn't a directory. */
+  BROWSE_PATH_NOT_DIRECTORY: "BROWSE_PATH_NOT_DIRECTORY",
+  /** server/routes/serverFiles.js -- GET /image-preview, no `path` query
+   * parameter. */
+  IMAGE_PREVIEW_PATH_REQUIRED: "IMAGE_PREVIEW_PATH_REQUIRED",
+  /** server/routes/serverFiles.js -- GET /image-preview, resolved file's
+   * extension isn't a known image type. */
+  IMAGE_PREVIEW_NOT_IMAGE: "IMAGE_PREVIEW_NOT_IMAGE",
+  /** server/routes/serverFiles.js -- GET /image-preview, resolved file
+   * exceeds 5MB. */
+  IMAGE_PREVIEW_TOO_LARGE: "IMAGE_PREVIEW_TOO_LARGE",
   /** server/services/auth.js -- requireAuth middleware, first-run setup not done yet. */
   SETUP_REQUIRED: "SETUP_REQUIRED",
   /** server/services/auth.js -- requireAuth middleware, no/malformed Authorization header. */
