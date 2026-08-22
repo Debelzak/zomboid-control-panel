@@ -119,6 +119,10 @@
         "label": "Create, delete & configure backups",
         "description": "Create manual backups, delete or prune old ones, upload external backups, and change the backup schedule."
       },
+      "download": {
+        "label": "Download a backup archive",
+        "description": "Download a backup .zip off the machine — a full copy of the world save and, if database backups are turned on, the panel's own account data. A different act from creating, deleting or restoring one: this one leaves the machine."
+      },
       "restore": {
         "label": "Restore a backup",
         "description": "Roll the live world back to an earlier backup — affects every player currently on the server."

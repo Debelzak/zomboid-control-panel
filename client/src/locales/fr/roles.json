@@ -119,6 +119,10 @@
         "label": "Créer, supprimer et configurer les sauvegardes",
         "description": "Créer des sauvegardes manuelles, supprimer ou purger les anciennes, importer des sauvegardes externes, et changer la planification."
       },
+      "download": {
+        "label": "Télécharger une archive de sauvegarde",
+        "description": "Télécharger une sauvegarde .zip hors de la machine — une copie complète de la sauvegarde du monde et, si les sauvegardes de base de données sont activées, des données de compte du panneau. Un acte différent de la création, la suppression ou la restauration d'une sauvegarde : celle-ci quitte la machine."
+      },
       "restore": {
         "label": "Restaurer une sauvegarde",
         "description": "Ramener le monde en cours à une sauvegarde antérieure — affecte tous les joueurs actuellement sur le serveur."
