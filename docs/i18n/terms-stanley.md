@@ -50,3 +50,37 @@ against Angela's and the other translator's choices.
   (client-side refresh of the cached list vs. forcing a fresh master-server query),
   matching the English button pair using two different verbs (Refresh vs Reload) for the
   same reason.
+
+## Backups.tsx (namespace: `backups`)
+
+- "Safehouse" → **Refuge**, reusing the exact term already established in the app
+  (found "Refuge"/"Refuges" already in the French locale for the chunks/base-management
+  page). Did NOT invent "planque" or "abri" even though both are plausible everyday
+  French for a survival-game safehouse — Angela's existing glossary already picked
+  "Refuge", so I matched it for "Safehouse Snapshot Created".
+- "Recovery Point" → **Point de récupération**, reusing the exact phrase already used
+  elsewhere in the app for password/account recovery flows ("Création d'un nouveau point
+  de récupération."). Same underlying idea (a point you can roll back to), so reused
+  rather than inventing "point de restauration" which would read as a second term for
+  the same concept.
+- "Snapshot" (both the themed "Safehouse Snapshot" and the plain "Server Snapshot"
+  dialog) → **Instantané**, the standard French tech term for a snapshot/point-in-time
+  capture.
+- Kept the "Automatic Snapshots Armed / Stood Down" military-flavor toggle copy as plain
+  **Instantanés automatiques activés / désactivés** rather than a literal
+  "armé/désarmé" — "armé" reads as alarm/security-system language in French UI
+  conventions, not backup-scheduling language, and would confuse rather than convey tone.
+- Empty-state copy ("No safety net" / one bad update away from lost progress") is a
+  deliberate warning that NOT having a backup is risky — per the brief, backup copy must
+  never imply a backup alone means the server is safe/working. Translated to preserve the
+  same warning weight: **"Aucun filet de sécurité" / "une mise à jour malheureuse suffit
+  pour perdre votre progression."** Did not soften this into reassuring language anywhere
+  in the page (e.g. never phrased a successful backup toast as "your server is safe now" —
+  "Instantané du refuge créé" only states what happened, the storage action, not a safety
+  guarantee).
+- "Saves folder" (the PZ save-game directory, distinct from the panel's own backups
+  folder) → **dossier de sauvegardes de jeu**, deliberately more specific than the bare
+  "dossier de sauvegardes" already used elsewhere in the glossary for the *backups*
+  folder — these are two different folders in this app (raw PZ saves vs. zipped panel
+  backups) and collapsing them to the same French phrase would be exactly the
+  "two different concepts, one phrase" bug the brief warned about.
