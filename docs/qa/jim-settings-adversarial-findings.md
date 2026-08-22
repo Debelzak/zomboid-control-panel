@@ -123,13 +123,29 @@ moment of the mistake, and with no in-panel recovery path once it fires.
 - **`corsAllowedOrigins` (General/Access area):** already gated through `validateCorsAllowedOrigins`
   with explicit length/count/format checks (5000 char total, 100 origins max, 256 chars each) — read
   it, no bypass found.
+- **Security tab — password change, recovery codes, "reset password on server" local-recovery
+  flow:** traced end to end (`server/routes/auth.js` `POST /reset-token/local` and
+  `POST /reset-password`, `server/services/auth.js`'s `resetPassword`/`generateRecoveryCodes`). This
+  is solid, defense-in-depth work: `isLocalPanelRequest` checks the actual TCP `req.socket.
+  remoteAddress` against the machine's own interface addresses (not a spoofable header like
+  X-Forwarded-For), the reset token is a 24-byte random hex value written to a 0o600 file, compared
+  with SHA-256-then-`timingSafeEqual` (avoids leaking length via a naive string-length short-circuit,
+  and avoids a timing side-channel on the comparison itself), expires after 24h with a size cap
+  (1KB) against a corrupted/huge token file, and both the token-creation and reset-attempt routes
+  are rate-limited. New-password minimum length (6 chars) is enforced centrally inside
+  `authService.resetPassword` regardless of which of the two call sites (this route or the
+  `/setup`-adjacent path) invokes it, and a successful reset bumps `tokenGen` and clears
+  `refreshSessions`, correctly invalidating every existing session rather than leaving old tokens
+  live after a password change. No gap found; went looking for one specifically since "unauthenticated
+  by design" endpoints are exactly where I'd expect a real hole, and didn't find one.
 
 ## Not reached
 
-- **Access tab (users/roles), Security tab, Mods tab, Backups tab, Updates tab, About tab** — not
-  adversarially tested this pass; time went into Finding 1 once it was clear it was real and how
-  deep the "no local catch anywhere in the chain" problem went, rather than spreading thin across
-  all ten tabs at shallow depth.
+- **Access tab (users/roles), Mods tab, Backups tab, Updates tab, About tab** — not adversarially
+  tested this pass; time went into Finding 1 once it was clear it was real and how deep the "no
+  local catch anywhere in the chain" problem went, plus a specific look at Security since
+  unauthenticated-by-design recovery flows are the highest-value place to find a real auth bypass —
+  rather than spreading thin across all ten tabs at shallow depth.
 - **Live reproduction** — traced entirely from source (same boundary as Kevin's — no throwaway
   server stood up for this, task 2's court already ruled a live instance wasn't worth the collision
   risk for a smaller question than this one). If a live check is wanted: point `httpsCertPath` at
