@@ -990,6 +990,275 @@ export const ErrorCode = Object.freeze({
   SAVE_FAILED_LEGACY: "save_failed",
   /** server/index.js -- Docker-update apply path, server wouldn't shut down. */
   STOP_FAILED_LEGACY: "stop_failed",
+
+  // --- server/routes/panelBridge.js ---
+
+  /** server/routes/panelBridge.js (many sites across the /command,
+   * /weather/*, /climate/*, /time, /events, /vehicle/*, /chat/* etc.
+   * routes) -- `bridge.bridgePath` isn't set. Identical wording/meaning
+   * everywhere, shared code -- same reasoning as WIPE_TARGETS_REQUIRED
+   * elsewhere in this file. */
+  BRIDGE_NOT_CONFIGURED: "BRIDGE_NOT_CONFIGURED",
+  /** server/routes/panelBridge.js (many sites, same routes as
+   * BRIDGE_NOT_CONFIGURED above) -- `bridge.isRunning` is false. Own
+   * wording ("...Start it first.") from BRIDGE_NOT_RUNNING_BARE below --
+   * kept separate rather than merged. */
+  BRIDGE_NOT_RUNNING: "BRIDGE_NOT_RUNNING",
+  /** server/routes/panelBridge.js (many sites: the character import/export,
+   * faction, safehouse, vehicle-detail routes) -- `bridge.isRunning` is
+   * false. Bare wording ("Bridge not running", no "Start it first."
+   * suffix) -- kept separate from BRIDGE_NOT_RUNNING above rather than
+   * merged. */
+  BRIDGE_NOT_RUNNING_BARE: "BRIDGE_NOT_RUNNING_BARE",
+  /** server/routes/panelBridge.js (many sites: player/faction/safehouse
+   * routes) -- `username` fails BRIDGE_USERNAME_REGEX. */
+  BRIDGE_INVALID_USERNAME_FORMAT: "BRIDGE_INVALID_USERNAME_FORMAT",
+  /** server/routes/panelBridge.js (4 sites: /message, /chat/*) -- `message`
+   * missing or exceeds 2000 characters. */
+  BRIDGE_MESSAGE_REQUIRED: "BRIDGE_MESSAGE_REQUIRED",
+  /** server/routes/panelBridge.js (4 sites: moderation kick/ban routes) --
+   * `username` missing or not a non-empty string. */
+  BRIDGE_VALID_USERNAME_REQUIRED: "BRIDGE_VALID_USERNAME_REQUIRED",
+  /** server/routes/panelBridge.js (4 sites: /vehicle/* fuel/battery-style
+   * routes) -- `value` missing, own wording ("(0.0-1.0)", no "number")
+   * from PANELBRIDGE_VALUE_REQUIRED_NUMBER_0_1 below -- kept separate. */
+  BRIDGE_VALUE_REQUIRED_0_1: "BRIDGE_VALUE_REQUIRED_0_1",
+  /** server/routes/panelBridge.js (3 sites: /climate/fog, /climate/clouds,
+   * and one more climate shortcut) -- `value` provided but out of 0-1
+   * range. */
+  BRIDGE_VALUE_MUST_BE_NUMBER_0_1: "BRIDGE_VALUE_MUST_BE_NUMBER_0_1",
+  /** server/routes/panelBridge.js (2 sites: /weather/snow,
+   * /weather/rain/start) -- `intensity` provided but out of 0-1 range. */
+  BRIDGE_INTENSITY_MUST_BE_NUMBER_0_1: "BRIDGE_INTENSITY_MUST_BE_NUMBER_0_1",
+  /** server/routes/panelBridge.js (2 sites: /events/lightning-adjacent
+   * routes) -- `x`/`y` both missing. */
+  BRIDGE_XY_COORDS_REQUIRED: "BRIDGE_XY_COORDS_REQUIRED",
+  /** server/routes/panelBridge.js (2 sites: moderation kick/ban routes) --
+   * `username` missing or fails format check, combined message. */
+  BRIDGE_INVALID_OR_MISSING_USERNAME: "BRIDGE_INVALID_OR_MISSING_USERNAME",
+  /** server/routes/panelBridge.js -- POST /auto-configure, GET
+   * /scan-server/:serverId, POST /install/from-lua-path (3 sites) --
+   * `serverId` doesn't match a known server. PARTIAL: message embeds
+   * `${serverId}`; server can't send structured params to this route yet,
+   * {{serverId}} is a placeholder nothing sends today. */
+  PANELBRIDGE_SERVER_ID_NOT_FOUND: "PANELBRIDGE_SERVER_ID_NOT_FOUND",
+  /** server/routes/panelBridge.js (2 sites: POST /auto-configure, GET
+   * /scan-server/:serverId) -- resolved server has no serverName/name set.
+   * Identical wording/meaning both sites, shared code. */
+  PANELBRIDGE_SERVER_NAME_NOT_CONFIGURED: "PANELBRIDGE_SERVER_NAME_NOT_CONFIGURED",
+  /** server/routes/panelBridge.js (2 sites: POST /install/from-lua-path,
+   * POST /install) -- no active server configured. Identical wording/
+   * meaning both sites, shared code. Distinct from PANELBRIDGE_
+   * AUTO_CONFIGURE_NO_ACTIVE_SERVER below (own wording, own route). */
+  PANELBRIDGE_NO_ACTIVE_SERVER: "PANELBRIDGE_NO_ACTIVE_SERVER",
+  /** server/routes/panelBridge.js -- POST /auto-configure, no active server
+   * and no serverId given. Own wording ("Please configure a server
+   * first.") from PANELBRIDGE_NO_ACTIVE_SERVER above -- kept separate. */
+  PANELBRIDGE_AUTO_CONFIGURE_NO_ACTIVE_SERVER: "PANELBRIDGE_AUTO_CONFIGURE_NO_ACTIVE_SERVER",
+  /** server/routes/panelBridge.js -- POST /auto-configure, none of the
+   * candidate bridge paths could be determined for the server. */
+  PANELBRIDGE_PATH_NOT_DETERMINED: "PANELBRIDGE_PATH_NOT_DETERMINED",
+  /** server/routes/panelBridge.js -- POST /auto-detect, no `serverName` in
+   * the body. */
+  PANELBRIDGE_SERVER_NAME_REQUIRED: "PANELBRIDGE_SERVER_NAME_REQUIRED",
+  /** server/routes/panelBridge.js -- POST /auto-detect,
+   * `zomboidUserFolder` fails isValidBridgePath(). */
+  PANELBRIDGE_INVALID_ZOMBOID_USER_FOLDER: "PANELBRIDGE_INVALID_ZOMBOID_USER_FOLDER",
+  /** server/routes/panelBridge.js -- POST /configure, no
+   * `zomboidSavePath` in the body. */
+  PANELBRIDGE_SAVE_PATH_REQUIRED: "PANELBRIDGE_SAVE_PATH_REQUIRED",
+  /** server/routes/panelBridge.js -- POST /configure, `zomboidSavePath`
+   * fails isValidBridgePath(). */
+  PANELBRIDGE_INVALID_SAVE_PATH: "PANELBRIDGE_INVALID_SAVE_PATH",
+  /** server/routes/panelBridge.js -- POST /configure-direct, no
+   * `bridgePath` string in the body. */
+  PANELBRIDGE_BRIDGE_PATH_REQUIRED: "PANELBRIDGE_BRIDGE_PATH_REQUIRED",
+  /** server/routes/panelBridge.js -- POST /configure-direct, `bridgePath`
+   * fails path.isAbsolute() on the raw input. */
+  PANELBRIDGE_PATH_MUST_BE_ABSOLUTE: "PANELBRIDGE_PATH_MUST_BE_ABSOLUTE",
+  /** server/routes/panelBridge.js -- POST /configure-direct, resolved path
+   * matches a BLOCKED_BRIDGE_PATH_PREFIXES entry. */
+  PANELBRIDGE_PATH_PROTECTED_SYSTEM_DIR: "PANELBRIDGE_PATH_PROTECTED_SYSTEM_DIR",
+  /** server/routes/panelBridge.js -- POST /command, active server is
+   * remote with neither SFTP nor a local bridge transport running. */
+  PANELBRIDGE_COMMAND_REMOTE_TRANSPORT_UNAVAILABLE: "PANELBRIDGE_COMMAND_REMOTE_TRANSPORT_UNAVAILABLE",
+  /** server/routes/panelBridge.js -- POST /command, no `action` in the
+   * body. */
+  PANELBRIDGE_ACTION_REQUIRED: "PANELBRIDGE_ACTION_REQUIRED",
+  /** server/routes/panelBridge.js -- POST /command, `action` not in
+   * VALID_ACTIONS. */
+  PANELBRIDGE_UNKNOWN_ACTION: "PANELBRIDGE_UNKNOWN_ACTION",
+  /** server/routes/panelBridge.js -- POST /command, `args` provided but
+   * isn't a plain object. */
+  PANELBRIDGE_ARGS_MUST_BE_OBJECT: "PANELBRIDGE_ARGS_MUST_BE_OBJECT",
+  /** server/routes/panelBridge.js -- POST /command action=spawnVehicleAt,
+   * `vehicle`/`scriptName` fails VEHICLE_SCRIPT_REGEX. */
+  PANELBRIDGE_INVALID_VEHICLE_SCRIPT_NAME: "PANELBRIDGE_INVALID_VEHICLE_SCRIPT_NAME",
+  /** server/routes/panelBridge.js -- POST /command action=spawnVehicleAt,
+   * x/y/z out of the RCON-supported range. */
+  PANELBRIDGE_SPAWN_VEHICLE_INVALID_COORDS: "PANELBRIDGE_SPAWN_VEHICLE_INVALID_COORDS",
+  /** server/routes/panelBridge.js -- POST /command action=airdrop, x/y out
+   * of range. */
+  PANELBRIDGE_AIRDROP_INVALID_COORDS: "PANELBRIDGE_AIRDROP_INVALID_COORDS",
+  /** server/routes/panelBridge.js -- POST /command action=airdrop, `preset`
+   * not in VALID_PRESETS. PARTIAL: message embeds the allowed-presets list
+   * via `${VALID_PRESETS.join(", ")}`; {{presets}} is a placeholder
+   * nothing sends today. */
+  PANELBRIDGE_AIRDROP_INVALID_PRESET: "PANELBRIDGE_AIRDROP_INVALID_PRESET",
+  /** server/routes/panelBridge.js -- POST /command action=airdrop, `items`
+   * provided but not an array of at most 50 entries. */
+  PANELBRIDGE_AIRDROP_ITEMS_ARRAY_INVALID: "PANELBRIDGE_AIRDROP_ITEMS_ARRAY_INVALID",
+  /** server/routes/panelBridge.js -- POST /command action=airdrop, an
+   * `items` entry isn't an object. */
+  PANELBRIDGE_AIRDROP_ITEM_INVALID: "PANELBRIDGE_AIRDROP_ITEM_INVALID",
+  /** server/routes/panelBridge.js -- POST /command action=airdrop, an
+   * `items` entry's `itemType` fails ITEM_TYPE_REGEX. PARTIAL: message
+   * embeds the offending value via `${String(entry.itemType).slice(0,
+   * 60)}`; {{itemType}} is a placeholder nothing sends today. */
+  PANELBRIDGE_AIRDROP_ITEM_TYPE_INVALID: "PANELBRIDGE_AIRDROP_ITEM_TYPE_INVALID",
+  /** server/routes/panelBridge.js -- POST /command action=airdrop, an
+   * `items` entry's `count` is outside 1-20. */
+  PANELBRIDGE_AIRDROP_ITEM_COUNT_INVALID: "PANELBRIDGE_AIRDROP_ITEM_COUNT_INVALID",
+  /** server/routes/panelBridge.js -- POST /weather/storm, `duration`
+   * outside 0-168. */
+  PANELBRIDGE_STORM_DURATION_INVALID: "PANELBRIDGE_STORM_DURATION_INVALID",
+  /** server/routes/panelBridge.js -- POST /weather/generate, `strength`
+   * outside 0-1. */
+  PANELBRIDGE_WEATHER_STRENGTH_INVALID: "PANELBRIDGE_WEATHER_STRENGTH_INVALID",
+  /** server/routes/panelBridge.js -- POST /weather/generate, `frontType`
+   * outside 0-5. */
+  PANELBRIDGE_WEATHER_FRONT_TYPE_INVALID: "PANELBRIDGE_WEATHER_FRONT_TYPE_INVALID",
+  /** server/routes/panelBridge.js -- POST /weather/lightning, `x` provided
+   * but not a finite number. */
+  PANELBRIDGE_LIGHTNING_X_INVALID: "PANELBRIDGE_LIGHTNING_X_INVALID",
+  /** server/routes/panelBridge.js -- POST /weather/lightning, `y` provided
+   * but not a finite number. */
+  PANELBRIDGE_LIGHTNING_Y_INVALID: "PANELBRIDGE_LIGHTNING_Y_INVALID",
+  /** server/routes/panelBridge.js -- POST /climate/float, `floatId` or
+   * `value` missing. */
+  PANELBRIDGE_CLIMATE_FLOAT_FIELDS_REQUIRED: "PANELBRIDGE_CLIMATE_FLOAT_FIELDS_REQUIRED",
+  /** server/routes/panelBridge.js -- POST /climate/float, `floatId`
+   * outside 0-12. */
+  PANELBRIDGE_CLIMATE_FLOAT_ID_INVALID: "PANELBRIDGE_CLIMATE_FLOAT_ID_INVALID",
+  /** server/routes/panelBridge.js -- POST /climate/float, `value` not a
+   * finite number. */
+  PANELBRIDGE_CLIMATE_FLOAT_VALUE_INVALID: "PANELBRIDGE_CLIMATE_FLOAT_VALUE_INVALID",
+  /** server/routes/panelBridge.js -- POST /climate/temperature, `value`
+   * outside -50 to 50. */
+  PANELBRIDGE_TEMPERATURE_VALUE_INVALID: "PANELBRIDGE_TEMPERATURE_VALUE_INVALID",
+  /** server/routes/panelBridge.js -- POST /time/set (or similar), `hour`
+   * outside 0-23. */
+  PANELBRIDGE_GAMETIME_HOUR_INVALID: "PANELBRIDGE_GAMETIME_HOUR_INVALID",
+  /** server/routes/panelBridge.js -- same route as above, `day` outside
+   * 1-31. */
+  PANELBRIDGE_GAMETIME_DAY_INVALID: "PANELBRIDGE_GAMETIME_DAY_INVALID",
+  /** server/routes/panelBridge.js -- same route as above, `month` outside
+   * 1-12. */
+  PANELBRIDGE_GAMETIME_MONTH_INVALID: "PANELBRIDGE_GAMETIME_MONTH_INVALID",
+  /** server/routes/panelBridge.js -- same route as above, `year` outside
+   * 1-9999. */
+  PANELBRIDGE_GAMETIME_YEAR_INVALID: "PANELBRIDGE_GAMETIME_YEAR_INVALID",
+  /** server/routes/panelBridge.js -- GET /player/:username (or similar),
+   * bridge.getPlayerDetails() threw. Fixed generic catch string (not a
+   * sanitizeError(error.message) passthrough), so it gets a code like any
+   * other static message. */
+  PANELBRIDGE_GET_PLAYER_DETAILS_FAILED: "PANELBRIDGE_GET_PLAYER_DETAILS_FAILED",
+  /** server/routes/panelBridge.js -- POST /player/teleport (or similar),
+   * `x`/`y`/`z` provided but not numbers. */
+  PANELBRIDGE_TELEPORT_COORDS_NOT_NUMBERS: "PANELBRIDGE_TELEPORT_COORDS_NOT_NUMBERS",
+  /** server/routes/panelBridge.js -- same teleport route, x/y outside
+   * 0-24000. */
+  PANELBRIDGE_TELEPORT_XY_OUT_OF_RANGE: "PANELBRIDGE_TELEPORT_XY_OUT_OF_RANGE",
+  /** server/routes/panelBridge.js -- same teleport route, z outside 0-8. */
+  PANELBRIDGE_TELEPORT_Z_OUT_OF_RANGE: "PANELBRIDGE_TELEPORT_Z_OUT_OF_RANGE",
+  /** server/routes/panelBridge.js -- same teleport route, bridge.
+   * teleportPlayer() threw. Fixed generic catch string, same reasoning as
+   * PANELBRIDGE_GET_PLAYER_DETAILS_FAILED above. */
+  PANELBRIDGE_TELEPORT_FAILED: "PANELBRIDGE_TELEPORT_FAILED",
+  /** server/routes/panelBridge.js -- POST /install/from-lua-path, auto-
+   * install refused (isRemote/canAutoInstall check). */
+  PANELBRIDGE_AUTO_INSTALL_NOT_AVAILABLE: "PANELBRIDGE_AUTO_INSTALL_NOT_AVAILABLE",
+  /** server/routes/panelBridge.js -- POST /install, active server is
+   * remote. Own wording from PANELBRIDGE_AUTO_INSTALL_NOT_AVAILABLE above
+   * -- kept separate. */
+  PANELBRIDGE_INSTALL_REMOTE_NOT_AVAILABLE: "PANELBRIDGE_INSTALL_REMOTE_NOT_AVAILABLE",
+  /** server/routes/panelBridge.js -- POST /install, canAutoInstall()
+   * false for a local server. */
+  PANELBRIDGE_INSTALL_CANNOT_AUTO_INSTALL: "PANELBRIDGE_INSTALL_CANNOT_AUTO_INSTALL",
+  /** server/routes/panelBridge.js -- POST /install/from-lua-path, no
+   * `serverLuaPath` in the body. */
+  PANELBRIDGE_SERVER_LUA_PATH_REQUIRED: "PANELBRIDGE_SERVER_LUA_PATH_REQUIRED",
+  /** server/routes/panelBridge.js -- POST /install/from-lua-path,
+   * `serverLuaPath` isn't a string or exceeds 500 characters. */
+  PANELBRIDGE_SERVER_LUA_PATH_FORMAT_INVALID: "PANELBRIDGE_SERVER_LUA_PATH_FORMAT_INVALID",
+  /** server/routes/panelBridge.js -- POST /install/from-lua-path,
+   * `serverLuaPath` isn't absolute. */
+  PANELBRIDGE_SERVER_LUA_PATH_NOT_ABSOLUTE: "PANELBRIDGE_SERVER_LUA_PATH_NOT_ABSOLUTE",
+  /** server/routes/panelBridge.js -- POST /install/from-lua-path, resolved
+   * path doesn't end in media/lua/server/. */
+  PANELBRIDGE_SERVER_LUA_PATH_WRONG_DIRECTORY: "PANELBRIDGE_SERVER_LUA_PATH_WRONG_DIRECTORY",
+  /** server/routes/panelBridge.js -- POST /install/from-lua-path, no
+   * embedded Lua and no on-disk pz-mod source found to copy. */
+  PANELBRIDGE_SOURCE_MOD_NOT_FOUND: "PANELBRIDGE_SOURCE_MOD_NOT_FOUND",
+  /** server/routes/panelBridge.js -- POST /audio/play-sound (or similar),
+   * x/y out of range. Own wording ("Coordinates out of range") from
+   * PANELBRIDGE_TELEPORT_XY_OUT_OF_RANGE above -- kept separate, own
+   * route. */
+  PANELBRIDGE_SOUND_COORDS_OUT_OF_RANGE: "PANELBRIDGE_SOUND_COORDS_OUT_OF_RANGE",
+  /** server/routes/panelBridge.js -- same play-sound route, bridge.
+   * playSoundNearPlayer() threw. Fixed generic catch string. */
+  PANELBRIDGE_PLAY_SOUND_FAILED: "PANELBRIDGE_PLAY_SOUND_FAILED",
+  /** server/routes/panelBridge.js -- POST /audio/gunshot (or similar),
+   * bridge.triggerGunshot() threw. Fixed generic catch string. */
+  PANELBRIDGE_TRIGGER_GUNSHOT_FAILED: "PANELBRIDGE_TRIGGER_GUNSHOT_FAILED",
+  /** server/routes/panelBridge.js -- POST /character/import (or similar),
+   * no `data` in the body. */
+  PANELBRIDGE_CHARACTER_DATA_REQUIRED: "PANELBRIDGE_CHARACTER_DATA_REQUIRED",
+  /** server/routes/panelBridge.js -- same character-import route, `data`
+   * isn't a plain object. */
+  PANELBRIDGE_CHARACTER_DATA_NOT_OBJECT: "PANELBRIDGE_CHARACTER_DATA_NOT_OBJECT",
+  /** server/routes/panelBridge.js -- same character-import route, `data`
+   * has none of the recognised sections. PARTIAL: message embeds the
+   * allowed-sections list via `${validSections.join(", ")}`; {{sections}}
+   * is a placeholder nothing sends today. */
+  PANELBRIDGE_CHARACTER_DATA_NO_VALID_SECTION: "PANELBRIDGE_CHARACTER_DATA_NO_VALID_SECTION",
+  /** server/routes/panelBridge.js -- POST /zombies/clear-near (or
+   * similar), `count` outside 1-100. */
+  PANELBRIDGE_HORDE_COUNT_INVALID: "PANELBRIDGE_HORDE_COUNT_INVALID",
+  /** server/routes/panelBridge.js -- POST /zombies/clear (or similar),
+   * `radius` outside 1-500. */
+  PANELBRIDGE_CLEAR_ZOMBIES_RADIUS_INVALID: "PANELBRIDGE_CLEAR_ZOMBIES_RADIUS_INVALID",
+  /** server/routes/panelBridge.js (5 sites: /vehicle/* fuel/battery-style
+   * routes) -- `value` missing. Own wording ("(number 0.0-1.0)", includes
+   * "number") from BRIDGE_VALUE_REQUIRED_0_1 above -- kept separate. */
+  PANELBRIDGE_VALUE_REQUIRED_NUMBER_0_1: "PANELBRIDGE_VALUE_REQUIRED_NUMBER_0_1",
+  /** server/routes/panelBridge.js -- POST /chat/admin, neither PanelBridge
+   * nor RCON available to send an admin chat message. */
+  PANELBRIDGE_ADMIN_CHAT_UNAVAILABLE: "PANELBRIDGE_ADMIN_CHAT_UNAVAILABLE",
+  /** server/routes/panelBridge.js -- same admin-chat route, sending the
+   * message itself threw. Fixed generic catch string. */
+  PANELBRIDGE_SEND_ADMIN_MESSAGE_FAILED: "PANELBRIDGE_SEND_ADMIN_MESSAGE_FAILED",
+  /** server/routes/panelBridge.js -- POST /chat/general (or similar),
+   * neither PanelBridge nor RCON available for regular chat. Own wording
+   * ("for chat") from PANELBRIDGE_ADMIN_CHAT_UNAVAILABLE above -- kept
+   * separate. */
+  PANELBRIDGE_CHAT_UNAVAILABLE: "PANELBRIDGE_CHAT_UNAVAILABLE",
+  /** server/routes/panelBridge.js -- POST /chat/alert (or similar), neither
+   * RCON nor PanelBridge available. Own wording (word order swapped, no
+   * "for X" suffix) from the two codes above -- kept separate. */
+  PANELBRIDGE_RCON_AND_BRIDGE_UNAVAILABLE: "PANELBRIDGE_RCON_AND_BRIDGE_UNAVAILABLE",
+  /** server/routes/panelBridge.js -- POST /sandbox/get-object (or
+   * similar), `object` fails the alphanumeric/dot identifier check. */
+  PANELBRIDGE_INVALID_OBJECT_NAME: "PANELBRIDGE_INVALID_OBJECT_NAME",
+  /** server/routes/panelBridge.js -- same sandbox-object route, `method`
+   * fails the alphanumeric/dot identifier check. */
+  PANELBRIDGE_INVALID_METHOD_NAME: "PANELBRIDGE_INVALID_METHOD_NAME",
+  /** server/routes/panelBridge.js -- GET /items/scan (or similar), bridge
+   * not running so the item catalogue can't be read from the live server. */
+  PANELBRIDGE_SCAN_ITEMS_NOT_RUNNING: "PANELBRIDGE_SCAN_ITEMS_NOT_RUNNING",
+  /** server/routes/panelBridge.js -- GET /vehicles/scan (or similar), same
+   * reasoning as PANELBRIDGE_SCAN_ITEMS_NOT_RUNNING above for vehicles. */
+  PANELBRIDGE_SCAN_VEHICLES_NOT_RUNNING: "PANELBRIDGE_SCAN_VEHICLES_NOT_RUNNING",
 });
 
 /**

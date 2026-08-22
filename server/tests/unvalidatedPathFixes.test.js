@@ -140,7 +140,10 @@ describe("panelBridge.js /configure and /auto-detect reject an unvalidated path"
       res,
     );
     expect(res.getStatusCode()).toBe(400);
-    expect(res.getBody()).toEqual({ error: "Invalid zomboidSavePath" });
+    expect(res.getBody()).toEqual({
+      error: "Invalid zomboidSavePath",
+      code: "PANELBRIDGE_INVALID_SAVE_PATH",
+    });
   });
 
   it("POST /configure refuses a protected system directory", async () => {
@@ -162,7 +165,10 @@ describe("panelBridge.js /configure and /auto-detect reject an unvalidated path"
       res,
     );
     expect(res.getStatusCode()).toBe(400);
-    expect(res.getBody()).toEqual({ error: "Invalid zomboidUserFolder path" });
+    expect(res.getBody()).toEqual({
+      error: "Invalid zomboidUserFolder path",
+      code: "PANELBRIDGE_INVALID_ZOMBOID_USER_FOLDER",
+    });
   });
 
   it("POST /configure-direct refuses a relative bridgePath (the isAbsolute check was checking path.resolve()'s result, which is always absolute -- a no-op that never rejected anything)", async () => {
@@ -173,7 +179,10 @@ describe("panelBridge.js /configure and /auto-detect reject an unvalidated path"
       res,
     );
     expect(res.getStatusCode()).toBe(400);
-    expect(res.getBody()).toEqual({ error: "Path must be absolute" });
+    expect(res.getBody()).toEqual({
+      error: "Path must be absolute",
+      code: "PANELBRIDGE_PATH_MUST_BE_ABSOLUTE",
+    });
   });
 
   it("POST /configure-direct still refuses a protected system directory (pre-existing check, now sharing the same blocklist)", async () => {
@@ -185,7 +194,10 @@ describe("panelBridge.js /configure and /auto-detect reject an unvalidated path"
       res,
     );
     expect(res.getStatusCode()).toBe(400);
-    expect(res.getBody()).toEqual({ error: "Path targets a protected system directory" });
+    expect(res.getBody()).toEqual({
+      error: "Path targets a protected system directory",
+      code: "PANELBRIDGE_PATH_PROTECTED_SYSTEM_DIR",
+    });
   });
 });
 

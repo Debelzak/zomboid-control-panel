@@ -84,6 +84,7 @@ describe("PanelBridge mod-install routes require admin", () => {
     expect(response.status).toHaveBeenCalledWith(400);
     expect(response.json).toHaveBeenCalledWith({
       error: expect.stringMatching(/remote servers.*SFTP/i),
+      code: "PANELBRIDGE_INSTALL_REMOTE_NOT_AVAILABLE",
     });
   });
 
