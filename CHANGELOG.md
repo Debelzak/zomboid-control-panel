@@ -111,6 +111,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `client/src/locales/README.md`.
 
 ### Fixed
+- **Crash Logs showed the wrong folder's logs if you had moved your data directory**: the Crash
+  Logs tab looked for crash reports next to wherever the panel happened to be started from, rather
+  than in the data directory you configured. If you have ever used the "move my data folder"
+  setting, that tab has been showing you the old location - and on a developer machine it was
+  displaying an unrelated log file entirely, with test data in it, presented as genuine crash
+  history. Every other log view in the panel already got this right. A file cache used by the
+  SFTP connection had the same fault and is fixed too.
+
+- **"Database accessible" always claimed to know nothing**: the Diagnostics check that reports on
+  your database always printed "? collections, 0 MB" no matter what was actually stored. It was
+  counting the wrong kind of value and reading a size that was never provided, so it could never
+  have shown a real answer. It now reports the real figures.
 - **Anyone who could reach the panel could see where every player was standing**: one address used
   by the live map returned, for every player currently online, their name, their exact position in
   the world, and how injured they were - without asking for a login. On a PvP server that is enough
