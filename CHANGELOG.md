@@ -111,6 +111,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `client/src/locales/README.md`.
 
 ### Fixed
+- **Anyone who could reach the panel could see where every player was standing**: one address used
+  by the live map returned, for every player currently online, their name, their exact position in
+  the world, and how injured they were - without asking for a login. On a PvP server that is enough
+  to hunt someone. It now requires an account with permission to view players, which all three
+  built-in roles have, so nothing you already use stops working. A comment in the code describing
+  this address as deliberately public has been corrected, so it does not get re-opened later.
 - **The panel could refuse to start while tests were running on the same machine**: the panel and
   its test suite both worked out where to keep their data from one shared file, and each could
   overwrite the other's answer. When that happened the panel would read a temporary folder as its
