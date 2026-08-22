@@ -40,6 +40,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   never sent back to the browser, not even masked. If you had already set any of this through
   environment variables, those still win, per field, so nothing you pinned deliberately gets
   overridden.
+- **The three Access Control screens now look like the rest of the panel**: Users, Sign-in and
+  Roles & Permissions were built last and did not quite match the twenty screens around them.
+  They now carry the same "Access Control" label above their titles that every other section uses,
+  Users' header icon matches its own menu icon, the Sign-in form is split into Provider and
+  Advanced instead of seven fields of identical weight, and the permissions grid's twelve group
+  headings read as headings rather than as more rows. No colours, fonts or components were
+  invented for this - every change reuses something the panel already does elsewhere.
+
 - **Debug > Diagnostics now reports in French**: 46 of the 47 health checks - their titles, their
   verdicts and the specific details they carry, such as how many mods are affected or which folder
   is missing - are now written in French rather than falling back to English. Checks whose wording
