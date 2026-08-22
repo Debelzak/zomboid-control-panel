@@ -14,6 +14,7 @@ import {
   getServer
 } from '../database/init.js';
 import { requirePermission } from '../services/permissions.js';
+import { classifyScheduledCommand } from '../services/scheduler.js';
 
 const router = express.Router();
 
@@ -24,6 +25,38 @@ const router = express.Router();
 // including moderator, could create or run a scheduled task — including
 // /restart-now.
 router.use(requirePermission('automation.manage'));
+
+// automation.manage alone only covers the curated, validated verbs
+// classifyScheduledCommand() recognises (restart/save/servermsg/bridge:).
+// Anything else is a RAW RCON command — the exact power routes/rcon.js
+// gates behind rcon.execute, admin+technician only, deliberately not
+// moderator. Without this, a role built with only automation.manage (a
+// real, supported thing to do via Roles & Permissions — its own label,
+// "manage scheduled tasks", says nothing about RCON) could create a task
+// with any RCON command and either wait for it to fire or "Run now" it
+// immediately, shutting the server down or banning anyone, invisibly
+// (the scheduled-task fallback in services/scheduler.js runs with
+// skipLog:true, so it never appears in RCON history). See
+// docs/qa/kevin-adversarial-findings.md Finding 1.
+//
+// A cron fire has no request and no req.user, so the gate can't live at
+// execution time for the unattended case — it has to live at the only
+// moments a raw command can actually enter the system with a real,
+// checkable identity behind the request: creating/editing a task (below),
+// and manually triggering one via "Run now" (also request-bound, checked
+// separately at that route). Reuses requirePermission() itself rather than
+// re-deriving the role/capability lookup — same fail-closed behaviour,
+// same error shape, zero risk of drifting from what the middleware form
+// does. If requirePermission finds the caller lacks the capability it
+// sends the 403/401 response itself; the caller here just needs to know
+// whether to stop.
+async function requireCapabilityInline(capability, req, res) {
+  let passed = false;
+  await requirePermission(capability)(req, res, () => {
+    passed = true;
+  });
+  return passed;
+}
 
 /**
  * Check if a cron expression runs more frequently than every 5 minutes.
@@ -135,6 +168,14 @@ router.post('/tasks', async (req, res) => {
       return res.status(400).json({ error: 'Invalid cron expression format' });
     }
 
+    // A raw (non restart/save/servermsg/bridge:) command reaches RCON with
+    // the same power as rcon.execute's own console -- require it explicitly
+    // rather than letting automation.manage alone grant that silently.
+    if (classifyScheduledCommand(command) === 'raw') {
+      const allowed = await requireCapabilityInline('rcon.execute', req, res);
+      if (!allowed) return;
+    }
+
     // Validate cron expression before saving
     if (!cron.validate(cronExpression)) {
       return res.status(400).json({ error: 'Invalid cron expression. Use format: minute hour day month weekday (e.g., "0 */6 * * *" for every 6 hours)' });
@@ -203,6 +244,15 @@ router.put('/tasks/:id', async (req, res) => {
     }
     if (command !== undefined && (typeof command !== 'string' || command.length > 2000)) {
       return res.status(400).json({ error: 'Invalid command (max 2000 characters)' });
+    }
+    // Only gate on rcon.execute when THIS request is actually setting the
+    // command to something raw -- a caller who only toggles enabled/name/
+    // serverId on a task someone else created shouldn't need rcon.execute
+    // just because that task's untouched, pre-existing command happens to
+    // be raw.
+    if (command !== undefined && classifyScheduledCommand(command) === 'raw') {
+      const allowed = await requireCapabilityInline('rcon.execute', req, res);
+      if (!allowed) return;
     }
     if (
       enabled !== undefined &&
@@ -309,6 +359,17 @@ router.post('/tasks/:id/run', async (req, res) => {
       return res.status(404).json({ error: 'Task not found' });
     }
 
+    // Unlike a cron fire, "Run now" IS a live request with a real req.user
+    // -- check the STORED command (not request body; there isn't one here)
+    // against the caller's CURRENT capabilities, not whoever created the
+    // task. A task saved as raw by someone who legitimately held
+    // rcon.execute at the time still needs it to be manually triggered by
+    // someone who doesn't hold it now.
+    if (classifyScheduledCommand(task.command) === 'raw') {
+      const allowed = await requireCapabilityInline('rcon.execute', req, res);
+      if (!allowed) return;
+    }
+
     log.info(`POST /tasks/${taskId}/run: ${task.name}`);
     scheduler.runTaskNow(task).catch(err => {
       log.error(`Manual run of task ${taskId} failed: ${err.message}`);
@@ -341,8 +402,12 @@ router.post('/restart-now', async (req, res) => {
       parsedWarningMinutes = 60; // Cap at 60 minutes
     }
 
-    // Run restart in background, passing warningMinutes directly
-    scheduler.performRestart(parsedWarningMinutes).catch(err => {
+    // Run restart in background, passing warningMinutes directly. Labeled
+    // "Manual restart" in Schedule History rather than performRestart()'s
+    // "Auto Restart" default -- this IS a human clicking Restart Now, and
+    // the history record should say so if it later fails. See
+    // docs/qa/kevin-adversarial-findings.md Finding 3.
+    scheduler.performRestart(parsedWarningMinutes, { label: 'Manual restart' }).catch(err => {
       log.error(`Restart failed: ${err.message}`);
     });
 
