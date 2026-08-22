@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Regenerate the login signing key from Settings**: an administrator can now replace the key that
+  signs login sessions, from Settings > Security. You would do this if a backup taken before this
+  release - which still contains the old key in plain text - may have been exposed. It signs out
+  every user on every device immediately, including you, and the screen says so twice before you
+  confirm it.
 - **Roles are becoming editable, not fixed**: the panel now stores roles in its database with a list
   of what each one is allowed to do, instead of three names hard-coded into the program. Upgrading
   changes nothing you can see - your existing administrator, technician and moderator accounts keep

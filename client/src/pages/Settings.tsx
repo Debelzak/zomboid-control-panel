@@ -314,6 +314,8 @@ export default function Settings() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [changingPassword, setChangingPassword] = useState(false);
+  const [regenerateJwtDialogOpen, setRegenerateJwtDialogOpen] = useState(false);
+  const [regeneratingJwtSecret, setRegeneratingJwtSecret] = useState(false);
   const [recoveryCodeStatus, setRecoveryCodeStatus] = useState<{
     configured: boolean;
     remaining: number;
@@ -1969,6 +1971,30 @@ export default function Settings() {
       });
     } finally {
       setChangingPassword(false);
+    }
+  };
+
+  const handleRegenerateJwtSecret = async () => {
+    setRegeneratingJwtSecret(true);
+    try {
+      await authApi.regenerateJwtSecret();
+      setRegenerateJwtDialogOpen(false);
+      toast({
+        title: "JWT Secret Regenerated",
+        description: "Every session has been signed out, including this one. Redirecting to login...",
+      });
+      await logout();
+    } catch (error) {
+      toast({
+        title: "Regeneration Failed",
+        description:
+          error instanceof Error
+            ? error.message
+            : "The panel could not regenerate the JWT secret.",
+        variant: "destructive",
+      });
+    } finally {
+      setRegeneratingJwtSecret(false);
     }
   };
 
@@ -5330,6 +5356,57 @@ export default function Settings() {
                         </div>
                       </div>
                     </div>
+
+                    {user?.role === "admin" && (
+                      <div className="max-w-2xl rounded-xl border border-destructive/40 bg-destructive/5 p-4 space-y-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-medium text-foreground">
+                              Regenerate JWT secret
+                            </p>
+                            <p className="mt-1 text-sm text-muted-foreground">
+                              Immediately signs out every user on every device, including you — access and refresh tokens for every current session stop working at once. Use this only if a backup containing the old signing key may have leaked; it is not a routine action and there is no automatic rotation.
+                            </p>
+                          </div>
+                          <RefreshCw className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+                        </div>
+                        <AlertDialog open={regenerateJwtDialogOpen} onOpenChange={setRegenerateJwtDialogOpen}>
+                          <AlertDialogTrigger asChild>
+                            <Button type="button" variant="destructive">
+                              <RefreshCw className="mr-2 h-4 w-4" />
+                              Regenerate JWT Secret
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle className="flex items-center gap-2">
+                                <AlertTriangle className="h-5 w-5 text-destructive" />
+                                Regenerate the JWT secret?
+                              </AlertDialogTitle>
+                              <AlertDialogDescription>
+                                This signs out every user on every device right now, including your own session — you will need to log back in immediately afterward. This cannot be undone.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel disabled={regeneratingJwtSecret}>Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  void handleRegenerateJwtSecret();
+                                }}
+                                disabled={regeneratingJwtSecret}
+                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              >
+                                {regeneratingJwtSecret ? (
+                                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                ) : null}
+                                Yes, sign out everyone
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </div>
+                    )}
                   </div>
                 )}
 

@@ -2839,6 +2839,9 @@ export const authApi = {
     codes: string[];
     createdAt: string;
   }> => apiPost("/auth/recovery-codes", {}),
+
+  regenerateJwtSecret: (): Promise<{ success: boolean; message?: string }> =>
+    apiPost("/auth/regenerate-jwt-secret", {}),
 };
 
 // Servers detection API helpers (added to serversApi)
