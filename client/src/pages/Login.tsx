@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { useAuth } from '../contexts/AuthContext'
-import { Button } from '../components/ui/button'
+import { Button, buttonVariants } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Checkbox } from '../components/ui/checkbox'
@@ -65,6 +65,37 @@ export default function Login() {
   const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const { status, version } = usePanelHealth()
+
+  // null = not known yet -- deliberately renders no SSO button while loading
+  // rather than a flash of one that then disappears.
+  const [oidcStatus, setOidcStatus] = useState<{ configured: boolean; providerName: string } | null>(null)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    fetch('/api/auth/oidc/status', { signal: controller.signal })
+      .then((r) => r.json())
+      .then((d) =>
+        setOidcStatus({
+          configured: d?.configured === true,
+          providerName: typeof d?.providerName === 'string' && d.providerName ? d.providerName : 'SSO',
+        }),
+      )
+      .catch(() => setOidcStatus({ configured: false, providerName: 'SSO' }))
+    return () => controller.abort()
+  }, [])
+
+  // The OIDC callback redirects the browser back here with ?oidcError=<reason>
+  // on any failure (see server/routes/oidc.js) -- surface it once, then strip
+  // it from the URL so a reload doesn't keep re-showing a stale error.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const oidcError = params.get('oidcError')
+    if (!oidcError) return
+    setError(t(`errors.oidc.${oidcError}`, { defaultValue: t('errors.oidc.generic') }))
+    params.delete('oidcError')
+    const query = params.toString()
+    window.history.replaceState(null, '', window.location.pathname + (query ? `?${query}` : '') + window.location.hash)
+  }, [t])
 
   useEffect(() => {
     return () => {
@@ -382,7 +413,22 @@ export default function Login() {
               </Button>
             </form>
           ) : (
-            <form id="login-form" onSubmit={handleSubmit} className="space-y-4">
+            <>
+              {oidcStatus?.configured && (
+                <div className="mb-4 space-y-4">
+                  <a
+                    href="/api/auth/oidc/login"
+                    className={buttonVariants({ variant: 'outline' }) + ' w-full'}
+                  >
+                    {t('sso.continueWith', { provider: oidcStatus.providerName })}
+                  </a>
+                  <div className="relative text-center text-xs uppercase tracking-wide text-muted-foreground">
+                    <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-border/60" aria-hidden="true" />
+                    <span className="relative bg-card/90 px-2">{t('sso.divider')}</span>
+                  </div>
+                </div>
+              )}
+              <form id="login-form" onSubmit={handleSubmit} className="space-y-4">
               {error && (
                 <div
                   id="login-error"
@@ -535,7 +581,8 @@ export default function Login() {
                   </div>
                 </div>
               )}
-            </form>
+              </form>
+            </>
           )}
         </section>
       </main>

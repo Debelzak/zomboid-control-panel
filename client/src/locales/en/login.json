@@ -9,6 +9,10 @@
     "offline": "Offline"
   },
   "skipToForm": "Skip to form",
+  "sso": {
+    "continueWith": "Continue with {{provider}}",
+    "divider": "or sign in with a password"
+  },
   "signIn": {
     "eyebrow": "Secure sign in",
     "title": "Sign in",
@@ -63,6 +67,15 @@
     "resetFailed": "Reset failed",
     "noRecoveryTokenYet": "No recovery token found yet. Create data/reset-token.txt on the panel host, then try again.",
     "couldNotCheckStatus": "Could not check recovery status. Try again in a moment.",
-    "couldNotCreateToken": "Could not create a recovery token"
+    "couldNotCreateToken": "Could not create a recovery token",
+    "oidc": {
+      "not_configured": "Single sign-on isn't available right now. Sign in with your username and password.",
+      "expired_flow": "Your sign-in attempt expired. Try again.",
+      "invalid_token": "The identity provider's response couldn't be verified. Try again, or sign in with your username and password.",
+      "session_failed": "Something went wrong finishing sign-in. Try again, or sign in with your username and password.",
+      "refused": "That account isn't permitted to sign in this way. Sign in with your username and password, or contact your administrator.",
+      "setup_required": "No admin account exists yet. Complete first-run setup with a username and password, then link single sign-on from Settings.",
+      "generic": "Single sign-on couldn't be completed. Try again, or sign in with your username and password."
+    }
   }
 }

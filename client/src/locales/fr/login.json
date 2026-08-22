@@ -9,6 +9,10 @@
     "offline": "Hors ligne"
   },
   "skipToForm": "Aller au formulaire",
+  "sso": {
+    "continueWith": "Continuer avec {{provider}}",
+    "divider": "ou connectez-vous avec un mot de passe"
+  },
   "signIn": {
     "eyebrow": "Connexion sécurisée",
     "title": "Se connecter",
@@ -63,6 +67,15 @@
     "resetFailed": "Échec de la réinitialisation",
     "noRecoveryTokenYet": "Aucun jeton de récupération trouvé pour l'instant. Créez data/reset-token.txt sur l'hôte du panneau, puis réessayez.",
     "couldNotCheckStatus": "Impossible de vérifier l'état de récupération. Réessayez dans un instant.",
-    "couldNotCreateToken": "Impossible de créer un jeton de récupération"
+    "couldNotCreateToken": "Impossible de créer un jeton de récupération",
+    "oidc": {
+      "not_configured": "La connexion unique n'est pas disponible pour le moment. Connectez-vous avec votre nom d'utilisateur et votre mot de passe.",
+      "expired_flow": "Votre tentative de connexion a expiré. Réessayez.",
+      "invalid_token": "La réponse du fournisseur d'identité n'a pas pu être vérifiée. Réessayez, ou connectez-vous avec votre nom d'utilisateur et votre mot de passe.",
+      "session_failed": "Une erreur est survenue lors de la finalisation de la connexion. Réessayez, ou connectez-vous avec votre nom d'utilisateur et votre mot de passe.",
+      "refused": "Ce compte n'est pas autorisé à se connecter de cette façon. Connectez-vous avec votre nom d'utilisateur et votre mot de passe, ou contactez votre administrateur.",
+      "setup_required": "Aucun compte administrateur n'existe encore. Terminez la configuration initiale avec un nom d'utilisateur et un mot de passe, puis associez la connexion unique depuis Paramètres.",
+      "generic": "La connexion unique n'a pas pu être finalisée. Réessayez, ou connectez-vous avec votre nom d'utilisateur et votre mot de passe."
+    }
   }
 }
