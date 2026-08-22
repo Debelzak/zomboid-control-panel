@@ -25,23 +25,48 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "..", "..");
 const configPath = path.join(repoRoot, "paths.config.json");
 
+// Marker written into every config this file creates, so a later run can tell OUR leftover from a
+// developer's real override. Without it the two are indistinguishable on disk, and "never clobber"
+// degrades into "never recover" the first time a run is interrupted before teardown.
+const MARKER = "vitest.globalSetup.mjs";
+
 let tempRoot = null;
 let weWroteTheConfig = false;
 
 export async function setup() {
-  // NEVER clobber an existing override. A developer may be pointing the panel at a real data root,
-  // and silently replacing that file would be far worse than the problem this fixes. If one is
-  // already present we leave it strictly alone and say so, rather than failing the run.
+  // NEVER clobber a REAL override. A developer may be pointing the panel at a live data root, and
+  // silently replacing that file would be far worse than the problem this fixes.
+  //
+  // But an interrupted run (Ctrl-C, a killed worker, a crash) skips teardown and leaves OUR config
+  // behind, pointing at a temp root that no longer exists. That leftover is untracked, so it also
+  // trips every repo-cleanliness check until someone notices it by hand. Treating it as a
+  // developer override meant the leak was permanent and silent. So: reclaim ours, respect theirs.
   if (fs.existsSync(configPath)) {
+    let existing = null;
+    try {
+      existing = JSON.parse(fs.readFileSync(configPath, "utf8"));
+    } catch {
+      // Unparseable. Not ours to interpret and not ours to delete - paths.js logs and falls back.
+    }
+
+    if (existing?._createdBy !== MARKER) {
+      console.log(
+        "[modernization] paths.config.json already exists and is not ours - leaving it untouched. " +
+          "Test data will follow that override, not a temporary root."
+      );
+      return;
+    }
+
     console.log(
-      "[modernization] paths.config.json already exists - leaving it untouched. " +
-        "Test data will follow that override, not a temporary root."
+      "[modernization] reclaiming a leaked paths.config.json from an interrupted run " +
+        `(stale data root: ${existing.dataDir}).`
     );
-    return;
+    fs.rmSync(configPath, { force: true });
   }
 
   tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zcp-test-"));
   const config = {
+    _createdBy: MARKER,
     dataDir: path.join(tempRoot, "data"),
     logsDir: path.join(tempRoot, "logs"),
   };
