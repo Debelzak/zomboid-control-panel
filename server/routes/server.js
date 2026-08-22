@@ -1093,7 +1093,7 @@ router.post("/restart", requirePermission("server.control"), async (req, res) =>
     }
 
     // Run restart in background with specified warning time
-    scheduler.performRestart(warningMinutes).catch((err) => {
+    scheduler.performRestart(warningMinutes, { label: "Manual restart" }).catch((err) => {
       log.error(`Restart failed: ${err.message}`);
     });
 
