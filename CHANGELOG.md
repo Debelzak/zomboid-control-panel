@@ -76,6 +76,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `client/src/locales/README.md`.
 
 ### Fixed
+- **The panel was quietly deleting backups you uploaded yourself**: automatic cleanup kept only the
+  most recent backups and treated an archive you had uploaded by hand exactly like one the panel
+  made on a schedule. On the default settings that meant a backup you deliberately saved was deleted
+  within a couple of days, with nothing to tell you it had happened. The code even carried a note
+  saying uploaded archives were protected - they were not. They are now: automatic cleanup skips
+  them entirely.
+
+- **Downloading a backup now needs permission**: every other backup action - create, delete,
+  restore, upload - required a permission, but downloading required none, so any account of any
+  role could pull down a complete copy of your world save. If a backup had ever been taken with the
+  panel's own settings file included, that copy also contained the stored password hashes for every
+  account. Downloading now needs its own "download backups" permission.
+
+  **On upgrade**, that permission is granted automatically to any role that could already manage
+  backups, so nobody loses access they had yesterday. You can take it away again per role from
+  Roles & Permissions.
 - **Giving a custom role permission to manage users now actually works**: the screens for listing
   and creating accounts were still checking for the built-in administrator role by name, rather than
   checking the permission. So you could tick "manage users" for a role you had created, the panel
