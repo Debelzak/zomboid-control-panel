@@ -35,6 +35,7 @@ import {
   type RoleInfo,
   type ManagedUserAccount,
 } from '@/lib/api'
+import { getUserErrorMessage } from '@/lib/errorMessage'
 
 // Mirrors server/services/permissions.js's RECOVERY_CAPABILITIES -- the two
 // capabilities the matrix's own lockout row header flags, since unchecking
@@ -100,10 +101,10 @@ export default function RolesPermissions() {
       if (error instanceof ApiError && error.status === 403) {
         setUsersDenied(true)
       } else {
-        setUsersLoadError(error instanceof Error ? error.message : String(error))
+        setUsersLoadError(getUserErrorMessage(error, t('toasts.unknownError')))
       }
     }
-  }, [])
+  }, [t])
 
   const fetchMatrix = useCallback(async () => {
     setLoading(true)
@@ -123,12 +124,12 @@ export default function RolesPermissions() {
       if (error instanceof ApiError && error.status === 403) {
         setPermissionDenied(true)
       } else {
-        setLoadError(error instanceof Error ? error.message : String(error))
+        setLoadError(getUserErrorMessage(error, t('toasts.unknownError')))
       }
     } finally {
       setLoading(false)
     }
-  }, [fetchUsers])
+  }, [fetchUsers, t])
 
   useEffect(() => {
     fetchMatrix()
@@ -142,10 +143,6 @@ export default function RolesPermissions() {
   }
   function groupLabel(group: string): string {
     return t(`capabilityGroups.${group}`, { defaultValue: group })
-  }
-
-  function describeError(error: unknown): string {
-    return error instanceof Error ? error.message : String(error)
   }
 
   async function applyRoleCapabilities(
@@ -185,7 +182,7 @@ export default function RolesPermissions() {
       }
       toast({
         title: t('toasts.actionFailedTitle'),
-        description: describeError(error),
+        description: getUserErrorMessage(error, t('toasts.unknownError')),
         variant: 'destructive',
       })
       return false
@@ -247,7 +244,7 @@ export default function RolesPermissions() {
       if (error instanceof ApiError && error.code === 'ROLE_NAME_TAKEN') {
         setFormError(t('errors:ROLE_NAME_TAKEN', { name }))
       } else {
-        setFormError(describeError(error))
+        setFormError(getUserErrorMessage(error, t('toasts.unknownError')))
       }
     } finally {
       setFormBusy(false)
@@ -284,7 +281,7 @@ export default function RolesPermissions() {
       if (error instanceof ApiError && error.code === 'ROLE_NAME_TAKEN') {
         setFormError(t('errors:ROLE_NAME_TAKEN', { name }))
       } else {
-        setFormError(describeError(error))
+        setFormError(getUserErrorMessage(error, t('toasts.unknownError')))
       }
     } finally {
       setFormBusy(false)
@@ -331,7 +328,7 @@ export default function RolesPermissions() {
       } else if (error instanceof ApiError && error.code === 'ROLE_HAS_MEMBERS') {
         setDeleteError(t('errors:ROLE_HAS_MEMBERS', { count: deleteTarget.memberCount }))
       } else {
-        setDeleteError(describeError(error))
+        setDeleteError(getUserErrorMessage(error, t('toasts.unknownError')))
       }
     } finally {
       setDeleteBusy(false)
@@ -373,7 +370,7 @@ export default function RolesPermissions() {
       } else {
         toast({
           title: t('toasts.actionFailedTitle'),
-          description: describeError(error),
+          description: getUserErrorMessage(error, t('toasts.unknownError')),
           variant: 'destructive',
         })
       }

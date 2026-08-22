@@ -86,7 +86,8 @@
     "capabilityRevoked": "Revoked \"{{capability}}\" from \"{{role}}\".",
     "userRoleAssignedTitle": "Role assigned",
     "userRoleAssignedDescription": "{{username}} now holds the \"{{role}}\" role.",
-    "actionFailedTitle": "Action failed"
+    "actionFailedTitle": "Action failed",
+    "unknownError": "Unknown error"
   },
   "capabilityGroups": {
     "Users & Roles": "Users & Roles",

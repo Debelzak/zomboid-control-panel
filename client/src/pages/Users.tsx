@@ -34,6 +34,7 @@ import {
   type ManagedUserAccount,
   type RoleInfo,
 } from '@/lib/api'
+import { getUserErrorMessage } from '@/lib/errorMessage'
 
 // POST /api/auth/users only accepts one of these three legacy names -- it
 // has no roleId param, so it can't assign a custom role at creation time
@@ -94,12 +95,12 @@ export default function Users() {
       if (error instanceof ApiError && error.status === 403) {
         setPermissionDenied(true)
       } else {
-        setLoadError(error instanceof Error ? error.message : String(error))
+        setLoadError(getUserErrorMessage(error, t('toasts.unknownError')))
       }
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [t])
 
   useEffect(() => {
     fetchAll()
@@ -112,10 +113,6 @@ export default function Users() {
     setRoleId(roles[0]?.id ?? '')
     setFormError(null)
     setCreateOpen(true)
-  }
-
-  function describeError(error: unknown): string {
-    return error instanceof Error ? error.message : String(error)
   }
 
   function getRoleForUser(user: ManagedUserAccount): RoleInfo | undefined {
@@ -159,7 +156,7 @@ export default function Users() {
       } else {
         toast({
           title: t('toasts.actionFailedTitle'),
-          description: describeError(error),
+          description: getUserErrorMessage(error, t('toasts.unknownError')),
           variant: 'destructive',
         })
       }
@@ -216,7 +213,7 @@ export default function Users() {
             description: t('toasts.userCreatedRoleAssignFailedDescription', {
               username: user.username,
               role: targetRole.name,
-              reason: describeError(error),
+              reason: getUserErrorMessage(error, t('toasts.unknownError')),
             }),
             variant: 'destructive',
           })
@@ -235,7 +232,7 @@ export default function Users() {
         variant: 'success',
       })
     } catch (error) {
-      setFormError(describeError(error))
+      setFormError(getUserErrorMessage(error, t('toasts.unknownError')))
     } finally {
       setFormBusy(false)
     }

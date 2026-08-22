@@ -54,6 +54,7 @@
     "userCreatedRoleAssignFailedDescription": "{{username}} a été créé en tant que « moderator », mais l'attribution de « {{role}} » a échoué : {{reason}}. Modifiez-le depuis Rôles et permissions.",
     "userDeletedTitle": "Compte supprimé",
     "userDeletedDescription": "{{username}} ne peut plus se connecter.",
-    "actionFailedTitle": "Échec de l'action"
+    "actionFailedTitle": "Échec de l'action",
+    "unknownError": "Erreur inconnue"
   }
 }

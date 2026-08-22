@@ -31,6 +31,7 @@
     "providerNameHelp": "Affiché sur le bouton de l'écran de connexion — « Continuer avec {{name}} ».",
     "redirectUri": "URI de redirection",
     "redirectUriHelp": "Collez cette URL exacte dans l'enregistrement d'application de votre fournisseur d'identité :",
+    "redirectUriConfirmNote": "Vérifiez que cela correspond bien à l'adresse que vous utilisez réellement pour accéder à ce panneau — en particulier http ou https. Derrière un proxy inverse, le panneau ne peut pas toujours savoir lequel votre navigateur a utilisé.",
     "useAndCopy": "Utiliser et copier",
     "scope": "Scope",
     "scopeHelp": "Avancé. Laissez tel quel sauf si votre fournisseur exige autre chose.",
@@ -49,6 +50,7 @@
     "testSuccessTitle": "Connexion réussie",
     "testSuccessDescription": "Le panneau a pu joindre le fournisseur d'identité et lire sa configuration.",
     "testFailedTitle": "Échec de la connexion",
-    "actionFailedTitle": "Échec de l'action"
+    "actionFailedTitle": "Échec de l'action",
+    "unknownError": "Erreur inconnue"
   }
 }

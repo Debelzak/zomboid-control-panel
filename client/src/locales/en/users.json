@@ -54,6 +54,7 @@
     "userCreatedRoleAssignFailedDescription": "{{username}} was created as \"moderator\", but assigning \"{{role}}\" failed: {{reason}}. Change it from Roles & Permissions.",
     "userDeletedTitle": "Account removed",
     "userDeletedDescription": "{{username}} can no longer sign in.",
-    "actionFailedTitle": "Action failed"
+    "actionFailedTitle": "Action failed",
+    "unknownError": "Unknown error"
   }
 }

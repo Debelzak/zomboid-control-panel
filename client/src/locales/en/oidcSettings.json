@@ -31,6 +31,7 @@
     "providerNameHelp": "Shown on the login screen's button — \"Continue with {{name}}\".",
     "redirectUri": "Redirect URI",
     "redirectUriHelp": "Paste this exact URL into your identity provider's app registration:",
+    "redirectUriConfirmNote": "Double-check this matches the web address you actually use to reach this panel — especially http vs. https. Behind a reverse proxy, the panel can't always tell which one your browser used.",
     "useAndCopy": "Use & copy",
     "scope": "Scope",
     "scopeHelp": "Advanced. Leave as-is unless your provider needs something different.",
@@ -49,6 +50,7 @@
     "testSuccessTitle": "Connection successful",
     "testSuccessDescription": "The panel could reach the identity provider and read its configuration.",
     "testFailedTitle": "Connection failed",
-    "actionFailedTitle": "Action failed"
+    "actionFailedTitle": "Action failed",
+    "unknownError": "Unknown error"
   }
 }

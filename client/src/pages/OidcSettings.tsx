@@ -17,6 +17,7 @@ import {
   type OidcSettingsWithEnv,
   type OidcSettingsUpdate,
 } from '@/lib/api'
+import { getUserErrorMessage } from '@/lib/errorMessage'
 
 // Matches server/utils/sanitize.js's isMaskedSecret() -- prefilling the
 // field with exactly this sentinel when a secret is already stored, and
@@ -76,20 +77,16 @@ export default function OidcSettings() {
       if (error instanceof ApiError && error.status === 403) {
         setPermissionDenied(true)
       } else {
-        setLoadError(error instanceof Error ? error.message : String(error))
+        setLoadError(getUserErrorMessage(error, t('toasts.unknownError')))
       }
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [t])
 
   useEffect(() => {
     fetchSettings()
   }, [fetchSettings])
-
-  function describeError(error: unknown): string {
-    return error instanceof Error ? error.message : String(error)
-  }
 
   // Only the fields that actually changed from what GET returned -- PUT is a
   // partial update, same convention as PUT /api/servers/:id.
@@ -122,7 +119,7 @@ export default function OidcSettings() {
       })
       void result
     } catch (error) {
-      setFormError(describeError(error))
+      setFormError(getUserErrorMessage(error, t('toasts.unknownError')))
     } finally {
       setSaving(false)
     }
@@ -147,7 +144,7 @@ export default function OidcSettings() {
     } catch (error) {
       toast({
         title: t('toasts.testFailedTitle'),
-        description: describeError(error),
+        description: getUserErrorMessage(error, t('toasts.unknownError')),
         variant: 'destructive',
       })
     } finally {
@@ -229,6 +226,39 @@ export default function OidcSettings() {
             </div>
 
             <div className="space-y-1.5">
+              <Label htmlFor="oidc-redirect-uri">{t('fields.redirectUri')}</Label>
+              <Input
+                id="oidc-redirect-uri"
+                value={form.redirectUri}
+                onChange={(e) => setForm((prev) => ({ ...prev, redirectUri: e.target.value }))}
+                disabled={envOverrides?.redirectUri}
+              />
+              {envOverrides?.redirectUri ? (
+                <p className="text-xs text-muted-foreground">{t('envPinnedNote')}</p>
+              ) : (
+                <>
+                  <div className="flex flex-wrap items-center gap-2 rounded-md border border-primary/30 bg-primary/[0.04] px-2.5 py-2 text-xs">
+                    <span className="text-muted-foreground">{t('fields.redirectUriHelp')}</span>
+                    <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-foreground/85">
+                      {settings.suggestedRedirectUri}
+                    </code>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="ml-auto h-7 gap-1.5 px-2 text-xs"
+                      onClick={handleUseRedirectUri}
+                    >
+                      {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                      {t('fields.useAndCopy')}
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">{t('fields.redirectUriConfirmNote')}</p>
+                </>
+              )}
+            </div>
+
+            <div className="space-y-1.5">
               <Label htmlFor="oidc-client-id">{t('fields.clientId')}</Label>
               <Input
                 id="oidc-client-id"
@@ -272,36 +302,6 @@ export default function OidcSettings() {
               <p className="text-xs text-muted-foreground">
                 {envOverrides?.providerName ? t('envPinnedNote') : t('fields.providerNameHelp')}
               </p>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="oidc-redirect-uri">{t('fields.redirectUri')}</Label>
-              <Input
-                id="oidc-redirect-uri"
-                value={form.redirectUri}
-                onChange={(e) => setForm((prev) => ({ ...prev, redirectUri: e.target.value }))}
-                disabled={envOverrides?.redirectUri}
-              />
-              {envOverrides?.redirectUri ? (
-                <p className="text-xs text-muted-foreground">{t('envPinnedNote')}</p>
-              ) : (
-                <div className="flex flex-wrap items-center gap-2 rounded-md border border-primary/30 bg-primary/[0.04] px-2.5 py-2 text-xs">
-                  <span className="text-muted-foreground">{t('fields.redirectUriHelp')}</span>
-                  <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-foreground/85">
-                    {settings.suggestedRedirectUri}
-                  </code>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="ml-auto h-7 gap-1.5 px-2 text-xs"
-                    onClick={handleUseRedirectUri}
-                  >
-                    {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                    {t('fields.useAndCopy')}
-                  </Button>
-                </div>
-              )}
             </div>
 
             <div className="space-y-1.5">
