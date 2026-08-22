@@ -116,6 +116,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `client/src/locales/README.md`.
 
 ### Fixed
+- **A built-in role could be deleted, despite the screen saying it could not**: the Roles &
+  Permissions screen greys out delete for the built-in administrator, technician and moderator
+  roles and says they cannot be removed. Only the button was stopping it - the server never
+  checked. Anyone able to manage roles could delete the administrator role itself, not just remove
+  someone from it. The server now refuses outright, so the message on screen is now true of the
+  system and not just of the button.
 - **A wrong HTTPS certificate path or port could stop the panel starting at all, permanently**:
   Settings accepted any text in the HTTPS certificate path, key path and port fields without
   checking them, and saved it with a success message. Nothing went wrong until the next restart -
