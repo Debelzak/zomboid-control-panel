@@ -207,6 +207,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to manage roles - previously fell back to English, because the panel had no way to carry that
   detail across in a translatable form. It does now, and the permission is named using the same
   wording the Roles & Permissions screen uses.
+
+  Eleven more of these were finished off in the same way: the messages about deleting too many map
+  chunks or too large a region, rejecting an invalid mod or Workshop ID, an unknown server, an
+  unrecognised airdrop preset or item type, character data with nothing usable in it, and a failed
+  sandbox-repair backup. Each of them names a specific count, ID or file, and each now carries that
+  detail across so the French version says it too instead of dropping back to English.
 - **The French wording for "Wipe server" said "reset", not "erase"**: the dialog title, the
   confirm button and both menu entries used *Réinitialiser* - the word this panel uses for ordinary,
   recoverable resets elsewhere - directly above body text correctly warning that the action deletes
