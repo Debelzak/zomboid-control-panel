@@ -277,6 +277,15 @@ function getDiagMetaStringList(check: DiagCheck, key: string): string[] {
   );
 }
 
+// MUST be called with the RAW check straight from the API response, never
+// the output of translateDiagnosticCheck(). The default-case fallback below
+// does English substring matching on check.hint (hint.includes("server
+// config"), etc) to pick a fix action for ids its switch doesn't cover --
+// passing it a translated (French) hint wouldn't error or fail a test, it
+// would just silently stop matching and drop the fix button for non-English
+// users. See translateDiagnosticCheck's own call site in this file: it
+// deliberately keeps this function fed the untranslated `check`, only the
+// three *displayed* text nodes use the translated copy.
 function getDiagnosticsFixAction(
   check: DiagCheck,
   t: TFunction,
@@ -926,51 +935,39 @@ export default function Debug() {
             description: `${result.message}${restartHint}`,
           });
         } else if (check.id === "server.process") {
+          // /server/start always responds non-2xx on failure, so
+          // handleResponse() throws into this handler's surrounding catch
+          // -- this never sees result.success === false.
           const result = (await serverApi.start()) as {
             success?: boolean;
             message?: string;
             error?: string;
           };
-          if (result?.success === false) {
-            throw new Error(
-              result.error ||
-                result.message ||
-                t("diagnostics.serverFailedToStart"),
-            );
-          }
           toast({
             title: t("diagnostics.serverStartingTitle"),
             description:
               result?.message || t("diagnostics.serverStartingFallback"),
           });
         } else if (check.id === "rcon.connected") {
+          // /rcon/connect always responds non-2xx on failure, so
+          // handleResponse() throws into this handler's surrounding catch
+          // -- the connected check below is always true when reached.
           const result = (await rconApi.connect()) as {
             success?: boolean;
             connected?: boolean;
             message?: string;
             error?: string;
           };
-          const connected =
-            result?.connected === true || result?.success === true;
-          if (!connected) {
-            throw new Error(
-              result?.error ||
-                result?.message ||
-                t("diagnostics.rconConnectFailedFallback"),
-            );
-          }
           toast({
             title: t("diagnostics.rconReconnectedTitle"),
             description:
               result?.message || t("diagnostics.rconReconnectedFallback"),
           });
         } else if (check.id === "db.backup") {
+          // /backup/create always responds non-2xx on failure, so
+          // handleResponse() throws into this handler's surrounding catch
+          // -- this never sees result.success === false.
           const result = await backupApi.createBackup({ includeDb: true });
-          if (result?.success === false) {
-            throw new Error(
-              result?.message || t("diagnostics.backupFailedFallback"),
-            );
-          }
           const backupName = result?.backup?.name
             ? ` (${result.backup.name})`
             : "";

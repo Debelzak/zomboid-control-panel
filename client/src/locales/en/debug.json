@@ -267,9 +267,6 @@
     "sandboxRepairedFallback_other": "Applied {{count}} fixes.{{restartHint}}",
     "noNumericIdsError": "No numeric Mods= entries were provided by diagnostics.",
     "noOrphanWorkshopError": "No orphan Workshop IDs were provided by diagnostics.",
-    "serverFailedToStart": "Server failed to start.",
-    "rconConnectFailedFallback": "RCON connect attempt failed.",
-    "backupFailedFallback": "Backup failed.",
     "checks": {
       "server": {
         "process": {

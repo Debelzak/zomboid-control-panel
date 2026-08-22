@@ -267,9 +267,6 @@
     "sandboxRepairedFallback_other": "{{count}} corrections appliquées.{{restartHint}}",
     "noNumericIdsError": "Aucune entrée Mods= numérique n'a été fournie par les diagnostics.",
     "noOrphanWorkshopError": "Aucun ID Workshop orphelin n'a été fourni par les diagnostics.",
-    "serverFailedToStart": "Échec du démarrage du serveur.",
-    "rconConnectFailedFallback": "La tentative de connexion RCON a échoué.",
-    "backupFailedFallback": "Échec de la sauvegarde.",
     "checks": {
       "server": {
         "process": {
