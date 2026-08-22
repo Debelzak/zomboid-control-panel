@@ -2536,6 +2536,13 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
               crashed: wf.crashed,
               logMtime: wf.logMtime,
             };
+            // Grammar agreement (item/items, ID/IDs, is/are, this/these) is
+            // simplified to a single always-readable phrasing rather than
+            // modeled as params or variants -- these are English pluralization
+            // rules that don't transfer to French's own (different) ones, so
+            // a param carrying "is"/"are" would just be a second un-
+            // translated-English-word problem like runtime.timeSkew's
+            // direction. The count and list themselves are still real params.
             if (wf.crashed) {
               workshopCrashed = true;
               checks.push(
@@ -2547,6 +2554,7 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
                     category: "server",
                     hint: `Open Server Config and remove ${wf.ids.length > 1 ? "these IDs" : "this ID"} from both WorkshopItems= and Mods=, then restart.`,
                     meta,
+                    params: { count: wf.ids.length, ageLabel, idList },
                   },
                 ),
               );
@@ -2560,6 +2568,7 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
                     category: "server",
                     hint: "Verify each ID is still public on the Steam Workshop, or remove it from the server config.",
                     meta,
+                    params: { count: wf.ids.length, ageLabel, idList },
                   },
                 ),
               );
@@ -2587,22 +2596,59 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
                 : ageMin < 1440
                   ? `${Math.round(ageMin / 60)}h ago`
                   : `${Math.round(ageMin / 1440)}d ago`;
-            const hint =
-              rc.kind === "oom"
-                ? "Raise the server's Java heap (-Xmx in the start script) or reduce mod count."
-                : "Open the Logs page and read the stack trace around the timestamp.";
-            checks.push(
-              diagFail(
-                "server.recentCrash",
-                `Recent crash: ${rc.label}`,
-                `Found in server-console.txt (last update ${ageLabel}): ${rc.line}`,
-                {
+            // rc.kind is a small fixed enum (oom/workshop/mainException/
+            // fatal), but `variant: rc.kind` would be a VARIABLE reference at
+            // the call site -- invisible to the registry test's regex scan
+            // the same way a ternary or template literal is, even though the
+            // set of values is closed. Four literal branches instead, so
+            // every kind is statically findable. Label differs per kind
+            // (baked into each variant's own locale entry, not a param);
+            // hint only really differs oom-vs-not, but each variant still
+            // carries its own complete hint per the "variants are self-
+            // contained" rule -- some duplication, deliberately.
+            const recentCrashMessage = `Found in server-console.txt (last update ${ageLabel}): ${rc.line}`;
+            const recentCrashParams = { ageLabel, line: rc.line };
+            if (rc.kind === "oom") {
+              checks.push(
+                diagFail("server.recentCrash", `Recent crash: ${rc.label}`, recentCrashMessage, {
                   category: "server",
-                  hint,
+                  hint: "Raise the server's Java heap (-Xmx in the start script) or reduce mod count.",
                   meta: { kind: rc.kind, logMtime: rc.logMtime },
-                },
-              ),
-            );
+                  params: recentCrashParams,
+                  variant: "oom",
+                }),
+              );
+            } else if (rc.kind === "workshop") {
+              checks.push(
+                diagFail("server.recentCrash", `Recent crash: ${rc.label}`, recentCrashMessage, {
+                  category: "server",
+                  hint: "Open the Logs page and read the stack trace around the timestamp.",
+                  meta: { kind: rc.kind, logMtime: rc.logMtime },
+                  params: recentCrashParams,
+                  variant: "workshop",
+                }),
+              );
+            } else if (rc.kind === "mainException") {
+              checks.push(
+                diagFail("server.recentCrash", `Recent crash: ${rc.label}`, recentCrashMessage, {
+                  category: "server",
+                  hint: "Open the Logs page and read the stack trace around the timestamp.",
+                  meta: { kind: rc.kind, logMtime: rc.logMtime },
+                  params: recentCrashParams,
+                  variant: "mainException",
+                }),
+              );
+            } else {
+              checks.push(
+                diagFail("server.recentCrash", `Recent crash: ${rc.label}`, recentCrashMessage, {
+                  category: "server",
+                  hint: "Open the Logs page and read the stack trace around the timestamp.",
+                  meta: { kind: rc.kind, logMtime: rc.logMtime },
+                  params: recentCrashParams,
+                  variant: "fatal",
+                }),
+              );
+            }
           }
         }
 
@@ -2669,6 +2715,7 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
                   category: "server",
                   hint: "Remove these from Mods= and add them to WorkshopItems= instead.",
                   meta: { numericInMods },
+                  params: { count: numericInMods.length, list },
                 },
               ),
             );
@@ -2680,7 +2727,7 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
                 "mods.resolved",
                 "Mods= entries all resolve",
                 `${ini.Mods.length} mod${ini.Mods.length === 1 ? "" : "s"} listed, all match an installed Workshop or local mod folder.`,
-                { category: "server" },
+                { category: "server", params: { count: ini.Mods.length } },
               ),
             );
           } else if (unresolvedMods.length > 0) {
@@ -2698,6 +2745,7 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
                   category: "server",
                   hint: "Usually a typo, missing WorkshopItems= ID, or the mod hasn't finished downloading. Fix in Server Config.",
                   meta: { unresolvedMods },
+                  params: { count: unresolvedMods.length, total: ini.Mods.length, list },
                 },
               ),
             );
@@ -2738,22 +2786,49 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
               parts.push(
                 `${deadWorkshop.length} not on disk (dead subscription)`,
               );
-            checks.push(
-              diagWarn(
-                "mods.orphanWorkshop",
-                "Subscribed Workshop items not enabled",
-                `${all.length} Workshop item${all.length === 1 ? " is" : "s are"} listed in WorkshopItems= but won't load: ${parts.join(", ")}. IDs: ${list}.`,
-                {
+            const orphanWorkshopHint =
+              "Auto-fix triages each ID: downloaded → resolves and adds to Mods=; ignored or missing → removes from WorkshopItems=.";
+            const orphanWorkshopMeta = {
+              orphanWorkshop: all,
+              downloadedOrphans: orphanWorkshop,
+              deadOrphans: deadWorkshop,
+            };
+            const orphanWorkshopMessage = `${all.length} Workshop item${all.length === 1 ? " is" : "s are"} listed in WorkshopItems= but won't load: ${parts.join(", ")}. IDs: ${list}.`;
+            // Which two-of-three-clauses combination the sentence needs is
+            // itself the thing that varies (downloaded-only / dead-only /
+            // both), not just the numbers inside one fixed template --
+            // variant, three literal branches.
+            if (orphanWorkshop.length > 0 && deadWorkshop.length > 0) {
+              checks.push(
+                diagWarn("mods.orphanWorkshop", "Subscribed Workshop items not enabled", orphanWorkshopMessage, {
                   category: "server",
-                  hint: "Auto-fix triages each ID: downloaded → resolves and adds to Mods=; ignored or missing → removes from WorkshopItems=.",
-                  meta: {
-                    orphanWorkshop: all,
-                    downloadedOrphans: orphanWorkshop,
-                    deadOrphans: deadWorkshop,
-                  },
-                },
-              ),
-            );
+                  hint: orphanWorkshopHint,
+                  meta: orphanWorkshopMeta,
+                  params: { count: all.length, downloadedCount: orphanWorkshop.length, deadCount: deadWorkshop.length, list },
+                  variant: "both",
+                }),
+              );
+            } else if (orphanWorkshop.length > 0) {
+              checks.push(
+                diagWarn("mods.orphanWorkshop", "Subscribed Workshop items not enabled", orphanWorkshopMessage, {
+                  category: "server",
+                  hint: orphanWorkshopHint,
+                  meta: orphanWorkshopMeta,
+                  params: { count: all.length, downloadedCount: orphanWorkshop.length, list },
+                  variant: "downloadedOnly",
+                }),
+              );
+            } else {
+              checks.push(
+                diagWarn("mods.orphanWorkshop", "Subscribed Workshop items not enabled", orphanWorkshopMessage, {
+                  category: "server",
+                  hint: orphanWorkshopHint,
+                  meta: orphanWorkshopMeta,
+                  params: { count: all.length, deadCount: deadWorkshop.length, list },
+                  variant: "deadOnly",
+                }),
+              );
+            }
           }
 
           // Duplicate Mods= / WorkshopItems= entries (cosmetic but confusing).
@@ -2771,21 +2846,45 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
               parts.push(
                 `${dupWs.length} duplicate WorkshopItems= entr${dupWs.length === 1 ? "y" : "ies"}`,
               );
-            checks.push(
-              diagWarn(
-                "mods.duplicates",
-                "Duplicate mod entries",
-                `${parts.join(", ")} in the server config.`,
-                {
+            const dupMessage = `${parts.join(", ")} in the server config.`;
+            const dupHint = "Tidy up Server Config — duplicates can confuse mod-load order.";
+            const dupMeta = {
+              dupMods: [...new Set(dupMods)],
+              dupWs: [...new Set(dupWs)],
+            };
+            // Same "which clauses does the sentence need" variance as
+            // orphanWorkshop above -- three literal branches.
+            if (dupMods.length && dupWs.length) {
+              checks.push(
+                diagWarn("mods.duplicates", "Duplicate mod entries", dupMessage, {
                   category: "server",
-                  hint: "Tidy up Server Config — duplicates can confuse mod-load order.",
-                  meta: {
-                    dupMods: [...new Set(dupMods)],
-                    dupWs: [...new Set(dupWs)],
-                  },
-                },
-              ),
-            );
+                  hint: dupHint,
+                  meta: dupMeta,
+                  params: { dupModsCount: dupMods.length, dupWsCount: dupWs.length },
+                  variant: "both",
+                }),
+              );
+            } else if (dupMods.length) {
+              checks.push(
+                diagWarn("mods.duplicates", "Duplicate mod entries", dupMessage, {
+                  category: "server",
+                  hint: dupHint,
+                  meta: dupMeta,
+                  params: { dupModsCount: dupMods.length },
+                  variant: "modsOnly",
+                }),
+              );
+            } else {
+              checks.push(
+                diagWarn("mods.duplicates", "Duplicate mod entries", dupMessage, {
+                  category: "server",
+                  hint: dupHint,
+                  meta: dupMeta,
+                  params: { dupWsCount: dupWs.length },
+                  variant: "workshopOnly",
+                }),
+              );
+            }
           }
 
           // Map= validity. `Muldraugh, KY` is the built-in base map; everything
@@ -2815,7 +2914,7 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
                 "mods.maps",
                 "Map= entries resolve",
                 `${ini.Map.length} map layer${ini.Map.length === 1 ? "" : "s"} configured.`,
-                { category: "server" },
+                { category: "server", params: { count: ini.Map.length } },
               ),
             );
           } else if (missingMaps.length > 0) {
@@ -2836,24 +2935,52 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
                 `${trulyMissing.length} not found in any installed mod: ${trulyMissing.join(", ")}`,
               );
             }
-            const hint =
-              modsInMap.length > 0 && trulyMissing.length === 0
-                ? "These names are mods, not maps. Remove them from Map= — they only need to be in Mods=."
-                : trulyMissing.length > 0 && modsInMap.length === 0
-                  ? "Players will spawn into the void. Add the matching map mod or fix the spelling in Server Config."
-                  : "Remove mod names from Map=, and add the matching map mod or fix spelling for the rest.";
-            checks.push(
-              diagFail(
-                "mods.maps",
-                "Map= entries do not resolve",
-                `${missingMaps.length} entr${missingMaps.length === 1 ? "y" : "ies"} in Map= cannot be found. ${parts.join(". ")}.`,
-                {
+            const mapsMessage = `${missingMaps.length} entr${missingMaps.length === 1 ? "y" : "ies"} in Map= cannot be found. ${parts.join(". ")}.`;
+            const mapsMeta = { missingMaps, modsInMap, trulyMissing };
+            const modsInMapList = modsInMap.join(", ");
+            const trulyMissingList = trulyMissing.join(", ");
+            // Same "which clauses" variance as orphanWorkshop/duplicates
+            // above -- three literal branches, each with its own hint (the
+            // hint ternary already picked a different sentence per case, so
+            // this was already effectively three scenarios before params
+            // ever entered the picture).
+            if (modsInMap.length > 0 && trulyMissing.length > 0) {
+              checks.push(
+                diagFail("mods.maps", "Map= entries do not resolve", mapsMessage, {
                   category: "server",
-                  hint,
-                  meta: { missingMaps, modsInMap, trulyMissing },
-                },
-              ),
-            );
+                  hint: "Remove mod names from Map=, and add the matching map mod or fix spelling for the rest.",
+                  meta: mapsMeta,
+                  params: {
+                    count: missingMaps.length,
+                    modsInMapCount: modsInMap.length,
+                    modsInMapList,
+                    trulyMissingCount: trulyMissing.length,
+                    trulyMissingList,
+                  },
+                  variant: "both",
+                }),
+              );
+            } else if (modsInMap.length > 0) {
+              checks.push(
+                diagFail("mods.maps", "Map= entries do not resolve", mapsMessage, {
+                  category: "server",
+                  hint: "These names are mods, not maps. Remove them from Map= — they only need to be in Mods=.",
+                  meta: mapsMeta,
+                  params: { count: missingMaps.length, modsInMapCount: modsInMap.length, modsInMapList },
+                  variant: "modsOnly",
+                }),
+              );
+            } else {
+              checks.push(
+                diagFail("mods.maps", "Map= entries do not resolve", mapsMessage, {
+                  category: "server",
+                  hint: "Players will spawn into the void. Add the matching map mod or fix the spelling in Server Config.",
+                  meta: mapsMeta,
+                  params: { count: missingMaps.length, trulyMissingCount: trulyMissing.length, trulyMissingList },
+                  variant: "missingOnly",
+                }),
+              );
+            }
           }
         }
 

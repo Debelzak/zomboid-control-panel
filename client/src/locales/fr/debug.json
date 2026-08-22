@@ -398,6 +398,30 @@
             "message": "Impossible de trouver PanelBridge.lua sur le serveur. Les fonctionnalités avancées (téléportation, météo, export de personnage) seront indisponibles.",
             "hint": "Copiez pz-mod/PanelBridge dans le dossier media/lua/server du serveur"
           }
+        },
+        "recentCrash": {
+          "fail": {
+            "oom": {
+              "label": "Panne récente : mémoire insuffisante",
+              "message": "Trouvé dans server-console.txt (dernière mise à jour {{ageLabel}}) : {{line}}",
+              "hint": "Augmentez le tas Java du serveur (-Xmx dans le script de démarrage) ou réduisez le nombre de mods."
+            },
+            "workshop": {
+              "label": "Panne récente : plantage lors de l'installation Workshop",
+              "message": "Trouvé dans server-console.txt (dernière mise à jour {{ageLabel}}) : {{line}}",
+              "hint": "Ouvrez la page Journaux et lisez la trace de pile autour de l'horodatage."
+            },
+            "mainException": {
+              "label": "Panne récente : exception non interceptée sur le fil principal",
+              "message": "Trouvé dans server-console.txt (dernière mise à jour {{ageLabel}}) : {{line}}",
+              "hint": "Ouvrez la page Journaux et lisez la trace de pile autour de l'horodatage."
+            },
+            "fatal": {
+              "label": "Panne récente : entrée de journal FATAL",
+              "message": "Trouvé dans server-console.txt (dernière mise à jour {{ageLabel}}) : {{line}}",
+              "hint": "Ouvrez la page Journaux et lisez la trace de pile autour de l'horodatage."
+            }
+          }
         }
       },
       "rcon": {
@@ -765,6 +789,99 @@
           "warn": {
             "label": "Erreur lors des vérifications du bridge",
             "message": "Les vérifications IPC du bridge n'ont pas pu s'exécuter : {{reason}}"
+          }
+        }
+      },
+      "mods": {
+        "workshopCrash": {
+          "fail": {
+            "label": "Échec du téléchargement d'un mod Workshop — démarrage du serveur interrompu",
+            "message": "{{count}} élément(s) Workshop n'ont pas pu être téléchargés et le serveur a planté pendant l'installation (dernière mise à jour du journal {{ageLabel}}). ID en échec : {{idList}}. Probablement retiré(s), rendu(s) privé(s) ou limité(s) par région.",
+            "hint": "Ouvrez la configuration du serveur et retirez le(s) ID en échec de WorkshopItems= et de Mods=, puis redémarrez."
+          },
+          "warn": {
+            "label": "Avertissements de téléchargement Workshop",
+            "message": "{{count}} élément(s) Workshop ont récemment échoué au téléchargement mais le serveur n'a pas planté (dernière mise à jour du journal {{ageLabel}}). ID : {{idList}}.",
+            "hint": "Vérifiez que chaque ID est toujours public sur le Steam Workshop, ou retirez-le de la configuration du serveur."
+          }
+        },
+        "numericInMods": {
+          "warn": {
+            "label": "ID Workshop mal placés dans Mods=",
+            "message": "{{count}} entrées numériques dans Mods= ressemblent à des ID Workshop, pas à des noms de dossiers de mods : {{list}}. Elles appartiennent à WorkshopItems= et ne se chargeront jamais depuis Mods=.",
+            "hint": "Retirez-les de Mods= et ajoutez-les à WorkshopItems= à la place."
+          }
+        },
+        "resolved": {
+          "ok": {
+            "label": "Toutes les entrées Mods= se résolvent",
+            "message": "{{count}} mod(s) listé(s), tous correspondent à un dossier de mod Workshop ou local installé."
+          },
+          "fail": {
+            "label": "Les entrées Mods= ne se résolvent pas",
+            "message": "{{count}} des {{total}} entrées Mods= ne correspondent à aucun dossier de mod installé : {{list}}.",
+            "hint": "Généralement une faute de frappe, un ID WorkshopItems= manquant, ou le mod n'a pas fini de se télécharger. Corrigez dans la configuration du serveur."
+          }
+        },
+        "orphanWorkshop": {
+          "warn": {
+            "both": {
+              "label": "Éléments Workshop souscrits non activés",
+              "message": "{{count}} élément(s) Workshop listé(s) dans WorkshopItems= mais qui ne se chargeront pas : {{downloadedCount}} téléchargé(s) mais absent(s) de Mods=, {{deadCount}} absent(s) du disque (abonnement mort). ID : {{list}}.",
+              "hint": "La correction automatique trie chaque ID : téléchargé → résolu et ajouté à Mods= ; ignoré ou manquant → retiré de WorkshopItems=."
+            },
+            "downloadedOnly": {
+              "label": "Éléments Workshop souscrits non activés",
+              "message": "{{count}} élément(s) Workshop listé(s) dans WorkshopItems= mais qui ne se chargeront pas : {{downloadedCount}} téléchargé(s) mais absent(s) de Mods=. ID : {{list}}.",
+              "hint": "La correction automatique trie chaque ID : téléchargé → résolu et ajouté à Mods= ; ignoré ou manquant → retiré de WorkshopItems=."
+            },
+            "deadOnly": {
+              "label": "Éléments Workshop souscrits non activés",
+              "message": "{{count}} élément(s) Workshop listé(s) dans WorkshopItems= mais qui ne se chargeront pas : {{deadCount}} absent(s) du disque (abonnement mort). ID : {{list}}.",
+              "hint": "La correction automatique trie chaque ID : téléchargé → résolu et ajouté à Mods= ; ignoré ou manquant → retiré de WorkshopItems=."
+            }
+          }
+        },
+        "duplicates": {
+          "warn": {
+            "both": {
+              "label": "Entrées de mods en double",
+              "message": "{{dupModsCount}} entrées Mods= en double, {{dupWsCount}} entrées WorkshopItems= en double dans la configuration du serveur.",
+              "hint": "Nettoyez la configuration du serveur — les doublons peuvent perturber l'ordre de chargement des mods."
+            },
+            "modsOnly": {
+              "label": "Entrées de mods en double",
+              "message": "{{dupModsCount}} entrées Mods= en double dans la configuration du serveur.",
+              "hint": "Nettoyez la configuration du serveur — les doublons peuvent perturber l'ordre de chargement des mods."
+            },
+            "workshopOnly": {
+              "label": "Entrées de mods en double",
+              "message": "{{dupWsCount}} entrées WorkshopItems= en double dans la configuration du serveur.",
+              "hint": "Nettoyez la configuration du serveur — les doublons peuvent perturber l'ordre de chargement des mods."
+            }
+          }
+        },
+        "maps": {
+          "ok": {
+            "label": "Les entrées Map= se résolvent",
+            "message": "{{count}} couche(s) de carte configurée(s)."
+          },
+          "fail": {
+            "both": {
+              "label": "Les entrées Map= ne se résolvent pas",
+              "message": "{{count}} entrées Map= sont introuvables. {{modsInMapCount}} d'entre elles sont en réalité des noms de mods, pas des cartes (elles n'appartiennent qu'à Mods=) : {{modsInMapList}}. {{trulyMissingCount}} introuvables dans un mod installé : {{trulyMissingList}}.",
+              "hint": "Retirez les noms de mods de Map=, et ajoutez le mod de carte correspondant ou corrigez l'orthographe pour le reste."
+            },
+            "modsOnly": {
+              "label": "Les entrées Map= ne se résolvent pas",
+              "message": "{{count}} entrées Map= sont introuvables. {{modsInMapCount}} d'entre elles sont en réalité des noms de mods, pas des cartes (elles n'appartiennent qu'à Mods=) : {{modsInMapList}}.",
+              "hint": "Ce sont des noms de mods, pas des cartes. Retirez-les de Map= — ils doivent seulement être dans Mods=."
+            },
+            "missingOnly": {
+              "label": "Les entrées Map= ne se résolvent pas",
+              "message": "{{count}} entrées Map= sont introuvables. {{trulyMissingCount}} introuvables dans un mod installé : {{trulyMissingList}}.",
+              "hint": "Les joueurs apparaîtront dans le vide. Ajoutez le mod de carte correspondant ou corrigez l'orthographe dans la configuration du serveur."
+            }
           }
         }
       }

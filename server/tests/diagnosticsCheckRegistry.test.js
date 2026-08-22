@@ -71,6 +71,15 @@ const KNOWN_TRANSLATED_IDS = new Set([
   "bridge.writable",
   "bridge.heartbeat",
   "bridge.error",
+  // Batch 7: Mods (+ server.recentCrash, same try-block as batch 2's
+  // Active Server checks, just further down in the file)
+  "mods.workshopCrash",
+  "server.recentCrash",
+  "mods.numericInMods",
+  "mods.resolved",
+  "mods.orphanWorkshop",
+  "mods.duplicates",
+  "mods.maps",
 ]);
 
 /**
@@ -83,11 +92,24 @@ const KNOWN_TRANSLATED_IDS = new Set([
  * reasoning as errorCodeRegistry.test.js's CODE_LITERAL_RE: narrow enough
  * not to need @babel/parser, and it keeps every id/status/variant this
  * test can see grep-able as a literal in the source, same discipline
- * server/utils/errorCodes.js documents for `code:` values. A variant
- * built from a ternary/expression rather than a string literal per branch
- * is invisible here BY DESIGN -- see the comment above the installPath and
- * jre call sites in debug.js for why they're written as two literal
- * branches instead.
+ * server/utils/errorCodes.js documents for `code:` values.
+ *
+ * A COMPUTED variant is invisible here BY DESIGN, and has shown up in three
+ * different spellings while building this file -- watch for all three when
+ * adding a new check, not just the first one you happen to remember:
+ *   1. A ternary:            variant: isLinux ? "linux" : "windows"
+ *   2. A template literal:   variant: `${direction}_${platform}`
+ *   3. Trusting a shared LABEL instead of the actual id+status call site --
+ *      not a variant-construction bug exactly, but the same root failure:
+ *      two genuinely different messages (e.g. db.backup's "unreadable" and
+ *      "error" scenarios) can share identical English label text, so
+ *      grouping by (id, status, label) instead of by call site silently
+ *      collapses two entries into one.
+ * All three are fixed the same way: write out separate if/else branches,
+ * each with its own literal `variant: "..."` string, and verify by grepping
+ * every diagOk/diagFail/diagWarn/diagSkip/diagInfo call for a given id
+ * BEFORE writing any locale JSON -- see the comment above the installPath
+ * and jre call sites in debug.js for a worked example.
  */
 function extractDiagnosticsChecks(source) {
   const startMarker = 'router.get("/diagnostics"';

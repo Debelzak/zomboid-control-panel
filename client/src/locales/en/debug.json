@@ -398,6 +398,30 @@
             "message": "Couldn't find PanelBridge.lua under the server. Advanced features (teleport, weather, character export) will be unavailable.",
             "hint": "Copy pz-mod/PanelBridge into the server's media/lua/server folder"
           }
+        },
+        "recentCrash": {
+          "fail": {
+            "oom": {
+              "label": "Recent crash: Out of memory",
+              "message": "Found in server-console.txt (last update {{ageLabel}}): {{line}}",
+              "hint": "Raise the server's Java heap (-Xmx in the start script) or reduce mod count."
+            },
+            "workshop": {
+              "label": "Recent crash: Workshop install crash",
+              "message": "Found in server-console.txt (last update {{ageLabel}}): {{line}}",
+              "hint": "Open the Logs page and read the stack trace around the timestamp."
+            },
+            "mainException": {
+              "label": "Recent crash: Uncaught main-thread exception",
+              "message": "Found in server-console.txt (last update {{ageLabel}}): {{line}}",
+              "hint": "Open the Logs page and read the stack trace around the timestamp."
+            },
+            "fatal": {
+              "label": "Recent crash: FATAL log entry",
+              "message": "Found in server-console.txt (last update {{ageLabel}}): {{line}}",
+              "hint": "Open the Logs page and read the stack trace around the timestamp."
+            }
+          }
         }
       },
       "rcon": {
@@ -765,6 +789,99 @@
           "warn": {
             "label": "Bridge checks errored",
             "message": "Bridge IPC checks could not run: {{reason}}"
+          }
+        }
+      },
+      "mods": {
+        "workshopCrash": {
+          "fail": {
+            "label": "Workshop mod download failed — server boot aborted",
+            "message": "{{count}} Workshop item(s) could not be downloaded and the server crashed during install (last log update {{ageLabel}}). Failing ID(s): {{idList}}. Likely delisted, made private, or region-restricted.",
+            "hint": "Open Server Config and remove the failing ID(s) from both WorkshopItems= and Mods=, then restart."
+          },
+          "warn": {
+            "label": "Workshop download warnings",
+            "message": "{{count}} Workshop item(s) recently failed to download but the server did not crash (last log update {{ageLabel}}). ID(s): {{idList}}.",
+            "hint": "Verify each ID is still public on the Steam Workshop, or remove it from the server config."
+          }
+        },
+        "numericInMods": {
+          "warn": {
+            "label": "Workshop IDs misplaced in Mods=",
+            "message": "{{count}} numeric Mods= entries look like Workshop IDs, not mod folder names: {{list}}. These belong in WorkshopItems= and will never load from Mods=.",
+            "hint": "Remove these from Mods= and add them to WorkshopItems= instead."
+          }
+        },
+        "resolved": {
+          "ok": {
+            "label": "Mods= entries all resolve",
+            "message": "{{count}} mod(s) listed, all match an installed Workshop or local mod folder."
+          },
+          "fail": {
+            "label": "Mods= entries do not resolve",
+            "message": "{{count}} of {{total}} Mods= entries don't match any installed mod folder: {{list}}.",
+            "hint": "Usually a typo, missing WorkshopItems= ID, or the mod hasn't finished downloading. Fix in Server Config."
+          }
+        },
+        "orphanWorkshop": {
+          "warn": {
+            "both": {
+              "label": "Subscribed Workshop items not enabled",
+              "message": "{{count}} Workshop item(s) listed in WorkshopItems= but won't load: {{downloadedCount}} downloaded but not in Mods=, {{deadCount}} not on disk (dead subscription). IDs: {{list}}.",
+              "hint": "Auto-fix triages each ID: downloaded → resolves and adds to Mods=; ignored or missing → removes from WorkshopItems=."
+            },
+            "downloadedOnly": {
+              "label": "Subscribed Workshop items not enabled",
+              "message": "{{count}} Workshop item(s) listed in WorkshopItems= but won't load: {{downloadedCount}} downloaded but not in Mods=. IDs: {{list}}.",
+              "hint": "Auto-fix triages each ID: downloaded → resolves and adds to Mods=; ignored or missing → removes from WorkshopItems=."
+            },
+            "deadOnly": {
+              "label": "Subscribed Workshop items not enabled",
+              "message": "{{count}} Workshop item(s) listed in WorkshopItems= but won't load: {{deadCount}} not on disk (dead subscription). IDs: {{list}}.",
+              "hint": "Auto-fix triages each ID: downloaded → resolves and adds to Mods=; ignored or missing → removes from WorkshopItems=."
+            }
+          }
+        },
+        "duplicates": {
+          "warn": {
+            "both": {
+              "label": "Duplicate mod entries",
+              "message": "{{dupModsCount}} duplicate Mods= entries, {{dupWsCount}} duplicate WorkshopItems= entries in the server config.",
+              "hint": "Tidy up Server Config — duplicates can confuse mod-load order."
+            },
+            "modsOnly": {
+              "label": "Duplicate mod entries",
+              "message": "{{dupModsCount}} duplicate Mods= entries in the server config.",
+              "hint": "Tidy up Server Config — duplicates can confuse mod-load order."
+            },
+            "workshopOnly": {
+              "label": "Duplicate mod entries",
+              "message": "{{dupWsCount}} duplicate WorkshopItems= entries in the server config.",
+              "hint": "Tidy up Server Config — duplicates can confuse mod-load order."
+            }
+          }
+        },
+        "maps": {
+          "ok": {
+            "label": "Map= entries resolve",
+            "message": "{{count}} map layer(s) configured."
+          },
+          "fail": {
+            "both": {
+              "label": "Map= entries do not resolve",
+              "message": "{{count}} Map= entries cannot be found. {{modsInMapCount}} of them are actually mod names, not maps (they only belong in Mods=): {{modsInMapList}}. {{trulyMissingCount}} not found in any installed mod: {{trulyMissingList}}.",
+              "hint": "Remove mod names from Map=, and add the matching map mod or fix spelling for the rest."
+            },
+            "modsOnly": {
+              "label": "Map= entries do not resolve",
+              "message": "{{count}} Map= entries cannot be found. {{modsInMapCount}} of them are actually mod names, not maps (they only belong in Mods=): {{modsInMapList}}.",
+              "hint": "These names are mods, not maps. Remove them from Map= — they only need to be in Mods=."
+            },
+            "missingOnly": {
+              "label": "Map= entries do not resolve",
+              "message": "{{count}} Map= entries cannot be found. {{trulyMissingCount}} not found in any installed mod: {{trulyMissingList}}.",
+              "hint": "Players will spawn into the void. Add the matching map mod or fix the spelling in Server Config."
+            }
           }
         }
       }

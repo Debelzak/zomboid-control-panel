@@ -450,4 +450,80 @@ describe('translateDiagnosticCheck', () => {
     expect(never.message).toBe("status.json n'a jamais été écrit. Le mod n'est pas chargé sur le serveur.")
     expect(stale.message).not.toBe(never.message)
   })
+
+  it('resolves 4 distinct variants for server.recentCrash, each with its own label (no shared-label param needed)', () => {
+    const oom = translateDiagnosticCheck({
+      id: 'server.recentCrash',
+      status: 'fail',
+      label: 'Recent crash: Out of memory',
+      message: 'Found in server-console.txt (last update 2h ago): java.lang.OutOfMemoryError: Java heap space',
+      hint: "Raise the server's Java heap (-Xmx in the start script) or reduce mod count.",
+      params: { ageLabel: '2h ago', line: 'java.lang.OutOfMemoryError: Java heap space' },
+      variant: 'oom',
+    })
+    const fatal = translateDiagnosticCheck({
+      id: 'server.recentCrash',
+      status: 'fail',
+      label: 'Recent crash: FATAL log entry',
+      message: 'Found in server-console.txt (last update 10m ago): FATAL something broke',
+      hint: 'Open the Logs page and read the stack trace around the timestamp.',
+      params: { ageLabel: '10m ago', line: 'FATAL something broke' },
+      variant: 'fatal',
+    })
+    expect(oom.label).toBe('Panne récente : mémoire insuffisante')
+    expect(fatal.label).toBe('Panne récente : entrée de journal FATAL')
+    expect(oom.hint).not.toBe(fatal.hint)
+    expect(oom.message).toBe('Trouvé dans server-console.txt (dernière mise à jour 2h ago) : java.lang.OutOfMemoryError: Java heap space')
+  })
+
+  it('resolves the 3-way "which clauses" variant for mods.orphanWorkshop', () => {
+    const both = translateDiagnosticCheck({
+      id: 'mods.orphanWorkshop',
+      status: 'warn',
+      label: 'Subscribed Workshop items not enabled',
+      message: '3 Workshop items are listed in WorkshopItems= but won\'t load: 2 downloaded but not in Mods=, 1 not on disk (dead subscription). IDs: 111, 222, 333.',
+      hint: 'Auto-fix triages each ID: downloaded → resolves and adds to Mods=; ignored or missing → removes from WorkshopItems=.',
+      params: { count: 3, downloadedCount: 2, deadCount: 1, list: '111, 222, 333' },
+      variant: 'both',
+    })
+    const downloadedOnly = translateDiagnosticCheck({
+      id: 'mods.orphanWorkshop',
+      status: 'warn',
+      label: 'Subscribed Workshop items not enabled',
+      message: '2 Workshop items are listed in WorkshopItems= but won\'t load: 2 downloaded but not in Mods=. IDs: 111, 222.',
+      hint: 'Auto-fix triages each ID: downloaded → resolves and adds to Mods=; ignored or missing → removes from WorkshopItems=.',
+      params: { count: 2, downloadedCount: 2, list: '111, 222' },
+      variant: 'downloadedOnly',
+    })
+    expect(both.message).toContain('2 téléchargé(s) mais absent(s) de Mods=, 1 absent(s) du disque')
+    expect(downloadedOnly.message).not.toContain('absent(s) du disque')
+    expect(both.message).not.toBe(downloadedOnly.message)
+  })
+
+  it('resolves the 3-way variant for mods.maps, params only appearing where the variant needs them', () => {
+    const modsOnly = translateDiagnosticCheck({
+      id: 'mods.maps',
+      status: 'fail',
+      label: 'Map= entries do not resolve',
+      message: '1 entry in Map= cannot be found. 1 entry is a mod, not a map (belong only in Mods=): CoolMod.',
+      hint: 'These names are mods, not maps. Remove them from Map= — they only need to be in Mods=.',
+      params: { count: 1, modsInMapCount: 1, modsInMapList: 'CoolMod' },
+      variant: 'modsOnly',
+    })
+    expect(modsOnly.message).toBe(
+      "1 entrées Map= sont introuvables. 1 d'entre elles sont en réalité des noms de mods, pas des cartes (elles n'appartiennent qu'à Mods=) : CoolMod.",
+    )
+    expect(modsOnly.hint).toBe('Ce sont des noms de mods, pas des cartes. Retirez-les de Map= — ils doivent seulement être dans Mods=.')
+  })
+
+  it('falls back to server text for mods.maps.fail when the variant has no registered entry (e.g. a future 4th combination)', () => {
+    const check = {
+      id: 'mods.maps',
+      status: 'fail',
+      label: 'Map= entries do not resolve',
+      message: 'some future scenario text',
+      variant: 'neither', // not a real variant this batch registered
+    }
+    expect(translateDiagnosticCheck(check).message).toBe('some future scenario text')
+  })
 })
