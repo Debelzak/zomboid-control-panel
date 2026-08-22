@@ -248,12 +248,14 @@ router.post("/auto-scan", requirePermission("servers.discover"), async (req, res
       return res.status(400).json({ error: "Invalid path format" });
     }
 
-    const resolvedPath = path.resolve(scanPath);
-
-    // Must be an absolute path
-    if (!path.isAbsolute(resolvedPath)) {
+    // Must check isAbsolute() on the raw input: path.resolve() always
+    // returns an absolute path (resolved against cwd), so checking it after
+    // resolving would never reject anything and silently accepted relative
+    // paths as if they'd been rejected.
+    if (!path.isAbsolute(scanPath)) {
       return res.status(400).json({ error: "Must be an absolute path" });
     }
+    const resolvedPath = path.resolve(scanPath);
 
     // Block scanning root paths directly — require at least one subfolder
     const isRootPath =
@@ -363,11 +365,14 @@ router.post("/detect", requirePermission("servers.discover"), async (req, res) =
       return res.status(400).json({ error: "Invalid path format" });
     }
 
-    // Must be absolute
-    const resolvedData = path.resolve(dataPath);
-    if (!path.isAbsolute(resolvedData)) {
+    // Must check isAbsolute() on the raw input: path.resolve() always
+    // returns an absolute path (resolved against cwd), so checking it after
+    // resolving would never reject anything and silently accepted relative
+    // paths as if they'd been rejected.
+    if (!path.isAbsolute(dataPath)) {
       return res.status(400).json({ error: "Must be an absolute path" });
     }
+    const resolvedData = path.resolve(dataPath);
 
     // Verify data path exists
     if (!fs.existsSync(resolvedData)) {

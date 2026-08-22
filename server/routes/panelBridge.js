@@ -2664,12 +2664,15 @@ router.post("/install-mod", requirePermission("bridge.setup"), (req, res) => {
     return res.status(400).json({ error: "Invalid path format" });
   }
 
-  const resolvedTarget = path.resolve(targetPath);
-
-  // Must be absolute
-  if (!path.isAbsolute(resolvedTarget)) {
+  // Must check isAbsolute() on the raw input: path.resolve() always
+  // returns an absolute path (resolved against cwd), so checking it after
+  // resolving would never reject anything and silently accepted relative
+  // paths as if they'd been rejected. (The real containment check is the
+  // realpath + /media/lua/server suffix check below, which does work.)
+  if (!path.isAbsolute(targetPath)) {
     return res.status(400).json({ error: "Must be an absolute path" });
   }
+  const resolvedTarget = path.resolve(targetPath);
 
   // Resolve symlinks to prevent traversal via symlink chains
   let realTarget;
