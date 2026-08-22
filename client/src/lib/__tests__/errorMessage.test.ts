@@ -103,3 +103,82 @@ describe('getUserErrorMessage — error.code translation priority', () => {
     expect(getUserErrorMessage(error, 'fallback')).toBe('No active server configured')
   })
 })
+
+describe('getUserErrorMessage — structured params interpolation', () => {
+  beforeEach(() => {
+    void i18n.changeLanguage('fr')
+  })
+
+  afterEach(() => {
+    void i18n.changeLanguage('en')
+  })
+
+  it('interpolates a registered translation once the server sends the matching param', () => {
+    const error = new ApiError('A role named "Moderator" already exists', {
+      code: 'ROLE_NAME_TAKEN',
+      data: { params: { name: 'Moderator' } },
+    })
+    expect(getUserErrorMessage(error, 'fallback')).toBe('Un rôle nommé « Moderator » existe déjà')
+  })
+
+  it('interpolates a numeric param', () => {
+    const error = new ApiError('3 user(s) still hold this role.', {
+      code: 'ROLE_HAS_MEMBERS',
+      data: { params: { count: 3 } },
+    })
+    expect(getUserErrorMessage(error, 'fallback')).toBe(
+      "Ce rôle est encore détenu par 3 utilisateur(s). Indiquez reassignTo pour les réattribuer à un autre rôle d'abord.",
+    )
+  })
+
+  it('resolves an action param through the capabilities label catalogue instead of showing the raw key', () => {
+    const error = new ApiError('This change would leave no user able to manage roles.', {
+      code: 'ROLE_LOCKOUT_LAST_MANAGER',
+      data: { params: { action: 'roles.manage' } },
+    })
+    const message = getUserErrorMessage(error, 'fallback')
+    expect(message).not.toContain('roles.manage')
+    expect(message).not.toContain('{{')
+    expect(message).toContain('Gérer les rôles et permissions')
+  })
+
+  it('falls back to the raw value for a capability param with no matching label (e.g. an invalid capability)', () => {
+    const error = new ApiError('Unknown capability: not.a.real.capability', {
+      code: 'INVALID_CAPABILITY',
+      data: { params: { capability: 'not.a.real.capability' } },
+    })
+    expect(getUserErrorMessage(error, 'fallback')).toBe('Capacité inconnue : not.a.real.capability')
+  })
+
+  it('does not resolve capability labels for param names outside the closed list (e.g. name)', () => {
+    const error = new ApiError('A role named "roles.manage" already exists', {
+      code: 'ROLE_NAME_TAKEN',
+      data: { params: { name: 'roles.manage' } },
+    })
+    expect(getUserErrorMessage(error, 'fallback')).toBe('Un rôle nommé « roles.manage » existe déjà')
+  })
+
+  it('falls through to the server text when params is missing the required key (malformed, not just absent)', () => {
+    const error = new ApiError('A role named "Moderator" already exists', {
+      code: 'ROLE_NAME_TAKEN',
+      data: { params: { wrongKey: 'Moderator' } },
+    })
+    expect(getUserErrorMessage(error, 'fallback')).toBe('A role named "Moderator" already exists')
+  })
+
+  it('falls through to the server text when params has the right key but a non-string/number value', () => {
+    const error = new ApiError('A role named "Moderator" already exists', {
+      code: 'ROLE_NAME_TAKEN',
+      data: { params: { name: { nested: 'Moderator' } } },
+    })
+    expect(getUserErrorMessage(error, 'fallback')).toBe('A role named "Moderator" already exists')
+  })
+
+  it('falls through to the server text when params itself is not an object (array)', () => {
+    const error = new ApiError('A role named "Moderator" already exists', {
+      code: 'ROLE_NAME_TAKEN',
+      data: { params: ['Moderator'] },
+    })
+    expect(getUserErrorMessage(error, 'fallback')).toBe('A role named "Moderator" already exists')
+  })
+})

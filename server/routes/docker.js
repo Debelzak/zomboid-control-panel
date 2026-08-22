@@ -1,6 +1,6 @@
 import express from "express";
 import { requirePermission } from "../services/permissions.js";
-import { sanitizeError } from "../utils/sanitize.js";
+import { sanitizeError, sanitizeErrorParams } from "../utils/sanitize.js";
 import { getServer } from "../database/init.js";
 import { RconService } from "../services/rcon.js";
 import { ErrorCode } from "../utils/errorCodes.js";
@@ -112,9 +112,11 @@ router.post("/containers/:id/:action", requirePermission("docker.manage"), async
       }
       const saved = await rconService.save({ skipLog: true });
       if (!saved?.success) {
+        const reason = saved?.error || "unknown error";
         return res.status(409).json({
-          error: `World save failed: ${saved?.error || "unknown error"}`,
+          error: `World save failed: ${reason}`,
           code: ErrorCode.DOCKER_ACTION_SAVE_FAILED,
+          params: sanitizeErrorParams({ reason }),
         });
       }
     }

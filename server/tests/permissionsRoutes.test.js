@@ -169,18 +169,29 @@ describe("POST /roles", () => {
     );
   });
 
-  it("surfaces INVALID_CAPABILITY as a 400 with the named code", async () => {
+  it("surfaces INVALID_CAPABILITY as a 400 with the named code and the offending capability as a param", async () => {
     const res = await runRoute("/roles", "post", {
       user: { userId: "u-admin", role: "admin" },
       body: { name: "Broken", capabilities: ["not.a.capability"] },
     });
     expect(res.getStatusCode()).toBe(400);
     expect(res.getBody().code).toBe("INVALID_CAPABILITY");
+    expect(res.getBody().params).toEqual({ capability: "not.a.capability" });
+  });
+
+  it("omits params for INVALID_CAPABILITY when there's no single offending value to report", async () => {
+    const res = await runRoute("/roles", "post", {
+      user: { userId: "u-admin", role: "admin" },
+      body: { name: "Broken", capabilities: "not-an-array" },
+    });
+    expect(res.getStatusCode()).toBe(400);
+    expect(res.getBody().code).toBe("INVALID_CAPABILITY");
+    expect(res.getBody().params).toBeUndefined();
   });
 });
 
 describe("PUT /roles/:id", () => {
-  it("surfaces ROLE_LOCKOUT_LAST_MANAGER as a 409 with the named code", async () => {
+  it("surfaces ROLE_LOCKOUT_LAST_MANAGER as a 409 with the named code and the stable capability key as a param", async () => {
     const res = await runRoute("/roles/:id", "put", {
       user: { userId: "u-admin", role: "admin" },
       params: { id: ADMIN_ROLE_ID },
@@ -188,11 +199,12 @@ describe("PUT /roles/:id", () => {
     });
     expect(res.getStatusCode()).toBe(409);
     expect(res.getBody().code).toBe("ROLE_LOCKOUT_LAST_MANAGER");
+    expect(res.getBody().params).toEqual({ action: "roles.manage" });
   });
 });
 
 describe("DELETE /roles/:id", () => {
-  it("surfaces ROLE_HAS_MEMBERS as a 409 with the named code, without reassignTo", async () => {
+  it("surfaces ROLE_HAS_MEMBERS as a 409 with the named code and the member count as a param", async () => {
     const res = await runRoute("/roles/:id", "delete", {
       user: { userId: "u-admin", role: "admin" },
       params: { id: ADMIN_ROLE_ID },
@@ -200,5 +212,6 @@ describe("DELETE /roles/:id", () => {
     });
     expect(res.getStatusCode()).toBe(409);
     expect(res.getBody().code).toBe("ROLE_HAS_MEMBERS");
+    expect(res.getBody().params).toEqual({ count: expect.any(Number) });
   });
 });

@@ -464,21 +464,26 @@ async function countUsersWithCapability(capability, excludingRoleId = null) {
   return count;
 }
 
+// Returns null when valid, otherwise { message, capability } -- capability
+// is only set when there's an actual offending value to report (the
+// not-an-array case has none), so callers can build the INVALID_CAPABILITY
+// `params` object without a placeholder value to fill.
 function validateCapabilitiesArray(capabilities) {
   if (!Array.isArray(capabilities)) {
-    return "capabilities must be an array";
+    return { message: "capabilities must be an array" };
   }
   const unknown = capabilities.filter((c) => !isKnownCapability(c));
   if (unknown.length > 0) {
-    return `Unknown capability: ${unknown[0]}`;
+    return { message: `Unknown capability: ${unknown[0]}`, capability: unknown[0] };
   }
   return null;
 }
 
-function makeError(code, message, status = 400) {
+function makeError(code, message, status = 400, params) {
   const err = new Error(message);
   err.code = code;
   err.status = status;
+  if (params) err.params = params;
   return err;
 }
 
@@ -503,7 +508,12 @@ export async function createRole({ name, capabilities }) {
   const trimmedName = name.trim();
   const capError = validateCapabilitiesArray(capabilities);
   if (capError) {
-    throw makeError(ErrorCode.INVALID_CAPABILITY, capError, 400);
+    throw makeError(
+      ErrorCode.INVALID_CAPABILITY,
+      capError.message,
+      400,
+      capError.capability !== undefined ? { capability: capError.capability } : undefined,
+    );
   }
 
   const existingRoles = await getRoles();
@@ -512,6 +522,7 @@ export async function createRole({ name, capabilities }) {
       ErrorCode.ROLE_NAME_TAKEN,
       `A role named "${trimmedName}" already exists`,
       409,
+      { name: trimmedName },
     );
   }
 
@@ -559,6 +570,11 @@ async function checkLockoutRulesForCapabilityChange({
           capability === "roles.manage" ? "manage roles" : "manage user accounts"
         }.`,
         409,
+        // `action` carries the stable capability key, not English prose --
+        // the client resolves it through capabilities.<key>.label in
+        // client/src/locales/*/roles.json, the same catalogue the matrix
+        // UI renders from. See errorMessage.ts's CAPABILITY_KEY_PARAM_NAMES.
+        { action: capability },
       );
     }
 
@@ -576,6 +592,7 @@ async function checkLockoutRulesForCapabilityChange({
             capability === "roles.manage" ? "manage roles" : "manage user accounts"
           }. Set confirmSelfCapabilityLoss: true to proceed anyway.`,
           409,
+          { action: capability },
         );
       }
     }
@@ -599,6 +616,7 @@ export async function updateRole(
       ErrorCode.ROLE_NAME_TAKEN,
       `A role named "${nextName}" already exists`,
       409,
+      { name: nextName },
     );
   }
 
@@ -606,7 +624,12 @@ export async function updateRole(
   if (capabilities !== undefined) {
     const capError = validateCapabilitiesArray(capabilities);
     if (capError) {
-      throw makeError(ErrorCode.INVALID_CAPABILITY, capError, 400);
+      throw makeError(
+        ErrorCode.INVALID_CAPABILITY,
+        capError.message,
+        400,
+        capError.capability !== undefined ? { capability: capError.capability } : undefined,
+      );
     }
     nextCapabilities = [...new Set(capabilities)];
 
@@ -649,6 +672,7 @@ export async function deleteRole(id, { reassignTo, actingUser } = {}) {
       ErrorCode.ROLE_HAS_MEMBERS,
       `${members.length} user(s) still hold this role. Pass reassignTo to move them to another role first.`,
       409,
+      { count: members.length },
     );
   }
 

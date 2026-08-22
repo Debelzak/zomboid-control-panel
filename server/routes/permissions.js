@@ -1,6 +1,6 @@
 import express from "express";
 import { createLogger } from "../utils/logger.js";
-import { sanitizeError } from "../utils/sanitize.js";
+import { sanitizeError, sanitizeErrorParams } from "../utils/sanitize.js";
 import {
   requirePermission,
   listCapabilitiesGrouped,
@@ -21,6 +21,7 @@ function respondWithServiceError(res, error, fallbackMessage) {
   if (error && error.status) {
     const body = { error: error.message || fallbackMessage };
     if (error.code) body.code = error.code;
+    if (error.params) body.params = sanitizeErrorParams(error.params);
     return res.status(error.status).json(body);
   }
   log.error(`${fallbackMessage}: ${error.message}`);

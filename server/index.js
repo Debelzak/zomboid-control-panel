@@ -55,7 +55,7 @@ import { requireRole } from "./services/auth.js";
 import authRoutes from "./routes/auth.js";
 import oidcRoutes from "./routes/oidc.js";
 import { loadOrCreateCerts } from "./utils/certs.js";
-import { sanitizeError } from "./utils/sanitize.js";
+import { sanitizeError, sanitizeErrorParams } from "./utils/sanitize.js";
 import { ErrorCode } from "./utils/errorCodes.js";
 import { getSftpCachePath } from "./services/panelBridgeSftp.js";
 import {
@@ -1557,16 +1557,20 @@ export async function handlePanelUpdateDownload(req, res) {
 
           const saved = await rconService.save();
           if (!saved?.success) {
+            const reason = saved?.error || "unknown error";
             return res.status(409).json({
-              error: `The world could not be saved (${saved?.error || "unknown error"}), so the server was left running. Applying the update now would lose everything since the last save.`,
+              error: `The world could not be saved (${reason}), so the server was left running. Applying the update now would lose everything since the last save.`,
               code: "save_failed",
+              params: sanitizeErrorParams({ reason }),
             });
           }
           const quit = await rconService.quit();
           if (!quit?.success) {
+            const reason = quit?.error || "unknown error";
             return res.status(502).json({
-              error: `The world was saved, but the server could not be shut down (${quit?.error || "unknown error"}). It is still running, so the update was not applied.`,
+              error: `The world was saved, but the server could not be shut down (${reason}). It is still running, so the update was not applied.`,
               code: "stop_failed",
+              params: sanitizeErrorParams({ reason }),
             });
           }
           await logServerEvent(

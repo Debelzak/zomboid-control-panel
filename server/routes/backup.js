@@ -2,7 +2,7 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import { createLogger } from "../utils/logger.js";
-import { sanitizeError } from "../utils/sanitize.js";
+import { sanitizeError, sanitizeErrorParams } from "../utils/sanitize.js";
 import { getActiveServer } from "../database/init.js";
 import { requirePermission } from "../services/permissions.js";
 import { listBackupRecords } from "../services/backupRecords.js";
@@ -352,6 +352,7 @@ router.post(
           .json({
             error: `A backup named "${finalName}" already exists. Delete it first or rename the upload.`,
             code: ErrorCode.BACKUP_UPLOAD_NAME_CONFLICT,
+            params: sanitizeErrorParams({ name: finalName }),
           });
       }
 
