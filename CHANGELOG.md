@@ -65,6 +65,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `client/src/locales/README.md`.
 
 ### Fixed
+- **Giving a custom role permission to manage users now actually works**: the screens for listing
+  and creating accounts were still checking for the built-in administrator role by name, rather than
+  checking the permission. So you could tick "manage users" for a role you had created, the panel
+  would save it and show it as granted, and that role still could not see the user list - the tick
+  box now means something. Changing an account's role already worked correctly; it is the other two
+  that were inconsistent with it.
+
+  One deliberate exception, left as it is on purpose: regenerating the login signing key is still
+  administrator-only and cannot be delegated to a custom role. It signs everybody out of every
+  device immediately, including you, and there is no way to undo it or wait it out - so it is not
+  something one role should be able to do to another.
 - **Permission checks now refuse by default instead of allowing by default**: underneath the
   account-management bug above sat the reason it was possible - if the panel could not tell who was
   making a request, the permission checks treated that as "nothing to check" and let it through. That
