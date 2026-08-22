@@ -50,6 +50,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rather than as more rows. No colours, fonts or components were invented for this - every change
   reuses something the panel already does elsewhere.
 
+- **Debug > World Map now reports in French too**: the fourteen health checks behind the World Map
+  tab - whether the map tiles were found, which game build they came from, whether the PanelBridge
+  mod is running and heard from recently, and which save the panel is reading - are now written in
+  French rather than falling back to English. Checks whose wording genuinely changes with the
+  situation get a properly written French sentence for each case, not one sentence with a word
+  swapped out. As with the Diagnostics tab, a test enforces that every check has both languages and
+  that no entry is left behind for a check that was removed.
+
 - **Debug > Diagnostics now reports in French**: 46 of the 47 health checks - their titles, their
   verdicts and the specific details they carry, such as how many mods are affected or which folder
   is missing - are now written in French rather than falling back to English. Checks whose wording
