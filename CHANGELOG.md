@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **The panel is now available in Spanish**: every screen, dialog, error message and health check -
+  6,855 pieces of text across 54 files - has been translated, and Español now appears in the
+  language picker alongside English, French and Simplified Chinese.
+
+  Spanish addresses you directly, the way a tool you run for your own server should, and keeps
+  Project Zomboid's own vocabulary where a Spanish-speaking player expects it: mod, chunk and
+  sandbox stay as they are, along with mod IDs, Workshop IDs, chat tags and SteamCMD's own output.
+  A shared glossary keeps one word per concept across every screen.
+
 - **The panel is now available in Simplified Chinese**: every screen, dialog, error message and
   health check - 6,855 pieces of text across 54 files - has been translated, and 简体中文 now appears
   in the language picker alongside English and French. The choice is remembered in your browser.
