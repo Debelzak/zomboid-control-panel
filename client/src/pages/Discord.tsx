@@ -1462,7 +1462,13 @@ export default function Discord() {
                   {t("management.botStatus.botUserLabel")}
                 </p>
                 <p className="mt-1 truncate text-lg font-semibold">
-                  {status?.username || t("management.botStatus.waitingForLogin")}
+                  {/* "Waiting for login" is only literally true for the few
+                      seconds a start() call is actually in flight -- once it
+                      fails (or was never attempted), status.running stays
+                      false and this text sits there indefinitely implying
+                      something is still in progress when nothing is. "Not
+                      signed in" is honest in both cases. */}
+                  {status?.username || t("management.botStatus.notSignedIn")}
                 </p>
               </div>
               <div
@@ -1474,7 +1480,14 @@ export default function Discord() {
                 <p
                   className={`mt-1 truncate text-lg font-semibold ${config?.channelId ? "" : "text-warning"}`}
                 >
-                  {config?.channelId ? t("management.botStatus.linked") : t("management.botStatus.notSet")}
+                  {/* This only checks config.channelId -- a saved settings
+                      value, unrelated to status (the live runtime) or to
+                      whether the bot has ever connected. "Linked" reads as a
+                      verified, active relationship it doesn't represent;
+                      "Configured" (matching the Bot Token field's own
+                      "Configured" badge below) says only what's actually
+                      true: a channel ID has been saved. */}
+                  {config?.channelId ? t("management.botStatus.configured") : t("management.botStatus.notSet")}
                 </p>
               </div>
             </div>
