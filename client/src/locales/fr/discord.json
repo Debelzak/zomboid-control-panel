@@ -115,6 +115,7 @@
       "copyUrl": "Copier l'URL",
       "permissionsIncludedLabel": "Permissions incluses :",
       "permissionsIncludedList": "Envoyer des messages, intégrer des liens, lire l'historique des messages, utiliser les commandes slash",
+      "permissionsIncludedHelp": "Send Messages et Embed Links permettent au bot de publier des mises à jour de statut et des réponses aux commandes. Read Message History est exigé par Discord pour que les réponses aux messages fonctionnent de manière fiable. Aucune de ces permissions ne permet au bot de gérer votre serveur, vos rôles ou vos salons.",
       "manualInviteTitle": "Invitation manuelle",
       "manualInviteIntro": "Si vous n'avez pas encore vérifié votre jeton, vous pouvez tout de même inviter le bot manuellement.",
       "manualStep1": "Dans le portail des développeurs, allez dans votre appli → <1>OAuth2</1> → <2>URL Generator</2>",

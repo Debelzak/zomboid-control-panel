@@ -116,6 +116,7 @@
       "copyUrl": "Copy URL",
       "permissionsIncludedLabel": "Permissions included:",
       "permissionsIncludedList": "Send Messages, Embed Links, Read Message History, Use Slash Commands",
+      "permissionsIncludedHelp": "Send Messages and Embed Links let the bot post status updates and command replies. Read Message History is required by Discord for reliable message replies. None of these permissions let the bot manage your server, roles, or channels.",
       "manualInviteTitle": "Manual invite",
       "manualInviteIntro": "If you have not verified your token yet, you can still invite the bot manually.",
       "manualStep1": "In the Developer Portal, go to your app → <1>OAuth2</1> → <2>URL Generator</2>",

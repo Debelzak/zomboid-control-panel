@@ -115,6 +115,7 @@
       "copyUrl": "复制链接",
       "permissionsIncludedLabel": "包含的权限：",
       "permissionsIncludedList": "发送消息、嵌入链接、读取消息历史、使用斜杠命令",
+      "permissionsIncludedHelp": "Send Messages 和 Embed Links 让机器人可以发布状态更新和指令回复。Read Message History 是 Discord 要求的权限，用于确保消息回复能可靠送达。这些权限都不允许机器人管理你的服务器、身份组或频道。",
       "manualInviteTitle": "手动邀请",
       "manualInviteIntro": "如果尚未校验令牌，仍可手动邀请机器人。",
       "manualStep1": "在开发者平台中，进入应用 → <1>OAuth2</1> → <2>URL Generator</2>",

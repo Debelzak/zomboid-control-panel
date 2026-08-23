@@ -60,6 +60,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { HelpTip } from '@/components/HelpTip'
 import { Switch } from '@/components/ui/switch'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
@@ -2696,7 +2697,10 @@ export default function Mods() {
                   </DialogHeader>
                   <div className="space-y-4">
                     <div>
-                      <Label htmlFor="collection-url-input">{t('collectionDialog.urlLabel')}</Label>
+                      <div className="flex items-center gap-1.5">
+                        <Label htmlFor="collection-url-input">{t('collectionDialog.urlLabel')}</Label>
+                        <HelpTip label={t('collectionDialog.urlLabel')}>{t('collectionDialog.urlHelp')}</HelpTip>
+                      </div>
                       <div className="flex flex-col gap-2 sm:flex-row">
                         <Input
                           id="collection-url-input"
@@ -2979,11 +2983,22 @@ export default function Mods() {
                         {discoveredMod.modIds.length > 0 ? (
                           <div className="space-y-2.5">
                             <div className="flex items-center justify-between gap-2">
-                              <Label className="text-xs font-medium">
-                                {discoveredMod.hasMultipleModIds
-                                  ? t('addModDialog.modIdsSelectedLabel', { selected: selectedModIds.size, total: discoveredMod.modIds.length })
-                                  : t('addModDialog.modIdLabel')}
-                              </Label>
+                              <div className="flex items-center gap-1.5">
+                                <Label className="text-xs font-medium">
+                                  {discoveredMod.hasMultipleModIds
+                                    ? t('addModDialog.modIdsSelectedLabel', { selected: selectedModIds.size, total: discoveredMod.modIds.length })
+                                    : t('addModDialog.modIdLabel')}
+                                </Label>
+                                <HelpTip
+                                  label={
+                                    discoveredMod.hasMultipleModIds
+                                      ? t('addModDialog.modIdsSelectedLabel', { selected: selectedModIds.size, total: discoveredMod.modIds.length })
+                                      : t('addModDialog.modIdLabel')
+                                  }
+                                >
+                                  {t('addModDialog.modIdsHelp')}
+                                </HelpTip>
+                              </div>
                               {discoveredMod.hasMultipleModIds && (
                                 <Button
                                   size="sm"

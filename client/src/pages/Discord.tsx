@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { HelpTip } from "@/components/HelpTip";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Switch } from "@/components/ui/switch";
@@ -1009,8 +1010,13 @@ export default function Discord() {
                     </div>
 
                     <div className="text-sm text-muted-foreground space-y-1">
-                      <p>
-                        <strong>{t("wizard.step3.permissionsIncludedLabel")}</strong> {t("wizard.step3.permissionsIncludedList")}
+                      <p className="flex flex-wrap items-center gap-1.5">
+                        <span>
+                          <strong>{t("wizard.step3.permissionsIncludedLabel")}</strong> {t("wizard.step3.permissionsIncludedList")}
+                        </span>
+                        <HelpTip label={t("wizard.step3.permissionsIncludedLabel")}>
+                          {t("wizard.step3.permissionsIncludedHelp")}
+                        </HelpTip>
                       </p>
                     </div>
                   </div>
