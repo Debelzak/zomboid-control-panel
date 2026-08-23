@@ -69,11 +69,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of endless; everything starts expanded, so nothing changes unless you want it to. Users, Roles and
   Settings now show the shape of the page while it loads rather than a bare spinner.
 
-- **A Sign-in (OIDC) settings screen**: single sign-on can now be set up from the panel itself,
-  under Access Control > Sign-in. Enter your provider's address, client ID and secret, and press
-  Test Connection to check the provider answers before you save. The redirect URI your provider
-  needs - the one value you cannot guess - is offered with a single action that fills it in and
-  copies it. The client secret is never shown back to you once saved.
+- **A Sign-in (OIDC) settings screen: single sign-on can be set up from the panel itself, without
+  editing environment variables and restarting.** OIDC (Google, Authentik, Keycloak, Azure AD and
+  anything else that speaks the standard) previously had to be configured by editing environment
+  variables and restarting; it can now be configured under Access Control > Sign-in, and the change
+  takes effect immediately. Enter your provider's address, client ID and secret, and press Test
+  Connection to check the provider answers before you save.
+
+  The redirect URI - the one value your identity provider needs and that you cannot guess - is
+  worked out from the address you are actually using to reach the panel, so it is correct behind a
+  reverse proxy, and is offered with a single action that fills it in and copies it. The client
+  secret is stored outside the main database, is never sent back to the browser (not even masked),
+  and is never shown back to you once saved. If you had already set any of this through environment
+  variables, those still win, per field, so nothing you pinned deliberately gets overridden.
 - **You can now delete a user**: the Users screen could create and list accounts but there was no
   way to remove one. There is now. The panel refuses to delete the last account that can manage
   users and roles, so you cannot empty out your own administrators, and it refuses to let you
@@ -89,18 +97,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the three built-in ones. Users and Roles & Permissions have moved out of Settings & Tools into
   their own Access Control section, since managing who can do what is not a tool.
 
-- **Single sign-on can be set up from the panel instead of environment variables**: OIDC (Google,
-  Authentik, Keycloak, Azure AD and anything else that speaks the standard) previously had to be
-  configured by editing environment variables and restarting. It can now be configured from
-  Settings, and the change takes effect immediately without a restart. There is a Test Connection
-  button that checks your provider is reachable before you commit to the settings.
-
-  The redirect URI - the one value your identity provider needs and that you cannot guess - is
-  shown to you, worked out from the address you are actually using to reach the panel, so it is
-  correct behind a reverse proxy. The client secret is stored outside the main database and is
-  never sent back to the browser, not even masked. If you had already set any of this through
-  environment variables, those still win, per field, so nothing you pinned deliberately gets
-  overridden.
 - **The three Access Control screens now look like the rest of the panel**: Users, Sign-in and
   Roles & Permissions were built last and did not quite match the twenty screens around them.
   They now carry a short label above their titles the way the panel's other sections do - one that
@@ -216,26 +212,218 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `client/src/locales/README.md`.
 
 ### Fixed
-- **Dragging the Map Cleanup map was jerky.** Panning or drawing a selection redrew the whole map
-  on every single mouse movement the browser reported - dozens of full repaints a second, each one
-  redrawing every visible chunk. The map now paints at most once per frame no matter how fast the
-  mouse moves: in a test firing 60 movements in a single burst, the old code would have attempted 60
-  repaints and the new code does exactly one. The map itself is unchanged - same chunks, same
-  colours, same selection behaviour - it simply stops doing work it was throwing away.
 
-- **Map Cleanup took far too long to open, and the wait got dramatically worse the bigger your
-  save was.** Two separate causes, both fixed. The scan read your save's chunk directories strictly
-  one at a time, so the wait tracked the *number of directories* rather than the amount of data -
-  measured on a test save, splitting the same 9,000 files across more directories took four times
-  longer with no extra data to read. On a NAS or a spinning disk, where each read costs far more
-  than on an SSD, that difference is much larger. Separately, the page asks for the file list and
-  the storage totals at the same time, and the totals were walking parts of the save up to three
-  times over, competing with the file list for the same disk. The totals are now gathered in a
-  single pass, and both walks read a bounded number of directories at once instead of either
-  one-at-a-time or all-at-once. On the same test save the file list went from 1.5s to 0.4s and the
-  totals from 1.25s to 0.65s - but the number that matters is the two together, which is what
-  actually happens when you open the page: it was swinging between 1.7 and 12.4 seconds and is now
-  a steady 1 second. The unpredictability was most of what made it feel broken.
+Ordered so what actually hurts you comes first: things that can lose data or leave you locked out,
+then who can do what, then places the panel told you something that was not true, then general
+reliability, then interface and translation.
+
+#### Data loss, dangerous actions, and things that never worked at all
+
+- **The panel was quietly deleting backups you uploaded yourself**: automatic cleanup kept only the
+  most recent backups and treated an archive you had uploaded by hand exactly like one the panel
+  made on a schedule. On the default settings that meant a backup you deliberately saved was deleted
+  within a couple of days, with nothing to tell you it had happened. The code even carried a note
+  saying uploaded archives were protected - they were not. They are now: automatic cleanup skips
+  them entirely.
+
+- **If the panel could not tell whether your server was running, it assumed it was stopped.** The
+  check that looks for the running game process reports a plain "not running" both when the server
+  is genuinely stopped and when the check itself fails - an unreadable process list, a permissions
+  problem, a hung scan. Four things trusted that answer and acted on it. **Wiping the world** could
+  therefore proceed against a server that was actually running. **Updating the server through
+  SteamCMD** could too - it even caught the check's own error and carried on regardless. The
+  unattended auto-updater would skip saving and shutting down cleanly first. And an automatic mod
+  restart could mark the update as handled without ever performing it, so it would never be retried.
+  All four now tell the difference between "stopped" and "cannot tell", and refuse to act on the
+  second.
+
+- **Three things stopped working without saying so.** Mod update checking silently fell back to a
+  weaker local-only comparison during a Steam outage, and reported nothing. Disk monitoring returned
+  exactly the same "plenty of space" shape whether the disk was healthy or the volume had become
+  unreachable, so the low-disk warning went quiet at precisely the moment it mattered. And the
+  short-lived cache used when editing configuration on a remote server was keyed only on the server
+  name, so changing the host or credentials and immediately reading a file could serve content
+  fetched over the old connection. All three now report their real state.
+
+- **"Success" messages that were not true**: 42 places in the panel showed a green success message
+  as soon as the request came back, without checking whether the action had actually worked. Banning
+  or unbanning a player, giving an item, spawning a vehicle, triggering a scheduled task, restarting
+  the server and sending a broadcast all reported success even when the game server was offline and
+  nothing had happened. The two worst were the restart and the broadcast: an operator would announce
+  a restart to players and walk away, or believe players had been warned, when neither had taken
+  place. All of these now show the real error the server returned.
+
+- **If you locked yourself out of the local administrator account, the recovery form could never
+  work.** Resetting a lost local password requires a one-time token that the panel writes to
+  `data/reset-token.txt` - but the form had no field to type it into. The token was therefore always
+  empty, the submit button was enabled anyway, and pressing it failed every time with a complaint
+  about the missing token. This is the panel's only self-service way back into a locked-out local
+  admin account, and it could not be completed by anybody. The form now has the field, and the
+  button stays disabled until you fill it in.
+
+- **A wrong HTTPS certificate path or port could stop the panel starting at all, permanently**:
+  Settings accepted any text in the HTTPS certificate path, key path and port fields without
+  checking them, and saved it with a success message. Nothing went wrong until the next restart -
+  possibly days later - at which point the whole panel failed to start, not just HTTPS, and stayed
+  down until someone edited the stored setting from the filesystem. Anyone without that access was
+  locked out of their own panel by a single save. Those fields are now checked when you save, with
+  a message naming the problem; and if a path that was valid later becomes invalid - moved, deleted
+  or permissions changed - the panel now starts with HTTPS switched off and says so, instead of
+  refusing to start.
+
+- **The panel would not start at all on some Windows machines**: the launcher started the panel by
+  its bare filename, which relies on Windows searching the folder the launcher is sitting in. That
+  search is switched off by a setting some corporate and security-hardened Windows images apply, and
+  when it is off the panel never starts - you get "is not recognized as an internal or external
+  command", five retry attempts, and a "Panel crashed" banner that tells you nothing useful. The
+  launcher now uses the full path. The rest of the launcher was checked for the same mistake; this
+  was the only place it occurred.
+
+- **The World Map was blank - every single tile was 404ing.** The upstream map host moved: tiles
+  and the per-build descriptors are now served from `tiles.pzmap.org` and no longer sit under a
+  `/maps` path segment. The panel was still asking for the old address, so nothing loaded at all.
+  Only part of the site moved, which is what made this awkward - the map's build list is still on
+  the original host and asking the new one for it fails outright - so the panel now keeps the two
+  apart and uses the right host for each. The browser-direct fallback, used when a deployment lets
+  the browser reach the map but not the panel, had the old path hardcoded separately and was fixed
+  too. **Debug > World Map** was also reporting on the wrong address, in all five languages; a
+  diagnostic that is wrong about the thing it exists to diagnose is worse than none, so it now
+  probes what the panel actually requests.
+
+- **"Ping" on the Server Finder never worked, and said "N/A" instead of saying so.** The ping
+  request was sent without the panel's own credentials, so the server rejected it before it ever
+  reached the game server being tested - every time, for every signed-in user. The page then showed
+  "N/A", which is exactly what an unreachable server looks like, so a working server and a broken
+  feature were impossible to tell apart. Pings now return real times.
+
+- **Changing a mod setting told you to do something impossible.** Editing a mod setting reported
+  "Stop the server before editing configuration" - but the Mod Settings page cannot load with the
+  server stopped, so following the instruction left you with no way back in. The panel already had
+  the honest message written for this case and a generic error lookup was burying it. **And the
+  change now actually sticks.** The panel was refusing to save the setting to disk while the server
+  ran, on the assumption that Project Zomboid rewrites its configuration on shutdown and would throw
+  the edit away. We tested that against a real Build 42 server instead of assuming it: a clean
+  shutdown does not touch `SandboxVars.lua` or the server `.ini` at all, and the next startup
+  preserves a change written while the server was running. So the refusal was protecting against
+  something that does not happen, on the one setting that could never be saved any other way. Mod
+  settings now apply to the running game and survive a restart.
+
+- **Servers created without a name all shared one.** If you did not fill in the in-game server name,
+  the panel permanently wrote `servertest` - Project Zomboid's own default name - into its database
+  as if you had chosen it. Everything downstream then treated that as your real server name forever,
+  so two servers set up this way would quietly point at the same configuration and save files. The
+  panel now takes a name from the display name you did provide, and refuses to create the server if
+  neither is usable, rather than inventing an identity and writing it down.
+
+- **The French wording for "Wipe server" said "reset", not "erase"**: the dialog title, the
+  confirm button and both menu entries used *Réinitialiser* - the word this panel uses for ordinary,
+  recoverable resets elsewhere - directly above body text correctly warning that the action deletes
+  everything permanently. A French-speaking operator read a reassuring title over an alarming
+  description. It now says *Effacer*. The same mismatch on the "Wipe the world" permission label is
+  fixed too. Delete-old-backups and chunk deletion were checked and were already correct.
+
+#### Who can do what
+
+- **Anyone who could reach the panel could create an administrator account, with no password**:
+  requests to the account-management endpoints were not checking who was calling them. On any panel
+  that had finished setup, a request with no credentials at all could list every account, create a
+  new administrator, change any account's role, or sign every user out. The screens always implied a
+  login was required; the server was not enforcing it. It is enforced now. **If this panel has ever
+  been reachable from outside your own machine, review your accounts and treat any you did not create
+  yourself as suspect.** This was not introduced by any recent change - it dates back several months.
+- **Permission checks now refuse by default instead of allowing by default**: underneath the
+  account-management bug above sat the reason it was possible - if the panel could not tell who was
+  making a request, the permission checks treated that as "nothing to check" and let it through. That
+  was written when it was safe, and it quietly stopped being safe. Every request now has an identity
+  attached before any check runs, and if one is ever missing, the panel now refuses by default. The
+  practical difference: a future mistake of this kind produces a door that will not open, which
+  someone reports the same day, instead of one that is open to everybody, which went unnoticed for
+  months.
+- **Anyone who could reach the panel could see where every player was standing**: one address used
+  by the live map returned, for every player currently online, their name, their exact position in
+  the world, and how injured they were - without asking for a login. On a PvP server that is enough
+  to hunt someone. It now requires an account with permission to view players, which all three
+  built-in roles have, so nothing you already use stops working. A comment in the code describing
+  this address as deliberately public has been corrected, so it does not get re-opened later.
+- **Downloading a backup now needs permission**: every other backup action - create, delete,
+  restore, upload - required a permission, but downloading required none, so any account of any
+  role could pull down a complete copy of your world save. If a backup had ever been taken with the
+  panel's own settings file included, that copy also contained the stored password hashes for every
+  account. Downloading now needs its own "download backups" permission.
+
+  **On upgrade**, that permission is granted automatically to any role that could already manage
+  backups, so nobody loses access they had yesterday. You can take it away again per role from
+  Roles & Permissions.
+- **A role that could only manage scheduled tasks could actually run any server command**: the
+  "manage scheduled tasks" permission let someone save a task containing any command at all and
+  then run it - including shutting the server down or banning players - and those runs did not
+  appear in the command history. Anyone who built a limited role such as a backup operator was
+  granting far more than the permission's name suggested. Saving, editing or running a task whose
+  command is not one of the ordinary ones (restart, save, broadcast) now also requires the
+  permission for running server commands directly.
+- **Role permissions now actually restrict access everywhere**: every panel route has been reviewed
+  and now enforces the role that matches what it does. Diagnostics and database maintenance are
+  administrator-only; mods, server files, scheduling and integrations are administrator and
+  technician; in-game player actions - kick, ban, whitelist, teleport - are open to moderators as
+  intended, and read-only status pages stay open to everyone signed in. Previously, once any account
+  existed beyond the first administrator, many of these were reachable by any signed-in user
+  regardless of role, including the endpoints that back up and compact the panel database.
+- **Server start, stop, install and configuration endpoints now enforce technician-or-above**:
+  starting, stopping, restarting or force-stopping the server; installing or updating it through
+  SteamCMD; editing its RCON or network settings; and browsing the host filesystem to set any of
+  that up were previously reachable by any signed-in account, including moderators — the same gap
+  the role-permissions review above closed for diagnostics and file management, just missed in this
+  file. In-game tools (weather, world events, server messages, releasing a safehouse) and read-only
+  status pages are unaffected and stay open to everyone signed in.
+- **PanelBridge integration and panel configuration endpoints now enforce technician-or-above**:
+  connecting or reconfiguring the PanelBridge mod link, its own diagnostics and item/vehicle catalog
+  scans, saving the game world through it, editing the panel's server config or RCON settings, and
+  CORS diagnostics were previously reachable by any signed-in account, including moderators. In-game
+  GM tools that live in this same file — weather, zombie and player events, sound, chat, utilities,
+  character import/export — are unaffected and stay open to every role, same as the equivalent tools
+  elsewhere in the panel.
+- **Restoring a backup is now administrator-only**: previously any administrator or technician
+  account could roll the live world back to an older backup. Deleting, pruning or creating backups
+  is routine housekeeping and stays open to technicians, but restoring one discards everything since
+  that backup for every player currently on the server — a decision about other people's time, not a
+  maintenance task — so only an administrator can do it now.
+- **Only the panel's own startup script may run inline**: the browser was previously told to allow
+  any inline script on the page, which weakens the main defence against a script being injected into
+  it. It is now restricted to the exact fingerprint of the panel's own theme bootstrap, recalculated
+  on every start so it can never go stale. **Inline styles are still permitted** - that half is
+  scoped as separate work and is not fixed by this change.
+- **A built-in role could be deleted, despite the screen saying it could not**: the Roles &
+  Permissions screen greys out delete for the built-in administrator, technician and moderator
+  roles and says they cannot be removed. Only the button was stopping it - the server never
+  checked. Anyone able to manage roles could delete the administrator role itself, not just remove
+  someone from it. The server now refuses outright, so the message on screen is now true of the
+  system and not just of the button.
+- **Giving a custom role permission to manage users now actually works**: the screens for listing
+  and creating accounts were still checking for the built-in administrator role by name, rather than
+  checking the permission. So you could tick "manage users" for a role you had created, the panel
+  would save it and show it as granted, and that role still could not see the user list - the tick
+  box now means something. Changing an account's role already worked correctly; it is the other two
+  that were inconsistent with it.
+
+  One deliberate exception, left as it is on purpose: regenerating the login signing key is still
+  administrator-only and cannot be delegated to a custom role. It signs everybody out of every
+  device immediately, including you, and there is no way to undo it or wait it out - so it is not
+  something one role should be able to do to another.
+- **RCON password, Discord bot token and Steam session moved out of `db.json`**: these credentials now
+  live in their own files rather than inside the database, so none of them are swept into a database
+  backup by accident. Existing installs move them automatically on the first start after upgrading -
+  same values, safer location, nothing to re-enter. **Any backup taken before this upgrade still
+  contains all three in plain text inside `db.json`**, and those are not fixed retroactively.
+- **The login signing key no longer lives inside `db.json`**: the key the panel uses to sign your
+  login sessions has moved into its own file, so it is no longer copied along every time `db.json` is
+  backed up. Existing installs move it automatically on the first start after upgrading - it is the
+  same key in a new place, so nobody is signed out. **Any backup taken before this upgrade still
+  contains the old key in plain text**; those are not fixed retroactively. If one of them may have
+  been exposed, an administrator can regenerate the key, which immediately signs out every user on
+  every device. There is no button for this yet - it is available to administrators through the
+  panel's API at `POST /api/auth/regenerate-jwt-secret`, and a Settings control is coming.
+
+#### Places the panel told you something that was not true
 
 - **The panel could stop noticing new Project Zomboid map releases without ever saying so.** The
   World Map works out which map build to use by asking the upstream map site, and if that lookup
@@ -257,79 +445,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   credentials are accepted, your credentials were rejected, or it could not determine an answer -
   and "could not determine" is never reported as success.
 
-- **Setting up single sign-on now tells you what it found.** There are presets for Google,
-  Authentik, Keycloak, Azure AD, Okta and Auth0 that fill in the shape of the issuer URL and the
-  scope each expects, so you are editing an example rather than guessing the format from scratch -
-  Keycloak wants a realm in the path, Azure wants a tenant, and nothing in the panel used to say so.
-  Custom is still the default and behaves exactly as before. After a successful test the panel also
-  shows what the provider actually returned - its endpoints and the scopes it advertises - so you
-  can check it against your provider's admin screen instead of taking "success" on trust.
+- **Crash Logs showed the wrong folder's logs if you had moved your data directory**: the Crash
+  Logs tab looked for crash reports next to wherever the panel happened to be started from, rather
+  than in the data directory you configured. If you have ever used the "move my data folder"
+  setting, that tab has been showing you the old location - and on a developer machine it was
+  displaying an unrelated log file entirely, with test data in it, presented as genuine crash
+  history. Every other log view in the panel already got this right. A file cache used by the
+  SFTP connection had the same fault and is fixed too.
 
-- **If the panel could not tell whether your server was running, it assumed it was stopped.** The
-  check that looks for the running game process reports a plain "not running" both when the server
-  is genuinely stopped and when the check itself fails - an unreadable process list, a permissions
-  problem, a hung scan. Four things trusted that answer and acted on it. **Wiping the world** could
-  therefore proceed against a server that was actually running. **Updating the server through
-  SteamCMD** could too - it even caught the check's own error and carried on regardless. The
-  unattended auto-updater would skip saving and shutting down cleanly first. And an automatic mod
-  restart could mark the update as handled without ever performing it, so it would never be retried.
-  All four now tell the difference between "stopped" and "cannot tell", and refuse to act on the
-  second.
+- **"Database accessible" always claimed to know nothing**: the Diagnostics check that reports on
+  your database always printed "? collections, 0 MB" no matter what was actually stored. It was
+  counting the wrong kind of value and reading a size that was never provided, so it could never
+  have shown a real answer. It now reports the real figures.
 
-- **Servers created without a name all shared one.** If you did not fill in the in-game server name,
-  the panel permanently wrote `servertest` - Project Zomboid's own default name - into its database
-  as if you had chosen it. Everything downstream then treated that as your real server name forever,
-  so two servers set up this way would quietly point at the same configuration and save files. The
-  panel now takes a name from the display name you did provide, and refuses to create the server if
-  neither is usable, rather than inventing an identity and writing it down.
-
-- **Turning mods on could silently leave some of them switched off.** When writing your mod
-  selection into the server configuration, any mod whose internal ID could not be worked out was
-  quietly left out of the active list while still being subscribed - so the game downloaded it and
-  never loaded it. The panel reported plain success. It now tells you which mods it could not
-  resolve.
-
-- **Three things stopped working without saying so.** Mod update checking silently fell back to a
-  weaker local-only comparison during a Steam outage, and reported nothing. Disk monitoring returned
-  exactly the same "plenty of space" shape whether the disk was healthy or the volume had become
-  unreachable, so the low-disk warning went quiet at precisely the moment it mattered. And the
-  short-lived cache used when editing configuration on a remote server was keyed only on the server
-  name, so changing the host or credentials and immediately reading a file could serve content
-  fetched over the old connection. All three now report their real state.
-
-- **If you locked yourself out of the local administrator account, the recovery form could never
-  work.** Resetting a lost local password requires a one-time token that the panel writes to
-  `data/reset-token.txt` - but the form had no field to type it into. The token was therefore always
-  empty, the submit button was enabled anyway, and pressing it failed every time with a complaint
-  about the missing token. This is the panel's only self-service way back into a locked-out local
-  admin account, and it could not be completed by anybody. The form now has the field, and the
-  button stays disabled until you fill it in.
-
-- **The Bridge status could say "offline" long after the bridge came back.** The panel stops polling
-  the game bridge when it sees a failure, and the thing that restarts the polling was the polling
-  itself - so once it stopped, nothing was left to notice a recovery. Restarting the game or
-  reloading the mod would reconnect the bridge while the panel went on showing "Bridge offline"
-  until you reloaded the page. It now keeps checking and recovers on its own.
-
-- **The Console could keep showing RCON as "online" after the connection had died.** The page only
-  recognised two specific raw connection errors, but the server translates most real disconnects
-  into readable sentences first - so the messages the page was watching for never arrived, and the
-  badge kept its last known good state. Sending an announcement did not update the badge at all,
-  even on the errors it did recognise. Both now react to the messages the server actually sends.
-
-- **On Windows, a failed installation told you to edit a Linux service file.** When the install path
-  is not writable, the panel appended advice about editing `zomboid-panel.service` and restarting
-  the service - instructions that do not exist on Windows, which is a fully supported platform here.
-  The advice is now shown only on Linux.
-
-- **A failed backup left an error card on screen forever.** When backup creation failed immediately,
-  the error card was shown but never scheduled to clear itself, unlike every other backup error. It
-  now clears like the rest.
-
-- **Two places recorded a failure and then lost it.** A diagnostics auto-fix that failed, and the
-  inline actions on the Events page (vehicle repair, alarms, locks, adding a player to a safehouse),
-  both reported problems only as a pop-up notification. Once it faded, or you changed tabs, there
-  was no sign anything had been attempted. Both now leave a record you can still see afterwards.
+- **Invented server on an unconfigured panel**: the Server Configuration page and its sibling
+  file, sandbox and spawn-point pages no longer present a fabricated `servertest` server — fully
+  populated and fully editable — when no server has actually been added through Server Setup or My
+  Servers. Those pages now correctly report that nothing is configured; a genuinely configured
+  server, including one relying on settings carried over from an older install, still loads exactly
+  as before.
 
 - **Stopping the server usually worked but often said it had failed.** When Project Zomboid shuts
   down it closes the panel's command connection as it goes - which is what a successful shutdown
@@ -350,11 +484,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   this; these eight had been missed. The history now records an action only once the server has
   confirmed it.
 
-- **"Ping" on the Server Finder never worked, and said "N/A" instead of saying so.** The ping
-  request was sent without the panel's own credentials, so the server rejected it before it ever
-  reached the game server being tested - every time, for every signed-in user. The page then showed
-  "N/A", which is exactly what an unreachable server looks like, so a working server and a broken
-  feature were impossible to tell apart. Pings now return real times.
+- **Bans recorded that never happened**: banning, unbanning or voice-banning a player — by username
+  or by SteamID — while the game server is offline or restarting no longer writes the action into
+  the panel's own ban list and history as though it had succeeded. Previously the in-game command
+  silently did nothing while the panel recorded it anyway, so its ban list could permanently
+  disagree with the server.
 
 - **Scheduled tasks could vanish from the Scheduler page even though they were fine.** The page
   loaded its tasks alongside several other things, and if any one of those other requests hiccupped
@@ -362,35 +496,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the page said "no tasks scheduled". Your tasks were there, still scheduled, still running. Each of
   those side requests now fails on its own without taking the task list down with it.
 
-- **A start command the panel warns about could still be saved.** The server edit dialog flags a
-  start command containing characters it will not accept, but saving went through anyway - and the
-  server applies the same rule when you actually press Start. So you could save, be told it saved,
-  and only discover the problem later with nothing pointing back to the dialog. The dialog now
-  refuses it at the point you save.
+- **Turning mods on could silently leave some of them switched off.** When writing your mod
+  selection into the server configuration, any mod whose internal ID could not be worked out was
+  quietly left out of the active list while still being subscribed - so the game downloaded it and
+  never loaded it. The panel reported plain success. It now tells you which mods it could not
+  resolve.
 
-- **The Voice Ban button did nothing the first time you pressed it.** If you opened Voice Ban for a
-  selected player and left the name field as-is, the first press was silently ignored - no error, no
-  message - and only a second press worked. It now works on the first press.
+- **The Bridge status could say "offline" long after the bridge came back.** The panel stops polling
+  the game bridge when it sees a failure, and the thing that restarts the polling was the polling
+  itself - so once it stopped, nothing was left to notice a recovery. Restarting the game or
+  reloading the mod would reconnect the bridge while the panel went on showing "Bridge offline"
+  until you reloaded the page. It now keeps checking and recovers on its own.
 
-- **The lost-password button could describe the wrong thing.** For an administrator who had already
-  saved recovery codes, the button offered to create a recovery file while actually opening the
-  recovery-code entry form. It now says what it does.
+- **The Console could keep showing RCON as "online" after the connection had died.** The page only
+  recognised two specific raw connection errors, but the server translates most real disconnects
+  into readable sentences first - so the messages the page was watching for never arrived, and the
+  badge kept its last known good state. Sending an announcement did not update the badge at all,
+  even on the errors it did recognise. Both now react to the messages the server actually sends.
 
-- **A normal mod state was styled like a problem.** A mod whose ID has not been resolved yet - the
-  ordinary state before it has been downloaded - was shown with the same warning styling as a real
-  duplicate-ID conflict, so routine setup looked like something had gone wrong. It is now shown as
-  information, which is what the code always intended it to be.
+- **Accents were stripped from ban reasons before they reached the server**: a ban reason written
+  in French was recorded intact in the panel's own log but arrived at the game server with the
+  accented letters removed entirely - *répété* became *rpt* - so the two records disagreed and
+  nothing told you. Accented letters are now converted to their closest plain equivalent
+  (*repete*), which the server can carry, and the same conversion is used for broadcasts.
 
-- **The World Map was blank - every single tile was 404ing.** The upstream map host moved: tiles
-  and the per-build descriptors are now served from `tiles.pzmap.org` and no longer sit under a
-  `/maps` path segment. The panel was still asking for the old address, so nothing loaded at all.
-  Only part of the site moved, which is what made this awkward - the map's build list is still on
-  the original host and asking the new one for it fails outright - so the panel now keeps the two
-  apart and uses the right host for each. The browser-direct fallback, used when a deployment lets
-  the browser reach the map but not the panel, had the old path hardcoded separately and was fixed
-  too. **Debug > World Map** was also reporting on the wrong address, in all five languages; a
-  diagnostic that is wrong about the thing it exists to diagnose is worse than none, so it now
-  probes what the panel actually requests.
+#### Reliability and clearer feedback
+
+- **Windows panel recovery after a crash**: on Windows the panel launcher only restarted the panel
+  when an update was being applied, so any other crash left it stopped — waiting on a keypress —
+  while the game server carried on running unattended. It now relaunches automatically, backing off
+  between attempts, and still stops and shows the exit code if the panel is crashing repeatedly
+  rather than hiding a genuine problem behind an endless restart loop. A clean shutdown stays shut
+  down. Takes effect in the next Windows build.
+
+- **Stuck "stop in progress" after a wedged kill**: force-stopping the server no longer hangs
+  forever if the operating system's own kill command stalls — for example under antivirus
+  interference. The panel gives up waiting after a bounded time, stays able to start, stop and
+  restart the server afterwards, and tells you plainly when it could not confirm the process
+  actually exited instead of silently reporting success.
+
+- **Server Setup could hide the one thing stopping you finishing.** An admin password is required
+  before a server can start, and the final button refuses without it - but the field sat inside the
+  collapsed Advanced Options section among genuinely optional toggles. You could work through every
+  step and only discover the requirement at the review screen at the end. It now has its own visible
+  card, like the RCON settings, and the step tells you it is missing at the point you can act on it.
+  Both the quick and full setup flows.
+
+- **Failed actions showed a blank or generic error instead of saying what went wrong**: on the world
+  map, every vehicle action - repair, refuel, replace battery, remove, hotwire - reported failure as
+  a bare "Error" with no explanation at all. Teleporting a player, calling an airdrop and spawning a
+  vehicle were the same. The specific messages had been written, but the code holding them could
+  never run, so nobody ever saw them. 29 of these unreachable failure paths were found across the
+  world map, Settings, Console, Debug, Backups, Servers, Chat and Events; 13 of them were showing
+  you meaningfully worse information than intended.
+
+- **"Test Connection" failures said "Action failed" instead of naming what failed**: a request that
+  the server answered with an explicit failure was being reported under a generic title, because the
+  code meant to handle that case could never run. The real reason was already shown underneath; now
+  the heading matches it.
 
 - **"Failed to start bot - check configuration" now tells you what is actually wrong.** The Discord
   bot reported the same sentence whatever went wrong, and the real reason was being thrown away one
@@ -404,37 +567,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   against the bot's status rather than shown once, so leaving the page and coming back still shows
   why the last start failed, and it clears itself as soon as a start succeeds.
 
-- **Changing a mod setting told you to do something impossible.** Editing a mod setting reported
-  "Stop the server before editing configuration" - but the Mod Settings page cannot load with the
-  server stopped, so following the instruction left you with no way back in. The panel already had
-  the honest message written for this case and a generic error lookup was burying it. **And the
-  change now actually sticks.** The panel was refusing to save the setting to disk while the server
-  ran, on the assumption that Project Zomboid rewrites its configuration on shutdown and would throw
-  the edit away. We tested that against a real Build 42 server instead of assuming it: a clean
-  shutdown does not touch `SandboxVars.lua` or the server `.ini` at all, and the next startup
-  preserves a change written while the server was running. So the refusal was protecting against
-  something that does not happen, on the one setting that could never be saved any other way. Mod
-  settings now apply to the running game and survive a restart.
+- **Setting up single sign-on now tells you what it found.** There are presets for Google,
+  Authentik, Keycloak, Azure AD, Okta and Auth0 that fill in the shape of the issuer URL and the
+  scope each expects, so you are editing an example rather than guessing the format from scratch -
+  Keycloak wants a realm in the path, Azure wants a tenant, and nothing in the panel used to say so.
+  Custom is still the default and behaves exactly as before. After a successful test the panel also
+  shows what the provider actually returned - its endpoints and the scopes it advertises - so you
+  can check it against your provider's admin screen instead of taking "success" on trust.
 
-- **Server Setup could hide the one thing stopping you finishing.** An admin password is required
-  before a server can start, and the final button refuses without it - but the field sat inside the
-  collapsed Advanced Options section among genuinely optional toggles. You could work through every
-  step and only discover the requirement at the review screen at the end. It now has its own visible
-  card, like the RCON settings, and the step tells you it is missing at the point you can act on it.
-  Both the quick and full setup flows.
+- **A start command the panel warns about could still be saved.** The server edit dialog flags a
+  start command containing characters it will not accept, but saving went through anyway - and the
+  server applies the same rule when you actually press Start. So you could save, be told it saved,
+  and only discover the problem later with nothing pointing back to the dialog. The dialog now
+  refuses it at the point you save.
 
-- **Browse Public told you to do things you could not do.** The page invited you to copy a server
-  address and to click a row for more detail; neither was possible - the row had no click handler
-  and there was no copy control anywhere on it. The address is now a copy button that confirms when
-  it has copied, so the instruction is true.
+- **RCON reconnect targeting**: a panel with no server configured no longer repeatedly attempts RCON
+  logins against whatever happens to be listening on the default port, and once a server is added it
+  is targeted correctly — including one that has no RCON password set yet — instead of silently
+  falling back to defaults. A server added while the panel is running is picked up on the next
+  reconnect attempt, with no restart.
 
-- **The World Map's "no players" message could be unreadable on a phone.** The text is drawn onto
-  the map itself and was centred without accounting for the floating zoom and layer controls, so on
-  a narrow screen the first words of it sat underneath an opaque button.
+- **RCON reconnect stability**: a failure while automatically restarting Panel Bridge after RCON
+  reconnects no longer has a path to crash the entire panel process.
 
-- **The save picker on Map Cleanup squeezed a whole list row into a closed drop-down.** When shut it
-  reused the full multi-line entry - name, date and size - inside a single-line control, so a long
-  save name was cut to around fifteen characters and you could not tell which save was selected.
+- **Server-running detection after a panel restart**: the panel now remembers the process it started
+  and rechecks that one directly first, falling back to the full host-wide process scan whenever
+  there is any doubt — the process died, or its command line no longer matches. Recognizing an
+  already-running server after the panel restarts or updates is faster, and no longer depends solely
+  on scanning and pattern-matching every process on the machine.
+
+- **Map Cleanup took far too long to open, and the wait got dramatically worse the bigger your
+  save was.** Two separate causes, both fixed. The scan read your save's chunk directories strictly
+  one at a time, so the wait tracked the *number of directories* rather than the amount of data -
+  measured on a test save, splitting the same 9,000 files across more directories took four times
+  longer with no extra data to read. On a NAS or a spinning disk, where each read costs far more
+  than on an SSD, that difference is much larger. Separately, the page asks for the file list and
+  the storage totals at the same time, and the totals were walking parts of the save up to three
+  times over, competing with the file list for the same disk. The totals are now gathered in a
+  single pass, and both walks read a bounded number of directories at once instead of either
+  one-at-a-time or all-at-once. On the same test save the file list went from 1.5s to 0.4s and the
+  totals from 1.25s to 0.65s - but the number that matters is the two together, which is what
+  actually happens when you open the page: it was swinging between 1.7 and 12.4 seconds and is now
+  a steady 1 second. The unpredictability was most of what made it feel broken.
+
+- **Dragging the Map Cleanup map was jerky.** Panning or drawing a selection redrew the whole map
+  on every single mouse movement the browser reported - dozens of full repaints a second, each one
+  redrawing every visible chunk. The map now paints at most once per frame no matter how fast the
+  mouse moves: in a test firing 60 movements in a single burst, the old code would have attempted 60
+  repaints and the new code does exactly one. The map itself is unchanged - same chunks, same
+  colours, same selection behaviour - it simply stops doing work it was throwing away.
+
+- **Two places recorded a failure and then lost it.** A diagnostics auto-fix that failed, and the
+  inline actions on the Events page (vehicle repair, alarms, locks, adding a player to a safehouse),
+  both reported problems only as a pop-up notification. Once it faded, or you changed tabs, there
+  was no sign anything had been attempted. Both now leave a record you can still see afterwards.
+
+- **A failed backup left an error card on screen forever.** When backup creation failed immediately,
+  the error card was shown but never scheduled to clear itself, unlike every other backup error. It
+  now clears like the rest.
+
+- **The Voice Ban button did nothing the first time you pressed it.** If you opened Voice Ban for a
+  selected player and left the name field as-is, the first press was silently ignored - no error, no
+  message - and only a second press worked. It now works on the first press.
+
+- **On Windows, a failed installation told you to edit a Linux service file.** When the install path
+  is not writable, the panel appended advice about editing `zomboid-panel.service` and restarting
+  the service - instructions that do not exist on Windows, which is a fully supported platform here.
+  The advice is now shown only on Linux.
+
+- **The lost-password button could describe the wrong thing.** For an administrator who had already
+  saved recovery codes, the button offered to create a recovery file while actually opening the
+  recovery-code entry form. It now says what it does.
+
+#### Interface and translation
+
+- **Two different server settings were both called "Safety System".** The anti-cheat toggle and the
+  safety-system toggle shared a label, so there was no way to tell which one you were changing.
 
 - **Chinese showed a stray Latin "s" on Chinese words, and German pluralised three phrases wrongly.**
   The Mods screen worked out plural endings in code - add an "s" unless the count is one - and handed
@@ -465,64 +673,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The world map's control label was cut off in German**, rendering as "STEUERL" in a rail built for
   a four-character English label. It now reads "Strg", which is what a German keyboard has printed on
   that key.
-- **Two different server settings were both called "Safety System".** The anti-cheat toggle and the
-  safety-system toggle shared a label, so there was no way to tell which one you were changing.
 - **Template comparisons and difficulty badges were English-only**, showing "On", "Off", "(not set)"
   and "Custom" in every language, and now also show translated server-setting names rather than raw
   English ones.
 - **Relative timestamps in Debug were English-only** - "5m ago", "just now" - regardless of language.
-- **The unRAID Community Applications listing showed a broken icon.** The template pointed at an
-  image file that has never existed in the project; it now points at the panel's actual icon.
-- **The panel would not start at all on some Windows machines**: the launcher started the panel by
-  its bare filename, which relies on Windows searching the folder the launcher is sitting in. That
-  search is switched off by a setting some corporate and security-hardened Windows images apply, and
-  when it is off the panel never starts - you get "is not recognized as an internal or external
-  command", five retry attempts, and a "Panel crashed" banner that tells you nothing useful. The
-  launcher now uses the full path. The rest of the launcher was checked for the same mistake; this
-  was the only place it occurred.
-
-- **A built-in role could be deleted, despite the screen saying it could not**: the Roles &
-  Permissions screen greys out delete for the built-in administrator, technician and moderator
-  roles and says they cannot be removed. Only the button was stopping it - the server never
-  checked. Anyone able to manage roles could delete the administrator role itself, not just remove
-  someone from it. The server now refuses outright, so the message on screen is now true of the
-  system and not just of the button.
-- **A wrong HTTPS certificate path or port could stop the panel starting at all, permanently**:
-  Settings accepted any text in the HTTPS certificate path, key path and port fields without
-  checking them, and saved it with a success message. Nothing went wrong until the next restart -
-  possibly days later - at which point the whole panel failed to start, not just HTTPS, and stayed
-  down until someone edited the stored setting from the filesystem. Anyone without that access was
-  locked out of their own panel by a single save. Those fields are now checked when you save, with
-  a message naming the problem; and if a path that was valid later becomes invalid - moved, deleted
-  or permissions changed - the panel now starts with HTTPS switched off and says so, instead of
-  refusing to start.
-- **Failed actions showed a blank or generic error instead of saying what went wrong**: on the world
-  map, every vehicle action - repair, refuel, replace battery, remove, hotwire - reported failure as
-  a bare "Error" with no explanation at all. Teleporting a player, calling an airdrop and spawning a
-  vehicle were the same. The specific messages had been written, but the code holding them could
-  never run, so nobody ever saw them. 29 of these unreachable failure paths were found across the
-  world map, Settings, Console, Debug, Backups, Servers, Chat and Events; 13 of them were showing
-  you meaningfully worse information than intended.
-- **A role that could only manage scheduled tasks could actually run any server command**: the
-  "manage scheduled tasks" permission let someone save a task containing any command at all and
-  then run it - including shutting the server down or banning players - and those runs did not
-  appear in the command history. Anyone who built a limited role such as a backup operator was
-  granting far more than the permission's name suggested. Saving, editing or running a task whose
-  command is not one of the ordinary ones (restart, save, broadcast) now also requires the
-  permission for running server commands directly.
-
-- **Accents were stripped from ban reasons before they reached the server**: a ban reason written
-  in French was recorded intact in the panel's own log but arrived at the game server with the
-  accented letters removed entirely - *répété* became *rpt* - so the two records disagreed and
-  nothing told you. Accented letters are now converted to their closest plain equivalent
-  (*repete*), which the server can carry, and the same conversion is used for broadcasts.
-
-- **"Restart now" no longer files its failures under "Auto Restart"**: a restart you triggered by
-  hand was recorded in Schedule History as though it had been automatic, so a failure looked like a
-  scheduled job misbehaving.
 - **Error messages that mention a specific thing now say it in French too**: messages that name a
-  permission, a role, a count or a reason - such as refusing a change that would leave nobody able
-  to manage roles - previously fell back to English, because the panel had no way to carry that
+  permission, a role, a count or a reason - such as refusing a change that would leave nobody able to
+  manage roles - previously fell back to English, because the panel had no way to carry that
   detail across in a translatable form. It does now, and the permission is named using the same
   wording the Roles & Permissions screen uses.
 
@@ -538,206 +695,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   four and two entirely different sentences respectively, all sharing one message. Those are not one
   sentence with a blank in it, so they are now separate messages, each written properly in both
   languages, rather than a French frame with an English instruction stapled on the end.
-- **The French wording for "Wipe server" said "reset", not "erase"**: the dialog title, the
-  confirm button and both menu entries used *Réinitialiser* - the word this panel uses for ordinary,
-  recoverable resets elsewhere - directly above body text correctly warning that the action deletes
-  everything permanently. A French-speaking operator read a reassuring title over an alarming
-  description. It now says *Effacer*. The same mismatch on the "Wipe the world" permission label is
-  fixed too. Delete-old-backups and chunk deletion were checked and were already correct.
+- **"Restart now" no longer files its failures under "Auto Restart"**: a restart you triggered by
+  hand was recorded in Schedule History as though it had been automatic, so a failure looked like a
+  scheduled job misbehaving.
+
+- **A normal mod state was styled like a problem.** A mod whose ID has not been resolved yet - the
+  ordinary state before it has been downloaded - was shown with the same warning styling as a real
+  duplicate-ID conflict, so routine setup looked like something had gone wrong. It is now shown as
+  information, which is what the code always intended it to be.
+
+- **Browse Public told you to do things you could not do.** The page invited you to copy a server
+  address and to click a row for more detail; neither was possible - the row had no click handler
+  and there was no copy control anywhere on it. The address is now a copy button that confirms when
+  it has copied, so the instruction is true.
+
+- **The World Map's "no players" message could be unreadable on a phone.** The text is drawn onto
+  the map itself and was centred without accounting for the floating zoom and layer controls, so on
+  a narrow screen the first words of it sat underneath an opaque button.
+
+- **The save picker on Map Cleanup squeezed a whole list row into a closed drop-down.** When shut it
+  reused the full multi-line entry - name, date and size - inside a single-line control, so a long
+  save name was cut to around fifteen characters and you could not tell which save was selected.
 
 - **The rights matrix is readable at full size**: with 27 permissions across 12 groups, scrolling
   the table lost track of which column was which role and which row was which permission. The role
   headings and the permission names now stay pinned while you scroll.
 
-- **"Test Connection" failures said "Action failed" instead of naming what failed**: a request that
-  the server answered with an explicit failure was being reported under a generic title, because the
-  code meant to handle that case could never run. The real reason was already shown underneath; now
-  the heading matches it.
-- **Crash Logs showed the wrong folder's logs if you had moved your data directory**: the Crash
-  Logs tab looked for crash reports next to wherever the panel happened to be started from, rather
-  than in the data directory you configured. If you have ever used the "move my data folder"
-  setting, that tab has been showing you the old location - and on a developer machine it was
-  displaying an unrelated log file entirely, with test data in it, presented as genuine crash
-  history. Every other log view in the panel already got this right. A file cache used by the
-  SFTP connection had the same fault and is fixed too.
-
-- **"Database accessible" always claimed to know nothing**: the Diagnostics check that reports on
-  your database always printed "? collections, 0 MB" no matter what was actually stored. It was
-  counting the wrong kind of value and reading a size that was never provided, so it could never
-  have shown a real answer. It now reports the real figures.
-- **Anyone who could reach the panel could see where every player was standing**: one address used
-  by the live map returned, for every player currently online, their name, their exact position in
-  the world, and how injured they were - without asking for a login. On a PvP server that is enough
-  to hunt someone. It now requires an account with permission to view players, which all three
-  built-in roles have, so nothing you already use stops working. A comment in the code describing
-  this address as deliberately public has been corrected, so it does not get re-opened later.
-- **The panel could refuse to start while tests were running on the same machine**: the panel and
-  its test suite both worked out where to keep their data from one shared file, and each could
-  overwrite the other's answer. When that happened the panel would read a temporary folder as its
-  real data directory, then refuse to start because it believed another copy of itself was already
-  running. Each now keeps its own separate answer, so they cannot collide. This only affected
-  machines where the panel's own test suite runs - not a normal installation.
-- **The panel was quietly deleting backups you uploaded yourself**: automatic cleanup kept only the
-  most recent backups and treated an archive you had uploaded by hand exactly like one the panel
-  made on a schedule. On the default settings that meant a backup you deliberately saved was deleted
-  within a couple of days, with nothing to tell you it had happened. The code even carried a note
-  saying uploaded archives were protected - they were not. They are now: automatic cleanup skips
-  them entirely.
-
-- **Downloading a backup now needs permission**: every other backup action - create, delete,
-  restore, upload - required a permission, but downloading required none, so any account of any
-  role could pull down a complete copy of your world save. If a backup had ever been taken with the
-  panel's own settings file included, that copy also contained the stored password hashes for every
-  account. Downloading now needs its own "download backups" permission.
-
-  **On upgrade**, that permission is granted automatically to any role that could already manage
-  backups, so nobody loses access they had yesterday. You can take it away again per role from
-  Roles & Permissions.
-- **Giving a custom role permission to manage users now actually works**: the screens for listing
-  and creating accounts were still checking for the built-in administrator role by name, rather than
-  checking the permission. So you could tick "manage users" for a role you had created, the panel
-  would save it and show it as granted, and that role still could not see the user list - the tick
-  box now means something. Changing an account's role already worked correctly; it is the other two
-  that were inconsistent with it.
-
-  One deliberate exception, left as it is on purpose: regenerating the login signing key is still
-  administrator-only and cannot be delegated to a custom role. It signs everybody out of every
-  device immediately, including you, and there is no way to undo it or wait it out - so it is not
-  something one role should be able to do to another.
-- **Permission checks now refuse by default instead of allowing by default**: underneath the
-  account-management bug above sat the reason it was possible - if the panel could not tell who was
-  making a request, the permission checks treated that as "nothing to check" and let it through. That
-  was written when it was safe, and it quietly stopped being safe. Every request now has an identity
-  attached before any check runs, and if one is ever missing, the panel now refuses by default. The
-  practical difference: a future mistake of this kind produces a door that will not open, which
-  someone reports the same day, instead of one that is open to everybody, which went unnoticed for
-  months.
-- **Anyone who could reach the panel could create an administrator account, with no password**:
-  requests to the account-management endpoints were not checking who was calling them. On any panel
-  that had finished setup, a request with no credentials at all could list every account, create a
-  new administrator, change any account's role, or sign every user out. The screens always implied a
-  login was required; the server was not enforcing it. It is enforced now. **If this panel has ever
-  been reachable from outside your own machine, review your accounts and treat any you did not create
-  yourself as suspect.** This was not introduced by any recent change - it dates back several months.
-- **Only the panel's own startup script may run inline**: the browser was previously told to allow
-  any inline script on the page, which weakens the main defence against a script being injected into
-  it. It is now restricted to the exact fingerprint of the panel's own theme bootstrap, recalculated
-  on every start so it can never go stale. **Inline styles are still permitted** - that half is
-  scoped as separate work and is not fixed by this change.
-- **Error codes now reach the browser by default**: the server's error handler passes a registered
-  error code along automatically instead of relying on a hand-written line at every point an error is
-  caught. Internal codes from the filesystem, the network or third-party libraries are never passed
-  on - only codes the panel has explicitly registered. Not visible yet; it is what translated error
-  messages will run on.
-
-- **Credential files can no longer be committed by accident**: the relocated signing key and the
-  per-server RCON password files are now excluded from version control.
-- **RCON password, Discord bot token and Steam session moved out of `db.json`**: these credentials now
-  live in their own files rather than inside the database, so none of them are swept into a database
-  backup by accident. Existing installs move them automatically on the first start after upgrading -
-  same values, safer location, nothing to re-enter. **Any backup taken before this upgrade still
-  contains all three in plain text inside `db.json`**, and those are not fixed retroactively.
-- **Every server error code now has an English and a French entry**: the second half of the
-  groundwork below. A check that was previously skipped - because the translation file did not exist
-  yet - now runs on every build and fails if a new server error code ships without a translation.
-  Server responses still show English text until the screens are wired to use these.
-
-- **Groundwork for error messages in your own language**: the panel's screens are translated but the
-  messages the server sends back are still English, which is exactly when a non-English speaker most
-  needs their own language. Every error the server reports now carries a stable machine-readable code
-  from a single list, and a check fails the build if anyone adds a new one without registering it.
-  Nothing visible changes yet - this is the plumbing the translated messages will sit on.
-- **The login signing key no longer lives inside `db.json`**: the key the panel uses to sign your
-  login sessions has moved into its own file, so it is no longer copied along every time `db.json` is
-  backed up. Existing installs move it automatically on the first start after upgrading - it is the
-  same key in a new place, so nobody is signed out. **Any backup taken before this upgrade still
-  contains the old key in plain text**; those are not fixed retroactively. If one of them may have
-  been exposed, an administrator can regenerate the key, which immediately signs out every user on
-  every device. There is no button for this yet - it is available to administrators through the
-  panel's API at `POST /api/auth/regenerate-jwt-secret`, and a Settings control is coming.
-
-- **A settings field could run any program on the host**: the branch-listing screen took a SteamCMD
-  folder straight from the request and launched whatever executable it pointed at, without the path
-  check every other route in that file applies. It now validates the path like its siblings do.
-- **"Success" messages that were not true**: 42 places in the panel showed a green success message
-  as soon as the request came back, without checking whether the action had actually worked. Banning
-  or unbanning a player, giving an item, spawning a vehicle, triggering a scheduled task, restarting
-  the server and sending a broadcast all reported success even when the game server was offline and
-  nothing had happened. The two worst were the restart and the broadcast: an operator would announce
-  a restart to players and walk away, or believe players had been warned, when neither had taken
-  place. All of these now show the real error the server returned.
-- **Role permissions now actually restrict access everywhere**: every panel route has been reviewed
-  and now enforces the role that matches what it does. Diagnostics and database maintenance are
-  administrator-only; mods, server files, scheduling and integrations are administrator and
-  technician; in-game player actions - kick, ban, whitelist, teleport - are open to moderators as
-  intended, and read-only status pages stay open to everyone signed in. Previously, once any account
-  existed beyond the first administrator, many of these were reachable by any signed-in user
-  regardless of role, including the endpoints that back up and compact the panel database.
-
-- **Restoring a backup is now administrator-only**: previously any administrator or technician
-  account could roll the live world back to an older backup. Deleting, pruning or creating backups
-  is routine housekeeping and stays open to technicians, but restoring one discards everything since
-  that backup for every player currently on the server — a decision about other people's time, not a
-  maintenance task — so only an administrator can do it now.
-
-- **Server start, stop, install and configuration endpoints now enforce technician-or-above**:
-  starting, stopping, restarting or force-stopping the server; installing or updating it through
-  SteamCMD; editing its RCON or network settings; and browsing the host filesystem to set any of
-  that up were previously reachable by any signed-in account, including moderators — the same gap
-  the role-permissions review above closed for diagnostics and file management, just missed in this
-  file. In-game tools (weather, world events, server messages, releasing a safehouse) and read-only
-  status pages are unaffected and stay open to everyone signed in.
-
-- **PanelBridge integration and panel configuration endpoints now enforce technician-or-above**:
-  connecting or reconfiguring the PanelBridge mod link, its own diagnostics and item/vehicle catalog
-  scans, saving the game world through it, editing the panel's server config or RCON settings, and
-  CORS diagnostics were previously reachable by any signed-in account, including moderators. In-game
-  GM tools that live in this same file — weather, zombie and player events, sound, chat, utilities,
-  character import/export — are unaffected and stay open to every role, same as the equivalent tools
-  elsewhere in the panel.
-
-- **Bans recorded that never happened**: banning, unbanning or voice-banning a player — by username
-  or by SteamID — while the game server is offline or restarting no longer writes the action into
-  the panel's own ban list and history as though it had succeeded. Previously the in-game command
-  silently did nothing while the panel recorded it anyway, so its ban list could permanently
-  disagree with the server.
-
-- **Invented server on an unconfigured panel**: the Server Configuration page and its sibling
-  file, sandbox and spawn-point pages no longer present a fabricated `servertest` server — fully
-  populated and fully editable — when no server has actually been added through Server Setup or My
-  Servers. Those pages now correctly report that nothing is configured; a genuinely configured
-  server, including one relying on settings carried over from an older install, still loads exactly
-  as before.
-
-- **Stuck "stop in progress" after a wedged kill**: force-stopping the server no longer hangs
-  forever if the operating system's own kill command stalls — for example under antivirus
-  interference. The panel gives up waiting after a bounded time, stays able to start, stop and
-  restart the server afterwards, and tells you plainly when it could not confirm the process
-  actually exited instead of silently reporting success.
-
-- **Windows panel recovery after a crash**: on Windows the panel launcher only restarted the panel
-  when an update was being applied, so any other crash left it stopped — waiting on a keypress —
-  while the game server carried on running unattended. It now relaunches automatically, backing off
-  between attempts, and still stops and shows the exit code if the panel is crashing repeatedly
-  rather than hiding a genuine problem behind an endless restart loop. A clean shutdown stays shut
-  down. Takes effect in the next Windows build.
-
-- **RCON reconnect targeting**: a panel with no server configured no longer repeatedly attempts RCON
-  logins against whatever happens to be listening on the default port, and once a server is added it
-  is targeted correctly — including one that has no RCON password set yet — instead of silently
-  falling back to defaults. A server added while the panel is running is picked up on the next
-  reconnect attempt, with no restart.
-
-- **RCON reconnect stability**: a failure while automatically restarting Panel Bridge after RCON
-  reconnects no longer has a path to crash the entire panel process.
-
-- **Server-running detection after a panel restart**: the panel now remembers the process it started
-  and rechecks that one directly first, falling back to the full host-wide process scan whenever
-  there is any doubt — the process died, or its command line no longer matches. Recognizing an
-  already-running server after the panel restarts or updates is faster, and no longer depends solely
-  on scanning and pattern-matching every process on the machine.
+- **The unRAID Community Applications listing showed a broken icon.** The template pointed at an
+  image file that has never existed in the project; it now points at the panel's actual icon.
 
 ### Security and maintenance
+
+- **Any non-administrator account could take over the administrator account.** The recovery-codes
+  endpoint checked that you were signed in, but not *who* you were - and the recovery codes it
+  issues have never belonged to the caller, they belong to the administrator. So anyone holding a
+  moderator or technician account could ask for a fresh set of administrator recovery codes, receive
+  them in plain text, and use one from the sign-in screen to set the administrator's password to
+  whatever they liked. Two requests, no cooperation from the administrator, and it would also have
+  quietly invalidated whatever recovery codes the real administrator had saved. Reading and
+  generating those codes is now administrator-only, and there are tests holding that gate shut.
+
+  **If you run an older version and have ever created a second account of any kind, treat this as
+  live.** The same endpoint is ungated in 1.1.x. Upgrading closes it; until then, an administrator
+  can regenerate their recovery codes to invalidate any set that was issued behind their back.
+
+- **Steam branch lookup could run an arbitrary program on the host**: the Steam-branches endpoint
+  (used when picking which PZ build to install) took a SteamCMD folder from the request and ran
+  whatever executable it found there, without checking the path first — unlike every other endpoint
+  that takes a filesystem path. A technician account, which is meant to operate the game server and
+  nothing more, could have pointed it at any program on the machine and had the panel run it. It now
+  validates the path the same way installation and update do, and refuses anything that isn't one.
+  Two related gaps in the PanelBridge mod-connection settings, where a relative folder path was
+  silently accepted instead of rejected, were fixed the same way.
+
+- **The RCON command history was readable without a permission check**, and it can contain
+  whitelist passwords typed into the console.
+
+- **Leftover database copies after a crash**: if the panel is killed while saving, a full copy of
+  the database file — including the RCON password and login secret — no longer lingers on disk
+  indefinitely. It is cleaned up automatically the next time the panel starts, once it can confirm
+  the process that left it behind is no longer running.
 
 - **Changing two permissions quickly could silently put one of them back.** On the Roles &
   Permissions grid, each tick sends the role's whole capability list. Ticking or unticking a second
@@ -756,24 +773,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   already used for creating users and changing roles, so redemptions are handled strictly one at a
   time and a spent code is spent.
 
-- **Any non-administrator account could take over the administrator account.** The recovery-codes
-  endpoint checked that you were signed in, but not *who* you were - and the recovery codes it
-  issues have never belonged to the caller, they belong to the administrator. So anyone holding a
-  moderator or technician account could ask for a fresh set of administrator recovery codes, receive
-  them in plain text, and use one from the sign-in screen to set the administrator's password to
-  whatever they liked. Two requests, no cooperation from the administrator, and it would also have
-  quietly invalidated whatever recovery codes the real administrator had saved. Reading and
-  generating those codes is now administrator-only, and there are tests holding that gate shut.
-
-  **If you run an older version and have ever created a second account of any kind, treat this as
-  live.** The same endpoint is ungated in 1.1.x. Upgrading closes it; until then, an administrator
-  can regenerate their recovery codes to invalidate any set that was issued behind their back.
-
-- **The panel's own update check could fail open.** Before downloading a panel update, the panel
-  runs a preflight check to refuse early if applying it would fail. If that check could not reach
-  the server it returned nothing at all - and "we don't know" was being read as "everything is
-  fine", so the download went ahead exactly when the safety check had failed. It now refuses unless
-  the check actually passed.
+- **Renaming a built-in role could lock you out of your own panel.**
 
 - **A backup could be left truncated and still appear in the list as a normal backup.** Archives
   were written straight to their final filename, so a crash or a power cut partway through left a
@@ -787,24 +787,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   missing from My Servers, and nothing said why. The wizards now only claim success when the server
   really was added, and say plainly what happened when it was not. Re-running setup is safe.
 
-- **The RCON command history was readable without a permission check**, and it can contain
-  whitelist passwords typed into the console.
-
-- **Renaming a built-in role could lock you out of your own panel.**
-
-- **Steam branch lookup could run an arbitrary program on the host**: the Steam-branches endpoint
-  (used when picking which PZ build to install) took a SteamCMD folder from the request and ran
-  whatever executable it found there, without checking the path first — unlike every other endpoint
-  that takes a filesystem path. A technician account, which is meant to operate the game server and
-  nothing more, could have pointed it at any program on the machine and had the panel run it. It now
-  validates the path the same way installation and update do, and refuses anything that isn't one.
-  Two related gaps in the PanelBridge mod-connection settings, where a relative folder path was
-  silently accepted instead of rejected, were fixed the same way.
-
-- **Leftover database copies after a crash**: if the panel is killed while saving, a full copy of
-  the database file — including the RCON password and login secret — no longer lingers on disk
-  indefinitely. It is cleaned up automatically the next time the panel starts, once it can confirm
-  the process that left it behind is no longer running.
+- **The panel's own update check could fail open.** Before downloading a panel update, the panel
+  runs a preflight check to refuse early if applying it would fail. If that check could not reach
+  the server it returned nothing at all - and "we don't know" was being read as "everything is
+  fine", so the download went ahead exactly when the safety check had failed. It now refuses unless
+  the check actually passed.
 
 - **GitHub release notes**: releases now publish the real changelog entries for their version. The
   matcher that pulled them out of this file depended on which `awk` the build runner happened to
