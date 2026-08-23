@@ -53,6 +53,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { PageHeader } from "@/components/PageHeader";
+import { PageSkeleton } from "@/components/PageSkeleton";
 import { PasswordInput } from "@/components/PasswordInput";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -238,7 +239,7 @@ function ThemeSelect() {
 }
 
 export default function Settings() {
-  const { t } = useTranslation("settings");
+  const { t, i18n } = useTranslation("settings");
   const socket = useSocket();
   const [settings, setSettings] = useState<AppSettings>({
     panelBridgeAutoUpdate: true,
@@ -741,27 +742,27 @@ export default function Settings() {
         .filter(Boolean);
 
       if (origins.length > MAX_CORS_ALLOWED_ORIGINS) {
-        return `Too many origins. Maximum is ${MAX_CORS_ALLOWED_ORIGINS}.`;
+        return t("access.originsError.tooMany", { max: MAX_CORS_ALLOWED_ORIGINS });
       }
 
       for (const origin of origins) {
         if (origin.length > MAX_CORS_ORIGIN_LENGTH) {
-          return `Origin too long (${origin.length} chars). Maximum is ${MAX_CORS_ORIGIN_LENGTH}.`;
+          return t("access.originsError.tooLong", { length: origin.length, max: MAX_CORS_ORIGIN_LENGTH });
         }
 
         try {
           const parsed = new URL(origin);
           if (!["http:", "https:"].includes(parsed.protocol)) {
-            return `Only http/https origins are allowed: ${origin}`;
+            return t("access.originsError.protocolNotAllowed", { origin });
           }
         } catch {
-          return `Invalid origin format: ${origin}`;
+          return t("access.originsError.invalidFormat", { origin });
         }
       }
 
       return null;
     },
-    [],
+    [t],
   );
 
   useEffect(() => {
@@ -1040,7 +1041,7 @@ export default function Settings() {
     if (!value) return t("errors.never");
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return t("errors.unknown");
-    return new Intl.DateTimeFormat(undefined, {
+    return new Intl.DateTimeFormat(i18n.language, {
       dateStyle: "medium",
       timeStyle: "short",
     }).format(date);
@@ -1962,17 +1963,17 @@ export default function Settings() {
       await authApi.regenerateJwtSecret();
       setRegenerateJwtDialogOpen(false);
       toast({
-        title: "JWT Secret Regenerated",
-        description: "Every session has been signed out, including this one. Redirecting to login...",
+        title: t("security.regenerateJwt.resultTitle"),
+        description: t("security.regenerateJwt.resultDescription"),
       });
       await logout();
     } catch (error) {
       toast({
-        title: "Regeneration Failed",
+        title: t("security.regenerateJwt.failedTitle"),
         description:
           error instanceof Error
             ? error.message
-            : "The panel could not regenerate the JWT secret.",
+            : t("security.regenerateJwt.failedFallback"),
         variant: "destructive",
       });
     } finally {
@@ -2080,9 +2081,12 @@ export default function Settings() {
 
   if (loading && !originalSettings) {
     return (
-      <div className="flex items-center justify-center min-h-[320px] py-12">
-        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-      </div>
+      <PageSkeleton
+        variant="form"
+        eyebrow={t("pageHeader.eyebrow")}
+        title={t("pageHeader.title")}
+        description={t("pageHeader.defaultDescription")}
+      />
     );
   }
 
@@ -2832,7 +2836,7 @@ export default function Settings() {
                               size="sm"
                               onClick={() => setPanelApplyResultDismissed(true)}
                             >
-                              Dismiss
+                              {t("updates.dismiss")}
                             </Button>
                             <Button
                               variant="outline"
@@ -4460,7 +4464,7 @@ export default function Settings() {
                       <Clock className="w-4 h-4 text-muted-foreground" />
                       <span className="text-sm">
                         {backupStatus.lastBackup
-                          ? t("backups.lastBackup", { date: new Date(backupStatus.lastBackup.created).toLocaleString() })
+                          ? t("backups.lastBackup", { date: new Date(backupStatus.lastBackup.created).toLocaleString(i18n.language) })
                           : t("backups.noBackupsYet")}
                       </span>
                     </div>
@@ -4568,7 +4572,7 @@ export default function Settings() {
                                 </p>
                                 <p className="text-xs text-muted-foreground">
                                   {formatBytes(backup.size)} •{" "}
-                                  {new Date(backup.created).toLocaleString()}
+                                  {new Date(backup.created).toLocaleString(i18n.language)}
                                 </p>
                               </div>
                             </div>
@@ -5203,10 +5207,10 @@ export default function Settings() {
                         <div className="flex items-start justify-between gap-3">
                           <div>
                             <p className="text-sm font-medium text-foreground">
-                              Regenerate JWT secret
+                              {t("security.regenerateJwt.cardTitle")}
                             </p>
                             <p className="mt-1 text-sm text-muted-foreground">
-                              Immediately signs out every user on every device, including you — access and refresh tokens for every current session stop working at once. Use this only if a backup containing the old signing key may have leaked; it is not a routine action and there is no automatic rotation.
+                              {t("security.regenerateJwt.cardDesc")}
                             </p>
                           </div>
                           <RefreshCw className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
@@ -5215,21 +5219,21 @@ export default function Settings() {
                           <AlertDialogTrigger asChild>
                             <Button type="button" variant="destructive">
                               <RefreshCw className="mr-2 h-4 w-4" />
-                              Regenerate JWT Secret
+                              {t("security.regenerateJwt.button")}
                             </Button>
                           </AlertDialogTrigger>
                           <AlertDialogContent>
                             <AlertDialogHeader>
                               <AlertDialogTitle className="flex items-center gap-2">
                                 <AlertTriangle className="h-5 w-5 text-destructive" />
-                                Regenerate the JWT secret?
+                                {t("security.regenerateJwt.confirmTitle")}
                               </AlertDialogTitle>
                               <AlertDialogDescription>
-                                This signs out every user on every device right now, including your own session — you will need to log back in immediately afterward. This cannot be undone.
+                                {t("security.regenerateJwt.confirmDesc")}
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
-                              <AlertDialogCancel disabled={regeneratingJwtSecret}>Cancel</AlertDialogCancel>
+                              <AlertDialogCancel disabled={regeneratingJwtSecret}>{t("security.regenerateJwt.cancel")}</AlertDialogCancel>
                               <AlertDialogAction
                                 onClick={(e) => {
                                   e.preventDefault();
@@ -5241,7 +5245,7 @@ export default function Settings() {
                                 {regeneratingJwtSecret ? (
                                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                                 ) : null}
-                                Yes, sign out everyone
+                                {t("security.regenerateJwt.confirm")}
                               </AlertDialogAction>
                             </AlertDialogFooter>
                           </AlertDialogContent>
@@ -5529,7 +5533,7 @@ function WorkshopCollectionSyncCard({
   ) => void;
   persistCookies: (cookies: Pick<AppSettings, "steamSessionId" | "steamLoginSecure">) => Promise<void>;
 }) {
-  const { t } = useTranslation("settings");
+  const { t, i18n } = useTranslation("settings");
   const { toast } = useToast();
   const [diff, setDiff] = useState<Awaited<
     ReturnType<typeof modsApi.collectionDiff>
@@ -6343,7 +6347,7 @@ function WorkshopCollectionSyncCard({
           </div>
           {diffCheckedAt && (
             <p className="text-[11px] text-muted-foreground/70">
-              {t("workshopSync.lastChecked", { time: diffCheckedAt.toLocaleTimeString() })}
+              {t("workshopSync.lastChecked", { time: diffCheckedAt.toLocaleTimeString(i18n.language) })}
               {diff?.title && (
                 <>
                   {" "}

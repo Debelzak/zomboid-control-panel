@@ -89,6 +89,12 @@
     "autoDetect": "Auto-detect (default)",
     "additionalOriginsLabel": "Additional Allowed Origins",
     "additionalOriginsHelp": "One address per line, including http:// or https:// and port if needed.",
+    "originsError": {
+      "tooMany": "Too many origins. Maximum is {{max}}.",
+      "tooLong": "Origin too long ({{length}} chars). Maximum is {{max}}.",
+      "protocolNotAllowed": "Only http/https origins are allowed: {{origin}}",
+      "invalidFormat": "Invalid origin format: {{origin}}"
+    },
     "allowAllLabel": "Allow All Origins (Debug Only)",
     "allowAllDesc": "Skip all origin checks — useful for diagnosing connection problems.",
     "debugLoggingLabel": "Enable CORS Debug Logging",
@@ -452,6 +458,19 @@
     "resetAndSignOutButton": "Reset Password and Sign Out",
     "recoveryRemoteIntro1": "The panel cannot show existing passwords. If you still have filesystem access to the panel host, sign out and either create <code>data/reset-token.txt</code> or start the panel with <code>--reset-password</code>.",
     "recoveryRemoteIntro2": "Once the token file exists, the login screen will show a recovery option so you can set a new admin password without knowing the old one.",
+    "regenerateJwt": {
+      "cardTitle": "Regenerate JWT secret",
+      "cardDesc": "Immediately signs out every user on every device, including you — access and refresh tokens for every current session stop working at once. Use this only if a backup containing the old signing key may have leaked; it is not a routine action and there is no automatic rotation.",
+      "button": "Regenerate JWT Secret",
+      "confirmTitle": "Regenerate the JWT secret?",
+      "confirmDesc": "This signs out every user on every device right now, including your own session — you will need to log back in immediately afterward. This cannot be undone.",
+      "cancel": "Cancel",
+      "confirm": "Yes, sign out everyone",
+      "resultTitle": "JWT secret regenerated",
+      "resultDescription": "Every session has been signed out, including this one. Redirecting to sign-in…",
+      "failedTitle": "Regeneration failed",
+      "failedFallback": "The panel could not regenerate the JWT secret."
+    },
     "tipsRconTitle": "RCON Security:",
     "tipsRconDesc": "Your RCON password is stored locally and is never transmitted outside of the RCON connection to your server.",
     "tipsAdminTitle": "Admin Commands:",
