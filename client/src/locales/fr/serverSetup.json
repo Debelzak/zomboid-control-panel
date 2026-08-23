@@ -242,6 +242,8 @@
     "adminPasswordRequiredTitle": "Mot de passe admin requis",
     "adminPasswordRequiredInstallDesc": "Saisissez un mot de passe admin avant de démarrer l'installation.",
     "adminPasswordRequiredCreateDesc": "Saisissez un mot de passe admin avant de créer ce serveur.",
+    "invalidPortTitle": "Port invalide",
+    "invalidPortDesc": "Le port du jeu et le port RCON doivent chacun être un nombre entier compris entre 1024 et 65535.",
     "startingInstallLog": "Démarrage de l'installation...",
     "creatingConfigLog": "Création de la configuration du serveur...",
     "configCreatedLog": "Configuration du serveur créée avec succès !",

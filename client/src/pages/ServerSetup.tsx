@@ -89,6 +89,15 @@ function handleCardKeyDown(
 }
 
 // Generate a random password
+// Mirrors server/routes/server.js's requireIntInRange(value, 1024, 65535, ...)
+// used by /install, /quick-setup, /configure-rcon and /configure-network for
+// rconPort/serverPort -- those now refuse an out-of-range port with a named
+// 400 instead of silently substituting a default, so the client can reject
+// it before the round trip too.
+export function isValidInstallPort(port: number): boolean {
+  return Number.isInteger(port) && port >= 1024 && port <= 65535;
+}
+
 function generatePassword(length = 12): string {
   const chars =
     "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -693,6 +702,14 @@ export default function ServerSetup() {
       });
       return;
     }
+    if (!isValidInstallPort(serverPort) || !isValidInstallPort(rconPort)) {
+      toast({
+        title: t("toasts.invalidPortTitle"),
+        description: t("toasts.invalidPortDesc"),
+        variant: "destructive",
+      });
+      return;
+    }
     setInstalling(true);
     setLogs([]);
     setInstallProgress(null);
@@ -733,6 +750,14 @@ export default function ServerSetup() {
       toast({
         title: t("toasts.adminPasswordRequiredTitle"),
         description: t("toasts.adminPasswordRequiredCreateDesc"),
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!isValidInstallPort(serverPort) || !isValidInstallPort(rconPort)) {
+      toast({
+        title: t("toasts.invalidPortTitle"),
+        description: t("toasts.invalidPortDesc"),
         variant: "destructive",
       });
       return;
