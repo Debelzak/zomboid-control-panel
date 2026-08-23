@@ -74,7 +74,11 @@ describe("template mutation routes", () => {
         params: { id: "template-1" },
         body: { serverId: "server-1" },
         user: { role: "admin" },
-        app: { get: () => ({ checkServerRunning: vi.fn(async () => true) }) },
+        app: {
+          get: () => ({
+            getServerProcessDetails: vi.fn(async () => ({ running: true, scanFailed: false })),
+          }),
+        },
       },
       response,
     );
@@ -83,7 +87,7 @@ describe("template mutation routes", () => {
     expect(applyTemplate).not.toHaveBeenCalled();
   });
 
-  it("fails closed when active-server state cannot be checked", async () => {
+  it("fails closed when active-server state cannot be checked (the scan itself throws)", async () => {
     getActiveServer.mockResolvedValue({ id: "server-1" });
     const response = createResponse();
 
@@ -94,12 +98,80 @@ describe("template mutation routes", () => {
         params: { id: "template-1" },
         body: { serverId: "server-1" },
         user: { role: "admin" },
-        app: { get: () => ({ checkServerRunning: vi.fn(async () => { throw new Error("scan failed"); }) }) },
+        app: {
+          get: () => ({
+            getServerProcessDetails: vi.fn(async () => {
+              throw new Error("scan failed");
+            }),
+          }),
+        },
       },
       response,
     );
 
     expect(response.status).toHaveBeenCalledWith(503);
     expect(applyTemplate).not.toHaveBeenCalled();
+  });
+
+  // Previously this route asked serverManager.checkServerRunning(), which
+  // discards the scan's own scanFailed flag and returns a plain boolean --
+  // so a scan that completed but couldn't determine the server's state
+  // (timeout, PowerShell/exec error) came back as `false`, indistinguishable
+  // from a confirmed-stopped server, and the apply proceeded. Same fail-open
+  // class already fixed at /wipe, /delete-files, chunks.js's
+  // delete-chunks/delete-region, and backup.js's restore.
+  it("fails closed when the scan completed but could not determine the server's state (scanFailed:true)", async () => {
+    getActiveServer.mockResolvedValue({ id: "server-1" });
+    const response = createResponse();
+
+    await runRoute(
+      "/:id/apply",
+      "post",
+      {
+        params: { id: "template-1" },
+        body: { serverId: "server-1" },
+        user: { role: "admin" },
+        app: {
+          get: () => ({
+            // Old method the route used to call directly -- collapses the
+            // failed scan into a plain `false`, which is exactly the bug:
+            // present alongside getServerProcessDetails so unfixed code
+            // (which calls checkServerRunning) proceeds instead of refusing.
+            checkServerRunning: vi.fn(async () => false),
+            getServerProcessDetails: vi.fn(async () => ({ running: false, scanFailed: true })),
+          }),
+        },
+      },
+      response,
+    );
+
+    expect(response.status).toHaveBeenCalledWith(503);
+    expect(applyTemplate).not.toHaveBeenCalled();
+  });
+
+  it("proceeds when the scan confirms the server is stopped (running:false, scanFailed:false)", async () => {
+    getActiveServer.mockResolvedValue({ id: "server-1" });
+    applyTemplate.mockResolvedValue({ success: true });
+    const response = createResponse();
+
+    await runRoute(
+      "/:id/apply",
+      "post",
+      {
+        params: { id: "template-1" },
+        body: { serverId: "server-1" },
+        user: { role: "admin" },
+        app: {
+          get: () => ({
+            getServerProcessDetails: vi.fn(async () => ({ running: false, scanFailed: false })),
+          }),
+        },
+      },
+      response,
+    );
+
+    expect(applyTemplate).toHaveBeenCalledWith("template-1", "server-1", {});
+    expect(response.status).not.toHaveBeenCalledWith(409);
+    expect(response.status).not.toHaveBeenCalledWith(503);
   });
 });

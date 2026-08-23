@@ -94,13 +94,27 @@ router.post("/:id/apply", requirePermission("templates.manage"), async (req, res
     const activeServer = await getActiveServer();
     if (String(activeServer?.id) === String(serverId)) {
       const serverManager = req.app.get("serverManager");
-      if (!serverManager?.checkServerRunning) {
+      if (!serverManager?.getServerProcessDetails) {
         return res.status(503).json({
           error: "Unable to verify server state",
         });
       }
       try {
-        if (await serverManager.checkServerRunning()) {
+        // getServerProcessDetails(), not checkServerRunning() -- the latter
+        // discards the scan's own scanFailed flag and returns a plain
+        // boolean, so a scan that completed but couldn't determine the
+        // server's state (timeout, PowerShell/exec error) came back
+        // indistinguishable from "confirmed stopped" and let this apply
+        // proceed. Same fail-open class already fixed at /wipe,
+        // /delete-files, chunks.js's delete-chunks/delete-region, and
+        // backup.js's restore.
+        const details = await serverManager.getServerProcessDetails();
+        if (details.scanFailed) {
+          return res.status(503).json({
+            error: "Unable to verify server state",
+          });
+        }
+        if (details.running) {
           return res.status(409).json({
             error: "Stop the server before applying a template",
           });
