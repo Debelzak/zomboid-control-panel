@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/PageHeader";
+import { EmptyState } from "@/components/EmptyState";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -38,13 +39,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Tooltip,
   TooltipContent,
@@ -2756,16 +2759,13 @@ export default function ChunkCleaner() {
                     </div>
                   </div>
                 ) : chunks.length === 0 ? (
-                  <div className="h-full flex items-center justify-center text-muted-foreground">
-                    <div className="text-center max-w-xs">
-                      <Map className="w-10 h-10 mx-auto mb-3 opacity-40" />
-                      <p className="font-medium text-foreground text-sm">
-                        {t("canvas.noChunksTitle")}
-                      </p>
-                      <p className="text-xs mt-1.5 opacity-70">
-                        {t("canvas.noChunksDesc")}
-                      </p>
-                    </div>
+                  <div className="h-full flex items-center justify-center">
+                    <EmptyState
+                      type="noFile"
+                      title={t("canvas.noChunksTitle")}
+                      description={t("canvas.noChunksDesc")}
+                      compact
+                    />
                   </div>
                 ) : (
                   <div
@@ -2836,20 +2836,20 @@ export default function ChunkCleaner() {
         </Collapsible>
 
         {/* Delete Confirmation Dialog */}
-        <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2 text-destructive">
+        <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2 text-destructive">
                 <AlertTriangle className="w-5 h-5" />
                 {t("deleteDialog.title", { count: selectedChunks.size })}
-              </DialogTitle>
-              <DialogDescription>
+              </AlertDialogTitle>
+              <AlertDialogDescription>
                 {t("deleteDialog.description", {
                   count: selectedChunks.size,
                   size: formatSize(selectedSize),
                 })}
-              </DialogDescription>
-            </DialogHeader>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
 
             <div className="space-y-4">
               <div className="flex items-center justify-between p-3 rounded-lg bg-muted">
@@ -2943,18 +2943,17 @@ export default function ChunkCleaner() {
               })()}
             </div>
 
-            <DialogFooter>
-              <Button
-                variant="outline"
-                onClick={() => setDeleteDialogOpen(false)}
-                disabled={deleting}
-              >
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={deleting}>
                 {t("deleteDialog.cancel")}
-              </Button>
-              <Button
-                variant="destructive"
-                onClick={handleDelete}
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => {
+                  e.preventDefault();
+                  void handleDelete();
+                }}
                 disabled={deleting}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               >
                 {deleting ? (
                   <>
@@ -2967,15 +2966,15 @@ export default function ChunkCleaner() {
                     {t("deleteDialog.confirm")}
                   </>
                 )}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {/* Server-running override dialog (issue #5: false-positive process
             detection). Shows the matched processes and lets the user force
             the delete after confirming the server really is stopped. */}
-        <Dialog
+        <AlertDialog
           open={serverRunningDialog.open}
           onOpenChange={(open) => {
             if (!open && serverRunningDialog.resolve) {
@@ -2984,16 +2983,16 @@ export default function ChunkCleaner() {
             }
           }}
         >
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2">
                 <AlertTriangle className="w-5 h-5 text-warning" />
                 {t("serverRunningDialog.title")}
-              </DialogTitle>
-              <DialogDescription>
+              </AlertDialogTitle>
+              <AlertDialogDescription>
                 {t("serverRunningDialog.description")}
-              </DialogDescription>
-            </DialogHeader>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
 
             <div className="space-y-3 py-2">
               {serverRunningDialog.matched.length > 0 ? (
@@ -3031,29 +3030,28 @@ export default function ChunkCleaner() {
               </div>
             </div>
 
-            <DialogFooter>
-              <Button
-                variant="outline"
+            <AlertDialogFooter>
+              <AlertDialogCancel
                 onClick={() => {
                   serverRunningDialog.resolve?.(false);
                   setServerRunningDialog({ open: false, matched: [] });
                 }}
               >
                 {t("serverRunningDialog.cancel")}
-              </Button>
-              <Button
-                variant="destructive"
+              </AlertDialogCancel>
+              <AlertDialogAction
                 onClick={() => {
                   serverRunningDialog.resolve?.(true);
                   setServerRunningDialog({ open: false, matched: [] });
                 }}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               >
                 <Trash2 className="w-4 h-4 mr-2" />
                 {t("serverRunningDialog.forceDelete")}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </TooltipProvider>
   );
