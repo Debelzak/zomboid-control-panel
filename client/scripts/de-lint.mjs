@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 // German (de) locale linter for defect classes no gate on this floor can see:
 // noun capitalisation, register leaks (Sie-form), imperative-vs-infinitive buttons,
-// English-width length blowups, and cross-file/glossary vocabulary drift.
+// English-width length blowups, cross-file/glossary vocabulary drift, and
+// inconsistent acronym casing.
 //
 // Report-only. Not wired into vitest or any gate -- see the task brief this was
 // written for. Run with: node client/scripts/de-lint.mjs
 //
-// Usage: node client/scripts/de-lint.mjs [--json] [--check=cap,register,verb,length,glossary]
+// Usage: node client/scripts/de-lint.mjs [--json] [--check=cap,register,verb,length,glossary,acronym]
 
 import fs from "node:fs";
 import path from "node:path";
@@ -30,7 +31,7 @@ const checkArg = args.find((a) => a.startsWith("--check="));
 // explicitly to see its output; treat every finding as unverified.
 const enabledChecks = checkArg
   ? new Set(checkArg.slice("--check=".length).split(","))
-  : new Set(["register", "verb", "length", "glossary"]);
+  : new Set(["register", "verb", "length", "glossary", "acronym"]);
 
 // ---------------------------------------------------------------------------
 // JSON helpers
@@ -400,6 +401,47 @@ function checkGlossaryTerm(enValue, deValue, matchers) {
 }
 
 // ---------------------------------------------------------------------------
+// Check 6: acronym casing consistency
+//
+// German capitalises RCON/GM/INI/OIDC wherever they appear as words, even
+// where the English source itself is inconsistent (a label spells it "RCON"
+// while a terse badge in the same file writes "rcon") -- the English source
+// is not authoritative about German orthography here, only about meaning.
+// Exception: shell-prompt mimicry, where the lowercase form IS the thing
+// being displayed on screen ("rcon $", "/rcon <command>").
+// ---------------------------------------------------------------------------
+
+const CANONICAL_ACRONYMS = { rcon: "RCON", gm: "GM", ini: "INI", oidc: "OIDC" };
+const SHELL_MIMICRY_RE = /[/`]\s*$|\$\s*$|^\s*[/$>]/; // context right before the match looks like a prompt/path
+
+function checkAcronymCasing(value) {
+  const findings = [];
+  // ".ini" as a literal file EXTENSION ("server.ini", "{{name}}.ini") is
+  // correctly lowercase -- it's a filename convention, not the acronym INI
+  // used as a word. This was the dominant false-positive source (21 of 22
+  // on the first pass, all "server.ini"/"{{x}}.ini"). Scrub placeholder
+  // names for the same reason a bare "{{ini}}" isn't the word "INI" either.
+  const scrubbed = value
+    .replace(/\{\{[^}]+\}\}/g, " ")
+    .replace(/\.ini\b/gi, ".xxx");
+  for (const [lower, canonical] of Object.entries(CANONICAL_ACRONYMS)) {
+    const re = new RegExp(`\\b${lower}\\b`, "gi");
+    for (const m of scrubbed.matchAll(re)) {
+      if (m[0] === canonical) continue; // already correct
+      const before = scrubbed.slice(Math.max(0, m.index - 3), m.index);
+      const after = scrubbed.slice(m.index + m[0].length, m.index + m[0].length + 3);
+      if (SHELL_MIMICRY_RE.test(before) || /^\s*\$/.test(after)) continue;
+      findings.push({
+        found: m[0],
+        expected: canonical,
+        context: value.slice(Math.max(0, m.index - 15), m.index + m[0].length + 15),
+      });
+    }
+  }
+  return findings;
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -413,7 +455,7 @@ function main() {
     .sort();
 
   const findingsByFile = {};
-  const stats = { cap: 0, register: 0, verb: 0, length: 0, glossary: 0, filesChecked: 0, keysChecked: 0 };
+  const stats = { cap: 0, register: 0, verb: 0, length: 0, glossary: 0, acronym: 0, filesChecked: 0, keysChecked: 0 };
 
   for (const fileName of deFiles) {
     const enPath = path.join(EN_DIR, fileName);
@@ -462,6 +504,24 @@ function main() {
             keyPath,
             confidence: f.confidence,
             detail: f.note ? `"${f.word}" (${f.note})` : `"${f.word}"`,
+            value: deValue,
+          });
+        }
+      }
+
+      // Search-index/keyword-list fields are matched, not read -- English's
+      // own source uses lowercase acronyms there too (case-insensitive
+      // matching is the point), so it's not the same "German should
+      // normalise regardless of English" case the rule targets.
+      const isSearchIndexField = /keywords$/i.test(keyPath);
+      if (enabledChecks.has("acronym") && !isSearchIndexField) {
+        for (const f of checkAcronymCasing(deValue)) {
+          stats.acronym++;
+          fileFindings.push({
+            type: "ACRONYM_CASING",
+            keyPath,
+            confidence: "high",
+            detail: `"${f.found}" should be "${f.expected}" in "...${f.context}..."`,
             value: deValue,
           });
         }
@@ -524,7 +584,8 @@ function main() {
   console.log(`de-lint: ${stats.filesChecked} files, ${stats.keysChecked} string keys checked`);
   console.log(
     `raw finding counts -- capitalisation: ${stats.cap}, register: ${stats.register}, ` +
-      `imperative-button: ${stats.verb}, length: ${stats.length}, glossary: ${stats.glossary}`,
+      `imperative-button: ${stats.verb}, length: ${stats.length}, glossary: ${stats.glossary}, ` +
+      `acronym: ${stats.acronym}`,
   );
   console.log("");
 
