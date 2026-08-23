@@ -430,6 +430,24 @@ router.post("/change-password", async (req, res) => {
         code: ErrorCode.CHANGE_PASSWORD_FIELDS_REQUIRED,
       });
     }
+    // Every other password-setting path in this file caps the maximum at
+    // 128 chars (createUser in services/auth.js, POST /reset-password both
+    // here and in authService.resetPassword) -- this route was the one
+    // missing it. Two real consequences of an unbounded length reaching
+    // bcrypt.hash(): bcrypt silently truncates at 72 BYTES, so two
+    // passwords sharing the same first 72 bytes become interchangeable for
+    // login with no warning; and bcrypt is deliberately slow, so this was
+    // an available (if authenticated) way to spend meaningfully more server
+    // CPU per request than any other password-setting path permits.
+    // Reusing RESET_PASSWORD_TOO_LONG's code: its locale text is already
+    // fully generic ("Password must be 128 characters or fewer"), no
+    // reset-specific wording to mismatch.
+    if (newPassword.length > 128) {
+      return res.status(400).json({
+        error: "Password must be 128 characters or fewer",
+        code: ErrorCode.RESET_PASSWORD_TOO_LONG,
+      });
+    }
     await authService.changePassword(user.userId, currentPassword, newPassword);
     res.clearCookie("refreshToken", getRefreshCookieOptions(req, false));
 
