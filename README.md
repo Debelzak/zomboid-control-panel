@@ -117,6 +117,20 @@ Java crash dumps, error logs, support bundles. One-click `.zip` export for when 
 
 </td>
 </tr>
+<tr>
+<td width="50%" valign="top">
+
+### 💾 Backups
+Manual or scheduled world backups with configurable retention. Preview a snapshot's contents before you restore it, download the raw archive, or upload an external one back in. Restoring stops the server, takes an automatic safety backup of the current state first, then rolls the world back — with an explicit warning that it can't be undone.
+
+</td>
+<td width="50%" valign="top">
+
+### 🧹 Chunk Cleaner & Map Cleanup
+Visual map selector for reclaiming disk space from an aging save. Delete individual chunks or drag out a rectangular region, with per-save stats so you know what you're removing before you commit.
+
+</td>
+</tr>
 </table>
 
 ---
@@ -141,7 +155,9 @@ Java crash dumps, error logs, support bundles. One-click `.zip` export for when 
 - **Server control** — Start, stop, restart, save. Live status and uptime.
 - **Console** — Live log viewer and RCON terminal with command history.
 - **Scheduling** — Recurring restarts, saves, broadcasts with countdown warnings.
-- **Backups** — Create, restore, and manage world backups.
+- **Backups** — Manual or scheduled world backups with configurable retention, snapshot preview, and download/upload of the raw archive. Restore takes an automatic safety backup first and warns it can't be undone.
+- **Roles & permissions** — Capability-based access control: three built-in roles (admin, technician, moderator) plus fully custom ones, each granting an explicit subset of the panel's 28 individual capabilities across 12 areas (server lifecycle, RCON, backups, mods, and more).
+- **Account recovery** — Single-use recovery codes, generated in advance from an authenticated admin session, let the admin reset their own password later if they get locked out. Two more paths cover losing access to the panel entirely: a local-only token file, or the `--reset-password` CLI flag run directly on the server.
 
 ### Observe
 - **Players** — Online list, activity history, kick/ban/unban, access levels, notes and tags.
@@ -153,8 +169,9 @@ Java crash dumps, error logs, support bundles. One-click `.zip` export for when 
 - **Events & weather** — Rain, storms, blizzards, climate control, time control, sound triggers, zombie management.
 - **PanelBridge** — Server-side Lua mod for actions RCON can't reach: teleport, heal, god mode, character export/import, inventory.
 - **Discord bot** — Slash commands and two-way chat relay.
+- **Single sign-on (SSO)** — OpenID Connect login, with ready-made presets for Google, Authentik, Keycloak, Azure AD, Okta, and Auth0, or any other compliant provider entered by hand. Full discovery + PKCE + state/nonce flow, with a one-click credential test before you commit to it.
 - **Multi-server** — Manage multiple PZ servers from one panel.
-- **Chunk cleaner** — Visual map selector for cleaning unused chunks.
+- **Chunk cleaner** — Visual map selector for reclaiming disk space from an aging save: delete individual chunks or drag out a rectangular region, with per-save stats before you commit.
 - **Auto-update** — Checks for new releases, downloads and applies them.
 
 ---
