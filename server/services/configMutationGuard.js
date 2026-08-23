@@ -3,6 +3,14 @@ import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("ConfigMutationGuard");
 
+// Refuses a local config write while the server is running. The routes this
+// applies to are chosen by callers via serverFiles.js's LOCAL_CONFIG_MUTATIONS
+// — see that Set's own comment for what's still gated, what isn't, and why:
+// the original blanket justification (PZ rewrites config on shutdown and
+// would discard a live edit) was measured 2026-08-23 and found false for a
+// clean stop, which is why one route (PUT /sandbox-option) was removed from
+// that Set. This function's own behavior is unchanged; only the route list
+// feeding it changed.
 export async function requireStoppedForLocalConfigMutation(req, res, next) {
   try {
     const activeServer = await getActiveServer();

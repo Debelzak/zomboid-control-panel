@@ -152,10 +152,26 @@ router.use(async (req, res, next) => {
   next();
 });
 
+// Routes gated by requireStoppedForLocalConfigMutation. The original
+// justification for gating ANY of these was the assumption that PZ rewrites
+// its config files on shutdown and would discard a live edit — measured
+// 2026-08-23 against a real B42 dedicated server (clean RCON `quit`, the same
+// path server.js's POST /stop uses): a clean shutdown touches NEITHER
+// SandboxVars.lua NOR the server .ini at all (byte-identical mtime/hash
+// before and after), and the next startup rewrites both but PRESERVES an
+// edit made on disk while the server was running — measured, not assumed.
+// So the assumption behind this whole list was false, at least for a clean
+// stop. "PUT /sandbox-option" is deliberately removed below on the strength
+// of that evidence, since a stuck-forever refusal (the mod-settings tab can
+// only ever call this while the server is running, so it 409'd every time)
+// is a real bug and this route's own file write already no-ops safely when
+// there's nothing to change (see persisted:false below). The other nine
+// entries are NOT touched here — carded separately for the same
+// re-evaluation post-deploy, since a wrong generalization there risks a
+// whole ini/spawn-region file, not just one sandbox key.
 const LOCAL_CONFIG_MUTATIONS = new Set([
   "PUT /ini",
   "PUT /sandbox",
-  "PUT /sandbox-option",
   "POST /sandbox/repair",
   "PUT /spawnpoints",
   "PUT /spawnregions",

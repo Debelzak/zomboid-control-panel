@@ -1159,14 +1159,20 @@ export default function ServerConfig() {
             })
           }
         } catch (error) {
-          // getUserErrorMessage resolves the server's own SERVER_RUNNING code
-          // to "Stop the server before editing configuration" before it ever
-          // looks at our fallback -- correct advice for a normal file save,
-          // but actively wrong here: the live edit above only ever succeeds
-          // while the server IS running, so this persistence attempt is
-          // guaranteed to hit that guard on every single edit, and stopping
-          // the server in response only locks the operator out of this tab.
-          // Show the fallback this catch block was written for instead of
+          // PUT /sandbox-option used to be gated behind "stop the server
+          // first" (LOCAL_CONFIG_MUTATIONS in serverFiles.js), and since the
+          // live edit above only ever succeeds while the server IS running,
+          // this persistence attempt was guaranteed to 409 on every single
+          // edit -- with getUserErrorMessage resolving that SERVER_RUNNING
+          // code to "Stop the server before editing configuration" before it
+          // ever looked at our fallback, actively bad advice since stopping
+          // the server only locked the operator out of this tab. Measured
+          // 2026-08-23 that a clean shutdown never rewrites this file at all,
+          // so that gate was removed for this one route (server/routes/
+          // serverFiles.js's LOCAL_CONFIG_MUTATIONS comment has the evidence)
+          // and this call should no longer 409 in normal operation. Kept as
+          // a defensive fallback in case SERVER_RUNNING is ever reached here
+          // some other way -- still shows the accurate message instead of
           // letting the generic code lookup bury it.
           const isServerRunningRefusal = error instanceof ApiError && error.code === 'SERVER_RUNNING'
           toast({
