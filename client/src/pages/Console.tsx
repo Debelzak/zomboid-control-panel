@@ -17,6 +17,25 @@ import { PageHeader } from '@/components/PageHeader'
 import { cn } from '@/lib/utils'
 import { usePageShortcut } from '@/hooks/useKeyboardShortcuts'
 
+// rconService.execute() routes most connection-loss cases through
+// getUserFriendlyError() (server/services/rcon.js) before they reach the
+// client, rewriting raw ECONNREFUSED/etc into prose -- so a raw-string-only
+// check misses every one of those friendly-error paths and leaves
+// rconConnected stuck at its last (stale) value. Match the friendly
+// strings too so any connection-loss report is recognized.
+const RCON_DISCONNECT_PHRASES = [
+  'Server is not running',
+  'ECONNREFUSED',
+  'Cannot connect to server',
+  'Connection timed out',
+  'Connection was reset',
+  'Could not reconnect after multiple attempts',
+  'Not connected to server',
+]
+function isRconDisconnectError(error: string | undefined): boolean {
+  return !!error && RCON_DISCONNECT_PHRASES.some((phrase) => error.includes(phrase))
+}
+
 interface CommandEntry {
   id: number
   command: string
@@ -535,8 +554,8 @@ export default function Console() {
         }
       }
 
-      // Update connection status based on result
-      if (result.error?.includes('Server is not running') || result.error?.includes('ECONNREFUSED')) {
+      // Update connection status based on result.
+      if (isRconDisconnectError(result.error)) {
         setRconConnected(false)
       } else if (result.success) {
         setRconConnected(true)
@@ -665,6 +684,7 @@ export default function Console() {
         setAnnouncement('')
         setRconConnected(true)
       } else {
+        if (isRconDisconnectError(result.error)) setRconConnected(false)
         toast({
           title: t('toasts.errorTitle'),
           description: result.error || t('toasts.broadcastFailedFallback'),
@@ -672,9 +692,11 @@ export default function Console() {
         })
       }
     } catch (error) {
+      const message = error instanceof Error ? error.message : t('toasts.broadcastFailedFallback')
+      if (isRconDisconnectError(message)) setRconConnected(false)
       toast({
         title: t('toasts.errorTitle'),
-        description: error instanceof Error ? error.message : t('toasts.broadcastFailedFallback'),
+        description: message,
         variant: 'destructive',
       })
     } finally {

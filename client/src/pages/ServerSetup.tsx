@@ -26,7 +26,7 @@ import {
   Info,
   ArrowRight,
 } from "lucide-react";
-import { configApi, serverApi, serversApi, debugApi } from "@/lib/api";
+import { configApi, serverApi, serversApi, debugApi, apiFetch } from "@/lib/api";
 import { getInstallProgressMessage } from "@/lib/installProgressMessage";
 import { useNavigate } from "react-router-dom";
 import {
@@ -112,8 +112,20 @@ const LINUX_SERVICE_INSTALL_PATH = "/opt/zomboid-panel/data/pzserver";
 function installationErrorGuidance(
   message: string,
   t: (key: string, opts?: Record<string, unknown>) => string,
+  platform: string | null,
 ) {
   if (!message.startsWith("Installation path is not writable:")) {
+    return message;
+  }
+  // The suffix tells the user to edit zomboid-panel.service and restart it
+  // via systemd -- meaningless (and unfollowable) advice on Windows/macOS,
+  // where this app is also a first-class supported platform, not an edge
+  // case. Server always returns the identical message regardless of host
+  // OS (server/routes/server.js formatWritablePathError), so the client is
+  // the only place that knows to gate this. Unknown platform (still
+  // loading, or the fetch failed) falls back to the plain message rather
+  // than guessing.
+  if (platform !== "linux") {
     return message;
   }
 
@@ -167,6 +179,9 @@ export default function ServerSetup() {
     recommendedMax: number;
   } | null>(null);
   const [detectingRam, setDetectingRam] = useState(false);
+  // Drives installationErrorGuidance's Linux-only remediation suffix --
+  // null until resolved, so we never show wrong-platform advice on a guess.
+  const [serverPlatform, setServerPlatform] = useState<string | null>(null);
 
   // Installation state
   const [installing, setInstalling] = useState(false);
@@ -283,6 +298,27 @@ export default function ServerSetup() {
   // Auto-detect RAM on mount
   useEffect(() => {
     handleAutoDetectRam();
+  }, []);
+
+  // Learn the panel host's actual OS on mount, so a Windows/macOS
+  // installation failure never gets told to edit a systemd unit.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiFetch("/debug/system");
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled && typeof data?.platform === "string") {
+          setServerPlatform(data.platform);
+        }
+      } catch {
+        // Silent fail - guidance falls back to the plain message
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Load saved settings
@@ -680,7 +716,7 @@ export default function ServerSetup() {
       });
     } catch (error) {
       const rawMessage = error instanceof Error ? error.message : t("common.unknownError");
-      const msg = installationErrorGuidance(rawMessage, t);
+      const msg = installationErrorGuidance(rawMessage, t, serverPlatform);
       addLog("error", msg);
       setInstalling(false);
       toast({

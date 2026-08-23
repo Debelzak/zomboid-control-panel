@@ -1170,13 +1170,21 @@ export default function WorldMap() {
     return () => clearInterval(interval)
   }, [bridgeConnected, fetchOverlays, hasActiveServer])
 
+  // Deliberately NOT gated on bridgeConnected: fetchPlayerPositions is what
+  // sets bridgeConnected in the first place (true on a successful response,
+  // false on failure). Gating this interval on bridgeConnected meant that
+  // once the mod disconnected, this effect's own guard would tear the
+  // interval down and nothing would ever call fetchPlayerPositions again to
+  // notice a reconnect -- the "Bridge Offline" badge was stuck until the
+  // user reloaded the page or switched servers. Polling through the
+  // disconnected state (a cheap failed fetch every 3s) lets it self-heal.
   useEffect(() => {
-    if (!hasActiveServer || !bridgeConnected) return
+    if (!hasActiveServer) return
     const interval = setInterval(() => {
       if (document.visibilityState !== 'hidden') fetchPlayerPositions()
     }, POLL_INTERVAL)
     return () => clearInterval(interval)
-  }, [bridgeConnected, fetchPlayerPositions, hasActiveServer])
+  }, [fetchPlayerPositions, hasActiveServer])
 
   useEffect(() => { playersRef.current = players }, [players])
 

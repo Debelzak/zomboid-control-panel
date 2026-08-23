@@ -682,6 +682,14 @@ export default function Debug() {
   const [fixingDiagnosticsCheckId, setFixingDiagnosticsCheckId] = useState<
     string | null
   >(null);
+  // Auto-fix failures otherwise only ever surfaced via a toast, which
+  // auto-dismisses and leaves the failing check row with no indication
+  // anything was attempted -- a user who steps away or switches tabs
+  // mid-attempt has no way to tell the fix ran and failed vs. was never
+  // tried. Persisted per check.id, same pattern as healthError/worldMapError.
+  const [diagnosticsFixErrors, setDiagnosticsFixErrors] = useState<
+    Record<string, string>
+  >({});
   const [worldMapDiag, setWorldMapDiag] = useState<WorldMapDiagnostics | null>(
     null,
   );
@@ -821,6 +829,21 @@ export default function Debug() {
       if (data?.checks) {
         setDiagnostics(data);
         setDiagnosticsError(null);
+        // Drop persisted fix-errors for checks that no longer fail/warn --
+        // the underlying issue resolved (via this fix or another path), so
+        // the stale error banner shouldn't keep showing.
+        const stillBad = new Set(
+          (data.checks as DiagCheck[])
+            .filter((c) => c.status === "fail" || c.status === "warn")
+            .map((c) => c.id),
+        );
+        setDiagnosticsFixErrors((prev) => {
+          const next: Record<string, string> = {};
+          for (const [id, msg] of Object.entries(prev)) {
+            if (stillBad.has(id)) next[id] = msg;
+          }
+          return next;
+        });
       } else {
         setDiagnosticsError(t("worldMapTab.unexpectedResponse"));
       }
@@ -839,6 +862,12 @@ export default function Debug() {
       if (!action) return;
 
       setFixingDiagnosticsCheckId(check.id);
+      setDiagnosticsFixErrors((prev) => {
+        if (!(check.id in prev)) return prev;
+        const next = { ...prev };
+        delete next[check.id];
+        return next;
+      });
       try {
         if (!action.automated) {
           if (check.id === "mods.resolved") {
@@ -1086,6 +1115,7 @@ export default function Debug() {
           description: message,
           variant: "destructive",
         });
+        setDiagnosticsFixErrors((prev) => ({ ...prev, [check.id]: message }));
       } finally {
         setFixingDiagnosticsCheckId(null);
       }
@@ -2545,6 +2575,14 @@ export default function Debug() {
                                       {t("common.fixLabel")}
                                     </span>{" "}
                                     {translated.hint}
+                                  </p>
+                                )}
+                                {diagnosticsFixErrors[check.id] && (
+                                  <p className="text-xs mt-1 text-destructive">
+                                    <span className="font-medium">
+                                      {t("diagnostics.fixFailedTitle")}:
+                                    </span>{" "}
+                                    {diagnosticsFixErrors[check.id]}
                                   </p>
                                 )}
                                 {fixAction && (

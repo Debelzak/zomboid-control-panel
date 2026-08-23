@@ -16,6 +16,7 @@
     "currentPassword": "Current password",
     "newPassword": "New password",
     "confirmNewPassword": "Confirm new password",
+    "recoveryTokenLocalReset": "Recovery token for local reset",
     "newPasswordLocalReset": "New password for local reset",
     "confirmNewPasswordLocalReset": "Confirm new password for local reset",
     "buyMeCoffeeKofi": "Buy me a coffee on Ko-fi"
@@ -463,6 +464,8 @@
     "refreshLocalRecovery": "Refresh Local Recovery",
     "resetPasswordOnServer": "Reset Password On This Server",
     "hideButton": "Hide",
+    "recoveryTokenLabel": "Recovery token",
+    "recoveryTokenPlaceholder": "Paste the token from data/reset-token.txt",
     "newPasswordForResetLabel": "New password",
     "confirmNewPasswordLabel": "Confirm new password",
     "resettingButton": "Resetting...",

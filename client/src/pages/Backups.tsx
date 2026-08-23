@@ -237,6 +237,15 @@ export default function Backups() {
         variant: 'destructive',
       })
       setBackupProgress({ phase: 'error', percent: 0, message: t('toasts.backupFailedMessage') })
+      // Mirror the 'backup:progress' socket handler's error-phase behavior
+      // above -- without this, a failure that never gets a corresponding
+      // socket event (e.g. the createBackup() call itself rejects before
+      // the server ever emits progress) leaves this error card on screen
+      // indefinitely instead of auto-clearing like every other transition.
+      if (progressTimeoutRef.current) {
+        clearTimeout(progressTimeoutRef.current)
+      }
+      progressTimeoutRef.current = setTimeout(() => setBackupProgress(null), 3000)
     } finally {
       setCreatingBackup(false)
     }

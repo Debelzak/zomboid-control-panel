@@ -1517,6 +1517,7 @@ export default function Events() {
         description: t('toasts.operationCompletedDesc'),
         variant: 'success' as const,
       })
+      pushActivity(label, true)
       // Re-run the current list operation to refresh table data
       if (bridgeResultData?.operation) {
         try {
@@ -1538,6 +1539,7 @@ export default function Events() {
         description: getUserErrorMessage(error, t('toasts.operationFailedFallback')),
         variant: 'destructive',
       })
+      pushActivity(t('toasts.actionFailedTitle', { action: label }), false)
     } finally {
       setBridgeLoading(null)
     }

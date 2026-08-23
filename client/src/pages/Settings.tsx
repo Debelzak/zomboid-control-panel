@@ -5152,6 +5152,23 @@ export default function Settings() {
                                     void handleResetLostPassword();
                                   }}
                                 >
+                                  <Input
+                                    type="text"
+                                    value={localPasswordResetToken}
+                                    onChange={(e) =>
+                                      setLocalPasswordResetToken(
+                                        e.target.value,
+                                      )
+                                    }
+                                    placeholder={t(
+                                      "security.recoveryTokenPlaceholder",
+                                    )}
+                                    className="h-11"
+                                    autoComplete="off"
+                                    aria-label={t(
+                                      "ariaLabels.recoveryTokenLocalReset",
+                                    )}
+                                  />
                                   <div className="relative">
                                     <Input
                                       type={
@@ -5237,6 +5254,7 @@ export default function Settings() {
                                     disabled={
                                       resettingLocalPassword ||
                                       preparingLocalPasswordReset ||
+                                      !localPasswordResetToken ||
                                       !localPasswordResetPassword ||
                                       !localPasswordResetConfirm ||
                                       localPasswordResetPassword !==
