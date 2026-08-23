@@ -323,3 +323,51 @@ describe("PUT /app-settings -- the other 8 boolean settings now reject a non-boo
     });
   }
 });
+
+// Bound chased from modChecker.js's setRestartOptions
+// (`Math.max(0, Math.min(30, val))`) -- but Settings.tsx's own input says
+// min=1, a real discrepancy from the consuming service's floor of 0.
+// Applying the narrower client-intent range (1-30): a restart delay of
+// exactly 0 isn't a meaningful choice distinct from no delay, and 1-30 is
+// what the UI has always presented as valid.
+describe("PUT /app-settings -- modRestartDelay validation (bound chased, not guessed)", () => {
+  it("rejects zero (matches Settings.tsx's min=1, narrower than modChecker's own floor of 0)", async () => {
+    const res = await putAppSettings({ modRestartDelay: 0 });
+    expect(res.getStatusCode()).toBe(400);
+    expect(res.getBody().error).toMatch(/Mod restart delay \(minutes\) must be a whole number/);
+  });
+
+  it("rejects a value above 30", async () => {
+    const res = await putAppSettings({ modRestartDelay: 31 });
+    expect(res.getStatusCode()).toBe(400);
+  });
+
+  it("accepts a valid value", async () => {
+    const res = await putAppSettings({ modRestartDelay: 5 });
+    expect(res.getStatusCode()).toBe(200);
+    expect(res.getBody().success).toBe(true);
+  });
+});
+
+// Bound chased from updateChecker.js's parseAutoUpdateWarningMinutes
+// (`Math.min(60, Math.max(0, ...))`) -- matches Settings.tsx's own input
+// (min=0 max=60) exactly, no discrepancy for this one.
+describe("PUT /app-settings -- serverAutoUpdateWarningMinutes validation (bound chased, matches client exactly)", () => {
+  it("accepts zero (a real, meaningful choice here: restart with no warning)", async () => {
+    const res = await putAppSettings({ serverAutoUpdateWarningMinutes: 0 });
+    expect(res.getStatusCode()).toBe(200);
+    expect(res.getBody().success).toBe(true);
+  });
+
+  it("rejects a value above 60", async () => {
+    const res = await putAppSettings({ serverAutoUpdateWarningMinutes: 61 });
+    expect(res.getStatusCode()).toBe(400);
+    expect(res.getBody().error).toMatch(/Server auto-update warning \(minutes\) must be a whole number/);
+  });
+
+  it("accepts a valid value", async () => {
+    const res = await putAppSettings({ serverAutoUpdateWarningMinutes: 15 });
+    expect(res.getStatusCode()).toBe(200);
+    expect(res.getBody().success).toBe(true);
+  });
+});

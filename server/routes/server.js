@@ -553,6 +553,24 @@ export function formatDirectoryReadError(
 // Security: INI sanitization imported from shared util
 // sanitizeIniValue strips \r\n;= to prevent injection
 
+// Shared range constants for the requireIntInRange call sites below AND in
+// config.js's PUT /app-settings (which imports these rather than retyping
+// the numbers) -- game port, RCON port and panel port all mean "a bindable
+// TCP port outside the well-known range," so they share one PORT_MIN/
+// PORT_MAX pair. Memory shares a floor (both fields refuse below 1 GB) but
+// have distinct ceilings. Exporting these is the actual fix for a claim
+// made in the 2026-08-23 validateInt-coerces audit that turned out false:
+// "no disagreement possible by construction" was said of two files with
+// sixteen hand-typed literal copies of these five numbers and no shared
+// constant anywhere -- true only of the FUNCTION (requireIntInRange itself,
+// imported), not the ranges. A future range change is one edit here instead
+// of a grep-and-hope across both files.
+export const PORT_MIN = 1024;
+export const PORT_MAX = 65535;
+export const MEMORY_GB_MIN = 1;
+export const MIN_MEMORY_GB_MAX = 64;
+export const MAX_MEMORY_GB_MAX = 128;
+
 // Coerces `value` to an integer in [min, max], silently substituting
 // defaultVal on NaN or out-of-range input. Despite the old name this
 // function replaced ("validateInt"), it does not validate -- it never
@@ -1730,19 +1748,19 @@ router.post("/install", requirePermission("server.install"), async (req, res) =>
     // field by the operator, so an out-of-range value is refused (with a
     // named field + range) rather than silently swapped for a default they
     // never chose. See 2026-08-23 validateInt-coerces audit.
-    const minMemoryCheck = requireIntInRange(minMemory, 1, 64, "Minimum memory (GB)");
+    const minMemoryCheck = requireIntInRange(minMemory, MEMORY_GB_MIN, MIN_MEMORY_GB_MAX, "Minimum memory (GB)");
     if (!minMemoryCheck.ok) {
       return res.status(400).json({ error: minMemoryCheck.message, code: ErrorCode.INVALID_MIN_MEMORY });
     }
-    const maxMemoryCheck = requireIntInRange(maxMemory, 1, 128, "Maximum memory (GB)");
+    const maxMemoryCheck = requireIntInRange(maxMemory, MEMORY_GB_MIN, MAX_MEMORY_GB_MAX, "Maximum memory (GB)");
     if (!maxMemoryCheck.ok) {
       return res.status(400).json({ error: maxMemoryCheck.message, code: ErrorCode.INVALID_MAX_MEMORY });
     }
-    const serverPortCheck = requireIntInRange(serverPort, 1024, 65535, "Game port");
+    const serverPortCheck = requireIntInRange(serverPort, PORT_MIN, PORT_MAX, "Game port");
     if (!serverPortCheck.ok) {
       return res.status(400).json({ error: serverPortCheck.message, code: ErrorCode.INVALID_SERVER_PORT });
     }
-    const rconPortCheck = requireIntInRange(rconPort, 1024, 65535, "RCON port");
+    const rconPortCheck = requireIntInRange(rconPort, PORT_MIN, PORT_MAX, "RCON port");
     if (!rconPortCheck.ok) {
       return res.status(400).json({ error: rconPortCheck.message, code: ErrorCode.INVALID_RCON_PORT });
     }
@@ -2233,19 +2251,19 @@ router.post("/quick-setup", requirePermission("server.install"), async (req, res
 
     // Validate numeric inputs -- same refuse-don't-coerce reasoning as
     // /install above. See 2026-08-23 validateInt-coerces audit.
-    const minMemoryCheck = requireIntInRange(minMemory, 1, 64, "Minimum memory (GB)");
+    const minMemoryCheck = requireIntInRange(minMemory, MEMORY_GB_MIN, MIN_MEMORY_GB_MAX, "Minimum memory (GB)");
     if (!minMemoryCheck.ok) {
       return res.status(400).json({ error: minMemoryCheck.message, code: ErrorCode.INVALID_MIN_MEMORY });
     }
-    const maxMemoryCheck = requireIntInRange(maxMemory, 1, 128, "Maximum memory (GB)");
+    const maxMemoryCheck = requireIntInRange(maxMemory, MEMORY_GB_MIN, MAX_MEMORY_GB_MAX, "Maximum memory (GB)");
     if (!maxMemoryCheck.ok) {
       return res.status(400).json({ error: maxMemoryCheck.message, code: ErrorCode.INVALID_MAX_MEMORY });
     }
-    const serverPortCheck = requireIntInRange(serverPort, 1024, 65535, "Game port");
+    const serverPortCheck = requireIntInRange(serverPort, PORT_MIN, PORT_MAX, "Game port");
     if (!serverPortCheck.ok) {
       return res.status(400).json({ error: serverPortCheck.message, code: ErrorCode.INVALID_SERVER_PORT });
     }
-    const rconPortCheck = requireIntInRange(rconPort, 1024, 65535, "RCON port");
+    const rconPortCheck = requireIntInRange(rconPort, PORT_MIN, PORT_MAX, "RCON port");
     if (!rconPortCheck.ok) {
       return res.status(400).json({ error: rconPortCheck.message, code: ErrorCode.INVALID_RCON_PORT });
     }
@@ -2419,7 +2437,7 @@ router.post("/configure-rcon", requirePermission("server.configure"), async (req
   try {
     const { rconPassword, rconPort: rawRconPort = 27015 } = req.body;
     // Refused, not coerced: see 2026-08-23 validateInt-coerces audit.
-    const rconPortCheck = requireIntInRange(rawRconPort, 1024, 65535, "RCON port");
+    const rconPortCheck = requireIntInRange(rawRconPort, PORT_MIN, PORT_MAX, "RCON port");
     if (!rconPortCheck.ok) {
       return res.status(400).json({ error: rconPortCheck.message, code: ErrorCode.INVALID_RCON_PORT });
     }
@@ -2497,7 +2515,7 @@ router.post("/configure-network", requirePermission("server.configure"), async (
   try {
     const { serverPort: rawServerPort = 16261, useUpnp = true } = req.body;
     // Refused, not coerced: see 2026-08-23 validateInt-coerces audit.
-    const serverPortCheck = requireIntInRange(rawServerPort, 1024, 65535, "Game port");
+    const serverPortCheck = requireIntInRange(rawServerPort, PORT_MIN, PORT_MAX, "Game port");
     if (!serverPortCheck.ok) {
       return res.status(400).json({ error: serverPortCheck.message, code: ErrorCode.INVALID_SERVER_PORT });
     }

@@ -18,7 +18,31 @@ import {
   minutesToCheckIntervalMs,
 } from "../services/modChecker.js";
 import { requireStoppedForLocalConfigMutation } from "../services/configMutationGuard.js";
-import { requireIntInRange } from "./server.js";
+import {
+  requireIntInRange,
+  PORT_MIN,
+  PORT_MAX,
+  MEMORY_GB_MIN,
+  MIN_MEMORY_GB_MAX,
+  MAX_MEMORY_GB_MAX,
+} from "./server.js";
+
+// Local to this route: autoExportMaxPerPlayer has no counterpart check in
+// server.js (or anywhere else), so unlike the port/memory constants above
+// there's no cross-file drift risk to guard against -- a plain local
+// constant is enough to remove the hand-typed literal. Range matches
+// Settings.tsx's own input (min=1 max=50).
+const AUTO_EXPORT_MAX_PER_PLAYER_MIN = 1;
+const AUTO_EXPORT_MAX_PER_PLAYER_MAX = 50;
+
+// Also local: neither of these has a server.js counterpart. Ranges chased
+// from their consuming services rather than guessed -- see the comments at
+// each call site below for the source and, for modRestartDelay, a real
+// discrepancy found between that source and Settings.tsx's own input.
+const MOD_RESTART_DELAY_MIN = 1;
+const MOD_RESTART_DELAY_MAX = 30;
+const SERVER_AUTO_UPDATE_WARNING_MINUTES_MIN = 0;
+const SERVER_AUTO_UPDATE_WARNING_MINUTES_MAX = 60;
 
 const router = express.Router();
 
@@ -287,6 +311,42 @@ router.put("/app-settings", requirePermission("panel.settings"), async (req, res
         });
       }
 
+      // Bound chased from the consuming service (modChecker.js's
+      // setRestartOptions: `Math.max(0, Math.min(30, val))`), which permits
+      // 0. Settings.tsx's own input says min=1 -- a real, if minor,
+      // discrepancy between the two, not invented here. Applying the
+      // narrower client-intent bound (1-30): a restart "delay" of exactly 0
+      // isn't a meaningful choice distinct from no delay at all, and 1-30 is
+      // what the UI has always presented as valid. Flagged, not silently
+      // resolved -- see 2026-08-23 config.js numeric-field audit part 4.
+      if (key === "modRestartDelay") {
+        const modRestartDelayCheck = requireIntInRange(
+          value,
+          MOD_RESTART_DELAY_MIN,
+          MOD_RESTART_DELAY_MAX,
+          "Mod restart delay (minutes)",
+        );
+        if (!modRestartDelayCheck.ok) {
+          return res.status(400).json({ error: modRestartDelayCheck.message });
+        }
+      }
+
+      // Bound chased from the consuming service (updateChecker.js's
+      // parseAutoUpdateWarningMinutes: `Math.min(60, Math.max(0, ...))`,
+      // default 15) -- matches Settings.tsx's own input (min=0 max=60)
+      // exactly, no discrepancy to report for this one.
+      if (key === "serverAutoUpdateWarningMinutes") {
+        const warningMinutesCheck = requireIntInRange(
+          value,
+          SERVER_AUTO_UPDATE_WARNING_MINUTES_MIN,
+          SERVER_AUTO_UPDATE_WARNING_MINUTES_MAX,
+          "Server auto-update warning (minutes)",
+        );
+        if (!warningMinutesCheck.ok) {
+          return res.status(400).json({ error: warningMinutesCheck.message });
+        }
+      }
+
       if (key === "lanIpAddress" && value !== "" && net.isIP(value) !== 4) {
         return res
           .status(400)
@@ -393,7 +453,7 @@ router.put("/app-settings", requirePermission("panel.settings"), async (req, res
       // reachable by walking around it from the other direction isn't a
       // guard, it's a speed bump on one approach.
       if (key === "panelPort") {
-        const panelPortCheck = requireIntInRange(value, 1024, 65535, "Panel port");
+        const panelPortCheck = requireIntInRange(value, PORT_MIN, PORT_MAX, "Panel port");
         if (!panelPortCheck.ok) {
           return res.status(400).json({ error: panelPortCheck.message });
         }
@@ -413,28 +473,28 @@ router.put("/app-settings", requirePermission("panel.settings"), async (req, res
       // lives in a completely different file. Same ranges as server.js's
       // checks so the two doors can't disagree with each other.
       if (key === "rconPort") {
-        const rconPortCheck = requireIntInRange(value, 1024, 65535, "RCON port");
+        const rconPortCheck = requireIntInRange(value, PORT_MIN, PORT_MAX, "RCON port");
         if (!rconPortCheck.ok) {
           return res.status(400).json({ error: rconPortCheck.message });
         }
       }
 
       if (key === "serverPort") {
-        const serverPortCheck = requireIntInRange(value, 1024, 65535, "Game port");
+        const serverPortCheck = requireIntInRange(value, PORT_MIN, PORT_MAX, "Game port");
         if (!serverPortCheck.ok) {
           return res.status(400).json({ error: serverPortCheck.message });
         }
       }
 
       if (key === "minMemory") {
-        const minMemoryCheck = requireIntInRange(value, 1, 64, "Minimum memory (GB)");
+        const minMemoryCheck = requireIntInRange(value, MEMORY_GB_MIN, MIN_MEMORY_GB_MAX, "Minimum memory (GB)");
         if (!minMemoryCheck.ok) {
           return res.status(400).json({ error: minMemoryCheck.message });
         }
       }
 
       if (key === "maxMemory") {
-        const maxMemoryCheck = requireIntInRange(value, 1, 128, "Maximum memory (GB)");
+        const maxMemoryCheck = requireIntInRange(value, MEMORY_GB_MIN, MAX_MEMORY_GB_MAX, "Maximum memory (GB)");
         if (!maxMemoryCheck.ok) {
           return res.status(400).json({ error: maxMemoryCheck.message });
         }
@@ -448,7 +508,7 @@ router.put("/app-settings", requirePermission("panel.settings"), async (req, res
       // whoever next reads that column expecting a real number. Range
       // matches Settings.tsx's own input (min=1 max=50).
       if (key === "autoExportMaxPerPlayer") {
-        const autoExportMaxCheck = requireIntInRange(value, 1, 50, "Auto-export copies kept");
+        const autoExportMaxCheck = requireIntInRange(value, AUTO_EXPORT_MAX_PER_PLAYER_MIN, AUTO_EXPORT_MAX_PER_PLAYER_MAX, "Auto-export copies kept");
         if (!autoExportMaxCheck.ok) {
           return res.status(400).json({ error: autoExportMaxCheck.message });
         }
