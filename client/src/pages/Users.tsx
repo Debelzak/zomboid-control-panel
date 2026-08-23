@@ -59,7 +59,12 @@ function recoveryActionKeyForRole(role: RoleInfo | undefined): 'lockout.actionMa
   return null
 }
 
-export default function Users() {
+// `embedded`: rendered inside a Settings tab panel instead of as its own
+// route. The tab trigger already carries the page's name/icon, so the full
+// PageHeader (eyebrow/title/description) would be a second, redundant
+// header stacked on top of Settings' own -- only the action button carries
+// over, in a slim row instead.
+export default function Users({ embedded = false }: { embedded?: boolean }) {
   const { t, i18n } = useTranslation(['users', 'errors'])
   const { toast } = useToast()
   const { user: currentUser } = useAuth()
@@ -251,22 +256,33 @@ export default function Users() {
   }
 
   return (
-    <div className="space-y-6 page-transition">
-      <PageHeader
-        eyebrow={t('pageHeader.eyebrow')}
-        title={t('pageHeader.title')}
-        description={t('pageHeader.description')}
-        icon={<UsersIcon className="h-6 w-6" />}
-        tone="config"
-        actions={
-          !permissionDenied ? (
+    <div className={embedded ? 'space-y-4' : 'space-y-6 page-transition'}>
+      {embedded ? (
+        !permissionDenied && (
+          <div className="flex justify-end">
             <Button onClick={openCreateDialog}>
               <UserPlus className="h-4 w-4" />
               {t('toolbar.addUser')}
             </Button>
-          ) : undefined
-        }
-      />
+          </div>
+        )
+      ) : (
+        <PageHeader
+          eyebrow={t('pageHeader.eyebrow')}
+          title={t('pageHeader.title')}
+          description={t('pageHeader.description')}
+          icon={<UsersIcon className="h-6 w-6" />}
+          tone="config"
+          actions={
+            !permissionDenied ? (
+              <Button onClick={openCreateDialog}>
+                <UserPlus className="h-4 w-4" />
+                {t('toolbar.addUser')}
+              </Button>
+            ) : undefined
+          }
+        />
+      )}
 
       {permissionDenied ? (
         <EmptyState
@@ -338,7 +354,7 @@ export default function Users() {
             </div>
             <div className="border-t border-border/40 px-4 py-3">
               <Link
-                to="/roles"
+                to="/settings?tab=roles"
                 className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
               >
                 {t('manageRolesLink')}

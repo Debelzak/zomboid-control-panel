@@ -24,6 +24,7 @@
   "tabs": {
     "groups": {
       "panel": "Panel",
+      "accessControl": "Access control",
       "gameServer": "Game server",
       "automation": "Automation",
       "system": "System"
@@ -33,6 +34,8 @@
     "https": { "label": "HTTPS", "tip": "TLS certificates for encrypted connections", "description": "TLS termination. Enable this when exposing the panel beyond your LAN." },
     "access": { "label": "Remote access", "tip": "Which browsers and devices may connect (CORS)", "description": "Which origins may reach this panel from another machine, and why requests get blocked." },
     "security": { "label": "Security", "tip": "Account password and sign-in", "description": "Panel account password and sign-in controls." },
+    "users": { "label": "Users", "tip": "Panel accounts and their assigned roles", "description": "Create, remove, and reassign roles for panel accounts." },
+    "roles": { "label": "Roles & Permissions", "tip": "Capability matrix for each role", "description": "Which capabilities each role grants, and which panel accounts hold them." },
     "connection": { "label": "RCON", "tip": "Remote console connection and startup behaviour", "description": "RCON connection used for commands, plus whether the game server starts with the panel." },
     "bridge": { "label": "PanelBridge", "tip": "Lua mod link, including remote servers over SFTP", "description": "PanelBridge Lua mod link for weather, teleport, and item control. Supports remote servers over SFTP." },
     "mods": { "label": "Mods & Workshop", "tip": "Update checks, collection sync, and Steam key", "description": "Workshop update detection, collection sync, and the Steam Web API key they rely on." },

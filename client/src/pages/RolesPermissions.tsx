@@ -61,7 +61,9 @@ function recoveryActionKey(
   return null
 }
 
-export default function RolesPermissions() {
+// `embedded`: rendered inside a Settings tab panel instead of as its own
+// route -- see the matching note on Users.tsx.
+export default function RolesPermissions({ embedded = false }: { embedded?: boolean }) {
   const { t } = useTranslation(['roles', 'errors'])
   const { toast } = useToast()
   const confirm = useConfirm()
@@ -444,22 +446,33 @@ export default function RolesPermissions() {
   }
 
   return (
-    <div className="space-y-6 page-transition">
-      <PageHeader
-        eyebrow={t('pageHeader.eyebrow')}
-        title={t('pageHeader.title')}
-        description={t('pageHeader.description')}
-        icon={<ShieldCheck className="h-6 w-6" />}
-        tone="config"
-        actions={
-          !permissionDenied ? (
+    <div className={embedded ? 'space-y-4' : 'space-y-6 page-transition'}>
+      {embedded ? (
+        !permissionDenied && (
+          <div className="flex justify-end">
             <Button onClick={openCreateDialog}>
               <Plus className="h-4 w-4" />
               {t('toolbar.newRole')}
             </Button>
-          ) : undefined
-        }
-      />
+          </div>
+        )
+      ) : (
+        <PageHeader
+          eyebrow={t('pageHeader.eyebrow')}
+          title={t('pageHeader.title')}
+          description={t('pageHeader.description')}
+          icon={<ShieldCheck className="h-6 w-6" />}
+          tone="config"
+          actions={
+            !permissionDenied ? (
+              <Button onClick={openCreateDialog}>
+                <Plus className="h-4 w-4" />
+                {t('toolbar.newRole')}
+              </Button>
+            ) : undefined
+          }
+        />
+      )}
 
       {permissionDenied ? (
         <EmptyState
@@ -482,7 +495,7 @@ export default function RolesPermissions() {
                 <table className="w-full min-w-[720px] border-collapse text-sm">
                   <thead>
                     <tr className="border-b border-border/60">
-                      <th className="sticky left-0 top-0 z-30 border-b border-border/60 bg-muted px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      <th className="sticky left-0 top-0 z-30 border-b border-border/60 bg-muted px-3 py-2 text-left align-top text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                         {t('matrix.capabilityColumnHeader')}
                       </th>
                       {roles.map((role) => (
@@ -495,41 +508,43 @@ export default function RolesPermissions() {
                               </Badge>
                             )}
                           </div>
-                          <div className="mt-0.5 text-xs font-normal text-muted-foreground">
-                            {t('matrix.memberCount', { count: role.memberCount })}
-                          </div>
-                          <div className="mt-1.5 flex items-center gap-1">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6"
-                              title={t('matrix.renameTooltip')}
-                              onClick={() => openRenameDialog(role)}
-                            >
-                              <Pencil className="h-3.5 w-3.5" />
-                            </Button>
-                            {role.isSeeded ? (
-                              <span title={t('matrix.deleteSeededTooltip')}>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-6 w-6 text-muted-foreground/40"
-                                  disabled
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </Button>
-                              </span>
-                            ) : (
+                          <div className="mt-1 flex items-center justify-between gap-2">
+                            <span className="text-xs font-normal text-muted-foreground">
+                              {t('matrix.memberCount', { count: role.memberCount })}
+                            </span>
+                            <div className="flex items-center gap-1">
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="h-6 w-6 text-destructive hover:text-destructive"
-                                title={t('matrix.deleteTooltip')}
-                                onClick={() => openDeleteDialog(role)}
+                                className="h-6 w-6"
+                                title={t('matrix.renameTooltip')}
+                                onClick={() => openRenameDialog(role)}
                               >
-                                <Trash2 className="h-3.5 w-3.5" />
+                                <Pencil className="h-3.5 w-3.5" />
                               </Button>
-                            )}
+                              {role.isSeeded ? (
+                                <span title={t('matrix.deleteSeededTooltip')}>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-6 w-6 text-muted-foreground/40"
+                                    disabled
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </Button>
+                                </span>
+                              ) : (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6 text-destructive hover:text-destructive"
+                                  title={t('matrix.deleteTooltip')}
+                                  onClick={() => openDeleteDialog(role)}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              )}
+                            </div>
                           </div>
                         </th>
                       ))}

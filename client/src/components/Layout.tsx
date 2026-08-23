@@ -32,8 +32,6 @@ import {
   PanelLeftClose,
   PanelLeft,
   LogOut,
-  ShieldCheck,
-  Users as UsersIcon,
   Lock,
   KeyRound
 } from 'lucide-react'
@@ -159,6 +157,10 @@ const navSections: NavSection[] = [
       { to: '/server-finder', icon: Search, label: 'Browse Public', labelKey: 'nav.items.browsePublic' },
     ]
   },
+  // Users and Roles & Permissions moved into Settings (Access Control tabs)
+  // -- see Settings.tsx's "users"/"roles" tab sections. Sign-in (/sso) stays
+  // here until OidcSettings.tsx is free to fold in too; this section is
+  // removed entirely once it joins them.
   {
     id: 'access',
     label: 'Access Control',
@@ -166,8 +168,6 @@ const navSections: NavSection[] = [
     icon: Lock,
     color: 'destructive',
     items: [
-      { to: '/users', icon: UsersIcon, label: 'Users', labelKey: 'nav.items.users' },
-      { to: '/roles', icon: ShieldCheck, label: 'Roles & Permissions', labelKey: 'nav.items.rolesPermissions' },
       { to: '/sso', icon: KeyRound, label: 'Sign-in', labelKey: 'nav.items.signIn' },
     ]
   },

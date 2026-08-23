@@ -146,20 +146,6 @@ const ROUTE_LOADERS: Record<string, RouteLoaderMeta> = {
     variant: 'form',
     metrics: ['auth', 'paths', 'network'],
   },
-  '/roles': {
-    title: 'Roles & Permissions',
-    description: 'Loading the capability matrix, roles, and user assignments.',
-    eyebrow: '// ACCESS · ROLES',
-    variant: 'list',
-    metrics: ['roles', 'capabilities', 'users'],
-  },
-  '/users': {
-    title: 'Users',
-    description: 'Loading user accounts.',
-    eyebrow: '// ACCESS · USERS',
-    variant: 'list',
-    metrics: ['accounts', 'roles'],
-  },
   '/sso': {
     title: 'Sign-in',
     description: 'Loading single sign-on settings.',
@@ -193,8 +179,6 @@ const Mods = lazy(() => import('./pages/Mods'))
 const ChunkCleaner = lazy(() => import('./pages/ChunkCleaner'))
 const Discord = lazy(() => import('./pages/Discord'))
 const Settings = lazy(() => import('./pages/Settings'))
-const RolesPermissions = lazy(() => import('./pages/RolesPermissions'))
-const Users = lazy(() => import('./pages/Users'))
 const OidcSettings = lazy(() => import('./pages/OidcSettings'))
 const ServerSetup = lazy(() => import('./pages/ServerSetup'))
 const Servers = lazy(() => import('./pages/Servers'))
@@ -590,8 +574,10 @@ function AppContent() {
               <Route path="/chunk-cleaner" element={<Navigate to="/chunks" replace />} />
               <Route path="/discord" element={<FeatureErrorBoundary featureName={t('nav.items.discord')}><Discord /></FeatureErrorBoundary>} />
               <Route path="/settings" element={<FeatureErrorBoundary featureName={t('nav.items.panelSettings')}><Settings /></FeatureErrorBoundary>} />
-              <Route path="/roles" element={<FeatureErrorBoundary featureName={t('nav.items.rolesPermissions')}><RolesPermissions /></FeatureErrorBoundary>} />
-              <Route path="/users" element={<FeatureErrorBoundary featureName={t('nav.items.users')}><Users /></FeatureErrorBoundary>} />
+              {/* Users and Roles & Permissions are now tabs inside Settings -- these
+                  keep old bookmarks/deep links working rather than 404ing them. */}
+              <Route path="/roles" element={<Navigate to="/settings?tab=roles" replace />} />
+              <Route path="/users" element={<Navigate to="/settings?tab=users" replace />} />
               <Route path="/sso" element={<FeatureErrorBoundary featureName={t('nav.items.signIn')}><OidcSettings /></FeatureErrorBoundary>} />
               <Route path="/server-setup" element={<FeatureErrorBoundary featureName={t('nav.items.serverSetup')}><ServerSetup /></FeatureErrorBoundary>} />
               <Route path="/servers" element={<FeatureErrorBoundary featureName={t('nav.items.myServers')}><Servers /></FeatureErrorBoundary>} />

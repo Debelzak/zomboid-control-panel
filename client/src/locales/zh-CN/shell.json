@@ -20,7 +20,6 @@
       "settingsAndTools": "设置与工具"
     },
     "items": {
-      "users": "用户",
       "signIn": "登录",
       "serverConsole": "服务器控制台",
       "onlinePlayers": "在线玩家",
@@ -38,7 +37,6 @@
       "browsePublic": "浏览公共服务器",
       "discord": "Discord",
       "panelSettings": "面板设置",
-      "rolesPermissions": "角色与权限",
       "debugLogs": "调试日志"
     },
     "notAvailableRemote": "远程（仅 RCON）服务器不支持此功能",

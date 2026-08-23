@@ -20,7 +20,6 @@
       "settingsAndTools": "Ajustes y herramientas"
     },
     "items": {
-      "users": "Usuarios",
       "signIn": "Inicio de sesión",
       "serverConsole": "Consola del servidor",
       "onlinePlayers": "Jugadores conectados",
@@ -38,7 +37,6 @@
       "browsePublic": "Explorar públicos",
       "discord": "Discord",
       "panelSettings": "Ajustes del panel",
-      "rolesPermissions": "Roles y permisos",
       "debugLogs": "Registros de depuración"
     },
     "notAvailableRemote": "No disponible para servidores remotos (solo RCON)",

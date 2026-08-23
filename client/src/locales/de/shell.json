@@ -20,7 +20,6 @@
       "settingsAndTools": "Einstellungen & Werkzeuge"
     },
     "items": {
-      "users": "Benutzer",
       "signIn": "Anmeldung",
       "serverConsole": "Serverkonsole",
       "onlinePlayers": "Online-Spieler",
@@ -38,7 +37,6 @@
       "browsePublic": "Öffentliche Server",
       "discord": "Discord",
       "panelSettings": "Paneleinstellungen",
-      "rolesPermissions": "Rollen & Berechtigungen",
       "debugLogs": "Debug-Protokolle"
     },
     "notAvailableRemote": "Nicht verfügbar für Remote-Server (nur RCON)",

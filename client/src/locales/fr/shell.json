@@ -20,7 +20,6 @@
       "settingsAndTools": "Paramètres et outils"
     },
     "items": {
-      "users": "Utilisateurs",
       "signIn": "Connexion",
       "serverConsole": "Console du serveur",
       "onlinePlayers": "Joueurs en ligne",
@@ -38,7 +37,6 @@
       "browsePublic": "Parcourir les serveurs publics",
       "discord": "Discord",
       "panelSettings": "Paramètres du panneau",
-      "rolesPermissions": "Rôles et permissions",
       "debugLogs": "Journaux de débogage"
     },
     "notAvailableRemote": "Non disponible pour les serveurs distants (RCON uniquement)",

@@ -30,6 +30,8 @@ import {
   RotateCw,
   Lock,
   User,
+  Users as UsersIcon,
+  ShieldCheck,
   ExternalLink,
   FolderOpen,
   Palette,
@@ -54,6 +56,8 @@ import {
 } from "@/components/ui/card";
 import { PageHeader } from "@/components/PageHeader";
 import { PageSkeleton } from "@/components/PageSkeleton";
+import Users from "@/pages/Users";
+import RolesPermissions from "@/pages/RolesPermissions";
 import { PasswordInput } from "@/components/PasswordInput";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -491,6 +495,22 @@ export default function Settings() {
       description: t("tabs.security.description"),
     },
     {
+      id: "users",
+      label: t("tabs.users.label"),
+      icon: UsersIcon,
+      group: t("tabs.groups.accessControl"),
+      tip: t("tabs.users.tip"),
+      description: t("tabs.users.description"),
+    },
+    {
+      id: "roles",
+      label: t("tabs.roles.label"),
+      icon: ShieldCheck,
+      group: t("tabs.groups.accessControl"),
+      tip: t("tabs.roles.tip"),
+      description: t("tabs.roles.description"),
+    },
+    {
       id: "connection",
       label: t("tabs.connection.label"),
       icon: Link,
@@ -564,6 +584,18 @@ export default function Settings() {
     },
     [setSearchParams],
   );
+
+  // Sync URL back to active tab -- catches ?tab= changes that don't go
+  // through handleTabChange above (e.g. an in-page <Link to="/settings?tab=roles">
+  // from an embedded tab's own content, which updates the URL without
+  // remounting this component, so the mount-time useState initializer above
+  // never re-runs on its own).
+  useEffect(() => {
+    const resolved = resolveTabId(searchParams.get("tab"));
+    if (resolved && resolved !== activeSection) {
+      setActiveSection(resolved);
+    }
+  }, [searchParams]); // eslint-disable-line react-hooks/exhaustive-deps -- resolveTabId/activeSection intentionally excluded: recomputed fresh each render off settingsSections (stable per render), including them would re-run this on every activeSection change instead of only on external URL changes
 
   // Warn before leaving with unsaved changes
   useEffect(() => {
@@ -5362,6 +5394,14 @@ export default function Settings() {
                 </div>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="users" className="mt-0">
+            <Users embedded />
+          </TabsContent>
+
+          <TabsContent value="roles" className="mt-0">
+            <RolesPermissions embedded />
           </TabsContent>
 
           <TabsContent value="about" className="mt-0 space-y-5">
