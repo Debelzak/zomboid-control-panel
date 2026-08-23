@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Server setting names and descriptions can now be translated.** The Server Configuration page
+  draws its 154 server settings and 269 sandbox settings from a schema that held its text in English
+  only, so that page stayed English no matter which language you picked. The text now resolves
+  through the translation system, falling back to the English in the schema wherever a language has
+  no entry yet - so nothing changes until a translation exists, and English never needs one.
 - **The panel is now available in German**: every screen, dialog, error message and health check -
   6,855 pieces of text across 54 files - has been translated, and Deutsch now appears in the
   language picker alongside English, French, Simplified Chinese and Spanish.
@@ -197,6 +202,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `client/src/locales/README.md`.
 
 ### Fixed
+- **Chinese showed a stray Latin "s" on Chinese words, and German pluralised three phrases wrongly.**
+  The Mods screen worked out plural endings in code - add an "s" unless the count is one - and handed
+  the same answer to every language. That is an English grammar rule, and it was correct for French
+  and Spanish by luck only. Chinese does not inflect for number at all, so eight messages had a Latin
+  letter stuck onto the end of Chinese text on screen. Those messages now use real per-language plural
+  forms, and the languages that were quietly relying on the old behaviour were corrected at the same
+  time - French had a missing elision and several past participles frozen in one form regardless of
+  count.
+- **Latin full stops and commas appeared inside Chinese sentences.** Several toasts and diagnostics
+  lines are assembled from fragments, and the code joined them with an English full stop and an
+  English comma. Chinese punctuates with its own full-width marks and its own enumeration comma, so
+  the result read as a Chinese sentence with foreign punctuation grafted on. The separators now
+  follow the language.
+- **Times and dates followed the wrong language.** The dashboard's performance charts formatted their
+  time axis for US English regardless of your language, and three timestamps on the Server
+  Configuration page followed your browser's language rather than the one you chose in the panel - so
+  a German panel on an English browser showed German text with US times.
+- **The page heading overlapped its own buttons in German, French and Spanish.** On My Servers the
+  description ran underneath the button row rather than beside it. The buttons were laid out at their
+  natural width inside a column capped at 48%, so they simply overflowed it; they now wrap within
+  their column. English was unaffected only because its description happens to be short enough.
+- **The world map's control label was cut off in German**, rendering as "STEUERL" in a rail built for
+  a four-character English label. It now reads "Strg", which is what a German keyboard has printed on
+  that key.
+- **Two different server settings were both called "Safety System".** The anti-cheat toggle and the
+  safety-system toggle shared a label, so there was no way to tell which one you were changing.
+- **Template comparisons and difficulty badges were English-only**, showing "On", "Off", "(not set)"
+  and "Custom" in every language, and now also show translated server-setting names rather than raw
+  English ones.
+- **Relative timestamps in Debug were English-only** - "5m ago", "just now" - regardless of language.
 - **The panel would not start at all on some Windows machines**: the launcher started the panel by
   its bare filename, which relies on Windows searching the folder the launcher is sitting in. That
   search is switched off by a setting some corporate and security-hardened Windows images apply, and
