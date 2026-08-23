@@ -4911,17 +4911,40 @@ router.post("/clear-stale-locks", requirePermission("diagnostics.manage"), async
   try {
     log.info("POST /clear-stale-locks");
     const serverManager = req.app.get("serverManager");
-    let running = false;
+    // getServerProcessDetails(), not checkServerRunning() -- the latter
+    // discards the scan's own scanFailed flag and returns a plain boolean,
+    // so a scan that completed but couldn't determine the server's state
+    // (timeout, PowerShell/exec error) came back indistinguishable from
+    // "confirmed stopped" and let this delete proceed, exactly the "yank a
+    // lock the JVM still holds open" case this route's own comment warns
+    // about. Same fail-open class already fixed at /wipe, /delete-files,
+    // chunks.js's delete-chunks/delete-region, backup.js's restore, and
+    // templates.js's apply. A thrown check (or no serverManager at all) also
+    // fails closed now, instead of falling back to the unrelated
+    // serverManager.isRunning flag.
+    let details;
     try {
-      if (typeof serverManager?.checkServerRunning === "function") {
-        running = await serverManager.checkServerRunning();
+      if (typeof serverManager?.getServerProcessDetails === "function") {
+        details = await serverManager.getServerProcessDetails();
       } else {
-        running = !!serverManager?.isRunning;
+        return res.status(503).json({
+          success: false,
+          error: "Cannot verify whether the server is stopped. Try again shortly.",
+        });
       }
     } catch {
-      running = !!serverManager?.isRunning;
+      return res.status(503).json({
+        success: false,
+        error: "Cannot verify whether the server is stopped. Try again shortly.",
+      });
     }
-    if (running) {
+    if (details.scanFailed) {
+      return res.status(503).json({
+        success: false,
+        error: "Cannot verify whether the server is stopped. Try again shortly.",
+      });
+    }
+    if (details.running) {
       return res.status(409).json({
         success: false,
         error:
