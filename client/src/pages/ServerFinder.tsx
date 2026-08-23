@@ -20,6 +20,7 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  Copy,
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { PageHeader } from '@/components/PageHeader'
@@ -275,6 +276,18 @@ export default function ServerFinder() {
   const goToPage = (page: number) => {
     const validPage = Math.max(1, Math.min(page, totalPages))
     setCurrentPage(validPage)
+  }
+
+  const copyAddress = async (address: string) => {
+    try {
+      await navigator.clipboard.writeText(address)
+      toast({ title: t('serverItem.addressCopiedTitle'), description: address })
+    } catch {
+      toast({
+        title: t('serverItem.addressCopyFailedTitle'),
+        variant: 'destructive',
+      })
+    }
   }
 
   const pingServer = async (ip: string, port: number) => {
@@ -690,10 +703,24 @@ export default function ServerFinder() {
                           )}
                         </div>
                         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
-                          <span className="flex items-center gap-1">
-                            <Globe className="h-3 w-3" />
-                            {server.ip}:{server.gamePort || server.port}
-                          </span>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  copyAddress(`${server.ip}:${server.gamePort || server.port}`)
+                                }}
+                                className="flex items-center gap-1 rounded hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+                                aria-label={t('serverItem.copyAddressAria', { address: `${server.ip}:${server.gamePort || server.port}` })}
+                              >
+                                <Globe className="h-3 w-3" />
+                                {server.ip}:{server.gamePort || server.port}
+                                <Copy className="h-3 w-3 opacity-50" />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent>{t('serverItem.copyAddress')}</TooltipContent>
+                          </Tooltip>
                           {server.map && (
                             <span className="flex items-center gap-1">
                               <MapPin className="h-3 w-3 shrink-0" />
