@@ -61,6 +61,7 @@
   "wizard": {
     "pageHeaderTitle": "Discord Bot Setup",
     "pageHeaderDescription": "Let's get your Discord bot up and running — follow the steps below",
+    "stepLocked": "Finish the current step first",
     "step0": {
       "heading": "Create a Discord Application",
       "description": "First, you need to create an application on Discord's Developer Portal. This only takes a minute.",

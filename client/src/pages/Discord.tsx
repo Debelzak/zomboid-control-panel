@@ -640,6 +640,16 @@ export default function Discord() {
   const isConfigured = config?.hasToken && config?.guildId;
   const showSetupWizard = !isConfigured && !status?.running;
 
+  // How far into the wizard the operator has actually unlocked, mirroring each
+  // step's own "Next" gate. Without this, the stepper let you click straight to
+  // Launch with an unverified or mistyped token — the "Save & Start" button only
+  // checks that a token string is present, not that Verify ever confirmed it.
+  const maxReachableStep = !botInfo
+    ? 1
+    : !guildId || hasGuildIdError || hasChannelIdError || hasAdminRoleIdError
+      ? 4
+      : 5;
+
   // ═════════════════════════════════════════════════
   // SETUP WIZARD — shown when bot is not yet configured
   // ═════════════════════════════════════════════════
@@ -661,16 +671,22 @@ export default function Discord() {
             const Icon = step.icon;
             const isActive = i === setupStep;
             const isDone = i < setupStep;
+            const isLocked = i > maxReachableStep;
             return (
               <div key={i} className="flex items-center flex-1 last:flex-none">
                 <button
-                  onClick={() => setSetupStep(i)}
+                  onClick={() => !isLocked && setSetupStep(i)}
+                  disabled={isLocked}
+                  aria-disabled={isLocked}
+                  title={isLocked ? t("wizard.stepLocked") : undefined}
                   className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-sm font-medium shrink-0 ${
                     isActive
                       ? "bg-primary text-primary-foreground"
                       : isDone
                         ? "bg-primary/10 text-primary hover:bg-primary/15"
-                        : "bg-muted text-muted-foreground hover:bg-muted/80"
+                        : isLocked
+                          ? "bg-muted/50 text-muted-foreground/50 cursor-not-allowed"
+                          : "bg-muted text-muted-foreground hover:bg-muted/80"
                   }`}
                 >
                   {isDone ? (
