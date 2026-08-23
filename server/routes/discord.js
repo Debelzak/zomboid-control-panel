@@ -280,6 +280,25 @@ router.post("/test", async (req, res) => {
     });
 
     if (!response.ok) {
+      // Discord's own status distinguishes "this token is wrong" from "this
+      // token is fine, Discord just isn't answering right now" -- collapsing
+      // every non-2xx into "Invalid token" sent people rotating a token that
+      // was never wrong.
+      if (response.status === 429) {
+        return res.status(429).json({
+          error: "Discord is rate-limiting this request. Wait a moment and try again.",
+        });
+      }
+      if (response.status >= 500) {
+        return res.status(502).json({
+          error: `Discord's API is unavailable right now (HTTP ${response.status}). This isn't your token -- try again shortly.`,
+        });
+      }
+      if (response.status !== 401) {
+        return res.status(400).json({
+          error: `Discord rejected the request (HTTP ${response.status}).`,
+        });
+      }
       return res.status(400).json({ error: "Invalid token" });
     }
 
