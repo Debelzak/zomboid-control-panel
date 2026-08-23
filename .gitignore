@@ -63,3 +63,8 @@ data/*.lock
 data/jwt.secret
 data/*.secret
 data/server-secrets/
+
+# Impeccable design-skill tooling (agent harness, not product code)
+.agents/
+.claude/
+skills-lock.json
