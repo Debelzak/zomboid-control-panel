@@ -209,12 +209,14 @@
     "quickStep2Both": "Enter a server name and an RCON password (minimum 6 characters).",
     "quickStep2Name": "Enter a server name to continue.",
     "quickStep2Rcon": "RCON password must be at least 6 characters.",
+    "quickStep2Admin": "Set an admin password to continue.",
     "fullStep1Path": "Set a SteamCMD folder path to continue.",
     "fullStep1Confirm": "Install or confirm SteamCMD to continue.",
     "fullStep2Both": "Set an install folder and server name to continue.",
     "fullStep2Path": "Set an install folder to continue.",
     "fullStep2Name": "Enter a server name to continue.",
-    "fullStep3Rcon": "RCON password must be at least 6 characters."
+    "fullStep3Rcon": "RCON password must be at least 6 characters.",
+    "fullStep3Admin": "Set an admin password to continue."
   },
   "toasts": {
     "installationErrorGuidance": "{{message}} On Linux, use {{path}}, or add both your install folder and its _Data folder to ReadWritePaths in zomboid-panel.service, then restart the service.",

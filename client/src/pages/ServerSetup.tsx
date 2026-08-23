@@ -251,14 +251,14 @@ export default function ServerSetup() {
     if (setupMode === "quick") {
       return {
         1: installPath.length > 0,
-        2: serverName.length > 0 && rconPassword.length >= 6,
+        2: serverName.length > 0 && rconPassword.length >= 6 && adminPassword.trim().length > 0,
         3: true,
       };
     }
     return {
       1: steamCmdPath.length > 0 && hasSteamCmd,
       2: installPath.length > 0 && serverName.length > 0,
-      3: rconPassword.length >= 6,
+      3: rconPassword.length >= 6 && adminPassword.trim().length > 0,
       4: true,
     };
   }, [
@@ -268,6 +268,7 @@ export default function ServerSetup() {
     installPath,
     serverName,
     rconPassword,
+    adminPassword,
   ]);
 
   const canProceed = stepValidation[currentStep as keyof typeof stepValidation];
@@ -1219,7 +1220,7 @@ export default function ServerSetup() {
       <div className="grid gap-6">
         {/* Installation Path */}
         <div className="space-y-2">
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
             <Label className="text-base">{t("full.step2.installFolderLabel")}</Label>
             <Button
               type="button"
@@ -1509,6 +1510,48 @@ export default function ServerSetup() {
         </CardContent>
       </Card>
 
+      {/* Admin Password - Critical */}
+      <Card className="border-primary/35 bg-card shadow-sm">
+        <CardHeader className="pb-4">
+          <div className="flex items-center gap-2">
+            <Shield className="w-5 h-5 text-primary" />
+            <CardTitle className="text-lg">{t("common.adminPasswordLabel")}</CardTitle>
+            <Badge className="ml-auto">{t("common.requiredBadge")}</Badge>
+          </div>
+          <CardDescription>{t("common.adminPasswordHelp")}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="relative max-w-sm">
+            <Input
+              type={showAdminPassword ? "text" : "password"}
+              value={adminPassword}
+              onChange={(e) => setAdminPassword(e.target.value)}
+              placeholder={t("common.adminPasswordPlaceholder")}
+              className="pr-10"
+              maxLength={128}
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="absolute right-1 top-1 h-9 w-9 p-0"
+              onClick={() => setShowAdminPassword(!showAdminPassword)}
+              aria-label={
+                showAdminPassword
+                  ? t("common.hideAdminPassword")
+                  : t("common.showAdminPassword")
+              }
+            >
+              {showAdminPassword ? (
+                <EyeOff className="h-4 w-4" />
+              ) : (
+                <Eye className="h-4 w-4" />
+              )}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Memory Settings */}
       <Card>
         <CardHeader className="pb-4">
@@ -1620,43 +1663,6 @@ export default function ServerSetup() {
                   {t("common.gamePortDefaultHint")}
                 </p>
               </div>
-
-              <div className="space-y-2">
-                <Label>
-                  {t("common.adminPasswordLabel")} <span className="text-destructive">*</span>
-                </Label>
-                <div className="relative">
-                  <Input
-                    type={showAdminPassword ? "text" : "password"}
-                    value={adminPassword}
-                    onChange={(e) => setAdminPassword(e.target.value)}
-                    placeholder={t("common.adminPasswordPlaceholder")}
-                    className="pr-10"
-                    maxLength={128}
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="absolute right-1 top-1 h-9 w-9 p-0"
-                    onClick={() => setShowAdminPassword(!showAdminPassword)}
-                    aria-label={
-                      showAdminPassword
-                        ? t("common.hideAdminPassword")
-                        : t("common.showAdminPassword")
-                    }
-                  >
-                    {showAdminPassword ? (
-                      <EyeOff className="h-4 w-4" />
-                    ) : (
-                      <Eye className="h-4 w-4" />
-                    )}
-                  </Button>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {t("common.adminPasswordHelp")}
-                </p>
-              </div>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-3">
@@ -1722,9 +1728,9 @@ export default function ServerSetup() {
       <Card>
         <CardContent className="pt-6">
           <div className="grid gap-3 text-sm">
-            <div className="flex justify-between py-2 border-b">
-              <span className="text-muted-foreground">{t("full.step4.summaryInstallPath")}</span>
-              <span className="font-mono text-right max-w-[300px] truncate">
+            <div className="flex justify-between gap-3 py-2 border-b">
+              <span className="text-muted-foreground shrink-0">{t("full.step4.summaryInstallPath")}</span>
+              <span className="font-mono text-right min-w-0 flex-1 truncate" title={installPath}>
                 {installPath}
               </span>
             </div>
@@ -2127,6 +2133,48 @@ export default function ServerSetup() {
           </CardContent>
         </Card>
 
+        {/* Admin Password - Critical */}
+        <Card className="border-primary/35 bg-card shadow-sm">
+          <CardHeader className="pb-4">
+            <div className="flex items-center gap-2">
+              <Shield className="w-5 h-5 text-primary" />
+              <CardTitle className="text-lg">{t("common.adminPasswordLabel")}</CardTitle>
+              <Badge className="ml-auto">{t("common.requiredBadge")}</Badge>
+            </div>
+            <CardDescription>{t("common.adminPasswordHelp")}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="relative max-w-sm">
+              <Input
+                type={showAdminPassword ? "text" : "password"}
+                value={adminPassword}
+                onChange={(e) => setAdminPassword(e.target.value)}
+                placeholder={t("common.adminPasswordPlaceholder")}
+                className="pr-10"
+                maxLength={128}
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="absolute right-1 top-1 h-9 w-9 p-0"
+                onClick={() => setShowAdminPassword(!showAdminPassword)}
+                aria-label={
+                  showAdminPassword
+                    ? t("common.hideAdminPassword")
+                    : t("common.showAdminPassword")
+                }
+              >
+                {showAdminPassword ? (
+                  <EyeOff className="h-4 w-4" />
+                ) : (
+                  <Eye className="h-4 w-4" />
+                )}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Memory */}
         <Card>
           <CardHeader className="pb-4">
@@ -2271,42 +2319,6 @@ export default function ServerSetup() {
                     {t("common.gamePortDefaultHint")}
                   </p>
                 </div>
-                <div className="space-y-2">
-                  <Label>
-                    {t("common.adminPasswordLabel")} <span className="text-destructive">*</span>
-                  </Label>
-                  <div className="relative">
-                    <Input
-                      type={showAdminPassword ? "text" : "password"}
-                      value={adminPassword}
-                      onChange={(e) => setAdminPassword(e.target.value)}
-                      placeholder={t("common.adminPasswordPlaceholder")}
-                      className="pr-10"
-                      maxLength={128}
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="absolute right-1 top-1 h-9 w-9 p-0"
-                      onClick={() => setShowAdminPassword(!showAdminPassword)}
-                      aria-label={
-                        showAdminPassword
-                          ? t("common.hideAdminPassword")
-                          : t("common.showAdminPassword")
-                      }
-                    >
-                      {showAdminPassword ? (
-                        <EyeOff className="h-4 w-4" />
-                      ) : (
-                        <Eye className="h-4 w-4" />
-                      )}
-                    </Button>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {t("common.adminPasswordHelp")}
-                  </p>
-                </div>
               </div>
 
               <div className="grid gap-3 sm:grid-cols-3">
@@ -2371,9 +2383,9 @@ export default function ServerSetup() {
       <Card>
         <CardContent className="pt-6">
           <div className="grid gap-3 text-sm">
-            <div className="flex justify-between py-2 border-b">
-              <span className="text-muted-foreground">{t("quick.step3.summaryServerFiles")}</span>
-              <span className="font-mono text-right max-w-[300px] truncate">
+            <div className="flex justify-between gap-3 py-2 border-b">
+              <span className="text-muted-foreground shrink-0">{t("quick.step3.summaryServerFiles")}</span>
+              <span className="font-mono text-right min-w-0 flex-1 truncate" title={installPath}>
                 {installPath}
               </span>
             </div>
@@ -2551,6 +2563,7 @@ export default function ServerSetup() {
         if (!serverName.trim()) return t("requirement.quickStep2Name");
         if (rconPassword.length < 6)
           return t("requirement.quickStep2Rcon");
+        if (!adminPassword.trim()) return t("requirement.quickStep2Admin");
       }
       return "";
     }
@@ -2566,8 +2579,10 @@ export default function ServerSetup() {
       if (!installPath.trim()) return t("requirement.fullStep2Path");
       if (!serverName.trim()) return t("requirement.fullStep2Name");
     }
-    if (currentStep === 3 && rconPassword.length < 6)
-      return t("requirement.fullStep3Rcon");
+    if (currentStep === 3) {
+      if (rconPassword.length < 6) return t("requirement.fullStep3Rcon");
+      if (!adminPassword.trim()) return t("requirement.fullStep3Admin");
+    }
     return "";
   };
 
