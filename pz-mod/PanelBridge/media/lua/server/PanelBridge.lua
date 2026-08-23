@@ -3985,18 +3985,34 @@ handlers.setSandboxOption = function(args)
     -- SandboxVars table, which stays stale until toLua() rebuilds it.
     PanelBridge.invoke(sandbox, "toLua")
 
-    -- Trigger a world save so the changed option persists across restarts
-    pcall(function()
-        local world = getWorld()
-        if world and world.saveWorld then
-            world:saveWorld()
+    -- Trigger a world save so the changed option persists across restarts.
+    -- A bare pcall here previously discarded the result, so a failed save
+    -- (e.g. disk full, world already saving) silently reported success to
+    -- the panel and the operator even though the change would be lost on
+    -- the next restart.
+    local world = getWorld()
+    local persisted = false
+    local saveErr = nil
+    if world and world.saveWorld then
+        local saveOk, saveErrMsg = pcall(function() world:saveWorld() end)
+        if saveOk then
+            persisted = true
+        else
+            saveErr = tostring(saveErrMsg)
         end
-    end)
+    else
+        saveErr = "World not available"
+    end
+    if not persisted then
+        PanelBridge.error("Sandbox option set but world save failed", { name = optName, error = saveErr })
+    end
 
     return true, {
         name = optName,
         value = confirmed,
-        type = optType
+        type = optType,
+        persisted = persisted,
+        saveError = saveErr
     }
 end
 
