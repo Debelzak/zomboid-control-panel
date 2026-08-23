@@ -3313,7 +3313,7 @@ export default function ServerConfig() {
                             </Badge>
                           </button>
                           {isExpanded && (
-                            <div className="mt-3 ml-4 space-y-1 border-l-2 border-primary/30 pl-4">
+                            <div className="mt-3 ml-4 space-y-1 pl-4">
                               {filteredOpts.map((opt, idx) => {
                                 // Mods often expose an internal sandbox key as their
                                 // "translated" name. Format it before displaying it.
