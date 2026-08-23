@@ -388,6 +388,7 @@ export default function Players() {
   const [newTag, setNewTag] = useState('')
   const [notesLoading, setNotesLoading] = useState(false)
   const [savingNote, setSavingNote] = useState(false)
+  const [deleteNoteConfirmOpen, setDeleteNoteConfirmOpen] = useState(false)
   const [playersLoadError, setPlayersLoadError] = useState<string | null>(null)
   const [toolsLoadError, setToolsLoadError] = useState<string | null>(null)
   const [notesError, setNotesError] = useState<string | null>(null)
@@ -582,6 +583,7 @@ export default function Players() {
       })
     } finally {
       setSavingNote(false)
+      setDeleteNoteConfirmOpen(false)
     }
   }
 
@@ -2577,7 +2579,7 @@ export default function Players() {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={handleDeleteNote}
+                            onClick={() => setDeleteNoteConfirmOpen(true)}
                             disabled={savingNote}
                             className="text-destructive hover:text-destructive"
                           >
@@ -2585,6 +2587,27 @@ export default function Players() {
                             {t('notes.deleteButton')}
                           </Button>
                         )}
+                        <AlertDialog open={deleteNoteConfirmOpen} onOpenChange={setDeleteNoteConfirmOpen}>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>{t('notes.deleteConfirmTitle')}</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                {t('notes.deleteConfirmDesc', { player: selectedPlayer })}
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel disabled={savingNote}>{t('notes.deleteConfirmCancel')}</AlertDialogCancel>
+                              <AlertDialogAction
+                                disabled={savingNote}
+                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                onClick={(e) => { e.preventDefault(); void handleDeleteNote() }}
+                              >
+                                {savingNote ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : null}
+                                {t('notes.deleteConfirmConfirm')}
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
                         <Button
                           size="sm"
                           onClick={handleSaveNote}
