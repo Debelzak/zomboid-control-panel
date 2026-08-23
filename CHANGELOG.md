@@ -507,6 +507,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security and maintenance
 
+- **Any non-administrator account could take over the administrator account.** The recovery-codes
+  endpoint checked that you were signed in, but not *who* you were - and the recovery codes it
+  issues have never belonged to the caller, they belong to the administrator. So anyone holding a
+  moderator or technician account could ask for a fresh set of administrator recovery codes, receive
+  them in plain text, and use one from the sign-in screen to set the administrator's password to
+  whatever they liked. Two requests, no cooperation from the administrator, and it would also have
+  quietly invalidated whatever recovery codes the real administrator had saved. Reading and
+  generating those codes is now administrator-only, and there are tests holding that gate shut.
+
+  **If you run an older version and have ever created a second account of any kind, treat this as
+  live.** The same endpoint is ungated in 1.1.x. Upgrading closes it; until then, an administrator
+  can regenerate their recovery codes to invalidate any set that was issued behind their back.
+
+- **The RCON command history was readable without a permission check**, and it can contain
+  whitelist passwords typed into the console.
+
+- **Renaming a built-in role could lock you out of your own panel.**
+
 - **Steam branch lookup could run an arbitrary program on the host**: the Steam-branches endpoint
   (used when picking which PZ build to install) took a SteamCMD folder from the request and ran
   whatever executable it found there, without checking the path first — unlike every other endpoint
