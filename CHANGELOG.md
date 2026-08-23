@@ -11,6 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The support bundle now knows about everything this release added.** The zip you generate from the
+  Debug page is what someone looks at when they are trying to help you, and it had not kept up. It
+  now also reports your single sign-on configuration, which roles exist and who holds them (so
+  "why can this person not see X" is finally answerable), how the World Map worked out which map
+  build to use - including whether `curl` is even installed on the host - the health of the panel's
+  own database writes, your recent backup runs, the Discord bot's connection state, and whether the
+  game server was actually running at the moment the bundle was made. Passwords, tokens and client
+  secrets are still masked, and the bundle's own "what is not in here" list has been kept accurate.
+
 - **Help where people actually get stuck.** A small "?" next to a setting now explains what it does,
   what happens if you get it wrong, and what the sensible choice is - in all five languages. It
   opens on tap as well as hover, so it works on a phone, and it is reachable by keyboard and
@@ -249,6 +258,13 @@ reliability, then interface and translation.
   unreachable: on the one page where they are how you get your data back. Most obvious in German or
   another language with longer labels, but it happened in English too. Rows now stack on narrow
   screens, so the buttons stay reachable and the filename stays readable.
+
+- **Every support bundle ever generated was silently missing five pieces of information.** The
+  section describing your server's configuration - the settings checksum, the effective settings,
+  the mod list, the Workshop item list and the map - was failing to build because of a missing
+  internal reference, and the safeguard that stops one faulty section from destroying the whole zip
+  quietly swallowed the error and moved on. So the bundle always looked complete and never was. It
+  builds correctly now.
 
 - **The panel was quietly deleting backups you uploaded yourself**: automatic cleanup kept only the
   most recent backups and treated an archive you had uploaded by hand exactly like one the panel
