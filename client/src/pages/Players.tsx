@@ -1137,7 +1137,7 @@ export default function Players() {
               />
             </div>
 
-            <ScrollArea className="h-[250px] sm:h-[320px]">
+            <ScrollArea className="h-[250px] sm:h-[320px] [&_[data-radix-scroll-area-viewport]>div]:!block">
               {rosterTab === 'online' && (
                 initialLoading ? (
                   <div className="flex items-center justify-center py-8">
