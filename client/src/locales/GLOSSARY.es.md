@@ -108,9 +108,17 @@ command names, and anything inside `{{double braces}}`.
 - **Accents are mandatory**, including on capitals (`Región`, `Éxito`). A missing accent is a typo,
   not a variant.
 - **Buttons and menu items take the infinitive**: `Reiniciar servidor`, not `Reinicia el servidor`.
-- **Prose is impersonal.** Write `No se puede leer la carpeta`, not `No puedes leer la carpeta`.
-  This avoids committing to *tú* or *usted* anywhere, which is the main thing that makes a Spanish
-  UI feel inconsistent when several people write it.
+- **Address the reader as *tú*.** `Inténtalo de nuevo`, `Comprueba tu conexión`, `Puedes reintentar`.
+  Never *usted* — this is a tool someone runs for their own game server, not enterprise software.
+
+  This rule replaces an earlier one that mandated impersonal prose. It was overturned by practice:
+  once the locale was largely written, a count across all 54 namespaces found **142 strings using
+  *tú* against 4 apparent *usted*** — and three of those four turned out to be `su`/`elija` referring
+  to a *server* or a *provider*, not to the reader. The impersonal rule existed to stop several
+  writers diverging; they had already converged on *tú* without it, so the rule was the outlier, not
+  the translations.
+- **Pure state statements stay impersonal**, because there is no one to address: `No se pudo cargar
+  la configuración`, not `No pudiste cargar…`. The *tú* rule governs instructions and actions.
 - **Keep destructive wording destructive.** A confirmation that sounds mild in Spanish when it was
   alarming in English is a bug, not a translation choice. This has already shipped once in French,
   where "Wipe server" came out as "reset".
