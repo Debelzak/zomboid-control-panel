@@ -1035,7 +1035,7 @@ export default function Scheduler() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <ScrollArea className="h-[300px] sm:h-[400px]">
+          <ScrollArea className="h-[300px] sm:h-[400px] [&_[data-radix-scroll-area-viewport]>div]:!block">
             {tasks.length === 0 ? (
               <EmptyState type="noSchedule" title={t('scheduledTasks.emptyTitle')} description={t('scheduledTasks.emptyDesc')} />
             ) : (
@@ -1043,24 +1043,24 @@ export default function Scheduler() {
                 {tasks.map((task) => (
                   <div
                     key={task.id}
-                    className={`group relative flex items-center gap-3 p-4 rounded-lg border transition-colors ${
+                    className={`group relative flex flex-col gap-3 p-4 rounded-lg border transition-colors sm:flex-row sm:items-center ${
                       task.enabled
                         ? 'bg-card border-border/60 hover:border-primary/40'
                         : 'bg-muted/30 border-border/40 text-muted-foreground'
                     }`}
                   >
-                    {/* Leading status pip — solid + ping when active, hollow when disabled */}
-                    <div className="shrink-0 self-stretch flex items-center" aria-hidden="true">
-                      {task.enabled ? (
-                        <span className="relative inline-flex">
-                          <span className="absolute inset-0 rounded-full bg-primary/40 animate-ping motion-reduce:hidden" />
-                          <span className="relative w-2 h-2 rounded-full bg-primary" />
-                        </span>
-                      ) : (
-                        <span className="w-2 h-2 rounded-full border border-muted-foreground/50" />
-                      )}
-                    </div>
-                    <div className="flex flex-1 items-center justify-between min-w-0">
+                    <div className="flex flex-1 min-w-0 items-center gap-3">
+                      {/* Leading status pip — solid + ping when active, hollow when disabled */}
+                      <div className="shrink-0 self-stretch flex items-center" aria-hidden="true">
+                        {task.enabled ? (
+                          <span className="relative inline-flex">
+                            <span className="absolute inset-0 rounded-full bg-primary/40 animate-ping motion-reduce:hidden" />
+                            <span className="relative w-2 h-2 rounded-full bg-primary" />
+                          </span>
+                        ) : (
+                          <span className="w-2 h-2 rounded-full border border-muted-foreground/50" />
+                        )}
+                      </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 min-w-0">
                           <h3 className="font-medium truncate text-foreground">{task.name}</h3>
@@ -1085,67 +1085,67 @@ export default function Scheduler() {
                           </p>
                         )}
                       </div>
-                      <div className="flex items-center gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleRunNow(task)}
-                          disabled={loading || runningTaskId !== null}
-                          title={t('scheduledTasks.runNowTitle')}
-                          aria-label={t('scheduledTasks.runNowAria', { name: task.name })}
-                        >
-                          {runningTaskId === task.id ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                          ) : (
-                            <Play className="w-4 h-4" />
-                          )}
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleEditTask(task)}
-                          disabled={loading}
-                          title={t('scheduledTasks.editTitle')}
-                          aria-label={t('scheduledTasks.editAria', { name: task.name })}
-                        >
-                          <Pencil className="w-4 h-4" />
-                        </Button>
-                        <Switch
-                          checked={!!task.enabled}
-                          onCheckedChange={() => handleToggleTask(task)}
-                          disabled={loading}
-                          aria-label={t('scheduledTasks.toggleAria', { name: task.name })}
-                        />
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              disabled={loading}
-                              aria-label={t('scheduledTasks.deleteAria', { name: task.name })}
+                    </div>
+                    <div className="flex items-center gap-2 self-end sm:self-auto">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleRunNow(task)}
+                        disabled={loading || runningTaskId !== null}
+                        title={t('scheduledTasks.runNowTitle')}
+                        aria-label={t('scheduledTasks.runNowAria', { name: task.name })}
+                      >
+                        {runningTaskId === task.id ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Play className="w-4 h-4" />
+                        )}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleEditTask(task)}
+                        disabled={loading}
+                        title={t('scheduledTasks.editTitle')}
+                        aria-label={t('scheduledTasks.editAria', { name: task.name })}
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </Button>
+                      <Switch
+                        checked={!!task.enabled}
+                        onCheckedChange={() => handleToggleTask(task)}
+                        disabled={loading}
+                        aria-label={t('scheduledTasks.toggleAria', { name: task.name })}
+                      />
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            disabled={loading}
+                            aria-label={t('scheduledTasks.deleteAria', { name: task.name })}
+                          >
+                            <Trash2 className="w-4 h-4 text-destructive" />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>{t('scheduledTasks.deleteDialogTitle')}</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              {t('scheduledTasks.deleteDialogDesc', { name: task.name })}
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>{t('manualRestart.cancel')}</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() => handleDeleteTask(task.id)}
+                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                             >
-                              <Trash2 className="w-4 h-4 text-destructive" />
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>{t('scheduledTasks.deleteDialogTitle')}</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                {t('scheduledTasks.deleteDialogDesc', { name: task.name })}
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>{t('manualRestart.cancel')}</AlertDialogCancel>
-                              <AlertDialogAction
-                                onClick={() => handleDeleteTask(task.id)}
-                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                              >
-                                {t('scheduledTasks.deleteConfirm')}
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      </div>
+                              {t('scheduledTasks.deleteConfirm')}
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     </div>
                   </div>
                 ))}
