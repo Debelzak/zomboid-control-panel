@@ -4727,7 +4727,7 @@ export default function Debug() {
             <CardContent>
               <ScrollArea
                 ref={logsScrollAreaRef}
-                className="h-[300px] sm:h-[500px] rounded-lg border border-border/50 bg-muted/20 [&_[data-radix-scroll-area-viewport]>div]:!block"
+                className="h-[300px] sm:h-[500px] rounded-lg border border-border/50 bg-muted/20"
               >
                 <div className="font-mono text-sm p-4">
                   {filteredLogs.length === 0 ? (

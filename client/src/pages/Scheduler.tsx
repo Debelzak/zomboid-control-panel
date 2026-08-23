@@ -1035,7 +1035,7 @@ export default function Scheduler() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <ScrollArea className="h-[300px] sm:h-[400px] [&_[data-radix-scroll-area-viewport]>div]:!block">
+          <ScrollArea className="h-[300px] sm:h-[400px]">
             {tasks.length === 0 ? (
               <EmptyState type="noSchedule" title={t('scheduledTasks.emptyTitle')} description={t('scheduledTasks.emptyDesc')} />
             ) : (
