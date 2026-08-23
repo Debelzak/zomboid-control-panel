@@ -112,7 +112,17 @@ import {
   parseNumericSettingValue,
   IniSetting,
   SandboxSetting,
-  groupByCategory
+  groupByCategory,
+  getIniSettingLabel,
+  getIniSettingDescription,
+  getIniSettingOptionLabel,
+  getIniCategoryLabel,
+  getIniCategoryGroupLabel,
+  getSandboxSettingLabel,
+  getSandboxSettingDescription,
+  getSandboxSettingOptionLabel,
+  getSandboxCategoryLabel,
+  getSandboxCategoryGroupLabel
 } from '@/lib/serverConfigSchema'
 
 type EditorMode = 'structured' | 'raw'
@@ -233,8 +243,8 @@ const IniSettingRow = memo(({
       }`}>
         <div className="flex items-center justify-between">
           <div>
-            <Label className="text-sm font-medium">{setting.label}</Label>
-            <p className="text-xs text-muted-foreground mt-0.5">{setting.description}</p>
+            <Label className="text-sm font-medium">{getIniSettingLabel(setting)}</Label>
+            <p className="text-xs text-muted-foreground mt-0.5">{getIniSettingDescription(setting)}</p>
           </div>
           {isModified && onReset && (
             <Button variant="ghost" size="sm" className="h-7 text-xs text-warning hover:text-warning" onClick={() => onReset(setting.key)}>
@@ -265,19 +275,19 @@ const IniSettingRow = memo(({
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <Label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">{setting.label}</Label>
+            <Label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">{getIniSettingLabel(setting)}</Label>
             {isModified && (
               <Badge variant="warning" className="h-5 text-xs">{t('row.modifiedBadge')}</Badge>
             )}
           </div>
-          <p className="text-xs text-muted-foreground mt-1.5">{setting.description}</p>
+          <p className="text-xs text-muted-foreground mt-1.5">{getIniSettingDescription(setting)}</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {isModified && onReset && (
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-11 w-11 text-warning hover:text-warning sm:h-9 sm:w-9" onClick={() => onReset(setting.key)} aria-label={t('row.resetAria', { label: setting.label })}>
+                  <Button variant="ghost" size="icon" className="h-11 w-11 text-warning hover:text-warning sm:h-9 sm:w-9" onClick={() => onReset(setting.key)} aria-label={t('row.resetAria', { label: getIniSettingLabel(setting) })}>
                     <Undo2 className="w-3.5 h-3.5" />
                   </Button>
                 </TooltipTrigger>
@@ -292,7 +302,7 @@ const IniSettingRow = memo(({
                 <Switch
                   checked={String(value).toLowerCase() === 'true'}
                   onCheckedChange={(checked) => onChange(setting.key, checked ? 'true' : 'false')}
-                  aria-label={setting.label || setting.key}
+                  aria-label={getIniSettingLabel(setting) || setting.key}
                 />
               </div>
             ) : setting.type === 'select' && setting.options ? (
@@ -302,7 +312,7 @@ const IniSettingRow = memo(({
                 </SelectTrigger>
                 <SelectContent>
                   {setting.options.map(opt => (
-                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                    <SelectItem key={opt.value} value={opt.value}>{getIniSettingOptionLabel(setting, opt.value)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -367,7 +377,7 @@ const IniSettingRow = memo(({
                   <div className="rounded-md border bg-muted/30 p-1.5 max-w-[200px]">
                     <AuthImage
                       filePath={value}
-                      alt={setting.label}
+                      alt={getIniSettingLabel(setting)}
                       className="rounded max-h-[80px] w-auto object-contain"
                     />
                   </div>
@@ -422,12 +432,12 @@ const SandboxSettingRow = memo(({
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <Label className="text-sm font-medium">{setting.label}</Label>
+            <Label className="text-sm font-medium">{getSandboxSettingLabel(setting)}</Label>
             {isModified && (
               <Badge variant="warning" className="h-5 text-xs">{t('row.modifiedBadge')}</Badge>
             )}
           </div>
-          <p className="text-xs text-muted-foreground mt-1.5">{setting.description}</p>
+          <p className="text-xs text-muted-foreground mt-1.5">{getSandboxSettingDescription(setting)}</p>
           <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
             <code className="bg-muted px-1 rounded">{setting.key}</code>
             {setting.default !== undefined && (
@@ -440,7 +450,7 @@ const SandboxSettingRow = memo(({
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-11 w-11 text-warning hover:text-warning sm:h-9 sm:w-9" onClick={() => onReset(setting)} aria-label={t('row.resetAria', { label: setting.label })}>
+                  <Button variant="ghost" size="icon" className="h-11 w-11 text-warning hover:text-warning sm:h-9 sm:w-9" onClick={() => onReset(setting)} aria-label={t('row.resetAria', { label: getSandboxSettingLabel(setting) })}>
                     <Undo2 className="w-3.5 h-3.5" />
                   </Button>
                 </TooltipTrigger>
@@ -455,7 +465,7 @@ const SandboxSettingRow = memo(({
                 <Switch
                   checked={Boolean(value)}
                   onCheckedChange={(checked) => onChange(setting, checked)}
-                  aria-label={setting.label || setting.key}
+                  aria-label={getSandboxSettingLabel(setting) || setting.key}
                 />
               </div>
             ) : setting.type === 'select' && setting.options ? (
@@ -465,7 +475,7 @@ const SandboxSettingRow = memo(({
                 </SelectTrigger>
                 <SelectContent>
                   {setting.options.map(opt => (
-                    <SelectItem key={opt.value} value={String(opt.value)}>{opt.label}</SelectItem>
+                    <SelectItem key={opt.value} value={String(opt.value)}>{getSandboxSettingOptionLabel(setting, opt.value)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -1230,7 +1240,7 @@ export default function ServerConfig() {
       if (invalidIniSettings.length > 0) {
         toast({
           title: t('toasts.invalidIniTitle'),
-          description: t('toasts.fixSettings', { settings: invalidIniSettings.map(setting => setting.label).join(', ') }),
+          description: t('toasts.fixSettings', { settings: invalidIniSettings.map(getIniSettingLabel).join(', ') }),
           variant: 'destructive',
         })
         return
@@ -1288,7 +1298,7 @@ export default function ServerConfig() {
       if (editorMode === 'structured' && invalidSandboxSettings.length > 0) {
         toast({
           title: t('toasts.invalidSandboxTitle'),
-          description: t('toasts.fixSettings', { settings: invalidSandboxSettings.map(setting => setting.label).join(', ') }),
+          description: t('toasts.fixSettings', { settings: invalidSandboxSettings.map(getSandboxSettingLabel).join(', ') }),
           variant: 'destructive',
         })
         return
@@ -1948,7 +1958,7 @@ export default function ServerConfig() {
             <AlertCircle className="h-4 w-4 text-destructive" />
             <AlertTitle>{t('invalidValuesAlert.title')}</AlertTitle>
             <AlertDescription>
-              {t('invalidValuesAlert.description', { settings: invalidSandboxSettings.map(setting => setting.label).join(', ') })}
+              {t('invalidValuesAlert.description', { settings: invalidSandboxSettings.map(getSandboxSettingLabel).join(', ') })}
             </AlertDescription>
           </Alert>
         )}
@@ -2131,7 +2141,7 @@ export default function ServerConfig() {
                           <div key={category.id} className="mb-5">
                             <div className="sticky top-0 z-10 -mx-1 mb-2 flex items-baseline gap-2 bg-card/95 px-1 py-1.5 backdrop-blur">
                               <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                                {category.label}
+                                {getIniCategoryLabel(category)}
                               </span>
                               <span className="text-[10px] text-muted-foreground/70">
                                 {t('categoriesNav.matchCount', { count: settings.length })}
@@ -2183,6 +2193,7 @@ export default function ServerConfig() {
                           </button>
                         </div>
                         {INI_CATEGORY_GROUPS.map((group, gIdx) => {
+                          const groupLabel = getIniCategoryGroupLabel(group)
                           const cats = INI_CATEGORIES.filter(c => c.group === group.id)
                           // Hide whole group if every category is empty under current filter
                           const totalInGroup = cats.reduce((acc, c) => acc + (filteredIniSettings[c.id] || []).length, 0)
@@ -2202,7 +2213,7 @@ export default function ServerConfig() {
                                   ? <ChevronRight className="h-3 w-3 shrink-0" />
                                   : <ChevronDown className="h-3 w-3 shrink-0" />
                                 }
-                                <span>{group.label}</span>
+                                <span>{groupLabel}</span>
                                 {groupModCount > 0 && (
                                   <span className="rounded-full bg-warning/20 px-1.5 py-0.5 text-[8px] font-semibold text-warning">{groupModCount}</span>
                                 )}
@@ -2226,7 +2237,7 @@ export default function ServerConfig() {
                                     }`}
                                   >
                                     <CategoryIcon name={category.icon} isActive={isActive} className="h-4 w-4 shrink-0" />
-                                    <span className="min-w-0 flex-1 truncate font-medium">{category.label}</span>
+                                    <span className="min-w-0 flex-1 truncate font-medium">{getIniCategoryLabel(category)}</span>
                                     {modCount > 0 && (
                                       <span
                                         className="shrink-0 rounded-full bg-warning/20 px-1.5 py-0.5 text-[9px] font-mono font-semibold uppercase tracking-wider text-warning"
@@ -2340,7 +2351,7 @@ export default function ServerConfig() {
                             <div>
                               <div className="sticky top-0 z-10 -mx-1 mb-3 flex items-baseline justify-between border-b border-border/50 bg-card/95 px-1 pb-2 pt-1 backdrop-blur">
                                 <h3 className="text-sm font-semibold uppercase tracking-wider text-primary">
-                                  {active?.label}
+                                  {active ? getIniCategoryLabel(active) : null}
                                 </h3>
                                 <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
                                   {t('categoryContent.settingCount', { count: settings.length })}
@@ -2535,7 +2546,7 @@ export default function ServerConfig() {
                           <div key={category.id} className="mb-5">
                             <div className="sticky top-0 z-10 -mx-1 mb-2 flex items-baseline gap-2 bg-card/95 px-1 py-1.5 backdrop-blur">
                               <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                                {category.label}
+                                {getSandboxCategoryLabel(category)}
                               </span>
                               <span className="text-[10px] text-muted-foreground/70">
                                 {t('categoriesNav.matchCount', { count: settings.length })}
@@ -2586,6 +2597,7 @@ export default function ServerConfig() {
                           </button>
                         </div>
                         {SANDBOX_CATEGORY_GROUPS.map((group, gIdx) => {
+                          const groupLabel = getSandboxCategoryGroupLabel(group)
                           const cats = SANDBOX_CATEGORIES.filter(c => c.group === group.id)
                           const totalInGroup = cats.reduce((acc, c) => acc + (filteredSandboxSettings[c.id] || []).length, 0)
                           if (totalInGroup === 0 && filterMode !== 'all') return null
@@ -2604,7 +2616,7 @@ export default function ServerConfig() {
                                   ? <ChevronRight className="h-3 w-3 shrink-0" />
                                   : <ChevronDown className="h-3 w-3 shrink-0" />
                                 }
-                                <span>{group.label}</span>
+                                <span>{groupLabel}</span>
                                 {groupModCount > 0 && (
                                   <span className="rounded-full bg-warning/20 px-1.5 py-0.5 text-[8px] font-semibold text-warning">{groupModCount}</span>
                                 )}
@@ -2628,7 +2640,7 @@ export default function ServerConfig() {
                                     }`}
                                   >
                                     <CategoryIcon name={category.icon} isActive={isActive} className="h-4 w-4 shrink-0" />
-                                    <span className="min-w-0 flex-1 truncate font-medium">{category.label}</span>
+                                    <span className="min-w-0 flex-1 truncate font-medium">{getSandboxCategoryLabel(category)}</span>
                                     {modCount > 0 && (
                                       <span
                                         className="shrink-0 rounded-full bg-warning/20 px-1.5 py-0.5 text-[9px] font-mono font-semibold uppercase tracking-wider text-warning"
@@ -2776,7 +2788,7 @@ export default function ServerConfig() {
                             <div>
                               <div className="sticky top-0 z-10 -mx-1 mb-3 flex items-baseline justify-between border-b border-border/50 bg-card/95 px-1 pb-2 pt-1 backdrop-blur">
                                 <h3 className="text-sm font-semibold uppercase tracking-wider text-primary">
-                                  {active?.label}
+                                  {active ? getSandboxCategoryLabel(active) : null}
                                 </h3>
                                 <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
                                   {t('categoryContent.settingCount', { count: settings.length })}
