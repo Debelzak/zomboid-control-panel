@@ -485,6 +485,13 @@ reliability, then interface and translation.
   working. It now asks the map service directly which build is current, and only falls back to
   searching the list - newest first - if that one is not usable yet.
 
+- **The Debug page and the Chunk Cleaner named map websites the panel had stopped using.** Their
+  labels still pointed at the addresses the map tiles used to come from, two moves ago - in all five
+  languages, because the English was wrong and every translation faithfully repeated it. The labels
+  now simply say which game build they refer to, which is the part that was ever useful: both builds
+  are served from the same place now, so the address could no longer tell them apart, and the Debug
+  page already shows the exact address it is testing directly underneath.
+
 - **The panel could stop noticing new Project Zomboid map releases without ever saying so.** The
   World Map works out which map build to use by asking the upstream map site, and if that lookup
   fails it falls back to a build number written into the panel. That fallback had been failing
