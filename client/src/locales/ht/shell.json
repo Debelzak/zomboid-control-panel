@@ -48,7 +48,7 @@
   "activeServer": {
     "label": "Sèvè Aktif",
     "none": "Pa gen sèvè chwazi",
-    "remoteBadge": "AL",
+    "remoteBadge": "RM",
     "remoteBadgeFull": "Aleka",
     "remoteTitle": "Sèvè aleka (RCON sèlman)",
     "activeBadge": "Aktif",

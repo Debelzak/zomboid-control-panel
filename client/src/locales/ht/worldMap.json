@@ -30,7 +30,7 @@
   "floor": {
     "ground": "Tè",
     "floorN": "Etaj {{n}}",
-    "basementN": "S{{n}}"
+    "basementN": "B{{n}}"
   },
   "tileFailure": {
     "signalLost": "sinyal.pèdi",
