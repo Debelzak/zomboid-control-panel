@@ -33,7 +33,7 @@
   },
   "stopServerAlert": {
     "title": "Der Server läuft",
-    "description": "Du kannst deine Änderungen jetzt speichern. Sie wirken sich erst auf das laufende Spiel aus, wenn der Server neu gestartet wurde."
+    "description": "Du kannst deine Änderungen jetzt speichern. Je nachdem, was du bearbeitest, ist eventuell ein Serverneustart nötig, damit sie wirksam werden — die Bestätigung nach dem Speichern sagt dir, ob das der Fall ist."
   },
   "invalidValuesAlert": {
     "title": "Behebe ungültige Werte vor dem Speichern",

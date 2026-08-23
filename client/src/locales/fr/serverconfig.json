@@ -33,7 +33,7 @@
   },
   "stopServerAlert": {
     "title": "Le serveur est en cours d'exécution",
-    "description": "Vous pouvez enregistrer vos modifications maintenant. Elles ne seront prises en compte par la partie en cours qu'après le redémarrage du serveur."
+    "description": "Vous pouvez enregistrer vos modifications maintenant. Selon ce que vous modifiez, un redémarrage du serveur peut être nécessaire pour qu'elles prennent effet — la confirmation après l'enregistrement vous le précisera."
   },
   "invalidValuesAlert": {
     "title": "Corrigez les valeurs invalides avant d'enregistrer",

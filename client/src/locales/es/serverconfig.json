@@ -33,7 +33,7 @@
   },
   "stopServerAlert": {
     "title": "El servidor está en ejecución",
-    "description": "Puedes guardar los cambios ahora. No llegarán a la partida en curso hasta que se reinicie el servidor."
+    "description": "Puedes guardar los cambios ahora. Según lo que estés editando, es posible que necesiten un reinicio del servidor para aplicarse — la confirmación tras guardar te lo indicará."
   },
   "invalidValuesAlert": {
     "title": "Corregir valores no válidos antes de guardar",
