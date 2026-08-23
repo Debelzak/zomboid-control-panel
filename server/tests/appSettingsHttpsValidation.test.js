@@ -325,14 +325,22 @@ describe("PUT /app-settings -- the other 8 boolean settings now reject a non-boo
 });
 
 // Bound chased from modChecker.js's setRestartOptions
-// (`Math.max(0, Math.min(30, val))`) -- but Settings.tsx's own input says
-// min=1, a real discrepancy from the consuming service's floor of 0.
-// Applying the narrower client-intent range (1-30): a restart delay of
-// exactly 0 isn't a meaningful choice distinct from no delay, and 1-30 is
-// what the UI has always presented as valid.
-describe("PUT /app-settings -- modRestartDelay validation (bound chased, not guessed)", () => {
-  it("rejects zero (matches Settings.tsx's min=1, narrower than modChecker's own floor of 0)", async () => {
+// (`Math.max(0, Math.min(30, val))`): [0, 30]. Settings.tsx's own input says
+// min=1, a real discrepancy -- ruled in favour of the service's floor, not
+// the client's: the service is the authority on what the system can do, and
+// refusing 0 here while the consumer accepts it fine would create a NEW
+// save-vs-consumer disagreement, the same bug class this thread closed.
+// Settings.tsx keeping min=1 is a UI recommendation, not a capability claim,
+// and is allowed to differ.
+describe("PUT /app-settings -- modRestartDelay validation (bound chased, service is the authority)", () => {
+  it("accepts zero -- the service's own floor, even though Settings.tsx's UI recommends min=1", async () => {
     const res = await putAppSettings({ modRestartDelay: 0 });
+    expect(res.getStatusCode()).toBe(200);
+    expect(res.getBody().success).toBe(true);
+  });
+
+  it("rejects a negative value", async () => {
+    const res = await putAppSettings({ modRestartDelay: -1 });
     expect(res.getStatusCode()).toBe(400);
     expect(res.getBody().error).toMatch(/Mod restart delay \(minutes\) must be a whole number/);
   });

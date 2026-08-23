@@ -37,9 +37,17 @@ const AUTO_EXPORT_MAX_PER_PLAYER_MAX = 50;
 
 // Also local: neither of these has a server.js counterpart. Ranges chased
 // from their consuming services rather than guessed -- see the comments at
-// each call site below for the source and, for modRestartDelay, a real
-// discrepancy found between that source and Settings.tsx's own input.
-const MOD_RESTART_DELAY_MIN = 1;
+// each call site below for the source. modRestartDelay's floor is 0, not
+// Settings.tsx's min=1: the service (modChecker.js's setRestartOptions) is
+// the authority on what the system can actually do, and it demonstrably
+// accepts 0. Refusing a value here that the consumer handles fine would be
+// a NEW disagreement between two layers -- the exact bug class this whole
+// thread closed, just pointing the other way (a save that rejects what the
+// consumer accepts, instead of a wizard that refuses what /app-settings
+// accepts). Settings.tsx keeping min=1 is fine and unrelated: that's a UI
+// recommendation, not a claim about server capability, and the two are
+// allowed to differ. See 2026-08-23 config.js numeric-field audit part 5.
+const MOD_RESTART_DELAY_MIN = 0;
 const MOD_RESTART_DELAY_MAX = 30;
 const SERVER_AUTO_UPDATE_WARNING_MINUTES_MIN = 0;
 const SERVER_AUTO_UPDATE_WARNING_MINUTES_MAX = 60;
@@ -312,13 +320,15 @@ router.put("/app-settings", requirePermission("panel.settings"), async (req, res
       }
 
       // Bound chased from the consuming service (modChecker.js's
-      // setRestartOptions: `Math.max(0, Math.min(30, val))`), which permits
-      // 0. Settings.tsx's own input says min=1 -- a real, if minor,
-      // discrepancy between the two, not invented here. Applying the
-      // narrower client-intent bound (1-30): a restart "delay" of exactly 0
-      // isn't a meaningful choice distinct from no delay at all, and 1-30 is
-      // what the UI has always presented as valid. Flagged, not silently
-      // resolved -- see 2026-08-23 config.js numeric-field audit part 4.
+      // setRestartOptions: `Math.max(0, Math.min(30, val))`): [0, 30].
+      // Settings.tsx's own input says min=1, a real discrepancy -- flagged
+      // rather than resolved silently, and the ruling went with the
+      // service's floor, not the client's: the service is the authority on
+      // what the system can do, and refusing 0 here while the consumer
+      // accepts it fine would be a NEW save-vs-consumer disagreement, the
+      // same bug class this whole thread closed. Settings.tsx keeping min=1
+      // is fine and unrelated -- a UI recommendation, not a capability
+      // claim. See 2026-08-23 config.js numeric-field audit part 5.
       if (key === "modRestartDelay") {
         const modRestartDelayCheck = requireIntInRange(
           value,
