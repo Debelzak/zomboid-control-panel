@@ -87,6 +87,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { EmptyState } from '@/components/EmptyState'
 import { SpawnBrowser } from '@/components/SpawnBrowser'
 import { playersApi, panelBridgeApi, configApi } from '@/lib/api'
+import { getBridgeVerifiedState } from '@/lib/bridgeVerify'
 import { PageHeader } from '@/components/PageHeader'
 import { cn, copyText } from '@/lib/utils'
 
@@ -704,15 +705,31 @@ export default function Players() {
     }
   }, [selectedPlayer, playerNotes])
 
-  const handleAction = async (action: string, fn: () => Promise<unknown>, closeDialog?: () => void) => {
+  // `fn` normally resolves to something the caller doesn't inspect (kick,
+  // ban, teleport, etc. -- unrelated to bridge verification). A handler that
+  // DOES need to override the generic success toast (the godmode/invisible/
+  // noclip/teleport bridge actions below, when the mod couldn't confirm the
+  // change) resolves to `{ toastOverride }` instead -- runtime-checked here
+  // rather than widening `fn`'s type, so every other caller is unaffected.
+  const handleAction = async (
+    action: string,
+    fn: () => Promise<unknown>,
+    closeDialog?: () => void,
+  ) => {
     setLoading(true)
     try {
-      await fn()
-      toast({
-        title: t('toasts.successTitle'),
-        description: t('toasts.successDesc', { action }),
-        variant: 'success' as const,
-      })
+      const result = await fn()
+      const override =
+        result && typeof result === 'object' && 'toastOverride' in result
+          ? (result as { toastOverride: { title: string; description?: string; variant?: 'default' | 'destructive' | 'success' } }).toastOverride
+          : null
+      toast(
+        override ?? {
+          title: t('toasts.successTitle'),
+          description: t('toasts.successDesc', { action }),
+          variant: 'success' as const,
+        },
+      )
       fetchPlayers()
       closeDialog?.()
     } catch (error) {
@@ -765,14 +782,46 @@ export default function Players() {
     })
   }
 
+  // Builds the { toastOverride } handleAction reads instead of its default
+  // success toast, for a bridge-verify-gated action that came back
+  // 'unverifiable' or 'old-bridge'. 'confirmed' and null (action isn't
+  // verify-gated at all) both return undefined -- no override, plain
+  // success toast, exactly as before this fix.
+  const bridgeVerifyToastOverride = (actionLabel: string, actionKey: string, data: unknown) => {
+    const state = getBridgeVerifiedState(actionKey, data as { verified?: unknown } | null | undefined)
+    if (state === 'unverifiable') {
+      return {
+        toastOverride: {
+          title: actionLabel,
+          description: t('toasts.bridgeUnverifiedDesc', { action: actionLabel }),
+          variant: 'default' as const,
+        },
+      }
+    }
+    if (state === 'old-bridge') {
+      return {
+        toastOverride: {
+          title: actionLabel,
+          description: t('toasts.bridgeOldBridgeDesc', { action: actionLabel }),
+          variant: 'default' as const,
+        },
+      }
+    }
+    return undefined
+  }
+
   const handleTeleport = (targetOverride?: string) => {
     const target = (targetOverride ?? teleportTarget ?? '').trim() || selectedPlayer
     if (!target || !teleportX || !teleportY) return
-    handleAction(t('actions.teleportPlayer'), () => playersApi.teleport(target, {
-      x: Number(teleportX),
-      y: Number(teleportY),
-      z: Number(teleportZ || '0')
-    }), () => {
+    const label = t('actions.teleportPlayer')
+    handleAction(label, async () => {
+      const response = await playersApi.teleport(target, {
+        x: Number(teleportX),
+        y: Number(teleportY),
+        z: Number(teleportZ || '0'),
+      })
+      return bridgeVerifyToastOverride(label, 'teleportPlayer', response?.data)
+    }, () => {
       setTeleportDialogOpen(false)
       setTeleportX('')
       setTeleportY('')
@@ -903,40 +952,55 @@ export default function Players() {
   const handleGodMode = (enabled: boolean) => {
     const player = selectedPlayer
     if (!player) return
-    handleAction(enabled ? t('actions.enableGodMode') : t('actions.disableGodMode'),
-      async () => {
-        await panelBridgeApi.sendCommand('setGodMode', { username: player, enabled })
+    const label = enabled ? t('actions.enableGodMode') : t('actions.disableGodMode')
+    handleAction(label, async () => {
+      const response = await panelBridgeApi.sendCommand('setGodMode', { username: player, enabled })
+      const state = getBridgeVerifiedState('setGodMode', response?.data)
+      // Only reflect the new state on the control once the mod actually
+      // confirmed it -- an 'unverifiable'/'old-bridge' response leaves the
+      // toggle showing its last KNOWN state instead of one nobody confirmed.
+      if (state === null || state === 'confirmed') {
         setPlayerPowers(prev => ({
           ...prev,
           [player]: { ...prev[player], godMode: enabled }
         }))
-      })
+      }
+      return bridgeVerifyToastOverride(label, 'setGodMode', response?.data)
+    })
   }
 
   const handleInvisible = (enabled: boolean) => {
     const player = selectedPlayer
     if (!player) return
-    handleAction(enabled ? t('actions.enableInvisible') : t('actions.disableInvisible'),
-      async () => {
-        await panelBridgeApi.sendCommand('setInvisible', { username: player, enabled })
+    const label = enabled ? t('actions.enableInvisible') : t('actions.disableInvisible')
+    handleAction(label, async () => {
+      const response = await panelBridgeApi.sendCommand('setInvisible', { username: player, enabled })
+      const state = getBridgeVerifiedState('setInvisible', response?.data)
+      if (state === null || state === 'confirmed') {
         setPlayerPowers(prev => ({
           ...prev,
           [player]: { ...prev[player], invisible: enabled }
         }))
-      })
+      }
+      return bridgeVerifyToastOverride(label, 'setInvisible', response?.data)
+    })
   }
 
   const handleNoclip = (enabled: boolean) => {
     const player = selectedPlayer
     if (!player) return
-    handleAction(enabled ? t('actions.enableNoclip') : t('actions.disableNoclip'),
-      async () => {
-        await panelBridgeApi.sendCommand('setNoclip', { username: player, enabled })
+    const label = enabled ? t('actions.enableNoclip') : t('actions.disableNoclip')
+    handleAction(label, async () => {
+      const response = await panelBridgeApi.sendCommand('setNoclip', { username: player, enabled })
+      const state = getBridgeVerifiedState('setNoclip', response?.data)
+      if (state === null || state === 'confirmed') {
         setPlayerPowers(prev => ({
           ...prev,
           [player]: { ...prev[player], noclip: enabled }
         }))
-      })
+      }
+      return bridgeVerifyToastOverride(label, 'setNoclip', response?.data)
+    })
   }
 
   const handleHealPlayer = () => {

@@ -349,6 +349,8 @@
   "toasts": {
     "successTitle": "Siksè",
     "successDesc": "{{action}} fini",
+    "bridgeUnverifiedDesc": "{{action}} te voye, men mod la pa t kapab konfime li te fè efè.",
+    "bridgeOldBridgeDesc": "{{action}} ka te fonksyone, men vèsyon mod PanelBridge sa a pa rapòte si li te fè sa. Mete mod la ajou pou konfime rezilta yo.",
     "errorTitle": "Erè",
     "actionFailedFallback": "Aksyon echwe",
     "noteSavedTitle": "Nòt Sove",

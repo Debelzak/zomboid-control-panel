@@ -505,6 +505,8 @@
   },
   "toasts": {
     "actionFailedTitle": "Échec de {{action}}",
+    "bridgeUnverifiedDesc": "{{action}} a été envoyé, mais le mod n'a pas pu confirmer que cela a fonctionné.",
+    "bridgeOldBridgeDesc": "{{action}} a peut-être fonctionné, mais cette version du mod PanelBridge ne signale pas si c'est le cas. Mettez à jour le mod pour confirmer les résultats.",
     "bridgeFailedDesc": "{{message}}. Vérifiez la connexion bridge/serveur et réessayez.",
     "commandFailedDesc": "{{message}}. Vérifiez les paramètres de la commande et réessayez.",
     "commandFailedFallback": "Échec de la commande",

@@ -104,6 +104,8 @@
     "bridgeOfflineDrops": "bridge hors ligne — largages indisponibles"
   },
   "toasts": {
+    "bridgeUnverifiedDesc": "{{action}} a été envoyé, mais le mod n'a pas pu confirmer que cela a fonctionné.",
+    "bridgeOldBridgeDesc": "{{action}} a peut-être fonctionné, mais cette version du mod PanelBridge ne signale pas si c'est le cas. Mettez à jour le mod pour confirmer les résultats.",
     "vehicleRepaired": "Véhicule réparé",
     "repairFailed": "Échec de la réparation",
     "fuelFilled": "Plein d'essence fait à 100 %",

@@ -325,6 +325,8 @@
     "copyFailed": "Pa t kapab kopye kontni nan clipboard.",
     "optionUpdatedTitle": "Opsyon Mete Ajou",
     "optionUpdatedDesc": "{{option}} defini avèk siksè",
+    "bridgeUnverifiedDesc": "{{action}} te voye, men mod la pa t kapab konfime li te fè efè.",
+    "bridgeOldBridgeDesc": "{{action}} ka te fonksyone, men vèsyon mod PanelBridge sa a pa rapòte si li te fè sa. Mete mod la ajou pou konfime rezilta yo.",
     "appliedNotSavedTitle": "Aplike, men pa sove",
     "notPersistedDesc": "{{option}} pa nan SandboxVars.lua, kidonk li ap reyinisyalize lè sèvè a redemare.",
     "willResetFallback": "{{option}} ap reyinisyalize lè sèvè a redemare.",

@@ -68,6 +68,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { panelBridgeApi, updateApi, serversApi, mapApi, playersApi } from '@/lib/api'
+import { getBridgeVerifiedState } from '@/lib/bridgeVerify'
 import { useToast } from '@/components/ui/use-toast'
 import { cn } from '@/lib/utils'
 
@@ -2408,18 +2409,35 @@ export default function WorldMap() {
         // with { success: true, ... } -- an in-game failure rejects the
         // promise instead (see processResult()'s pending.reject branch), so
         // handleResponse() throws into the catch below either way. This
-        // never sees res.success === false.
-        await panelBridgeApi.sendCommand('teleportPlayer', {
+        // never sees res.success === false. It CAN resolve with
+        // data.verified !== 'confirmed' though (mod couldn't read back the
+        // new position) -- that's not a rejection, so it needs its own check.
+        const response = await panelBridgeApi.sendCommand('teleportPlayer', {
           username,
           x: Math.round(x),
           y: Math.round(y),
           z: Math.round(z),
         })
         if (!mountedRef.current) return
-        toast({
-          title: t('toasts.teleportedTitle'),
-          description: t('toasts.teleportedDesc', { username, x: Math.round(x), y: Math.round(y) }),
-        })
+        const verifyState = getBridgeVerifiedState('teleportPlayer', response?.data)
+        toast(
+          verifyState === 'unverifiable'
+            ? {
+                title: t('toasts.teleportedTitle'),
+                description: t('toasts.bridgeUnverifiedDesc', { action: t('toasts.teleportedTitle') }),
+                variant: 'default',
+              }
+            : verifyState === 'old-bridge'
+              ? {
+                  title: t('toasts.teleportedTitle'),
+                  description: t('toasts.bridgeOldBridgeDesc', { action: t('toasts.teleportedTitle') }),
+                  variant: 'default',
+                }
+              : {
+                  title: t('toasts.teleportedTitle'),
+                  description: t('toasts.teleportedDesc', { username, x: Math.round(x), y: Math.round(y) }),
+                },
+        )
         fetchPlayerPositions()
       } catch (err) {
         if (!mountedRef.current) return
@@ -2824,7 +2842,16 @@ export default function WorldMap() {
                   onClick={() => {
                     setActionLoading('god-card')
                     panelBridgeApi.sendCommand('setGodMode', { username: selectedPlayer.username, enabled: true })
-                      .then(() => toast({ title: t('dossier.godModeEnabled') }))
+                      .then((response) => {
+                        const state = getBridgeVerifiedState('setGodMode', response?.data)
+                        if (state === 'unverifiable') {
+                          toast({ title: t('dossier.godModeEnabled'), description: t('toasts.bridgeUnverifiedDesc', { action: t('dossier.god') }), variant: 'default' })
+                        } else if (state === 'old-bridge') {
+                          toast({ title: t('dossier.godModeEnabled'), description: t('toasts.bridgeOldBridgeDesc', { action: t('dossier.god') }), variant: 'default' })
+                        } else {
+                          toast({ title: t('dossier.godModeEnabled') })
+                        }
+                      })
                       .catch(() => toast({ title: t('errorTitle'), variant: 'destructive' }))
                       .finally(() => setActionLoading(null))
                   }}
@@ -3007,8 +3034,15 @@ export default function WorldMap() {
                   onClick={() => {
                     setActionLoading('vehicle-fuel')
                     panelBridgeApi.sendCommand('vehicleSetFuel', { vehicleId: contextMenu.vehicle!.id, percent: 100 })
-                      .then(() => {
-                        toast({ title: t('toasts.fuelFilled') })
+                      .then((response) => {
+                        const state = getBridgeVerifiedState('vehicleSetFuel', response?.data)
+                        if (state === 'unverifiable') {
+                          toast({ title: t('toasts.fuelFilled'), description: t('toasts.bridgeUnverifiedDesc', { action: t('toasts.fuelFilled') }), variant: 'default' })
+                        } else if (state === 'old-bridge') {
+                          toast({ title: t('toasts.fuelFilled'), description: t('toasts.bridgeOldBridgeDesc', { action: t('toasts.fuelFilled') }), variant: 'default' })
+                        } else {
+                          toast({ title: t('toasts.fuelFilled') })
+                        }
                         fetchOverlays()
                       })
                       .catch((err) => toast({ title: t('toasts.fuelFailed'), description: err instanceof Error ? err.message : t('toasts.unknownError'), variant: 'destructive' }))
@@ -3023,8 +3057,15 @@ export default function WorldMap() {
                   onClick={() => {
                     setActionLoading('vehicle-battery')
                     panelBridgeApi.sendCommand('vehicleSetBattery', { vehicleId: contextMenu.vehicle!.id, charge: 100 })
-                      .then(() => {
-                        toast({ title: t('toasts.batteryCharged') })
+                      .then((response) => {
+                        const state = getBridgeVerifiedState('vehicleSetBattery', response?.data)
+                        if (state === 'unverifiable') {
+                          toast({ title: t('toasts.batteryCharged'), description: t('toasts.bridgeUnverifiedDesc', { action: t('toasts.batteryCharged') }), variant: 'default' })
+                        } else if (state === 'old-bridge') {
+                          toast({ title: t('toasts.batteryCharged'), description: t('toasts.bridgeOldBridgeDesc', { action: t('toasts.batteryCharged') }), variant: 'default' })
+                        } else {
+                          toast({ title: t('toasts.batteryCharged') })
+                        }
                         fetchOverlays()
                       })
                       .catch((err) => toast({ title: t('toasts.batteryFailed'), description: err instanceof Error ? err.message : t('toasts.unknownError'), variant: 'destructive' }))

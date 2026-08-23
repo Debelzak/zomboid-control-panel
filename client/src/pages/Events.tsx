@@ -56,6 +56,7 @@ import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
 import { useToast } from '@/components/ui/use-toast'
 import { rconApi, serverApi, playersApi, panelBridgeApi } from '@/lib/api'
+import { getBridgeVerifiedState } from '@/lib/bridgeVerify'
 import { Link } from 'react-router-dom'
 import { PageHeader } from '@/components/PageHeader'
 import { cn } from '@/lib/utils'
@@ -1242,17 +1243,33 @@ export default function Events() {
     return rconApi.execute(command)
   }, [])
 
+  // `fn` normally resolves to something this function doesn't inspect (RCON
+  // commands, vehicle spawns, etc. -- no verify concept). A handler that DOES
+  // need to override the generic success toast (createHorde/createHorde2
+  // below, when the mod couldn't confirm the spawn -- see
+  // panelBridgeSpawnHordeFabricatedCount.test.js) resolves to
+  // `{ toastOverride }` instead -- runtime-checked here rather than widening
+  // `fn`'s type, so every other caller is unaffected.
   const handleAction = useCallback(async (action: string, fn: () => Promise<unknown>) => {
     setLoading(action)
     try {
-      await fn()
-      const successCopy = getEventSuccessCopy(action, t)
-      toast({
-        title: successCopy.title,
-        description: successCopy.description,
-        variant: 'success' as const,
-      })
-      pushActivity(successCopy.title, true)
+      const result = await fn()
+      const override =
+        result && typeof result === 'object' && 'toastOverride' in result
+          ? (result as { toastOverride: { title: string; description?: string; variant?: 'default' | 'destructive' | 'success' } }).toastOverride
+          : null
+      if (override) {
+        toast(override)
+        pushActivity(override.title, true)
+      } else {
+        const successCopy = getEventSuccessCopy(action, t)
+        toast({
+          title: successCopy.title,
+          description: successCopy.description,
+          variant: 'success' as const,
+        })
+        pushActivity(successCopy.title, true)
+      }
     } catch (error) {
       const message = getUserErrorMessage(error, t('toasts.commandFailedFallback'))
       toast({
@@ -1337,16 +1354,38 @@ export default function Events() {
     return players[Math.floor(Math.random() * players.length)].name
   }
 
+  // Reports verified:false (never surfaced as ok:false -- see
+  // panelBridgeSpawnHordeFabricatedCount.test.js) when the spawned count was
+  // fabricated from a fallback rather than read back from
+  // VirtualZombieManager. Builds the handleAction toastOverride so
+  // "Horde created" doesn't imply a count the mod couldn't actually confirm.
+  const hordeToastOverride = (
+    actionKey: 'spawnHordeNearPlayer' | 'spawnHordeBehindPlayer',
+    actionLabel: string,
+    response: { data?: { verified?: unknown } | null } | undefined,
+  ) => {
+    const state = getBridgeVerifiedState(actionKey, response?.data)
+    if (state === 'unverifiable') {
+      return { toastOverride: { title: actionLabel, description: t('toasts.bridgeUnverifiedDesc', { action: actionLabel }), variant: 'default' as const } }
+    }
+    if (state === 'old-bridge') {
+      return { toastOverride: { title: actionLabel, description: t('toasts.bridgeOldBridgeDesc', { action: actionLabel }), variant: 'default' as const } }
+    }
+    return undefined
+  }
+
   // Zombie commands — use PanelBridge (CreateSwarm) for proper distance control
-  const createHorde = (count: number, username?: string) => {
+  const createHorde = async (count: number, username?: string) => {
     if (!username) throw new Error(t('toasts.targetPlayerRequiredHorde'))
-    return panelBridgeApi.spawnHordeNear(username, count)
+    const response = await panelBridgeApi.spawnHordeNear(username, count)
+    return hordeToastOverride('spawnHordeNearPlayer', getEventSuccessCopy('Create horde', t).title, response)
   }
 
   // Spawn horde behind the player based on their facing direction
-  const createHorde2 = (count: number, username?: string) => {
+  const createHorde2 = async (count: number, username?: string) => {
     if (!username) throw new Error(t('toasts.targetPlayerRequiredHorde'))
-    return panelBridgeApi.spawnHordeBehind(username, count)
+    const response = await panelBridgeApi.spawnHordeBehind(username, count)
+    return hordeToastOverride('spawnHordeBehindPlayer', getEventSuccessCopy('Create horde (behind)', t).title, response)
   }
 
   // Clear all zombies from loaded cells
@@ -1507,18 +1546,33 @@ export default function Events() {
   const runInlineAction = async (action: string, args: Record<string, unknown>, label: string) => {
     setBridgeLoading(action)
     try {
-      await panelBridgeApi.sendCommand(action, args)
-      toast({
-        title: `${label}`,
-        description: t('toasts.operationCompletedDesc'),
-        variant: 'success' as const,
-      })
+      const response = await panelBridgeApi.sendCommand(action, args)
+      const verifyState = getBridgeVerifiedState(action, response?.data)
+      if (verifyState === 'unverifiable') {
+        toast({
+          title: label,
+          description: t('toasts.bridgeUnverifiedDesc', { action: label }),
+          variant: 'default',
+        })
+      } else if (verifyState === 'old-bridge') {
+        toast({
+          title: label,
+          description: t('toasts.bridgeOldBridgeDesc', { action: label }),
+          variant: 'default',
+        })
+      } else {
+        toast({
+          title: `${label}`,
+          description: t('toasts.operationCompletedDesc'),
+          variant: 'success' as const,
+        })
+      }
       pushActivity(label, true)
       // Re-run the current list operation to refresh table data
       if (bridgeResultData?.operation) {
         try {
           const refreshed = await panelBridgeApi.sendCommand(bridgeResultData.operation, {})
-          const payload = (refreshed as Record<string, unknown>)?.data ?? refreshed
+          const payload = refreshed?.data ?? refreshed
           setBridgeResultData({
             operation: bridgeResultData.operation,
             success: true,
@@ -1570,7 +1624,7 @@ export default function Events() {
     setBridgeFormError(null)
     try {
       const response = await panelBridgeApi.sendCommand(bridgeOperation, parsedArgs)
-      const payload = (response as Record<string, unknown>)?.data ?? response
+      const payload = response?.data ?? response
       setBridgeResultData({
         operation: bridgeOperation,
         success: true,
@@ -1582,11 +1636,27 @@ export default function Events() {
       if (['getSafehouses', 'getFactions', 'getVehiclesDetailed'].includes(bridgeOperation)) {
         setBridgeOptionsRefreshTick((prev) => prev + 1)
       }
-      toast({
-        title: t('toasts.operationExecutedSuffix', { label: bridgeOperationTemplates[bridgeOperation]?.label || bridgeOperation }),
-        description: t('toasts.operationCompletedDesc'),
-        variant: 'success' as const,
-      })
+      const operationLabel = bridgeOperationTemplates[bridgeOperation]?.label || bridgeOperation
+      const verifyState = getBridgeVerifiedState(bridgeOperation, response?.data)
+      if (verifyState === 'unverifiable') {
+        toast({
+          title: t('toasts.operationExecutedSuffix', { label: operationLabel }),
+          description: t('toasts.bridgeUnverifiedDesc', { action: operationLabel }),
+          variant: 'default',
+        })
+      } else if (verifyState === 'old-bridge') {
+        toast({
+          title: t('toasts.operationExecutedSuffix', { label: operationLabel }),
+          description: t('toasts.bridgeOldBridgeDesc', { action: operationLabel }),
+          variant: 'default',
+        })
+      } else {
+        toast({
+          title: t('toasts.operationExecutedSuffix', { label: operationLabel }),
+          description: t('toasts.operationCompletedDesc'),
+          variant: 'success' as const,
+        })
+      }
     } catch (error) {
       const message = getUserErrorMessage(error, t('toasts.bridgeOperationFailedFallback'))
       setBridgeResultData({

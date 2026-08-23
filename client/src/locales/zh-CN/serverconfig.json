@@ -320,6 +320,8 @@
     "copyFailed": "复制内容到剪贴板失败。",
     "optionUpdatedTitle": "选项已更新",
     "optionUpdatedDesc": "{{option}} 设置成功",
+    "bridgeUnverifiedDesc": "{{action}} 已发送，但模组无法确认是否生效。",
+    "bridgeOldBridgeDesc": "{{action}} 可能已生效，但此版本的 PanelBridge 模组不会回报结果。请更新模组以确认结果。",
     "appliedNotSavedTitle": "已应用，但未保存",
     "notPersistedDesc": "{{option}} 不在 SandboxVars.lua 中，服务器重启后将会重置。",
     "willResetFallback": "{{option}} 将在服务器重启后重置。",

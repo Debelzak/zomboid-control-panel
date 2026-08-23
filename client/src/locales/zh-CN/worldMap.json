@@ -104,6 +104,8 @@
     "bridgeOfflineDrops": "桥接离线——空投不可用"
   },
   "toasts": {
+    "bridgeUnverifiedDesc": "{{action}} 已发送，但模组无法确认是否生效。",
+    "bridgeOldBridgeDesc": "{{action}} 可能已生效，但此版本的 PanelBridge 模组不会回报结果。请更新模组以确认结果。",
     "vehicleRepaired": "载具已修复",
     "repairFailed": "修理失败",
     "fuelFilled": "燃料已加至 100%",

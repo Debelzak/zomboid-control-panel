@@ -349,6 +349,8 @@
   "toasts": {
     "successTitle": "Éxito",
     "successDesc": "Se completó: {{action}}",
+    "bridgeUnverifiedDesc": "{{action}} se envió, pero el mod no pudo confirmar que surtiera efecto.",
+    "bridgeOldBridgeDesc": "{{action}} puede haber funcionado, pero esta versión del mod PanelBridge no informa si fue así. Actualiza el mod para confirmar los resultados.",
     "errorTitle": "Error",
     "actionFailedFallback": "La acción falló",
     "noteSavedTitle": "Nota guardada",

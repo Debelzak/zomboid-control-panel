@@ -320,6 +320,8 @@
     "copyFailed": "No se pudo copiar el contenido al portapapeles.",
     "optionUpdatedTitle": "Opción actualizada",
     "optionUpdatedDesc": "Se ha establecido correctamente: {{option}}",
+    "bridgeUnverifiedDesc": "{{action}} se envió, pero el mod no pudo confirmar que surtiera efecto.",
+    "bridgeOldBridgeDesc": "{{action}} puede haber funcionado, pero esta versión del mod PanelBridge no informa si fue así. Actualiza el mod para confirmar los resultados.",
     "appliedNotSavedTitle": "Aplicado, pero no guardado",
     "notPersistedDesc": "{{option}} no está en SandboxVars.lua, así que se restablecerá cuando el servidor se reinicie.",
     "willResetFallback": "{{option}} se restablecerá cuando el servidor se reinicie.",

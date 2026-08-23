@@ -505,6 +505,8 @@
   },
   "toasts": {
     "actionFailedTitle": "{{action}} echwe",
+    "bridgeUnverifiedDesc": "{{action}} te voye, men mod la pa t kapab konfime li te fè efè.",
+    "bridgeOldBridgeDesc": "{{action}} ka te fonksyone, men vèsyon mod PanelBridge sa a pa rapòte si li te fè sa. Mete mod la ajou pou konfime rezilta yo.",
     "bridgeFailedDesc": "{{message}}. Verifye koneksyon bridge/sèvè epi eseye ankò.",
     "commandFailedDesc": "{{message}}. Verifye paramèt kòmand yo epi eseye ankò.",
     "commandFailedFallback": "Kòmand echwe",
