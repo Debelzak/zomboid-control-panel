@@ -996,7 +996,8 @@
           "buildDetect": {
             "ok": {
               "label": "Automatische B42-Build-Erkennung funktioniert",
-              "message": "Build {{build}} wurde dynamisch aus build_list.json ermittelt."
+              "message": "Build {{build}} wurde dynamisch aus build_list.json ermittelt.",
+              "hint": "Die Auflösung hängt von einer vorgelagerten Bot-Erkennungsheuristik ab, die außerhalb der Kontrolle des Panels liegt und bei identischen Anfragen nachweislich unterschiedlich reagiert hat. Betrachten Sie dies als derzeit funktionierend, nicht als dauerhaft gelöst — es kann jederzeit wieder fehlschlagen, ohne dass sich am Panel etwas ändert."
             },
             "warn": {
               "label": "Automatische B42-Build-Erkennung fehlgeschlagen",

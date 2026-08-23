@@ -996,7 +996,8 @@
           "buildDetect": {
             "ok": {
               "label": "Detección automática de la compilación B42 correcta",
-              "message": "La compilación {{build}} se resolvió dinámicamente desde build_list.json."
+              "message": "La compilación {{build}} se resolvió dinámicamente desde build_list.json.",
+              "hint": "La resolución depende de una heurística antibots del servicio remoto, ajena al control del panel, que se ha observado responder de forma incoherente a solicitudes idénticas. Considérelo funcional por ahora, no resuelto de forma permanente: puede volver a fallar sin ningún cambio por parte del panel."
             },
             "warn": {
               "label": "Error en la detección automática de la compilación B42",
