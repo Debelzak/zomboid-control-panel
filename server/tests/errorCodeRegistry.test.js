@@ -59,6 +59,48 @@ function findCodeLiterals() {
   return found;
 }
 
+// The OTHER real usage shape alongside `code: "<literal>"` above, and the
+// dominant one by volume (336 member-access references vs. 17 literal-string
+// ones as of 2026-08-23): `code: ErrorCode.SOME_NAME` -- already
+// registry-safe by construction (a typo here is `undefined` at runtime, not
+// a silent divergence), which is why the check above doesn't scan for it.
+// The orphan check below needs it anyway: a code referenced only this way is
+// not unused, and scanning literals alone would falsely flag ~95% of the
+// registry as orphaned.
+const CODE_MEMBER_RE = /\bErrorCode\.([A-Z][A-Z0-9_]*)\b/g;
+
+function findMemberReferences() {
+  const found = new Set();
+  for (const file of SCANNED_FILES) {
+    const source = fs.readFileSync(file, "utf8");
+    let match;
+    CODE_MEMBER_RE.lastIndex = 0;
+    while ((match = CODE_MEMBER_RE.exec(source))) {
+      found.add(match[1]);
+    }
+  }
+  return found;
+}
+
+// Two ErrorCode entries are registered but deliberately never emitted --
+// each was split into narrower variants on 2026-08-22 (WRITABLE_PATH_ERROR
+// -> WRITABLE_PATH_{INSTALL,DATA}_{BAREMETAL,CONTAINER};
+// DIRECTORY_READ_FAILED -> DIRECTORY_READ_FAILED_{WINDOWS,POSIX}) because
+// each one covered multiple distinct English sentences behind an
+// unreachable {{label}}/{{guidance}} placeholder that never actually
+// received params. Both splits were additive-only: the original code stays
+// registered, with its own explanatory comment at the registry entry (see
+// server/utils/errorCodes.js) and its own client/src/locales/en/errors.json
+// key, on purpose -- "kept for registry completeness," not an oversight.
+// Verified 2026-08-23: neither appears as a literal or an ErrorCode.NAME
+// reference anywhere in server/routes, server/services, server/middleware
+// or server/index.js. Do not remove either from this allowlist without
+// first removing the registry entry and its locale key in the same commit.
+const KNOWN_INTENTIONALLY_UNREFERENCED = new Set([
+  "WRITABLE_PATH_ERROR",
+  "DIRECTORY_READ_FAILED",
+]);
+
 // This is a STRUCTURE check, one level deeper than the fr/en locale parity
 // test (client/src/locales/__tests__/localeParity.test.ts), not a MEANING
 // check: it proves every code literal the server actually emits is a
@@ -110,6 +152,36 @@ describe("server error codes: registry membership (structure, not meaning)", () 
     expect(literals.map((l) => l.value)).toContain("server_running");
   });
 
+  // The half people forget: a registry entry no longer referenced anywhere
+  // in source -- either dead from the start or orphaned by a later edit.
+  // "no entry survives for a code that was removed" applies from BOTH the
+  // source side (this) and the locale side (below). Mirrors
+  // progressCodeRegistry.test.js's equivalent check; the reference set here
+  // is wider (literal OR member access) because ErrorCode, unlike
+  // ProgressCode, is genuinely used both ways in this codebase.
+  it("every registered ErrorCode value is referenced at least once (as a `code:` literal or an `ErrorCode.NAME` member access) in server/routes, server/services, server/middleware or server/index.js", () => {
+    const literalValues = new Set(findCodeLiterals().map((l) => l.value));
+    const memberNames = findMemberReferences();
+
+    const unused = Object.keys(ErrorCode).filter(
+      (name) =>
+        !KNOWN_INTENTIONALLY_UNREFERENCED.has(name) &&
+        !memberNames.has(name) &&
+        !literalValues.has(ErrorCode[name]),
+    );
+
+    expect(
+      unused,
+      unused.length
+        ? `${unused.length} ErrorCode entr(y/ies) registered but never emitted: ${unused.join(", ")}. ` +
+            "Remove from errorCodes.js and its locale entries, or wire it up. If it's " +
+            "intentionally kept (e.g. split into narrower variants), add it to " +
+            "KNOWN_INTENTIONALLY_UNREFERENCED above with a comment explaining why, the " +
+            "way WRITABLE_PATH_ERROR and DIRECTORY_READ_FAILED already are."
+        : "",
+    ).toEqual([]);
+  });
+
   const localeEnPath = path.join(
     SERVER_DIR,
     "..",
@@ -139,9 +211,30 @@ describe("server error codes: registry membership (structure, not meaning)", () 
           : "",
       ).toEqual([]);
     });
+
+    it("every key in client/src/locales/en/errors.json is a registered ErrorCode value (no stale entries for a removed/renamed code)", () => {
+      const localeKeys = Object.keys(
+        JSON.parse(fs.readFileSync(localeEnPath, "utf8")),
+      );
+      const registryNames = new Set(Object.keys(ErrorCode));
+      const stale = localeKeys.filter((key) => !registryNames.has(key));
+
+      expect(
+        stale,
+        stale.length
+          ? `client/src/locales/en/errors.json has entries for removed/renamed codes: ${stale.join(", ")}`
+          : "",
+      ).toEqual([]);
+    });
   } else {
     it.skip(
       "every registered ErrorCode has a matching key in client/src/locales/en/errors.json -- " +
+        "SKIPPED: client/src/locales/en/errors.json does not exist yet. This test starts " +
+        "enforcing automatically the moment that file is created; no change needed here.",
+      () => {},
+    );
+    it.skip(
+      "every key in client/src/locales/en/errors.json is a registered ErrorCode value -- " +
         "SKIPPED: client/src/locales/en/errors.json does not exist yet. This test starts " +
         "enforcing automatically the moment that file is created; no change needed here.",
       () => {},
