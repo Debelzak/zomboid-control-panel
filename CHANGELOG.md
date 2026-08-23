@@ -308,6 +308,15 @@ reliability, then interface and translation.
   something that does not happen, on the one setting that could never be saved any other way. Mod
   settings now apply to the running game and survive a restart.
 
+- **A panel with no server configured yet could mistake somebody else's Project Zomboid server for
+  its own.** Before you point the panel at a server it had no name to work with, so it assumed
+  `servertest` - which is Project Zomboid's own default server name. If the machine was already
+  running a vanilla PZ server, that server matches, and the panel identified it as *definitely*
+  the one it manages. On a box where you installed the panel alongside a server you were already
+  running, it could report that server's state as its own before you had finished setting anything
+  up. A panel that does not know which server it manages now says so instead of guessing, and
+  treats any process it cannot identify as exactly that.
+
 - **Servers created without a name all shared one.** If you did not fill in the in-game server name,
   the panel permanently wrote `servertest` - Project Zomboid's own default name - into its database
   as if you had chosen it. Everything downstream then treated that as your real server name forever,
