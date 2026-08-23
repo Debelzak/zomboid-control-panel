@@ -30,7 +30,7 @@ const router = express.Router();
 // ─── Persistent disk-backed tile cache ───────────────────────────────────
 // A given PZ map build's tiles never change once published, so unlike a
 // typical HTTP cache these never need to expire — once a tile has been
-// fetched from map.projectzomboid.com it's cached on disk indefinitely.
+// fetched from the upstream tile host it's cached on disk indefinitely.
 // Over time this turns the proxy into a self-hosted mirror of whatever
 // parts of the map players have actually looked at, with zero upfront
 // download and no dependency on the upstream host for anything already
@@ -216,8 +216,8 @@ const B42_GEOMETRY_FALLBACK = {
 
 // The projection origin is NOT derivable from the image dimensions: 42.20.0 is
 // exactly 2x the height of 42.19.0 but 4032 px wider, because the renderer
-// crops/pads each build independently. map.projectzomboid.com publishes the
-// real origin per build in base/map_info.json and its own viewer projects with
+// crops/pads each build independently. The map service (tiles.pzmap.org)
+// publishes the real origin per build in base/map_info.json and its own viewer projects with
 //   imageX = (x0 + (sx - sy) * sqr / 2) / scale
 //   imageY = (y0 + (sx + sy) * sqr / 4) / scale
 // where scale = 1 << skip. Scaling a previous build's origin by the width
@@ -274,8 +274,8 @@ async function fetchMapGeometry(directory) {
   }
 }
 
-// A brand-new PZ build's tiles can be listed as the "default" entry in
-// build_list.json before map.projectzomboid.com has actually finished
+// A brand-new PZ build's tiles can be listed as the default entry in the
+// build list before the map service has actually finished
 // rendering full world coverage for it. Probing a few inhabited-area tiles
 // lets us detect "listed but not rendered yet" and fall back to the previous
 // build instead of showing an empty map.
@@ -565,7 +565,7 @@ async function fetchTileWithTimeout(url) {
   return fetch(url, {
     signal: AbortSignal.timeout(TILE_FETCH_TIMEOUT_MS),
     headers: {
-      // Some upstreams (Cloudflare on b42map.com) return 403/503 when the
+      // Some upstreams (Cloudflare on tiles.pzmap.org) return 403/503 when the
       // User-Agent header is missing entirely. Send a neutral identifier.
       "User-Agent":
         "ZomboidControlPanel/1.0 (+https://github.com/fpsacha/zomboid-control-panel)",

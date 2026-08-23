@@ -163,7 +163,7 @@
     "selected": "已选中",
     "pxPerChunk": "{{scale}} px/区块",
     "boundsLabel": "区块 {{minX}}–{{maxX}}, {{minY}}–{{maxY}}  ({{count}})  |  单元 {{cellMinX}}–{{cellMaxX}}, {{cellMinY}}–{{cellMaxY}}",
-    "mapB42": "地图：B42（b42map.com）",
+    "mapB42": "地图：B42",
     "mapB41": "地图：B41",
     "safehouseFallback": "安全屋",
     "vehicleCount_one": "{{count}} 辆载具",

@@ -163,7 +163,7 @@
     "selected": "SELECCIONADO",
     "pxPerChunk": "{{scale}} px/chunk",
     "boundsLabel": "Chunks {{minX}}–{{maxX}}, {{minY}}–{{maxY}}  ({{count}})  |  Celdas {{cellMinX}}–{{cellMaxX}}, {{cellMinY}}–{{cellMaxY}}",
-    "mapB42": "Mapa: B42 (b42map.com)",
+    "mapB42": "Mapa: B42",
     "mapB41": "Mapa: B41",
     "safehouseFallback": "Refugio",
     "vehicleCount_one": "{{count}} vehículo",

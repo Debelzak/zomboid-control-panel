@@ -4041,7 +4041,7 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
 
 // ─── World Map Diagnostics ───────────────────────────────────────────
 // Dedicated checks for everything the World Map page depends on:
-// tile CDNs (b42map.com / pzmap.org), PanelBridge handlers
+// tile CDNs (tiles.pzmap.org), PanelBridge handlers
 // for live player/vehicle/safehouse data, save folder layout (B41 vs B42),
 // and the local /api/map proxy itself.
 const TILE_PROBE_TIMEOUT_MS = 5000;
