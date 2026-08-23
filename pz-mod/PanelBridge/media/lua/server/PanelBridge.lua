@@ -6276,6 +6276,19 @@ handlers.createFaction = function(args)
         end
     end
 
+    -- Faction.createFaction does not exist ANYWHERE in the real B42 jar --
+    -- confirmed 2026-08-23 by scanning every one of the jar's 23,740 class
+    -- files for a method literally named createFaction: zero hits. (Two
+    -- near-miss names exist on Faction itself, canCreateFaction() -- a
+    -- permission check, not a creator -- and the unrelated createFactionChat.)
+    -- FactionCreatePacket.class exists, suggesting real faction creation on
+    -- B42 goes through a network packet flow rather than a direct Lua-callable
+    -- method -- not investigated further here (out of scope for a
+    -- verification-gating pass; a real replacement would need someone to
+    -- trace that packet handler). The guard above and the pcall below already
+    -- make this fail safely and honestly every time (verified: this returns
+    -- ok=false, not a false success) -- nothing to fix for THIS audit's
+    -- purposes, but "Create Faction" has likely never worked on a B42 server.
     local ok, factionOrErr = pcall(function()
         return Faction.createFaction(name, owner)
     end)
@@ -6314,7 +6327,22 @@ handlers.factionAddPlayer = function(args)
         return false, nil, "Failed to add player to faction: " .. tostring(err)
     end
 
-    return true, { message = "Player added to faction", factionName = factionName, username = username }
+    -- Faction.addPlayer is declared void (confirmed 2026-08-23 against the
+    -- real B42 jar), so isMember(username) (also confirmed present) is the
+    -- only way to check the add actually took effect.
+    local ok2, isMemberNow = pcall(function() return faction:isMember(username) end)
+    local verified
+    if not ok2 then
+        verified = nil
+    else
+        verified = (isMemberNow == true)
+    end
+
+    if verified == false then
+        return false, nil, "Add player call succeeded but " .. username .. " is not a faction member"
+    end
+
+    return true, { message = "Player added to faction", factionName = factionName, username = username, verified = verified }
 end
 
 handlers.factionRemovePlayer = function(args)
@@ -6338,7 +6366,20 @@ handlers.factionRemovePlayer = function(args)
         return false, nil, "Failed to remove player from faction: " .. tostring(err)
     end
 
-    return true, { message = "Player removed from faction", factionName = factionName, username = username }
+    -- Same void-method situation as factionAddPlayer -- verify via isMember.
+    local ok2, isMemberNow = pcall(function() return faction:isMember(username) end)
+    local verified
+    if not ok2 then
+        verified = nil
+    else
+        verified = (isMemberNow == false)
+    end
+
+    if verified == false then
+        return false, nil, "Remove player call succeeded but " .. username .. " is still a faction member"
+    end
+
+    return true, { message = "Player removed from faction", factionName = factionName, username = username, verified = verified }
 end
 
 handlers.factionSetTag = function(args)
@@ -6362,7 +6403,23 @@ handlers.factionSetTag = function(args)
         return false, nil, "Failed to set faction tag: " .. tostring(err)
     end
 
-    return true, { message = "Faction tag updated", factionName = factionName, tag = tag }
+    -- Faction.setTag is declared void; getTag() (confirmed present on the
+    -- real B42 jar) reads the real result back.
+    local ok2, actualTag = pcall(function() return faction:getTag() end)
+    local verified
+    if not ok2 then
+        verified = nil
+    elseif actualTag == tag then
+        verified = true
+    else
+        verified = false
+    end
+
+    if verified == false then
+        return false, nil, "Set tag call succeeded but faction tag is still " .. tostring(actualTag)
+    end
+
+    return true, { message = "Faction tag updated", factionName = factionName, tag = tag, verified = verified }
 end
 
 handlers.removeFaction = function(args)
@@ -6376,6 +6433,12 @@ handlers.removeFaction = function(args)
     local faction = Faction.getFaction(factionName)
     if not faction then return false, nil, "Faction not found: " .. factionName end
 
+    -- faction:removeFaction does not exist ANYWHERE in the real B42 jar --
+    -- same full-jar scan as createFaction's comment above, zero hits. See
+    -- that comment for the FactionCreatePacket/FactionDisbandPacket lead
+    -- that was not chased further here. Fails safely and honestly today
+    -- (ok=false, not a false success) -- "Remove Faction" has likely never
+    -- worked on a B42 server either.
     local ok, err = pcall(function()
         faction:removeFaction()
     end)
