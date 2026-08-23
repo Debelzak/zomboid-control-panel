@@ -155,6 +155,20 @@ describe("restoreBackup archive safety", () => {
   });
 });
 
+describe("createBackup archive safety", () => {
+  it("leaves no .tmp file behind after a successful backup, and lists a real .zip", async () => {
+    const service = createService();
+
+    const result = await service.createBackup({});
+
+    expect(result.success).toBe(true);
+    const files = fs.readdirSync(backupsPath);
+    expect(files.some((f) => f.endsWith(".tmp"))).toBe(false);
+    expect(files.some((f) => f.endsWith(".zip"))).toBe(true);
+  });
+
+});
+
 describe("deleteBackupsOlderThan result contract", () => {
   it("reports partial deletion failures as unsuccessful", async () => {
     const service = createService();

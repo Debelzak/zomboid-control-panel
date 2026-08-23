@@ -234,7 +234,9 @@ router.post("/restore/:name", requirePermission("backups.restore"), async (req, 
       });
     }
 
-    const result = await backupService.restoreBackup(safeName, req.body);
+    const io = req.app.get("io");
+    // Pass io for progress updates -- see createBackup's identical pattern above.
+    const result = await backupService.restoreBackup(safeName, { ...req.body, io });
 
     if (result.success) {
       res.json(result);

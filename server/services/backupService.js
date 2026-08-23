@@ -248,6 +248,12 @@ export class BackupService {
     const serverName = activeServer?.serverName || "server";
     const backupName = `${serverName}_${timestamp}.zip`;
     const backupPath = path.join(backupsPath, backupName);
+    // Write under a name listBackups() won't match (it only lists *.zip), and
+    // rename into place only after the archive closes successfully -- writing
+    // straight to backupPath meant a process kill mid-archive left a
+    // truncated file at the real, listed filename, indistinguishable in the
+    // UI from a real backup until someone tried to restore it.
+    const tempBackupPath = `${backupPath}.tmp`;
     const serverSnapshot = captureBackupSnapshot(activeServer);
 
     log.info(`Starting backup: ${backupName}`);
@@ -323,7 +329,7 @@ export class BackupService {
     });
 
     // Create zip archive
-    const output = createWriteStream(backupPath);
+    const output = createWriteStream(tempBackupPath);
     const archive = archiver("zip", {
       zlib: { level: 6 }, // Moderate compression
     });
@@ -354,6 +360,21 @@ export class BackupService {
 
       output.on("close", async () => {
         emitProgress("finalizing", 95, "Finalizing backup...");
+
+        // Only now, with the archive fully written and closed, does it become
+        // the real backup. Anything that dies before this line leaves nothing
+        // but an already-excluded .tmp file behind.
+        try {
+          fs.renameSync(tempBackupPath, backupPath);
+        } catch (renameError) {
+          emitProgress(
+            "error",
+            0,
+            `Backup failed: ${renameError.message}`,
+          );
+          reject(renameError);
+          return;
+        }
 
         const duration = ((Date.now() - startTime) / 1000).toFixed(1);
         const sizeBytes = archive.pointer();
@@ -409,13 +430,29 @@ export class BackupService {
         });
       });
 
+      // Best-effort: remove whatever partial bytes made it to disk so a
+      // failed run doesn't leave a stray .tmp file behind. Not the listed
+      // backup name (already excluded by listBackups()'s .zip filter), so
+      // this is cleanliness, not the safety property -- that's the rename.
+      const cleanupTemp = () => {
+        fs.rm(tempBackupPath, { force: true }, (cleanupErr) => {
+          if (cleanupErr) {
+            log.warn(
+              `Could not remove incomplete backup file ${tempBackupPath}: ${cleanupErr.message}`,
+            );
+          }
+        });
+      };
+
       output.on("error", (err) => {
         emitProgress("error", 0, `Backup failed: ${err.message}`);
+        cleanupTemp();
         reject(err);
       });
 
       archive.on("error", (err) => {
         emitProgress("error", 0, `Archive error: ${err.message}`);
+        cleanupTemp();
         reject(err);
       });
 
@@ -423,6 +460,7 @@ export class BackupService {
         if (err.code === "ENOENT") {
           log.warn(`Backup warning: ${err.message}`);
         } else {
+          cleanupTemp();
           reject(err);
         }
       });
@@ -733,6 +771,19 @@ export class BackupService {
     this.restoreInProgress = true;
     const startTime = Date.now();
     let stagingPath = null;
+    const io = options.io; // Socket.IO for progress updates
+
+    // Helper to emit progress. Mirrors createBackup's emitProgress exactly so
+    // the two events share a shape -- restore previously emitted nothing at
+    // all, not even for its own pre-restore-backup sub-step, because that
+    // inner createBackup() call never received io.
+    const emitProgress = (phase, percent, message, extra = {}) => {
+      if (io) {
+        io.emit("restore:progress", { phase, percent, message, ...extra });
+      }
+    };
+
+    emitProgress("preparing", 5, "Preparing restore...");
 
     try {
       const backupsPath = await this.getBackupsPath();
@@ -766,9 +817,19 @@ export class BackupService {
       // Create a pre-restore backup if requested
       if (options.createPreRestoreBackup !== false) {
         log.info("Creating pre-restore backup...");
-        const preBackupResult = await this.createBackup({ isPreRestore: true });
+        emitProgress("pre-backup", 10, "Backing up current world before restoring...");
+        // Passing io through means this sub-step surfaces its own normal
+        // backup:progress events (preparing/archiving/finalizing) instead of
+        // running silently -- restore no longer looks stalled during what can
+        // be the longest part of the whole operation.
+        const preBackupResult = await this.createBackup({ isPreRestore: true, io });
         if (!preBackupResult.success) {
           log.error(`Pre-restore backup failed: ${preBackupResult.message}`);
+          emitProgress(
+            "error",
+            0,
+            `Cannot restore: pre-restore backup failed (${preBackupResult.message}). Aborting to protect save data.`,
+          );
           return {
             success: false,
             message: `Cannot restore: pre-restore backup failed (${preBackupResult.message}). Aborting to protect save data.`,
@@ -797,6 +858,7 @@ export class BackupService {
 
       // Extract the backup with zip-slip protection
       log.info("Extracting backup to staging area...");
+      emitProgress("extracting", 45, "Extracting backup...");
       const unzip = await getUnzipper();
       const resolvedParent = path.resolve(stagingPath) + path.sep;
 
@@ -903,6 +965,8 @@ export class BackupService {
         );
       }
 
+      emitProgress("finalizing", 85, "Swapping in the restored world...");
+
       const retiredPath = `${savesPath}.replaced-${Date.now()}`;
       let retired = false;
 
@@ -950,6 +1014,7 @@ export class BackupService {
       log.info(`Restore completed in ${duration}s`);
 
       await logServerEvent("backup_restored", `Restored from ${safeName}`);
+      emitProgress("complete", 100, `Restored from ${safeName}`);
 
       return {
         success: true,
@@ -958,6 +1023,7 @@ export class BackupService {
       };
     } catch (error) {
       log.error(`Restore failed: ${error.message}`);
+      emitProgress("error", 0, `Restore failed: ${sanitizeError(error.message)}`);
       await logServerEvent("restore_failed", error.message);
       return { success: false, message: error.message };
     } finally {
