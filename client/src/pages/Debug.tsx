@@ -4520,7 +4520,7 @@ export default function Debug() {
           <Card>
             <CardHeader className="pb-4">
               <div className="flex flex-col gap-4">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-y-2">
                   <div>
                     <CardTitle className="flex items-center gap-2">
                       <Terminal className="w-5 h-5" />
@@ -4727,7 +4727,7 @@ export default function Debug() {
             <CardContent>
               <ScrollArea
                 ref={logsScrollAreaRef}
-                className="h-[300px] sm:h-[500px] rounded-lg border border-border/50 bg-muted/20"
+                className="h-[300px] sm:h-[500px] rounded-lg border border-border/50 bg-muted/20 [&_[data-radix-scroll-area-viewport]>div]:!block"
               >
                 <div className="font-mono text-sm p-4">
                   {filteredLogs.length === 0 ? (
