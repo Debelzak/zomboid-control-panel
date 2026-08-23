@@ -635,6 +635,15 @@ reliability, then interface and translation.
 
 #### Interface and translation
 
+- **Users, Roles & Permissions and Sign-in have moved into Panel Settings.** They used to be their
+  own "Access Control" section in the left sidebar; they are now tabs alongside the panel's other
+  settings, and the sidebar section is gone. **Existing links and bookmarks still work** - the old
+  addresses redirect to the right tab. Two long-standing layout annoyances were tidied up in the
+  process: the Roles & Permissions grid header, where each role's name, badge, member count and
+  buttons sat on three uneven lines with the "Capability" heading floating at mid-height; and the
+  Sign-in page, which put six mostly-short fields on their own full-width rows and made a short
+  form feel long. Related fields now share a row on wider screens and stack again on a phone.
+
 - **Two different server settings were both called "Safety System".** The anti-cheat toggle and the
   safety-system toggle shared a label, so there was no way to tell which one you were changing.
 
@@ -759,6 +768,17 @@ reliability, then interface and translation.
   removed. Responses arriving out of order could do the same thing on their own. Each change is now
   based on the most recent state rather than the state on screen when the page last drew, and a
   reply that has already been superseded is ignored instead of applied.
+
+- **The panel now hides administration it knows you cannot use.** Until now every signed-in
+  account, whatever its role, could see Users, Roles & Permissions and Sign-in in the menu and open
+  those pages - the server refused the actions behind them, but the pages themselves opened and
+  simply failed. That mattered more once these became tabs inside Panel Settings, a page people open
+  for ordinary reasons, so they are now shown only to accounts whose role actually grants the
+  capability, and typing the address directly does not get you in either. **The server has not
+  become more permissive:** every one of those actions was already refused server-side and still is.
+  This only stops the panel offering you doors that were always locked. If the panel cannot work out
+  what your role allows, it shows the tabs rather than hiding them, so a hiccup cannot lock an
+  administrator out of their own settings.
 
 - **A single-use recovery code could be used more than once.** Recovery codes are meant to work
   exactly once, and each redemption marks the code as spent. But two redemptions arriving at the
