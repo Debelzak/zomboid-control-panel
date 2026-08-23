@@ -32,8 +32,8 @@
     "fileMissingAria": "文件缺失"
   },
   "stopServerAlert": {
-    "title": "保存前先停止服务器",
-    "description": "Project Zomboid 在运行时可能会覆盖这些文件。你可以先在此准备更改，然后停止服务器并保存。"
+    "title": "服务器正在运行",
+    "description": "您现在可以保存更改。在服务器重启之前，这些更改不会应用到正在运行的游戏中。"
   },
   "invalidValuesAlert": {
     "title": "保存前修正无效的值",

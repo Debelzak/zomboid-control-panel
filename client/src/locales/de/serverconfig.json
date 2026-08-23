@@ -32,8 +32,8 @@
     "fileMissingAria": "Datei fehlt"
   },
   "stopServerAlert": {
-    "title": "Stoppe den Server vor dem Speichern",
-    "description": "Project Zomboid kann diese Dateien überschreiben, während der Server läuft. Du kannst hier Änderungen vorbereiten und sie dann speichern, nachdem du den Server gestoppt hast."
+    "title": "Der Server läuft",
+    "description": "Du kannst deine Änderungen jetzt speichern. Sie wirken sich erst auf das laufende Spiel aus, wenn der Server neu gestartet wurde."
   },
   "invalidValuesAlert": {
     "title": "Behebe ungültige Werte vor dem Speichern",

@@ -32,8 +32,8 @@
     "fileMissingAria": "fichier manquant"
   },
   "stopServerAlert": {
-    "title": "Arrêtez le serveur avant d'enregistrer",
-    "description": "Project Zomboid peut écraser ces fichiers pendant son exécution. Vous pouvez préparer vos modifications ici, puis arrêter le serveur pour les enregistrer."
+    "title": "Le serveur est en cours d'exécution",
+    "description": "Vous pouvez enregistrer vos modifications maintenant. Elles ne seront prises en compte par la partie en cours qu'après le redémarrage du serveur."
   },
   "invalidValuesAlert": {
     "title": "Corrigez les valeurs invalides avant d'enregistrer",

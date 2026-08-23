@@ -32,8 +32,8 @@
     "fileMissingAria": "archivo no encontrado"
   },
   "stopServerAlert": {
-    "title": "Detener el servidor antes de guardar",
-    "description": "Project Zomboid puede sobrescribir estos archivos mientras se está ejecutando. Puedes preparar los cambios aquí y luego detener el servidor para guardarlos."
+    "title": "El servidor está en ejecución",
+    "description": "Puedes guardar los cambios ahora. No llegarán a la partida en curso hasta que se reinicie el servidor."
   },
   "invalidValuesAlert": {
     "title": "Corregir valores no válidos antes de guardar",
