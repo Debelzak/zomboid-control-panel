@@ -771,6 +771,14 @@
     "invalidCorsOrigins": {
       "title": "Origines CORS invalides"
     },
+    "invalidPanelPort": {
+      "title": "Port du panneau invalide",
+      "description": "Le port du panneau doit être un nombre entier compris entre 1 et 65535."
+    },
+    "invalidHttpsPort": {
+      "title": "Port HTTPS invalide",
+      "description": "Le port HTTPS doit être un nombre entier compris entre 1 et 65535."
+    },
     "settingsSaved": {
       "title": "Paramètres enregistrés",
       "description": "Vos paramètres du panneau ont été enregistrés."

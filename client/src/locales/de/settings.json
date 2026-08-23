@@ -771,6 +771,14 @@
     "invalidCorsOrigins": {
       "title": "Ungültige CORS-Ursprünge"
     },
+    "invalidPanelPort": {
+      "title": "Ungültiger Panel-Port",
+      "description": "Der Panel-Port muss eine ganze Zahl zwischen 1 und 65535 sein."
+    },
+    "invalidHttpsPort": {
+      "title": "Ungültiger HTTPS-Port",
+      "description": "Der HTTPS-Port muss eine ganze Zahl zwischen 1 und 65535 sein."
+    },
     "settingsSaved": {
       "title": "Einstellungen gespeichert",
       "description": "Deine Paneleinstellungen wurden gespeichert."

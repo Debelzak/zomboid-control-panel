@@ -771,6 +771,14 @@
     "invalidCorsOrigins": {
       "title": "Orígenes de CORS no válidos"
     },
+    "invalidPanelPort": {
+      "title": "Puerto del panel no válido",
+      "description": "El puerto del panel debe ser un número entero entre 1 y 65535."
+    },
+    "invalidHttpsPort": {
+      "title": "Puerto HTTPS no válido",
+      "description": "El puerto HTTPS debe ser un número entero entre 1 y 65535."
+    },
     "settingsSaved": {
       "title": "Ajustes guardados",
       "description": "Tus ajustes del panel se guardaron."

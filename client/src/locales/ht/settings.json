@@ -674,6 +674,8 @@
     "recoveryCodesGenerated": { "title": "Kòd rekiperasyon jenere", "description": "Sove yo kounye a — yo pa ka montre ankò." },
     "recoveryCodesFailed": { "title": "Pa t kapab jenere kòd rekiperasyon", "fallback": "Eseye ankò." },
     "invalidCorsOrigins": { "title": "Orijin CORS Envalid" },
+    "invalidPanelPort": { "title": "Pò Panèl Envalid", "description": "Pò panèl la dwe yon nonm antye ant 1 ak 65535." },
+    "invalidHttpsPort": { "title": "Pò HTTPS Envalid", "description": "Pò HTTPS la dwe yon nonm antye ant 1 ak 65535." },
     "settingsSaved": { "title": "Paramèt Sove", "description": "Paramèt panèl ou yo sove." },
     "settingsSaveFailed": { "title": "Pa t Kapab Sove Paramèt", "fallback": "Panèl la pa t kapab sove paramèt ou yo. Eseye ankò." },
     "corsReloaded": { "title": "Règ CORS Rechaje", "description": "Backend la rechaje paramèt CORS nan baz done a." },
