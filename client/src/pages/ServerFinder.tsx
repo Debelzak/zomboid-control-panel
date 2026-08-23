@@ -364,7 +364,7 @@ export default function ServerFinder() {
         description={t('pageHeader.description')}
         icon={<Globe className="w-5 h-5" />}
         actions={
-          <div className="flex gap-2">
+          <>
             <Button variant="outline" onClick={() => fetchServers(false)} disabled={loading}>
               {loading ? (
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -377,7 +377,7 @@ export default function ServerFinder() {
               <RefreshCw className="h-4 w-4 mr-2" />
               {t('pageHeader.reloadFromSteam')}
             </Button>
-          </div>
+          </>
         }
       />
 
