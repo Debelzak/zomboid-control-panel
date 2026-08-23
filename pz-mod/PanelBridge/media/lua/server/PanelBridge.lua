@@ -643,6 +643,38 @@ function PanelBridge.tryGet(obj, methodName, ...)
     return nil
 end
 
+-- Standardizes the FINAL (ok, data, err) shape for any handler that has
+-- already computed a `verified` tri-state by comparing a real read-back
+-- against what it just tried to do. This is the house convention as of the
+-- 2026-08-23 handler-verification audit -- it does not decide HOW to
+-- compare (that's inherently handler-specific: exact match, a numeric
+-- tolerance, membership in a list, etc.), only what to DO with the answer:
+--   verified == true  -> the write is confirmed to have taken effect.
+--   verified == false -> a real read-back disagrees with what was
+--                        requested. This handler must NOT report ok=true --
+--                        a false success is silent and nobody ever learns
+--                        otherwise; a false failure here is loud and
+--                        self-correcting (the operator just retries).
+--   verified == nil   -> no read-back was possible (the underlying game API
+--                        is void, or the requested change was too small to
+--                        distinguish from a no-op). This is NOT a failure --
+--                        it means "the call was made, the result cannot be
+--                        confirmed" -- and must not be conflated with
+--                        verified == false (see the a-and-b-or-c idiom bug
+--                        this file used to have: collapsing "confirmed
+--                        wrong" and "can't tell" into one value is exactly
+--                        the bug that made an earlier fix's gate unreachable).
+-- `data` is the handler's own response table; this only adds/overwrites its
+-- `verified` field. `failMessage` is used only when verified == false.
+function PanelBridge.verifiedResult(verified, data, failMessage)
+    data = data or {}
+    data.verified = verified
+    if verified == false then
+        return false, nil, failMessage or "Operation succeeded but did not take effect"
+    end
+    return true, data
+end
+
 -- Detect PZ version and available APIs
 function PanelBridge.detectVersion()
     local version = {
