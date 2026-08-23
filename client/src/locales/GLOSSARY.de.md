@@ -213,6 +213,21 @@ consistency, and length wins wherever the label has no room to be a word.
    to disk. Translate our explanation of what that setting does. Judge it per string
    and report anything genuinely ambiguous rather than guessing silently.
 
+## Acronyms are capitalised in German even where English is inconsistent
+
+RCON, GM, INI, OIDC, RAM, CPU, ID. English source strings are **internally inconsistent
+about this** — the same file writes *RCON* in a label and *rcon* in a terse badge — and
+translators have faithfully mirrored the inconsistency into German in at least three
+files under three different owners.
+
+Do not mirror it. German capitalises an acronym wherever it appears, so normalise to the
+uppercase form even when the English value beside it is lowercase. The one exception is a
+string mimicking a shell prompt or a literal command (`rcon $`, `/rcon`), where the
+lowercase form *is* the thing being shown.
+
+This is the general case of a rule worth stating once: **the English source is not
+authoritative about German orthography.** Match its meaning, not its typography.
+
 ## The trap specific to German: case and gender around placeholders
 
 English carries no agreement at all. German carries three genders and four cases, and
