@@ -298,7 +298,7 @@
         "installPath": {
           "fail": {
             "label": "Installationspfad fehlt",
-            "message": "Für den aktiven Server ist kein installPath konfiguriert.",
+            "message": "Für den aktiven Server ist kein Installationspfad konfiguriert.",
             "hint": "Server → Bearbeiten → Installationspfad",
             "netMount": {
               "label": "Installationspfad nicht gefunden",
