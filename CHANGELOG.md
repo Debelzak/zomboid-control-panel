@@ -216,6 +216,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `client/src/locales/README.md`.
 
 ### Fixed
+- **The World Map was blank - every single tile was 404ing.** The upstream map host moved: tiles
+  and the per-build descriptors are now served from `tiles.pzmap.org` and no longer sit under a
+  `/maps` path segment. The panel was still asking for the old address, so nothing loaded at all.
+  Only part of the site moved, which is what made this awkward - the map's build list is still on
+  the original host and asking the new one for it fails outright - so the panel now keeps the two
+  apart and uses the right host for each. The browser-direct fallback, used when a deployment lets
+  the browser reach the map but not the panel, had the old path hardcoded separately and was fixed
+  too. **Debug > World Map** was also reporting on the wrong address, in all five languages; a
+  diagnostic that is wrong about the thing it exists to diagnose is worse than none, so it now
+  probes what the panel actually requests.
+
 - **"Failed to start bot - check configuration" now tells you what is actually wrong.** The Discord
   bot reported the same sentence whatever went wrong, and the real reason was being thrown away one
   line before the response was written - the server knew, logged it, and then discarded it. The most
