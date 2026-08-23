@@ -135,6 +135,36 @@ words inside the same product is worse than a loanword.
 Compounds hyphenate, because they mix an English token: *Safehouse-Besitzer*,
 *Safehouse-Verwaltung*, *Safehouse-Mitglied*.
 
+## Terms coined during the German pass
+
+Decided from real strings as the buckets landed. Same rule as everything else here:
+if you are about to coin one of these differently, do not.
+
+| English | de | Note |
+| --- | --- | --- |
+| spawn point / spawn region | der Spawnpunkt / die Spawnregion | closed compound; *Spawn* is an adopted loanword |
+| tile | die Kachel | world-map tile |
+| disk | der Datenträger | *von Datenträger löschen* — chosen for consistency across debug, errors and mods |
+| Mod Checker | der Mod-Checker | the feature's German name; **never** *Mod-Prüfung* |
+| item (a JSON array entry) | das Element | |
+| itemType (the Project Zomboid item id) | itemType | a payload field name — stays literal |
+| capability label | see below | |
+
+**Capability labels are substituted into error sentences.** `roles.json`'s
+`capabilities.<key>.label` entries are not only matrix row headings: the server throws
+ROLE_LOCKOUT_LAST_MANAGER and ROLE_SELF_CAPABILITY_LOSS_CONFIRM with
+`{ action: "roles.manage" }`, and the client resolves that key through the same
+catalogue (see the comment at `server/services/permissions.js:568` and
+`CAPABILITY_KEY_PARAM_NAMES` in `errorMessage.ts`). So every capability label must read
+correctly **standalone, after a colon**, in a sentence it never sees:
+
+```
+Nach dieser Änderung hätte niemand mehr die Berechtigung: {{action}}
+```
+
+That is why the German for those two errors uses a colon construction rather than
+*niemand könnte mehr {{action}}* — the placeholder carries a label, not an infinitive.
+
 ## Style rules
 
 1. **Register: du, lowercase.** This panel is run by game-server operators, and the
