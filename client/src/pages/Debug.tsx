@@ -11,6 +11,7 @@ import {
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
+import { getCurrentLanguage } from "@/i18n";
 import {
   Bug,
   RefreshCw,
@@ -1818,7 +1819,9 @@ export default function Debug() {
     let url: string | null = null;
     setDownloadingLogArchive(true);
     try {
-      const res = await authFetch("/api/debug/logs/download-zip");
+      const res = await authFetch("/api/debug/logs/download-zip", {
+        headers: { "X-UI-Language": getCurrentLanguage() },
+      });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
       const blob = await res.blob();

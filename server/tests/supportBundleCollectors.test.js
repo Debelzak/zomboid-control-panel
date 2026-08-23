@@ -21,8 +21,8 @@ const {
   buildDiscordBotStatus,
 } = await import("../routes/debug.js");
 
-function fakeReq(services = {}) {
-  return { app: { get: (key) => services[key] } };
+function fakeReq(services = {}, headers = {}) {
+  return { app: { get: (key) => services[key] }, headers };
 }
 
 describe("support bundle: curl availability (World Map's runtime dependency)", () => {
@@ -188,6 +188,58 @@ describe("support bundle: system info reports whether the server process was run
   it("reports checked:false rather than throwing when no serverManager is available", async () => {
     const result = await buildSystemInfo(null, null);
     expect(result.serverProcess).toEqual({ checked: false });
+  });
+
+  it("defaults uiLanguage to 'not reported' when the caller doesn't supply one", async () => {
+    const result = await buildSystemInfo(null, null);
+    expect(result.uiLanguage).toBe("not reported");
+  });
+});
+
+describe("support bundle: UI language reported by the bundle-download request", () => {
+  // buildBundleDiagnostics also runs buildWorldMapDiagnostics, which shells
+  // out to curl -- give the mock a working implementation so that Promise.all
+  // resolves instead of hanging on an unconfigured child_process mock.
+  beforeEach(() => {
+    mockExecFile.mockImplementation((cmd, args, opts, cb) => cb(null, "curl 8.4.0", ""));
+  });
+  afterEach(() => mockExecFile.mockReset());
+
+  it("threads a plausible BCP-47-shaped header value straight through system-info.json", async () => {
+    const req = fakeReq({}, { "x-ui-language": "zh-CN" });
+    const files = await buildBundleDiagnostics(null, req);
+    const systemInfo = JSON.parse(files.find((f) => f.name === "system-info.json").content);
+    expect(systemInfo.uiLanguage).toBe("zh-CN");
+  });
+
+  it("degrades to 'not reported' rather than guessing 'en' when the header is absent", async () => {
+    const req = fakeReq({});
+    const files = await buildBundleDiagnostics(null, req);
+    const systemInfo = JSON.parse(files.find((f) => f.name === "system-info.json").content);
+    expect(systemInfo.uiLanguage).toBe("not reported");
+  });
+
+  it("degrades to 'not reported' for a garbage or oversized header rather than writing it through unvalidated", async () => {
+    const tooLong = fakeReq({}, { "x-ui-language": "a".repeat(200) });
+    const notALocale = fakeReq({}, { "x-ui-language": "<script>alert(1)</script>" });
+
+    const tooLongResult = await buildBundleDiagnostics(null, tooLong);
+    const notALocaleResult = await buildBundleDiagnostics(null, notALocale);
+
+    expect(
+      JSON.parse(tooLongResult.find((f) => f.name === "system-info.json").content).uiLanguage,
+    ).toBe("not reported");
+    expect(
+      JSON.parse(notALocaleResult.find((f) => f.name === "system-info.json").content).uiLanguage,
+    ).toBe("not reported");
+  });
+
+  it("README describes the new field and no longer carries the stale 'not included' exclusion", async () => {
+    const req = fakeReq({});
+    const files = await buildBundleDiagnostics(null, req);
+    const readme = files.find((f) => f.name === "README.md").content;
+    expect(readme).toContain("uiLanguage");
+    expect(readme).not.toContain("Which UI language the reporting user had selected");
   });
 });
 

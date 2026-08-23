@@ -362,7 +362,30 @@ async function safeStatfs(target) {
   }
 }
 
-async function buildSystemInfo(activeServer, serverManager) {
+// The bundle-download request is the only place the panel's UI language
+// reaches the server -- otherwise it lives only in the reporting browser's
+// localStorage (see buildBundleReadme). Treated as untrusted input: bounded
+// length and checked against a generic BCP-47-shaped pattern, not a
+// hardcoded list of languages this build currently ships (client/src/i18n's
+// LANGUAGE_CODES), which would go stale as languages are added without a
+// server change. MUST degrade to "not reported" rather than guessing "en"
+// for an older client, a direct curl request, or a garbage/oversized value
+// -- a support artefact that guesses and is wrong is worse than one that
+// admits it doesn't know.
+const UI_LANGUAGE_HEADER = "x-ui-language";
+const UI_LANGUAGE_MAX_LENGTH = 35; // BCP 47 language tags top out around here
+const UI_LANGUAGE_RE = /^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{1,8}){0,4}$/;
+
+function resolveReportedUiLanguage(req) {
+  const raw = req?.headers?.[UI_LANGUAGE_HEADER];
+  if (typeof raw !== "string") return "not reported";
+  const value = raw.trim();
+  if (!value || value.length > UI_LANGUAGE_MAX_LENGTH) return "not reported";
+  if (!UI_LANGUAGE_RE.test(value)) return "not reported";
+  return value;
+}
+
+async function buildSystemInfo(activeServer, serverManager, uiLanguage = "not reported") {
   const version = await readPanelVersion();
   const isPkg = typeof process.pkg !== "undefined";
   const paths = getDataPaths();
@@ -432,6 +455,7 @@ async function buildSystemInfo(activeServer, serverManager) {
       installDir: await safeStatfs(activeServer?.installPath || null),
     },
     serverProcess,
+    uiLanguage,
   };
 }
 
@@ -1024,7 +1048,7 @@ function buildBundleReadme() {
     "## Where to look first",
     "",
     "1. `support-bundle-info.txt` — high-level summary, paths used.",
-    "2. `system-info.json` — panel version, OS, RAM, disk free, and whether the dedicated server process was running when this bundle was generated.",
+    "2. `system-info.json` — panel version, OS, RAM, disk free, whether the dedicated server process was running when this bundle was generated, and which UI language the browser reported when requesting this bundle (`uiLanguage`; \"not reported\" if the request didn't include it — never guessed).",
     "3. `panel-config.json` — sanitized settings + servers list (passwords/tokens masked). Also where backup schedule/retention and scheduled-task configuration live (`settings.backupSchedule`, `settings.backupMaxCount`, `scheduledTasks`).",
     "4. `zomboid-paths.json` — what the panel thinks the data/install paths are, all probed candidates, and dir listings of `Saves/`, `Saves/Multiplayer/`, `Server/`, `Logs/`, etc.",
     "5. `bridge-status.json` — PanelBridge connection, IPC file ages, and active transport.",
@@ -1059,7 +1083,6 @@ function buildBundleReadme() {
     "- Full environment variable values (only allow-listed keys show values).",
     "- MAC addresses (network interfaces list IPs only).",
     "- The LowDB file itself (`db.json`) — only sanitized excerpts.",
-    "- Which UI language the reporting user had selected. That's stored only in that browser's `localStorage`, never sent to or known by the server — ask the user directly if a rendering bug looks language-specific.",
     "- Whether a config edit is still waiting on a restart to take effect. The panel computes that live per-request and never stores it — `system-info.json`'s `serverProcess` (was the server running right now) is the closest fact actually available.",
     "- A record of the OIDC \"Test connection\" button's last result, or a live check against the identity provider run while building this bundle — `oidc-status.json` reports configuration only.",
     "- Failed backup attempts as structured data (only successful runs are recorded) — check `admin-panel/error.log` for those.",
@@ -1082,9 +1105,10 @@ async function buildBundleDiagnostics(activeServer, req) {
   };
 
   const serverManager = req?.app?.get?.("serverManager") || null;
+  const uiLanguage = resolveReportedUiLanguage(req);
 
   const results = await Promise.all([
-    wrap("system-info.json", () => buildSystemInfo(activeServer, serverManager)),
+    wrap("system-info.json", () => buildSystemInfo(activeServer, serverManager, uiLanguage)),
     wrap("panel-config.json", () => buildPanelConfig(activeServer)),
     wrap("zomboid-paths.json", () => buildZomboidPaths(activeServer)),
     wrap("recent-events.json", () => buildRecentEvents()),
