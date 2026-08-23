@@ -237,7 +237,7 @@
     "numericIdsRemovedDesc_one": "Se eliminó {{count}} entrada de Mods=.{{restartHint}}",
     "numericIdsRemovedDesc_other": "Se eliminaron {{count}} entradas de Mods=.{{restartHint}}",
     "workshopResolvedTitle": "Elementos de Workshop resueltos",
-    "workshopEnabled": "activados {{count}} (IDs de mod añadidos: {{modIds}})",
+    "workshopEnabled": "activados: {{count}} (ID{{modIdsPlural}} de mod: {{modIds}})",
     "workshopDroppedIgnored_one": "{{count}} ignorado",
     "workshopDroppedIgnored_other": "{{count}} ignorados",
     "workshopDroppedMissing": "{{count}} sin encontrar en disco",
