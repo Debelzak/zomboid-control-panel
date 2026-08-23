@@ -11,6 +11,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Setting the panel's own port out of range saved without complaint, then sent you to a dead
+  address.** The panel port field on the Settings page accepted any number. The save reported success,
+  because the server checks the HTTPS port and the reconnect interval on that form but had no check at
+  all for the panel port sitting beside them. Clicking Restart Panel then pointed the browser at
+  whatever you had typed, while the panel itself quietly fell back to port 3001 - so the browser hung
+  on an address nothing was listening to, with no error to explain it and no obvious way back. The
+  field now refuses an out-of-range port before saving, as does the HTTPS port field.
+
+- **Out-of-range numbers in the Install and Quick Setup wizards were silently replaced instead of
+  refused.** The server port, RCON port and the memory limits all went through a helper that was named
+  and documented as validating its input but in practice swapped anything out of range for a default
+  and said nothing. Type port 80 and the server was installed on 16261, with no message anywhere - so
+  a port forward or firewall rule set up for the port you chose pointed at nothing, and every symptom
+  after that led away from the cause. Those fields, in Install, Quick Setup, and the later RCON and
+  network configuration steps, now refuse an out-of-range value and name the field and the range they
+  expect. Two remaining uses of the old behaviour were deliberately left alone, as places where
+  falling back to a default is the intended behaviour rather than a silent substitution.
+
 - **Mod thumbnails did not load for anyone in 1.2.0.** Every Workshop thumbnail in the panel came
   back rejected as unauthenticated, on every install, for every signed-in user including
   administrators. The cause was two correct decisions that stopped agreeing. Thumbnail images are
