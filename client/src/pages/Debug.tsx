@@ -279,15 +279,13 @@ function getDiagMetaStringList(check: DiagCheck, key: string): string[] {
 }
 
 // MUST be called with the RAW check straight from the API response, never
-// the output of translateDiagnosticCheck(). The default-case fallback below
-// does English substring matching on check.hint (hint.includes("server
-// config"), etc) to pick a fix action for ids its switch doesn't cover --
-// passing it a translated (French) hint wouldn't error or fail a test, it
-// would just silently stop matching and drop the fix button for non-English
-// users. See translateDiagnosticCheck's own call site in this file: it
-// deliberately keeps this function fed the untranslated `check`, only the
-// three *displayed* text nodes use the translated copy.
-function getDiagnosticsFixAction(
+// the output of translateDiagnosticCheck() -- `note` below falls back to
+// the literal `check.hint` verbatim, which should stay the server's own
+// English text, not a partially-translated mix. See translateDiagnosticCheck's
+// own call site in this file: it deliberately keeps this function fed the
+// untranslated `check`, only the three *displayed* text nodes use the
+// translated copy.
+export function getDiagnosticsFixAction(
   check: DiagCheck,
   t: TFunction,
 ): DiagnosticsFixAction | null {
@@ -606,8 +604,19 @@ function getDiagnosticsFixAction(
       return {
         label: t("fixActions.fallback.label"),
         automated: false,
-        openServerConfig:
-          hint.includes("server config") || hint.includes("server.ini"),
+        // Only match literal tokens here, never English prose. SERVER.INI
+        // and Mods= are on the do-not-translate list in every locale
+        // glossary, so they still appear verbatim (just lowercased) inside
+        // a translated hint -- safe to match regardless of UI language.
+        // A prose phrase like "server config" is not: it used to also be
+        // matched here, and every check whose English hint contains that
+        // phrase already has an explicit case above that sets
+        // openServerConfig directly, so removing it changes nothing today
+        // -- but it would have silently dropped the Open Server Config
+        // button for non-English users the day someone added a new
+        // fallback-covered check with that phrase in its hint. Don't
+        // re-add a prose match here; add an explicit switch case instead.
+        openServerConfig: hint.includes("server.ini"),
         openMods: category === "mods" || hint.includes("mods="),
         links: links.length > 0 ? links : undefined,
         note: check.hint || t("fixActions.fallback.noteFallback"),
