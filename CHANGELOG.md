@@ -189,6 +189,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from about 13.7 seconds to between 6 and 8. The shared scan is deliberately short-lived and is thrown
   away whenever chunks are deleted, so the counts you see before a destructive action are never stale.
 
+- **The wipe preview froze the whole panel while it counted.** Ticking "Map & terrain" and pressing
+  Preview counted every file in the save, and it did so in a way that blocked the panel entirely - not
+  just that page, but everything: RCON, the player list, and any other admin signed in at the time.
+  On a large save that was over twenty seconds of a completely unresponsive panel, for what is a routine
+  step before wiping. The count now runs without blocking, and if it cannot finish in time the dialog
+  says so rather than presenting a possibly-incomplete total as final. A preview that quietly undercounts
+  is a dialog misdescribing what it is about to delete.
+
 ### Added
 
 - **The panel is now available in Haitian Creole.** Kreyol ayisyen joins English, French, German,
