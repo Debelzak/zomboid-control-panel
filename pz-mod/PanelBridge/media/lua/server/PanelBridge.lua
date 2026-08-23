@@ -3516,8 +3516,21 @@ handlers.teleportPlayer = function(args)
         end
     end)
 
-    -- Step 0c: Enable network teleport flag BEFORE moving so the move itself
-    -- is flagged as an authorized teleport instead of a suspicious jump.
+    -- Step 0c: setNetworkTeleportEnabled does not exist anywhere in the real
+    -- B42 IsoPlayer/IsoGameCharacter hierarchy -- confirmed 2026-08-23 by
+    -- grepping the shipped projectzomboid.jar for the string "NetworkTeleport"
+    -- across every .class file (zero hits) and separately reading every
+    -- teleport-related method in IsoGameCharacter (only the teleportTo
+    -- overloads exist). This call has therefore always been a silent no-op
+    -- on B42; a live v1.7.14 test against 42.20.0 independently observed the
+    -- resulting symptom (server moved the player, no client was told, the
+    -- client's own stale position won -- see that changelog entry above).
+    -- There is no known direct replacement: teleportTo appears to be the
+    -- only surviving teleport-related API, so whatever authorization/
+    -- broadcast responsibility this flag used to carry either moved inside
+    -- teleportTo itself in B42 or has no Lua-exposed equivalent at all.
+    -- Left in place (harmless pcall, and the Step 6 probe below already
+    -- reports its real absence at runtime) rather than guessed at.
     if PanelBridge.invoke(player, "setNetworkTeleportEnabled", true) then
         table.insert(debugInfo, "networkTeleportEnabled(pre) set")
     end
@@ -3546,16 +3559,17 @@ handlers.teleportPlayer = function(args)
         table.insert(debugInfo, "setLxyz done")
     end
 
-    -- Step 3: Re-set network teleport flag (tells server to broadcast new position)
+    -- Step 3: same call as Step 0c, same verified-absent method (see comment
+    -- there) -- kept only in case a future PZ build re-adds it.
     if PanelBridge.invoke(player, "setNetworkTeleportEnabled", true) then
         table.insert(debugInfo, "networkTeleportEnabled(post) set")
     end
 
-    -- Step 4: Force position broadcast via sendPlayerExtraInfo (global, server-side)
+    -- Step 4: Force position broadcast via sendPlayerExtraInfo (global, server-side).
     -- PanelBridge has no client-side mod, so sendServerCommand to a custom module
-    -- would be a silent no-op. Instead, rely on teleportTo + setNetworkTeleportEnabled
-    -- to trigger PZ's built-in position sync. sendPlayerExtraInfo also pushes
-    -- an authoritative player-state update to all clients.
+    -- would be a silent no-op. sendPlayerExtraInfo is the one broadcast mechanism
+    -- here actually confirmed to exist -- setNetworkTeleportEnabled above does not
+    -- (see Step 0c) and contributes nothing to sync today.
     pcall(function()
         if sendPlayerExtraInfo then
             sendPlayerExtraInfo(player)
