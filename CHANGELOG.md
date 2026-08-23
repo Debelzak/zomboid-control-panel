@@ -773,7 +773,15 @@ reliability, then interface and translation.
   already used for creating users and changing roles, so redemptions are handled strictly one at a
   time and a spent code is spent.
 
-- **Renaming a built-in role could lock you out of your own panel.**
+- **Renaming a role could lock you out of your own panel, instantly and permanently.** The panel
+  works out what you are allowed to do by looking up your role *by its name*. Renaming a role
+  changed the role but left every member still pointing at the old name, so the lookup stopped
+  matching and everyone in that role lost every permission they had - in a single request, with
+  no warning. Renaming the administrator role locked the entire panel, including the person who
+  had just done it. The safeguards that stop you removing your own last administrator did not
+  help, because they only watch for permissions being taken away, and this was only a rename.
+  Built-in roles can no longer be renamed at all, and renaming a custom role now updates every
+  member with it.
 
 - **A backup could be left truncated and still appear in the list as a normal backup.** Archives
   were written straight to their final filename, so a crash or a power cut partway through left a
