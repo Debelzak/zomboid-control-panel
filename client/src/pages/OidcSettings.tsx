@@ -70,7 +70,9 @@ const MASKED_SECRET_SENTINEL = '••••••••'
 const FIELD_KEYS = ['issuerUrl', 'clientId', 'redirectUri', 'scope', 'providerName'] as const
 type FieldKey = (typeof FIELD_KEYS)[number]
 
-export default function OidcSettings() {
+// `embedded`: rendered inside a Settings tab panel instead of as its own
+// route -- see the matching note on Users.tsx.
+export default function OidcSettings({ embedded = false }: { embedded?: boolean }) {
   const { t } = useTranslation('oidcSettings')
   const { toast } = useToast()
 
@@ -237,14 +239,16 @@ export default function OidcSettings() {
   const envOverrides = settings?.envOverrides
 
   return (
-    <div className="space-y-6 page-transition">
-      <PageHeader
-        eyebrow={t('pageHeader.eyebrow')}
-        title={t('pageHeader.title')}
-        description={t('pageHeader.description')}
-        icon={<KeyRound className="h-6 w-6" />}
-        tone="config"
-      />
+    <div className={embedded ? 'space-y-4' : 'space-y-6 page-transition'}>
+      {!embedded && (
+        <PageHeader
+          eyebrow={t('pageHeader.eyebrow')}
+          title={t('pageHeader.title')}
+          description={t('pageHeader.description')}
+          icon={<KeyRound className="h-6 w-6" />}
+          tone="config"
+        />
+      )}
 
       {loading ? (
         <div className="flex items-center justify-center py-16 text-muted-foreground">
@@ -284,27 +288,43 @@ export default function OidcSettings() {
             )}
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-5 rounded-xl border border-border/70 bg-background/40 p-4">
+            <div className="space-y-4 rounded-xl border border-border/70 bg-background/40 p-4">
               <div className="space-y-1">
                 <p className="text-sm font-medium text-foreground">{t('sections.provider')}</p>
                 <p className="text-xs text-muted-foreground">{t('sections.providerDescription')}</p>
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="oidc-provider-preset">{t('providerPresets.label')}</Label>
-                <Select value={selectedPreset} onValueChange={handlePresetChange}>
-                  <SelectTrigger id="oidc-provider-preset">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={CUSTOM_PRESET_ID}>{t('providerPresets.custom')}</SelectItem>
-                    {PROVIDER_PRESETS.map((preset) => (
-                      <SelectItem key={preset.id} value={preset.id}>
-                        {t(`providerPresets.${preset.id}.label`)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">{t('providerPresets.help')}</p>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="oidc-provider-preset">{t('providerPresets.label')}</Label>
+                  <Select value={selectedPreset} onValueChange={handlePresetChange}>
+                    <SelectTrigger id="oidc-provider-preset">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={CUSTOM_PRESET_ID}>{t('providerPresets.custom')}</SelectItem>
+                      {PROVIDER_PRESETS.map((preset) => (
+                        <SelectItem key={preset.id} value={preset.id}>
+                          {t(`providerPresets.${preset.id}.label`)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">{t('providerPresets.help')}</p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="oidc-provider-name">{t('fields.providerName')}</Label>
+                  <Input
+                    id="oidc-provider-name"
+                    value={form.providerName}
+                    onChange={(e) => setForm((prev) => ({ ...prev, providerName: e.target.value }))}
+                    placeholder={t('fields.providerNamePlaceholder')}
+                    disabled={envOverrides?.providerName}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {envOverrides?.providerName ? t('envPinnedNote') : t('fields.providerNameHelp')}
+                  </p>
+                </div>
               </div>
 
               <div className="space-y-1.5">
@@ -357,56 +377,44 @@ export default function OidcSettings() {
                 )}
               </div>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="oidc-client-id">{t('fields.clientId')}</Label>
-                <Input
-                  id="oidc-client-id"
-                  value={form.clientId}
-                  onChange={(e) => setForm((prev) => ({ ...prev, clientId: e.target.value }))}
-                  disabled={envOverrides?.clientId}
-                />
-                {envOverrides?.clientId && (
-                  <p className="text-xs text-muted-foreground">{t('envPinnedNote')}</p>
-                )}
-              </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="oidc-client-id">{t('fields.clientId')}</Label>
+                  <Input
+                    id="oidc-client-id"
+                    value={form.clientId}
+                    onChange={(e) => setForm((prev) => ({ ...prev, clientId: e.target.value }))}
+                    disabled={envOverrides?.clientId}
+                  />
+                  {envOverrides?.clientId && (
+                    <p className="text-xs text-muted-foreground">{t('envPinnedNote')}</p>
+                  )}
+                </div>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="oidc-client-secret">{t('fields.clientSecret')}</Label>
-                <Input
-                  id="oidc-client-secret"
-                  type="password"
-                  value={clientSecret}
-                  onChange={(e) => setClientSecret(e.target.value)}
-                  placeholder={
-                    settings.clientSecretConfigured
-                      ? t('fields.clientSecretPlaceholderConfigured')
-                      : t('fields.clientSecretPlaceholderEmpty')
-                  }
-                  disabled={envOverrides?.clientSecret}
-                />
-                {envOverrides?.clientSecret ? (
-                  <p className="text-xs text-muted-foreground">{t('envPinnedNote')}</p>
-                ) : settings.clientSecretConfigured ? (
-                  <p className="text-xs text-muted-foreground">{t('fields.clientSecretConfiguredHelp')}</p>
-                ) : null}
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="oidc-provider-name">{t('fields.providerName')}</Label>
-                <Input
-                  id="oidc-provider-name"
-                  value={form.providerName}
-                  onChange={(e) => setForm((prev) => ({ ...prev, providerName: e.target.value }))}
-                  placeholder={t('fields.providerNamePlaceholder')}
-                  disabled={envOverrides?.providerName}
-                />
-                <p className="text-xs text-muted-foreground">
-                  {envOverrides?.providerName ? t('envPinnedNote') : t('fields.providerNameHelp')}
-                </p>
+                <div className="space-y-1.5">
+                  <Label htmlFor="oidc-client-secret">{t('fields.clientSecret')}</Label>
+                  <Input
+                    id="oidc-client-secret"
+                    type="password"
+                    value={clientSecret}
+                    onChange={(e) => setClientSecret(e.target.value)}
+                    placeholder={
+                      settings.clientSecretConfigured
+                        ? t('fields.clientSecretPlaceholderConfigured')
+                        : t('fields.clientSecretPlaceholderEmpty')
+                    }
+                    disabled={envOverrides?.clientSecret}
+                  />
+                  {envOverrides?.clientSecret ? (
+                    <p className="text-xs text-muted-foreground">{t('envPinnedNote')}</p>
+                  ) : settings.clientSecretConfigured ? (
+                    <p className="text-xs text-muted-foreground">{t('fields.clientSecretConfiguredHelp')}</p>
+                  ) : null}
+                </div>
               </div>
             </div>
 
-            <div className="space-y-5 rounded-xl border border-border/70 bg-background/40 p-4">
+            <div className="space-y-4 rounded-xl border border-border/70 bg-background/40 p-4">
               <div className="space-y-1">
                 <p className="text-sm font-medium text-foreground">{t('sections.advanced')}</p>
                 <p className="text-xs text-muted-foreground">{t('sections.advancedDescription')}</p>

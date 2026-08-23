@@ -32,6 +32,7 @@ import {
   User,
   Users as UsersIcon,
   ShieldCheck,
+  KeyRound,
   ExternalLink,
   FolderOpen,
   Palette,
@@ -58,6 +59,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { PageSkeleton } from "@/components/PageSkeleton";
 import Users from "@/pages/Users";
 import RolesPermissions from "@/pages/RolesPermissions";
+import OidcSettings from "@/pages/OidcSettings";
 import { PasswordInput } from "@/components/PasswordInput";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -511,6 +513,14 @@ export default function Settings() {
       description: t("tabs.roles.description"),
     },
     {
+      id: "sso",
+      label: t("tabs.sso.label"),
+      icon: KeyRound,
+      group: t("tabs.groups.accessControl"),
+      tip: t("tabs.sso.tip"),
+      description: t("tabs.sso.description"),
+    },
+    {
       id: "connection",
       label: t("tabs.connection.label"),
       icon: Link,
@@ -560,6 +570,7 @@ export default function Settings() {
     // lacks access -- it only ever hides it when the answer is a known no.
     if (section.id === "users") return can("users.manage");
     if (section.id === "roles") return can("roles.manage");
+    if (section.id === "sso") return can("panel.settings");
     return true;
   });
   const settingsGroups = settingsSections.reduce<
@@ -5413,6 +5424,10 @@ export default function Settings() {
 
           <TabsContent value="roles" className="mt-0">
             <RolesPermissions embedded />
+          </TabsContent>
+
+          <TabsContent value="sso" className="mt-0">
+            <OidcSettings embedded />
           </TabsContent>
 
           <TabsContent value="about" className="mt-0 space-y-5">

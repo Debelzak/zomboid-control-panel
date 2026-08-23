@@ -146,13 +146,6 @@ const ROUTE_LOADERS: Record<string, RouteLoaderMeta> = {
     variant: 'form',
     metrics: ['auth', 'paths', 'network'],
   },
-  '/sso': {
-    title: 'Sign-in',
-    description: 'Loading single sign-on settings.',
-    eyebrow: '// ACCESS · SIGN-IN',
-    variant: 'form',
-    metrics: ['provider', 'redirect', 'status'],
-  },
   '/debug': {
     title: 'Debug Logs',
     description: 'Preparing diagnostics, probes, logs, and support bundle tools.',
@@ -179,7 +172,6 @@ const Mods = lazy(() => import('./pages/Mods'))
 const ChunkCleaner = lazy(() => import('./pages/ChunkCleaner'))
 const Discord = lazy(() => import('./pages/Discord'))
 const Settings = lazy(() => import('./pages/Settings'))
-const OidcSettings = lazy(() => import('./pages/OidcSettings'))
 const ServerSetup = lazy(() => import('./pages/ServerSetup'))
 const Servers = lazy(() => import('./pages/Servers'))
 const ServerConfig = lazy(() => import('./pages/ServerConfig'))
@@ -578,7 +570,7 @@ function AppContent() {
                   keep old bookmarks/deep links working rather than 404ing them. */}
               <Route path="/roles" element={<Navigate to="/settings?tab=roles" replace />} />
               <Route path="/users" element={<Navigate to="/settings?tab=users" replace />} />
-              <Route path="/sso" element={<FeatureErrorBoundary featureName={t('nav.items.signIn')}><OidcSettings /></FeatureErrorBoundary>} />
+              <Route path="/sso" element={<Navigate to="/settings?tab=sso" replace />} />
               <Route path="/server-setup" element={<FeatureErrorBoundary featureName={t('nav.items.serverSetup')}><ServerSetup /></FeatureErrorBoundary>} />
               <Route path="/servers" element={<FeatureErrorBoundary featureName={t('nav.items.myServers')}><Servers /></FeatureErrorBoundary>} />
               <Route path="/server-config" element={<FeatureErrorBoundary featureName={t('nav.items.serverConfiguration')}><ServerConfig /></FeatureErrorBoundary>} />

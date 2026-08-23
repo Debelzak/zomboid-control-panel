@@ -16,11 +16,9 @@
       "config": "配置",
       "maintain": "维护",
       "servers": "服务器",
-      "access": "访问控制",
       "settingsAndTools": "设置与工具"
     },
     "items": {
-      "signIn": "登录",
       "serverConsole": "服务器控制台",
       "onlinePlayers": "在线玩家",
       "inGameChat": "游戏内聊天",

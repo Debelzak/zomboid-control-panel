@@ -16,11 +16,9 @@
       "config": "Config",
       "maintain": "Maintain",
       "servers": "Servers",
-      "access": "Access Control",
       "settingsAndTools": "Settings & Tools"
     },
     "items": {
-      "signIn": "Sign-in",
       "serverConsole": "Server Console",
       "onlinePlayers": "Online Players",
       "inGameChat": "In-Game Chat",

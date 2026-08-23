@@ -16,11 +16,9 @@
       "config": "Configuración",
       "maintain": "Mantenimiento",
       "servers": "Servidores",
-      "access": "Control de acceso",
       "settingsAndTools": "Ajustes y herramientas"
     },
     "items": {
-      "signIn": "Inicio de sesión",
       "serverConsole": "Consola del servidor",
       "onlinePlayers": "Jugadores conectados",
       "inGameChat": "Chat en el juego",
