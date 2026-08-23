@@ -7,7 +7,7 @@
   "loading": "Cargando ajustes de inicio de sesión…",
   "permissionDenied": {
     "title": "No se pueden administrar los ajustes de inicio de sesión",
-    "description": "El rol de esta cuenta no incluye \"Administrar ajustes de todo el panel\". Un administrador debe concederlo si se necesita acceso a esta pantalla."
+    "description": "El rol de tu cuenta no incluye \"Administrar ajustes de todo el panel\". Pide a un administrador que lo conceda si necesitas acceso a esta pantalla."
   },
   "loadError": {
     "title": "No se pudieron cargar los ajustes de inicio de sesión",

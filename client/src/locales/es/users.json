@@ -7,7 +7,7 @@
   "loading": "Cargando cuentas…",
   "permissionDenied": {
     "title": "No se pueden administrar cuentas de usuario",
-    "description": "El rol de esta cuenta no incluye \"Administrar cuentas de usuario\". Un administrador debe concederlo si se necesita acceso a esta pantalla."
+    "description": "El rol de tu cuenta no incluye \"Administrar cuentas de usuario\". Pide a un administrador que lo conceda si necesitas acceso a esta pantalla."
   },
   "loadError": {
     "title": "No se pudieron cargar las cuentas",
@@ -52,7 +52,7 @@
   "toasts": {
     "userCreatedTitle": "Cuenta creada",
     "userCreatedDescription": "{{username}} ya puede iniciar sesión como \"{{role}}\".",
-    "userCreatedRoleAssignFailedDescription": "{{username}} se creó como \"moderador\", pero no se pudo asignar \"{{role}}\": {{reason}}. Puede cambiarse desde Roles y Permisos.",
+    "userCreatedRoleAssignFailedDescription": "{{username}} se creó como \"moderador\", pero no se pudo asignar \"{{role}}\": {{reason}}. Cámbialo desde Roles y Permisos.",
     "userDeletedTitle": "Cuenta eliminada",
     "userDeletedDescription": "{{username}} ya no puede iniciar sesión.",
     "actionFailedTitle": "La acción falló",
