@@ -123,6 +123,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so a known gap in someone else's map was indistinguishable from a page that had frozen mid-load.
   Tiles confirmed missing now render as a distinct, deliberate-looking area.
 
+- **Map Cleanup was reading your entire save twice every time you opened it.** The page asks for the
+  chunk list and the storage summary at the same moment, and each of those walked every chunk file on
+  disk independently. On a large save that is a lot of work done twice for one page load. Both answers
+  now come from a single pass. Measured on a 147,000-chunk save, the two requests together went from
+  15.3 seconds to 5.6. The scan is shared only between requests that are genuinely in flight together
+  and is never cached beyond that, so deleting chunks still shows an accurate count immediately
+  afterwards.
+
+- **Behind a reverse proxy, the panel treated every visitor on the internet as if they were sitting at
+  the server.** The "recover my account from the machine itself" option decides whether you are local
+  by looking at the network address the request arrived from. With nginx or Caddy in front of the panel
+  - a setup this project documents and supports - every request arrives from the proxy running on the
+  same machine, so everyone looked local. The panel now recognises when it is behind a proxy and stops
+  claiming it can tell, rather than guessing wrong in the dangerous direction. If you are in that
+  situation the panel says so and points you at the two paths that still work: creating
+  data/reset-token.txt on the host yourself, or using a recovery code.
+
 ### Added
 
 - **Two more health checks on the Debug page.** One reports how many of your tracked mods currently
