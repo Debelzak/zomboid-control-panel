@@ -1250,6 +1250,8 @@
     "resumeLiveUpdates": "Resume live updates",
     "pauseLiveUpdates": "Pause live updates",
     "refreshLogsTooltip": "Refresh logs",
+    "logsFetchFailedTitle": "Couldn't refresh logs",
+    "logsFetchFailedDesc": "The log list didn't update. Check the panel's connection and try again.",
     "exportTrigger": "Export",
     "exportPlaceholder": "Export logs...",
     "exportFullTxt": "Full log file (.txt)",

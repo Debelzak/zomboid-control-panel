@@ -1487,6 +1487,11 @@ export default function Debug() {
       }
     } catch (error) {
       reportClientError("Failed to fetch logs.", error);
+      toast({
+        title: t("logsTab.logsFetchFailedTitle"),
+        description: t("logsTab.logsFetchFailedDesc"),
+        variant: "destructive",
+      });
     } finally {
       setRefreshingLogs(false);
     }

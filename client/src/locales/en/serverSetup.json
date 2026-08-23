@@ -226,6 +226,8 @@
     "serverRegisteredLog": "Server registered in panel database",
     "activeServerSwitchedLog": "Switched active server to new installation",
     "registerFailedLog": "Warning: Failed to register server in panel.",
+    "registerFailedTitle": "Server files installed, but registration failed",
+    "registerFailedDesc": "The game files are on disk, but the panel couldn't add this server to its database, so it won't appear in My Servers yet. Check the log above, then try Server Setup again — it's safe to re-run.",
     "steamCmdReadyTitle": "SteamCMD Ready",
     "steamCmdReadyDesc": "SteamCMD is installed and ready to use.",
     "steamCmdFailedTitle": "SteamCMD Setup Failed",

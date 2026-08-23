@@ -285,6 +285,7 @@ export default function Settings() {
     null,
   );
   const [loading, setLoading] = useState(false);
+  const [settingsLoadError, setSettingsLoadError] = useState<string | null>(null);
   const [showSteamApiKey, setShowSteamApiKey] = useState(false);
   const [saving, setSaving] = useState(false);
   const [corsOriginValidationError, setCorsOriginValidationError] = useState<
@@ -423,6 +424,7 @@ export default function Settings() {
 
   // Server list for install dropdown
   const [servers, setServers] = useState<ServerInstance[]>([]);
+  const [serversLoadError, setServersLoadError] = useState(false);
   const [selectedInstallServerId, setSelectedInstallServerId] =
     useState<string>("");
   const [installingMod, setInstallingMod] = useState(false);
@@ -430,6 +432,8 @@ export default function Settings() {
   // Backup state
   const [backupStatus, setBackupStatus] = useState<BackupStatus | null>(null);
   const [backups, setBackups] = useState<BackupFile[]>([]);
+  const [backupsLoadError, setBackupsLoadError] = useState(false);
+  const [backupStatusLoadError, setBackupStatusLoadError] = useState(false);
   const [backupLoading, setBackupLoading] = useState(false);
   const [creatingBackup, setCreatingBackup] = useState(false);
   const [restoringBackup, setRestoringBackup] = useState<string | null>(null);
@@ -586,6 +590,7 @@ export default function Settings() {
     setLoading(true);
     try {
       const data = await configApi.getAppSettings();
+      setSettingsLoadError(null);
       if (data.settings) {
         // Use functional update to get current state and merge with loaded settings
         setSettings((prevSettings) => {
@@ -609,6 +614,9 @@ export default function Settings() {
       }
     } catch (error) {
       reportClientError("Failed to fetch settings.", error);
+      const message =
+        error instanceof Error ? error.message : t("pageHeader.loadFailedFallback");
+      setSettingsLoadError(message);
     } finally {
       setLoading(false);
     }
@@ -625,10 +633,15 @@ export default function Settings() {
       setCorsDiagnostics(data.diagnostics);
     } catch (error) {
       reportClientError("Failed to fetch CORS diagnostics.", error);
+      toast({
+        title: t("access.diagnosticsRefreshFailedTitle"),
+        description: t("access.diagnosticsRefreshFailedDesc"),
+        variant: "destructive",
+      });
     } finally {
       setCorsLoading(false);
     }
-  }, []);
+  }, [toast, t]);
 
   useEffect(() => {
     fetchCorsDiagnostics();
@@ -993,11 +1006,13 @@ export default function Settings() {
     setDownloadingPanelUpdate(true);
     setPanelUpdateStatusError(null);
     try {
-      // Pre-flight before touching disk — refuse early if we know apply will fail.
+      // Pre-flight before touching disk — refuse early if we know apply will
+      // fail, and refuse just as hard if the pre-flight check itself
+      // couldn't be reached (a failed check is not a passed check).
       const pre = await fetchPanelUpdatePreflight();
-      if (pre && !pre.ok) {
+      if (!pre || !pre.ok) {
         throw new Error(
-          pre.blockers[0] || t("errors.updateBlockedByPreflight"),
+          pre?.blockers[0] || t("errors.updateBlockedByPreflight"),
         );
       }
 
@@ -1204,14 +1219,18 @@ export default function Settings() {
       setBridgeError(null);
     } catch (error) {
       reportClientError("Failed to fetch bridge status.", error);
+      setBridgeError(
+        error instanceof Error ? error.message : t("bridge.statusFetchFailedFallback"),
+      );
     }
-  }, []);
+  }, [t]);
 
   // Fetch servers list for install dropdown
   const fetchServers = useCallback(async () => {
     try {
       const data = await serversApi.getAll();
       setServers(data.servers || []);
+      setServersLoadError(false);
       // Auto-select active server
       const activeServer = data.servers?.find((s) => s.isActive);
       if (activeServer && !selectedInstallServerId) {
@@ -1219,6 +1238,7 @@ export default function Settings() {
       }
     } catch (error) {
       reportClientError("Failed to fetch servers.", error);
+      setServersLoadError(true);
     }
   }, [selectedInstallServerId]);
 
@@ -1317,8 +1337,10 @@ export default function Settings() {
       setBackupStatus(status);
       setBackupSchedule(status.schedule);
       setBackupMaxCount(status.maxBackups);
+      setBackupStatusLoadError(false);
     } catch (error) {
       reportClientError("Failed to fetch backup status.", error);
+      setBackupStatusLoadError(true);
     }
   }, []);
 
@@ -1326,8 +1348,10 @@ export default function Settings() {
     try {
       const data = await backupApi.listBackups();
       setBackups(data.backups || []);
+      setBackupsLoadError(false);
     } catch (error) {
       reportClientError("Failed to fetch backups.", error);
+      setBackupsLoadError(true);
     }
   }, []);
 
@@ -2087,6 +2111,46 @@ export default function Settings() {
         title={t("pageHeader.title")}
         description={t("pageHeader.defaultDescription")}
       />
+    );
+  }
+
+  if (settingsLoadError && !originalSettings) {
+    return (
+      <div className="page-transition">
+        <PageHeader
+          title={t("pageHeader.title")}
+          description={t("pageHeader.defaultDescription")}
+          eyebrow={t("pageHeader.eyebrow")}
+          tone="config"
+          icon={<Settings2 className="w-5 h-5" />}
+        />
+        <Card className="border-2 border-destructive/50 bg-destructive/5 mt-4">
+          <CardContent className="pt-6">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-6 h-6 text-destructive shrink-0 mt-0.5" />
+              <div className="min-w-0 flex-1">
+                <h3 className="text-base font-semibold">
+                  {t("pageHeader.loadFailedTitle")}
+                </h3>
+                <p className="text-sm text-muted-foreground mt-1">
+                  {t("pageHeader.loadFailedDesc", { error: settingsLoadError })}
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={fetchSettings}
+                disabled={loading}
+              >
+                <RefreshCw
+                  className={cn("w-4 h-4 mr-2", loading && "animate-spin")}
+                />
+                {t("pageHeader.retry")}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     );
   }
 
@@ -4115,7 +4179,9 @@ export default function Settings() {
                       <SelectContent>
                         {servers.length === 0 ? (
                           <div className="px-2 py-1.5 text-sm text-muted-foreground">
-                            {t("bridge.noServersConfigured")}
+                            {serversLoadError
+                              ? t("bridge.serversLoadFailed")
+                              : t("bridge.noServersConfigured")}
                           </div>
                         ) : (
                           servers.map((server) => (
@@ -4477,13 +4543,15 @@ export default function Settings() {
                     <div className="space-y-0.5">
                       <Label className="text-base">{t("backups.scheduledLabel")}</Label>
                       <p className="text-sm text-muted-foreground">
-                        {t("backups.scheduledDesc")}
+                        {!backupStatus && backupStatusLoadError
+                          ? t("backups.statusLoadFailed")
+                          : t("backups.scheduledDesc")}
                       </p>
                     </div>
                     <Switch
                       checked={backupStatus?.enabled || false}
                       onCheckedChange={toggleBackupEnabled}
-                      disabled={backupLoading}
+                      disabled={backupLoading || (!backupStatus && backupStatusLoadError)}
                       aria-label={t("ariaLabels.enableScheduledBackups")}
                     />
                   </div>
@@ -4552,9 +4620,9 @@ export default function Settings() {
                   {backups.length === 0 ? (
                     <EmptyState
                       compact
-                      type="empty"
-                      title={t("backups.emptyTitle")}
-                      description={t("backups.emptyDescription")}
+                      type={backupsLoadError ? "disconnected" : "empty"}
+                      title={backupsLoadError ? t("backups.loadFailedTitle") : t("backups.emptyTitle")}
+                      description={backupsLoadError ? t("backups.loadFailedDescription") : t("backups.emptyDescription")}
                     />
                   ) : (
                     <ScrollArea className="h-[200px] rounded-lg border">

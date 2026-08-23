@@ -201,6 +201,8 @@
     "deleteAll": "Delete all",
     "scanning": "Scanning workshop folder…",
     "empty": "No disabled mods. Everything in the workshop folder is enabled in the server INI.",
+    "scanFailedTitle": "Couldn't scan for disabled mods",
+    "scanFailedDesc": "The workshop folder scan failed. Try refreshing again.",
     "openWorkshopPage": "Open Workshop page",
     "enable": "Enable",
     "deleteFromDisk": "Delete from disk"

@@ -42,7 +42,11 @@
   "pageHeader": {
     "title": "Settings",
     "defaultDescription": "Panel port, remote access, server integrations, backups, and security.",
-    "eyebrow": "Configuration"
+    "eyebrow": "Configuration",
+    "loadFailedTitle": "Couldn't load settings",
+    "loadFailedDesc": "{{error}} — showing your last-saved settings would risk overwriting real values with placeholders, so nothing is editable until this loads.",
+    "loadFailedFallback": "The settings request failed.",
+    "retry": "Retry"
   },
   "unsavedBanner": {
     "label": "Unsaved changes",
@@ -87,6 +91,8 @@
     "lanAddressLabel": "Dashboard LAN Address",
     "lanAddressDesc": "Which network interface's address the dashboard shows. Useful when this host has more than one, e.g. Tailscale and ZeroTier at once — pick the one you actually want to share with players.",
     "autoDetect": "Auto-detect (default)",
+    "diagnosticsRefreshFailedTitle": "Couldn't refresh CORS diagnostics",
+    "diagnosticsRefreshFailedDesc": "The numbers below are stale, not current.",
     "additionalOriginsLabel": "Additional Allowed Origins",
     "additionalOriginsHelp": "One address per line, including http:// or https:// and port if needed.",
     "originsError": {
@@ -291,6 +297,7 @@
     "fileWatcherPollingOnly": "Polling only",
     "pendingLabel": "Pending:",
     "errorTitle": "Panel Bridge Error",
+    "statusFetchFailedFallback": "Couldn't reach the bridge status endpoint.",
     "stopBridge": "Stop Bridge",
     "pinging": "Pinging...",
     "pingMod": "Ping Mod",
@@ -340,6 +347,7 @@
     "installTitle": "Install PanelBridge.lua",
     "selectServerPlaceholder": "Select server...",
     "noServersConfigured": "No servers configured",
+    "serversLoadFailed": "Couldn't load the server list — try reopening this page",
     "activeSuffix": "(Active)",
     "installButton": "Install Mod",
     "remoteInstallWarning": "Remote server: copy PanelBridge.lua to the remote Lua folder with SFTP or the provider file manager. Automatic local installation is unavailable.",
@@ -403,6 +411,9 @@
     "existingBackupsTitle": "Existing Backups",
     "emptyTitle": "No backups yet",
     "emptyDescription": "Click \"Backup Now\" to create one.",
+    "loadFailedTitle": "Couldn't load backups",
+    "loadFailedDescription": "This isn't necessarily an empty list — the backup list request failed. Reopen this page to try again.",
+    "statusLoadFailed": "Couldn't check whether scheduled backups are on — this toggle is disabled until it loads. Reopen this page to try again.",
     "restoreTitle": "Restore this backup (server must be stopped)",
     "restoreDialogTitle": "Restore Backup",
     "restoreDialogIntro": "This will restore <b>{{name}}</b> and <b>OVERWRITE</b> the current world data.",

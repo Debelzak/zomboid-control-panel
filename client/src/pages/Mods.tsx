@@ -605,10 +605,15 @@ export default function Mods() {
       setDisabledMods(result.mods || [])
     } catch (error) {
       reportClientError('Failed to fetch disabled mods.', error)
+      toast({
+        title: t('disabledPanel.scanFailedTitle'),
+        description: t('disabledPanel.scanFailedDesc'),
+        variant: 'destructive',
+      })
     } finally {
       setDisabledLoading(false)
     }
-  }, [])
+  }, [toast, t])
 
   const handleEnableDiskMod = useCallback(async (workshopId: string) => {
     if (enablingId) return
@@ -3824,6 +3829,7 @@ export default function Mods() {
                       }))
                     } catch (e) {
                       reportClientError('Failed to restore conflict', e)
+                      toast({ variant: 'destructive', title: 'Failed to restore conflict' })
                     }
                   }
 

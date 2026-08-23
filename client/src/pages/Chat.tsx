@@ -233,10 +233,15 @@ export default function Chat() {
   }, [defaultPresets])
 
   const persistPresets = useCallback(async (next: string[]) => {
-    setPresets(next)
+    let previous: string[] = []
+    setPresets(prev => {
+      previous = prev
+      return next
+    })
     try {
       await configApi.updateAppSettings({ chatPresets: next })
     } catch (error) {
+      setPresets(previous)
       reportClientError('Failed to save chat presets.', error)
       toast({
         title: t('toasts.presetsSaveFailedTitle'),

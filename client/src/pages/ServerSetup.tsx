@@ -430,7 +430,6 @@ export default function ServerSetup() {
       params?: Record<string, string | number>;
     }) => {
       setInstalling(false);
-      setInstallComplete(data.success);
       const displayMessage = getInstallProgressMessage(data, data.message);
       if (data.success) {
         setLogs((prev) => [
@@ -478,6 +477,11 @@ export default function ServerSetup() {
               },
             ]);
           }
+          setInstallComplete(true);
+          toast({
+            title: t("toasts.serverInstalledTitle"),
+            description: t("toasts.serverInstalledDesc"),
+          });
         } catch (error) {
           reportClientError("Failed to create server entry.", error);
           setLogs((prev) => [
@@ -488,13 +492,14 @@ export default function ServerSetup() {
               timestamp: new Date(),
             },
           ]);
+          toast({
+            title: t("toasts.registerFailedTitle"),
+            description: t("toasts.registerFailedDesc"),
+            variant: "destructive",
+          });
         }
-
-        toast({
-          title: t("toasts.serverInstalledTitle"),
-          description: t("toasts.serverInstalledDesc"),
-        });
       } else {
+        setInstallComplete(false);
         setLogs((prev) => [
           ...prev,
           { type: "error", message: displayMessage, timestamp: new Date() },
@@ -696,6 +701,7 @@ export default function ServerSetup() {
       return;
     }
     setInstalling(true);
+    setInstallComplete(false);
     setLogs([]);
     addLog("info", t("toasts.creatingConfigLog"));
 
@@ -743,16 +749,21 @@ export default function ServerSetup() {
             await serversApi.activate(createResult.server.id);
             addLog("success", t("toasts.activeServerSwitchedLog"));
           }
+
+          setInstallComplete(true);
+          toast({
+            title: t("toasts.serverAddedTitle"),
+            description: t("toasts.serverAddedDesc"),
+          });
         } catch (error) {
           reportClientError("Failed to create server entry.", error);
           addLog("error", t("toasts.registerFailedLog"));
+          toast({
+            title: t("toasts.registerFailedTitle"),
+            description: t("toasts.registerFailedDesc"),
+            variant: "destructive",
+          });
         }
-
-        setInstallComplete(true);
-        toast({
-          title: t("toasts.serverAddedTitle"),
-          description: t("toasts.serverAddedDesc"),
-        });
       } else {
         addLog("error", data.error);
         toast({
