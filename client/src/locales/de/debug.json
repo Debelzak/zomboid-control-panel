@@ -992,6 +992,17 @@
               "label": "Erreichbarkeitsprüfung der Kacheln fehlgeschlagen",
               "message": "Die Kachelprüfung konnte nicht abgeschlossen werden: {{reason}}"
             }
+          },
+          "buildDetect": {
+            "ok": {
+              "label": "Automatische B42-Build-Erkennung funktioniert",
+              "message": "Build {{build}} wurde dynamisch aus build_list.json ermittelt."
+            },
+            "warn": {
+              "label": "Automatische B42-Build-Erkennung fehlgeschlagen",
+              "message": "Es wird der fest hinterlegte Build {{build}} verwendet, da die Erkennung fehlgeschlagen ist: {{reason}}. Der nächste PZ-Karten-Build wird nicht berücksichtigt, solange die Erkennung nicht wieder funktioniert.",
+              "hint": "Die Erkennung liest build_list.json sowie die layer0.dzi jedes Kandidaten von tiles.pzmap.org. Wenn die Gegenstelle gezielt die Anfragen des Panels blockiert (z. B. ein Bot-Schutz, der auf den HTTP-Client reagiert), lässt sich das möglicherweise nicht vom Panel aus beheben — achten Sie nach der nächsten PZ-Kartenveröffentlichung auf diese Warnung, denn dann wirkt sich ein veralteter Build als falsche Kartengeometrie aus."
+            }
           }
         },
         "runtime": {

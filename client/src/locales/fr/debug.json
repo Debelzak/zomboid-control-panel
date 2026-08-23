@@ -992,6 +992,17 @@
               "label": "Échec de la sonde d'accessibilité des tuiles",
               "message": "La sonde de tuiles n'a pas pu se terminer : {{reason}}"
             }
+          },
+          "buildDetect": {
+            "ok": {
+              "label": "Détection automatique du build B42 opérationnelle",
+              "message": "Le build {{build}} a été résolu dynamiquement depuis build_list.json."
+            },
+            "warn": {
+              "label": "Échec de la détection automatique du build B42",
+              "message": "Utilisation du build codé en dur {{build}} car la détection a échoué : {{reason}}. Le prochain build de carte de PZ ne sera pas pris en compte tant que la détection ne fonctionnera pas à nouveau.",
+              "hint": "La détection lit build_list.json ainsi que le layer0.dzi de chaque candidat sur tiles.pzmap.org. Si le service distant bloque spécifiquement les requêtes du panneau (par exemple une protection anti-bot basée sur le client HTTP), il se peut que cela ne soit pas corrigeable côté panneau — surveillez cet avertissement après la prochaine sortie de carte PZ, car c'est à ce moment qu'un build obsolète se traduit par une géométrie de carte incorrecte."
+            }
           }
         },
         "runtime": {

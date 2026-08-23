@@ -992,6 +992,17 @@
               "label": "Fallo en la comprobación de accesibilidad de mosaicos",
               "message": "La comprobación de mosaicos no pudo completarse: {{reason}}"
             }
+          },
+          "buildDetect": {
+            "ok": {
+              "label": "Detección automática de la compilación B42 correcta",
+              "message": "La compilación {{build}} se resolvió dinámicamente desde build_list.json."
+            },
+            "warn": {
+              "label": "Error en la detección automática de la compilación B42",
+              "message": "Se está usando la compilación fija {{build}} porque la detección falló: {{reason}}. No se tendrá en cuenta la próxima compilación del mapa de PZ hasta que la detección vuelva a funcionar.",
+              "hint": "La detección lee build_list.json y el layer0.dzi de cada candidato en tiles.pzmap.org. Si el servicio remoto bloquea específicamente las solicitudes del panel (por ejemplo, una protección antibots basada en el cliente HTTP), puede que no sea posible solucionarlo desde el panel — vigile este aviso tras la próxima publicación del mapa de PZ, ya que es entonces cuando una compilación obsoleta se manifiesta como una geometría de mapa incorrecta."
+            }
           }
         },
         "runtime": {

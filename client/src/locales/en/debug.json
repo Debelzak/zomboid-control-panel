@@ -992,6 +992,17 @@
               "label": "Tile reachability probe failed",
               "message": "Tile probe could not complete: {{reason}}"
             }
+          },
+          "buildDetect": {
+            "ok": {
+              "label": "B42 build auto-detect healthy",
+              "message": "Build {{build}} was resolved dynamically from build_list.json."
+            },
+            "warn": {
+              "label": "B42 build auto-detect failed",
+              "message": "Using hardcoded build {{build}} because discovery failed: {{reason}}. This will not track the next PZ map build until discovery starts working again.",
+              "hint": "Discovery reads build_list.json and each candidate's layer0.dzi from tiles.pzmap.org. If upstream is blocking the panel's requests specifically (e.g. bot protection keyed on the HTTP client), this may not be fixable from the panel side — watch for this warning after the next PZ map release, since that's when a stale build actually shows up as wrong map geometry."
+            }
           }
         },
         "runtime": {

@@ -992,6 +992,17 @@
               "label": "图块可达性探测失败",
               "message": "图块探测未能完成：{{reason}}"
             }
+          },
+          "buildDetect": {
+            "ok": {
+              "label": "B42 版本自动检测正常",
+              "message": "已从 build_list.json 动态解析出版本 {{build}}。"
+            },
+            "warn": {
+              "label": "B42 版本自动检测失败",
+              "message": "因检测失败，正在使用写死的版本 {{build}}：{{reason}}。在检测恢复正常之前，将无法跟进下一个 PZ 地图版本。",
+              "hint": "检测会从 tiles.pzmap.org 读取 build_list.json 以及每个候选版本的 layer0.dzi。如果上游专门拦截面板的请求（例如针对 HTTP 客户端的机器人防护），则可能无法从面板侧修复 — 请在下一次 PZ 地图发布后留意此警告，因为那时过时的版本才会表现为地图几何错误。"
+            }
           }
         },
         "runtime": {

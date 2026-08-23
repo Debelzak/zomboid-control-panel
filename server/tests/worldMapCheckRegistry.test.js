@@ -93,6 +93,7 @@ const KNOWN_TRANSLATED_IDS = new Set([
   "worldmap.tiles.b42",
   "worldmap.tiles.b41",
   "worldmap.tiles.b42Top",
+  "worldmap.tiles.buildDetect",
   "worldmap.tiles.error",
   "worldmap.runtime",
   "worldmap.bridge.configured",
