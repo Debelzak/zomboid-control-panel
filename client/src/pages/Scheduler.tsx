@@ -1213,10 +1213,8 @@ export default function Scheduler() {
                 {history.map((entry) => (
                   <div
                     key={entry.id}
-                    className={`p-3 rounded-lg border-l-2 border-y border-r border-y-border/40 border-r-border/40 ${
-                      entry.success
-                        ? 'bg-card border-l-primary/50'
-                        : 'bg-destructive/[0.06] border-l-destructive border-y-destructive/25 border-r-destructive/25'
+                    className={`p-3 rounded-lg border border-border/40 ${
+                      entry.success ? 'bg-card' : 'bg-destructive/[0.06]'
                     }`}
                   >
                     <div className="flex items-start justify-between">
