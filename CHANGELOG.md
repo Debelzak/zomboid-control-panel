@@ -249,6 +249,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is not something the panel can fix from its side - so the point of this change is that you will
   find out, instead of finding out from a wrong map.
 
+- **"Test connection" on the Sign-in page did not test your credentials.** It fetched the
+  provider's public configuration document and reported success - which proves only that the issuer
+  URL is reachable. A wrong client ID, a wrong client secret, or an unregistered redirect URI all
+  passed the test, and you found out by signing out and getting stuck. The test now actually
+  authenticates against the provider's token endpoint and can tell the three cases apart: your
+  credentials are accepted, your credentials were rejected, or it could not determine an answer -
+  and "could not determine" is never reported as success.
+
+- **Setting up single sign-on now tells you what it found.** There are presets for Google,
+  Authentik, Keycloak, Azure AD, Okta and Auth0 that fill in the shape of the issuer URL and the
+  scope each expects, so you are editing an example rather than guessing the format from scratch -
+  Keycloak wants a realm in the path, Azure wants a tenant, and nothing in the panel used to say so.
+  Custom is still the default and behaves exactly as before. After a successful test the panel also
+  shows what the provider actually returned - its endpoints and the scopes it advertises - so you
+  can check it against your provider's admin screen instead of taking "success" on trust.
+
 - **If the panel could not tell whether your server was running, it assumed it was stopped.** The
   check that looks for the running game process reports a plain "not running" both when the server
   is genuinely stopped and when the check itself fails - an unreadable process list, a permissions
