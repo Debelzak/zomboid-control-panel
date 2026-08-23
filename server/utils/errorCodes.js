@@ -102,6 +102,11 @@ export const ErrorCode = Object.freeze({
   /** server/routes/auth.js -- POST /api/auth/reset-token/local, request did
    * not originate from the panel host itself. */
   LOCAL_RESET_NOT_LOCAL: "LOCAL_RESET_NOT_LOCAL",
+  /** server/routes/auth.js -- POST /api/auth/reset-token/local, refused
+   * because the panel is behind a reverse proxy (trust proxy configured) and
+   * so cannot verify the request's real origin. Fails closed rather than
+   * trusting a forwarded header -- see isPanelBehindTrustProxy. */
+  LOCAL_RESET_BEHIND_PROXY: "LOCAL_RESET_BEHIND_PROXY",
   /** server/routes/auth.js -- POST /api/auth/reset-token/local, writing the
    * token file itself failed. */
   LOCAL_RESET_TOKEN_CREATE_FAILED: "LOCAL_RESET_TOKEN_CREATE_FAILED",

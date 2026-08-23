@@ -87,7 +87,23 @@ function getResetTokenPath() {
   return path.join(dataDir, "reset-token.txt");
 }
 
+// When trust proxy is configured (server/index.js, TRUST_PROXY env var), the
+// TCP peer on every request is the reverse proxy itself, not the real
+// client -- the panel has no way to tell a local caller from a remote one at
+// the socket layer. Trusting a forwarded header instead would let a remote
+// caller spoof local trust (see bugfixes.test.js's "does not trust
+// proxy-derived IP fields" test, which defends against exactly that). Fail
+// closed rather than guess in either direction: under a proxy, nothing is
+// ever treated as local.
+export function isPanelBehindTrustProxy(req) {
+  return Boolean(req.app?.get?.("trust proxy"));
+}
+
 export function isLocalPanelRequest(req) {
+  if (isPanelBehindTrustProxy(req)) {
+    return false;
+  }
+
   const candidateAddresses = [
     req.socket?.remoteAddress,
     req.connection?.remoteAddress,
@@ -780,6 +796,13 @@ router.post("/recover-with-code", resetLimiter, async (req, res) => {
 router.post("/reset-token/local", localResetTokenLimiter, async (req, res) => {
   try {
     if (!isLocalPanelRequest(req)) {
+      if (isPanelBehindTrustProxy(req)) {
+        return res.status(403).json({
+          error:
+            "This panel is running behind a reverse proxy, so it can't verify a request came from the server itself. Create data/reset-token.txt on the host directly, or use a recovery code instead.",
+          code: ErrorCode.LOCAL_RESET_BEHIND_PROXY,
+        });
+      }
       return res.status(403).json({
         error:
           "This recovery action is only available when the panel is opened from the server itself.",

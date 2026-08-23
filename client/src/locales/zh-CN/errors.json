@@ -17,6 +17,7 @@
   "RATE_LIMIT_LOCAL_RECOVERY": "本地找回尝试次数过多，请稍后重试。",
   "RECOVERY_CODE_FIELDS_REQUIRED": "找回代码与新密码均为必填项",
   "LOCAL_RESET_NOT_LOCAL": "此找回操作仅在从服务器本机打开面板时可用。",
+  "LOCAL_RESET_BEHIND_PROXY": "此面板运行在反向代理之后，无法验证请求确实来自服务器本身。请直接在主机上创建 data/reset-token.txt，或改用找回代码。",
   "LOCAL_RESET_TOKEN_CREATE_FAILED": "无法在此服务器上创建找回令牌。",
   "RESET_PASSWORD_FIELDS_REQUIRED": "令牌与新密码均为必填项",
   "RESET_PASSWORD_TOO_LONG": "密码不得超过 128 个字符",

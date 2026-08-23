@@ -17,6 +17,7 @@
   "RATE_LIMIT_LOCAL_RECOVERY": "Trop de tentatives de récupération locale. Réessayez plus tard.",
   "RECOVERY_CODE_FIELDS_REQUIRED": "Un code de récupération et un nouveau mot de passe sont requis",
   "LOCAL_RESET_NOT_LOCAL": "Cette action de récupération n'est disponible que lorsque le panneau est ouvert depuis le serveur lui-même.",
+  "LOCAL_RESET_BEHIND_PROXY": "Ce panneau fonctionne derrière un proxy inverse et ne peut donc pas vérifier qu'une requête provient réellement du serveur. Créez data/reset-token.txt directement sur l'hôte, ou utilisez plutôt un code de récupération.",
   "LOCAL_RESET_TOKEN_CREATE_FAILED": "Impossible de créer un jeton de récupération sur ce serveur.",
   "RESET_PASSWORD_FIELDS_REQUIRED": "Le jeton et le nouveau mot de passe sont requis",
   "RESET_PASSWORD_TOO_LONG": "Le mot de passe doit comporter 128 caractères ou moins",

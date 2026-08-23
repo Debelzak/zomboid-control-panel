@@ -17,6 +17,7 @@
   "RATE_LIMIT_LOCAL_RECOVERY": "Too many local recovery attempts. Please try again later.",
   "RECOVERY_CODE_FIELDS_REQUIRED": "A recovery code and a new password are required",
   "LOCAL_RESET_NOT_LOCAL": "This recovery action is only available when the panel is opened from the server itself.",
+  "LOCAL_RESET_BEHIND_PROXY": "This panel is running behind a reverse proxy, so it can't verify a request came from the server itself. Create data/reset-token.txt on the host directly, or use a recovery code instead.",
   "LOCAL_RESET_TOKEN_CREATE_FAILED": "Could not create a recovery token on this server.",
   "RESET_PASSWORD_FIELDS_REQUIRED": "Token and new password are required",
   "RESET_PASSWORD_TOO_LONG": "Password must be 128 characters or fewer",

@@ -17,6 +17,7 @@
   "RATE_LIMIT_LOCAL_RECOVERY": "Demasiados intentos de recuperación local. Inténtalo de nuevo más tarde.",
   "RECOVERY_CODE_FIELDS_REQUIRED": "Se requieren un código de recuperación y una nueva contraseña",
   "LOCAL_RESET_NOT_LOCAL": "Esta acción de recuperación solo está disponible cuando el panel se abre desde el propio servidor.",
+  "LOCAL_RESET_BEHIND_PROXY": "Este panel se ejecuta detrás de un proxy inverso, por lo que no puede verificar que una solicitud provenga realmente del servidor. Crea data/reset-token.txt directamente en el host, o usa un código de recuperación en su lugar.",
   "LOCAL_RESET_TOKEN_CREATE_FAILED": "No se pudo crear un token de recuperación en este servidor.",
   "RESET_PASSWORD_FIELDS_REQUIRED": "Se requieren el token y la nueva contraseña",
   "RESET_PASSWORD_TOO_LONG": "La contraseña debe tener 128 caracteres o menos",
