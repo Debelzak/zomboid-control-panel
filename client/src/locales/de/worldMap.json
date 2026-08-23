@@ -8,7 +8,7 @@
   "safehouseFallback": "Safehouse",
   "vehicleFallback": "Fahrzeug",
   "controlRail": {
-    "ctrlLabel": "Steuerung",
+    "ctrlLabel": "Strg",
     "zoomIn": "Vergrößern",
     "zoomOut": "Verkleinern",
     "fitToPlayers": "An Spieler anpassen",
