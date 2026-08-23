@@ -106,7 +106,7 @@
     }
   },
   "rain": {
-    "sublabel": "rcon · immer verfügbar",
+    "sublabel": "RCON · immer verfügbar",
     "rainLabel": "Regen",
     "stormLabel": "Sturm",
     "startRain": "Regen starten",
@@ -313,7 +313,7 @@
     "operationSelectAria": "Aktion auswählen",
     "operationSelectPlaceholder": "Aktion auswählen",
     "operationGroupsLabel": "Aktionsgruppen",
-    "operationGroupsHint": "Durchsuche nach Kategorie: Territorium, Fahrzeuge, Events und Moderation.",
+    "operationGroupsHint": "Durchsuche nach Kategorie: Gebiet, Fahrzeuge, Events und Moderation.",
     "quickPicks": "Schnellauswahl: {{group}}",
     "optionsCount": "{{count}} Optionen",
     "operationInputsLabel": "Aktionseingaben",
@@ -351,7 +351,7 @@
     "requiredSuffix": " *"
   },
   "operationGroups": {
-    "territory": { "label": "Territorium", "description": "Verwaltung von Safehouses und Fraktionen." },
+    "territory": { "label": "Gebiet", "description": "Verwaltung von Safehouses und Fraktionen." },
     "vehicles": { "label": "Fahrzeuge", "description": "Reparatur, Alarme, Sirenen und Kofferraumschlösser." },
     "events": { "label": "Events", "description": "Schwärme, Infrastruktur und skriptgesteuerte Abläufe." },
     "moderation": { "label": "Moderation", "description": "Kick- und Bann-Aktionen über BanSystem." }
