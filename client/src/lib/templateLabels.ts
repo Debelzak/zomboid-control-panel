@@ -4,7 +4,12 @@
  * falls back to splitting the raw PZ key (e.g. "PVPMeleeDamageModifier")
  * into words for settings that schema doesn't (yet) describe.
  */
-import { getIniSetting, getSandboxSetting } from "./serverConfigSchema";
+import {
+  getIniSetting,
+  getSandboxSetting,
+  getIniSettingLabel,
+  getSandboxSettingLabel,
+} from "./serverConfigSchema";
 import { resolveRegisteredTranslation } from "./paramTranslation";
 
 const ACRONYM_LABELS: Record<string, string> = {
@@ -22,11 +27,13 @@ export function humanizeTemplateKey(key: string): string {
 }
 
 export function getIniKeyLabel(key: string): string {
-  return getIniSetting(key)?.label || humanizeTemplateKey(key);
+  const setting = getIniSetting(key);
+  return setting ? getIniSettingLabel(setting) : humanizeTemplateKey(key);
 }
 
 export function getSandboxKeyLabel(key: string): string {
-  return getSandboxSetting(key)?.label || humanizeTemplateKey(key);
+  const setting = getSandboxSetting(key);
+  return setting ? getSandboxSettingLabel(setting) : humanizeTemplateKey(key);
 }
 
 /** e.g. "hardcore" -> "Hardcore", "pvp" -> "PVP", "first-week" -> "First Week". */
