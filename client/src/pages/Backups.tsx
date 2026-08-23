@@ -518,7 +518,7 @@ export default function Backups() {
         description={t('pageHeader.description')}
         icon={<Archive className="w-5 h-5 text-primary" />}
         actions={
-          <div className="flex items-center gap-2">
+          <>
             <Button
               onClick={handleCreateBackup}
               disabled={creatingBackup || restoringBackup !== null || !backupStatus?.savesExists || activeServerRemote}
@@ -574,7 +574,7 @@ export default function Backups() {
             >
               <RefreshCw className={cn('w-4 h-4', loading && 'animate-spin')} />
             </Button>
-          </div>
+          </>
         }
       />
 
