@@ -1187,7 +1187,7 @@ export default function Servers() {
         tone="servers"
         icon={<Server className="w-5 h-5 text-primary" />}
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             <Button
               variant="outline"
               size="icon"
