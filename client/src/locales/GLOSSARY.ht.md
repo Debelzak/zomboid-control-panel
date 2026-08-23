@@ -64,6 +64,10 @@ command names, cron expressions, and anything inside `{{double braces}}`.
 | folder | dosye | |
 | path | chemen | |
 | wipe (destructive) | efase nèt | "erase completely" — never *reyinisyalize* (reset), see Style rules |
+| vehicle | machin | |
+| spawn (verb, materialize an item/vehicle/entity in-world) | fè parèt | "make appear" — descriptive, no established single-word Kreyòl gaming term found |
+| scan (verb, query the live server via PanelBridge) | eskane | |
+| catalog | katalòg | |
 | Safehouse (Project Zomboid mechanic) | kay sekirize | **uncertain** — descriptive translation ("secured house"), not a known established Kreyòl gaming term. Flagged for native-speaker review; if a real Kreyòl PZ community term exists, it should replace this. |
 
 ## Access control
