@@ -11,6 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Scanning a large mod library for conflicts froze the rest of the panel.** The scan walked every
+  file of every installed mod without ever pausing, so on a big library nothing else the panel was
+  doing could get a turn - the player list, RCON, any other tab, all stalled until it finished. On a
+  library with one very large mod in it that stall was measured at just under seven tenths of a
+  second, in a single unbroken block. It is now under thirty milliseconds. Two separate loops were
+  responsible; the second and larger one only came to light after the first was fixed and the
+  improvement turned out to be smaller than it should have been.
+
 - **Banning or unbanning by Steam ID accepted anything you typed.** The player allowlist field already
   kept only digits, stopped at seventeen of them, and refused to submit until it had exactly that -
   matching what the server requires. Its two neighbours, Ban by Steam ID and Unban by Steam ID, took
