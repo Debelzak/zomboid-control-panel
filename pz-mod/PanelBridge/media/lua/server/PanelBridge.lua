@@ -4861,7 +4861,7 @@ handlers.restoreUtilities = function(args, cmdId)
             message = "Utilities restored",
             power = restorePower,
             water = restoreWater,
-            hydroPowerOn = true,
+            hydroPowerOn = world:isHydroPowerOn(),
             debug = debugInfo
         }
     end
@@ -4998,7 +4998,7 @@ handlers.shutOffUtilities = function(args, cmdId)
             message = "Utilities shut off",
             power = shutPower,
             water = shutWater,
-            hydroPowerOn = false,
+            hydroPowerOn = world:isHydroPowerOn(),
             debug = debugInfo
         }
     end
@@ -6579,15 +6579,6 @@ handlers.vehicleHotwire = function(args)
 
     if not ok then
         return false, nil, "Hotwire failed: " .. tostring(err) .. " (completed: " .. table.concat(actions, ", ") .. ")"
-    end
-
-    local failed = 0
-    for _, result in ipairs(results) do
-        if not result.success then failed = failed + 1 end
-    end
-    if failed > 0 then
-        return false, { executed = executed, failed = failed, results = results },
-            tostring(failed) .. " event sequence step(s) failed"
     end
 
     return true, {
