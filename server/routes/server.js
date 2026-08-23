@@ -553,11 +553,37 @@ export function formatDirectoryReadError(
 // Security: INI sanitization imported from shared util
 // sanitizeIniValue strips \r\n;= to prevent injection
 
-// Security: Validate integer in range
-function validateInt(value, min, max, defaultVal) {
+// Coerces `value` to an integer in [min, max], silently substituting
+// defaultVal on NaN or out-of-range input. Despite the old name this
+// function replaced ("validateInt"), it does not validate -- it never
+// refuses a bad value or tells anyone it was replaced. Only use this for a
+// machine-supplied or optional parameter where the substituted default IS
+// the designed behaviour (e.g. a listing limit nobody typed deliberately).
+// A value a human typed into a field belongs in requireIntInRange below
+// instead -- see 2026-08-23 validateInt-coerces audit (server.js call sites
+// were split between the two on a case-by-case basis, not a blanket switch).
+function coerceIntInRange(value, min, max, defaultVal) {
   const num = parseInt(value, 10);
   if (isNaN(num) || num < min || num > max) return defaultVal;
   return num;
+}
+
+// Parses `value` as an integer in [min, max]. Returns { ok: true, value }
+// on success, or { ok: false, message } naming the field and the valid
+// range on failure -- for a value a human typed into a field, where
+// silently substituting something else would leave them believing they set
+// something they didn't (a port they typed being silently swapped is the
+// motivating case: their firewall rule and port forward end up pointing at
+// a number nothing is listening on, with nothing telling them why).
+function requireIntInRange(value, min, max, fieldLabel) {
+  const num = parseInt(value, 10);
+  if (isNaN(num) || num < min || num > max) {
+    return {
+      ok: false,
+      message: `${fieldLabel} must be a whole number between ${min} and ${max}.`,
+    };
+  }
+  return { ok: true, value: num };
 }
 
 // Build the Java classpath entries for launching the dedicated server.
@@ -1333,7 +1359,12 @@ router.post("/events/horde", requirePermission("server.world_events"), async (re
   try {
     const rconService = req.app.get("rconService");
     const { count, username } = req.body;
-    const safeCount = validateInt(count, 1, 500, 50);
+    // Coerced, not refused: the UI's slider already clamps to [10, 500], so
+    // an out-of-range value here only reaches this route via a direct API
+    // call, and a smaller-than-asked horde is not a "your setting was
+    // silently ignored" story the way a swapped port is -- see
+    // 2026-08-23 validateInt-coerces audit.
+    const safeCount = coerceIntInRange(count, 1, 500, 50);
     if (username && (typeof username !== "string" || username.length > 64)) {
       return res.status(400).json({ error: "Invalid username", code: ErrorCode.EVENTS_INVALID_USERNAME });
     }
@@ -1695,11 +1726,30 @@ router.post("/install", requirePermission("server.install"), async (req, res) =>
       });
     }
 
-    // Validate numeric inputs
-    const safeMinMemory = validateInt(minMemory, 1, 64, 4);
-    const safeMaxMemory = validateInt(maxMemory, 1, 128, 8);
-    const safeServerPort = validateInt(serverPort, 1024, 65535, 16261);
-    const safeRconPort = validateInt(rconPort, 1024, 65535, 27015);
+    // Validate numeric inputs -- each of these was explicitly typed into a
+    // field by the operator, so an out-of-range value is refused (with a
+    // named field + range) rather than silently swapped for a default they
+    // never chose. See 2026-08-23 validateInt-coerces audit.
+    const minMemoryCheck = requireIntInRange(minMemory, 1, 64, "Minimum memory (GB)");
+    if (!minMemoryCheck.ok) {
+      return res.status(400).json({ error: minMemoryCheck.message, code: ErrorCode.INVALID_MIN_MEMORY });
+    }
+    const maxMemoryCheck = requireIntInRange(maxMemory, 1, 128, "Maximum memory (GB)");
+    if (!maxMemoryCheck.ok) {
+      return res.status(400).json({ error: maxMemoryCheck.message, code: ErrorCode.INVALID_MAX_MEMORY });
+    }
+    const serverPortCheck = requireIntInRange(serverPort, 1024, 65535, "Game port");
+    if (!serverPortCheck.ok) {
+      return res.status(400).json({ error: serverPortCheck.message, code: ErrorCode.INVALID_SERVER_PORT });
+    }
+    const rconPortCheck = requireIntInRange(rconPort, 1024, 65535, "RCON port");
+    if (!rconPortCheck.ok) {
+      return res.status(400).json({ error: rconPortCheck.message, code: ErrorCode.INVALID_RCON_PORT });
+    }
+    const safeMinMemory = minMemoryCheck.value;
+    const safeMaxMemory = maxMemoryCheck.value;
+    const safeServerPort = serverPortCheck.value;
+    const safeRconPort = rconPortCheck.value;
 
     // Sanitize string inputs for batch file
     const safeAdminPassword = sanitizeForBatch(adminPassword);
@@ -2181,11 +2231,28 @@ router.post("/quick-setup", requirePermission("server.install"), async (req, res
       });
     }
 
-    // Validate numeric inputs
-    const safeMinMemory = validateInt(minMemory, 1, 64, 4);
-    const safeMaxMemory = validateInt(maxMemory, 1, 128, 8);
-    const safeServerPort = validateInt(serverPort, 1024, 65535, 16261);
-    const safeRconPort = validateInt(rconPort, 1024, 65535, 27015);
+    // Validate numeric inputs -- same refuse-don't-coerce reasoning as
+    // /install above. See 2026-08-23 validateInt-coerces audit.
+    const minMemoryCheck = requireIntInRange(minMemory, 1, 64, "Minimum memory (GB)");
+    if (!minMemoryCheck.ok) {
+      return res.status(400).json({ error: minMemoryCheck.message, code: ErrorCode.INVALID_MIN_MEMORY });
+    }
+    const maxMemoryCheck = requireIntInRange(maxMemory, 1, 128, "Maximum memory (GB)");
+    if (!maxMemoryCheck.ok) {
+      return res.status(400).json({ error: maxMemoryCheck.message, code: ErrorCode.INVALID_MAX_MEMORY });
+    }
+    const serverPortCheck = requireIntInRange(serverPort, 1024, 65535, "Game port");
+    if (!serverPortCheck.ok) {
+      return res.status(400).json({ error: serverPortCheck.message, code: ErrorCode.INVALID_SERVER_PORT });
+    }
+    const rconPortCheck = requireIntInRange(rconPort, 1024, 65535, "RCON port");
+    if (!rconPortCheck.ok) {
+      return res.status(400).json({ error: rconPortCheck.message, code: ErrorCode.INVALID_RCON_PORT });
+    }
+    const safeMinMemory = minMemoryCheck.value;
+    const safeMaxMemory = maxMemoryCheck.value;
+    const safeServerPort = serverPortCheck.value;
+    const safeRconPort = rconPortCheck.value;
     const safeAdminPassword = sanitizeForBatch(adminPassword);
 
     log.info(
@@ -2351,7 +2418,12 @@ router.post("/quick-setup", requirePermission("server.install"), async (req, res
 router.post("/configure-rcon", requirePermission("server.configure"), async (req, res) => {
   try {
     const { rconPassword, rconPort: rawRconPort = 27015 } = req.body;
-    const rconPort = validateInt(rawRconPort, 1024, 65535, 27015);
+    // Refused, not coerced: see 2026-08-23 validateInt-coerces audit.
+    const rconPortCheck = requireIntInRange(rawRconPort, 1024, 65535, "RCON port");
+    if (!rconPortCheck.ok) {
+      return res.status(400).json({ error: rconPortCheck.message, code: ErrorCode.INVALID_RCON_PORT });
+    }
+    const rconPort = rconPortCheck.value;
 
     if (!rconPassword) {
       return res.status(400).json({ error: "RCON password is required", code: ErrorCode.CONFIGURE_RCON_PASSWORD_REQUIRED });
@@ -2424,7 +2496,12 @@ router.post("/configure-rcon", requirePermission("server.configure"), async (req
 router.post("/configure-network", requirePermission("server.configure"), async (req, res) => {
   try {
     const { serverPort: rawServerPort = 16261, useUpnp = true } = req.body;
-    const serverPort = validateInt(rawServerPort, 1024, 65535, 16261);
+    // Refused, not coerced: see 2026-08-23 validateInt-coerces audit.
+    const serverPortCheck = requireIntInRange(rawServerPort, 1024, 65535, "Game port");
+    if (!serverPortCheck.ok) {
+      return res.status(400).json({ error: serverPortCheck.message, code: ErrorCode.INVALID_SERVER_PORT });
+    }
+    const serverPort = serverPortCheck.value;
 
     // Get the server config path from active server or settings
     const serverConfigPath = await getServerConfigPath();
@@ -2637,7 +2714,11 @@ router.post("/stats", requirePermission("server.configure"), async (req, res) =>
         .json({ error: `Invalid mode. Valid: ${validModes.join(", ")}`, code: ErrorCode.STATS_INVALID_MODE });
     }
 
-    const validPeriod = period ? validateInt(period, 1, 3600, null) : null;
+    // Coerced, not refused: no client caller sets this today (unused API
+    // surface), and an out-of-range value already falls back to `null`
+    // (stats reporting off) rather than a plausible-looking wrong number --
+    // see 2026-08-23 validateInt-coerces audit.
+    const validPeriod = period ? coerceIntInRange(period, 1, 3600, null) : null;
 
     const result = await rconService.setStats(mode, validPeriod);
     res.json(result);
