@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mockGetRoleByName } from "./helpers/mockPermissionsDb.js";
 
 // Coverage for worldmap.tiles.buildDetect's two getB42ResolutionStatus()
@@ -18,12 +18,38 @@ vi.mock("../database/init.js", async () => {
 });
 
 const getB42ResolutionStatus = vi.fn();
+const getB42Dir = vi.fn();
+const getB42TopFormat = vi.fn();
 vi.mock("../routes/mapProxy.js", async () => {
   const actual = await vi.importActual("../routes/mapProxy.js");
-  return { ...actual, getB42ResolutionStatus };
+  return { ...actual, getB42ResolutionStatus, getB42Dir, getB42TopFormat };
 });
 
 const { default: debugRouter } = await import("../routes/debug.js");
+
+// The /worldmap handler calls getB42Dir()/getB42TopFormat() for real
+// (unrelated to the buildDetect check these tests target) and then probes
+// three tile URLs with a real fetch(), each under its own 5s timeout.
+// Jim's curl-based discovery in mapProxy.js is correct but genuinely slower
+// than the old fetch-based version, and under a full 132-file suite run
+// (shared CPU/network with everything else) that pushed this test right up
+// against vitest's own per-test timeout -- flaky under load, reliably green
+// in isolation. Stubbing all three removes every source of live network
+// wall-clock time from a test that only asserts on the buildDetect check
+// entry, not on b42Dir/b42TopFormat/the tile probes themselves.
+let originalFetch;
+beforeEach(() => {
+  getB42Dir.mockResolvedValue("42.20.0");
+  getB42TopFormat.mockResolvedValue("jpg");
+  originalFetch = global.fetch;
+  global.fetch = vi.fn(async () => {
+    throw new Error("network disabled for this test");
+  });
+});
+
+afterEach(() => {
+  global.fetch = originalFetch;
+});
 
 function createResponse() {
   const response = { status: () => response, json: () => response };
