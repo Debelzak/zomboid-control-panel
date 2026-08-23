@@ -176,7 +176,7 @@
     "avQuarantine": "Virenschutz oder Controlled Folder Access hat die neue Binärdatei nach der Platzierung gelöscht.",
     "avExclusionHint": "Füge diesen Ordner zu deinen Virenschutzausnahmen hinzu und versuche es erneut:",
     "windowsDefenderLabel": "Windows Defender:",
-    "renameLocked": "ein anderer Prozess (OneDrive, Virenschutz oder ein Datei-Watcher) hat die exe gesperrt. Pausiere OneDrive oder schließe Explorer-Fenster, die auf den Ordner zeigen, und versuche es dann erneut.",
+    "renameLocked": "ein anderer Prozess (OneDrive, Virenschutz oder ein Datei-Watcher) hat die EXE gesperrt. Pausiere OneDrive oder schließe Explorer-Fenster, die auf den Ordner zeigen, und versuche es dann erneut.",
     "permissionDenied": "Zugriff beim Schreiben in den Panel-Ordner verweigert. Starte das Panel erneut als Administrator oder verschiebe es aus dem Ordner „Program Files“.",
     "helperBlocked": "das Update-Hilfsskript wurde am Ausführen gehindert (Windows Defender ASR, AppLocker oder Gruppenrichtlinie). Die bereitgestellte Binärdatei befindet sich noch auf der Festplatte.",
     "helperBlockedRecoveryLabel": "Wiederherstellung:",

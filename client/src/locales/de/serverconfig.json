@@ -154,7 +154,7 @@
     "sectionLabel": "Mod-Sandbox-Optionen",
     "sectionSublabelLoaded_one": "{{count}} Mod · live von PanelBridge",
     "sectionSublabelLoaded_other": "{{count}} Mods · live von PanelBridge",
-    "sectionSublabelIdle": "panelbridge · live",
+    "sectionSublabelIdle": "PanelBridge · live",
     "modifiedBadge": "{{count}} geändert",
     "refresh": "Aktualisieren",
     "load": "Laden",
