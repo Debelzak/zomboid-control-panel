@@ -214,6 +214,25 @@ consistency, and length wins wherever the label has no room to be a word.
    to disk. Translate our explanation of what that setting does. Judge it per string
    and report anything genuinely ambiguous rather than guessing silently.
 
+## A keyboard key takes its German key legend, not the German word
+
+`Strg`, not *Steuerung*. `Umschalt` / `Umschalttaste`, not *Verschiebung*. `Entf`, `Eingabe`,
+`Alt`, `Esc`, `Tab`. The label names a **physical key the operator is looking at**, and a
+German keyboard has *Strg* printed on it.
+
+This convention already existed in the tree before it was written down — `debug.json`
+says *Strg+C* and *Strg+F*, `serverconfig.json` says *Strg+S*, `chunkCleaner.json` says
+*Umschalttaste*, all written independently by different people. One site disagreed
+(`worldMap.json` controlRail rendering *Steuerung* into a rail sized for four characters,
+hard-clipped to STEUERL on screen), and it was the only one.
+
+The generalisation is worth as much as the rule: **when several people independently
+land on the same form and one site does not, the outlier is the bug.** Look for the
+convention in the tree before inventing an answer.
+
+Note *Steuerung* is correct for the CONCEPT — *Live-Steuerung*, *RCON-Steuerung*. It is
+only wrong as the name of a key.
+
 ## Acronyms are capitalised in German even where English is inconsistent
 
 RCON, GM, INI, OIDC, RAM, CPU, ID. English source strings are **internally inconsistent
