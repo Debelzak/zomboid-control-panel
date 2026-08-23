@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Banning or unbanning by Steam ID accepted anything you typed.** The player allowlist field already
+  kept only digits, stopped at seventeen of them, and refused to submit until it had exactly that -
+  matching what the server requires. Its two neighbours, Ban by Steam ID and Unban by Steam ID, took
+  free text and only checked that you had typed something, so a mistyped or partial ID travelled to
+  the server and came back rejected with nothing pointing at what was wrong. All three fields now
+  behave the same way.
+
 - **Setting the panel's own port out of range saved without complaint, then sent you to a dead
   address.** The panel port field on the Settings page accepted any number. The save reported success,
   because the server checks the HTTPS port and the reconnect interval on that form but had no check at
