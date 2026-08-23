@@ -7,6 +7,92 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-08-23
+
+### Fixed
+
+- **Four more places could act on a server whose state the panel could not actually determine.** The
+  fix above closed that gap for wiping the world, updating through SteamCMD, the unattended
+  auto-updater and automatic mod restarts. The same "cannot tell" being read as "confirmed stopped"
+  was still present in four more: deleting map chunks or a whole region, restoring a backup,
+  applying a config template, and clearing stale lock files. Two of those overwrite live data
+  outright - restoring a backup rolls the world back over every player currently standing in it,
+  and deleting chunks can corrupt save files a still-running server is holding open. All four now
+  refuse outright when the server's state cannot be confirmed, matching the rule already applied
+  everywhere else.
+
+- **A sandbox setting could be reported as saved and be gone after the next restart.** Applying a
+  sandbox option through the in-game bridge calls the game's own world-save function to persist it,
+  but the result of that save was thrown away - so a save that failed, whether from a full disk or
+  a world already mid-save, still told the panel it had worked. The setting looked applied right up
+  until the server restarted and reverted to whatever was actually on disk. The save's real result
+  is now checked, logged when it fails, and reported back.
+
+- **Several RCON-only actions reported success while doing nothing at all.** The panel's check for
+  "the game refused this command" recognised exactly one wording - `Unknown command` - so every
+  other way the game says no was read as success. An audit against the real dedicated-server code
+  found four places this let the panel lie. **Kicking a player with a reason** accepted the reason,
+  wrote it to the panel's own log, and never sent it to the game, so the kicked player and the
+  server's logs never saw why. **Releasing a safehouse** can never work over RCON at all - Project
+  Zomboid refuses that specific command from anything but the game itself - and the panel reported
+  success on every attempt anyway; it now says plainly that it cannot do it. (Doing it through the
+  in-game mod instead would be new work, not a fix, and is not part of this release.) **God mode
+  and invisibility aimed at another player** were sent as the command that toggles them on
+  yourself, which has no slot for someone else's name - so it could never reach the player you
+  picked. The panel now sends the command the game actually provides for targeting someone else.
+  The refusal check itself now recognises three more ways the game says no, and is applied to
+  retried commands too: previously a command that reconnected and was then still refused reported
+  success regardless. A warning on the Players page claiming RCON could never target another player
+  has been removed - it was true when it was written, and stopped being true the moment the fix
+  above landed.
+
+- **Three more places reported success without checking whether the thing they claimed to do had
+  happened**, found by the same audit as the 42 above. Applying a config template writes the main
+  settings and the sandbox settings as two separate steps; if the first succeeded and the second
+  failed, the panel reported a flat failure as though neither had happened, when the first was
+  already on disk. Changing the Discord bot's token or server ID while it is running reconnects it
+  immediately, and a reconnect that failed - a bad token, a timeout - was reported exactly like one
+  that worked; the settings themselves always saved correctly, it was only the reconnect status
+  that was wrong. And saving server configuration and immediately telling the running server to
+  reload it always reported the reload half as successful, whatever the server actually said. All
+  three now report what genuinely happened.
+
+- **The off-screen-buttons bug already fixed for Backups was hiding on three more screens.** A long
+  task name in Scheduler could push its Run, Edit, Toggle and Delete buttons completely out of
+  reach on a phone; the Refresh and Clear buttons above the execution history could be clipped the
+  same way, worse in German; the Debug Logs page had the identical problem in both its header
+  controls and its log lines; and a long player name on the Players page defeated its own
+  truncation and pushed the row's expand arrow off the screen. All four are fixed, and the fix now
+  lives in one shared component instead of being hand-copied a fifth time - so this particular bug
+  cannot come back by copy-paste on whatever screen is built next.
+
+- **Several disabled buttons and status badges explained themselves only to a mouse.** The reason a
+  button was greyed out - an expired Steam session, missing cookies - lived only in a hover tooltip
+  that a keyboard, touchscreen or screen-reader user never receives. Fixed in three places: the
+  Add and Remove buttons on the Mods page now expose their disabled reason properly; the PanelBridge
+  connection badge announced nothing at all for two of its four states and dropped part of the
+  announcement for the other two, and now announces all four; and a mod conflict badge's
+  "shadowed" explanation is now shown as real visible text instead of hiding behind a hover.
+
+- **Player traits never loaded at all on Build 42.** The in-game bridge asked for a player's traits
+  using three different method names in turn, and none of the three exist in Build 42 - so every
+  trait lookup came back empty, every time, and looked like a player who simply had no traits. It
+  now uses the method Build 42 actually provides. Two smaller faults of the same kind were fixed
+  alongside it: an enum-type sandbox option never reported which choice was selected, and an
+  inventory item's progress values (how far through a book you are, how much is left in a drainable
+  item) were always blank because the panel asked for a single value the game does not have -
+  it now carries both of the real ones.
+
+### Added
+
+- **Two more health checks on the Debug page.** One reports how many of your tracked mods currently
+  have no Workshop thumbnail and why - most often because Steam itself cannot be reached from the
+  panel's machine - and the panel now stops re-requesting every one of them on every page load once
+  it has seen a failure, instead of hammering Steam from a host where it already knows it cannot
+  get through. The other looks back over the last day of RCON commands for any the game itself
+  refused, as opposed to a connection failure, which a different check already covers, and names
+  which commands and why.
+
 ## [1.2.0] - 2026-08-22
 
 > **TL;DR:** This is a big update. The panel now has broader multilingual support,
@@ -18,13 +104,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Two more health checks on the Debug page.** One reports how many of your tracked mods currently
-  have no Workshop thumbnail and why - most often because Steam itself cannot be reached from the
-  panel's machine - and the panel now stops re-requesting every one of them on every page load once
-  it has seen a failure, instead of hammering Steam from a host where it already knows it cannot
-  get through. The other looks back over the last day of RCON commands for any the game itself
-  refused, as opposed to a connection failure, which a different check already covers, and names
-  which commands and why.
 
 - **The support bundle now knows about everything this release added.** The zip you generate from the
   Debug page is what someone looks at when they are trying to help you, and it had not kept up. It
@@ -267,22 +346,6 @@ reliability, then interface and translation.
   a screen remembering to ask. It now refuses both cases, and, like wiping, refuses outright when
   it cannot tell whether the server is running rather than assuming it is stopped.
 
-- **The off-screen-buttons bug already fixed for Backups was hiding on three more screens.** A long
-  task name in Scheduler could push its Run, Edit, Toggle and Delete buttons completely out of
-  reach on a phone; the Refresh and Clear buttons above the execution history could be clipped the
-  same way, worse in German; the Debug Logs page had the identical problem in both its header
-  controls and its log lines; and a long player name on the Players page defeated its own
-  truncation and pushed the row's expand arrow off the screen. All four are fixed, and the fix now
-  lives in one shared component instead of being hand-copied a fifth time - so this particular bug
-  cannot come back by copy-paste on whatever screen is built next.
-
-- **Several disabled buttons and status badges explained themselves only to a mouse.** The reason a
-  button was greyed out - an expired Steam session, missing cookies - lived only in a hover tooltip
-  that a keyboard, touchscreen or screen-reader user never receives. Fixed in three places: the
-  Add and Remove buttons on the Mods page now expose their disabled reason properly; the PanelBridge
-  connection badge announced nothing at all for two of its four states and dropped part of the
-  announcement for the other two, and now announces all four; and a mod conflict badge's
-  "shadowed" explanation is now shown as real visible text instead of hiding behind a hover.
 
 - **On a phone, the Backups page could push the buttons for your backups completely off the side of
   the screen.** When a backup's filename was long - which it is whenever the server has a
@@ -300,22 +363,6 @@ reliability, then interface and translation.
   quietly swallowed the error and moved on. So the bundle always looked complete and never was. It
   builds correctly now.
 
-- **Four more places could act on a server whose state the panel could not actually determine.** The
-  fix above closed that gap for wiping the world, updating through SteamCMD, the unattended
-  auto-updater and automatic mod restarts. The same "cannot tell" being read as "confirmed stopped"
-  was still present in four more: deleting map chunks or a whole region, restoring a backup,
-  applying a config template, and clearing stale lock files. Two of those overwrite live data
-  outright - restoring a backup rolls the world back over every player currently standing in it,
-  and deleting chunks can corrupt save files a still-running server is holding open. All four now
-  refuse outright when the server's state cannot be confirmed, matching the rule already applied
-  everywhere else.
-
-- **A sandbox setting could be reported as saved and be gone after the next restart.** Applying a
-  sandbox option through the in-game bridge calls the game's own world-save function to persist it,
-  but the result of that save was thrown away - so a save that failed, whether from a full disk or
-  a world already mid-save, still told the panel it had worked. The setting looked applied right up
-  until the server restarted and reverted to whatever was actually on disk. The save's real result
-  is now checked, logged when it fails, and reported back.
 
 - **The panel was quietly deleting backups you uploaded yourself**: automatic cleanup kept only the
   most recent backups and treated an archive you had uploaded by hand exactly like one the panel
@@ -343,34 +390,6 @@ reliability, then interface and translation.
   name, so changing the host or credentials and immediately reading a file could serve content
   fetched over the old connection. All three now report their real state.
 
-- **Several RCON-only actions reported success while doing nothing at all.** The panel's check for
-  "the game refused this command" recognised exactly one wording - `Unknown command` - so every
-  other way the game says no was read as success. An audit against the real dedicated-server code
-  found four places this let the panel lie. **Kicking a player with a reason** accepted the reason,
-  wrote it to the panel's own log, and never sent it to the game, so the kicked player and the
-  server's logs never saw why. **Releasing a safehouse** can never work over RCON at all - Project
-  Zomboid refuses that specific command from anything but the game itself - and the panel reported
-  success on every attempt anyway; it now says plainly that it cannot do it. (Doing it through the
-  in-game mod instead would be new work, not a fix, and is not part of this release.) **God mode
-  and invisibility aimed at another player** were sent as the command that toggles them on
-  yourself, which has no slot for someone else's name - so it could never reach the player you
-  picked. The panel now sends the command the game actually provides for targeting someone else.
-  The refusal check itself now recognises three more ways the game says no, and is applied to
-  retried commands too: previously a command that reconnected and was then still refused reported
-  success regardless. A warning on the Players page claiming RCON could never target another player
-  has been removed - it was true when it was written, and stopped being true the moment the fix
-  above landed.
-
-- **Three more places reported success without checking whether the thing they claimed to do had
-  happened**, found by the same audit as the 42 above. Applying a config template writes the main
-  settings and the sandbox settings as two separate steps; if the first succeeded and the second
-  failed, the panel reported a flat failure as though neither had happened, when the first was
-  already on disk. Changing the Discord bot's token or server ID while it is running reconnects it
-  immediately, and a reconnect that failed - a bad token, a timeout - was reported exactly like one
-  that worked; the settings themselves always saved correctly, it was only the reconnect status
-  that was wrong. And saving server configuration and immediately telling the running server to
-  reload it always reported the reload half as successful, whatever the server actually said. All
-  three now report what genuinely happened.
 
 - **"Success" messages that were not true**: 42 places in the panel showed a green success message
   as soon as the request came back, without checking whether the action had actually worked. Banning
