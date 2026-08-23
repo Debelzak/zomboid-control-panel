@@ -36,7 +36,7 @@ const router = express.Router();
 // round trip's latency is paid one after another with nothing overlapped.
 // A small bounded batch overlaps latency without either extreme.
 //
-// The bound is PER CALL, not global. getDirSize/countFiles/getDirStats
+// The bound is PER CALL, not global. getDirSize/getDirStats
 // below call this recursively — each nesting level gets its own fresh
 // `limit`-wide batch, so the true worst case across a walk N levels deep is
 // limit^N concurrent operations, not limit. For a save shaped like
@@ -522,13 +522,22 @@ router.get("/saves", async (req, res) => {
         const savePath = path.join(savesPath, d.name);
         const stats = await fs.promises.stat(savePath);
 
+        // /chunks/:saveName and /stats/:saveName already share map/'s scan
+        // via getMapFolderScan() (see its comment) -- this route was the
+        // one caller still walking it independently, via countFiles(), on
+        // EVERY page load (fetchSaves() runs on ChunkCleaner mount, before
+        // the user has even picked a save). Measured live: 8.06s for a
+        // 147,136-chunk save, on top of the already-fixed /chunks+/stats
+        // pair -- the operator's real page-load total was still ~13.7s
+        // after 6ad0ce0, not the 5.6s that fix alone reported.
+        const mapPath = path.join(savePath, "map");
+        const mapScan = await getMapFolderScan(mapPath);
+
         // Count chunk files (uses recursive count for B42's subdirectory structure)
         // Also check save root for B41 flat chunk files
-        let chunkCount = 0;
-        const mapPath = path.join(savePath, "map");
-        if (fs.existsSync(mapPath)) {
-          chunkCount = await countFiles(mapPath);
-        }
+        let chunkCount = mapScan.isB42Structure
+          ? mapScan.totalBinFiles + mapScan.totalNonBinFiles
+          : 0;
         if (chunkCount === 0) {
           // B41 fallback: count map_X_Y.bin files in save root
           const B41_CHUNK_REGEX = /^map_\d+_\d+\.bin$/i;
@@ -544,8 +553,37 @@ router.get("/saves", async (req, res) => {
           }
         }
 
-        // Get save size
-        const size = await getDirSize(savePath);
+        // Get save size -- reuse the map/ scan above for the "map" entry
+        // instead of letting getDirSize() re-walk the same 100k+ files a
+        // third time; every other top-level entry (chunkdata/, players.db,
+        // etc.) still goes through getDirSize()/stat() same as before.
+        let size = 0;
+        try {
+          const topEntries = await fs.promises.readdir(savePath, {
+            withFileTypes: true,
+          });
+          const topSizes = await Promise.all(
+            topEntries.map(async (entry) => {
+              if (entry.name === "map" && mapScan.isB42Structure) {
+                const chunkSize = mapScan.rawChunks.reduce(
+                  (sum, c) => sum + c.size,
+                  0,
+                );
+                return chunkSize + mapScan.totalNonBinSize;
+              }
+              const fullPath = path.join(savePath, entry.name);
+              if (entry.isDirectory()) return getDirSize(fullPath);
+              try {
+                return (await fs.promises.stat(fullPath)).size;
+              } catch (e) {
+                return 0;
+              }
+            }),
+          );
+          size = topSizes.reduce((a, b) => a + b, 0);
+        } catch (e) {
+          log.debug(`Save size scan failed for ${savePath}: ${e.message}`);
+        }
 
         return {
           name: d.name,
@@ -2084,7 +2122,7 @@ router.get("/stats/:saveName", async (req, res) => {
 
 // Helper functions
 //
-// getDirSize/countFiles/getDirStats all recurse with bounded concurrency
+// getDirSize/getDirStats both recurse with bounded concurrency
 // (via runWithConcurrency) rather than firing every entry at once — a
 // directory with hundreds of subdirectories previously opened hundreds of
 // simultaneous readdir/stat handles per recursion level. That's a per-level
@@ -2116,30 +2154,10 @@ async function getDirSize(dirPath) {
   return totalSize;
 }
 
-// Count files recursively (handles B42's subdirectory structure).
-async function countFiles(dirPath) {
-  let count = 0;
-  try {
-    const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
-    const dirs = entries.filter((e) => e.isDirectory());
-    count += entries.length - dirs.length;
-    if (dirs.length > 0) {
-      const subCounts = await runWithConcurrency(dirs, DIR_WALK_CONCURRENCY, (entry) =>
-        countFiles(path.join(dirPath, entry.name)),
-      );
-      count += subCounts.reduce((a, b) => a + b, 0);
-    }
-  } catch (err) {
-    if (err.code !== "EACCES" && err.code !== "ENOENT")
-      log.debug(`countFiles error for ${dirPath}: ${err.message}`);
-  }
-  return count;
-}
-
 // Combined file-count + total-size in a single recursive pass — for callers
 // (currently only /stats/:saveName) that need both numbers for the SAME
-// directory, where calling countFiles() and getDirSize() separately would
-// walk that directory's whole subtree twice for no reason.
+// directory, where walking it for a count and again for a size separately
+// would walk that directory's whole subtree twice for no reason.
 async function getDirStats(dirPath) {
   let count = 0;
   let size = 0;
