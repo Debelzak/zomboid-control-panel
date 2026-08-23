@@ -997,6 +997,7 @@ function Row({
               onClick={() => onAction('remove')}
               disabled={!!busy || !credsConfigured || tokenExpired}
               title={tokenExpired ? t('sessionExpiredShort') : !credsConfigured ? t('needCookiesShort') : t('removeFromCollectionTitle')}
+              aria-label={tokenExpired ? t('sessionExpiredShort') : !credsConfigured ? t('needCookiesShort') : undefined}
             >
               {busy === 'remove' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Minus className="w-3 h-3" />}
               <span className="ml-1 hidden sm:inline">{t('remove')}</span>
@@ -1009,6 +1010,7 @@ function Row({
               onClick={() => onAction('add')}
               disabled={!!busy || !credsConfigured || tokenExpired}
               title={tokenExpired ? t('sessionExpiredShort') : !credsConfigured ? t('needCookiesShort') : t('addToCollectionTitle')}
+              aria-label={tokenExpired ? t('sessionExpiredShort') : !credsConfigured ? t('needCookiesShort') : undefined}
             >
               {busy === 'add' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
               <span className="ml-1 hidden sm:inline">{t('add')}</span>
