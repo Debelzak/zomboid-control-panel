@@ -194,6 +194,19 @@ function freshScenarioDir(name) {
 describe.skipIf(!!skipReason)(
   "Start.bat supervisor crash-loop behavior",
   () => {
+    // hookTimeout: csc.exe compiling this ~30-line stub measured 180-419ms
+    // across 8 samples taken under sustained 100% CPU load (12 busy-loop
+    // processes on this box's 16 cores) -- nowhere near the old 30000ms
+    // ceiling. That means the one real "Hook timed out in 30000ms" seen on
+    // this floor was not CPU contention (this sample would have shown it);
+    // it is more likely disk I/O or antivirus real-time-scanning a
+    // freshly-written .cs/.exe pair, which busy-loop CPU stress does not
+    // reproduce and this pass did not chase further. Because the actual
+    // failure driver is uncaptured, 3x-ing a clean sample that never hit it
+    // would be false precision -- instead this widens 3x the LAST KNOWN-
+    // INSUFFICIENT value (the 30000ms that already failed once), the same
+    // margin logic applied everywhere else in this file, anchored to the
+    // number that's actually known to have been too small.
     beforeAll(async () => {
       ({ generateStartBat } = await import("../../build.js"));
 
@@ -208,12 +221,65 @@ describe.skipIf(!!skipReason)(
         ["-nologo", "-optimize", "-out:" + stubExePath, srcPath],
         { stdio: "pipe" },
       );
-    }, 30000);
+    }, 90000);
 
     afterAll(() => {
       if (sharedDir) fs.rmSync(sharedDir, { recursive: true, force: true });
     });
 
+    // Every number in this file was re-derived together (2026-08-23), not
+    // just the scenario currently failing. The bug was an inversion: each
+    // runSupervisor(..., N) call's own N is an INTERNAL watchdog -- it
+    // taskkills the child at N ms and resolves with launches=0/status=null,
+    // which reads as a wrong-count ASSERTION FAILURE rather than a timeout.
+    // The surrounding it(..., M) is vitest's own ceiling. N was always
+    // SMALLER than M at every call site (e.g. 30000 vs 45000), so the
+    // internal watchdog fired first on every single failure -- the M values
+    // widened in an earlier pass were never once the binding constraint,
+    // which is why widening them alone did not fix anything.
+    //
+    // Fresh worst-observed-completed-run data (2026-08-23), two conditions:
+    // (a) 7 runs of this file ALONE through vitest --reporter=verbose under
+    //     sustained 100% CPU load (12 busy-loop processes, 16-core box) --
+    //     the same load-generation approach as vitest.config.js's own
+    //     testTimeout justification -- and
+    // (b) 3 runs of the FULL server/tests suite (135 files) under the same
+    //     CPU load, which is the condition that actually matters: real
+    //     cross-file contention (many files' own real subprocess spawns
+    //     competing at once), not synthetic CPU spin in isolation. (a) alone
+    //     under-measured two scenarios by an order of magnitude -- caught
+    //     only by also running (b), which is why both are recorded here
+    //     rather than shipping off (a) alone:
+    //   clean-exit             180357ms (b)  refused-second-instance 11777ms (a)
+    //   no-hardcoded-url        25181ms (a)  recover-after-crash    108766ms (b)
+    //   real-backoff-wait       23688ms (a)  hits-cap                53900ms (a)
+    //   update-loop             31135ms (a)  resets-after-stable-run 30628ms (a)
+    // Each scenario's watchdog (runSupervisor's own N) below is 3x its own
+    // worst observed figure above, rounded up -- the same "3x worst
+    // observed, not picked by trial and error" rule this file already
+    // documented for its slowest scenario, just correctly computed with
+    // current data (both conditions) and correctly wired as the binding
+    // number. Each it(..., M) stays exactly 15000ms above its own watchdog
+    // (the same margin the original numbers already used: 30000->45000,
+    // 35000->50000, 45000->60000) -- enough for taskkill + cleanup + promise
+    // resolution to finish and vitest to observe the result before ITS OWN
+    // ceiling could also fire, so a genuine hang always surfaces as the
+    // internal watchdog's clear "killed after Nms" shape, never a same-tick
+    // race with vitest's own timeout.
+    //
+    // clean-exit and recover-after-crash carry watchdogs in the minutes
+    // (545000ms, 330000ms) because of the (b) outliers above -- both are
+    // otherwise-simple scenarios (single or double launch, no backoff loop)
+    // that spiked once each under compounded stress (12 busy-loop processes
+    // AND the full 135-file suite's own real contention at the same time),
+    // not on every run. That combination is deliberately harsher than the
+    // real gate: the actual release gate runs on a quiesced floor, which
+    // this pass's own busy-loop load was specifically generating stress
+    // beyond. Flagged rather than trimmed back down to a smaller, unproven
+    // number -- these two are the ones worth a second look if a tighter
+    // ceiling is wanted later; the other six never approached their old
+    // values even under the (b) condition and did not need to move as far.
+    //
     // Every timeout in this file was widened together, not just the one
     // scenario originally reported flaky. While diagnosing that one, three
     // DIFFERENT tests in this same file failed in the same way (an
@@ -233,13 +299,17 @@ describe.skipIf(!!skipReason)(
         await writeStartBatInto(dir);
         setupStub(dir, [0], [0]);
 
-        const result = await runSupervisor(dir, {}, 30000);
+        // watchdog 545000 = 3x the 180357ms worst observed for this
+        // scenario (a single-run outlier under compounded stress -- see the
+        // comment block above beforeAll). it() ceiling stays 15000ms above
+        // the watchdog.
+        const result = await runSupervisor(dir, {}, 545000);
 
         expect(countLaunches(result.stdout)).toBe(1);
         expect(result.status).toBe(0);
         expect(readSupervisorLog(dir)).not.toMatch(/relaunch attempt/i);
       },
-      45000,
+      560000,
     );
 
     it(
@@ -257,7 +327,8 @@ describe.skipIf(!!skipReason)(
         await writeStartBatInto(dir);
         setupStub(dir, [78], [0]);
 
-        const result = await runSupervisor(dir, {}, 30000);
+        // watchdog 40000 = 3x the 11777ms worst observed for this scenario.
+        const result = await runSupervisor(dir, {}, 40000);
 
         expect(countLaunches(result.stdout)).toBe(1);
         expect(result.status).toBe(78);
@@ -265,7 +336,7 @@ describe.skipIf(!!skipReason)(
         expect(log).not.toMatch(/relaunch attempt/i);
         expect(log).not.toMatch(/Gave up/i);
       },
-      45000,
+      55000,
     );
 
     it(
@@ -283,12 +354,13 @@ describe.skipIf(!!skipReason)(
         await writeStartBatInto(dir);
         setupStub(dir, [0], [0]);
 
-        const result = await runSupervisor(dir, {}, 30000);
+        // watchdog 80000 = 3x the 25181ms worst observed for this scenario.
+        const result = await runSupervisor(dir, {}, 80000);
 
         expect(result.status).toBe(0);
         expect(result.stdout).not.toMatch(/localhost:3001/);
       },
-      45000,
+      95000,
     );
 
     it(
@@ -298,10 +370,13 @@ describe.skipIf(!!skipReason)(
         await writeStartBatInto(dir);
         setupStub(dir, [7, 0], [0, 0]);
 
+        // watchdog 330000 = 3x the 108766ms worst observed for this
+        // scenario (a single-run outlier under compounded stress -- see the
+        // comment block above beforeAll).
         const result = await runSupervisor(
           dir,
           { PANEL_SUPERVISOR_BACKOFF_SECONDS: "0" },
-          35000,
+          330000,
         );
 
         expect(countLaunches(result.stdout)).toBe(2);
@@ -310,7 +385,7 @@ describe.skipIf(!!skipReason)(
         expect(log).toMatch(/relaunch attempt 1 of 5/);
         expect(log).not.toMatch(/Gave up/);
       },
-      50000,
+      345000,
     );
 
     it(
@@ -328,7 +403,8 @@ describe.skipIf(!!skipReason)(
         await writeStartBatInto(dir);
         setupStub(dir, [7, 0], [0, 0]);
 
-        const result = await runSupervisor(dir, { PANEL_SUPERVISOR_BACKOFF_SECONDS: "3" }, 30000);
+        // watchdog 75000 = 3x the 23688ms worst observed for this scenario.
+        const result = await runSupervisor(dir, { PANEL_SUPERVISOR_BACKOFF_SECONDS: "3" }, 75000);
 
         expect(countLaunches(result.stdout)).toBe(2);
         expect(result.status).toBe(0);
@@ -345,7 +421,7 @@ describe.skipIf(!!skipReason)(
         expect(gapSeconds, "measured gap between the wait message and the next launch").not.toBeNull();
         expect(gapSeconds).toBeGreaterThanOrEqual(2);
       },
-      35000,
+      90000,
     );
 
     it(
@@ -355,13 +431,16 @@ describe.skipIf(!!skipReason)(
         await writeStartBatInto(dir);
         setupStub(dir, [7], [0]);
 
+        // watchdog 165000 = 3x the 53900ms worst observed for this scenario
+        // -- the slowest in the file (4 real launches, each with its own
+        // binary-pick/timestamp powershell overhead).
         const result = await runSupervisor(
           dir,
           {
             PANEL_SUPERVISOR_BACKOFF_SECONDS: "0",
             PANEL_SUPERVISOR_MAX_CRASHES: "3",
           },
-          35000,
+          165000,
         );
 
         // cap=3 allows 3 relaunches (4 total launches) before giving up on
@@ -374,7 +453,7 @@ describe.skipIf(!!skipReason)(
         expect(log).toMatch(/relaunch attempt 3 of 3/);
         expect(log).toMatch(/Gave up after 4 rapid crashes/);
       },
-      50000,
+      180000,
     );
 
     it(
@@ -384,10 +463,11 @@ describe.skipIf(!!skipReason)(
         await writeStartBatInto(dir);
         setupStub(dir, [75, 75, 0], [0, 0, 0]);
 
+        // watchdog 95000 = 3x the 31135ms worst observed for this scenario.
         const result = await runSupervisor(
           dir,
           { PANEL_SUPERVISOR_MAX_CRASHES: "1" },
-          30000,
+          95000,
         );
 
         expect(countLaunches(result.stdout)).toBe(3);
@@ -398,7 +478,7 @@ describe.skipIf(!!skipReason)(
         expect(log).not.toMatch(/relaunch attempt/);
         expect(log).not.toMatch(/Gave up/);
       },
-      45000,
+      110000,
     );
 
     it(
@@ -425,14 +505,11 @@ describe.skipIf(!!skipReason)(
         // What varied wildly was how long it took to get there: this
         // scenario needs ~8-10 real powershell.exe subprocess spawns (a
         // timestamp lookup and a binary pick each loop iteration, a
-        // Start-Sleep for backoff after each crash), and under this
-        // floor's actual concurrent load, measured total durations for
-        // IDENTICAL code and inputs ranged from ~7.3s up past the old
-        // 15000ms ceiling. 45000ms is 3x the worst completed run observed,
-        // not a number picked by trial and error -- and this test was not
-        // the only one in the file this actually affected; see the block
-        // comment above the first `it(` in this describe for what a full
-        // validation pass turned up.
+        // Start-Sleep for backoff after each crash), and under this floor's
+        // actual concurrent load this file's own watchdog was the ACTUAL
+        // killer (not vitest's it() ceiling, which was always looser) --
+        // see the comment block above beforeAll for the full re-measurement.
+        // watchdog 95000 = 3x the 30628ms worst observed for this scenario.
         const result = await runSupervisor(
           dir,
           {
@@ -440,7 +517,7 @@ describe.skipIf(!!skipReason)(
             PANEL_SUPERVISOR_MAX_CRASHES: "1",
             PANEL_SUPERVISOR_MIN_STABLE_SECONDS: "1",
           },
-          45000,
+          95000,
         );
 
         expect(countLaunches(result.stdout)).toBe(3);
@@ -449,7 +526,7 @@ describe.skipIf(!!skipReason)(
         expect(log).toMatch(/resetting crash counter/);
         expect(log).not.toMatch(/Gave up/);
       },
-      60000,
+      110000,
     );
   },
 );
