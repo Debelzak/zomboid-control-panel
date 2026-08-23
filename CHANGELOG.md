@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-08-22
+
 ### Added
 - **Server setting names and descriptions can now be translated.** The Server Configuration page
   draws its 154 server settings and 269 sandbox settings from a schema that held its text in English
@@ -219,6 +221,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   time axis for US English regardless of your language, and three timestamps on the Server
   Configuration page followed your browser's language rather than the one you chose in the panel - so
   a German panel on an English browser showed German text with US times.
+- **Switching language left some text in the old one until you reloaded the page.** The "last
+  checked" time on Debug > Diagnostics, the dashboard's performance chart axis and a diagnostics
+  action label were all computed once and then kept, so picking a new language changed the rest of
+  the screen around them while they stayed as they were. They now change with everything else, the
+  moment you pick.
 - **The page heading overlapped its own buttons in German, French and Spanish.** On My Servers the
   description ran underneath the button row rather than beside it. The buttons were laid out at their
   natural width inside a column capped at 48%, so they simply overflowed it; they now wrap within
@@ -232,6 +239,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and "Custom" in every language, and now also show translated server-setting names rather than raw
   English ones.
 - **Relative timestamps in Debug were English-only** - "5m ago", "just now" - regardless of language.
+- **The unRAID Community Applications listing showed a broken icon.** The template pointed at an
+  image file that has never existed in the project; it now points at the panel's actual icon.
 - **The panel would not start at all on some Windows machines**: the launcher started the panel by
   its bare filename, which relies on Windows searching the folder the launcher is sitting in. That
   search is switched off by a setting some corporate and security-hardened Windows images apply, and
