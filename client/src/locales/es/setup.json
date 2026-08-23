@@ -48,6 +48,7 @@
     "hint": "Escribe de nuevo la misma contraseña para confirmarla."
   },
   "rememberMe": "Mantener la sesión iniciada en este navegador",
+  "rememberMeHelp": "Omite la pantalla de inicio de sesión la próxima vez que abras el panel en este navegador. Déjala desactivada en un ordenador compartido o público: cualquiera que use ese navegador después podría controlar este servidor sin contraseña.",
   "submit": "Crear cuenta y continuar",
   "submitting": "Creando cuenta de administrador...",
   "errors": {

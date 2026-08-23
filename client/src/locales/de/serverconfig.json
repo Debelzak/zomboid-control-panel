@@ -139,6 +139,7 @@
     "noRegionsDesc": "Wechsle in den Raw-Modus, um den Dateiinhalt anzuzeigen",
     "columnDisplayName": "Anzeigename",
     "columnMapFilePath": "Kartenpfad",
+    "mapFilePathTip": "Muss exakt mit einer bereits im Maps-Ordner dieses Servers vorhandenen Kartendatei übereinstimmen — ohne Dateiendung und groß-/kleinschreibungsempfindlich. Ein Fehler hier führt dazu, dass das Spiel diese Region überspringt oder gar nicht erst startet.",
     "displayNamePlaceholder": "z. B. Muldraugh, KY",
     "displayNameAria": "Region {{index}}: Anzeigename",
     "serverFileLabel": "Serverdatei",
@@ -226,6 +227,7 @@
   },
   "templatesDialog": {
     "title": "Konfigurationsvorlagen",
+    "applyTip": "Das Anwenden einer Vorlage ersetzt ALLE Ihre aktuellen Einstellungen — sie wird nicht mit den vorhandenen zusammengeführt. Das Panel sichert den aktuellen Stand vor dem Anwenden, sodass Sie es über Wiederherstellen rückgängig machen können, aber der Server muss vorher gestoppt sein.",
     "description": "Speichere deine aktuelle Konfiguration als Vorlage oder lade eine gespeicherte Vorlage.",
     "savedCount_one": "{{count}} Vorlage gespeichert",
     "savedCount_other": "{{count}} Vorlagen gespeichert",

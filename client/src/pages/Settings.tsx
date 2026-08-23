@@ -64,6 +64,7 @@ import { PasswordInput } from "@/components/PasswordInput";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { HelpTip } from "@/components/HelpTip";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -2516,9 +2517,14 @@ export default function Settings() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="cors-origins">
-                      {t("access.additionalOriginsLabel")}
-                    </Label>
+                    <div className="flex items-center gap-1.5">
+                      <Label htmlFor="cors-origins">
+                        {t("access.additionalOriginsLabel")}
+                      </Label>
+                      <HelpTip label={t("access.additionalOriginsLabel")}>
+                        {t("access.additionalOriginsTip")}
+                      </HelpTip>
+                    </div>
                     <Textarea
                       id="cors-origins"
                       value={settings.corsAllowedOrigins}
@@ -4052,7 +4058,7 @@ export default function Settings() {
                         <strong className="text-foreground">{t("bridge.setupOrderLabel")}</strong> <Trans t={t} i18nKey="bridge.setupOrderText" components={{ b: <strong className="text-foreground" /> }} />
                       </div>
                       <div className="grid gap-3 sm:grid-cols-2">
-                        <div className="space-y-1.5"><Label htmlFor="sftp-host">{t("bridge.sftpHostLabel")}</Label><Input id="sftp-host" value={settings.panelBridgeSftpHost} onChange={(event) => updateSetting("panelBridgeSftpHost", event.target.value)} placeholder="pz.example.net" /></div>
+                        <div className="space-y-1.5"><div className="flex items-center gap-1.5"><Label htmlFor="sftp-host">{t("bridge.sftpHostLabel")}</Label><HelpTip label={t("bridge.sftpHostLabel")}>{t("bridge.sftpBridgeTip")}</HelpTip></div><Input id="sftp-host" value={settings.panelBridgeSftpHost} onChange={(event) => updateSetting("panelBridgeSftpHost", event.target.value)} placeholder="pz.example.net" /></div>
                         <div className="space-y-1.5"><Label htmlFor="sftp-port">{t("bridge.sftpPortLabel")}</Label><Input id="sftp-port" inputMode="numeric" value={settings.panelBridgeSftpPort} onChange={(event) => updateSetting("panelBridgeSftpPort", event.target.value)} /></div>
                         <div className="space-y-1.5"><Label htmlFor="sftp-user">{t("bridge.sftpUsernameLabel")}</Label><Input id="sftp-user" autoComplete="username" value={settings.panelBridgeSftpUsername} onChange={(event) => updateSetting("panelBridgeSftpUsername", event.target.value)} /></div>
                         <div className="space-y-1.5"><Label htmlFor="sftp-password">{t("bridge.sftpPasswordLabel")}</Label><PasswordInput id="sftp-password" autoComplete="current-password" value={settings.panelBridgeSftpPassword} onChange={(value) => updateSetting("panelBridgeSftpPassword", value)} placeholder={t("bridge.sftpPasswordPlaceholder")} label={t("bridge.sftpPasswordAria")} /></div>
@@ -4613,7 +4619,10 @@ export default function Settings() {
                   {backupStatus?.enabled && (
                     <div className="grid grid-cols-1 gap-4 border-l-2 border-primary/20 pl-4 sm:grid-cols-2">
                       <div className="space-y-2">
-                        <Label htmlFor="backup-schedule">{t("backups.scheduleLabel")}</Label>
+                        <div className="flex items-center gap-1.5">
+                          <Label htmlFor="backup-schedule">{t("backups.scheduleLabel")}</Label>
+                          <HelpTip label={t("backups.scheduleLabel")}>{t("backups.scheduleTip")}</HelpTip>
+                        </div>
                         <Input
                           id="backup-schedule"
                           value={backupSchedule}

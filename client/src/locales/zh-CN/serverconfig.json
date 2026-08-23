@@ -139,6 +139,7 @@
     "noRegionsDesc": "尝试切换到「原始」模式查看文件内容",
     "columnDisplayName": "显示名称",
     "columnMapFilePath": "地图文件路径",
+    "mapFilePathTip": "必须与该服务器 Maps 文件夹中已存在的地图文件名完全一致——不带扩展名，且区分大小写。填错会导致游戏跳过该区域，或直接无法启动。",
     "displayNamePlaceholder": "例如：Muldraugh, KY",
     "displayNameAria": "区域 {{index}} 显示名称",
     "serverFileLabel": "服务器文件",
@@ -226,6 +227,7 @@
   },
   "templatesDialog": {
     "title": "配置模板",
+    "applyTip": "应用模板会替换你当前的全部设置——而不是与现有设置合并。面板会在应用前备份当前生效的配置，因此可以通过“还原”撤销，但必须先停止服务器。",
     "description": "将当前配置保存为模板，或加载已保存的模板。",
     "savedCount_one": "已保存 {{count}} 个模板",
     "savedCount_other": "已保存 {{count}} 个模板",

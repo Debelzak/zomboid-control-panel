@@ -48,6 +48,7 @@
     "hint": "Retapez le même mot de passe pour le confirmer."
   },
   "rememberMe": "Rester connecté sur ce navigateur",
+  "rememberMeHelp": "Passe l'écran de connexion la prochaine fois que vous ouvrez le panneau dans ce navigateur. Laissez cette option désactivée sur un ordinateur partagé ou public : toute personne utilisant ensuite ce navigateur pourrait contrôler ce serveur sans mot de passe.",
   "submit": "Créer le compte et continuer",
   "submitting": "Création du compte administrateur...",
   "errors": {

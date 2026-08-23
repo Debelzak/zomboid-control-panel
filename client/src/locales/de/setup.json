@@ -48,6 +48,7 @@
     "hint": "Gib das gleiche Passwort zur Bestätigung erneut ein."
   },
   "rememberMe": "In diesem Browser angemeldet bleiben",
+  "rememberMeHelp": "Überspringt den Anmeldebildschirm, wenn Sie das Panel das nächste Mal in diesem Browser öffnen. Lassen Sie diese Option auf einem gemeinsam genutzten oder öffentlichen Computer deaktiviert — sonst könnte jeder, der diesen Browser danach benutzt, den Server ohne Passwort steuern.",
   "submit": "Konto erstellen & fortfahren",
   "submitting": "Administratorkonto wird erstellt …",
   "errors": {

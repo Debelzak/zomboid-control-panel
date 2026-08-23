@@ -48,6 +48,7 @@
     "hint": "Type the same password again to confirm it."
   },
   "rememberMe": "Keep me signed in on this browser",
+  "rememberMeHelp": "Skips the login screen next time you open the panel in this browser. Leave this off on a shared or public computer — anyone who uses that browser afterward would be able to control this server without a password.",
   "submit": "Create account & continue",
   "submitting": "Creating admin account...",
   "errors": {

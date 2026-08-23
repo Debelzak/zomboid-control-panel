@@ -139,6 +139,7 @@
     "noRegionsDesc": "Try switching to Raw mode to view the file contents",
     "columnDisplayName": "Display Name",
     "columnMapFilePath": "Map File Path",
+    "mapFilePathTip": "Must exactly match a map file that already exists in this server's Maps folder — no extension, and it's case-sensitive. Get it wrong and the game either skips this region or fails to start.",
     "displayNamePlaceholder": "e.g., Muldraugh, KY",
     "displayNameAria": "Region {{index}} display name",
     "serverFileLabel": "Server File",
@@ -226,6 +227,7 @@
   },
   "templatesDialog": {
     "title": "Config Templates",
+    "applyTip": "Applying a template replaces ALL of your current settings — it doesn't merge with what's there now. The panel backs up what's live before applying, so Restore can undo it, but the server must be stopped first.",
     "description": "Save your current configuration as a template or load a saved template.",
     "savedCount_one": "{{count}} template saved",
     "savedCount_other": "{{count}} templates saved",

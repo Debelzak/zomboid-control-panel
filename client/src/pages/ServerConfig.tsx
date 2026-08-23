@@ -67,6 +67,7 @@ import { Input } from '@/components/ui/input'
 import { reportClientError } from '@/lib/client-errors'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
+import { HelpTip } from '@/components/HelpTip'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -3030,7 +3031,10 @@ export default function ServerConfig() {
                       <div className="hidden sm:grid grid-cols-[2rem_minmax(180px,260px)_minmax(0,1fr)_2.25rem] items-center gap-3 border-b bg-muted/30 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                         <span className="text-center">#</span>
                         <span>{t('spawnRegionsTab.columnDisplayName')}</span>
-                        <span>{t('spawnRegionsTab.columnMapFilePath')}</span>
+                        <span className="flex items-center gap-1">
+                          {t('spawnRegionsTab.columnMapFilePath')}
+                          <HelpTip label={t('spawnRegionsTab.columnMapFilePath')}>{t('spawnRegionsTab.mapFilePathTip')}</HelpTip>
+                        </span>
                         <span aria-hidden="true" />
                       </div>
                       <ul className="divide-y divide-border/60">
@@ -3693,6 +3697,7 @@ export default function ServerConfig() {
             <DialogTitle className="flex items-center gap-2">
               <Bookmark className="w-5 h-5" />
               {t('templatesDialog.title')}
+              <HelpTip label={t('templatesDialog.title')}>{t('templatesDialog.applyTip')}</HelpTip>
             </DialogTitle>
             <DialogDescription>
               {t('templatesDialog.description')}

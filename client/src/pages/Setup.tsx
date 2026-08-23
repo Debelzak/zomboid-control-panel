@@ -6,6 +6,7 @@ import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Checkbox } from '../components/ui/checkbox'
 import { AuthScreenLayout } from '../components/AuthScreenLayout'
+import { HelpTip } from '../components/HelpTip'
 import { AlertTriangle, ArrowRight, CheckCircle, Eye, EyeOff, KeyRound, Loader2, RadioTower, Server, ShieldCheck, ShieldAlert, XCircle } from 'lucide-react'
 
 type StrengthKey = 'tooShort' | 'weak' | 'fair' | 'good' | 'strong'
@@ -363,9 +364,10 @@ export default function Setup() {
             checked={rememberMe}
             onCheckedChange={(checked) => setRememberMe(checked === true)}
           />
-          <Label htmlFor="rememberMe" className="cursor-pointer text-sm font-normal text-foreground/90">
+          <Label htmlFor="rememberMe" className="flex cursor-pointer items-center gap-1.5 text-sm font-normal text-foreground/90">
             {t('rememberMe')}
           </Label>
+          <HelpTip label={t('rememberMe')}>{t('rememberMeHelp')}</HelpTip>
         </div>
 
         <Button

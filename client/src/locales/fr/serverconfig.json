@@ -139,6 +139,7 @@
     "noRegionsDesc": "Essayez de passer en mode Brut pour voir le contenu du fichier",
     "columnDisplayName": "Nom affiché",
     "columnMapFilePath": "Chemin du fichier de carte",
+    "mapFilePathTip": "Doit correspondre exactement à un fichier de carte déjà présent dans le dossier Maps de ce serveur — sans extension, et en respectant la casse. Une erreur ici fait que le jeu ignore cette région ou refuse de démarrer.",
     "displayNamePlaceholder": "ex. Muldraugh, KY",
     "displayNameAria": "Nom affiché de la région {{index}}",
     "serverFileLabel": "Fichier serveur",
@@ -226,6 +227,7 @@
   },
   "templatesDialog": {
     "title": "Modèles de configuration",
+    "applyTip": "L'application d'un modèle remplace TOUS vos paramètres actuels — elle ne les fusionne pas avec ceux déjà en place. Le panneau sauvegarde ce qui est actif avant l'application, donc Restaurer peut l'annuler, mais le serveur doit d'abord être arrêté.",
     "description": "Enregistrez votre configuration actuelle comme modèle ou chargez un modèle enregistré.",
     "savedCount_one": "{{count}} modèle enregistré",
     "savedCount_other": "{{count}} modèles enregistrés",

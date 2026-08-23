@@ -100,6 +100,7 @@
     "diagnosticsRefreshFailedDesc": "The numbers below are stale, not current.",
     "additionalOriginsLabel": "Additional Allowed Origins",
     "additionalOriginsHelp": "One address per line, including http:// or https:// and port if needed.",
+    "additionalOriginsTip": "Browsers block a page from talking to an API at a different address than the one it was loaded from. If you open this panel from an address it doesn't already recognize — a domain name, a reverse proxy, a second network interface — add that exact address here or the browser will silently refuse its requests. Most single-machine setups never need this.",
     "originsError": {
       "tooMany": "Too many origins. Maximum is {{max}}.",
       "tooLong": "Origin too long ({{length}} chars). Maximum is {{max}}.",
@@ -321,6 +322,7 @@
     "setupOrderLabel": "Setup order:",
     "setupOrderText": "enter the VPS folder, click <b>Verify and prepare SFTP</b> to verify access and create the bridge queue folders, then click <b>Start SFTP bridge</b>. A missing status file means the PZ server has not written one yet.",
     "sftpHostLabel": "SFTP host",
+    "sftpBridgeTip": "Only needed when the dedicated server runs on a different machine than this panel. The panel connects here over SFTP to read and write that machine's config files. Get these details from whoever manages that machine — if your server runs on this same computer, leave this whole section blank.",
     "sftpPortLabel": "Port",
     "sftpUsernameLabel": "Username",
     "sftpPasswordLabel": "Password",
@@ -410,6 +412,7 @@
     "scheduleLabel": "Schedule",
     "schedulePlaceholder": "0 */6 * * *",
     "scheduleHelp": "Default: every 6 hours. Uses cron format: minute hour day month weekday.",
+    "scheduleTip": "Each * means \"any value\". A couple of examples: \"0 3 * * *\" runs once a day at 3:00 AM; \"0 */6 * * *\" runs every 6 hours; \"0 0 * * 0\" runs once a week, at midnight on Sunday.",
     "maxBackupsLabel": "Max Backups to Keep",
     "maxBackupsHelp": "The panel deletes the oldest backups when this limit is reached.",
     "saveScheduleButton": "Save Schedule Settings",

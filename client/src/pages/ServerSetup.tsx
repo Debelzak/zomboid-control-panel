@@ -27,6 +27,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { configApi, serverApi, serversApi, debugApi, apiFetch } from "@/lib/api";
+import { HelpTip } from "@/components/HelpTip";
 import { getInstallProgressMessage } from "@/lib/installProgressMessage";
 import { useNavigate } from "react-router-dom";
 import {
@@ -1356,7 +1357,10 @@ export default function ServerSetup() {
 
         {/* Branch Selection */}
         <div className="space-y-2">
-          <Label className="text-base">{t("full.step2.gameVersionLabel")}</Label>
+          <div className="flex items-center gap-1.5">
+            <Label className="text-base">{t("full.step2.gameVersionLabel")}</Label>
+            <HelpTip label={t("full.step2.gameVersionLabel")}>{t("full.step2.gameVersionHelp")}</HelpTip>
+          </div>
           <Select
             value={branch}
             onValueChange={setBranch}
@@ -1476,7 +1480,10 @@ export default function ServerSetup() {
         <CardContent className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label>{t("common.rconPasswordLabel")}</Label>
+              <div className="flex items-center gap-1.5">
+                <Label>{t("common.rconPasswordLabel")}</Label>
+                <HelpTip label={t("common.rconPasswordLabel")}>{t("common.rconPasswordHelp")}</HelpTip>
+              </div>
               <div className="flex gap-1">
                 <div className="relative flex-1">
                   <Input
@@ -1624,7 +1631,10 @@ export default function ServerSetup() {
           <div className="grid gap-6 sm:grid-cols-2">
             <div className="space-y-3">
               <div className="flex items-center justify-between gap-3">
-                <Label>{t("common.minRamLabel")}</Label>
+                <div className="flex items-center gap-1.5">
+                  <Label>{t("common.minRamLabel")}</Label>
+                  <HelpTip label={t("common.minRamLabel")}>{t("common.ramHelp")}</HelpTip>
+                </div>
                 <Input
                   type="number"
                   min={1}
@@ -2091,7 +2101,10 @@ export default function ServerSetup() {
           <CardContent className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label>{t("common.rconPasswordLabel")}</Label>
+                <div className="flex items-center gap-1.5">
+                  <Label>{t("common.rconPasswordLabel")}</Label>
+                  <HelpTip label={t("common.rconPasswordLabel")}>{t("common.rconPasswordHelp")}</HelpTip>
+                </div>
                 <div className="flex gap-1">
                   <div className="relative flex-1">
                     <Input
@@ -2247,7 +2260,10 @@ export default function ServerSetup() {
             <div className="grid gap-6 sm:grid-cols-2">
               <div className="space-y-3">
                 <div className="flex items-center justify-between gap-3">
-                  <Label>{t("common.minRamLabel")}</Label>
+                  <div className="flex items-center gap-1.5">
+                    <Label>{t("common.minRamLabel")}</Label>
+                    <HelpTip label={t("common.minRamLabel")}>{t("common.ramHelp")}</HelpTip>
+                  </div>
                   <Input
                     type="number"
                     min={1}

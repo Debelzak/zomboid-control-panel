@@ -139,6 +139,7 @@
     "noRegionsDesc": "Cambia al modo Texto plano para ver el contenido del archivo",
     "columnDisplayName": "Nombre visible",
     "columnMapFilePath": "Ruta del archivo de mapa",
+    "mapFilePathTip": "Debe coincidir exactamente con un archivo de mapa que ya exista en la carpeta Maps de este servidor: sin extensión y distinguiendo mayúsculas y minúsculas. Si te equivocas, el juego omite esa región o no llega a arrancar.",
     "displayNamePlaceholder": "p. ej., Muldraugh, KY",
     "displayNameAria": "Nombre visible de la región {{index}}",
     "serverFileLabel": "Archivo del servidor",
@@ -226,6 +227,7 @@
   },
   "templatesDialog": {
     "title": "Plantillas de configuración",
+    "applyTip": "Aplicar una plantilla reemplaza TODOS tus ajustes actuales; no se combina con los que ya están. El panel hace una copia de seguridad de lo que está activo antes de aplicarla, así que Restaurar puede deshacerlo, pero primero hay que detener el servidor.",
     "description": "Guarda la configuración actual como plantilla o carga una plantilla guardada.",
     "savedCount_one": "{{count}} plantilla guardada",
     "savedCount_other": "{{count}} plantillas guardadas",
