@@ -180,7 +180,7 @@ Visual map selector for reclaiming disk space from an aging save. Delete individ
 
 ## Requirements
 
-- **Project Zomboid dedicated server** — Build 41 or Build 42. Tested through B42.18.
+- **Project Zomboid dedicated server** — Build 41 or Build 42.
 - **RCON enabled** in your server `.ini` (`RCONPort=27015` and `RCONPassword=...`).
 - **Network access** between the panel and the PZ server (same machine, same LAN, or reachable IP).
 - For PanelBridge features: `DoLuaChecksum=false` in the server `.ini`.
