@@ -297,7 +297,13 @@ export default function ServerFinder() {
     setPingingServers(prev => new Set([...prev, key]))
 
     try {
-      const response = await fetch(`/api/server-finder/ping?ip=${ip}&port=${port}`)
+      // Must go through apiFetch, not a bare fetch(): /server-finder is
+      // gated by requirePermission('server.install'), which needs the
+      // Authorization: Bearer header apiFetch attaches. A bare fetch omits
+      // it, so the panel's own auth middleware 401s every ping before it
+      // ever reaches the UDP query -- indistinguishable client-side from a
+      // real "server didn't respond", so every ping silently showed N/A.
+      const response = await apiFetch(`/server-finder/ping?ip=${ip}&port=${port}`)
       const data = await response.json()
 
       if (data.success && data.ping !== null) {

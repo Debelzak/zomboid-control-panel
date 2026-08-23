@@ -953,6 +953,16 @@ export default function Servers() {
       return
     }
 
+    // The dialog already shows this as a red warning under the field (see
+    // customStartCommandDisallowed below) but was never wired to block Save --
+    // the server rejects the same characters at start time (validateStartCommand
+    // in serverManager.js), so an unblocked save looked successful and only
+    // failed later, on the next start attempt, with no link back to this dialog.
+    if (editingServer.startCommand && /[&|;<>`${}()!\[\]]/.test(editingServer.startCommand)) {
+      toast({ title: t('toasts.error'), description: t('editDialog.customStartCommandDisallowed'), variant: 'destructive' })
+      return
+    }
+
     setSavingEdit(true)
     try {
       await serversApi.update(editingServer.id, editingServer)
