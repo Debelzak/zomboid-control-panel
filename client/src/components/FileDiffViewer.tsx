@@ -219,6 +219,15 @@ export const FileDiffViewer = memo(function FileDiffViewer({ file, modAId, modBI
               )}
             </div>
           )}
+          {overlap && overlap.kind === 'lua-shadow' && (
+            // The compact row only shows the one-word "shadowed" badge; its full
+            // explanation lives in that badge's hover title, which a touch user
+            // tapping this row open can never see. Same text, shown as real
+            // content here instead of relying on hover.
+            <div className="px-3 py-2 border-b border-border/30 bg-muted/20 text-[10px] text-muted-foreground/70 leading-relaxed">
+              {t('shadowedTooltip')}
+            </div>
+          )}
           {loading && (
             <div aria-busy="true" className="flex items-center justify-center py-6 text-muted-foreground text-xs">
               <Loader2 aria-hidden="true" className="w-3.5 h-3.5 animate-spin mr-2" /> {t('comparingFiles')}
