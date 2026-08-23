@@ -1884,14 +1884,24 @@ async function scanLocalMods(zPath) {
 
 // Recursively scan a save folder. Returns total bytes, .bin chunk count,
 // and any stale lock files (>1h old, which prevent boot). Bounded by
-// MAX_FILES to keep huge saves from making diagnostics hang.
-async function scanSaveStats(saveDir) {
+// MAX_FILES AND by `budgetMs` (wall-clock) so huge saves can't make
+// diagnostics hang -- and so the walk itself self-terminates well before
+// the caller's own outer timeout, instead of relying on that outer race to
+// kill it. Each individual readdir/stat is already time-boxed by
+// safeReaddir/safeStat (FS_TIMEOUT_MS), so the walk checks its deadline
+// BEFORE issuing the next one rather than mid-flight -- Node's fs.promises
+// readdir/stat don't accept an AbortSignal, so a call already in flight
+// when the deadline passes can't be cancelled, only not-followed-by-another.
+// That bounds the "still running after the caller stopped waiting" tail to
+// at most one FS_TIMEOUT_MS, not the open-ended rest of a 50,000-file walk.
+async function scanSaveStats(saveDir, budgetMs) {
   if (!saveDir) return null;
   const exists = await safePathExists(saveDir);
   if (!exists) return null;
   const MAX_FILES = 50000;
   const staleAfterMs = 60 * 60 * 1000;
   const now = Date.now();
+  const deadline = now + budgetMs;
   let totalBytes = 0;
   let chunks = 0;
   let staleLocks = [];
@@ -1899,14 +1909,14 @@ async function scanSaveStats(saveDir) {
   let truncated = false;
 
   const walk = async (dir) => {
-    if (visited >= MAX_FILES) {
+    if (visited >= MAX_FILES || Date.now() >= deadline) {
       truncated = true;
       return;
     }
     const names = await safeReaddir(dir);
     if (!names) return;
     for (const name of names) {
-      if (++visited > MAX_FILES) {
+      if (++visited > MAX_FILES || Date.now() >= deadline) {
         truncated = true;
         return;
       }
@@ -3582,8 +3592,15 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
           for (const sp of saveDirCandidates) {
             const st = await safeStat(sp);
             if (st && st.isDirectory()) {
+              // scanSaveStats gets a budget comfortably under the outer
+              // withTimeout below, so it almost always finishes (with
+              // truncated: true if it ran out of room) rather than being
+              // raced away -- the outer wrap stays only as a last-resort
+              // safety net. Both `null` (raced away) and `truncated: true`
+              // (self-bounded early exit) mean the same thing to the check
+              // below: this scan could not fully confirm the save is clean.
               saveStats = await withTimeout(
-                scanSaveStats(sp),
+                scanSaveStats(sp, FS_TIMEOUT_MS * 3),
                 FS_TIMEOUT_MS * 4,
                 null,
               );
@@ -3591,31 +3608,8 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
               break;
             }
           }
-          if (saveStats && saveStats.staleLocks.length > 0) {
-            checks.push(
-              diagFail(
-                "server.staleLocks",
-                "Stale lock files in save folder",
-                `${saveStats.staleLocks.length} .lock file${saveStats.staleLocks.length === 1 ? "" : "s"} older than 1 hour in ${saveDirUsed}. PZ will refuse to load the save until they are removed.`,
-                {
-                  category: "server",
-                  hint: "Stop the server, delete every *.lock file under the save folder, then restart.",
-                  meta: { staleLocks: saveStats.staleLocks.slice(0, 10) },
-                  // NOTE (flagged to god, not inherited by accident): `dir`
-                  // is the save folder's absolute path. The English fallback
-                  // `message` above already ships it unredacted (message/
-                  // label/hint were never sanitized, only `params` is) --
-                  // but sanitizeErrorParams() WILL redact this specific
-                  // param to "[path]" before a French client ever sees it,
-                  // since it's an absolute path. Net effect: French users
-                  // see strictly less detail here than English users for
-                  // this one check (a translation-richness gap, not a new
-                  // security exposure -- English was already unredacted).
-                  params: { count: saveStats.staleLocks.length, dir: saveDirUsed },
-                },
-              ),
-            );
-          }
+          const staleLocksCheck = buildStaleLocksCheck(saveStats, saveDirUsed);
+          if (staleLocksCheck) checks.push(staleLocksCheck);
           // Save-size info is emitted in the Storage section below — we
           // stash the stats on the response context via a per-request var.
           req._diagSaveStats = saveStats ? { ...saveStats, saveDirUsed } : null;
@@ -4561,6 +4555,63 @@ async function detectSaveBuild(savePath) {
   return "unknown";
 }
 
+// Turns a scanSaveStats() result into the server.staleLocks diagnostics
+// check (or null, when there's nothing to report). Kept as a standalone,
+// module-level function (not inlined at its call site above, and NOT moved
+// up near scanSaveStats itself) so this decision -- fail on a confirmed
+// finding, warn honestly when the scan couldn't finish, stay silent only
+// when it actually confirmed the save is clean -- can be unit tested
+// directly (see server/tests/scanSaveStatsDeadline.test.js), while still
+// living inside the GET /diagnostics-to-GET /worldmap textual range that
+// server/tests/diagnosticsCheckRegistry.test.js scans for
+// diagOk/Fail/Warn/Skip/Info calls to enforce locale coverage -- a call
+// site outside that range is invisible to it. (Deliberately not spelling
+// out that route-registration literal here, so this comment itself can't
+// be mistaken by that test's own indexOf() scan for the boundary it's
+// looking for -- exactly the bug this comment used to cause.)
+function buildStaleLocksCheck(saveStats, saveDirUsed) {
+  if (saveStats && saveStats.staleLocks.length > 0) {
+    return diagFail(
+      "server.staleLocks",
+      "Stale lock files in save folder",
+      `${saveStats.staleLocks.length} .lock file${saveStats.staleLocks.length === 1 ? "" : "s"} older than 1 hour in ${saveDirUsed}. PZ will refuse to load the save until they are removed.`,
+      {
+        category: "server",
+        hint: "Stop the server, delete every *.lock file under the save folder, then restart.",
+        meta: { staleLocks: saveStats.staleLocks.slice(0, 10) },
+        // NOTE (flagged to god, not inherited by accident): `dir` is the
+        // save folder's absolute path. The English fallback `message`
+        // above already ships it unredacted (message/label/hint were never
+        // sanitized, only `params` is) -- but sanitizeErrorParams() WILL
+        // redact this specific param to "[path]" before a French client
+        // ever sees it, since it's an absolute path. Net effect: French
+        // users see strictly less detail here than English users for this
+        // one check (a translation-richness gap, not a new security
+        // exposure -- English was already unredacted).
+        params: { count: saveStats.staleLocks.length, dir: saveDirUsed },
+      },
+    );
+  }
+  if (saveDirUsed && (!saveStats || saveStats.truncated)) {
+    // The check could not finish (raced away by the outer timeout, or
+    // self-truncated at MAX_FILES/the wall-clock budget) -- report that
+    // honestly instead of silently omitting the check. A blank space here
+    // previously meant "confirmed clean" and "gave up looking" identically;
+    // they are not the same finding.
+    return diagWarn(
+      "server.staleLocks",
+      "Could not fully check for stale lock files",
+      `${saveDirUsed} is too large to fully scan for stale lock files within the diagnostics time budget. Stale lock files may be present but undetected.`,
+      {
+        category: "server",
+        hint: "Run \"Delete stale lock files\" to scan and clear in one pass -- it gets a much larger time budget than this automatic check -- or check the save folder manually if the server won't boot.",
+        params: { dir: saveDirUsed },
+      },
+    );
+  }
+  return null;
+}
+
 router.get("/worldmap", requirePermission("diagnostics.manage"), async (req, res) => {
   const t0 = Date.now();
   const checks = [];
@@ -5228,34 +5279,34 @@ router.post("/clear-stale-locks", requirePermission("diagnostics.manage"), async
     const MAX_FILES = 50000;
     const staleAfterMs = 60 * 60 * 1000;
     const now = Date.now();
+    // User-triggered, not a background poll -- generous budget compared to
+    // scanSaveStats's diagnostics-cycle one, since letting a deliberate
+    // delete run longer is better than truncating it early. Still bounded:
+    // same reasoning as scanSaveStats above, an unbounded raw
+    // fs.promises.readdir/stat here could hang the whole request forever on
+    // a dead network mount, so this walk gets the same FS_TIMEOUT_MS-bounded
+    // safeReaddir/safeStat plus its own wall-clock deadline.
+    const deadline = now + 30000;
     const deleted = [];
     const failed = [];
     let visited = 0;
     let truncated = false;
 
     const walk = async (dir) => {
-      if (visited >= MAX_FILES) {
+      if (visited >= MAX_FILES || Date.now() >= deadline) {
         truncated = true;
         return;
       }
-      let names;
-      try {
-        names = await fs.promises.readdir(dir);
-      } catch {
-        return;
-      }
+      const names = await safeReaddir(dir);
+      if (!names) return;
       for (const name of names) {
-        if (++visited > MAX_FILES) {
+        if (++visited > MAX_FILES || Date.now() >= deadline) {
           truncated = true;
           return;
         }
         const full = path.join(dir, name);
-        let st;
-        try {
-          st = await fs.promises.stat(full);
-        } catch {
-          continue;
-        }
+        const st = await safeStat(full);
+        if (!st) continue;
         if (st.isDirectory()) {
           await walk(full);
         } else if (
@@ -5276,7 +5327,8 @@ router.post("/clear-stale-locks", requirePermission("diagnostics.manage"), async
     await walk(saveDir);
 
     log.info(
-      `Cleared ${deleted.length} stale lock file(s) from ${saveDir} (${failed.length} failed)`,
+      `Cleared ${deleted.length} stale lock file(s) from ${saveDir} (${failed.length} failed)` +
+        (truncated ? " -- scan stopped early, save too large to fully check in one pass" : ""),
     );
     res.json({
       success: true,
@@ -5287,7 +5339,9 @@ router.post("/clear-stale-locks", requirePermission("diagnostics.manage"), async
       message:
         `Removed ${deleted.length} stale lock file${deleted.length === 1 ? "" : "s"}` +
         (failed.length > 0 ? ` (${failed.length} could not be deleted)` : "") +
-        ".",
+        (truncated
+          ? ". Stopped early -- this save is too large to fully check in one pass, so some stale lock files may remain undetected."
+          : ".") ,
     });
   } catch (error) {
     log.error(`Failed to clear stale locks: ${error.message}`);
@@ -5613,3 +5667,7 @@ export { buildThumbnailResolutionCheck };
 // Exported for direct unit testing of the GET /diagnostics RCON
 // command-rejection check -- see server/tests/rconCommandRejectionsCheck.test.js.
 export { summarizeRconRejections, buildRconCommandRejectionsCheck };
+// Exported for direct unit testing of the stale-lock save-folder walk's
+// deadline behavior and its diagnostics-check decision -- see
+// server/tests/scanSaveStatsDeadline.test.js.
+export { scanSaveStats, buildStaleLocksCheck };
