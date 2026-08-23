@@ -6072,7 +6072,30 @@ handlers.safehouseAddPlayer = function(args)
         return false, nil, "Failed to add player to safehouse: " .. tostring(addErr)
     end
 
-    return true, { message = "Player added to safehouse", safehouseRef = args.safehouseRef, username = username }
+    -- SafeHouse.addPlayer is declared void (confirmed 2026-08-23 against
+    -- the real B42 jar), so the only way to check it actually happened is
+    -- to read the membership list back via getPlayers() (also confirmed
+    -- present, and already used by handlers.getSafehouses).
+    local verified
+    local ok2, players = pcall(function() return sh:getPlayers() end)
+    if ok2 and players then
+        local found = false
+        local ok3 = pcall(function()
+            for i = 0, players:size() - 1 do
+                if tostring(players:get(i)) == username then
+                    found = true
+                    break
+                end
+            end
+        end)
+        if ok3 then verified = found end
+    end
+
+    if verified == false then
+        return false, nil, "Add player call succeeded but " .. username .. " is not in the safehouse player list"
+    end
+
+    return true, { message = "Player added to safehouse", safehouseRef = args.safehouseRef, username = username, verified = verified }
 end
 
 handlers.safehouseRemovePlayer = function(args)
@@ -6089,7 +6112,28 @@ handlers.safehouseRemovePlayer = function(args)
         return false, nil, "Failed to remove player from safehouse: " .. tostring(removeErr)
     end
 
-    return true, { message = "Player removed from safehouse", safehouseRef = args.safehouseRef, username = username }
+    -- Same void-method situation as safehouseAddPlayer -- verify via the
+    -- membership list read-back instead.
+    local verified
+    local ok2, players = pcall(function() return sh:getPlayers() end)
+    if ok2 and players then
+        local found = false
+        local ok3 = pcall(function()
+            for i = 0, players:size() - 1 do
+                if tostring(players:get(i)) == username then
+                    found = true
+                    break
+                end
+            end
+        end)
+        if ok3 then verified = not found end
+    end
+
+    if verified == false then
+        return false, nil, "Remove player call succeeded but " .. username .. " is still in the safehouse player list"
+    end
+
+    return true, { message = "Player removed from safehouse", safehouseRef = args.safehouseRef, username = username, verified = verified }
 end
 
 handlers.safehouseSetOwner = function(args)
@@ -6106,7 +6150,23 @@ handlers.safehouseSetOwner = function(args)
         return false, nil, "Failed to set safehouse owner: " .. tostring(setErr)
     end
 
-    return true, { message = "Safehouse owner updated", safehouseRef = args.safehouseRef, owner = owner }
+    -- SafeHouse.setOwner is declared void; getOwner() (confirmed present,
+    -- also used by handlers.getSafehouses) reads the real result back.
+    local ok2, actualOwner = pcall(function() return sh:getOwner() end)
+    local verified
+    if not ok2 then
+        verified = nil
+    elseif actualOwner == owner then
+        verified = true
+    else
+        verified = false
+    end
+
+    if verified == false then
+        return false, nil, "Set owner call succeeded but safehouse owner is still " .. tostring(actualOwner)
+    end
+
+    return true, { message = "Safehouse owner updated", safehouseRef = args.safehouseRef, owner = owner, verified = verified }
 end
 
 handlers.safehouseSetRespawn = function(args)
@@ -6124,11 +6184,29 @@ handlers.safehouseSetRespawn = function(args)
         return false, nil, "Failed to set safehouse respawn: " .. tostring(setErr)
     end
 
+    -- SafeHouse.setRespawnInSafehouse is declared void; isRespawnInSafehouse
+    -- (confirmed present on the real B42 jar, takes the same username) reads
+    -- the real per-player result back.
+    local ok2, actualRespawn = pcall(function() return sh:isRespawnInSafehouse(username) end)
+    local verified
+    if not ok2 then
+        verified = nil
+    elseif actualRespawn == enabled then
+        verified = true
+    else
+        verified = false
+    end
+
+    if verified == false then
+        return false, nil, "Set respawn call succeeded but did not take effect (still " .. tostring(actualRespawn) .. ")"
+    end
+
     return true, {
         message = "Safehouse respawn updated",
         safehouseRef = args.safehouseRef,
         username = username,
-        enabled = enabled
+        enabled = enabled,
+        verified = verified
     }
 end
 
