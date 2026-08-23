@@ -224,6 +224,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The panel now tells you when an in-game action could not be confirmed.** Actions carried out
+  through the in-game bridge - teleporting a player, god mode, invisibility, noclip, safehouse and
+  faction operations, spawning a horde, changing a sandbox setting, the vehicle controls - now report
+  one of three things instead of a flat success. Either the mod read the game's state back and
+  confirmed the change actually took effect; or it made the call and says plainly that this particular
+  change cannot be read back, so it is reported as done-but-unconfirmed rather than as a success; or
+  the reply carries no verification at all, which now means one specific thing - the bridge mod on your
+  server is older than the panel and should be updated.
+  The controls behave accordingly. Previously a toggle such as god mode switched itself on the instant
+  you clicked it, whatever the game reported back, so a change the mod had explicitly failed to confirm
+  was displayed as having worked and stayed that way until something refreshed the page. A missed
+  notification is easy to overlook; a switch showing the wrong position is the panel actively telling
+  you something untrue. Those controls now wait for the confirmation before they move.
+
 - **The panel is now available in Haitian Creole.** Kreyol ayisyen joins English, French, German,
   Spanish and Simplified Chinese in the language menu - all 55 sets of text, around 7,000 individual
   strings, translated from the English originals. Nothing about the existing five languages changed.
