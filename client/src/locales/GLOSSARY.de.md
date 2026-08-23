@@ -1,8 +1,9 @@
 # German (de) translation glossary
 
 The one place German vocabulary and register are decided. Read it before writing a
-string; add to it when you decide something new, in the same commit as the strings
-that use it. A term that crosses namespaces crossing them inconsistently is the one
+string. Unlike the Spanish and Chinese glossaries, THIS FILE HAS ONE WRITER (god) --
+five agents are translating in parallel and five editors of one file collide. Message
+god a term you have decided; it lands here and gets broadcast. A term that crosses namespaces crossing them inconsistently is the one
 defect the parity test cannot catch — every key present, every string wrong in a
 different way.
 
