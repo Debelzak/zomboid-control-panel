@@ -163,6 +163,13 @@ export class ModChecker extends EventEmitter {
     this.intervalId = null;
     this.initialCheckTimeout = null;
     this.lastCheck = null;
+    // Whether the most recent checkForUpdates() actually got data back from
+    // the Steam Web API, vs. silently degrading to the smaller, less
+    // complete ACF-only comparison (see the `steamData.size === 0` branch
+    // below). Without this, a Steam outage/rate-limit/network block looks
+    // identical to "checked, 0 updates" everywhere getStatus() is read.
+    this.steamApiHealthy = true;
+    this.lastSteamApiFailureAt = null;
     this.modsNeedingUpdate = [];
     this.onUpdateCallback = null;
     this.autoRestartEnabled = false; // Track auto-restart state
@@ -1269,6 +1276,15 @@ export class ModChecker extends EventEmitter {
         }
       }
 
+      // Empty result with nothing queried isn't a failure -- there was
+      // nothing to ask Steam about. Empty result with IDs queried means the
+      // API call itself failed (see fetchSteamTimestamps): every batch
+      // network-errored, timed out, or got rate-limited.
+      this.steamApiHealthy = steamData.size > 0 || workshopIds.length === 0;
+      this.lastSteamApiFailureAt = this.steamApiHealthy
+        ? this.lastSteamApiFailureAt
+        : new Date();
+
       if (steamData.size === 0) {
         // API failed entirely — fall back to ACF-only comparison
         log.warn("Steam API returned no data, falling back to ACF-only check");
@@ -1527,10 +1543,14 @@ export class ModChecker extends EventEmitter {
         log.debug("No mod updates available");
       }
 
-      return { updated: updatedMods.length > 0, mods: updatedMods };
+      return {
+        updated: updatedMods.length > 0,
+        mods: updatedMods,
+        source: this.steamApiHealthy ? "steam" : "acf-only",
+      };
     } catch (error) {
       log.error(`Mod update check failed: ${error.message}`);
-      return { updated: false, mods: [], error: error.message };
+      return { updated: false, mods: [], error: error.message, source: "error" };
     } finally {
       this.checkInProgress = false;
     }
@@ -1657,6 +1677,14 @@ export class ModChecker extends EventEmitter {
       totalModsInWorkshop: Object.keys(workshopInfo).length,
       totalModsTracked: Array.isArray(trackedMods) ? trackedMods.length : 0,
       updatesAvailable: modsWithUpdates,
+      // False only after a check that actually queried Steam and got
+      // nothing back (outage/rate-limit/network block) -- true before the
+      // first check ever runs, so this isn't itself a false alarm on a
+      // freshly-started panel.
+      steamApiHealthy: this.steamApiHealthy,
+      lastSteamApiFailureAt: this.lastSteamApiFailureAt
+        ? this.lastSteamApiFailureAt.toISOString()
+        : null,
       autoRestartEnabled: this.autoRestartEnabled,
       // Restart options
       restartWarningMinutes: this.restartWarningMinutes,

@@ -1966,6 +1966,15 @@ router.post("/write-to-ini", async (req, res) => {
     const workshopIdList = sanitizeIniList(
       resolvedMods.map((m) => m.workshopId).filter(Boolean),
     );
+    // Every workshopId ends up in WorkshopItems= above regardless of whether
+    // its modId resolved, so Steam will download it either way. A workshopId
+    // whose modId never resolved is silently EXCLUDED from Mods= (filtered
+    // via .filter(Boolean) above) -- it never loads in PZ even though it's
+    // subscribed. Surface which ones so the caller isn't told "success" for
+    // mods that are actually still orphaned.
+    const unresolvedWorkshopIds = resolvedMods
+      .filter((m) => m.workshopId && !m.modId)
+      .map((m) => m.workshopId);
 
     // Auto-detect map folders from downloaded workshop mods if not provided
     let detectedMapFolders = mapFolders || [];
@@ -2033,10 +2042,11 @@ router.post("/write-to-ini", async (req, res) => {
 
     res.json({
       success: true,
-      message: `Successfully configured ${mods.length} mods in server config.${autoDetectedCount > 0 ? ` (${autoDetectedCount} mod IDs auto-detected)` : ""}${detectedMapFolders.length > 0 ? ` Map folders: ${detectedMapFolders.join(", ")}` : ""}`,
+      message: `Successfully configured ${mods.length} mods in server config.${autoDetectedCount > 0 ? ` (${autoDetectedCount} mod IDs auto-detected)` : ""}${detectedMapFolders.length > 0 ? ` Map folders: ${detectedMapFolders.join(", ")}` : ""}${unresolvedWorkshopIds.length > 0 ? ` WARNING: ${unresolvedWorkshopIds.length} mod ID(s) could not be auto-detected and were subscribed but NOT enabled: ${unresolvedWorkshopIds.join(", ")}` : ""}`,
       iniPath,
       modsConfigured: mods.length,
       autoDetectedModIds: autoDetectedCount,
+      unresolvedModIds: unresolvedWorkshopIds,
       modIds: modIdList,
       workshopItems: workshopIdList,
       mapList,

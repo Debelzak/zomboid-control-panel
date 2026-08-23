@@ -249,17 +249,30 @@ export function acquireMirrorLock() {
 
 let lastSession = null;
 
+// Identifies WHERE the mirror was pulled from -- everything that decides
+// which remote files end up in it, short of the password (a password change
+// alone doesn't change what the files are, only how we authenticate to get
+// them). Two requests within MIRROR_FRESH_MS that resolve to the same
+// serverName but a DIFFERENT host/port/username/configPath (a credentials
+// change on Settings, or a configPath change on the SFTP config list) must
+// not reuse a mirror pulled under the old transport.
+function transportFingerprint(config) {
+  return `${config.host}:${config.port}:${config.username}:${config.configPath}`;
+}
+
 export async function beginRemoteConfigSession(config, serverName, { fresh }) {
+  const transportKey = transportFingerprint(config);
   if (
     !fresh &&
     lastSession &&
     lastSession.serverName === serverName &&
+    lastSession.transportKey === transportKey &&
     Date.now() - lastSession.pulledAt < MIRROR_FRESH_MS
   ) {
     return lastSession;
   }
   const pulled = await pullRemoteConfigFiles(config, serverName);
-  lastSession = { ...pulled, serverName };
+  lastSession = { ...pulled, serverName, transportKey };
   return lastSession;
 }
 
