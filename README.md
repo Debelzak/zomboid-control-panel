@@ -184,6 +184,7 @@ Visual map selector for reclaiming disk space from an aging save. Delete individ
 - **RCON enabled** in your server `.ini` (`RCONPort=27015` and `RCONPassword=...`).
 - **Network access** between the panel and the PZ server (same machine, same LAN, or reachable IP).
 - For PanelBridge features: `DoLuaChecksum=false` in the server `.ini`.
+- **`curl`** for World Map build detection (Docker, Windows, and macOS already have it; a bare-metal Linux tarball install might not). Without it, the map still works — it just falls back to a fixed build and stops tracking new Project Zomboid map releases, which Debug > World Map will flag.
 
 The packaged binary includes its own runtime — no Node.js, Python, or Java install needed on the panel host.
 
