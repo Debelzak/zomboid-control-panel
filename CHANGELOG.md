@@ -249,6 +249,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is not something the panel can fix from its side - so the point of this change is that you will
   find out, instead of finding out from a wrong map.
 
+- **If the panel could not tell whether your server was running, it assumed it was stopped.** The
+  check that looks for the running game process reports a plain "not running" both when the server
+  is genuinely stopped and when the check itself fails - an unreadable process list, a permissions
+  problem, a hung scan. Four things trusted that answer and acted on it. **Wiping the world** could
+  therefore proceed against a server that was actually running. **Updating the server through
+  SteamCMD** could too - it even caught the check's own error and carried on regardless. The
+  unattended auto-updater would skip saving and shutting down cleanly first. And an automatic mod
+  restart could mark the update as handled without ever performing it, so it would never be retried.
+  All four now tell the difference between "stopped" and "cannot tell", and refuse to act on the
+  second.
+
+- **Servers created without a name all shared one.** If you did not fill in the in-game server name,
+  the panel permanently wrote `servertest` - Project Zomboid's own default name - into its database
+  as if you had chosen it. Everything downstream then treated that as your real server name forever,
+  so two servers set up this way would quietly point at the same configuration and save files. The
+  panel now takes a name from the display name you did provide, and refuses to create the server if
+  neither is usable, rather than inventing an identity and writing it down.
+
+- **Turning mods on could silently leave some of them switched off.** When writing your mod
+  selection into the server configuration, any mod whose internal ID could not be worked out was
+  quietly left out of the active list while still being subscribed - so the game downloaded it and
+  never loaded it. The panel reported plain success. It now tells you which mods it could not
+  resolve.
+
+- **Three things stopped working without saying so.** Mod update checking silently fell back to a
+  weaker local-only comparison during a Steam outage, and reported nothing. Disk monitoring returned
+  exactly the same "plenty of space" shape whether the disk was healthy or the volume had become
+  unreachable, so the low-disk warning went quiet at precisely the moment it mattered. And the
+  short-lived cache used when editing configuration on a remote server was keyed only on the server
+  name, so changing the host or credentials and immediately reading a file could serve content
+  fetched over the old connection. All three now report their real state.
+
 - **If you locked yourself out of the local administrator account, the recovery form could never
   work.** Resetting a lost local password requires a one-time token that the panel writes to
   `data/reset-token.txt` - but the form had no field to type it into. The token was therefore always
