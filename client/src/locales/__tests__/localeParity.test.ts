@@ -88,6 +88,26 @@ function tagTokens(value: unknown): string[] {
   return [...value.matchAll(TAG_TOKEN_RE)].map((m) => m[0]).sort()
 }
 
+// Catches a literal "&" (or any other special character) getting escaped to
+// an HTML entity by a translation pass — invisible to every other check
+// here: valid JSON, correct key set, no placeholder involved, no <tag>
+// involved. Live in shipped German (2026-08-23): several fork-generated
+// strings turned "apply time & date" into "Zeit &amp; Datum anwenden",
+// which renders as the literal text "&amp;" on screen since nothing in this
+// app HTML-decodes plain t() output. Matches named entities (&lt; &gt;
+// &amp; &quot; &apos; ...) and numeric forms (&#39; decimal, &#x27; hex).
+// Deliberately does NOT flag a bare "&" itself — only comparing entities
+// against entities means this correctly PASSES scheduler.json's
+// bridgeFormatHint, where English's own example syntax deliberately
+// contains a literal "&lt;action&gt;" and every locale correctly mirrors
+// it verbatim. Order-independent (sorted), same reasoning as tagTokens.
+const HTML_ENTITY_RE = /&(?:[a-zA-Z]+|#\d+|#x[0-9a-fA-F]+);/g
+
+function entityTokens(value: unknown): string[] {
+  if (typeof value !== 'string') return []
+  return [...value.matchAll(HTML_ENTITY_RE)].map((m) => m[0]).sort()
+}
+
 // A narrow, individually-reviewed exception list — NOT a blanket "_one keys
 // may omit {{count}}" rule, which would hide a future _one key that drops
 // {{count}} by accident instead of by design. Each entry here was checked
@@ -196,6 +216,14 @@ describe(`locale parity (${SOURCE_LANGUAGE} is the source of truth)`, () => {
         if (JSON.stringify(sourceTags) === JSON.stringify(targetTags)) return []
         return [`${key}: ${SOURCE_LANGUAGE}=${JSON.stringify(sourceTags)} vs ${lang}=${JSON.stringify(targetTags)}`]
       })
+      const entityMismatches = sharedKeys.flatMap((key) => {
+        const sourceEntities = entityTokens(getAtPath(sourceObj, key))
+        const targetEntities = entityTokens(getAtPath(targetObj, key))
+        if (JSON.stringify(sourceEntities) === JSON.stringify(targetEntities)) return []
+        return [
+          `${key}: ${SOURCE_LANGUAGE}=${JSON.stringify(sourceEntities)} vs ${lang}=${JSON.stringify(targetEntities)}`,
+        ]
+      })
 
       it(`${lang}/${ns}.json supplies every {{placeholder}} that ${SOURCE_LANGUAGE}/${ns}.json uses for the same key`, () => {
         expect(
@@ -215,6 +243,13 @@ describe(`locale parity (${SOURCE_LANGUAGE} is the source of truth)`, () => {
         expect(
           tagMismatches,
           `${lang}/${ns}.json has a tag mismatch vs ${SOURCE_LANGUAGE}/${ns}.json (missing/extra/escaped <tag>)`,
+        ).toEqual([])
+      })
+
+      it(`${lang}/${ns}.json has the same multiset of HTML entities as ${SOURCE_LANGUAGE}/${ns}.json for the same key`, () => {
+        expect(
+          entityMismatches,
+          `${lang}/${ns}.json has an HTML-entity mismatch vs ${SOURCE_LANGUAGE}/${ns}.json (a literal character got escaped, e.g. "&" became "&amp;", and will render as literal entity text on screen)`,
         ).toEqual([])
       })
     }
