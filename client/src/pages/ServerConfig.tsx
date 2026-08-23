@@ -3696,8 +3696,10 @@ export default function ServerConfig() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Bookmark className="w-5 h-5" />
-              {t('templatesDialog.title')}
-              <HelpTip label={t('templatesDialog.title')}>{t('templatesDialog.applyTip')}</HelpTip>
+              <span className="flex items-center gap-1.5">
+                {t('templatesDialog.title')}
+                <HelpTip label={t('templatesDialog.title')}>{t('templatesDialog.applyTip')}</HelpTip>
+              </span>
             </DialogTitle>
             <DialogDescription>
               {t('templatesDialog.description')}
