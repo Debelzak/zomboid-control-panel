@@ -420,7 +420,7 @@ export default function Mods() {
     if (workshopCount > 0 && modIdCount === 0) {
       conflicts.push({
         type: 'missing_modid',
-        severity: 'warning',
+        severity: 'info',
         message: t('serverConfigTab.workshopItemsNoModIds', { count: workshopCount }),
       })
     }
