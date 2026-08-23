@@ -291,9 +291,11 @@ export default function OidcSettings() {
                   }
                   disabled={envOverrides?.clientSecret}
                 />
-                {envOverrides?.clientSecret && (
+                {envOverrides?.clientSecret ? (
                   <p className="text-xs text-muted-foreground">{t('envPinnedNote')}</p>
-                )}
+                ) : settings.clientSecretConfigured ? (
+                  <p className="text-xs text-muted-foreground">{t('fields.clientSecretConfiguredHelp')}</p>
+                ) : null}
               </div>
 
               <div className="space-y-1.5">

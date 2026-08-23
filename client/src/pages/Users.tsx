@@ -59,7 +59,7 @@ function recoveryActionKeyForRole(role: RoleInfo | undefined): 'lockout.actionMa
 }
 
 export default function Users() {
-  const { t } = useTranslation(['users', 'errors'])
+  const { t, i18n } = useTranslation(['users', 'errors'])
   const { toast } = useToast()
   const { user: currentUser } = useAuth()
   const confirm = useConfirm()
@@ -300,10 +300,10 @@ export default function Users() {
                           <Badge variant="outline">{user.role}</Badge>
                         </td>
                         <td className="px-4 py-2.5 text-muted-foreground">
-                          {new Date(user.createdAt).toLocaleString()}
+                          {new Date(user.createdAt).toLocaleString(i18n.language)}
                         </td>
                         <td className="px-4 py-2.5 text-muted-foreground">
-                          {user.lastLogin ? new Date(user.lastLogin).toLocaleString() : t('table.never')}
+                          {user.lastLogin ? new Date(user.lastLogin).toLocaleString(i18n.language) : t('table.never')}
                         </td>
                         <td className="px-4 py-2.5 text-right">
                           {!isSelf && (
@@ -367,6 +367,7 @@ export default function Users() {
                 onChange={(e) => setPassword(e.target.value)}
                 autoComplete="new-password"
               />
+              <p className="text-xs text-muted-foreground">{t('createDialog.passwordHint')}</p>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="new-user-confirm-password">{t('createDialog.confirmPasswordLabel')}</Label>

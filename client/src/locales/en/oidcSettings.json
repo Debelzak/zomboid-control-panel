@@ -33,6 +33,7 @@
     "clientSecret": "Client secret",
     "clientSecretPlaceholderConfigured": "Leave unchanged to keep the current secret",
     "clientSecretPlaceholderEmpty": "Enter the client secret",
+    "clientSecretConfiguredHelp": "A secret is already stored — these dots aren't the real value. Leave them as-is to keep it, type a new value to replace it, or clear the field and save to remove sign-in with this provider.",
     "providerName": "Display name",
     "providerNamePlaceholder": "e.g. Google, Okta, Authentik",
     "providerNameHelp": "Shown on the login screen's button — \"Continue with {{name}}\".",

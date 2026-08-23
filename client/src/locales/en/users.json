@@ -38,6 +38,7 @@
     "usernameLabel": "Username",
     "usernamePlaceholder": "e.g. jsmith",
     "passwordLabel": "Password",
+    "passwordHint": "Use at least 6 characters.",
     "confirmPasswordLabel": "Confirm password",
     "roleLabel": "Role",
     "rolePlaceholder": "Choose a role…",
