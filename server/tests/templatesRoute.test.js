@@ -4,7 +4,9 @@ const getActiveServer = vi.fn();
 const saveTemplate = vi.fn();
 const applyTemplate = vi.fn();
 
-vi.mock("../database/init.js", () => ({ getActiveServer }));
+import { mockGetRoleByName } from "./helpers/mockPermissionsDb.js";
+
+vi.mock("../database/init.js", () => ({ getActiveServer, getRoleByName: mockGetRoleByName }));
 vi.mock("../services/templateService.js", () => ({
   listTemplates: vi.fn(),
   getTemplate: vi.fn(),

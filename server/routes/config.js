@@ -1,7 +1,9 @@
 import express from "express";
+import fs from "fs";
+import path from "path";
 import { createLogger } from "../utils/logger.js";
 const log = createLogger("API:Config");
-import { getAllSettings, setSetting } from "../database/init.js";
+import { getAllSettings, getSetting, setSetting } from "../database/init.js";
 import {
   sanitizeError,
   SENSITIVE_FIELD_RE,
@@ -9,7 +11,7 @@ import {
   maskSensitiveObject,
 } from "../utils/sanitize.js";
 import net from "net";
-import { requireRole } from "../services/auth.js";
+import { requirePermission } from "../services/permissions.js";
 import {
   MOD_CHECK_INTERVAL_MINUTES_MAX,
   MOD_CHECK_INTERVAL_MINUTES_MIN,
@@ -150,7 +152,7 @@ router.get("/", async (req, res) => {
 });
 
 // Update server configuration
-router.put("/", requireStoppedForLocalConfigMutation, async (req, res) => {
+router.put("/", requirePermission("server.configure"), requireStoppedForLocalConfigMutation, async (req, res) => {
   try {
     log.info("PUT /config — saving server config");
     const serverManager = req.app.get("serverManager");
@@ -174,7 +176,7 @@ router.put("/", requireStoppedForLocalConfigMutation, async (req, res) => {
 });
 
 // Reload server options via RCON
-router.post("/reload", async (req, res) => {
+router.post("/reload", requirePermission("server.configure"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
     const result = await rconService.reloadOptions();
@@ -198,7 +200,7 @@ router.get("/options", async (req, res) => {
 });
 
 // Change a specific option via RCON
-router.post("/option", async (req, res) => {
+router.post("/option", requirePermission("server.configure"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
     const { name, value } = req.body;
@@ -249,7 +251,7 @@ router.get("/app-settings", async (req, res) => {
 // corsAllowAll (disables CORS origin checking panel-wide) and other
 // security-relevant settings, so any authenticated-but-unprivileged
 // account must not be able to write it.
-router.put("/app-settings", requireRole("admin"), async (req, res) => {
+router.put("/app-settings", requirePermission("panel.settings"), async (req, res) => {
   try {
     const { settings } = req.body;
     log.info(
@@ -302,6 +304,72 @@ router.put("/app-settings", requireRole("admin"), async (req, res) => {
         typeof value !== "boolean"
       ) {
         return res.status(400).json({ error: `${key} must be true or false` });
+      }
+
+      // httpsCertPath/httpsKeyPath used to be accepted as any string and
+      // only ever checked at panel BOOT (utils/certs.js), where a bad value
+      // (directory instead of file, unreadable) crashed the whole process
+      // via an unguarded fs.readFileSync -- see that file's own fix for the
+      // other half of this. Rejecting a bad value here, immediately, is
+      // what actually prevents an operator from saving one in the first
+      // place; the boot-time fix alone only stops the crash for a value
+      // that goes bad AFTER being saved (moved/deleted/permissions changed
+      // later), which is a real but separate case this can't catch.
+      if (
+        (key === "httpsCertPath" || key === "httpsKeyPath") &&
+        value !== ""
+      ) {
+        if (typeof value !== "string") {
+          return res.status(400).json({ error: `${key} must be a string` });
+        }
+        let stat;
+        try {
+          stat = fs.statSync(value);
+        } catch {
+          return res.status(400).json({
+            error: `${key} does not point to a file that exists: ${value}`,
+          });
+        }
+        if (!stat.isFile()) {
+          return res.status(400).json({
+            error: `${key} must be a file, not a directory: ${value}`,
+          });
+        }
+        try {
+          fs.accessSync(value, fs.constants.R_OK);
+        } catch {
+          return res.status(400).json({
+            error: `${key} exists but is not readable by the panel: ${value}`,
+          });
+        }
+      }
+
+      if (key === "httpsPort") {
+        const port = Number(value);
+        if (!Number.isInteger(port) || port < 1 || port > 65535) {
+          return res.status(400).json({
+            error: "httpsPort must be a whole number from 1 to 65535",
+          });
+        }
+        const panelPort = await getSetting("panelPort");
+        if (panelPort && port === Number(panelPort)) {
+          return res.status(400).json({
+            error: `httpsPort cannot be the same as the panel's HTTP port (${panelPort})`,
+          });
+        }
+      }
+
+      // Same missing-range-check shape as httpsPort above, but the worst
+      // case if it slips through is a too-fast/too-slow reconnect timer,
+      // not a lockout -- worth closing anyway since it's one check in the
+      // same loop, not worth its own investigation.
+      if (key === "reconnectInterval") {
+        const interval = Number(value);
+        if (!Number.isInteger(interval) || interval < 1 || interval > 60) {
+          return res.status(400).json({
+            error: "reconnectInterval must be a whole number from 1 to 60",
+          });
+        }
       }
 
       if (key === "chatPresets") {
@@ -432,8 +500,11 @@ router.put("/app-settings", requireRole("admin"), async (req, res) => {
   }
 });
 
-// CORS diagnostics for remote access troubleshooting
-router.get("/cors-debug", async (req, res) => {
+// CORS diagnostics for remote access troubleshooting. Admin-only, same tier
+// as debug.js: this is internal panel/network diagnostic surface, not a
+// server-operation task, and can mutate CORS state (clearing the blocked
+// list, forcing a reload).
+router.get("/cors-debug", requirePermission("diagnostics.manage"), async (req, res) => {
   try {
     const getCorsDebugSnapshot = req.app.get("getCorsDebugSnapshot");
     if (typeof getCorsDebugSnapshot !== "function") {
@@ -448,7 +519,7 @@ router.get("/cors-debug", async (req, res) => {
   }
 });
 
-router.post("/cors-debug/reload", async (req, res) => {
+router.post("/cors-debug/reload", requirePermission("diagnostics.manage"), async (req, res) => {
   try {
     const refreshCorsConfig = req.app.get("refreshCorsConfig");
     if (typeof refreshCorsConfig !== "function") {
@@ -464,7 +535,7 @@ router.post("/cors-debug/reload", async (req, res) => {
   }
 });
 
-router.delete("/cors-debug/blocked", async (req, res) => {
+router.delete("/cors-debug/blocked", requirePermission("diagnostics.manage"), async (req, res) => {
   try {
     const clearCorsBlockedOrigins = req.app.get("clearCorsBlockedOrigins");
     const getCorsDebugSnapshot = req.app.get("getCorsDebugSnapshot");
@@ -502,30 +573,32 @@ router.get("/paths", async (req, res) => {
   }
 });
 
+// serverManager.savePath set here is what server.js's /wipe and
+// /wipe/preview join with "Saves/Multiplayer/{serverName}" before recursively
+// deleting -- the previous check here only rejected a literal ".." and never
+// required an absolute path, so a relative value would resolve against
+// whatever the panel process's cwd happens to be at wipe time instead of the
+// real Zomboid data folder. Matches server.js's own isValidPath: absolute,
+// no traversal.
+function isValidConfigPath(inputPath) {
+  if (typeof inputPath !== "string" || inputPath.length > 500) return false;
+  const normalized = path.normalize(inputPath);
+  if (normalized.includes("..")) return false;
+  return path.isAbsolute(normalized);
+}
+
 // Update paths (runtime only - doesn't persist to .env)
-router.put("/paths", async (req, res) => {
+router.put("/paths", requirePermission("server.configure"), async (req, res) => {
   try {
     const serverManager = req.app.get("serverManager");
     const { serverPath, savePath } = req.body;
 
     // Validate paths
-    if (serverPath !== undefined) {
-      if (
-        typeof serverPath !== "string" ||
-        serverPath.length > 500 ||
-        serverPath.includes("..")
-      ) {
-        return res.status(400).json({ error: "Invalid server path" });
-      }
+    if (serverPath !== undefined && !isValidConfigPath(serverPath)) {
+      return res.status(400).json({ error: "Invalid server path" });
     }
-    if (savePath !== undefined) {
-      if (
-        typeof savePath !== "string" ||
-        savePath.length > 500 ||
-        savePath.includes("..")
-      ) {
-        return res.status(400).json({ error: "Invalid save path" });
-      }
+    if (savePath !== undefined && !isValidConfigPath(savePath)) {
+      return res.status(400).json({ error: "Invalid save path" });
     }
 
     serverManager.updatePaths(serverPath, savePath);
@@ -553,7 +626,7 @@ const RCON_HOST_REGEX = /^[a-zA-Z0-9.-]{1,255}$/;
 const RCON_PASSWORD_MAX_LENGTH = 256;
 
 // Update RCON configuration
-router.put("/rcon", async (req, res) => {
+router.put("/rcon", requirePermission("server.configure"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
     const { host, port, password } = req.body;
@@ -595,7 +668,7 @@ router.put("/rcon", async (req, res) => {
 });
 
 // Test RCON connection
-router.post("/test-rcon", async (req, res) => {
+router.post("/test-rcon", requirePermission("server.configure"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
 

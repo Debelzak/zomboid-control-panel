@@ -249,6 +249,56 @@ describe('RconService', () => {
       expect(executeSpy).not.toHaveBeenCalled();
       expect(result.success).toBe(false);
     });
+
+    it('transliterates common accented Latin letters instead of dropping them', async () => {
+      const liveRcon = new RconService();
+      const executeSpy = vi.spyOn(liveRcon, 'execute').mockResolvedValue({ success: true, response: 'ok' });
+
+      await liveRcon.serverMessage('Redemarrage du serveur \u00e0 20h, merci de vous d\u00e9connecter');
+
+      const sent = executeSpy.mock.calls[0][0];
+      expect(sent).toContain('Redemarrage du serveur a 20h');
+      expect(sent).toContain('deconnecter');
+      expect(sent).not.toMatch(/[\u00C0-\u024F]/);
+    });
+  });
+
+  // Finding 2 (docs/qa/kevin-adversarial-findings.md): sanitizeForBanReason()
+  // used to have its own, less careful character-folding rules than
+  // serverMessage() -- same class of user-typed text, different treatment
+  // depending on which RCON call carried it. Both now share
+  // foldToRconAscii().
+  describe('sanitizeForBanReason / banPlayer (shared ASCII folding)', () => {
+    it('transliterates accents and normalizes curly quotes the same way serverMessage() does', () => {
+      const liveRcon = new RconService();
+      const sanitized = liveRcon.sanitizeForBanReason(
+        'Comportement toxique r\u00e9p\u00e9t\u00e9, insultes \u00e0 d\u2019autres joueurs',
+      );
+      expect(sanitized).toBe("Comportement toxique repete, insultes a d'autres joueurs");
+    });
+
+    it('still strips characters outside the ban-reason whitelist after folding (quotes, backslash, symbols)', () => {
+      const liveRcon = new RconService();
+      const sanitized = liveRcon.sanitizeForBanReason('griefing "the base" \\ 100% <script>');
+      expect(sanitized).not.toMatch(/["\\<>]/);
+    });
+
+    it('banPlayer() returns sentReason -- the ACTUAL text sent to RCON, which callers should log instead of the raw input', async () => {
+      const liveRcon = new RconService();
+      vi.spyOn(liveRcon, 'sanitizeQuotedArg').mockReturnValue('Bob');
+      const executeSpy = vi.spyOn(liveRcon, 'execute').mockResolvedValue({ success: true, response: 'ok' });
+
+      const result = await liveRcon.banPlayer(
+        'Bob',
+        false,
+        'Comportement toxique r\u00e9p\u00e9t\u00e9',
+      );
+
+      expect(result.sentReason).toBe('Comportement toxique repete');
+      const cmd = executeSpy.mock.calls[0][0];
+      expect(cmd).toContain('Comportement toxique repete');
+      expect(cmd).not.toContain('r\u00e9p\u00e9t\u00e9');
+    });
   });
 
   describe('quoted argument safety', () => {

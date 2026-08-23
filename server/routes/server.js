@@ -16,8 +16,10 @@ import {
 import { sanitizeError, sanitizeIniValue } from "../utils/sanitize.js";
 import { normalizeMemoryGb } from "../utils/memory.js";
 import { withFileLock, writeFileAtomic } from "../utils/fileWriteQueue.js";
-import { requireRole } from "../services/auth.js";
+import { requirePermission } from "../services/permissions.js";
 import { runManagedLifecycle } from "../services/managedContainer.js";
+import { ErrorCode } from "../utils/errorCodes.js";
+import { ProgressCode } from "../utils/progressCodes.js";
 
 const router = express.Router();
 
@@ -47,6 +49,21 @@ function getSteamCmdExe(steamcmdPath) {
   return primary; // Return primary path even if not found — let caller handle the error
 }
 
+// Emits one line of SteamCMD's OWN stdout/stderr, forwarded verbatim, with
+// no `progressCode` field and no way to attach one. This is the ONLY
+// function in this file allowed to emit install:log, steam:log or
+// steamcmd:log for a raw passthrough line -- every other emit of those
+// three events is an authored line and must carry a progressCode instead.
+// That split used to be enforced only by which event name a call site
+// picked, and it was violated exactly once (the 32-bit-library warning
+// below, our own text going out through steamcmd:log) before anyone was
+// even trying to maintain the rule -- see ProgressCode's file header. Going
+// through this helper (or not) is what makes "raw" and "authored" mutually
+// exclusive now, not a comment.
+function emitRawSteamCmdLine(io, event, type, text) {
+  io?.emit(event, { type, text });
+}
+
 // Self-heal "SteamCMD not found": downloads, extracts and first-time
 // initializes SteamCMD into `installPath` on Linux, mirroring the same
 // steps as POST /steamcmd/download. Called from /install and /update when
@@ -74,6 +91,7 @@ async function ensureSteamCmdLinux(installPath, io) {
   emit("steamcmd:status", {
     status: "downloading",
     message: "SteamCMD missing — downloading it now...",
+    progressCode: ProgressCode.STEAMCMD_LINUX_AUTO_DOWNLOAD_START,
   });
 
   if (!fs.existsSync(installPath)) {
@@ -101,6 +119,7 @@ async function ensureSteamCmdLinux(installPath, io) {
   emit("steamcmd:status", {
     status: "extracting",
     message: "Extracting SteamCMD...",
+    progressCode: ProgressCode.STEAMCMD_EXTRACTING,
   });
   await execAsync(`tar -xzf '${safeTarPath}' -C '${safeInstallPath}'`, {
     timeout: 30000,
@@ -124,6 +143,7 @@ async function ensureSteamCmdLinux(installPath, io) {
   emit("steamcmd:status", {
     status: "initializing",
     message: "Initializing SteamCMD (first run)...",
+    progressCode: ProgressCode.STEAMCMD_INITIALIZING,
   });
   const ldPaths = [
     path.join(installPath, "linux32"),
@@ -140,10 +160,10 @@ async function ensureSteamCmdLinux(installPath, io) {
       env: { ...process.env, LD_LIBRARY_PATH: ldPaths },
     });
     proc.stdout.on("data", (d) =>
-      emit("steamcmd:log", { type: "stdout", text: d.toString() }),
+      emitRawSteamCmdLine(io, "steamcmd:log", "stdout", d.toString()),
     );
     proc.stderr.on("data", (d) =>
-      emit("steamcmd:log", { type: "stderr", text: d.toString() }),
+      emitRawSteamCmdLine(io, "steamcmd:log", "stderr", d.toString()),
     );
     proc.on("close", (code) => {
       if (code === 0 || code === 7) {
@@ -165,6 +185,7 @@ async function ensureSteamCmdLinux(installPath, io) {
     status: "complete",
     message: "SteamCMD installed successfully!",
     path: installPath,
+    progressCode: ProgressCode.STEAMCMD_INSTALL_COMPLETE,
   });
   log.info(`SteamCMD auto-installed to ${installPath}`);
   return steamcmdExe;
@@ -395,7 +416,13 @@ async function getServerName() {
     return activeServer.serverName;
   }
   const legacyName = await getSetting("serverName");
-  return legacyName || "servertest";
+  // No active server and no legacy settings name either -- "servertest" used
+  // to fill in here, which is Project Zomboid's own vanilla single-player/
+  // test-server name. On a machine with a real, unrelated PZ install at the
+  // default path, an unconfigured panel would silently target its
+  // Server/servertest.ini. Callers already gate on `!serverConfigPath`;
+  // returning null lets the same gate also catch "no server name configured".
+  return legacyName || null;
 }
 
 // Security: Sanitize string for use in batch files/commands
@@ -450,20 +477,76 @@ function ensureWritableDirectory(directoryPath) {
   fs.accessSync(directoryPath, fs.constants.W_OK);
 }
 
-function formatWritablePathError(label, directoryPath) {
+// `kind` selects which of the 4 WRITABLE_PATH_* codes applies -- "install"
+// vs "data" is a label word choice, isContainer is a full alternate
+// remediation sentence, and neither is a value to interpolate (2026-08-22
+// variant-vs-params correction). Returns {message, code, params} rather
+// than just the string so every call site can pass `code` and `params`
+// straight through to res.json() without recomputing isContainer itself --
+// the params-survive-the-formatter check this was built to satisfy.
+// platformIsWindows defaults to the module's own isWindows -- container
+// detection is Linux-only by design (containers aren't a Windows concept
+// for this app), so a real call site never overrides it; a test does, to
+// exercise the container branch on a Windows dev machine.
+const WRITABLE_PATH_LABELS = Object.freeze({
+  install: "Installation path",
+  data: "Zomboid data folder",
+});
+
+export function formatWritablePathError(
+  kind,
+  directoryPath,
+  platformIsWindows = isWindows,
+) {
+  const label = WRITABLE_PATH_LABELS[kind];
   const isContainer =
-    !isWindows &&
+    !platformIsWindows &&
     (fs.existsSync("/.dockerenv") || fs.existsSync("/run/.containerenv"));
   const baseMessage = `${label} is not writable: ${directoryPath}.`;
 
   if (isContainer) {
-    return (
-      `${baseMessage} In Docker, bind-mount a writable host folder at this path ` +
-      `and make it owned by the panel container UID/GID.`
-    );
+    return {
+      message:
+        `${baseMessage} In Docker, bind-mount a writable host folder at this path ` +
+        `and make it owned by the panel container UID/GID.`,
+      code:
+        kind === "install"
+          ? ErrorCode.WRITABLE_PATH_INSTALL_CONTAINER
+          : ErrorCode.WRITABLE_PATH_DATA_CONTAINER,
+      params: { path: directoryPath },
+    };
   }
 
-  return `${baseMessage} Choose a folder writable by the panel process.`;
+  return {
+    message: `${baseMessage} Choose a folder writable by the panel process.`,
+    code:
+      kind === "install"
+        ? ErrorCode.WRITABLE_PATH_INSTALL_BAREMETAL
+        : ErrorCode.WRITABLE_PATH_DATA_BAREMETAL,
+    params: { path: directoryPath },
+  };
+}
+
+// isWindows picks a full alternate remediation sentence, not a value to
+// interpolate -- same reasoning/shape as formatWritablePathError's
+// isContainer split (2026-08-22 variant-vs-params correction). Platform is
+// an explicit param (defaulting to the module's own isWindows) rather than
+// read from process.platform inline, so a test can exercise both branches
+// without mocking the platform for the whole module.
+export function formatDirectoryReadError(
+  directoryPath,
+  osCode,
+  platformIsWindows = isWindows,
+) {
+  return {
+    message: platformIsWindows
+      ? `Cannot read ${directoryPath} (${osCode}). Run the panel as an account that can read this folder.`
+      : `Cannot read ${directoryPath} (${osCode}). The panel service account needs read and execute permission on this folder and every parent folder.`,
+    code: platformIsWindows
+      ? ErrorCode.DIRECTORY_READ_FAILED_WINDOWS
+      : ErrorCode.DIRECTORY_READ_FAILED_POSIX,
+    params: { path: directoryPath, code: osCode },
+  };
 }
 
 // Security: INI sanitization imported from shared util
@@ -660,6 +743,24 @@ export LD_LIBRARY_PATH="\${INSTDIR}/natives/:\${INSTDIR}/natives/linux64/:\${INS
   return { bat: batchContent, sh: shellContent };
 }
 
+// Role sweep for this file: routes below are grouped into what's actually
+// operational duty (start/stop/restart/save the running process, install or
+// update the game, edit its .ini config, browse the filesystem to set that
+// up) vs. what's read-only status/info or in-game/GM authority that every
+// role legitimately uses. Wipe and delete-files stay admin-only, unchanged.
+//
+// UPDATE: the weather/events/alarm/message/removezombies/releasesafehouse
+// group below, previously left open with no gate at all (every signed-in
+// role reached them, same as any other GM tool), is now
+// requirePermission("server.world_events") -- folded into the matrix and
+// granted to admin+technician+moderator by default, so this is a zero-
+// behaviour-change addition, not a restriction (adding a capability isn't
+// narrowing anything). Only /status and /network-interfaces stay
+// deliberately outside the matrix entirely: dashboard-wide reads that
+// protect nothing if gated and can break a screen for a role if mis-set.
+// Everything left unguarded below is that deliberate exception, not an
+// oversight.
+
 // Get server status
 router.get("/status", async (req, res) => {
   try {
@@ -694,7 +795,7 @@ router.get("/network-interfaces", async (req, res) => {
 });
 
 // Start server
-router.post("/start", async (req, res) => {
+router.post("/start", requirePermission("server.control"), async (req, res) => {
   try {
     const activeServer = await getActiveServer();
     log.info(
@@ -704,6 +805,7 @@ router.post("/start", async (req, res) => {
       return res.status(400).json({
         error:
           "Cannot start a remote server. Remote servers are managed externally — use RCON to interact.",
+        code: ErrorCode.SERVER_START_REMOTE_REFUSED,
       });
     }
 
@@ -944,7 +1046,7 @@ router.post("/start", async (req, res) => {
 });
 
 // Stop server (graceful via RCON)
-router.post("/stop", async (req, res) => {
+router.post("/stop", requirePermission("server.control"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
     const serverManager = req.app.get("serverManager");
@@ -954,7 +1056,10 @@ router.post("/stop", async (req, res) => {
     if (!rconService.connected) {
       return res
         .status(400)
-        .json({ error: "RCON not connected. Cannot gracefully stop server." });
+        .json({
+          error: "RCON not connected. Cannot gracefully stop server.",
+          code: ErrorCode.SERVER_STOP_RCON_NOT_CONNECTED,
+        });
     }
 
     // Save first — quitting after a failed save discards everything since
@@ -963,6 +1068,7 @@ router.post("/stop", async (req, res) => {
     if (!saved?.success) {
       return res.status(502).json({
         error: `Save failed, so the server was left running: ${sanitizeError(saved?.error)}`,
+        code: ErrorCode.SERVER_STOP_SAVE_FAILED,
       });
     }
 
@@ -973,6 +1079,7 @@ router.post("/stop", async (req, res) => {
     if (managed.handled && !managed.success) {
       return res.status(502).json({
         error: `The world was saved, but the container could not be stopped: ${sanitizeError(managed.error)}`,
+        code: ErrorCode.SERVER_STOP_CONTAINER_STOP_FAILED,
       });
     }
 
@@ -1002,7 +1109,7 @@ router.post("/stop", async (req, res) => {
 });
 
 // Force stop server
-router.post("/force-stop", async (req, res) => {
+router.post("/force-stop", requirePermission("server.control"), async (req, res) => {
   try {
     log.info("POST /force-stop — force kill requested");
     const activeServer = await getActiveServer();
@@ -1010,6 +1117,7 @@ router.post("/force-stop", async (req, res) => {
       return res.status(400).json({
         error:
           "Cannot force-stop a remote server. The process is not managed by this panel.",
+        code: ErrorCode.SERVER_FORCE_STOP_REMOTE_REFUSED,
       });
     }
 
@@ -1046,13 +1154,14 @@ router.post("/force-stop", async (req, res) => {
 });
 
 // Restart server
-router.post("/restart", async (req, res) => {
+router.post("/restart", requirePermission("server.control"), async (req, res) => {
   try {
     const activeServer = await getActiveServer();
     if (activeServer?.isRemote) {
       return res.status(400).json({
         error:
           "Cannot restart a remote server. The process is not managed by this panel.",
+        code: ErrorCode.SERVER_RESTART_REMOTE_REFUSED,
       });
     }
 
@@ -1066,7 +1175,7 @@ router.post("/restart", async (req, res) => {
     }
 
     // Run restart in background with specified warning time
-    scheduler.performRestart(warningMinutes).catch((err) => {
+    scheduler.performRestart(warningMinutes, { label: "Manual restart" }).catch((err) => {
       log.error(`Restart failed: ${err.message}`);
     });
 
@@ -1084,7 +1193,7 @@ router.post("/restart", async (req, res) => {
 });
 
 // Save world
-router.post("/save", async (req, res) => {
+router.post("/save", requirePermission("server.control"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
     const result = await rconService.save();
@@ -1095,20 +1204,25 @@ router.post("/save", async (req, res) => {
   }
 });
 
+// Message/weather/events/alarm/removezombies/releasesafehouse below: open to
+// every role, deliberately -- these are in-game/GM authority (broadcast a
+// message, run a weather or zombie event, release an inactive player's
+// safehouse), the same territory as players.js, not server operation.
+
 // Send server message
-router.post("/message", async (req, res) => {
+router.post("/message", requirePermission("server.world_events"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
     const { message } = req.body;
 
     if (!message) {
-      return res.status(400).json({ error: "Message is required" });
+      return res.status(400).json({ error: "Message is required", code: ErrorCode.SERVER_MESSAGE_REQUIRED });
     }
 
     if (typeof message !== "string" || message.length > 1000) {
       return res
         .status(400)
-        .json({ error: "Message must be a string under 1000 characters" });
+        .json({ error: "Message must be a string under 1000 characters", code: ErrorCode.SERVER_MESSAGE_TOO_LONG });
     }
 
     // Strip newlines/carriage returns to prevent RCON protocol injection
@@ -1123,7 +1237,7 @@ router.post("/message", async (req, res) => {
 });
 
 // Weather controls
-router.post("/weather/start-rain", async (req, res) => {
+router.post("/weather/start-rain", requirePermission("server.world_events"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
     const { intensity } = req.body;
@@ -1134,7 +1248,7 @@ router.post("/weather/start-rain", async (req, res) => {
   }
 });
 
-router.post("/weather/stop-rain", async (req, res) => {
+router.post("/weather/stop-rain", requirePermission("server.world_events"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
     const result = await rconService.stopRain();
@@ -1144,7 +1258,7 @@ router.post("/weather/stop-rain", async (req, res) => {
   }
 });
 
-router.post("/weather/start-storm", async (req, res) => {
+router.post("/weather/start-storm", requirePermission("server.world_events"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
     const { duration } = req.body;
@@ -1155,7 +1269,7 @@ router.post("/weather/start-storm", async (req, res) => {
   }
 });
 
-router.post("/weather/stop", async (req, res) => {
+router.post("/weather/stop", requirePermission("server.world_events"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
     const result = await rconService.stopWeather();
@@ -1166,7 +1280,7 @@ router.post("/weather/stop", async (req, res) => {
 });
 
 // Events
-router.post("/events/chopper", async (req, res) => {
+router.post("/events/chopper", requirePermission("server.world_events"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
     const result = await rconService.triggerChopper();
@@ -1176,7 +1290,7 @@ router.post("/events/chopper", async (req, res) => {
   }
 });
 
-router.post("/events/gunshot", async (req, res) => {
+router.post("/events/gunshot", requirePermission("server.world_events"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
     const result = await rconService.triggerGunshot();
@@ -1186,12 +1300,12 @@ router.post("/events/gunshot", async (req, res) => {
   }
 });
 
-router.post("/events/lightning", async (req, res) => {
+router.post("/events/lightning", requirePermission("server.world_events"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
     const { username } = req.body;
     if (username && (typeof username !== "string" || username.length > 64)) {
-      return res.status(400).json({ error: "Invalid username" });
+      return res.status(400).json({ error: "Invalid username", code: ErrorCode.EVENTS_INVALID_USERNAME });
     }
     const result = await rconService.triggerLightning(username);
     res.json(result);
@@ -1200,12 +1314,12 @@ router.post("/events/lightning", async (req, res) => {
   }
 });
 
-router.post("/events/thunder", async (req, res) => {
+router.post("/events/thunder", requirePermission("server.world_events"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
     const { username } = req.body;
     if (username && (typeof username !== "string" || username.length > 64)) {
-      return res.status(400).json({ error: "Invalid username" });
+      return res.status(400).json({ error: "Invalid username", code: ErrorCode.EVENTS_INVALID_USERNAME });
     }
     const result = await rconService.triggerThunder(username);
     res.json(result);
@@ -1214,13 +1328,13 @@ router.post("/events/thunder", async (req, res) => {
   }
 });
 
-router.post("/events/horde", async (req, res) => {
+router.post("/events/horde", requirePermission("server.world_events"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
     const { count, username } = req.body;
     const safeCount = validateInt(count, 1, 500, 50);
     if (username && (typeof username !== "string" || username.length > 64)) {
-      return res.status(400).json({ error: "Invalid username" });
+      return res.status(400).json({ error: "Invalid username", code: ErrorCode.EVENTS_INVALID_USERNAME });
     }
     const result = await rconService.createHorde(safeCount, username);
     res.json(result);
@@ -1238,7 +1352,7 @@ const FALLBACK_BRANCHES = [
   { name: "legacy41", description: "Legacy Build 41 branch for older worlds and mods." },
 ];
 
-router.get("/steamcmd/detect", async (_req, res) => {
+router.get("/steamcmd/detect", requirePermission("server.world_events"), async (_req, res) => {
   try {
     const steamcmdPath = await findSteamCmdPath();
     if (!steamcmdPath) {
@@ -1263,7 +1377,7 @@ router.get("/steamcmd/detect", async (_req, res) => {
 });
 
 // Get available Steam branches for PZ Dedicated Server (App ID 380870)
-router.get("/branches", async (req, res) => {
+router.get("/branches", requirePermission("server.install"), async (req, res) => {
   try {
     const steamcmdPath =
       req.query.steamcmdPath || (await getSetting("steamcmdPath"));
@@ -1278,6 +1392,15 @@ router.get("/branches", async (req, res) => {
         source: "fallback",
         message: "SteamCMD path not configured, using fallback branches",
       });
+    }
+
+    // Unlike every other route in this file that derives an executable path
+    // from user input, this one skipped isValidPath() -- steamcmdPath comes
+    // straight off the query string, and getSteamCmdExe() + spawn() below
+    // would run whatever binary exists at the caller-chosen path. Validate
+    // it the same way /install and /steam-update do before it's ever used.
+    if (!isValidPath(steamcmdPath)) {
+      return res.status(400).json({ error: "Invalid SteamCMD path", code: ErrorCode.STEAMCMD_PATH_INVALID });
     }
 
     const steamcmdExe = getSteamCmdExe(steamcmdPath);
@@ -1489,7 +1612,7 @@ export async function getSteamLoginArgs() {
 }
 
 // SteamCMD Installation endpoint
-router.post("/install", async (req, res) => {
+router.post("/install", requirePermission("server.install"), async (req, res) => {
   let activeOperationPath = null;
   try {
     const {
@@ -1522,26 +1645,28 @@ router.post("/install", async (req, res) => {
     if (!steamcmdPath || !installPath || !serverName) {
       return res.status(400).json({
         error: "Missing required fields: steamcmdPath, installPath, serverName",
+        code: ErrorCode.INSTALL_MISSING_FIELDS,
       });
     }
 
     if (!isValidPath(steamcmdPath)) {
-      return res.status(400).json({ error: "Invalid SteamCMD path" });
+      return res.status(400).json({ error: "Invalid SteamCMD path", code: ErrorCode.STEAMCMD_PATH_INVALID });
     }
 
     if (!isValidPath(installPath)) {
-      return res.status(400).json({ error: "Invalid install path" });
+      return res.status(400).json({ error: "Invalid install path", code: ErrorCode.INSTALL_PATH_INVALID });
     }
 
     if (!isValidServerName(serverName)) {
       return res.status(400).json({
         error:
           "Invalid server name. Use only letters, numbers, underscores, hyphens, and spaces (max 64 chars)",
+        code: ErrorCode.SERVER_NAME_FORMAT_INVALID,
       });
     }
 
     if (zomboidDataPath && !isValidPath(zomboidDataPath)) {
-      return res.status(400).json({ error: "Invalid Zomboid data path" });
+      return res.status(400).json({ error: "Invalid Zomboid data path", code: ErrorCode.ZOMBOID_DATA_PATH_INVALID });
     }
 
     const { zomboidPath, serverConfigPath, usesEnvironmentDataPath } =
@@ -1550,16 +1675,22 @@ router.post("/install", async (req, res) => {
     try {
       ensureWritableDirectory(installPath);
     } catch (directoryError) {
+      const writableError = formatWritablePathError("install", installPath);
       return res.status(400).json({
-        error: formatWritablePathError("Installation path", installPath),
+        error: writableError.message,
+        code: writableError.code,
+        params: writableError.params,
       });
     }
 
     try {
       ensureWritableDirectory(serverConfigPath);
     } catch (directoryError) {
+      const writableError = formatWritablePathError("data", zomboidPath);
       return res.status(400).json({
-        error: formatWritablePathError("Zomboid data folder", zomboidPath),
+        error: writableError.message,
+        code: writableError.code,
+        params: writableError.params,
       });
     }
 
@@ -1581,7 +1712,7 @@ router.post("/install", async (req, res) => {
       if (isWindows) {
         return res
           .status(400)
-          .json({ error: `SteamCMD not found at: ${steamcmdExe}` });
+          .json({ error: `SteamCMD not found at: ${steamcmdExe}`, code: ErrorCode.STEAMCMD_NOT_FOUND_AT_PATH });
       }
       try {
         steamcmdExe = await ensureSteamCmdLinux(
@@ -1591,6 +1722,7 @@ router.post("/install", async (req, res) => {
       } catch (dlErr) {
         return res.status(500).json({
           error: `SteamCMD not found and auto-download failed: ${sanitizeError(dlErr.message)}`,
+          code: ErrorCode.STEAMCMD_AUTO_DOWNLOAD_FAILED,
         });
       }
     }
@@ -1601,6 +1733,7 @@ router.post("/install", async (req, res) => {
       return res.status(409).json({
         error:
           "A Steam operation is already in progress for this path. Please wait for it to complete.",
+        code: ErrorCode.STEAM_OPERATION_IN_PROGRESS_PATH,
       });
     }
 
@@ -1681,7 +1814,7 @@ router.post("/install", async (req, res) => {
 
       for (const line of lines) {
         if (line.trim()) {
-          io.emit("install:log", { type: "stdout", text: line });
+          emitRawSteamCmdLine(io, "install:log", "stdout", line);
           log.info(`SteamCMD: ${line}`);
         }
       }
@@ -1701,7 +1834,7 @@ router.post("/install", async (req, res) => {
 
       for (const line of lines) {
         if (line.trim()) {
-          io.emit("install:log", { type: "stderr", text: line });
+          emitRawSteamCmdLine(io, "install:log", "stderr", line);
           log.warn(`SteamCMD stderr: ${line}`);
         }
       }
@@ -1710,11 +1843,11 @@ router.post("/install", async (req, res) => {
     steamcmd.on("close", async (code) => {
       // Flush any remaining buffered output
       if (stdoutBuffer.trim()) {
-        io.emit("install:log", { type: "stdout", text: stdoutBuffer.trim() });
+        emitRawSteamCmdLine(io, "install:log", "stdout", stdoutBuffer.trim());
         log.info(`SteamCMD: ${stdoutBuffer.trim()}`);
       }
       if (stderrBuffer.trim()) {
-        io.emit("install:log", { type: "stderr", text: stderrBuffer.trim() });
+        emitRawSteamCmdLine(io, "install:log", "stderr", stderrBuffer.trim());
         log.warn(`SteamCMD stderr: ${stderrBuffer.trim()}`);
       }
 
@@ -1736,6 +1869,10 @@ router.post("/install", async (req, res) => {
           io.emit("install:log", {
             type: "stdout",
             text: `Using ${usesEnvironmentDataPath ? "configured" : "isolated"} data folder: ${zomboidPath}`,
+            progressCode: usesEnvironmentDataPath
+              ? ProgressCode.DATA_FOLDER_USING_CONFIGURED
+              : ProgressCode.DATA_FOLDER_USING_ISOLATED,
+            params: { path: zomboidPath },
           });
         }
 
@@ -1757,6 +1894,12 @@ router.post("/install", async (req, res) => {
               `sudo install -d -m 0755 -o "$(whoami)" -g "$(whoami)" "${zomboidPath}", then retry.`,
             installPath,
             serverName,
+            progressCode: ProgressCode.INSTALL_DATA_FOLDER_NOT_WRITABLE,
+            params: {
+              path: zomboidPath,
+              reason: dirError.code || dirError.message,
+              command: `sudo install -d -m 0755 -o "$(whoami)" -g "$(whoami)" "${zomboidPath}"`,
+            },
           });
           activeSteamOperations.delete(normalizedPath);
           return;
@@ -1770,6 +1913,8 @@ router.post("/install", async (req, res) => {
           io.emit("install:log", {
             type: "stdout",
             text: `RCON settings saved (port: ${rconPort})`,
+            progressCode: ProgressCode.RCON_SETTINGS_SAVED,
+            params: { port: rconPort },
           });
 
           // Pre-create INI with RCON settings so PZ reads them on first boot
@@ -1790,6 +1935,7 @@ router.post("/install", async (req, res) => {
               io.emit("install:log", {
                 type: "stdout",
                 text: "Pre-created server INI with RCON credentials",
+                progressCode: ProgressCode.INI_PRECREATED_WITH_RCON,
               });
             }
           } catch (iniError) {
@@ -1835,6 +1981,8 @@ router.post("/install", async (req, res) => {
           io.emit("install:log", {
             type: "stdout",
             text: `Created custom startup script: ${scriptName}`,
+            progressCode: ProgressCode.STARTUP_SCRIPT_CREATED,
+            params: { scriptName },
           });
         } catch (batchError) {
           log.warn(`Failed to create startup scripts: ${batchError.message}`);
@@ -1879,6 +2027,7 @@ router.post("/install", async (req, res) => {
               io.emit("install:log", {
                 type: "stdout",
                 text: "PanelBridge mod installed automatically",
+                progressCode: ProgressCode.PANELBRIDGE_AUTO_INSTALLED,
               });
               log.info("PanelBridge mod auto-installed to server");
             }
@@ -1902,6 +2051,7 @@ router.post("/install", async (req, res) => {
           serverPort: safeServerPort,
           minMemory: safeMinMemory,
           maxMemory: safeMaxMemory,
+          progressCode: ProgressCode.INSTALL_COMPLETE_SUCCESS,
         });
       } else {
         log.error(`SteamCMD exited with code ${code}`);
@@ -1909,6 +2059,8 @@ router.post("/install", async (req, res) => {
           success: false,
           message: `Installation failed with exit code ${code}`,
           output,
+          progressCode: ProgressCode.INSTALL_FAILED_EXIT_CODE,
+          params: { code },
         });
       }
 
@@ -1924,6 +2076,8 @@ router.post("/install", async (req, res) => {
       io.emit("install:complete", {
         success: false,
         message: `Failed to run SteamCMD: ${sanitizeError(error.message)}`,
+        progressCode: ProgressCode.STEAMCMD_RUN_FAILED,
+        params: { reason: sanitizeError(error.message) },
       });
     });
 
@@ -1944,7 +2098,7 @@ router.post("/install", async (req, res) => {
 });
 
 // Quick Setup - Create new server config using existing files (no SteamCMD download)
-router.post("/quick-setup", async (req, res) => {
+router.post("/quick-setup", requirePermission("server.install"), async (req, res) => {
   try {
     const {
       installPath,
@@ -1965,22 +2119,23 @@ router.post("/quick-setup", async (req, res) => {
     if (!installPath || !serverName) {
       return res
         .status(400)
-        .json({ error: "Missing required fields: installPath, serverName" });
+        .json({ error: "Missing required fields: installPath, serverName", code: ErrorCode.QUICK_SETUP_MISSING_FIELDS });
     }
 
     if (!isValidPath(installPath)) {
-      return res.status(400).json({ error: "Invalid install path" });
+      return res.status(400).json({ error: "Invalid install path", code: ErrorCode.INSTALL_PATH_INVALID });
     }
 
     if (!isValidServerName(serverName)) {
       return res.status(400).json({
         error:
           "Invalid server name. Use only letters, numbers, underscores, hyphens, and spaces (max 64 chars)",
+        code: ErrorCode.SERVER_NAME_FORMAT_INVALID,
       });
     }
 
     if (zomboidDataPath && !isValidPath(zomboidDataPath)) {
-      return res.status(400).json({ error: "Invalid Zomboid data path" });
+      return res.status(400).json({ error: "Invalid Zomboid data path", code: ErrorCode.ZOMBOID_DATA_PATH_INVALID });
     }
 
     const { zomboidPath, serverConfigPath, usesEnvironmentDataPath } =
@@ -1999,22 +2154,29 @@ router.post("/quick-setup", async (req, res) => {
       return res.status(400).json({
         error:
           "Server files not found. Make sure the path contains Project Zomboid dedicated server files.",
+        code: ErrorCode.QUICK_SETUP_SERVER_FILES_NOT_FOUND,
       });
     }
 
     try {
       ensureWritableDirectory(installPath);
     } catch (directoryError) {
+      const writableError = formatWritablePathError("install", installPath);
       return res.status(400).json({
-        error: formatWritablePathError("Installation path", installPath),
+        error: writableError.message,
+        code: writableError.code,
+        params: writableError.params,
       });
     }
 
     try {
       ensureWritableDirectory(serverConfigPath);
     } catch (directoryError) {
+      const writableError = formatWritablePathError("data", zomboidPath);
       return res.status(400).json({
-        error: formatWritablePathError("Zomboid data folder", zomboidPath),
+        error: writableError.message,
+        code: writableError.code,
+        params: writableError.params,
       });
     }
 
@@ -2185,22 +2347,23 @@ router.post("/quick-setup", async (req, res) => {
 });
 
 // Configure RCON in server's .ini file
-router.post("/configure-rcon", async (req, res) => {
+router.post("/configure-rcon", requirePermission("server.configure"), async (req, res) => {
   try {
     const { rconPassword, rconPort: rawRconPort = 27015 } = req.body;
     const rconPort = validateInt(rawRconPort, 1024, 65535, 27015);
 
     if (!rconPassword) {
-      return res.status(400).json({ error: "RCON password is required" });
+      return res.status(400).json({ error: "RCON password is required", code: ErrorCode.CONFIGURE_RCON_PASSWORD_REQUIRED });
     }
 
     // Get the server config path from active server or settings
     const serverConfigPath = await getServerConfigPath();
     const serverName = await getServerName();
 
-    if (!serverConfigPath) {
+    if (!serverConfigPath || !serverName) {
       return res.status(400).json({
         error: "Server config path not set. Please run installation first.",
+        code: ErrorCode.SERVER_CONFIG_PATH_NOT_SET,
       });
     }
 
@@ -2209,6 +2372,7 @@ router.post("/configure-rcon", async (req, res) => {
     if (!fs.existsSync(iniPath)) {
       return res.status(400).json({
         error: `Server config not found at ${iniPath}. Start the server once first to generate the config file.`,
+        code: ErrorCode.SERVER_CONFIG_FILE_NOT_FOUND,
       });
     }
 
@@ -2256,7 +2420,7 @@ router.post("/configure-rcon", async (req, res) => {
 });
 
 // Configure server network settings (port, UPnP) in .ini file
-router.post("/configure-network", async (req, res) => {
+router.post("/configure-network", requirePermission("server.configure"), async (req, res) => {
   try {
     const { serverPort: rawServerPort = 16261, useUpnp = true } = req.body;
     const serverPort = validateInt(rawServerPort, 1024, 65535, 16261);
@@ -2265,9 +2429,10 @@ router.post("/configure-network", async (req, res) => {
     const serverConfigPath = await getServerConfigPath();
     const serverName = await getServerName();
 
-    if (!serverConfigPath) {
+    if (!serverConfigPath || !serverName) {
       return res.status(400).json({
         error: "Server config path not set. Please run installation first.",
+        code: ErrorCode.SERVER_CONFIG_PATH_NOT_SET,
       });
     }
 
@@ -2276,6 +2441,7 @@ router.post("/configure-network", async (req, res) => {
     if (!fs.existsSync(iniPath)) {
       return res.status(400).json({
         error: `Server config not found at ${iniPath}. Start the server once first to generate the config file.`,
+        code: ErrorCode.SERVER_CONFIG_FILE_NOT_FOUND,
       });
     }
 
@@ -2336,7 +2502,7 @@ router.post("/configure-network", async (req, res) => {
 });
 
 // Alarm - sound building alarm
-router.post("/alarm", async (req, res) => {
+router.post("/alarm", requirePermission("server.world_events"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
     const result = await rconService.alarm();
@@ -2349,7 +2515,7 @@ router.post("/alarm", async (req, res) => {
 });
 
 // Remove zombies
-router.post("/removezombies", async (req, res) => {
+router.post("/removezombies", requirePermission("server.world_events"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
     const result = await rconService.removeZombies();
@@ -2362,19 +2528,19 @@ router.post("/removezombies", async (req, res) => {
 });
 
 // Reload Lua script
-router.post("/reloadlua", async (req, res) => {
+router.post("/reloadlua", requirePermission("server.configure"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
     const { filename } = req.body;
 
     if (!filename) {
-      return res.status(400).json({ error: "Filename is required" });
+      return res.status(400).json({ error: "Filename is required", code: ErrorCode.RELOAD_LUA_FILENAME_REQUIRED });
     }
 
     // Validate filename - allow alphanumeric, underscores, dots, and forward slashes only
     // Block backslashes and '..' to prevent path traversal
     if (!/^[a-zA-Z0-9_/.\-]+\.lua$/.test(filename) || filename.includes("..")) {
-      return res.status(400).json({ error: "Invalid filename format" });
+      return res.status(400).json({ error: "Invalid filename format", code: ErrorCode.RELOAD_LUA_INVALID_FILENAME });
     }
 
     const result = await rconService.reloadLua(filename);
@@ -2387,13 +2553,13 @@ router.post("/reloadlua", async (req, res) => {
 });
 
 // Set log level
-router.post("/log", async (req, res) => {
+router.post("/log", requirePermission("server.configure"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
     const { type, level } = req.body;
 
     if (!type || !level) {
-      return res.status(400).json({ error: "Type and level are required" });
+      return res.status(400).json({ error: "Type and level are required", code: ErrorCode.LOG_TYPE_LEVEL_REQUIRED });
     }
 
     const validTypes = [
@@ -2436,13 +2602,13 @@ router.post("/log", async (req, res) => {
     if (!validTypes.includes(type)) {
       return res
         .status(400)
-        .json({ error: `Invalid log type. Valid: ${validTypes.join(", ")}` });
+        .json({ error: `Invalid log type. Valid: ${validTypes.join(", ")}`, code: ErrorCode.LOG_INVALID_TYPE });
     }
 
     if (!validLevels.includes(level)) {
       return res
         .status(400)
-        .json({ error: `Invalid log level. Valid: ${validLevels.join(", ")}` });
+        .json({ error: `Invalid log level. Valid: ${validLevels.join(", ")}`, code: ErrorCode.LOG_INVALID_LEVEL });
     }
 
     const result = await rconService.setLogLevel(type, level);
@@ -2454,20 +2620,20 @@ router.post("/log", async (req, res) => {
 });
 
 // Server statistics
-router.post("/stats", async (req, res) => {
+router.post("/stats", requirePermission("server.configure"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
     const { mode, period } = req.body;
 
     if (!mode) {
-      return res.status(400).json({ error: "Mode is required" });
+      return res.status(400).json({ error: "Mode is required", code: ErrorCode.STATS_MODE_REQUIRED });
     }
 
     const validModes = ["none", "file", "console", "all"];
     if (!validModes.includes(mode.toLowerCase())) {
       return res
         .status(400)
-        .json({ error: `Invalid mode. Valid: ${validModes.join(", ")}` });
+        .json({ error: `Invalid mode. Valid: ${validModes.join(", ")}`, code: ErrorCode.STATS_INVALID_MODE });
     }
 
     const validPeriod = period ? validateInt(period, 1, 3600, null) : null;
@@ -2481,7 +2647,7 @@ router.post("/stats", async (req, res) => {
 });
 
 // Release safehouse
-router.post("/releasesafehouse", async (req, res) => {
+router.post("/releasesafehouse", requirePermission("server.world_events"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
     const result = await rconService.releaseSafehouse();
@@ -2493,7 +2659,7 @@ router.post("/releasesafehouse", async (req, res) => {
 });
 
 // Update server using SteamCMD
-router.post("/steam-update", async (req, res) => {
+router.post("/steam-update", requirePermission("server.install"), async (req, res) => {
   let activeOperationPath = null;
   try {
     let {
@@ -2515,30 +2681,47 @@ router.post("/steam-update", async (req, res) => {
     if (!steamcmdPath || !installPath) {
       return res
         .status(400)
-        .json({ error: "Missing required fields: steamcmdPath, installPath" });
+        .json({ error: "Missing required fields: steamcmdPath, installPath", code: ErrorCode.STEAM_UPDATE_MISSING_FIELDS });
     }
 
     if (!isValidPath(steamcmdPath)) {
-      return res.status(400).json({ error: "Invalid SteamCMD path" });
+      return res.status(400).json({ error: "Invalid SteamCMD path", code: ErrorCode.STEAMCMD_PATH_INVALID });
     }
 
     if (!isValidPath(installPath)) {
-      return res.status(400).json({ error: "Invalid install path" });
+      return res.status(400).json({ error: "Invalid install path", code: ErrorCode.INSTALL_PATH_INVALID });
     }
 
-    // Check if server is running - cannot update while running
+    // Check if server is running - cannot update while running. Fail closed:
+    // this used to swallow a failed detection scan and continue as if the
+    // server were stopped ("user may be updating a different server"), but
+    // checkServerRunning() throwing (or resolving scanFailed) means we
+    // genuinely don't know the process state — and running SteamCMD
+    // `validate` against a live install's files is exactly what this check
+    // exists to prevent. Same doctrine as configMutationGuard.js's
+    // SERVER_STATE_UNKNOWN response.
     const serverManager = req.app.get("serverManager");
     try {
-      const isRunning = await serverManager.checkServerRunning();
-      if (isRunning) {
+      const processDetails = await serverManager.getServerProcessDetails();
+      if (processDetails.scanFailed) {
+        return res.status(503).json({
+          error: "Cannot verify whether the server is stopped. Try again shortly.",
+          code: ErrorCode.SERVER_STATE_UNKNOWN,
+        });
+      }
+      if (processDetails.running) {
         return res.status(400).json({
           error:
             "Server is currently running. Please stop the server before updating.",
+          code: ErrorCode.STEAM_UPDATE_SERVER_RUNNING,
         });
       }
     } catch (e) {
       log.warn(`Could not verify server status before update: ${e.message}`);
-      // Continue anyway - user may be updating a different server
+      return res.status(503).json({
+        error: "Cannot verify whether the server is stopped. Try again shortly.",
+        code: ErrorCode.SERVER_STATE_UNKNOWN,
+      });
     }
 
     // Prevent concurrent operations on the same install path
@@ -2547,6 +2730,7 @@ router.post("/steam-update", async (req, res) => {
       return res.status(409).json({
         error:
           "A Steam operation is already in progress for this server. Please wait for it to complete.",
+        code: ErrorCode.STEAM_OPERATION_IN_PROGRESS_SERVER,
       });
     }
 
@@ -2557,7 +2741,7 @@ router.post("/steam-update", async (req, res) => {
       if (isWindows) {
         return res
           .status(400)
-          .json({ error: `SteamCMD not found at: ${steamcmdExe}` });
+          .json({ error: `SteamCMD not found at: ${steamcmdExe}`, code: ErrorCode.STEAMCMD_NOT_FOUND_AT_PATH });
       }
       try {
         steamcmdExe = await ensureSteamCmdLinux(
@@ -2567,6 +2751,7 @@ router.post("/steam-update", async (req, res) => {
       } catch (dlErr) {
         return res.status(500).json({
           error: `SteamCMD not found and auto-download failed: ${sanitizeError(dlErr.message)}`,
+          code: ErrorCode.STEAMCMD_AUTO_DOWNLOAD_FAILED,
         });
       }
     }
@@ -2628,6 +2813,9 @@ router.post("/steam-update", async (req, res) => {
     io.emit("steam:start", {
       type: validateFiles ? "verify" : "update",
       message: validateFiles ? "Verifying game files..." : "Updating server...",
+      progressCode: validateFiles
+        ? ProgressCode.STEAM_START_VERIFY
+        : ProgressCode.STEAM_START_UPDATE,
     });
 
     // On Linux, set LD_LIBRARY_PATH so SteamCMD can find its 32-bit libraries
@@ -2673,7 +2861,7 @@ router.post("/steam-update", async (req, res) => {
 
       for (const line of lines) {
         if (line.trim()) {
-          io.emit("steam:log", { type: "stdout", text: line });
+          emitRawSteamCmdLine(io, "steam:log", "stdout", line);
           log.info(`SteamCMD: ${line}`);
         }
       }
@@ -2692,7 +2880,7 @@ router.post("/steam-update", async (req, res) => {
 
       for (const line of lines) {
         if (line.trim()) {
-          io.emit("steam:log", { type: "stderr", text: line });
+          emitRawSteamCmdLine(io, "steam:log", "stderr", line);
           log.warn(`SteamCMD stderr: ${line}`);
         }
       }
@@ -2701,10 +2889,10 @@ router.post("/steam-update", async (req, res) => {
     steamcmd.on("close", (code) => {
       // Flush remaining buffers
       if (stdoutBuffer.trim()) {
-        io.emit("steam:log", { type: "stdout", text: stdoutBuffer.trim() });
+        emitRawSteamCmdLine(io, "steam:log", "stdout", stdoutBuffer.trim());
       }
       if (stderrBuffer.trim()) {
-        io.emit("steam:log", { type: "stderr", text: stderrBuffer.trim() });
+        emitRawSteamCmdLine(io, "steam:log", "stderr", stderrBuffer.trim());
       }
 
       // Clear active operation
@@ -2718,11 +2906,32 @@ router.post("/steam-update", async (req, res) => {
         ? "SteamCMD could not access a Project Zomboid depot manifest. Your installed server files were not changed. Retry later; if it persists, update using a Steam account that owns Project Zomboid."
         : `Server ${operation} failed with code ${code}`;
 
+      // "update" vs "verification" is a word choice, not a value -- own
+      // codes per direction, not a shared template with `operation`
+      // substituted in (see ProgressCode's file header, params-vs-variant
+      // rule). steamDepotAccessDenied is independent of that distinction.
+      let completeProgressCode;
+      let completeParams;
+      if (success) {
+        completeProgressCode = validateFiles
+          ? ProgressCode.STEAM_VERIFY_COMPLETE_SUCCESS
+          : ProgressCode.STEAM_UPDATE_COMPLETE_SUCCESS;
+      } else if (steamDepotAccessDenied) {
+        completeProgressCode = ProgressCode.STEAM_DEPOT_ACCESS_DENIED;
+      } else {
+        completeProgressCode = validateFiles
+          ? ProgressCode.STEAM_VERIFY_FAILED
+          : ProgressCode.STEAM_UPDATE_FAILED;
+        completeParams = { code };
+      }
+
       io.emit("steam:complete", {
         success,
         message: success
           ? `Server ${operation} completed successfully`
           : failureMessage,
+        progressCode: completeProgressCode,
+        ...(completeParams ? { params: completeParams } : {}),
       });
 
       // After successful update, re-check update status so banner clears
@@ -2752,6 +2961,8 @@ router.post("/steam-update", async (req, res) => {
       io.emit("steam:complete", {
         success: false,
         message: `Failed to run SteamCMD: ${sanitizeError(error.message)}`,
+        progressCode: ProgressCode.STEAMCMD_RUN_FAILED,
+        params: { reason: sanitizeError(error.message) },
       });
       log.error(`SteamCMD error: ${error.message}`);
     });
@@ -2770,7 +2981,7 @@ router.post("/steam-update", async (req, res) => {
 });
 
 // Auto-download and install SteamCMD
-router.post("/steamcmd/download", async (req, res) => {
+router.post("/steamcmd/download", requirePermission("server.install"), async (req, res) => {
   try {
     log.info(`POST /steamcmd/download (platform=${process.platform})`);
     const defaultPath = isWindows
@@ -2789,7 +3000,7 @@ router.post("/steamcmd/download", async (req, res) => {
     const { installPath = defaultPath } = req.body;
 
     if (!isValidPath(installPath)) {
-      return res.status(400).json({ error: "Invalid installation path" });
+      return res.status(400).json({ error: "Invalid installation path", code: ErrorCode.STEAMCMD_DOWNLOAD_INVALID_PATH });
     }
 
     const io = req.app.get("io");
@@ -2809,6 +3020,7 @@ router.post("/steamcmd/download", async (req, res) => {
       io.emit("steamcmd:status", {
         status: "downloading",
         message: "Downloading SteamCMD...",
+        progressCode: ProgressCode.STEAMCMD_DOWNLOADING,
       });
       log.info(`Downloading SteamCMD to ${installPath}`);
 
@@ -2820,6 +3032,8 @@ router.post("/steamcmd/download", async (req, res) => {
         io.emit("steamcmd:status", {
           status: "error",
           message: `Download failed: ${err.message}`,
+          progressCode: ProgressCode.STEAMCMD_DOWNLOAD_FAILED,
+          params: { reason: err.message },
         });
         log.error(`SteamCMD download failed: ${err.message}`);
       };
@@ -2850,6 +3064,7 @@ router.post("/steamcmd/download", async (req, res) => {
           io.emit("steamcmd:status", {
             status: "extracting",
             message: "Extracting SteamCMD...",
+            progressCode: ProgressCode.STEAMCMD_EXTRACTING,
           });
           log.info("Extracting SteamCMD...");
 
@@ -2864,6 +3079,8 @@ router.post("/steamcmd/download", async (req, res) => {
           io.emit("steamcmd:status", {
             status: "error",
             message: `Extraction failed: ${sanitizeError(extractError.message)}`,
+            progressCode: ProgressCode.STEAMCMD_EXTRACTION_FAILED,
+            params: { reason: sanitizeError(extractError.message) },
           });
           log.error(`SteamCMD extraction failed: ${extractError.message}`);
         }
@@ -2878,6 +3095,7 @@ router.post("/steamcmd/download", async (req, res) => {
       io.emit("steamcmd:status", {
         status: "downloading",
         message: "Downloading SteamCMD for Linux...",
+        progressCode: ProgressCode.STEAMCMD_DOWNLOADING_LINUX,
       });
       log.info(`Downloading SteamCMD (Linux) to ${installPath}`);
 
@@ -2900,6 +3118,8 @@ router.post("/steamcmd/download", async (req, res) => {
             io.emit("steamcmd:status", {
               status: "error",
               message: `Download failed: ${dlErr.message}. Ensure curl or wget is installed.`,
+              progressCode: ProgressCode.STEAMCMD_DOWNLOAD_FAILED_LINUX,
+              params: { reason: dlErr.message },
             });
             log.error(`SteamCMD download failed: ${dlErr.message}`);
             return;
@@ -2914,6 +3134,7 @@ router.post("/steamcmd/download", async (req, res) => {
         io.emit("steamcmd:status", {
           status: "extracting",
           message: "Extracting SteamCMD...",
+          progressCode: ProgressCode.STEAMCMD_EXTRACTING,
         });
         log.info("Extracting SteamCMD...");
 
@@ -2933,6 +3154,8 @@ router.post("/steamcmd/download", async (req, res) => {
               io.emit("steamcmd:status", {
                 status: "error",
                 message: `Extraction failed: ${tarErr.message}`,
+                progressCode: ProgressCode.STEAMCMD_EXTRACTION_FAILED,
+                params: { reason: tarErr.message },
               });
               log.error(`SteamCMD extraction failed: ${tarErr.message}`);
               return;
@@ -2965,9 +3188,18 @@ router.post("/steamcmd/download", async (req, res) => {
                   log.warn(
                     "Could not verify 32-bit libraries. SteamCMD may fail if glibc.i686 / lib32gcc is not installed.",
                   );
+                  // Our own authored text, not SteamCMD's -- deliberately
+                  // NOT routed through emitRawSteamCmdLine(). It carries a
+                  // progressCode like every other authored line, on the
+                  // same event a raw line would use, which is exactly the
+                  // ambiguity that made this call site worth fixing: with
+                  // the helper split in place, a raw line physically
+                  // cannot carry a progressCode, so this one being
+                  // authored is now visible in the payload shape itself.
                   io.emit("steamcmd:log", {
                     type: "stderr",
                     text: "Warning: Could not verify 32-bit libraries. If SteamCMD fails, install: yum install glibc.i686 libstdc++.i686 (CentOS/RHEL) or apt install lib32gcc-s1 (Debian/Ubuntu)",
+                    progressCode: ProgressCode.STEAMCMD_32BIT_LIB_WARNING,
                   });
                 }
                 runFirstTimeSetup();
@@ -2982,6 +3214,7 @@ router.post("/steamcmd/download", async (req, res) => {
       io.emit("steamcmd:status", {
         status: "initializing",
         message: "Initializing SteamCMD (first run)...",
+        progressCode: ProgressCode.STEAMCMD_INITIALIZING,
       });
       log.info("Running SteamCMD first-time setup...");
 
@@ -3002,11 +3235,11 @@ router.post("/steamcmd/download", async (req, res) => {
       const steamcmd = spawn(steamcmdExe, ["+quit"], firstRunOpts);
 
       steamcmd.stdout.on("data", (data) => {
-        io.emit("steamcmd:log", { type: "stdout", text: data.toString() });
+        emitRawSteamCmdLine(io, "steamcmd:log", "stdout", data.toString());
       });
 
       steamcmd.stderr.on("data", (data) => {
-        io.emit("steamcmd:log", { type: "stderr", text: data.toString() });
+        emitRawSteamCmdLine(io, "steamcmd:log", "stderr", data.toString());
       });
 
       steamcmd.on("close", (code) => {
@@ -3015,12 +3248,15 @@ router.post("/steamcmd/download", async (req, res) => {
             status: "complete",
             message: "SteamCMD installed successfully!",
             path: installPath,
+            progressCode: ProgressCode.STEAMCMD_INSTALL_COMPLETE,
           });
           log.info(`SteamCMD installed successfully to ${installPath}`);
         } else {
           io.emit("steamcmd:status", {
             status: "error",
             message: `SteamCMD setup failed with code ${code}`,
+            progressCode: ProgressCode.STEAMCMD_SETUP_FAILED,
+            params: { code },
           });
           log.error(`SteamCMD first-run failed with code ${code}`);
         }
@@ -3030,6 +3266,8 @@ router.post("/steamcmd/download", async (req, res) => {
         io.emit("steamcmd:status", {
           status: "error",
           message: `Failed to run SteamCMD: ${sanitizeError(error.message)}`,
+          progressCode: ProgressCode.STEAMCMD_RUN_FAILED,
+          params: { reason: sanitizeError(error.message) },
         });
         log.error(`SteamCMD run error: ${error.message}`);
       });
@@ -3043,7 +3281,7 @@ router.post("/steamcmd/download", async (req, res) => {
 });
 
 // Check if SteamCMD exists at a path
-router.get("/steamcmd/check", async (req, res) => {
+router.get("/steamcmd/check", requirePermission("server.install"), async (req, res) => {
   try {
     const { path: checkPath } = req.query;
 
@@ -3068,17 +3306,48 @@ router.get("/steamcmd/check", async (req, res) => {
 });
 
 // Delete server files (used when removing a server from panel with file deletion)
-router.post("/delete-files", requireRole("admin"), async (req, res) => {
+router.post("/delete-files", requirePermission("server.wipe"), async (req, res) => {
   try {
-    const { path: deletePath } = req.body;
+    // Same rails POST /wipe already has: refuse without confirm, refuse
+    // while the server is running, and fail CLOSED (not open) when
+    // detection itself can't tell -- getServerProcessDetails() exposes that
+    // as scanFailed; checkServerRunning() would collapse it into a bare
+    // `false` (see d85fd42). Mirrors /wipe's exact order: state check, then
+    // confirm, then this route's own path/PZ-install validation below.
+    const serverManager = req.app.get("serverManager");
+    await serverManager.loadConfig();
+
+    const processDetails = await serverManager.getServerProcessDetails();
+    if (processDetails.scanFailed) {
+      return res.status(503).json({
+        error: "Cannot verify whether the server is stopped. Try again shortly.",
+        code: ErrorCode.SERVER_STATE_UNKNOWN,
+      });
+    }
+    if (processDetails.running) {
+      return res.status(400).json({
+        error: "Server must be stopped before deleting its files. Stop the server first.",
+        // Shared with /wipe -- see errorCodes.js for why.
+        code: ErrorCode.WIPE_SERVER_RUNNING,
+      });
+    }
+
+    const { path: deletePath, confirm } = req.body;
+    if (confirm !== true) {
+      return res.status(400).json({
+        error: "Deleting these files requires confirm: true",
+        // Shared with /wipe -- see errorCodes.js for why.
+        code: ErrorCode.WIPE_CONFIRM_REQUIRED,
+      });
+    }
 
     if (!deletePath || !isValidPath(deletePath)) {
-      return res.status(400).json({ error: "Invalid path" });
+      return res.status(400).json({ error: "Invalid path", code: ErrorCode.INVALID_PATH });
     }
 
     // Safety check: path must exist and contain PZ server files
     if (!fs.existsSync(deletePath)) {
-      return res.status(404).json({ error: "Path does not exist" });
+      return res.status(404).json({ error: "Path does not exist", code: ErrorCode.PATH_NOT_FOUND });
     }
 
     // Check for known PZ server markers to prevent accidental deletion of wrong folders
@@ -3097,13 +3366,14 @@ router.post("/delete-files", requireRole("admin"), async (req, res) => {
     // Also reject paths containing '..' after normalization
     const normalizedDelete = path.normalize(deletePath);
     if (normalizedDelete.includes("..")) {
-      return res.status(400).json({ error: "Invalid path" });
+      return res.status(400).json({ error: "Invalid path", code: ErrorCode.INVALID_PATH });
     }
 
     if (!hasPzFiles) {
       return res.status(400).json({
         error:
           "This does not appear to be a Project Zomboid server installation. Refusing to delete for safety.",
+        code: ErrorCode.DELETE_FILES_NOT_PZ_INSTALL,
       });
     }
 
@@ -3121,7 +3391,7 @@ router.post("/delete-files", requireRole("admin"), async (req, res) => {
 });
 
 // List directory contents for the in-app folder browser
-router.post("/list-directory", async (req, res) => {
+router.post("/list-directory", requirePermission("server.install"), async (req, res) => {
   try {
     const { dirPath } = req.body;
 
@@ -3176,18 +3446,18 @@ router.post("/list-directory", async (req, res) => {
 
     // Validate the requested path
     if (!isValidPath(dirPath)) {
-      return res.status(400).json({ error: "Invalid path" });
+      return res.status(400).json({ error: "Invalid path", code: ErrorCode.INVALID_PATH });
     }
 
     const normalized = path.normalize(dirPath);
 
     if (!fs.existsSync(normalized)) {
-      return res.status(404).json({ error: "Path does not exist" });
+      return res.status(404).json({ error: "Path does not exist", code: ErrorCode.PATH_NOT_FOUND });
     }
 
     const stat = fs.statSync(normalized);
     if (!stat.isDirectory()) {
-      return res.status(400).json({ error: "Path is not a directory" });
+      return res.status(400).json({ error: "Path is not a directory", code: ErrorCode.PATH_NOT_A_DIRECTORY });
     }
 
     // Read directory entries — only folders
@@ -3195,12 +3465,12 @@ router.post("/list-directory", async (req, res) => {
     try {
       items = fs.readdirSync(normalized, { withFileTypes: true });
     } catch (e) {
-      const code = e && typeof e === "object" && "code" in e ? e.code : "UNKNOWN";
-      const guidance = isWindows
-        ? "Run the panel as an account that can read this folder."
-        : "The panel service account needs read and execute permission on this folder and every parent folder.";
+      const osCode = e && typeof e === "object" && "code" in e ? e.code : "UNKNOWN";
+      const readError = formatDirectoryReadError(normalized, osCode);
       return res.status(403).json({
-        error: `Cannot read ${normalized} (${code}). ${guidance}`,
+        error: readError.message,
+        code: readError.code,
+        params: readError.params,
       });
     }
 
@@ -3241,7 +3511,7 @@ router.post("/list-directory", async (req, res) => {
 });
 
 // Open folder browser dialog (uses PowerShell on Windows, zenity/kdialog on Linux)
-router.post("/browse-folder", async (req, res) => {
+router.post("/browse-folder", requirePermission("server.install"), async (req, res) => {
   try {
     const { initialPath, description = "Select a folder" } = req.body;
 
@@ -3251,7 +3521,7 @@ router.post("/browse-folder", async (req, res) => {
       description.length > 100 ||
       !/^[a-zA-Z0-9 _.\-:()]+$/.test(description)
     ) {
-      return res.status(400).json({ error: "Invalid description parameter" });
+      return res.status(400).json({ error: "Invalid description parameter", code: ErrorCode.BROWSE_FOLDER_INVALID_DESCRIPTION });
     }
 
     if (!isWindows) {
@@ -3294,6 +3564,7 @@ router.post("/browse-folder", async (req, res) => {
           return res.status(501).json({
             error:
               "No folder browser available. Install zenity or kdialog, or enter the path manually.",
+            code: ErrorCode.BROWSE_FOLDER_NO_DIALOG_AVAILABLE,
           });
         });
       });
@@ -3353,7 +3624,7 @@ if ($result -eq 'OK') { Write-Output $dialog.SelectedPath } else { Write-Output 
 
     powershell.on("error", (error) => {
       log.error(`Folder browser error: ${error.message}`);
-      res.status(500).json({ error: "Failed to open folder browser" });
+      res.status(500).json({ error: "Failed to open folder browser", code: ErrorCode.BROWSE_FOLDER_OPEN_FAILED });
     });
   } catch (error) {
     log.error(`Browse folder failed: ${error.message}`);
@@ -3450,7 +3721,7 @@ function filterConsoleLogLines(lines, filterLevel = "filtered") {
 }
 
 // Get server console log content
-router.get("/console-log", async (req, res) => {
+router.get("/console-log", requirePermission("server.world_events"), async (req, res) => {
   try {
     const activeServer = await getActiveServer();
     // server-console.txt is in zomboidDataPath (where Server/, Saves/, Logs/ are)
@@ -3461,7 +3732,7 @@ router.get("/console-log", async (req, res) => {
       (await getSetting("serverPath"));
 
     if (!zomboidDataPath) {
-      return res.status(400).json({ error: "Server data path not configured" });
+      return res.status(400).json({ error: "Server data path not configured", code: ErrorCode.SERVER_DATA_PATH_NOT_CONFIGURED });
     }
 
     const consoleLogPath = path.join(zomboidDataPath, "server-console.txt");
@@ -3536,7 +3807,7 @@ router.get("/console-log", async (req, res) => {
 let errorCountCache = { at: 0, value: null };
 const ERROR_COUNT_TTL_MS = 20000;
 
-router.get("/console-log/error-count", async (req, res) => {
+router.get("/console-log/error-count", requirePermission("server.world_events"), async (req, res) => {
   try {
     const now = Date.now();
     if (errorCountCache.value && now - errorCountCache.at < ERROR_COUNT_TTL_MS) {
@@ -3614,7 +3885,7 @@ router.get("/console-log/error-count", async (req, res) => {
 });
 
 // Stream server console log (long-polling for new content)
-router.get("/console-log/stream", async (req, res) => {
+router.get("/console-log/stream", requirePermission("server.world_events"), async (req, res) => {
   try {
     const activeServer = await getActiveServer();
     // server-console.txt is in zomboidDataPath (where Server/, Saves/, Logs/ are)
@@ -3625,7 +3896,7 @@ router.get("/console-log/stream", async (req, res) => {
       (await getSetting("serverPath"));
 
     if (!zomboidDataPath) {
-      return res.status(400).json({ error: "Server data path not configured" });
+      return res.status(400).json({ error: "Server data path not configured", code: ErrorCode.SERVER_DATA_PATH_NOT_CONFIGURED });
     }
 
     const consoleLogPath = path.join(zomboidDataPath, "server-console.txt");
@@ -3699,7 +3970,7 @@ router.get("/console-log/stream", async (req, res) => {
 });
 
 // Clear server console log
-router.post("/console-log/clear", async (req, res) => {
+router.post("/console-log/clear", requirePermission("server.configure"), async (req, res) => {
   try {
     const activeServer = await getActiveServer();
     // server-console.txt is in zomboidDataPath (where Server/, Saves/, Logs/ are)
@@ -3710,7 +3981,7 @@ router.post("/console-log/clear", async (req, res) => {
       (await getSetting("serverPath"));
 
     if (!zomboidDataPath) {
-      return res.status(400).json({ error: "Server data path not configured" });
+      return res.status(400).json({ error: "Server data path not configured", code: ErrorCode.SERVER_DATA_PATH_NOT_CONFIGURED });
     }
 
     const consoleLogPath = path.join(zomboidDataPath, "server-console.txt");
@@ -3730,18 +4001,18 @@ router.post("/console-log/clear", async (req, res) => {
 // ==================== UPDATE CHECKER ROUTES ====================
 
 // Check for server updates
-router.get("/update-check", async (req, res) => {
+router.get("/update-check", requirePermission("server.world_events"), async (req, res) => {
   try {
     const updateChecker = req.app.get("updateChecker");
     if (!updateChecker) {
-      return res.status(503).json({ error: "Update checker not available" });
+      return res.status(503).json({ error: "Update checker not available", code: ErrorCode.UPDATE_CHECKER_NOT_AVAILABLE });
     }
 
     const forceCheck = req.query.force === "true";
 
     if (forceCheck) {
       const result = await updateChecker.checkForUpdates(true);
-      res.json(result || { error: "Could not check for updates" });
+      res.json(result || { error: "Could not check for updates", code: ErrorCode.UPDATE_CHECK_NO_RESULT });
     } else {
       res.json(updateChecker.getStatus());
     }
@@ -3752,11 +4023,11 @@ router.get("/update-check", async (req, res) => {
 });
 
 // Get update checker status
-router.get("/update-check/status", async (req, res) => {
+router.get("/update-check/status", requirePermission("server.world_events"), async (req, res) => {
   try {
     const updateChecker = req.app.get("updateChecker");
     if (!updateChecker) {
-      return res.status(503).json({ error: "Update checker not available" });
+      return res.status(503).json({ error: "Update checker not available", code: ErrorCode.UPDATE_CHECKER_NOT_AVAILABLE });
     }
 
     res.json(updateChecker.getStatus());
@@ -3766,16 +4037,16 @@ router.get("/update-check/status", async (req, res) => {
 });
 
 // Set update check interval
-router.post("/update-check/interval", async (req, res) => {
+router.post("/update-check/interval", requirePermission("server.configure"), async (req, res) => {
   try {
     const updateChecker = req.app.get("updateChecker");
     if (!updateChecker) {
-      return res.status(503).json({ error: "Update checker not available" });
+      return res.status(503).json({ error: "Update checker not available", code: ErrorCode.UPDATE_CHECKER_NOT_AVAILABLE });
     }
 
     const { minutes } = req.body;
     if (!minutes || typeof minutes !== "number") {
-      return res.status(400).json({ error: "minutes must be a number" });
+      return res.status(400).json({ error: "minutes must be a number", code: ErrorCode.UPDATE_CHECK_INTERVAL_INVALID });
     }
 
     await updateChecker.setInterval(minutes);
@@ -3791,8 +4062,10 @@ router.post("/update-check/interval", async (req, res) => {
 // Guard against concurrent wipe operations
 let wipeInProgress = false;
 
-// Preview what will be wiped (dry-run)
-router.post("/wipe/preview", async (req, res) => {
+// Preview what will be wiped (dry-run). Admin-only, same as /wipe itself --
+// this pairs with the actual wipe, so anyone who can't wipe has no reason
+// to preview one.
+router.post("/wipe/preview", requirePermission("server.wipe"), async (req, res) => {
   try {
     const serverManager = req.app.get("serverManager");
     await serverManager.loadConfig();
@@ -3802,6 +4075,7 @@ router.post("/wipe/preview", async (req, res) => {
       return res.status(400).json({
         error:
           "targets must be a non-empty array of: map, players, world, accounts",
+        code: ErrorCode.WIPE_TARGETS_REQUIRED,
       });
     }
 
@@ -3812,24 +4086,25 @@ router.post("/wipe/preview", async (req, res) => {
     if (invalid.length > 0) {
       return res.status(400).json({
         error: `Invalid targets: ${invalid.join(", ")}. Allowed: ${allowedTargets.join(", ")}`,
+        code: ErrorCode.WIPE_PREVIEW_INVALID_TARGETS,
       });
     }
 
     const savePath = serverManager.savePath;
     const serverName = serverManager.serverName || "servertest";
     if (!savePath) {
-      return res.status(400).json({ error: "No zomboid data path configured" });
+      return res.status(400).json({ error: "No zomboid data path configured", code: ErrorCode.WIPE_ZOMBOID_DATA_PATH_NOT_CONFIGURED });
     }
     // Reject server names with path separators
     if (/[/\\]/.test(serverName)) {
-      return res.status(400).json({ error: "Invalid server name" });
+      return res.status(400).json({ error: "Invalid server name", code: ErrorCode.WIPE_INVALID_SERVER_NAME });
     }
 
     const saveDir = path.join(savePath, "Saves", "Multiplayer", serverName);
     if (!fs.existsSync(saveDir)) {
       return res
         .status(404)
-        .json({ error: `Save directory not found: ${serverName}` });
+        .json({ error: `Save directory not found: ${serverName}`, code: ErrorCode.WIPE_SAVE_DIRECTORY_NOT_FOUND });
     }
 
     const preview = {};
@@ -4033,13 +4308,14 @@ router.post("/wipe/preview", async (req, res) => {
 });
 
 // Execute server wipe
-router.post("/wipe", requireRole("admin"), async (req, res) => {
+router.post("/wipe", requirePermission("server.wipe"), async (req, res) => {
   // Claim the guard before the first await: awaiting between the check and the
   // assignment lets a second concurrent request pass the check and run a
   // parallel destructive wipe of the same save directory.
   if (wipeInProgress) {
     return res.status(409).json({
       error: "A wipe operation is already in progress. Please wait.",
+      code: ErrorCode.WIPE_IN_PROGRESS,
     });
   }
   wipeInProgress = true;
@@ -4048,22 +4324,35 @@ router.post("/wipe", requireRole("admin"), async (req, res) => {
     const serverManager = req.app.get("serverManager");
     await serverManager.loadConfig();
 
-    // Safety: server must be stopped
-    const isRunning = await serverManager.checkServerRunning();
-    if (isRunning) {
+    // Safety: server must be stopped, and we must be SURE of that.
+    // checkServerRunning() collapses a failed detection scan into `false`
+    // (same as a confirmed-stopped server), which would let this destructive
+    // wipe proceed against a server we simply failed to see was running.
+    // getServerProcessDetails() exposes that distinction via scanFailed, so
+    // use it directly here and fail closed when detection itself failed.
+    const processDetails = await serverManager.getServerProcessDetails();
+    if (processDetails.scanFailed) {
+      return res.status(503).json({
+        error: "Cannot verify whether the server is stopped. Try again shortly.",
+        code: ErrorCode.SERVER_STATE_UNKNOWN,
+      });
+    }
+    if (processDetails.running) {
       return res.status(400).json({
         error: "Server must be stopped before wiping. Stop the server first.",
+        code: ErrorCode.WIPE_SERVER_RUNNING,
       });
     }
 
     const { targets, confirm } = req.body;
     if (confirm !== true) {
-      return res.status(400).json({ error: "Wipe requires confirm: true" });
+      return res.status(400).json({ error: "Wipe requires confirm: true", code: ErrorCode.WIPE_CONFIRM_REQUIRED });
     }
     if (!Array.isArray(targets) || targets.length === 0) {
       return res.status(400).json({
         error:
           "targets must be a non-empty array of: map, players, world, accounts",
+        code: ErrorCode.WIPE_TARGETS_REQUIRED,
       });
     }
 
@@ -4074,29 +4363,29 @@ router.post("/wipe", requireRole("admin"), async (req, res) => {
     if (invalid.length > 0) {
       return res
         .status(400)
-        .json({ error: `Invalid targets: ${invalid.join(", ")}` });
+        .json({ error: `Invalid targets: ${invalid.join(", ")}`, code: ErrorCode.WIPE_INVALID_TARGETS });
     }
 
     const savePath = serverManager.savePath;
     const serverName = serverManager.serverName || "servertest";
     if (!savePath) {
-      return res.status(400).json({ error: "No zomboid data path configured" });
+      return res.status(400).json({ error: "No zomboid data path configured", code: ErrorCode.WIPE_ZOMBOID_DATA_PATH_NOT_CONFIGURED });
     }
     if (/[/\\]/.test(serverName)) {
-      return res.status(400).json({ error: "Invalid server name" });
+      return res.status(400).json({ error: "Invalid server name", code: ErrorCode.WIPE_INVALID_SERVER_NAME });
     }
 
     const saveDir = path.join(savePath, "Saves", "Multiplayer", serverName);
     if (!fs.existsSync(saveDir)) {
       return res
         .status(404)
-        .json({ error: `Save directory not found: ${serverName}` });
+        .json({ error: `Save directory not found: ${serverName}`, code: ErrorCode.WIPE_SAVE_DIRECTORY_NOT_FOUND });
     }
 
     // Path traversal safety
     const normalizedSaveDir = path.normalize(saveDir);
     if (normalizedSaveDir.includes("..")) {
-      return res.status(400).json({ error: "Invalid path" });
+      return res.status(400).json({ error: "Invalid path", code: ErrorCode.INVALID_PATH });
     }
 
     const results = {};

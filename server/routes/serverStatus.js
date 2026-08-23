@@ -12,6 +12,10 @@ import { composeServerStatus } from "../utils/serverStatusModel.js";
 const log = createLogger("API:ServerStatus");
 const router = express.Router();
 
+// No requireRole, deliberately: every role needs to know whether the
+// server is up before doing anything else with it (a moderator deciding
+// whether to even attempt an in-game action, a technician deciding whether
+// to restart it). Read-only, nothing sensitive returned.
 router.get("/active/status", async (req, res) => {
   try {
     const server = await getActiveServer();

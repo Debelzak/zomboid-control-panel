@@ -12,7 +12,6 @@ import {
   removeTrackedMod,
   clearModUpdates,
   getSetting,
-  setSetting,
   getActiveServer,
   getModPresets,
   createModPreset,
@@ -31,6 +30,7 @@ import { getDataPaths } from "../utils/paths.js";
 import { getSteamApiKey } from "../services/steamApiKey.js";
 import {
   sanitizeError,
+  sanitizeErrorParams,
   sanitizeIniValue,
   sanitizeIniList,
   sanitizeModIdList,
@@ -43,31 +43,61 @@ import {
   computeDiff as computeCollectionDiff,
   syncSingleChange as autoSyncCollection,
   fetchPublishedFileTitles,
+  getSteamSessionCredentials,
+  setSteamSessionCredentials,
 } from "../services/workshopCollectionSync.js";
 import {
   listAvailableBrowsers,
   extractSteamCookies,
 } from "../utils/browserCookies.js";
+import { requirePermission } from "../services/permissions.js";
+import { ErrorCode } from "../utils/errorCodes.js";
+import { withFileLock, writeFileAtomic } from "../utils/fileWriteQueue.js";
 
 const router = express.Router();
+
+// Every route in this file is admin+technician: "mods" and "config" are
+// explicitly the technician's job per the role brief, and moderator's job
+// is player/in-game authority, not workshop or INI management. Applied
+// once at the router level (this file has ~70 endpoints) rather than
+// per-route, so a route added here later is admin+technician by default
+// instead of silently inheriting the central-login-gate-only exposure this
+// whole file had before (any logged-in role — including moderator — could
+// previously edit sandbox vars, mod lists, or workshop collections).
+router.use(requirePermission("mods.manage"));
 
 // ─── INI write mutex ────────────────────────────────────────────────────────
 // Serialises write operations to the same INI file so concurrent requests
 // cannot interleave their writes (prevents lost-update race conditions).
-const iniLocks = new Map(); // iniPath → Promise chain
+//
+// Delegates the actual serialization to the shared per-path lock in
+// utils/fileWriteQueue.js — the same one routes/serverFiles.js's PUT /ini and
+// PUT /raw/:type use for the identical file. Before this, mods.js kept its
+// own separate Map here: two independent mutexes guarding one physical INI
+// file, neither aware of the other. A ServerConfig save (PUT /ini) and a
+// Mods-page toggle (POST /toggle-mod-id, /write-to-ini, ...) landing at the
+// same moment could each acquire "their" lock, both read the same starting
+// content, and the second write would silently clobber the first's change —
+// exactly the lost-update race both call sites' comments claimed to prevent,
+// but only within their own file.
+//
+// activeIniLocks below is bookkeeping only (backs getIniLockCount, which an
+// existing test asserts drains to 0) — it never gates a write itself.
+const activeIniLocks = new Map(); // iniPath -> in-flight call count
 export function withIniLock(iniPath, fn) {
-  const prev = iniLocks.get(iniPath) || Promise.resolve();
-  const next = prev.then(fn, fn); // run fn regardless of previous result
-  iniLocks.set(iniPath, next);
+  activeIniLocks.set(iniPath, (activeIniLocks.get(iniPath) || 0) + 1);
   const cleanup = () => {
-    if (iniLocks.get(iniPath) === next) iniLocks.delete(iniPath);
+    const remaining = (activeIniLocks.get(iniPath) || 1) - 1;
+    if (remaining <= 0) activeIniLocks.delete(iniPath);
+    else activeIniLocks.set(iniPath, remaining);
   };
-  next.then(cleanup, cleanup);
-  return next;
+  const run = withFileLock(iniPath, fn);
+  run.then(cleanup, cleanup);
+  return run;
 }
 
 export function getIniLockCount() {
-  return iniLocks.size;
+  return activeIniLocks.size;
 }
 
 export function filterOwnedClientModIds(clientModIds, ownedModIds) {
@@ -152,7 +182,16 @@ async function getServerName() {
     return activeServer.serverName;
   }
   const legacyName = await getSetting("serverName");
-  return legacyName || "servertest";
+  // No active server and no legacy settings name either -- there is no real
+  // server this could refer to. "servertest" used to fill in here, which
+  // happens to be Project Zomboid's own vanilla single-player/test-server
+  // name: on a machine that has a real (unrelated, never-added-to-the-panel)
+  // PZ install at the default path, an unconfigured panel would silently
+  // read/write ITS Server/servertest.ini and report success. Every call
+  // site below already gates on `!serverConfigPath`; returning null here
+  // (instead of a fabricated name) makes those same gates also catch "no
+  // server name configured" rather than papering over it.
+  return legacyName || null;
 }
 
 async function getServerPath() {
@@ -168,7 +207,10 @@ async function getServerPath() {
 function getModChecker(req, res) {
   const modChecker = req.app.get("modChecker");
   if (!modChecker) {
-    res.status(500).json({ error: "Mod checker not initialized" });
+    res.status(500).json({
+      error: "Mod checker not initialized",
+      code: ErrorCode.MOD_CHECKER_NOT_INITIALIZED,
+    });
     return null;
   }
   return modChecker;
@@ -403,12 +445,18 @@ router.post("/track", async (req, res) => {
     log.info(`POST /track: workshopId=${workshopId}`);
 
     if (!workshopId) {
-      return res.status(400).json({ error: "Workshop ID is required" });
+      return res.status(400).json({
+        error: "Workshop ID is required",
+        code: ErrorCode.MODS_WORKSHOP_ID_REQUIRED,
+      });
     }
 
     const workshopIdStr = String(workshopId);
     if (!/^\d{1,15}$/.test(workshopIdStr)) {
-      return res.status(400).json({ error: "Invalid Workshop ID format" });
+      return res.status(400).json({
+        error: "Invalid Workshop ID format",
+        code: ErrorCode.MODS_INVALID_WORKSHOP_ID_FORMAT,
+      });
     }
 
     // Clear from ignore list if present (user explicitly wants to track this)
@@ -432,7 +480,10 @@ router.delete("/track/:workshopId", async (req, res) => {
 
     // Validate workshopId is a numeric string
     if (!workshopId || !/^\d{1,15}$/.test(workshopId)) {
-      return res.status(400).json({ error: "Invalid workshop ID" });
+      return res.status(400).json({
+        error: "Invalid workshop ID",
+        code: ErrorCode.MODS_INVALID_WORKSHOP_ID_LOWER,
+      });
     }
 
     // Get mod name before removing (for the ignore list)
@@ -474,11 +525,17 @@ router.delete("/ignored/:workshopId", async (req, res) => {
   try {
     const { workshopId } = req.params;
     if (!workshopId || !/^\d{1,15}$/.test(workshopId)) {
-      return res.status(400).json({ error: "Invalid workshop ID" });
+      return res.status(400).json({
+        error: "Invalid workshop ID",
+        code: ErrorCode.MODS_INVALID_WORKSHOP_ID_LOWER,
+      });
     }
     const removed = await removeIgnoredMod(workshopId);
     if (!removed) {
-      return res.status(404).json({ error: "Mod not found in ignore list" });
+      return res.status(404).json({
+        error: "Mod not found in ignore list",
+        code: ErrorCode.MODS_IGNORE_ENTRY_NOT_FOUND,
+      });
     }
     res.json({ success: true, message: "Mod removed from ignore list" });
   } catch (error) {
@@ -529,14 +586,22 @@ router.post("/ignored-pairs", async (req, res) => {
     ) {
       return res.status(400).json({
         error: "modIdA and modIdB are required and must be valid mod IDs",
+        code: ErrorCode.MODS_IGNORED_PAIR_INVALID_IDS,
       });
     }
     if (modIdA === modIdB) {
-      return res.status(400).json({ error: "modIdA and modIdB must differ" });
+      return res.status(400).json({
+        error: "modIdA and modIdB must differ",
+        code: ErrorCode.MODS_IGNORED_PAIR_SAME_ID,
+      });
     }
     const safeReason = typeof reason === "string" ? reason.slice(0, 200) : null;
     const entry = await addIgnoredModPair(modIdA, modIdB, safeReason);
-    if (!entry) return res.status(400).json({ error: "Invalid pair" });
+    if (!entry)
+      return res.status(400).json({
+        error: "Invalid pair",
+        code: ErrorCode.MODS_IGNORED_PAIR_INVALID,
+      });
     res.json({ success: true, pair: entry });
   } catch (error) {
     log.error(`Failed to add ignored mod pair: ${error.message}`);
@@ -553,11 +618,17 @@ router.delete("/ignored-pairs", async (req, res) => {
       !MOD_ID_RE.test(modIdA) ||
       !MOD_ID_RE.test(modIdB)
     ) {
-      return res.status(400).json({ error: "modIdA and modIdB are required" });
+      return res.status(400).json({
+        error: "modIdA and modIdB are required",
+        code: ErrorCode.MODS_IGNORED_PAIR_IDS_REQUIRED,
+      });
     }
     const removed = await removeIgnoredModPair(modIdA, modIdB);
     if (!removed)
-      return res.status(404).json({ error: "Pair not found in ignore list" });
+      return res.status(404).json({
+        error: "Pair not found in ignore list",
+        code: ErrorCode.MODS_IGNORED_PAIR_NOT_FOUND,
+      });
     res.json({ success: true });
   } catch (error) {
     log.error(`Failed to remove ignored mod pair: ${error.message}`);
@@ -648,6 +719,7 @@ router.put("/interval", async (req, res) => {
       return res.status(400).json({
         error:
           "Interval must be a whole number of minutes from 60000ms to 7200000ms",
+        code: ErrorCode.MODS_CHECK_INTERVAL_INVALID,
       });
     }
 
@@ -670,7 +742,10 @@ router.post("/auto-restart", async (req, res) => {
 
     const { enabled } = req.body || {};
     if (typeof enabled !== "boolean") {
-      return res.status(400).json({ error: "`enabled` must be a boolean" });
+      return res.status(400).json({
+        error: "`enabled` must be a boolean",
+        code: ErrorCode.MODS_AUTO_RESTART_ENABLED_REQUIRED,
+      });
     }
 
     if (enabled) {
@@ -710,10 +785,16 @@ router.put("/restart-options", async (req, res) => {
     const inRange = (v, min, max) =>
       Number.isFinite(Number(v)) && Number(v) >= min && Number(v) <= max;
     if (warningMinutes !== undefined && !inRange(warningMinutes, 0, 1440)) {
-      return res.status(400).json({ error: "warningMinutes must be 0-1440" });
+      return res.status(400).json({
+        error: "warningMinutes must be 0-1440",
+        code: ErrorCode.MODS_RESTART_WARNING_MINUTES_INVALID,
+      });
     }
     if (maxDelayMinutes !== undefined && !inRange(maxDelayMinutes, 0, 1440)) {
-      return res.status(400).json({ error: "maxDelayMinutes must be 0-1440" });
+      return res.status(400).json({
+        error: "maxDelayMinutes must be 0-1440",
+        code: ErrorCode.MODS_RESTART_MAX_DELAY_MINUTES_INVALID,
+      });
     }
     if (
       checkInterval !== undefined &&
@@ -724,6 +805,7 @@ router.put("/restart-options", async (req, res) => {
       return res.status(400).json({
         error:
           "checkInterval must be a whole number of minutes from 60000ms to 7200000ms",
+        code: ErrorCode.MODS_RESTART_CHECK_INTERVAL_INVALID,
       });
     }
     if (
@@ -732,7 +814,10 @@ router.put("/restart-options", async (req, res) => {
     ) {
       return res
         .status(400)
-        .json({ error: "delayIfPlayersOnline must be a boolean" });
+        .json({
+          error: "delayIfPlayersOnline must be a boolean",
+          code: ErrorCode.MODS_RESTART_DELAY_IF_PLAYERS_ONLINE_INVALID,
+        });
     }
 
     await modChecker.setRestartOptions({
@@ -808,7 +893,7 @@ router.post("/sync-from-server", async (req, res) => {
     const serverConfigPath = await getServerConfigPath();
     const serverName = await getServerName();
 
-    if (!serverConfigPath) {
+    if (!serverConfigPath || !serverName) {
       log.warn("sync-from-server: Server config path not set");
       return res.json({
         success: false,
@@ -825,7 +910,10 @@ router.post("/sync-from-server", async (req, res) => {
       sanitizedServerName !== serverName ||
       serverName.includes("..")
     ) {
-      return res.status(400).json({ error: "Invalid server name" });
+      return res.status(400).json({
+        error: "Invalid server name",
+        code: ErrorCode.MODS_INVALID_SERVER_NAME,
+      });
     }
 
     const iniPath = path.join(serverConfigPath, `${sanitizedServerName}.ini`);
@@ -1070,8 +1158,8 @@ router.get("/collection/diff", async (req, res) => {
     // strings, of plausible length. Otherwise the UI would happily show
     // "configured" while the actual write endpoints fail with "Steam
     // session cookies not configured".
-    const sidVal = await getSetting("steamSessionId");
-    const lsVal = await getSetting("steamLoginSecure");
+    const { sessionId: sidVal, loginSecure: lsVal } =
+      await getSteamSessionCredentials();
     const looksMasked = (v) =>
       typeof v === "string" && (v.startsWith("••••••••") || /^[•*]+$/.test(v));
     const hasCredentials =
@@ -1130,11 +1218,17 @@ router.post("/collection/items", async (req, res) => {
   try {
     const collectionId = await getSetting("workshopCollectionId");
     if (!collectionId) {
-      return res.status(400).json({ error: "Collection ID not configured" });
+      return res.status(400).json({
+        error: "Collection ID not configured",
+        code: ErrorCode.MODS_COLLECTION_ID_NOT_CONFIGURED,
+      });
     }
     const workshopId = String(req.body?.workshopId || "").trim();
     if (!/^\d{1,15}$/.test(workshopId)) {
-      return res.status(400).json({ error: "Invalid workshop ID" });
+      return res.status(400).json({
+        error: "Invalid workshop ID",
+        code: ErrorCode.MODS_INVALID_WORKSHOP_ID_LOWER,
+      });
     }
     const r = await addItemToCollection(collectionId, workshopId);
     if (!r.ok)
@@ -1152,11 +1246,17 @@ router.delete("/collection/items/:workshopId", async (req, res) => {
   try {
     const collectionId = await getSetting("workshopCollectionId");
     if (!collectionId) {
-      return res.status(400).json({ error: "Collection ID not configured" });
+      return res.status(400).json({
+        error: "Collection ID not configured",
+        code: ErrorCode.MODS_COLLECTION_ID_NOT_CONFIGURED,
+      });
     }
     const workshopId = String(req.params.workshopId || "").trim();
     if (!/^\d{1,15}$/.test(workshopId)) {
-      return res.status(400).json({ error: "Invalid workshop ID" });
+      return res.status(400).json({
+        error: "Invalid workshop ID",
+        code: ErrorCode.MODS_INVALID_WORKSHOP_ID_LOWER,
+      });
     }
     const r = await removeItemFromCollection(collectionId, workshopId);
     if (!r.ok)
@@ -1176,7 +1276,10 @@ router.delete("/collection/tracking/:workshopId", async (req, res) => {
   try {
     const workshopId = String(req.params.workshopId || "").trim();
     if (!/^\d{1,15}$/.test(workshopId)) {
-      return res.status(400).json({ error: "Invalid workshop ID" });
+      return res.status(400).json({
+        error: "Invalid workshop ID",
+        code: ErrorCode.MODS_INVALID_WORKSHOP_ID_LOWER,
+      });
     }
     const removed = await removeTrackedMod(workshopId);
     res.json({
@@ -1197,7 +1300,10 @@ router.post("/collection/sync", async (req, res) => {
   try {
     const collectionId = await getSetting("workshopCollectionId");
     if (!collectionId) {
-      return res.status(400).json({ error: "Collection ID not configured" });
+      return res.status(400).json({
+        error: "Collection ID not configured",
+        code: ErrorCode.MODS_COLLECTION_ID_NOT_CONFIGURED,
+      });
     }
     const tracked = await getTrackedMods();
     const trackedIds = tracked.map((m) => String(m.workshop_id));
@@ -1263,13 +1369,18 @@ router.post("/collection/test", async (req, res) => {
   try {
     const collectionId = await getSetting("workshopCollectionId");
     if (!collectionId)
-      return res.status(400).json({ error: "Collection ID not configured" });
-    const sessionId = await getSetting("steamSessionId");
-    const loginSecure = await getSetting("steamLoginSecure");
+      return res.status(400).json({
+        error: "Collection ID not configured",
+        code: ErrorCode.MODS_COLLECTION_ID_NOT_CONFIGURED,
+      });
+    const { sessionId, loginSecure } = await getSteamSessionCredentials();
     if (!sessionId || !loginSecure)
       return res
         .status(400)
-        .json({ error: "Steam session cookies not configured" });
+        .json({
+          error: "Steam session cookies not configured",
+          code: ErrorCode.MODS_STEAM_SESSION_COOKIES_NOT_CONFIGURED,
+        });
 
     const contents = await getCollectionContents(collectionId);
     if (!contents.ok)
@@ -1321,6 +1432,8 @@ router.post("/collection/extract-cookies", async (req, res) => {
     if (!allowed.includes(browser)) {
       return res.status(400).json({
         error: "Invalid browser. Must be one of: " + allowed.join(", "),
+        code: ErrorCode.MODS_INVALID_BROWSER,
+        params: sanitizeErrorParams({ browsers: allowed.join(", ") }),
       });
     }
     const result = await extractSteamCookies(browser);
@@ -1351,7 +1464,10 @@ router.post("/collection/extension-push", async (req, res) => {
     if (!sessionid || !loginSecure) {
       return res
         .status(400)
-        .json({ error: "Both sessionid and steamLoginSecure are required" });
+        .json({
+          error: "Both sessionid and steamLoginSecure are required",
+          code: ErrorCode.MODS_EXTENSION_COOKIES_REQUIRED,
+        });
     }
     // Cookie values must not contain CR/LF/null/semicolon — those would break
     // the Cookie header we build for Workshop write requests and could be
@@ -1360,17 +1476,22 @@ router.post("/collection/extension-push", async (req, res) => {
     if (HAS_CONTROL.test(sessionid) || HAS_CONTROL.test(loginSecure)) {
       return res
         .status(400)
-        .json({ error: "Cookie values contain forbidden control characters" });
+        .json({
+          error: "Cookie values contain forbidden control characters",
+          code: ErrorCode.MODS_EXTENSION_COOKIES_CONTROL_CHARS,
+        });
     }
     // Sanity-check value lengths — Steam cookies are well under 1 KB each.
     if (sessionid.length > 4096 || loginSecure.length > 4096) {
       return res
         .status(400)
-        .json({ error: "Cookie values are unexpectedly long" });
+        .json({
+          error: "Cookie values are unexpectedly long",
+          code: ErrorCode.MODS_EXTENSION_COOKIES_TOO_LONG,
+        });
     }
 
-    await setSetting("steamSessionId", sessionid);
-    await setSetting("steamLoginSecure", loginSecure);
+    setSteamSessionCredentials(sessionid, loginSecure);
 
     log.info(
       `Steam cookies updated via browser extension (user: ${req.user?.username || "unknown"})`,
@@ -1444,6 +1565,7 @@ router.get("/collection/extension-bundle", async (req, res) => {
       return res.status(404).json({
         error:
           "Browser extension files are missing from this panel install. Download zomboid-panel-extension.zip from the GitHub release instead.",
+        code: ErrorCode.MODS_EXTENSION_FILES_MISSING,
       });
     }
 
@@ -1478,7 +1600,10 @@ router.post("/import-collection", async (req, res) => {
     if (!collectionUrl) {
       return res
         .status(400)
-        .json({ error: "Collection URL or ID is required" });
+        .json({
+          error: "Collection URL or ID is required",
+          code: ErrorCode.MODS_IMPORT_COLLECTION_URL_REQUIRED,
+        });
     }
 
     // Extract collection ID from URL or use directly
@@ -1490,7 +1615,10 @@ router.post("/import-collection", async (req, res) => {
 
     // Validate it's a number
     if (!/^\d{1,15}$/.test(collectionId)) {
-      return res.status(400).json({ error: "Invalid collection ID" });
+      return res.status(400).json({
+        error: "Invalid collection ID",
+        code: ErrorCode.MODS_IMPORT_COLLECTION_ID_INVALID,
+      });
     }
 
     log.info(`Fetching collection details for ID: ${collectionId}`);
@@ -1517,6 +1645,7 @@ router.post("/import-collection", async (req, res) => {
       if (error.name === "AbortError") {
         return res.status(504).json({
           error: "Steam collection lookup timed out. Please try again.",
+          code: ErrorCode.MODS_IMPORT_COLLECTION_TIMEOUT,
         });
       }
       throw error;
@@ -1531,7 +1660,10 @@ router.post("/import-collection", async (req, res) => {
     const collectionData = await collectionResponse.json();
 
     if (!collectionData.response?.collectiondetails?.[0]) {
-      return res.status(404).json({ error: "Collection not found" });
+      return res.status(404).json({
+        error: "Collection not found",
+        code: ErrorCode.MODS_IMPORT_COLLECTION_NOT_FOUND,
+      });
     }
 
     const collection = collectionData.response.collectiondetails[0];
@@ -1539,7 +1671,10 @@ router.post("/import-collection", async (req, res) => {
     if (collection.result !== 1) {
       return res
         .status(404)
-        .json({ error: "Collection not found or is private" });
+        .json({
+          error: "Collection not found or is private",
+          code: ErrorCode.MODS_IMPORT_COLLECTION_PRIVATE,
+        });
     }
 
     const modIds = collection.children?.map((c) => c.publishedfileid) || [];
@@ -1616,12 +1751,18 @@ router.post("/get-mod-info", async (req, res) => {
     const { workshopId } = req.body;
 
     if (!workshopId) {
-      return res.status(400).json({ error: "Workshop ID is required" });
+      return res.status(400).json({
+        error: "Workshop ID is required",
+        code: ErrorCode.MODS_WORKSHOP_ID_REQUIRED,
+      });
     }
 
     const workshopIdStr = String(workshopId);
     if (!/^\d{1,15}$/.test(workshopIdStr)) {
-      return res.status(400).json({ error: "Invalid Workshop ID format" });
+      return res.status(400).json({
+        error: "Invalid Workshop ID format",
+        code: ErrorCode.MODS_INVALID_WORKSHOP_ID_FORMAT,
+      });
     }
 
     const infoAbort = new AbortController();
@@ -1652,7 +1793,10 @@ router.post("/get-mod-info", async (req, res) => {
     const modInfo = data.response?.publishedfiledetails?.[0];
 
     if (!modInfo || modInfo.result !== 1) {
-      return res.status(404).json({ error: "Mod not found" });
+      return res.status(404).json({
+        error: "Mod not found",
+        code: ErrorCode.MODS_GET_MOD_INFO_NOT_FOUND,
+      });
     }
 
     res.json({
@@ -1685,14 +1829,20 @@ router.post("/write-to-ini", async (req, res) => {
     // mapFolders: optional array of map folder names for map mods
 
     if (!mods || !Array.isArray(mods)) {
-      return res.status(400).json({ error: "Mods array is required" });
+      return res.status(400).json({
+        error: "Mods array is required",
+        code: ErrorCode.MODS_WRITE_TO_INI_MODS_ARRAY_REQUIRED,
+      });
     }
 
     // Validate all workshopId values are numeric to prevent path traversal
     for (const m of mods) {
       if (m.workshopId && !/^\d{1,15}$/.test(String(m.workshopId))) {
+        const workshopId = String(m.workshopId).substring(0, 20);
         return res.status(400).json({
-          error: `Invalid Workshop ID: ${String(m.workshopId).substring(0, 20)}`,
+          error: `Invalid Workshop ID: ${workshopId}`,
+          code: ErrorCode.MODS_INVALID_WORKSHOP_ID_TEMPLATE,
+          params: sanitizeErrorParams({ workshopId }),
         });
       }
     }
@@ -1701,9 +1851,10 @@ router.post("/write-to-ini", async (req, res) => {
     const serverName = await getServerName();
     const serverPath = await getServerPath();
 
-    if (!serverConfigPath) {
+    if (!serverConfigPath || !serverName) {
       return res.status(400).json({
         error: "Server config path not set. Please configure the server first.",
+        code: ErrorCode.MODS_CONFIG_PATH_NOT_SET_GUIDANCE,
       });
     }
 
@@ -1714,7 +1865,10 @@ router.post("/write-to-ini", async (req, res) => {
       sanitizedServerName !== serverName ||
       serverName.includes("..")
     ) {
-      return res.status(400).json({ error: "Invalid server name" });
+      return res.status(400).json({
+        error: "Invalid server name",
+        code: ErrorCode.MODS_INVALID_SERVER_NAME,
+      });
     }
 
     const iniPath = path.join(serverConfigPath, `${sanitizedServerName}.ini`);
@@ -1723,6 +1877,7 @@ router.post("/write-to-ini", async (req, res) => {
       return res.status(400).json({
         error:
           "Server config file not found. Start the server once first to generate the config file.",
+        code: ErrorCode.MODS_CONFIG_FILE_NOT_FOUND_GUIDANCE,
       });
     }
 
@@ -1811,6 +1966,15 @@ router.post("/write-to-ini", async (req, res) => {
     const workshopIdList = sanitizeIniList(
       resolvedMods.map((m) => m.workshopId).filter(Boolean),
     );
+    // Every workshopId ends up in WorkshopItems= above regardless of whether
+    // its modId resolved, so Steam will download it either way. A workshopId
+    // whose modId never resolved is silently EXCLUDED from Mods= (filtered
+    // via .filter(Boolean) above) -- it never loads in PZ even though it's
+    // subscribed. Surface which ones so the caller isn't told "success" for
+    // mods that are actually still orphaned.
+    const unresolvedWorkshopIds = resolvedMods
+      .filter((m) => m.workshopId && !m.modId)
+      .map((m) => m.workshopId);
 
     // Auto-detect map folders from downloaded workshop mods if not provided
     let detectedMapFolders = mapFolders || [];
@@ -1869,7 +2033,7 @@ router.post("/write-to-ini", async (req, res) => {
         }
       }
 
-      fs.writeFileSync(iniPath, content, "utf-8");
+      writeFileAtomic(iniPath, content, "utf-8");
     });
 
     log.info(
@@ -1878,10 +2042,11 @@ router.post("/write-to-ini", async (req, res) => {
 
     res.json({
       success: true,
-      message: `Successfully configured ${mods.length} mods in server config.${autoDetectedCount > 0 ? ` (${autoDetectedCount} mod IDs auto-detected)` : ""}${detectedMapFolders.length > 0 ? ` Map folders: ${detectedMapFolders.join(", ")}` : ""}`,
+      message: `Successfully configured ${mods.length} mods in server config.${autoDetectedCount > 0 ? ` (${autoDetectedCount} mod IDs auto-detected)` : ""}${detectedMapFolders.length > 0 ? ` Map folders: ${detectedMapFolders.join(", ")}` : ""}${unresolvedWorkshopIds.length > 0 ? ` WARNING: ${unresolvedWorkshopIds.length} mod ID(s) could not be auto-detected and were subscribed but NOT enabled: ${unresolvedWorkshopIds.join(", ")}` : ""}`,
       iniPath,
       modsConfigured: mods.length,
       autoDetectedModIds: autoDetectedCount,
+      unresolvedModIds: unresolvedWorkshopIds,
       modIds: modIdList,
       workshopItems: workshopIdList,
       mapList,
@@ -1899,10 +2064,11 @@ router.get("/current-config", async (req, res) => {
     const serverConfigPath = await getServerConfigPath();
     const serverName = await getServerName();
 
-    if (!serverConfigPath) {
+    if (!serverConfigPath || !serverName) {
       return res.json({
         configured: false,
         error: "Server config path not set",
+        code: ErrorCode.MODS_CONFIG_PATH_NOT_SET,
         modIds: [],
         workshopIds: [],
         totalMods: 0,
@@ -1916,7 +2082,10 @@ router.get("/current-config", async (req, res) => {
       sanitizedServerName !== serverName ||
       serverName.includes("..")
     ) {
-      return res.status(400).json({ error: "Invalid server name" });
+      return res.status(400).json({
+        error: "Invalid server name",
+        code: ErrorCode.MODS_INVALID_SERVER_NAME,
+      });
     }
 
     const iniPath = path.join(serverConfigPath, `${sanitizedServerName}.ini`);
@@ -1925,6 +2094,7 @@ router.get("/current-config", async (req, res) => {
       return res.json({
         configured: false,
         error: "Server config file not found",
+        code: ErrorCode.MODS_CONFIG_FILE_NOT_FOUND,
         modIds: [],
         workshopIds: [],
         totalMods: 0,
@@ -1979,21 +2149,33 @@ router.post("/toggle-mod-id", async (req, res) => {
     const { modId, enabled } = req.body;
 
     if (!modId || typeof modId !== "string") {
-      return res.status(400).json({ error: "modId is required" });
+      return res.status(400).json({
+        error: "modId is required",
+        code: ErrorCode.MODS_TOGGLE_MOD_ID_REQUIRED,
+      });
     }
     if (typeof enabled !== "boolean") {
-      return res.status(400).json({ error: "enabled (boolean) is required" });
+      return res.status(400).json({
+        error: "enabled (boolean) is required",
+        code: ErrorCode.MODS_TOGGLE_ENABLED_REQUIRED,
+      });
     }
     // Validate modId format — allow any printable characters except INI delimiters
     if (/[\r\n;=]/.test(modId) || modId.length > 200) {
-      return res.status(400).json({ error: "Invalid mod ID format" });
+      return res.status(400).json({
+        error: "Invalid mod ID format",
+        code: ErrorCode.MODS_INVALID_MOD_ID_FORMAT,
+      });
     }
 
     const serverConfigPath = await getServerConfigPath();
     const serverName = await getServerName();
 
-    if (!serverConfigPath) {
-      return res.status(400).json({ error: "Server config path not set" });
+    if (!serverConfigPath || !serverName) {
+      return res.status(400).json({
+        error: "Server config path not set",
+        code: ErrorCode.MODS_CONFIG_PATH_NOT_SET,
+      });
     }
 
     const sanitizedServerName = path.basename(serverName);
@@ -2002,12 +2184,18 @@ router.post("/toggle-mod-id", async (req, res) => {
       sanitizedServerName !== serverName ||
       serverName.includes("..")
     ) {
-      return res.status(400).json({ error: "Invalid server name" });
+      return res.status(400).json({
+        error: "Invalid server name",
+        code: ErrorCode.MODS_INVALID_SERVER_NAME,
+      });
     }
 
     const iniPath = path.join(serverConfigPath, `${sanitizedServerName}.ini`);
     if (!fs.existsSync(iniPath)) {
-      return res.status(400).json({ error: "Server config file not found" });
+      return res.status(400).json({
+        error: "Server config file not found",
+        code: ErrorCode.MODS_CONFIG_FILE_NOT_FOUND,
+      });
     }
 
     // Reject attempts to ENABLE a workshop-ID-shaped value as a mod ID.
@@ -2017,6 +2205,7 @@ router.post("/toggle-mod-id", async (req, res) => {
       return res.status(400).json({
         error:
           "That looks like a Steam Workshop ID, not a mod ID. Workshop IDs (numeric) belong in WorkshopItems=, not Mods=.",
+        code: ErrorCode.MODS_TOGGLE_WORKSHOP_ID_IN_MODID,
       });
     }
 
@@ -2040,7 +2229,7 @@ router.post("/toggle-mod-id", async (req, res) => {
         content += `\nMods=${newModList}`;
       }
 
-      fs.writeFileSync(iniPath, content, "utf-8");
+      writeFileAtomic(iniPath, content, "utf-8");
       return { totalMods: currentModIds.length };
     });
     log.info(
@@ -2065,27 +2254,38 @@ router.post("/batch-toggle-mod-ids", async (req, res) => {
     const { changes } = req.body;
 
     if (!Array.isArray(changes) || changes.length === 0) {
-      return res.status(400).json({ error: "changes array is required" });
+      return res.status(400).json({
+        error: "changes array is required",
+        code: ErrorCode.MODS_BATCH_TOGGLE_CHANGES_REQUIRED,
+      });
     }
     if (changes.length > 500) {
-      return res.status(400).json({ error: "Too many changes (max 500)" });
+      return res.status(400).json({
+        error: "Too many changes (max 500)",
+        code: ErrorCode.MODS_BATCH_TOGGLE_TOO_MANY,
+      });
     }
 
     // Validate all entries
     for (const change of changes) {
       if (!change.modId || typeof change.modId !== "string") {
-        return res
-          .status(400)
-          .json({ error: "Each change must have a modId string" });
+        return res.status(400).json({
+          error: "Each change must have a modId string",
+          code: ErrorCode.MODS_BATCH_TOGGLE_MODID_STRING_REQUIRED,
+        });
       }
       if (typeof change.enabled !== "boolean") {
-        return res
-          .status(400)
-          .json({ error: "Each change must have an enabled boolean" });
+        return res.status(400).json({
+          error: "Each change must have an enabled boolean",
+          code: ErrorCode.MODS_BATCH_TOGGLE_ENABLED_BOOLEAN_REQUIRED,
+        });
       }
       if (/[\r\n;=]/.test(change.modId) || change.modId.length > 200) {
+        const modId = change.modId.substring(0, 50);
         return res.status(400).json({
-          error: `Invalid mod ID format: ${change.modId.substring(0, 50)}`,
+          error: `Invalid mod ID format: ${modId}`,
+          code: ErrorCode.MODS_INVALID_MOD_ID_FORMAT_TEMPLATE,
+          params: sanitizeErrorParams({ modId }),
         });
       }
     }
@@ -2093,8 +2293,11 @@ router.post("/batch-toggle-mod-ids", async (req, res) => {
     const serverConfigPath = await getServerConfigPath();
     const serverName = await getServerName();
 
-    if (!serverConfigPath) {
-      return res.status(400).json({ error: "Server config path not set" });
+    if (!serverConfigPath || !serverName) {
+      return res.status(400).json({
+        error: "Server config path not set",
+        code: ErrorCode.MODS_CONFIG_PATH_NOT_SET,
+      });
     }
 
     const sanitizedServerName = path.basename(serverName);
@@ -2103,12 +2306,18 @@ router.post("/batch-toggle-mod-ids", async (req, res) => {
       sanitizedServerName !== serverName ||
       serverName.includes("..")
     ) {
-      return res.status(400).json({ error: "Invalid server name" });
+      return res.status(400).json({
+        error: "Invalid server name",
+        code: ErrorCode.MODS_INVALID_SERVER_NAME,
+      });
     }
 
     const iniPath = path.join(serverConfigPath, `${sanitizedServerName}.ini`);
     if (!fs.existsSync(iniPath)) {
-      return res.status(400).json({ error: "Server config file not found" });
+      return res.status(400).json({
+        error: "Server config file not found",
+        code: ErrorCode.MODS_CONFIG_FILE_NOT_FOUND,
+      });
     }
 
     // Reject batches that try to ENABLE workshop-ID-shaped values. Removal
@@ -2119,6 +2328,8 @@ router.post("/batch-toggle-mod-ids", async (req, res) => {
     if (badEnables.length > 0) {
       return res.status(400).json({
         error: `Refusing to add ${badEnables.length} workshop-ID-shaped entr${badEnables.length === 1 ? "y" : "ies"} to Mods= (those belong in WorkshopItems=).`,
+        code: ErrorCode.MODS_BATCH_TOGGLE_WORKSHOP_ID_IN_MODS,
+        params: sanitizeErrorParams({ count: badEnables.length }),
       });
     }
 
@@ -2145,7 +2356,7 @@ router.post("/batch-toggle-mod-ids", async (req, res) => {
         content += `\nMods=${newModList}`;
       }
 
-      fs.writeFileSync(iniPath, content, "utf-8");
+      writeFileAtomic(iniPath, content, "utf-8");
       return { totalMods: currentModIds.length };
     });
     log.info(`Batch toggled ${changes.length} mod IDs in ${iniPath}`);
@@ -2169,21 +2380,28 @@ router.post("/add-to-ini", async (req, res) => {
     // modId: optional - the mod loading ID (from info.txt). If not provided, workshopId is used as a placeholder
 
     if (!workshopId) {
-      return res.status(400).json({ error: "Workshop ID is required" });
+      return res.status(400).json({
+        error: "Workshop ID is required",
+        code: ErrorCode.MODS_WORKSHOP_ID_REQUIRED,
+      });
     }
 
     // Validate workshopId is numeric
     if (!/^\d{1,15}$/.test(String(workshopId))) {
-      return res.status(400).json({ error: "Invalid Workshop ID" });
+      return res.status(400).json({
+        error: "Invalid Workshop ID",
+        code: ErrorCode.MODS_INVALID_WORKSHOP_ID_CAP,
+      });
     }
 
     const serverConfigPath = await getServerConfigPath();
     const serverName = await getServerName();
 
-    if (!serverConfigPath) {
+    if (!serverConfigPath || !serverName) {
       return res.status(400).json({
         error:
           "Server config path not set. Please configure the server first in Settings.",
+        code: ErrorCode.MODS_ADD_TO_INI_CONFIG_PATH_NOT_SET,
       });
     }
 
@@ -2194,7 +2412,10 @@ router.post("/add-to-ini", async (req, res) => {
       sanitizedServerName !== serverName ||
       serverName.includes("..")
     ) {
-      return res.status(400).json({ error: "Invalid server name" });
+      return res.status(400).json({
+        error: "Invalid server name",
+        code: ErrorCode.MODS_INVALID_SERVER_NAME,
+      });
     }
 
     const iniPath = path.join(serverConfigPath, `${sanitizedServerName}.ini`);
@@ -2203,6 +2424,7 @@ router.post("/add-to-ini", async (req, res) => {
       return res.status(400).json({
         error:
           "Server config file not found. Start the server once first to generate the config file.",
+        code: ErrorCode.MODS_CONFIG_FILE_NOT_FOUND_GUIDANCE,
       });
     }
 
@@ -2312,7 +2534,7 @@ router.post("/add-to-ini", async (req, res) => {
         }
       }
 
-      fs.writeFileSync(iniPath, content, "utf-8");
+      writeFileAtomic(iniPath, content, "utf-8");
       return {
         alreadyExists: false,
         totalWorkshopItems: currentWorkshopIds.length,
@@ -2834,17 +3056,26 @@ router.post("/inspect-workshop-item", async (req, res) => {
   try {
     const { workshopId } = req.body;
     if (!workshopId) {
-      return res.status(400).json({ error: "Workshop ID is required" });
+      return res.status(400).json({
+        error: "Workshop ID is required",
+        code: ErrorCode.MODS_WORKSHOP_ID_REQUIRED,
+      });
     }
 
     // Validate workshopId is numeric to prevent path traversal
     if (!/^\d{1,15}$/.test(String(workshopId))) {
-      return res.status(400).json({ error: "Invalid Workshop ID" });
+      return res.status(400).json({
+        error: "Invalid Workshop ID",
+        code: ErrorCode.MODS_INVALID_WORKSHOP_ID_CAP,
+      });
     }
 
     const serverPath = await getServerPath();
     if (!serverPath) {
-      return res.status(400).json({ error: "Server path not configured" });
+      return res.status(400).json({
+        error: "Server path not configured",
+        code: ErrorCode.MODS_SERVER_PATH_NOT_CONFIGURED_NOPERIOD,
+      });
     }
 
     const mods = getModDetailsFromWorkshop(workshopId, serverPath);
@@ -2871,12 +3102,18 @@ router.post("/remove-from-ini", async (req, res) => {
     const { workshopId, modId, modIds: clientModIds } = req.body;
 
     if (!workshopId) {
-      return res.status(400).json({ error: "Workshop ID is required" });
+      return res.status(400).json({
+        error: "Workshop ID is required",
+        code: ErrorCode.MODS_WORKSHOP_ID_REQUIRED,
+      });
     }
 
     // Validate workshopId is numeric to prevent path traversal
     if (!/^\d{1,15}$/.test(String(workshopId))) {
-      return res.status(400).json({ error: "Invalid Workshop ID" });
+      return res.status(400).json({
+        error: "Invalid Workshop ID",
+        code: ErrorCode.MODS_INVALID_WORKSHOP_ID_CAP,
+      });
     }
 
     const knownModIds = Array.isArray(clientModIds)
@@ -2887,8 +3124,11 @@ router.post("/remove-from-ini", async (req, res) => {
     const serverPath = await getServerPath();
     const serverName = await getServerName();
 
-    if (!serverConfigPath) {
-      return res.status(400).json({ error: "Server config path not set" });
+    if (!serverConfigPath || !serverName) {
+      return res.status(400).json({
+        error: "Server config path not set",
+        code: ErrorCode.MODS_CONFIG_PATH_NOT_SET,
+      });
     }
 
     // Sanitize serverName
@@ -2898,13 +3138,19 @@ router.post("/remove-from-ini", async (req, res) => {
       sanitizedServerName !== serverName ||
       serverName.includes("..")
     ) {
-      return res.status(400).json({ error: "Invalid server name" });
+      return res.status(400).json({
+        error: "Invalid server name",
+        code: ErrorCode.MODS_INVALID_SERVER_NAME,
+      });
     }
 
     const iniPath = path.join(serverConfigPath, `${sanitizedServerName}.ini`);
 
     if (!fs.existsSync(iniPath)) {
-      return res.status(400).json({ error: "Server config file not found" });
+      return res.status(400).json({
+        error: "Server config file not found",
+        code: ErrorCode.MODS_CONFIG_FILE_NOT_FOUND,
+      });
     }
 
     // Atomically read-modify-write inside the lock
@@ -3040,7 +3286,7 @@ router.post("/remove-from-ini", async (req, res) => {
         );
       }
 
-      fs.writeFileSync(iniPath, content, "utf-8");
+      writeFileAtomic(iniPath, content, "utf-8");
       return {
         removedModIds,
         removedMapFolders,
@@ -3078,12 +3324,18 @@ router.post("/batch-remove", async (req, res) => {
     const { workshopIds } = req.body;
 
     if (!Array.isArray(workshopIds) || workshopIds.length === 0) {
-      return res.status(400).json({ error: "workshopIds array is required" });
+      return res.status(400).json({
+        error: "workshopIds array is required",
+        code: ErrorCode.MODS_BATCH_REMOVE_WORKSHOP_IDS_ARRAY_REQUIRED,
+      });
     }
 
     // Cap batch size to prevent abuse
     if (workshopIds.length > 500) {
-      return res.status(400).json({ error: "Maximum 500 mods per batch" });
+      return res.status(400).json({
+        error: "Maximum 500 mods per batch",
+        code: ErrorCode.MODS_BATCH_REMOVE_TOO_MANY,
+      });
     }
 
     // Validate all IDs upfront
@@ -3094,7 +3346,10 @@ router.post("/batch-remove", async (req, res) => {
     }
 
     if (validIds.length === 0) {
-      return res.status(400).json({ error: "No valid workshop IDs provided" });
+      return res.status(400).json({
+        error: "No valid workshop IDs provided",
+        code: ErrorCode.MODS_NO_VALID_WORKSHOP_IDS,
+      });
     }
 
     // Step 1: Get mod names before removal (for ignore list)
@@ -3194,7 +3449,7 @@ router.post("/batch-remove", async (req, res) => {
               );
             }
 
-            fs.writeFileSync(iniPath, content, "utf-8");
+            writeFileAtomic(iniPath, content, "utf-8");
 
             const wsRemoved = origWsCount - iniWorkshopIds.length;
             const modRemoved = origModCount - iniModIds.length;
@@ -3257,6 +3512,7 @@ router.post("/batch-remove", async (req, res) => {
         : {
             error:
               "Server config file was not found or not accessible — no mods were removed.",
+            code: ErrorCode.MODS_BATCH_REMOVE_INI_NOT_ACCESSIBLE,
           }),
     });
   } catch (error) {
@@ -3272,8 +3528,11 @@ router.post("/repair-map-entries", async (req, res) => {
     const serverPath = await getServerPath();
     const serverName = await getServerName();
 
-    if (!serverConfigPath || !serverPath) {
-      return res.status(400).json({ error: "Server path not configured." });
+    if (!serverConfigPath || !serverPath || !serverName) {
+      return res.status(400).json({
+        error: "Server path not configured.",
+        code: ErrorCode.MODS_SERVER_PATH_NOT_CONFIGURED,
+      });
     }
 
     const sanitizedServerName = path.basename(serverName);
@@ -3282,12 +3541,18 @@ router.post("/repair-map-entries", async (req, res) => {
       sanitizedServerName !== serverName ||
       serverName.includes("..")
     ) {
-      return res.status(400).json({ error: "Invalid server name" });
+      return res.status(400).json({
+        error: "Invalid server name",
+        code: ErrorCode.MODS_INVALID_SERVER_NAME,
+      });
     }
 
     const iniPath = path.join(serverConfigPath, `${sanitizedServerName}.ini`);
     if (!fs.existsSync(iniPath)) {
-      return res.status(400).json({ error: "Server config file not found." });
+      return res.status(400).json({
+        error: "Server config file not found.",
+        code: ErrorCode.MODS_CONFIG_FILE_NOT_FOUND_PERIOD,
+      });
     }
 
     // Atomically read-modify-write inside the lock
@@ -3347,7 +3612,7 @@ router.post("/repair-map-entries", async (req, res) => {
         if (content.includes("Map=")) {
           content = content.replace(/^Map=.*/m, `Map=${newMapLine}`);
         }
-        fs.writeFileSync(iniPath, content, "utf-8");
+        writeFileAtomic(iniPath, content, "utf-8");
         log.info(
           `Repaired Map= entries: removed ${removedEntries.length} invalid, added ${addedEntries.length} missing`,
         );
@@ -3392,8 +3657,11 @@ router.post("/deduplicate-mod-ids", async (req, res) => {
     const serverConfigPath = await getServerConfigPath();
     const serverName = await getServerName();
 
-    if (!serverConfigPath) {
-      return res.status(400).json({ error: "Server path not configured." });
+    if (!serverConfigPath || !serverName) {
+      return res.status(400).json({
+        error: "Server path not configured.",
+        code: ErrorCode.MODS_SERVER_PATH_NOT_CONFIGURED,
+      });
     }
 
     const sanitizedServerName = path.basename(serverName);
@@ -3402,12 +3670,18 @@ router.post("/deduplicate-mod-ids", async (req, res) => {
       sanitizedServerName !== serverName ||
       serverName.includes("..")
     ) {
-      return res.status(400).json({ error: "Invalid server name" });
+      return res.status(400).json({
+        error: "Invalid server name",
+        code: ErrorCode.MODS_INVALID_SERVER_NAME,
+      });
     }
 
     const iniPath = path.join(serverConfigPath, `${sanitizedServerName}.ini`);
     if (!fs.existsSync(iniPath)) {
-      return res.status(400).json({ error: "Server config file not found." });
+      return res.status(400).json({
+        error: "Server config file not found.",
+        code: ErrorCode.MODS_CONFIG_FILE_NOT_FOUND_PERIOD,
+      });
     }
 
     // Atomically read-modify-write inside the lock
@@ -3437,7 +3711,7 @@ router.post("/deduplicate-mod-ids", async (req, res) => {
         /^Mods=.*/m,
         `Mods=${sanitizeModIdList(deduped)}`,
       );
-      fs.writeFileSync(iniPath, content, "utf-8");
+      writeFileAtomic(iniPath, content, "utf-8");
       return { noChanges: false, removed, deduped };
     });
 
@@ -3474,19 +3748,28 @@ router.post("/add-missing-dep", async (req, res) => {
   try {
     const { workshopId, modId } = req.body;
     if (!workshopId || !/^\d{1,15}$/.test(String(workshopId))) {
-      return res.status(400).json({ error: "Valid Workshop ID is required" });
+      return res.status(400).json({
+        error: "Valid Workshop ID is required",
+        code: ErrorCode.MODS_ADD_MISSING_DEP_WORKSHOP_ID_REQUIRED,
+      });
     }
     // Sanitize modId — only allow safe characters
     const modIdStr = modId ? String(modId) : null;
     if (modIdStr && !/^[\w.\-]{1,200}$/.test(modIdStr)) {
-      return res.status(400).json({ error: "Invalid mod ID format" });
+      return res.status(400).json({
+        error: "Invalid mod ID format",
+        code: ErrorCode.MODS_INVALID_MOD_ID_FORMAT,
+      });
     }
 
     const serverConfigPath = await getServerConfigPath();
     const serverName = await getServerName();
     const serverPath = await getServerPath();
-    if (!serverConfigPath)
-      return res.status(400).json({ error: "Server path not configured." });
+    if (!serverConfigPath || !serverName)
+      return res.status(400).json({
+        error: "Server path not configured.",
+        code: ErrorCode.MODS_SERVER_PATH_NOT_CONFIGURED,
+      });
 
     const sanitizedServerName = path.basename(serverName);
     if (
@@ -3494,11 +3777,17 @@ router.post("/add-missing-dep", async (req, res) => {
       sanitizedServerName !== serverName ||
       serverName.includes("..")
     ) {
-      return res.status(400).json({ error: "Invalid server name" });
+      return res.status(400).json({
+        error: "Invalid server name",
+        code: ErrorCode.MODS_INVALID_SERVER_NAME,
+      });
     }
     const iniPath = path.join(serverConfigPath, `${sanitizedServerName}.ini`);
     if (!fs.existsSync(iniPath)) {
-      return res.status(400).json({ error: "Server config file not found" });
+      return res.status(400).json({
+        error: "Server config file not found",
+        code: ErrorCode.MODS_CONFIG_FILE_NOT_FOUND,
+      });
     }
 
     // Do async detection work BEFORE taking the lock
@@ -3577,7 +3866,7 @@ router.post("/add-missing-dep", async (req, res) => {
         }
       }
 
-      fs.writeFileSync(iniPath, content, "utf-8");
+      writeFileAtomic(iniPath, content, "utf-8");
       return { wsAdded, modIdAdded };
     });
 
@@ -3605,19 +3894,26 @@ router.post("/add-all-resolved-deps", async (req, res) => {
   try {
     const { deps } = req.body;
     if (!deps || !Array.isArray(deps) || deps.length === 0) {
-      return res.status(400).json({ error: "No dependencies provided" });
+      return res.status(400).json({
+        error: "No dependencies provided",
+        code: ErrorCode.MODS_ADD_ALL_DEPS_REQUIRED,
+      });
     }
     if (deps.length > 200) {
-      return res
-        .status(400)
-        .json({ error: "Too many dependencies in one request (max 200)" });
+      return res.status(400).json({
+        error: "Too many dependencies in one request (max 200)",
+        code: ErrorCode.MODS_ADD_ALL_DEPS_TOO_MANY,
+      });
     }
 
     // Validate all workshop IDs
     for (const dep of deps) {
       if (!dep.workshopId || !/^\d{1,15}$/.test(String(dep.workshopId))) {
+        const workshopId = String(dep.workshopId).substring(0, 20);
         return res.status(400).json({
-          error: `Invalid Workshop ID: ${String(dep.workshopId).substring(0, 20)}`,
+          error: `Invalid Workshop ID: ${workshopId}`,
+          code: ErrorCode.MODS_INVALID_WORKSHOP_ID_TEMPLATE,
+          params: sanitizeErrorParams({ workshopId }),
         });
       }
     }
@@ -3625,8 +3921,11 @@ router.post("/add-all-resolved-deps", async (req, res) => {
     const serverConfigPath = await getServerConfigPath();
     const serverName = await getServerName();
     const serverPath = await getServerPath();
-    if (!serverConfigPath) {
-      return res.status(400).json({ error: "Server config path not set" });
+    if (!serverConfigPath || !serverName) {
+      return res.status(400).json({
+        error: "Server config path not set",
+        code: ErrorCode.MODS_CONFIG_PATH_NOT_SET,
+      });
     }
     const sanitizedServerName = path.basename(serverName);
     if (
@@ -3634,11 +3933,17 @@ router.post("/add-all-resolved-deps", async (req, res) => {
       sanitizedServerName !== serverName ||
       serverName.includes("..")
     ) {
-      return res.status(400).json({ error: "Invalid server name" });
+      return res.status(400).json({
+        error: "Invalid server name",
+        code: ErrorCode.MODS_INVALID_SERVER_NAME,
+      });
     }
     const iniPath = path.join(serverConfigPath, `${sanitizedServerName}.ini`);
     if (!fs.existsSync(iniPath)) {
-      return res.status(400).json({ error: "Server config file not found" });
+      return res.status(400).json({
+        error: "Server config file not found",
+        code: ErrorCode.MODS_CONFIG_FILE_NOT_FOUND,
+      });
     }
 
     // Pre-resolve all mod IDs BEFORE taking the lock (async ops)
@@ -3712,7 +4017,7 @@ router.post("/add-all-resolved-deps", async (req, res) => {
         else content += `\nMap=${mapLine}`;
       }
 
-      fs.writeFileSync(iniPath, content, "utf-8");
+      writeFileAtomic(iniPath, content, "utf-8");
       return { wsAdded, modIdsAdded, allMapFolders };
     });
 
@@ -3741,7 +4046,10 @@ router.post("/search-workshop-mods", async (req, res) => {
     if (!query || typeof query !== "string" || query.trim().length < 2) {
       return res
         .status(400)
-        .json({ error: "Query must be at least 2 characters" });
+        .json({
+          error: "Query must be at least 2 characters",
+          code: ErrorCode.MODS_SEARCH_QUERY_TOO_SHORT,
+        });
     }
 
     const trimmed = query.trim();
@@ -4069,7 +4377,10 @@ router.post("/resolve-missing-deps", async (req, res) => {
   try {
     const { deps } = req.body;
     if (!deps || !Array.isArray(deps)) {
-      return res.status(400).json({ error: "Dependencies array is required" });
+      return res.status(400).json({
+        error: "Dependencies array is required",
+        code: ErrorCode.MODS_RESOLVE_DEPS_ARRAY_REQUIRED,
+      });
     }
 
     const serverPath = await getServerPath();
@@ -4153,8 +4464,11 @@ router.post("/sync-mod-ids", async (req, res) => {
     const serverConfigPath = await getServerConfigPath();
     const serverName = await getServerName();
     const serverPath = await getServerPath();
-    if (!serverConfigPath) {
-      return res.status(400).json({ error: "Server config path not set" });
+    if (!serverConfigPath || !serverName) {
+      return res.status(400).json({
+        error: "Server config path not set",
+        code: ErrorCode.MODS_CONFIG_PATH_NOT_SET,
+      });
     }
     const sanitizedServerName = path.basename(serverName);
     if (
@@ -4162,11 +4476,17 @@ router.post("/sync-mod-ids", async (req, res) => {
       sanitizedServerName !== serverName ||
       serverName.includes("..")
     ) {
-      return res.status(400).json({ error: "Invalid server name" });
+      return res.status(400).json({
+        error: "Invalid server name",
+        code: ErrorCode.MODS_INVALID_SERVER_NAME,
+      });
     }
     const iniPath = path.join(serverConfigPath, `${sanitizedServerName}.ini`);
     if (!fs.existsSync(iniPath)) {
-      return res.status(400).json({ error: "Server config file not found" });
+      return res.status(400).json({
+        error: "Server config file not found",
+        code: ErrorCode.MODS_CONFIG_FILE_NOT_FOUND,
+      });
     }
 
     // First pass: read INI to get workshop IDs list (no lock needed for read-only)
@@ -4275,7 +4595,7 @@ router.post("/sync-mod-ids", async (req, res) => {
         content += `\nMods=${newModList}`;
       }
 
-      fs.writeFileSync(iniPath, content, "utf-8");
+      writeFileAtomic(iniPath, content, "utf-8");
       return { syncedMods, missingMods, totalModIds: finalModIds.length };
     });
 
@@ -4311,8 +4631,11 @@ router.get("/validate-config", async (req, res) => {
     const serverPath = await getServerPath();
     const serverName = await getServerName();
 
-    if (!serverConfigPath) {
-      return res.status(400).json({ error: "Server config path not set" });
+    if (!serverConfigPath || !serverName) {
+      return res.status(400).json({
+        error: "Server config path not set",
+        code: ErrorCode.MODS_CONFIG_PATH_NOT_SET,
+      });
     }
 
     // Sanitize serverName
@@ -4322,12 +4645,18 @@ router.get("/validate-config", async (req, res) => {
       sanitizedServerName !== serverName ||
       serverName.includes("..")
     ) {
-      return res.status(400).json({ error: "Invalid server name" });
+      return res.status(400).json({
+        error: "Invalid server name",
+        code: ErrorCode.MODS_INVALID_SERVER_NAME,
+      });
     }
     const iniPath = path.join(serverConfigPath, `${sanitizedServerName}.ini`);
 
     if (!fs.existsSync(iniPath)) {
-      return res.status(400).json({ error: "Server config file not found" });
+      return res.status(400).json({
+        error: "Server config file not found",
+        code: ErrorCode.MODS_CONFIG_FILE_NOT_FOUND,
+      });
     }
 
     const content = readTextFile(iniPath);
@@ -4434,13 +4763,17 @@ router.post("/presets", async (req, res) => {
   try {
     let { name, description } = req.body;
     if (!name || typeof name !== "string") {
-      return res.status(400).json({ error: "Preset name is required" });
+      return res.status(400).json({
+        error: "Preset name is required",
+        code: ErrorCode.MODS_PRESET_NAME_REQUIRED,
+      });
     }
     name = name.trim();
     if (!name || name.length > 100) {
-      return res
-        .status(400)
-        .json({ error: "Preset name must be 1-100 characters" });
+      return res.status(400).json({
+        error: "Preset name must be 1-100 characters",
+        code: ErrorCode.MODS_PRESET_NAME_LENGTH_INVALID,
+      });
     }
     if (description && typeof description === "string") {
       description = description.trim().slice(0, 500);
@@ -4454,11 +4787,17 @@ router.post("/presets", async (req, res) => {
     const iniPath = getSanitizedIniPath(serverConfigPath, serverName);
 
     if (!iniPath) {
-      return res.status(400).json({ error: "Invalid server name" });
+      return res.status(400).json({
+        error: "Invalid server name",
+        code: ErrorCode.MODS_INVALID_SERVER_NAME,
+      });
     }
 
     if (!fs.existsSync(iniPath)) {
-      return res.status(400).json({ error: "Server INI not found" });
+      return res.status(400).json({
+        error: "Server INI not found",
+        code: ErrorCode.MODS_SERVER_INI_NOT_FOUND,
+      });
     }
 
     const content = readTextFile(iniPath);
@@ -4492,16 +4831,25 @@ router.put("/presets/:id", async (req, res) => {
   try {
     const { id } = req.params;
     if (!id) {
-      return res.status(400).json({ error: "Invalid preset ID" });
+      return res.status(400).json({
+        error: "Invalid preset ID",
+        code: ErrorCode.MODS_INVALID_PRESET_ID,
+      });
     }
 
     const updates = {};
     if (req.body.name !== undefined) {
       if (typeof req.body.name !== "string")
-        return res.status(400).json({ error: "name must be a string" });
+        return res.status(400).json({
+          error: "name must be a string",
+          code: ErrorCode.MODS_PRESET_UPDATE_NAME_STRING_REQUIRED,
+        });
       const trimmed = req.body.name.trim();
       if (!trimmed || trimmed.length > 100)
-        return res.status(400).json({ error: "name must be 1-100 characters" });
+        return res.status(400).json({
+          error: "name must be 1-100 characters",
+          code: ErrorCode.MODS_PRESET_UPDATE_NAME_LENGTH_INVALID,
+        });
       updates.name = trimmed;
     }
     if (req.body.description !== undefined) {
@@ -4512,18 +4860,27 @@ router.put("/presets/:id", async (req, res) => {
     }
     if (req.body.workshopIds !== undefined) {
       if (!Array.isArray(req.body.workshopIds))
-        return res.status(400).json({ error: "workshopIds must be an array" });
+        return res.status(400).json({
+          error: "workshopIds must be an array",
+          code: ErrorCode.MODS_PRESET_UPDATE_WORKSHOP_IDS_ARRAY,
+        });
       updates.workshop_ids = req.body.workshopIds;
     }
     if (req.body.modIds !== undefined) {
       if (!Array.isArray(req.body.modIds))
-        return res.status(400).json({ error: "modIds must be an array" });
+        return res.status(400).json({
+          error: "modIds must be an array",
+          code: ErrorCode.MODS_MOD_IDS_ARRAY_REQUIRED,
+        });
       updates.mods = req.body.modIds;
     }
 
     const preset = await updateModPreset(id, updates);
     if (!preset) {
-      return res.status(404).json({ error: "Preset not found" });
+      return res.status(404).json({
+        error: "Preset not found",
+        code: ErrorCode.MODS_PRESET_NOT_FOUND,
+      });
     }
 
     log.info(`Updated mod preset: ${updates.name || id}`);
@@ -4539,13 +4896,19 @@ router.delete("/presets/:id", async (req, res) => {
   try {
     const { id } = req.params;
     if (!id) {
-      return res.status(400).json({ error: "Invalid preset ID" });
+      return res.status(400).json({
+        error: "Invalid preset ID",
+        code: ErrorCode.MODS_INVALID_PRESET_ID,
+      });
     }
 
     const deleted = await deleteModPreset(id);
 
     if (!deleted) {
-      return res.status(404).json({ error: "Preset not found" });
+      return res.status(404).json({
+        error: "Preset not found",
+        code: ErrorCode.MODS_PRESET_NOT_FOUND,
+      });
     }
 
     log.info(`Deleted mod preset: ${id}`);
@@ -4564,7 +4927,10 @@ router.post("/presets/:id/apply", async (req, res) => {
     const preset = presets.find((p) => String(p.id) === String(id));
 
     if (!preset) {
-      return res.status(404).json({ error: "Preset not found" });
+      return res.status(404).json({
+        error: "Preset not found",
+        code: ErrorCode.MODS_PRESET_NOT_FOUND,
+      });
     }
 
     const serverConfigPath = await getServerConfigPath();
@@ -4572,11 +4938,17 @@ router.post("/presets/:id/apply", async (req, res) => {
     const iniPath = getSanitizedIniPath(serverConfigPath, serverName);
 
     if (!iniPath) {
-      return res.status(400).json({ error: "Invalid server name" });
+      return res.status(400).json({
+        error: "Invalid server name",
+        code: ErrorCode.MODS_INVALID_SERVER_NAME,
+      });
     }
 
     if (!fs.existsSync(iniPath)) {
-      return res.status(400).json({ error: "Server INI not found" });
+      return res.status(400).json({
+        error: "Server INI not found",
+        code: ErrorCode.MODS_SERVER_INI_NOT_FOUND,
+      });
     }
 
     await withIniLock(iniPath, () => {
@@ -4596,7 +4968,7 @@ router.post("/presets/:id/apply", async (req, res) => {
         content += `\n${modsLine}`;
       }
 
-      fs.writeFileSync(iniPath, content, "utf-8");
+      writeFileAtomic(iniPath, content, "utf-8");
     });
 
     log.info(
@@ -4619,16 +4991,23 @@ router.post("/save-order", async (req, res) => {
     const { modIds } = req.body;
 
     if (!Array.isArray(modIds)) {
-      return res.status(400).json({ error: "modIds must be an array" });
+      return res.status(400).json({
+          error: "modIds must be an array",
+          code: ErrorCode.MODS_MOD_IDS_ARRAY_REQUIRED,
+        });
     }
     if (modIds.length > 2000) {
-      return res.status(400).json({ error: "Too many mod IDs (max 2000)" });
+      return res.status(400).json({
+        error: "Too many mod IDs (max 2000)",
+        code: ErrorCode.MODS_SAVE_ORDER_TOO_MANY,
+      });
     }
     for (const id of modIds) {
       if (typeof id !== "string" || id.length > 200) {
-        return res
-          .status(400)
-          .json({ error: "Each mod ID must be a string (max 200 chars)" });
+        return res.status(400).json({
+          error: "Each mod ID must be a string (max 200 chars)",
+          code: ErrorCode.MODS_SAVE_ORDER_MODID_STRING_REQUIRED,
+        });
       }
     }
 
@@ -4637,11 +5016,17 @@ router.post("/save-order", async (req, res) => {
     const iniPath = getSanitizedIniPath(serverConfigPath, serverName);
 
     if (!iniPath) {
-      return res.status(400).json({ error: "Invalid server name" });
+      return res.status(400).json({
+        error: "Invalid server name",
+        code: ErrorCode.MODS_INVALID_SERVER_NAME,
+      });
     }
 
     if (!fs.existsSync(iniPath)) {
-      return res.status(400).json({ error: "Server INI not found" });
+      return res.status(400).json({
+        error: "Server INI not found",
+        code: ErrorCode.MODS_SERVER_INI_NOT_FOUND,
+      });
     }
 
     await withIniLock(iniPath, () => {
@@ -4654,7 +5039,7 @@ router.post("/save-order", async (req, res) => {
         content += `\n${modsLine}`;
       }
 
-      fs.writeFileSync(iniPath, content, "utf-8");
+      writeFileAtomic(iniPath, content, "utf-8");
     });
 
     log.info(`Saved mod load order: ${modIds.length} mods`);
@@ -4682,12 +5067,18 @@ router.post("/discover-mod-ids", async (req, res) => {
     }
 
     if (!wsId) {
-      return res.status(400).json({ error: "Workshop ID or URL is required" });
+      return res.status(400).json({
+        error: "Workshop ID or URL is required",
+        code: ErrorCode.MODS_DISCOVER_WORKSHOP_ID_OR_URL_REQUIRED,
+      });
     }
 
     // Validate it's a number
     if (!/^\d{1,15}$/.test(String(wsId))) {
-      return res.status(400).json({ error: "Invalid Workshop ID" });
+      return res.status(400).json({
+        error: "Invalid Workshop ID",
+        code: ErrorCode.MODS_INVALID_WORKSHOP_ID_CAP,
+      });
     }
 
     const serverPath = await getServerPath();
@@ -4819,26 +5210,36 @@ router.post("/add-mod-advanced", async (req, res) => {
     // includeAllModIds: boolean - if true, add all discovered mod IDs
 
     if (!workshopId) {
-      return res.status(400).json({ error: "Workshop ID is required" });
+      return res.status(400).json({
+        error: "Workshop ID is required",
+        code: ErrorCode.MODS_WORKSHOP_ID_REQUIRED,
+      });
     }
 
     if (!selectedModIds && !includeAllModIds) {
       return res.status(400).json({
         error: "Either selectedModIds or includeAllModIds is required",
+        code: ErrorCode.MODS_ADD_ADVANCED_SELECTION_REQUIRED,
       });
     }
 
     // Validate workshopId is numeric
     if (!/^\d{1,15}$/.test(String(workshopId))) {
-      return res.status(400).json({ error: "Invalid Workshop ID" });
+      return res.status(400).json({
+        error: "Invalid Workshop ID",
+        code: ErrorCode.MODS_INVALID_WORKSHOP_ID_CAP,
+      });
     }
 
     const serverConfigPath = await getServerConfigPath();
     const serverName = await getServerName();
     const serverPath = await getServerPath();
 
-    if (!serverConfigPath) {
-      return res.status(400).json({ error: "Server config path not set" });
+    if (!serverConfigPath || !serverName) {
+      return res.status(400).json({
+        error: "Server config path not set",
+        code: ErrorCode.MODS_CONFIG_PATH_NOT_SET,
+      });
     }
 
     const sanitizedServerName = path.basename(serverName);
@@ -4847,12 +5248,18 @@ router.post("/add-mod-advanced", async (req, res) => {
       sanitizedServerName !== serverName ||
       serverName.includes("..")
     ) {
-      return res.status(400).json({ error: "Invalid server name" });
+      return res.status(400).json({
+        error: "Invalid server name",
+        code: ErrorCode.MODS_INVALID_SERVER_NAME,
+      });
     }
 
     const iniPath = path.join(serverConfigPath, `${sanitizedServerName}.ini`);
     if (!fs.existsSync(iniPath)) {
-      return res.status(400).json({ error: "Server config file not found" });
+      return res.status(400).json({
+        error: "Server config file not found",
+        code: ErrorCode.MODS_CONFIG_FILE_NOT_FOUND,
+      });
     }
 
     // Validate mod ID format BEFORE taking the lock (prevent INI injection)
@@ -4864,8 +5271,11 @@ router.post("/add-mod-advanced", async (req, res) => {
         /[\r\n;=]/.test(modId) ||
         modId.length > 200
       ) {
+        const truncatedModId = String(modId).substring(0, 50);
         return res.status(400).json({
-          error: `Invalid mod ID format: ${String(modId).substring(0, 50)}`,
+          error: `Invalid mod ID format: ${truncatedModId}`,
+          code: ErrorCode.MODS_INVALID_MOD_ID_FORMAT_TEMPLATE,
+          params: sanitizeErrorParams({ modId: truncatedModId }),
         });
       }
     }
@@ -4952,7 +5362,7 @@ router.post("/add-mod-advanced", async (req, res) => {
         }
       }
 
-      fs.writeFileSync(iniPath, content, "utf-8");
+      writeFileAtomic(iniPath, content, "utf-8");
       return {
         addedModIds,
         totalModIdsInConfig: currentModIds.length,
@@ -6378,7 +6788,10 @@ router.get("/conflicts", async (req, res) => {
   if (!lockToken) {
     return res
       .status(429)
-      .json({ error: "A conflict scan is already running. Please wait." });
+      .json({
+        error: "A conflict scan is already running. Please wait.",
+        code: ErrorCode.MODS_CONFLICT_SCAN_ALREADY_RUNNING,
+      });
   }
   const scanStart = Date.now();
   try {
@@ -6386,6 +6799,7 @@ router.get("/conflicts", async (req, res) => {
     if (!serverPath)
       return res.status(400).json({
         error: "Server install path not set — configure it in Settings",
+        code: ErrorCode.MODS_SERVER_INSTALL_PATH_NOT_SET,
       });
     const { workshopIds, modIdsFromIni } = await readIniModLists();
     if (workshopIds.length === 0) {
@@ -6495,7 +6909,10 @@ router.get("/conflicts/stream", async (req, res) => {
   if (!lockToken) {
     return res
       .status(429)
-      .json({ error: "A conflict scan is already running. Please wait." });
+      .json({
+        error: "A conflict scan is already running. Please wait.",
+        code: ErrorCode.MODS_CONFLICT_SCAN_ALREADY_RUNNING,
+      });
   }
   const scanStart = Date.now();
 
@@ -6540,6 +6957,7 @@ router.get("/conflicts/stream", async (req, res) => {
     if (!serverPath) {
       send("error", {
         error: "Server install path not set — configure it in Settings",
+        code: ErrorCode.MODS_SERVER_INSTALL_PATH_NOT_SET,
       });
       res.end();
       return;
@@ -6756,6 +7174,7 @@ router.get("/conflicts/diff", async (req, res) => {
       return res.status(400).json({
         error:
           "Could not load file comparison — missing file or mod information",
+        code: ErrorCode.MODS_CONFLICTS_DIFF_PARAMS_REQUIRED,
       });
     }
 
@@ -6768,7 +7187,10 @@ router.get("/conflicts/diff", async (req, res) => {
     ) {
       return res
         .status(400)
-        .json({ error: "Could not identify one of the mods — try rescanning" });
+        .json({
+          error: "Could not identify one of the mods — try rescanning",
+          code: ErrorCode.MODS_CONFLICTS_DIFF_MOD_ID_INVALID,
+        });
     }
 
     // Validate the file path doesn't try path traversal
@@ -6780,6 +7202,7 @@ router.get("/conflicts/diff", async (req, res) => {
     ) {
       return res.status(400).json({
         error: "The file path looks invalid — try rescanning conflicts",
+        code: ErrorCode.MODS_CONFLICTS_DIFF_PATH_INVALID,
       });
     }
 
@@ -6787,6 +7210,7 @@ router.get("/conflicts/diff", async (req, res) => {
     if (!serverPath)
       return res.status(400).json({
         error: "Server install path not set — configure it in Settings",
+        code: ErrorCode.MODS_SERVER_INSTALL_PATH_NOT_SET,
       });
     const { workshopIds } = await readIniModLists();
 
@@ -6865,6 +7289,7 @@ router.get("/conflicts/diff", async (req, res) => {
       return res.status(404).json({
         error:
           "Could not find both mod files on disk — they may have been removed or updated since the last scan",
+        code: ErrorCode.MODS_CONFLICTS_DIFF_FILES_NOT_FOUND,
       });
     }
 
@@ -7173,22 +7598,34 @@ router.post("/enable-disk-mod", async (req, res) => {
     const { workshopId } = req.body || {};
     const wsId = String(workshopId || "");
     if (!/^\d{1,15}$/.test(wsId)) {
-      return res.status(400).json({ error: "Invalid workshop ID" });
+      return res.status(400).json({
+        error: "Invalid workshop ID",
+        code: ErrorCode.MODS_INVALID_WORKSHOP_ID_LOWER,
+      });
     }
 
     const serverConfigPath = await getServerConfigPath();
     const serverName = await getServerName();
     const serverPath = await getServerPath();
     if (!serverConfigPath || !serverName) {
-      return res.status(400).json({ error: "Server config path not set" });
+      return res.status(400).json({
+        error: "Server config path not set",
+        code: ErrorCode.MODS_CONFIG_PATH_NOT_SET,
+      });
     }
     const sanitized = path.basename(serverName);
     if (sanitized !== serverName || serverName.includes("..")) {
-      return res.status(400).json({ error: "Invalid server name" });
+      return res.status(400).json({
+        error: "Invalid server name",
+        code: ErrorCode.MODS_INVALID_SERVER_NAME,
+      });
     }
     const iniPath = path.join(serverConfigPath, `${sanitized}.ini`);
     if (!fs.existsSync(iniPath)) {
-      return res.status(404).json({ error: "Server INI not found" });
+      return res.status(404).json({
+        error: "Server INI not found",
+        code: ErrorCode.MODS_SERVER_INI_NOT_FOUND,
+      });
     }
 
     // Resolve mod folder IDs (Mods= entries) from the workshop folder so the
@@ -7228,7 +7665,7 @@ router.post("/enable-disk-mod", async (req, res) => {
         ? content.replace(/^Mods=.*/m, modsLine)
         : content.trimEnd() + `\n${modsLine}\n`;
 
-      fs.writeFileSync(iniPath, content, "utf-8");
+      writeFileAtomic(iniPath, content, "utf-8");
     });
 
     // Lift any prior ignore-list entry so auto-track picks it up.
@@ -7319,7 +7756,7 @@ async function deleteModFromDiskAndIni(wsId) {
       if (mapList.length === 0) mapList = ["Muldraugh, KY"];
       content = content.replace(/^Map=.*/m, `Map=${sanitizeIniList(mapList)}`);
     }
-    fs.writeFileSync(iniPath, content, "utf-8");
+    writeFileAtomic(iniPath, content, "utf-8");
   });
 
   const possiblePaths = getWorkshopPaths(wsId, serverPath || "");
@@ -7348,7 +7785,10 @@ router.post("/delete-disk-mod", async (req, res) => {
     const { workshopId } = req.body || {};
     const wsId = String(workshopId || "");
     if (!/^\d{1,15}$/.test(wsId)) {
-      return res.status(400).json({ error: "Invalid workshop ID" });
+      return res.status(400).json({
+        error: "Invalid workshop ID",
+        code: ErrorCode.MODS_INVALID_WORKSHOP_ID_LOWER,
+      });
     }
 
     const { removedPath, modIdsToStrip, iniEditApplied } =
@@ -7357,6 +7797,7 @@ router.post("/delete-disk-mod", async (req, res) => {
     if (!iniEditApplied) {
       return res.status(400).json({
         error: "Server config file was not found or not accessible",
+        code: ErrorCode.MODS_INI_NOT_ACCESSIBLE,
         workshopId: wsId,
         deletedFromDisk: false,
       });
@@ -7419,7 +7860,10 @@ router.post("/purge", async (req, res) => {
   try {
     const wsId = String(req.body?.workshopId || "").trim();
     if (!/^\d{1,15}$/.test(wsId)) {
-      return res.status(400).json({ error: "Invalid workshop ID" });
+      return res.status(400).json({
+        error: "Invalid workshop ID",
+        code: ErrorCode.MODS_INVALID_WORKSHOP_ID_LOWER,
+      });
     }
 
     // Read the name before untracking, or the ignore list loses it.
@@ -7455,6 +7899,7 @@ router.post("/purge", async (req, res) => {
       return res.status(500).json({
         error:
           "Server config file was not found or not accessible — the mod was not removed from the server.",
+        code: ErrorCode.MODS_PURGE_INI_NOT_ACCESSIBLE,
         collection,
         deletedFromDisk: !!removedPath,
       });
@@ -7500,13 +7945,19 @@ router.post("/batch-delete-disk-mods", async (req, res) => {
     if (!Array.isArray(workshopIds) || workshopIds.length === 0) {
       return res
         .status(400)
-        .json({ error: "workshopIds must be a non-empty array" });
+        .json({
+          error: "workshopIds must be a non-empty array",
+          code: ErrorCode.MODS_WORKSHOP_IDS_ARRAY_REQUIRED,
+        });
     }
     const cleaned = workshopIds
       .map(String)
       .filter((id) => /^\d{1,15}$/.test(id));
     if (cleaned.length === 0) {
-      return res.status(400).json({ error: "No valid workshop IDs provided" });
+      return res.status(400).json({
+        error: "No valid workshop IDs provided",
+        code: ErrorCode.MODS_NO_VALID_WORKSHOP_IDS,
+      });
     }
 
     const serverConfigPath = await getServerConfigPath();
@@ -7521,6 +7972,7 @@ router.post("/batch-delete-disk-mods", async (req, res) => {
     if (!iniPath || !fs.existsSync(iniPath)) {
       return res.status(400).json({
         error: "Server config file was not found or not accessible",
+        code: ErrorCode.MODS_INI_NOT_ACCESSIBLE,
       });
     }
 
@@ -7557,7 +8009,7 @@ router.post("/batch-delete-disk-mods", async (req, res) => {
           `Mods=${sanitizeModIdList(modsList)}`,
         );
       }
-      fs.writeFileSync(iniPath, content, "utf-8");
+      writeFileAtomic(iniPath, content, "utf-8");
     });
 
     // Delete folders.
@@ -7632,28 +8084,43 @@ router.post("/resolve-orphan-workshop", async (req, res) => {
     if (!Array.isArray(workshopIds) || workshopIds.length === 0) {
       return res
         .status(400)
-        .json({ error: "workshopIds must be a non-empty array" });
+        .json({
+          error: "workshopIds must be a non-empty array",
+          code: ErrorCode.MODS_WORKSHOP_IDS_ARRAY_REQUIRED,
+        });
     }
     const cleaned = workshopIds
       .map(String)
       .filter((id) => /^\d{1,15}$/.test(id));
     if (cleaned.length === 0) {
-      return res.status(400).json({ error: "No valid workshop IDs provided" });
+      return res.status(400).json({
+        error: "No valid workshop IDs provided",
+        code: ErrorCode.MODS_NO_VALID_WORKSHOP_IDS,
+      });
     }
 
     const serverConfigPath = await getServerConfigPath();
     const serverName = await getServerName();
     const serverPath = await getServerPath();
     if (!serverConfigPath || !serverName) {
-      return res.status(400).json({ error: "Server config path not set" });
+      return res.status(400).json({
+        error: "Server config path not set",
+        code: ErrorCode.MODS_CONFIG_PATH_NOT_SET,
+      });
     }
     const sanitized = path.basename(serverName);
     if (sanitized !== serverName || serverName.includes("..")) {
-      return res.status(400).json({ error: "Invalid server name" });
+      return res.status(400).json({
+        error: "Invalid server name",
+        code: ErrorCode.MODS_INVALID_SERVER_NAME,
+      });
     }
     const iniPath = path.join(serverConfigPath, `${sanitized}.ini`);
     if (!fs.existsSync(iniPath)) {
-      return res.status(404).json({ error: "Server INI not found" });
+      return res.status(404).json({
+        error: "Server INI not found",
+        code: ErrorCode.MODS_SERVER_INI_NOT_FOUND,
+      });
     }
 
     const ignoredSet = new Set();
@@ -7736,7 +8203,7 @@ router.post("/resolve-orphan-workshop", async (req, res) => {
           : content.trimEnd() + `\n${newLine}\n`;
       }
 
-      fs.writeFileSync(iniPath, content, "utf-8");
+      writeFileAtomic(iniPath, content, "utf-8");
     });
 
     const counts = {

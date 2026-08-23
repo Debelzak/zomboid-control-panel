@@ -9,8 +9,8 @@ import {
   getActiveServer,
   updateServer,
 } from "../database/init.js";
-import { sanitizeError } from "../utils/sanitize.js";
-import { requireRole } from "../services/auth.js";
+import { sanitizeError, sanitizeErrorParams } from "../utils/sanitize.js";
+import { requirePermission } from "../services/permissions.js";
 import { deleteVehiclesInBoxes } from "../utils/vehiclesDb.js";
 import { confineToRoots } from "../utils/browseRoots.js";
 import {
@@ -19,11 +19,56 @@ import {
   invalidateCandidatePathsCache,
   inspectZomboidPath,
 } from "../utils/zomboidPaths.js";
+import { ErrorCode } from "../utils/errorCodes.js";
 
 // Re-export for tests / other modules that still pull these from chunks.js.
 export { normalizeUserPath, getCandidateZomboidPaths };
 
 const router = express.Router();
+
+// Run `worker` over `items` with at most `limit` in flight at once. Used for
+// directory-tree walks where the item count can run into the hundreds or
+// thousands (e.g. one X-directory per iteration on a large B42 map) —
+// unbounded Promise.all over that many entries can exhaust file handles
+// (EMFILE) and, on a spinning array or network share, queue so many
+// concurrent round trips that it's slower than doing them one at a time.
+// Fully sequential has the opposite problem: on the same slow storage, each
+// round trip's latency is paid one after another with nothing overlapped.
+// A small bounded batch overlaps latency without either extreme.
+//
+// The bound is PER CALL, not global. getDirSize/countFiles/getDirStats
+// below call this recursively — each nesting level gets its own fresh
+// `limit`-wide batch, so the true worst case across a walk N levels deep is
+// limit^N concurrent operations, not limit. For a save shaped like
+// savePath -> map -> {X} -> {Y}.bin (3 levels) at limit=8 that's a
+// theoretical 8^3=512 in-flight file handles, not 8. A shared semaphore
+// threaded through the recursion would cap it at a true global 8, but a
+// naive version of that deadlocks: a directory-level worker holds its slot
+// while awaiting its own children's walk, and children recursing into the
+// same shared pool can end up with every slot held by parents who are
+// themselves just waiting — confirmed this by hand before ruling it out,
+// not worth attempting again without a proper acquire-then-release-before-
+// recursing redesign. Left as a per-level bound: still a large, real
+// improvement over the fully-unbounded Promise.all this replaced (which
+// had no ceiling at all, i.e. an unbounded, not just larger, blast radius),
+// and 512 in a genuine worst case is well below typical OS handle limits
+// for the shapes these saves actually take in practice.
+async function runWithConcurrency(items, limit, worker) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  const runners = Array.from(
+    { length: Math.min(limit, items.length) },
+    async () => {
+      while (true) {
+        const i = nextIndex++;
+        if (i >= items.length) return;
+        results[i] = await worker(items[i], i);
+      }
+    },
+  );
+  await Promise.all(runners);
+  return results;
+}
 
 export async function copyChunkBackup(sourcePath, destinationPath, exclusive = false) {
   try {
@@ -578,11 +623,14 @@ router.get("/suggested-paths", async (req, res) => {
 // to the legacy flat setting. The path is validated with the same rules as
 // the /saves customPath query parameter so users can't smuggle in arbitrary
 // directories via this endpoint.
-router.post("/save-path", async (req, res) => {
+router.post("/save-path", requirePermission("chunks.manage"), async (req, res) => {
   try {
     const { path: rawPath } = req.body || {};
     if (!rawPath || typeof rawPath !== "string") {
-      return res.status(400).json({ error: "Missing path." });
+      return res.status(400).json({
+        error: "Missing path.",
+        code: ErrorCode.CHUNKS_SAVE_PATH_MISSING,
+      });
     }
     let validated;
     try {
@@ -595,9 +643,10 @@ router.post("/save-path", async (req, res) => {
       return res.status(e.statusCode || 400).json(payload);
     }
     if (!validated) {
-      return res
-        .status(400)
-        .json({ error: "Path is empty after normalization." });
+      return res.status(400).json({
+        error: "Path is empty after normalization.",
+        code: ErrorCode.CHUNKS_SAVE_PATH_EMPTY,
+      });
     }
 
     const activeServer = await getActiveServer();
@@ -651,7 +700,10 @@ router.get("/chunks/:saveName", async (req, res) => {
     // Sanitize saveName to prevent path traversal
     const sanitizedSaveName = path.basename(saveName);
     if (!sanitizedSaveName || sanitizedSaveName !== saveName) {
-      return res.status(400).json({ error: "Invalid save name" });
+      return res.status(400).json({
+        error: "Invalid save name",
+        code: ErrorCode.CHUNKS_INVALID_SAVE_NAME,
+      });
     }
 
     let zomboidDataPath;
@@ -662,7 +714,10 @@ router.get("/chunks/:saveName", async (req, res) => {
     }
 
     if (!zomboidDataPath) {
-      return res.status(400).json({ error: "Zomboid data path not set" });
+      return res.status(400).json({
+        error: "Zomboid data path not set",
+        code: ErrorCode.CHUNKS_DATA_PATH_NOT_SET,
+      });
     }
 
     // Resolve the saves path the same way as /saves
@@ -724,7 +779,16 @@ router.get("/chunks/:saveName", async (req, res) => {
 
     if (xDirs.length > 0) {
       // B42 structure: map/{X}/{Y}.bin
-      // Use sequential directory scans to avoid overwhelming the filesystem.
+      // Bounded-concurrency directory scan: XDIR_SCAN_CONCURRENCY dirs in
+      // flight at once. A large B42 map can have hundreds of X-directories;
+      // a fully sequential scan pays each directory's round-trip latency
+      // one after another, which is fine on a local SSD but adds up fast on
+      // the spinning arrays / network shares unRAID setups commonly use.
+      // Unbounded concurrency has its own failure mode on the same
+      // hardware — hundreds of simultaneous readdir/stat calls can exhaust
+      // file handles (EMFILE) or queue so deep on slow storage that it's
+      // slower than sequential. See runWithConcurrency() above.
+      const XDIR_SCAN_CONCURRENCY = 8;
       let totalBinFiles = 0;
       let totalNonBinFiles = 0;
       let sampleNonBinFiles = [];
@@ -732,7 +796,7 @@ router.get("/chunks/:saveName", async (req, res) => {
       let scannedDirs = 0;
       emitProgress(0, xDirs.length, 0, { force: true });
 
-      for (const xDir of xDirs) {
+      await runWithConcurrency(xDirs, XDIR_SCAN_CONCURRENCY, async (xDir) => {
         const x = parseInt(xDir.name, 10);
         const xPath = path.join(mapPath, xDir.name);
 
@@ -746,7 +810,7 @@ router.get("/chunks/:saveName", async (req, res) => {
 
           if (yFiles.length === 0) {
             emptyDirs++;
-            continue;
+            return;
           }
 
           const binFiles = yFiles.filter((f) => f.endsWith(".bin"));
@@ -799,7 +863,7 @@ router.get("/chunks/:saveName", async (req, res) => {
 
         scannedDirs++;
         emitProgress(scannedDirs, xDirs.length, chunks.length);
-      }
+      });
 
       // Diagnostic: log what was found inside the B42 dirs
       log.info(
@@ -816,7 +880,7 @@ router.get("/chunks/:saveName", async (req, res) => {
       for (const file of files) {
         // Common formats: map_X_Y.bin, chunkdata_X_Y.bin, X_Y.bin
         const match = file.match(
-          /(?:map_|chunkdata_|chunk_)?(\d+)_(\d+)(?:_\d+)?\.bin$/i,
+          /^(?:map_|chunkdata_|chunk_)?(\d+)_(\d+)(?:_\d+)?\.bin$/i,
         );
         if (match) {
           const x = parseInt(match[1], 10);
@@ -954,7 +1018,7 @@ router.get("/chunks/:saveName", async (req, res) => {
 
         const chunkEntries = [];
         for (const file of validFiles) {
-          const match = file.match(/(\d+)_(\d+)(?:_\d+)?\.bin$/i);
+          const match = file.match(/^(\d+)_(\d+)(?:_\d+)?\.bin$/i);
           if (match) {
             const rawX = parseInt(match[1], 10);
             const rawY = parseInt(match[2], 10);
@@ -1039,7 +1103,7 @@ router.get("/chunks/:saveName", async (req, res) => {
 });
 
 // Delete selected chunks
-router.post("/delete-chunks", requireRole("admin"), async (req, res) => {
+router.post("/delete-chunks", requirePermission("chunks.manage"), async (req, res) => {
   try {
     const {
       saveName,
@@ -1101,9 +1165,10 @@ router.post("/delete-chunks", requireRole("admin"), async (req, res) => {
     }
 
     if (!saveName || !chunks || !Array.isArray(chunks) || chunks.length === 0) {
-      return res
-        .status(400)
-        .json({ error: "Save name and chunks array required" });
+      return res.status(400).json({
+        error: "Save name and chunks array required",
+        code: ErrorCode.DELETE_CHUNKS_FIELDS_REQUIRED,
+      });
     }
 
     // Cap chunk count explicitly. Express body-parser already rejects >1MB
@@ -1112,39 +1177,52 @@ router.post("/delete-chunks", requireRole("admin"), async (req, res) => {
     if (chunks.length > 100000) {
       return res.status(400).json({
         error: `Too many chunks (${chunks.length.toLocaleString()}). Maximum is 100,000 per request — split into smaller batches.`,
+        code: ErrorCode.DELETE_CHUNKS_TOO_MANY,
+        params: sanitizeErrorParams({ count: chunks.length }),
       });
     }
 
     // Sanitize saveName to prevent path traversal
     const sanitizedSaveName = path.basename(saveName);
     if (!sanitizedSaveName || sanitizedSaveName !== saveName) {
-      return res.status(400).json({ error: "Invalid save name" });
+      return res.status(400).json({
+        error: "Invalid save name",
+        code: ErrorCode.CHUNKS_INVALID_SAVE_NAME,
+      });
     }
 
     // Validate chunk files and coordinates
     for (const chunk of chunks) {
       if (!chunk.file) {
-        return res.status(400).json({ error: "Invalid chunk file name" });
+        return res.status(400).json({
+          error: "Invalid chunk file name",
+          code: ErrorCode.DELETE_CHUNKS_INVALID_FILE_NAME,
+        });
       }
       const normalized = path.normalize(chunk.file);
       if (normalized.includes("..") || path.isAbsolute(normalized)) {
-        return res.status(400).json({ error: "Invalid chunk file path" });
+        return res.status(400).json({
+          error: "Invalid chunk file path",
+          code: ErrorCode.DELETE_CHUNKS_INVALID_FILE_PATH,
+        });
       }
       if (chunk.x !== undefined && chunk.x !== null) {
         const nx = Number(chunk.x);
         if (!Number.isFinite(nx) || !Number.isInteger(nx)) {
-          return res
-            .status(400)
-            .json({ error: "Invalid chunk x coordinate — must be an integer" });
+          return res.status(400).json({
+            error: "Invalid chunk x coordinate — must be an integer",
+            code: ErrorCode.DELETE_CHUNKS_INVALID_X,
+          });
         }
         chunk.x = nx;
       }
       if (chunk.y !== undefined && chunk.y !== null) {
         const ny = Number(chunk.y);
         if (!Number.isFinite(ny) || !Number.isInteger(ny)) {
-          return res
-            .status(400)
-            .json({ error: "Invalid chunk y coordinate — must be an integer" });
+          return res.status(400).json({
+            error: "Invalid chunk y coordinate — must be an integer",
+            code: ErrorCode.DELETE_CHUNKS_INVALID_Y,
+          });
         }
         chunk.y = ny;
       }
@@ -1154,14 +1232,20 @@ router.post("/delete-chunks", requireRole("admin"), async (req, res) => {
       ? resolveCustomOrDefaultDataPath(String(customPath))
       : await getZomboidDataPath();
     if (!zomboidDataPath) {
-      return res.status(400).json({ error: "Zomboid data path not set" });
+      return res.status(400).json({
+        error: "Zomboid data path not set",
+        code: ErrorCode.CHUNKS_DATA_PATH_NOT_SET,
+      });
     }
 
     const savesPath = resolveSavesPath(zomboidDataPath);
     const savePath = path.join(savesPath, sanitizedSaveName);
 
     if (!fs.existsSync(savePath)) {
-      return res.status(404).json({ error: "Save not found" });
+      return res.status(404).json({
+        error: "Save not found",
+        code: ErrorCode.CHUNKS_SAVE_NOT_FOUND,
+      });
     }
 
     // B42 vs B41 detection — filesystem-based, not filename-based.
@@ -1425,7 +1509,7 @@ router.post("/delete-chunks", requireRole("admin"), async (req, res) => {
 });
 
 // Delete chunks by region (x/y coordinate range)
-router.post("/delete-region", requireRole("admin"), async (req, res) => {
+router.post("/delete-region", requirePermission("chunks.manage"), async (req, res) => {
   try {
     const {
       saveName,
@@ -1488,15 +1572,19 @@ router.post("/delete-region", requireRole("admin"), async (req, res) => {
       minY === undefined ||
       maxY === undefined
     ) {
-      return res
-        .status(400)
-        .json({ error: "Save name and region bounds required" });
+      return res.status(400).json({
+        error: "Save name and region bounds required",
+        code: ErrorCode.DELETE_REGION_FIELDS_REQUIRED,
+      });
     }
 
     // Sanitize saveName to prevent path traversal
     const sanitizedSaveName = path.basename(saveName);
     if (!sanitizedSaveName || sanitizedSaveName !== saveName) {
-      return res.status(400).json({ error: "Invalid save name" });
+      return res.status(400).json({
+        error: "Invalid save name",
+        code: ErrorCode.CHUNKS_INVALID_SAVE_NAME,
+      });
     }
 
     // Validate bounds are numbers
@@ -1510,23 +1598,28 @@ router.post("/delete-region", requireRole("admin"), async (req, res) => {
       !Number.isFinite(minY) ||
       !Number.isFinite(maxY)
     ) {
-      return res
-        .status(400)
-        .json({ error: "Region bounds must be finite numbers" });
+      return res.status(400).json({
+        error: "Region bounds must be finite numbers",
+        code: ErrorCode.DELETE_REGION_BOUNDS_NOT_FINITE,
+      });
     }
     // Reject swapped bounds — otherwise a non-invert selection silently
     // matches nothing and the caller sees an unhelpful "0 deleted".
     if (minX > maxX || minY > maxY) {
-      return res
-        .status(400)
-        .json({ error: "Region bounds inverted (minX > maxX or minY > maxY)" });
+      return res.status(400).json({
+        error: "Region bounds inverted (minX > maxX or minY > maxY)",
+        code: ErrorCode.DELETE_REGION_BOUNDS_INVERTED,
+      });
     }
 
     const zomboidDataPath = customPath
       ? resolveCustomOrDefaultDataPath(String(customPath))
       : await getZomboidDataPath();
     if (!zomboidDataPath) {
-      return res.status(400).json({ error: "Zomboid data path not set" });
+      return res.status(400).json({
+        error: "Zomboid data path not set",
+        code: ErrorCode.CHUNKS_DATA_PATH_NOT_SET,
+      });
     }
 
     const savesPath = resolveSavesPath(zomboidDataPath);
@@ -1534,7 +1627,10 @@ router.post("/delete-region", requireRole("admin"), async (req, res) => {
     const mapPath = path.join(savePath, "map");
 
     if (!fs.existsSync(savePath)) {
-      return res.status(404).json({ error: "Save not found" });
+      return res.status(404).json({
+        error: "Save not found",
+        code: ErrorCode.CHUNKS_SAVE_NOT_FOUND,
+      });
     }
 
     const mapExists = fs.existsSync(mapPath);
@@ -1592,7 +1688,7 @@ router.post("/delete-region", requireRole("admin"), async (req, res) => {
 
       for (const file of files) {
         const match = file.match(
-          /(?:map_|chunkdata_|chunk_)?(\d+)_(\d+)(?:_\d+)?\.bin$/i,
+          /^(?:map_|chunkdata_|chunk_)?(\d+)_(\d+)(?:_\d+)?\.bin$/i,
         );
         if (match) {
           const x = parseInt(match[1], 10);
@@ -1651,6 +1747,8 @@ router.post("/delete-region", requireRole("admin"), async (req, res) => {
     if (chunksToDelete.length > 100000) {
       return res.status(400).json({
         error: `Region too large (${chunksToDelete.length.toLocaleString()} chunks). Maximum is 100,000 at a time.`,
+        code: ErrorCode.DELETE_REGION_TOO_LARGE,
+        params: sanitizeErrorParams({ count: chunksToDelete.length }),
       });
     }
 
@@ -1705,6 +1803,7 @@ router.post("/delete-region", requireRole("admin"), async (req, res) => {
 
     // Delete chunks
     let deleted = 0;
+    const errors = [];
     const touchedCells = new Set();
     const regionIsB42 = xDirs.length > 0;
     const regionCellDiv = cellDivisorFor(regionIsB42);
@@ -1722,8 +1821,10 @@ router.post("/delete-region", requireRole("admin"), async (req, res) => {
             `${Math.floor(chunk.x / regionCellDiv)},${Math.floor(chunk.y / regionCellDiv)}`,
           );
         } catch (err) {
-          if (err.code !== "ENOENT")
+          if (err.code !== "ENOENT") {
             log.warn(`Failed to delete chunk ${chunk.file}: ${err.message}`);
+            errors.push(`${chunk.file}: ${sanitizeError(err.message)}`);
+          }
         }
       }),
     );
@@ -1799,6 +1900,7 @@ router.post("/delete-region", requireRole("admin"), async (req, res) => {
       deleted,
       vehiclesDeleted: vehiclesResult.deleted || 0,
       cellFilesRemoved: cellCleanup.removed.length,
+      errors: errors.length > 0 ? errors : undefined,
       region: { minX, maxX, minY, maxY },
       inverted: invert,
     });
@@ -1821,7 +1923,10 @@ router.get("/stats/:saveName", async (req, res) => {
     // Sanitize saveName to prevent path traversal
     const sanitizedSaveName = path.basename(saveName);
     if (!sanitizedSaveName || sanitizedSaveName !== saveName) {
-      return res.status(400).json({ error: "Invalid save name" });
+      return res.status(400).json({
+        error: "Invalid save name",
+        code: ErrorCode.CHUNKS_INVALID_SAVE_NAME,
+      });
     }
 
     let zomboidDataPath;
@@ -1834,7 +1939,10 @@ router.get("/stats/:saveName", async (req, res) => {
     }
 
     if (!zomboidDataPath) {
-      return res.status(400).json({ error: "Zomboid data path not set" });
+      return res.status(400).json({
+        error: "Zomboid data path not set",
+        code: ErrorCode.CHUNKS_DATA_PATH_NOT_SET,
+      });
     }
 
     // Resolve the saves path the same way as /saves
@@ -1843,14 +1951,11 @@ router.get("/stats/:saveName", async (req, res) => {
     const savePath = path.join(savesPath, sanitizedSaveName);
 
     if (!fs.existsSync(savePath)) {
-      return res.status(404).json({ error: "Save not found" });
+      return res.status(404).json({
+        error: "Save not found",
+        code: ErrorCode.CHUNKS_SAVE_NOT_FOUND,
+      });
     }
-
-    const stats = {
-      saveName,
-      totalSize: await getDirSize(savePath), // Now awaited
-      folders: {},
-    };
 
     const folders = [
       "map",
@@ -1862,20 +1967,66 @@ router.get("/stats/:saveName", async (req, res) => {
       "radio",
     ];
 
+    // One combined walk per known folder (count + size together) instead of
+    // countFiles() and getDirSize() separately — that previously walked
+    // each folder's whole subtree twice.
+    const folderStatsByName = {};
     for (const folder of folders) {
       const folderPath = path.join(savePath, folder);
       try {
         if (fs.existsSync(folderPath)) {
-          const fileCount = await countFiles(folderPath);
-          const size = await getDirSize(folderPath);
-          stats.folders[folder] = {
-            fileCount,
-            size,
-            sizeFormatted: formatBytes(size),
-          };
+          const { count, size } = await getDirStats(folderPath);
+          folderStatsByName[folder] = { count, size };
         }
       } catch (e) {
         log.debug(`Failed to stat folder ${folder}: ${e.message}`);
+      }
+    }
+
+    // Total save size: sum of everything directly under savePath. Reuses
+    // the per-folder walk above for entries that are one of the known
+    // folders (previously a THIRD full walk of the same subtree — once as
+    // part of this total, once via countFiles, once via getDirSize) rather
+    // than re-scanning them.
+    let totalSize = 0;
+    try {
+      const topEntries = await fs.promises.readdir(savePath, { withFileTypes: true });
+      const topSizes = await runWithConcurrency(topEntries, DIR_WALK_CONCURRENCY, async (entry) => {
+        if (entry.isDirectory()) {
+          if (Object.prototype.hasOwnProperty.call(folderStatsByName, entry.name)) {
+            return folderStatsByName[entry.name].size;
+          }
+          // A directory we don't already have stats for (not one of the
+          // known folders) — still needs its own walk to be counted.
+          return getDirSize(path.join(savePath, entry.name));
+        }
+        try {
+          const s = await fs.promises.stat(path.join(savePath, entry.name));
+          return s.size;
+        } catch (e) {
+          return 0;
+        }
+      });
+      totalSize = topSizes.reduce((a, b) => a + b, 0);
+    } catch (err) {
+      if (err.code !== "EACCES" && err.code !== "ENOENT")
+        log.debug(`Top-level size scan failed for ${savePath}: ${err.message}`);
+    }
+
+    const stats = {
+      saveName,
+      totalSize,
+      folders: {},
+    };
+
+    for (const folder of folders) {
+      if (folderStatsByName[folder]) {
+        const { count, size } = folderStatsByName[folder];
+        stats.folders[folder] = {
+          fileCount: count,
+          size,
+          sizeFormatted: formatBytes(size),
+        };
       }
     }
 
@@ -1947,25 +2098,31 @@ router.get("/stats/:saveName", async (req, res) => {
 });
 
 // Helper functions
+//
+// getDirSize/countFiles/getDirStats all recurse with bounded concurrency
+// (via runWithConcurrency) rather than firing every entry at once — a
+// directory with hundreds of subdirectories previously opened hundreds of
+// simultaneous readdir/stat handles per recursion level. That's a per-level
+// bound, not a global one — see the note on runWithConcurrency above for
+// why, and the real worst case for a walk this deep.
+const DIR_WALK_CONCURRENCY = 8;
+
 async function getDirSize(dirPath) {
   let totalSize = 0;
   try {
     const files = await fs.promises.readdir(dirPath, { withFileTypes: true });
-
-    const promises = files.map(async (file) => {
+    const sizes = await runWithConcurrency(files, DIR_WALK_CONCURRENCY, async (file) => {
       const filePath = path.join(dirPath, file.name);
       if (file.isDirectory()) {
         return getDirSize(filePath);
-      } else {
-        try {
-          const stats = await fs.promises.stat(filePath);
-          return stats.size;
-        } catch (e) {
-          return 0;
-        }
+      }
+      try {
+        const stats = await fs.promises.stat(filePath);
+        return stats.size;
+      } catch (e) {
+        return 0;
       }
     });
-    const sizes = await Promise.all(promises);
     totalSize = sizes.reduce((a, b) => a + b, 0);
   } catch (err) {
     if (err.code !== "EACCES" && err.code !== "ENOENT")
@@ -1974,22 +2131,17 @@ async function getDirSize(dirPath) {
   return totalSize;
 }
 
-// Count files recursively (handles B42's subdirectory structure)
-// Uses parallel I/O for speed on large saves with many chunk directories.
+// Count files recursively (handles B42's subdirectory structure).
 async function countFiles(dirPath) {
   let count = 0;
   try {
     const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
-    const subdirPromises = [];
-    for (const entry of entries) {
-      if (entry.isDirectory()) {
-        subdirPromises.push(countFiles(path.join(dirPath, entry.name)));
-      } else {
-        count++;
-      }
-    }
-    if (subdirPromises.length > 0) {
-      const subCounts = await Promise.all(subdirPromises);
+    const dirs = entries.filter((e) => e.isDirectory());
+    count += entries.length - dirs.length;
+    if (dirs.length > 0) {
+      const subCounts = await runWithConcurrency(dirs, DIR_WALK_CONCURRENCY, (entry) =>
+        countFiles(path.join(dirPath, entry.name)),
+      );
       count += subCounts.reduce((a, b) => a + b, 0);
     }
   } catch (err) {
@@ -1997,6 +2149,39 @@ async function countFiles(dirPath) {
       log.debug(`countFiles error for ${dirPath}: ${err.message}`);
   }
   return count;
+}
+
+// Combined file-count + total-size in a single recursive pass — for callers
+// (currently only /stats/:saveName) that need both numbers for the SAME
+// directory, where calling countFiles() and getDirSize() separately would
+// walk that directory's whole subtree twice for no reason.
+async function getDirStats(dirPath) {
+  let count = 0;
+  let size = 0;
+  try {
+    const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
+    await runWithConcurrency(entries, DIR_WALK_CONCURRENCY, async (entry) => {
+      const entryPath = path.join(dirPath, entry.name);
+      if (entry.isDirectory()) {
+        const sub = await getDirStats(entryPath);
+        count += sub.count;
+        size += sub.size;
+        return;
+      }
+      count++;
+      try {
+        const stats = await fs.promises.stat(entryPath);
+        size += stats.size;
+      } catch (e) {
+        // Matches getDirSize's silent-0-on-stat-failure — the file still
+        // counts, it just doesn't contribute a known size.
+      }
+    });
+  } catch (err) {
+    if (err.code !== "EACCES" && err.code !== "ENOENT")
+      log.debug(`getDirStats error for ${dirPath}: ${err.message}`);
+  }
+  return { count, size };
 }
 
 function formatBytes(bytes) {
@@ -2025,9 +2210,10 @@ router.get("/browse", async (req, res) => {
     }
 
     if (!zomboidDataPath) {
-      return res
-        .status(400)
-        .json({ error: "No Zomboid data path configured to browse" });
+      return res.status(400).json({
+        error: "No Zomboid data path configured to browse",
+        code: ErrorCode.BROWSE_CHUNKS_DATA_PATH_NOT_SET,
+      });
     }
 
     const allowedRoots = [path.resolve(zomboidDataPath)];
@@ -2035,16 +2221,23 @@ router.get("/browse", async (req, res) => {
     if (!resolved) {
       return res.status(403).json({
         error: "Access denied: path is outside the server's save directory",
+        code: ErrorCode.BROWSE_CHUNKS_ACCESS_DENIED,
       });
     }
 
     if (!fs.existsSync(resolved)) {
-      return res.status(400).json({ error: "Path does not exist" });
+      return res.status(400).json({
+        error: "Path does not exist",
+        code: ErrorCode.BROWSE_CHUNKS_PATH_NOT_FOUND,
+      });
     }
 
     const stat = await fs.promises.stat(resolved);
     if (!stat.isDirectory()) {
-      return res.status(400).json({ error: "Path is not a directory" });
+      return res.status(400).json({
+        error: "Path is not a directory",
+        code: ErrorCode.BROWSE_CHUNKS_PATH_NOT_DIRECTORY,
+      });
     }
 
     const entries = await fs.promises.readdir(resolved, {
