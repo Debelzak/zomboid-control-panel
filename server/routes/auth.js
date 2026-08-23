@@ -16,7 +16,7 @@ import { getDataPaths } from "../utils/paths.js";
 import { setSetting } from "../database/init.js";
 import { verifySetupToken, clearSetupToken } from "../utils/setupToken.js";
 import { getRefreshCookieOptions } from "../utils/refreshCookie.js";
-import { requirePermission } from "../services/permissions.js";
+import { requirePermission, getCapabilitiesForRole } from "../services/permissions.js";
 import { ErrorCode } from "../utils/errorCodes.js";
 
 const log = createLogger("Auth");
@@ -391,8 +391,15 @@ router.get("/me", async (req, res) => {
       });
     }
 
+    // Additive field -- UX ONLY, not an access-control boundary. See
+    // getCapabilitiesForRole()'s doc comment: requirePermission() on each
+    // route remains the only thing that actually enforces anything. A
+    // client-side check MUST treat null (unknown role, lookup failure) as
+    // "don't hide anything", never as "hide everything".
+    const capabilities = await getCapabilitiesForRole(user.role);
+
     res.json({
-      user: { id: user.userId, username: user.username, role: user.role },
+      user: { id: user.userId, username: user.username, role: user.role, capabilities },
     });
   } catch (error) {
     res.status(401).json({

@@ -413,6 +413,26 @@ export function requirePermission(capability) {
   };
 }
 
+/**
+ * A role's effective capabilities, for a client-side UX check (e.g. "should
+ * this tab be visible") -- NOT an access-control decision. requirePermission()
+ * above remains the only thing that actually enforces anything server-side;
+ * this exists so routes exposing the caller's own user object (login,
+ * refresh, /auth/me) can resolve capabilities the identical way
+ * requirePermission() does, instead of each hand-rolling its own lookup.
+ * Returns null (not []) when the role can't be resolved -- a renamed/deleted
+ * role, or a lookup failure -- so callers can tell "no capabilities" apart
+ * from "couldn't find out." Never throws.
+ */
+async function getCapabilitiesForRole(roleName) {
+  try {
+    const role = await getRoleByName(roleName);
+    return role && Array.isArray(role.capabilities) ? role.capabilities : null;
+  } catch {
+    return null;
+  }
+}
+
 // ============================================
 // Role data access
 // ============================================
@@ -431,6 +451,7 @@ export {
   getRoleById,
   getRoleByName,
   getUsersForRole,
+  getCapabilitiesForRole,
   RECOVERY_CAPABILITIES,
 };
 

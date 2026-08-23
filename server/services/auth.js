@@ -22,6 +22,7 @@ import {
   regenerateJwtSecretFile,
 } from "../utils/jwtSecret.js";
 import { readSecret } from "../utils/secrets.js";
+import { getCapabilitiesForRole } from "./permissions.js";
 import {
   getRoleById,
   getRoleByName,
@@ -693,8 +694,10 @@ class AuthService {
       : null;
 
     log.info(`User logged in: ${username}`);
+    // UX-only field -- see getCapabilitiesForRole()'s doc comment.
+    const capabilities = await getCapabilitiesForRole(user.role);
     return {
-      user: { id: user.id, username: user.username, role: user.role },
+      user: { id: user.id, username: user.username, role: user.role, capabilities },
       accessToken,
       refreshToken,
     };
@@ -789,8 +792,10 @@ class AuthService {
 
       const accessToken = this.generateAccessToken(user);
       const newRefreshToken = this.generateRefreshToken(user, newSession.id);
+      // UX-only field -- see getCapabilitiesForRole()'s doc comment.
+      const capabilities = await getCapabilitiesForRole(user.role);
       return {
-        user: { id: user.id, username: user.username, role: user.role },
+        user: { id: user.id, username: user.username, role: user.role, capabilities },
         accessToken,
         refreshToken: newRefreshToken,
       };

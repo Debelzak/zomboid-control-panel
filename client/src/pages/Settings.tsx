@@ -317,7 +317,7 @@ export default function Settings() {
   const [panelApplyResultDismissed, setPanelApplyResultDismissed] =
     useState(false);
   const { toast } = useToast();
-  const { user, authEnabled, logout } = useAuth();
+  const { user, authEnabled, logout, can } = useAuth();
 
   // Change password state
   const [currentPassword, setCurrentPassword] = useState("");
@@ -550,7 +550,18 @@ export default function Settings() {
       tip: t("tabs.about.tip"),
       description: t("tabs.about.description"),
     },
-  ];
+  ].filter((section) => {
+    // UX only -- see AuthContext's `can()` doc comment. Hiding these two
+    // tabs from a role that can't use them is purely cosmetic tidiness;
+    // requirePermission("users.manage"/"roles.manage") on the actual
+    // /api/users and /api/roles routes is what actually protects anything,
+    // and stays untouched. can() fails OPEN (true) when capabilities are
+    // unknown, so this never hides a tab from someone it can't confirm
+    // lacks access -- it only ever hides it when the answer is a known no.
+    if (section.id === "users") return can("users.manage");
+    if (section.id === "roles") return can("roles.manage");
+    return true;
+  });
   const settingsGroups = settingsSections.reduce<
     { name: string; sections: typeof settingsSections }[]
   >((groups, section) => {
