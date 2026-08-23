@@ -648,6 +648,7 @@ export default function Debug() {
   const [refreshingLogs, setRefreshingLogs] = useState(false);
   const [refreshingCrashLogs, setRefreshingCrashLogs] = useState(false);
   const [refreshingHealth, setRefreshingHealth] = useState(false);
+  const [healthError, setHealthError] = useState<string | null>(null);
   const [activityEntries, setActivityEntries] = useState<ActivityEntry[]>([]);
   const [activitySource, setActivitySource] = useState<string>("all");
   const [activitySearch, setActivitySearch] = useState("");
@@ -676,6 +677,7 @@ export default function Debug() {
     null,
   );
   const [refreshingDiagnostics, setRefreshingDiagnostics] = useState(false);
+  const [diagnosticsError, setDiagnosticsError] = useState<string | null>(null);
   const [diagnosticsHideOk, setDiagnosticsHideOk] = useState(false);
   const [fixingDiagnosticsCheckId, setFixingDiagnosticsCheckId] = useState<
     string | null
@@ -796,10 +798,13 @@ export default function Debug() {
       const data = await res.json();
       if (data?.services) {
         setHealthStatus(data);
+        setHealthError(null);
       } else {
-        setHealthStatus(null);
+        setHealthError(t("worldMapTab.unexpectedResponse"));
       }
     } catch (error) {
+      const msg = error instanceof Error ? error.message : t("worldMapTab.networkError");
+      setHealthError(msg);
       reportClientError("Failed to fetch health status.", error);
     } finally {
       setRefreshingHealth(false);
@@ -813,13 +818,20 @@ export default function Debug() {
       const res = await authFetch("/api/debug/diagnostics");
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      if (data?.checks) setDiagnostics(data);
+      if (data?.checks) {
+        setDiagnostics(data);
+        setDiagnosticsError(null);
+      } else {
+        setDiagnosticsError(t("worldMapTab.unexpectedResponse"));
+      }
     } catch (error) {
+      const msg = error instanceof Error ? error.message : t("worldMapTab.networkError");
+      setDiagnosticsError(msg);
       reportClientError("Failed to fetch diagnostics.", error);
     } finally {
       setRefreshingDiagnostics(false);
     }
-  }, [authFetch]);
+  }, [authFetch, t]);
 
   const handleDiagnosticsFix = useCallback(
     async (check: DiagCheck) => {
@@ -2255,6 +2267,39 @@ export default function Debug() {
 
         {/* Diagnostics Tab — Smart health checks with green/amber/red */}
         <TabsContent value="diagnostics" className="space-y-4">
+          {diagnosticsError && (
+            <Card className="border-2 border-destructive/50 bg-destructive/5">
+              <CardContent className="pt-6">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="w-6 h-6 text-destructive shrink-0 mt-0.5" />
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-base font-semibold">
+                      {t("worldMapTab.couldNotReachTitle")}
+                    </h3>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {t("worldMapTab.couldNotReachDesc", { error: diagnosticsError })}
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={fetchDiagnostics}
+                    disabled={refreshingDiagnostics}
+                  >
+                    <RefreshCw
+                      className={cn(
+                        "w-4 h-4 mr-2",
+                        refreshingDiagnostics && "animate-spin",
+                      )}
+                    />
+                    {t("worldMapTab.retry")}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+          {diagnosticsError && !diagnostics ? null : (
+          <>
           {(() => {
             const overall = diagnostics?.overall;
             const summary = diagnostics?.summary;
@@ -2313,7 +2358,7 @@ export default function Debug() {
                         </CardDescription>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center flex-wrap gap-2">
                       {summary && (
                         <div className="flex items-center gap-1.5 text-xs">
                           <Badge
@@ -2585,6 +2630,8 @@ export default function Debug() {
                 </CardContent>
               </Card>
             )}
+          </>
+          )}
         </TabsContent>
 
         {/* World Map Tab — dedicated diagnostics for the live map */}
@@ -5307,6 +5354,39 @@ export default function Debug() {
 
         {/* Health Tab */}
         <TabsContent value="health" className="space-y-4">
+          {healthError && (
+            <Card className="border-2 border-destructive/50 bg-destructive/5">
+              <CardContent className="pt-6">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="w-6 h-6 text-destructive shrink-0 mt-0.5" />
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-base font-semibold">
+                      {t("healthTab.couldNotReachTitle")}
+                    </h3>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {t("worldMapTab.couldNotReachDesc", { error: healthError })}
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={fetchHealthStatus}
+                    disabled={refreshingHealth}
+                  >
+                    <RefreshCw
+                      className={cn(
+                        "w-4 h-4 mr-2",
+                        refreshingHealth && "animate-spin",
+                      )}
+                    />
+                    {t("worldMapTab.retry")}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+          {healthError && !healthStatus ? null : (
+          <>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Overall Status */}
             <Card>
@@ -5593,6 +5673,8 @@ export default function Debug() {
               </p>
             </CardContent>
           </Card>
+          </>
+          )}
         </TabsContent>
 
         {/* System Tab */}

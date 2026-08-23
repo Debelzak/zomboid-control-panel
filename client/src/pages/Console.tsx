@@ -641,13 +641,18 @@ export default function Console() {
         }
       }
 
-      setLiveLog(prev => [...prev, {
-        command: cmd,
-        response: result.response || result.error || 'Broadcast sent',
-        success: result.success,
-        timestamp: new Date().toISOString(),
-        _id: ++liveLogIdRef.current,
-      } as RconResponse & { _id: number }].slice(-100))
+      // Same shape as executeCommand above: add to live log only when socket
+      // updates are unavailable to avoid duplicates -- the server emits its
+      // own 'rcon:response' for every /execute call, broadcasts included.
+      if (!socket?.connected) {
+        setLiveLog(prev => [...prev, {
+          command: cmd,
+          response: result.response || result.error || t('rcon.noResponseFallback'),
+          success: result.success,
+          timestamp: new Date().toISOString(),
+          _id: ++liveLogIdRef.current,
+        } as RconResponse & { _id: number }].slice(-100))
+      }
 
       if (result.success) {
         toast({

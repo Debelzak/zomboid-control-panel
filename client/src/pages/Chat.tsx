@@ -169,15 +169,15 @@ export default function Chat() {
       // explanation) -- so this never sees result.success === false, only
       // the catch below.
       let localType: ChatMessage['type'] = 'server'
-      let localAuthor = 'Server'
+      let localAuthor = t('labels.server')
       if (channel === 'admin') {
         await panelBridgeApi.sendToAdminChat(message)
         localType = 'admin'
-        localAuthor = 'Admin'
+        localAuthor = t('labels.admin')
       } else if (channel === 'general') {
         await panelBridgeApi.sendToGeneralChat(message, 'Admin')
         localType = 'general'
-        localAuthor = 'Admin'
+        localAuthor = t('labels.admin')
       } else {
         await panelBridgeApi.sendToServerChat(message, false)
       }

@@ -87,7 +87,8 @@
     "inputAria": "RCON command input",
     "executeAria": "Execute command",
     "run": "run",
-    "keyboardHint": "// enter · run · ↑↓ history"
+    "keyboardHint": "// enter · run · ↑↓ history",
+    "noResponseFallback": "No response"
   },
   "quickCommands": {
     "players": "Players",
