@@ -26,7 +26,8 @@
       "panel": "Panneau",
       "gameServer": "Serveur de jeu",
       "automation": "Automatisation",
-      "system": "Système"
+      "system": "Système",
+      "accessControl": "Contrôle d'accès"
     },
     "general": {
       "label": "Général",
@@ -77,6 +78,21 @@
       "label": "À propos",
       "tip": "Version, informations d'exécution et paramètres situés ailleurs",
       "description": "Version du panneau et informations d'exécution, ainsi que l'emplacement des autres paramètres."
+    },
+    "users": {
+      "label": "Utilisateurs",
+      "tip": "Comptes du panneau et rôles attribués",
+      "description": "Créez et supprimez des comptes du panneau, et modifiez leur rôle."
+    },
+    "roles": {
+      "label": "Rôles et permissions",
+      "tip": "Matrice des capacités de chaque rôle",
+      "description": "Les capacités accordées par chaque rôle, et les comptes du panneau qui les détiennent."
+    },
+    "sso": {
+      "label": "Connexion",
+      "tip": "Fournisseur d'authentification unique (OIDC)",
+      "description": "Permettez aux comptes du panneau de se connecter via un fournisseur d'identité externe."
     }
   },
   "ariaLabel": "Sections des paramètres",

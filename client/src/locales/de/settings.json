@@ -26,7 +26,8 @@
       "panel": "Panel",
       "gameServer": "Spielserver",
       "automation": "Automatisierung",
-      "system": "System"
+      "system": "System",
+      "accessControl": "Zugriffssteuerung"
     },
     "general": {
       "label": "Allgemein",
@@ -77,6 +78,21 @@
       "label": "Info",
       "tip": "Version, Laufzeitinformationen und Einstellungen auf anderen Seiten",
       "description": "Panel-Version und Laufzeitdetails, sowie wo sich die restlichen Einstellungen befinden."
+    },
+    "users": {
+      "label": "Benutzer",
+      "tip": "Panel-Konten und ihre zugewiesenen Rollen",
+      "description": "Panel-Konten anlegen, entfernen und ihre Rolle ändern."
+    },
+    "roles": {
+      "label": "Rollen und Berechtigungen",
+      "tip": "Berechtigungsmatrix für jede Rolle",
+      "description": "Welche Berechtigungen jede Rolle gewährt und welche Panel-Konten sie besitzen."
+    },
+    "sso": {
+      "label": "Anmeldung",
+      "tip": "Single-Sign-on-Anbieter (OIDC)",
+      "description": "Panel-Konten die Anmeldung über einen externen Identitätsanbieter ermöglichen."
     }
   },
   "ariaLabel": "Einstellungsbereiche",

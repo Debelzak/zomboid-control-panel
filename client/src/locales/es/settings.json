@@ -26,7 +26,8 @@
       "panel": "Panel",
       "gameServer": "Servidor del juego",
       "automation": "Automatización",
-      "system": "Sistema"
+      "system": "Sistema",
+      "accessControl": "Control de acceso"
     },
     "general": {
       "label": "General",
@@ -77,6 +78,21 @@
       "label": "Acerca de",
       "tip": "Versión, información del entorno de ejecución y ajustes que viven en otras páginas",
       "description": "Versión del panel y detalles del entorno de ejecución, además de dónde viven los demás ajustes."
+    },
+    "users": {
+      "label": "Usuarios",
+      "tip": "Cuentas del panel y los roles asignados",
+      "description": "Cree y elimine cuentas del panel, y cambie su rol."
+    },
+    "roles": {
+      "label": "Roles y permisos",
+      "tip": "Matriz de capacidades de cada rol",
+      "description": "Qué capacidades concede cada rol y qué cuentas del panel las tienen."
+    },
+    "sso": {
+      "label": "Inicio de sesión",
+      "tip": "Proveedor de inicio de sesión único (OIDC)",
+      "description": "Permita que las cuentas del panel inicien sesión a través de un proveedor de identidad externo."
     }
   },
   "ariaLabel": "Secciones de ajustes",

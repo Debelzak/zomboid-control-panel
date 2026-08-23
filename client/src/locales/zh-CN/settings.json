@@ -26,7 +26,8 @@
       "panel": "面板",
       "gameServer": "游戏服务器",
       "automation": "自动化",
-      "system": "系统"
+      "system": "系统",
+      "accessControl": "访问控制"
     },
     "general": {
       "label": "常规",
@@ -77,6 +78,21 @@
       "label": "关于",
       "tip": "版本、运行时信息及分布在其他页面的设置",
       "description": "面板版本及运行时详情，以及其余设置的所在位置。"
+    },
+    "users": {
+      "label": "用户",
+      "tip": "面板账户及其分配的角色",
+      "description": "创建、删除面板账户，并更改其角色。"
+    },
+    "roles": {
+      "label": "角色与权限",
+      "tip": "每个角色的权限矩阵",
+      "description": "每个角色授予哪些权限，以及哪些面板账户拥有它们。"
+    },
+    "sso": {
+      "label": "登录",
+      "tip": "单点登录（OIDC）提供商",
+      "description": "允许面板账户通过外部身份提供商登录。"
     }
   },
   "ariaLabel": "设置分区",
