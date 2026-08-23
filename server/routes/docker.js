@@ -121,7 +121,13 @@ router.post("/containers/:id/:action", requirePermission("docker.manage"), async
       }
     }
     const result = await dockerClient.runManagedAction(req.params.id, req.params.action);
-    if (!result.success) return res.status(403).json(result);
+    if (!result.success) {
+      // Same redaction the /status route above already applies to this
+      // client's errors -- runManagedAction now returns the real Docker
+      // error text (was a static "Docker action failed" for every cause),
+      // which can include a filesystem path (e.g. a socket permission error).
+      return res.status(403).json({ ...result, error: sanitizeError(result.error) });
+    }
     return res.json(result);
   } catch (error) {
     return res.status(500).json({ error: sanitizeError(error.message) });

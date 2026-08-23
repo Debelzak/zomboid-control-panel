@@ -181,6 +181,32 @@ describe("POST /api/docker/containers/:id/:action", () => {
     expect(save).not.toHaveBeenCalled();
     expect(runManagedAction).toHaveBeenCalledWith("managed", "restart");
   });
+
+  it("passes through the real Docker error instead of a generic message, with any path redacted", async () => {
+    const response = createResponse();
+    const runManagedAction = vi.fn(async () => ({
+      success: false,
+      error: "connect EACCES /var/run/docker.sock",
+    }));
+    getServer.mockResolvedValue({ id: "server-1", dockerContainerName: "managed" });
+
+    await runRoute("/containers/:id/:action", "post", {
+      user: { role: "admin" },
+      params: { id: "managed", action: "start" },
+      body: { serverId: "server-1" },
+      app: { get: () => ({
+        enabled: true,
+        available: true,
+        inspectManagedContainer: vi.fn(async () => ({ State: { Running: false } })),
+        runManagedAction,
+      }) },
+    }, response);
+
+    expect(response.status).toHaveBeenCalledWith(403);
+    const payload = response.json.mock.calls[0][0];
+    expect(payload.error).toMatch(/EACCES/);
+    expect(payload.error).not.toContain("/var/run/docker.sock");
+  });
 });
 
 describe("GET /api/docker/stats", () => {
