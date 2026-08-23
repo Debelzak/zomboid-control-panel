@@ -174,7 +174,7 @@ function ConnLine({
 /* -------------------------------------------------------------------------- */
 
 export default function Dashboard() {
-  const { t } = useTranslation('dashboard')
+  const { t, i18n } = useTranslation('dashboard')
   /* ---------------------------- state ------------------------------------- */
   const [status, setStatus] = useState<ServerStatus | null>(null)
   const [composedStatus, setComposedStatus] = useState<ComposedServerStatus | null>(null)
@@ -312,7 +312,7 @@ export default function Dashboard() {
       const data = await debugApi.getPerformanceHistory(60)
       if (data.history) {
         setPerformanceHistory(data.history.map((h: Record<string, unknown>) => ({
-          time: new Date(h.timestamp as string).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+          time: new Date(h.timestamp as string).toLocaleTimeString(i18n.language, { hour: '2-digit', minute: '2-digit' }),
           timestamp: h.timestamp as string,
           playerCount: (h.playerCount as number) || 0,
           memoryMB: Math.round(((h.memoryUsed as number) || 0) / (1024 * 1024)),
@@ -486,7 +486,7 @@ export default function Dashboard() {
     socket.emit('subscribe:perf')
     const onSnapshot = (snap: Record<string, unknown>) => {
       const point: PerformancePoint = {
-        time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+        time: new Date().toLocaleTimeString(i18n.language, { hour: '2-digit', minute: '2-digit' }),
         timestamp: new Date().toISOString(),
         playerCount: (snap.playerCount as number) || 0,
         memoryMB: Math.round(((snap.memoryUsed as number) || 0) / (1024 * 1024)),
