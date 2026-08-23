@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.2.0] - 2026-08-22
 
+> **TL;DR:** This is a big update. The panel now has broader multilingual support,
+> translated server settings and contextual help, stronger config, server lifecycle,
+> mod, workshop, backup and authentication workflows, richer support bundles, and
+> a substantial reliability, security and release-tooling pass. Earlier releases
+> below cover Build 42 compatibility, PanelBridge, Docker, map handling, Discord,
+> and the fixes that made the panel safer to operate day to day.
+
 ### Added
 
 - **The support bundle now knows about everything this release added.** The zip you generate from the
