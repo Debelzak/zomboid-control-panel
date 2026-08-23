@@ -471,3 +471,119 @@ describe("vehicles.db pruning", () => {
     expect(remaining[0]).toEqual(expect.objectContaining({ wx: 5, wy: 5 }));
   });
 });
+
+// Every test above passes force:true (postAs's default), which skips the
+// running-server guard entirely -- so none of them ever exercised it. These
+// do: a real serverManager.getServerProcessDetails() call can resolve
+// {running:false, scanFailed:true} when the detection scan itself fails
+// (timeout, PowerShell/exec error -- see serverManager.js's own comments).
+// Before this fix, delete-chunks/delete-region checked only `.running`, so a
+// failed scan was read as "confirmed stopped" and the delete proceeded --
+// exactly the corruption scenario each handler's own comment warns about
+// (mutating save files a still-running server holds open). /wipe and
+// /delete-files already fail closed on this exact flag (SERVER_STATE_UNKNOWN);
+// these two siblings didn't.
+function postAsWithServerManager(routePath, body, serverManager) {
+  return runRoute(routePath, "post", {
+    user: { role: "technician" },
+    app: { get: (key) => (key === "serverManager" ? serverManager : null) },
+    body: { force: false, createBackup: false, deleteVehicles: false, ...body },
+  });
+}
+
+describe("delete-chunks/delete-region: an undetermined server state must refuse, not be read as 'stopped'", () => {
+  it("delete-chunks refuses with SERVER_STATE_UNKNOWN when the running-scan itself failed (scanFailed:true), and never touches the file", async () => {
+    const chunk = path.join(savePath, "map", "0", "0.bin");
+    writeFileDeep(chunk, "a");
+    const serverManager = {
+      getServerProcessDetails: async () => ({ running: false, scanFailed: true }),
+    };
+
+    const res = await postAsWithServerManager(
+      "/delete-chunks",
+      { saveName: SAVE_NAME, chunks: [{ file: "0/0.bin", x: 0, y: 0 }] },
+      serverManager,
+    );
+
+    expect(res.getStatusCode()).toBe(503);
+    expect(res.getBody()).toMatchObject({ code: "SERVER_STATE_UNKNOWN" });
+    expect(fs.existsSync(chunk)).toBe(true);
+  });
+
+  it("delete-region refuses with SERVER_STATE_UNKNOWN when the running-scan itself failed (scanFailed:true), and never touches the file", async () => {
+    const chunk = path.join(savePath, "map", "0", "0.bin");
+    writeFileDeep(chunk, "a");
+    const serverManager = {
+      getServerProcessDetails: async () => ({ running: false, scanFailed: true }),
+    };
+
+    const res = await postAsWithServerManager(
+      "/delete-region",
+      { saveName: SAVE_NAME, minX: 0, maxX: 10, minY: 0, maxY: 10 },
+      serverManager,
+    );
+
+    expect(res.getStatusCode()).toBe(503);
+    expect(res.getBody()).toMatchObject({ code: "SERVER_STATE_UNKNOWN" });
+    expect(fs.existsSync(chunk)).toBe(true);
+  });
+
+  it("delete-chunks refuses with SERVER_STATE_UNKNOWN rather than silently proceeding when the running-check itself throws", async () => {
+    const chunk = path.join(savePath, "map", "0", "0.bin");
+    writeFileDeep(chunk, "a");
+    const serverManager = {
+      getServerProcessDetails: async () => {
+        throw new Error("boom-process-scan");
+      },
+    };
+
+    const res = await postAsWithServerManager(
+      "/delete-chunks",
+      { saveName: SAVE_NAME, chunks: [{ file: "0/0.bin", x: 0, y: 0 }] },
+      serverManager,
+    );
+
+    expect(res.getStatusCode()).toBe(503);
+    expect(res.getBody()).toMatchObject({ code: "SERVER_STATE_UNKNOWN" });
+    expect(fs.existsSync(chunk)).toBe(true);
+  });
+
+  it("delete-chunks still refuses on a confirmed-running server (running:true, scanFailed:false) -- unaffected by this fix", async () => {
+    const chunk = path.join(savePath, "map", "0", "0.bin");
+    writeFileDeep(chunk, "a");
+    const serverManager = {
+      getServerProcessDetails: async () => ({
+        running: true,
+        scanFailed: false,
+        matched: [{ pid: "123", cmd: "java ... -servername TestSave" }],
+      }),
+    };
+
+    const res = await postAsWithServerManager(
+      "/delete-chunks",
+      { saveName: SAVE_NAME, chunks: [{ file: "0/0.bin", x: 0, y: 0 }] },
+      serverManager,
+    );
+
+    expect(res.getStatusCode()).toBe(400);
+    expect(res.getBody()).toMatchObject({ code: "server_running" });
+    expect(fs.existsSync(chunk)).toBe(true);
+  });
+
+  it("delete-chunks proceeds normally when the scan confirms the server is stopped (running:false, scanFailed:false)", async () => {
+    const chunk = path.join(savePath, "map", "0", "0.bin");
+    writeFileDeep(chunk, "a");
+    const serverManager = {
+      getServerProcessDetails: async () => ({ running: false, scanFailed: false }),
+    };
+
+    const res = await postAsWithServerManager(
+      "/delete-chunks",
+      { saveName: SAVE_NAME, chunks: [{ file: "0/0.bin", x: 0, y: 0 }] },
+      serverManager,
+    );
+
+    expect(res.getStatusCode()).toBe(200);
+    expect(fs.existsSync(chunk)).toBe(false);
+  });
+});
