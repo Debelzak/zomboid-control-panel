@@ -996,11 +996,8 @@
           "buildDetect": {
             "ok": {
               "label": "B42 build auto-detect healthy",
-              "message": "Build {{build}} was resolved dynamically from build_list.json."
-            },
-            "info": {
-              "label": "B42 build auto-detect resolved via the browser",
-              "message": "Build {{build}} was resolved by your browser and supplied to the panel -- the panel host itself could not reach the map service directly."
+              "message": "Build {{build}} was resolved dynamically from build_list.json.",
+              "hint": "Resolution depends on an upstream bot-detection heuristic outside the panel's control, which has been observed responding inconsistently to identical requests. Treat this as working right now, not permanently solved -- it can start failing again with no change on the panel's side."
             },
             "warn": {
               "label": "B42 build auto-detect failed",

@@ -4147,16 +4147,14 @@ router.get("/worldmap", requirePermission("diagnostics.manage"), async (req, res
       // discovery itself is dead and will silently pin the panel to an old
       // build the moment PZ ships a new one. Report on discovery itself,
       // separately from whether tiles for whatever build we landed on load.
-      // Three states, not two: getB42ResolutionStatus().source is 'dynamic'
-      // (the panel resolved it from upstream itself), 'client' (the panel
-      // couldn't, but the operator's browser did and supplied it -- working,
-      // but means the panel host itself cannot reach the map service), or
-      // 'fallback' (nobody resolved it; the hardcoded build is in use, and
-      // this is the state that goes stale silently -- see the warn branch).
-      // 'client' collapsing into the same "ok" bucket as 'dynamic' would
-      // hide exactly the fact this check exists to surface, the same way
-      // the old two-state version hid 'fallback' behind a build number that
-      // happens to match today's live build.
+      // Two states: getB42ResolutionStatus().source is 'dynamic' (the panel
+      // resolved it from upstream itself) or 'fallback' (nobody resolved it;
+      // the hardcoded build is in use, and this is the state that goes stale
+      // silently -- see the warn branch). A third 'client' state (the
+      // browser resolving what the panel couldn't) was investigated and
+      // cancelled -- upstream sends no CORS headers on one host and
+      // inconsistent bot-challenge behavior on the other, so it could not be
+      // demonstrated to work. Do not resurrect it without new evidence.
       const resolution = getB42ResolutionStatus();
       if (resolution.source === "dynamic") {
         checks.push(
@@ -4164,22 +4162,23 @@ router.get("/worldmap", requirePermission("diagnostics.manage"), async (req, res
             "worldmap.tiles.buildDetect",
             "B42 build auto-detect healthy",
             `Build ${resolution.build} was resolved dynamically from build_list.json.`,
-            { category: "worldmap", params: { build: resolution.build } },
-          ),
-        );
-      } else if (resolution.source === "client") {
-        checks.push(
-          diagInfo(
-            "worldmap.tiles.buildDetect",
-            "B42 build auto-detect resolved via the browser",
-            `Build ${resolution.build} was resolved by your browser and supplied to the panel -- the panel host itself could not reach the map service directly.`,
-            { category: "worldmap", params: { build: resolution.build } },
+            {
+              category: "worldmap",
+              // Resolution goes through curl now (Node's fetch and https
+              // share one blocked TLS stack) and only succeeds with a
+              // realistic browser user-agent -- a generic or missing one
+              // gets a 403. That's an upstream heuristic this panel does
+              // not control and two independent checks tonight found it
+              // behaving inconsistently across identical requests, so this
+              // is "working right now", not a permanent fix.
+              hint: "Resolution depends on an upstream bot-detection heuristic outside the panel's control, which has been observed responding inconsistently to identical requests. Treat this as working right now, not permanently solved -- it can start failing again with no change on the panel's side.",
+              params: { build: resolution.build },
+            },
           ),
         );
       } else {
-        // 'fallback', or any value not yet in the contract -- treat as the
-        // failure state rather than as healthy. This is the branch that
-        // used to be `resolution.usingFallback` before the third state.
+        // 'fallback', or any value outside the current contract -- treat as
+        // the failure state rather than as healthy.
         checks.push(
           diagWarn(
             "worldmap.tiles.buildDetect",
