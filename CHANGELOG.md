@@ -496,12 +496,6 @@ reliability, then interface and translation.
   the page said "no tasks scheduled". Your tasks were there, still scheduled, still running. Each of
   those side requests now fails on its own without taking the task list down with it.
 
-- **Turning mods on could silently leave some of them switched off.** When writing your mod
-  selection into the server configuration, any mod whose internal ID could not be worked out was
-  quietly left out of the active list while still being subscribed - so the game downloaded it and
-  never loaded it. The panel reported plain success. It now tells you which mods it could not
-  resolve.
-
 - **The Bridge status could say "offline" long after the bridge came back.** The panel stops polling
   the game bridge when it sees a failure, and the thing that restarts the polling was the polling
   itself - so once it stopped, nothing was left to notice a recovery. Restarting the game or
