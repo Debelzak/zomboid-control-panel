@@ -72,7 +72,7 @@
     "titleNoVersion": "Panel-Update verfügbar",
     "titleWithVersionOpenSettings": "Panel-Update verfügbar: v{{version}}. Paneleinstellungen öffnen.",
     "titleNoVersionOpenSettings": "Panel-Update verfügbar. Paneleinstellungen öffnen.",
-    "update": "Aktualisieren"
+    "update": "Update"
   },
   "footer": {
     "signOut": "Abmelden",
