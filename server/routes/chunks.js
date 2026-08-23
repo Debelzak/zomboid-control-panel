@@ -26,6 +26,32 @@ export { normalizeUserPath, getCandidateZomboidPaths };
 
 const router = express.Router();
 
+// Run `worker` over `items` with at most `limit` in flight at once. Used for
+// directory-tree walks where the item count can run into the hundreds or
+// thousands (e.g. one X-directory per iteration on a large B42 map) —
+// unbounded Promise.all over that many entries can exhaust file handles
+// (EMFILE) and, on a spinning array or network share, queue so many
+// concurrent round trips that it's slower than doing them one at a time.
+// Fully sequential has the opposite problem: on the same slow storage, each
+// round trip's latency is paid one after another with nothing overlapped.
+// A small bounded batch overlaps latency without either extreme.
+async function runWithConcurrency(items, limit, worker) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  const runners = Array.from(
+    { length: Math.min(limit, items.length) },
+    async () => {
+      while (true) {
+        const i = nextIndex++;
+        if (i >= items.length) return;
+        results[i] = await worker(items[i], i);
+      }
+    },
+  );
+  await Promise.all(runners);
+  return results;
+}
+
 export async function copyChunkBackup(sourcePath, destinationPath, exclusive = false) {
   try {
     await fs.promises.copyFile(
@@ -735,7 +761,16 @@ router.get("/chunks/:saveName", async (req, res) => {
 
     if (xDirs.length > 0) {
       // B42 structure: map/{X}/{Y}.bin
-      // Use sequential directory scans to avoid overwhelming the filesystem.
+      // Bounded-concurrency directory scan: XDIR_SCAN_CONCURRENCY dirs in
+      // flight at once. A large B42 map can have hundreds of X-directories;
+      // a fully sequential scan pays each directory's round-trip latency
+      // one after another, which is fine on a local SSD but adds up fast on
+      // the spinning arrays / network shares unRAID setups commonly use.
+      // Unbounded concurrency has its own failure mode on the same
+      // hardware — hundreds of simultaneous readdir/stat calls can exhaust
+      // file handles (EMFILE) or queue so deep on slow storage that it's
+      // slower than sequential. See runWithConcurrency() above.
+      const XDIR_SCAN_CONCURRENCY = 8;
       let totalBinFiles = 0;
       let totalNonBinFiles = 0;
       let sampleNonBinFiles = [];
@@ -743,7 +778,7 @@ router.get("/chunks/:saveName", async (req, res) => {
       let scannedDirs = 0;
       emitProgress(0, xDirs.length, 0, { force: true });
 
-      for (const xDir of xDirs) {
+      await runWithConcurrency(xDirs, XDIR_SCAN_CONCURRENCY, async (xDir) => {
         const x = parseInt(xDir.name, 10);
         const xPath = path.join(mapPath, xDir.name);
 
@@ -757,7 +792,7 @@ router.get("/chunks/:saveName", async (req, res) => {
 
           if (yFiles.length === 0) {
             emptyDirs++;
-            continue;
+            return;
           }
 
           const binFiles = yFiles.filter((f) => f.endsWith(".bin"));
@@ -810,7 +845,7 @@ router.get("/chunks/:saveName", async (req, res) => {
 
         scannedDirs++;
         emitProgress(scannedDirs, xDirs.length, chunks.length);
-      }
+      });
 
       // Diagnostic: log what was found inside the B42 dirs
       log.info(
@@ -1904,12 +1939,6 @@ router.get("/stats/:saveName", async (req, res) => {
       });
     }
 
-    const stats = {
-      saveName,
-      totalSize: await getDirSize(savePath), // Now awaited
-      folders: {},
-    };
-
     const folders = [
       "map",
       "chunkdata",
@@ -1920,20 +1949,66 @@ router.get("/stats/:saveName", async (req, res) => {
       "radio",
     ];
 
+    // One combined walk per known folder (count + size together) instead of
+    // countFiles() and getDirSize() separately — that previously walked
+    // each folder's whole subtree twice.
+    const folderStatsByName = {};
     for (const folder of folders) {
       const folderPath = path.join(savePath, folder);
       try {
         if (fs.existsSync(folderPath)) {
-          const fileCount = await countFiles(folderPath);
-          const size = await getDirSize(folderPath);
-          stats.folders[folder] = {
-            fileCount,
-            size,
-            sizeFormatted: formatBytes(size),
-          };
+          const { count, size } = await getDirStats(folderPath);
+          folderStatsByName[folder] = { count, size };
         }
       } catch (e) {
         log.debug(`Failed to stat folder ${folder}: ${e.message}`);
+      }
+    }
+
+    // Total save size: sum of everything directly under savePath. Reuses
+    // the per-folder walk above for entries that are one of the known
+    // folders (previously a THIRD full walk of the same subtree — once as
+    // part of this total, once via countFiles, once via getDirSize) rather
+    // than re-scanning them.
+    let totalSize = 0;
+    try {
+      const topEntries = await fs.promises.readdir(savePath, { withFileTypes: true });
+      const topSizes = await runWithConcurrency(topEntries, DIR_WALK_CONCURRENCY, async (entry) => {
+        if (entry.isDirectory()) {
+          if (Object.prototype.hasOwnProperty.call(folderStatsByName, entry.name)) {
+            return folderStatsByName[entry.name].size;
+          }
+          // A directory we don't already have stats for (not one of the
+          // known folders) — still needs its own walk to be counted.
+          return getDirSize(path.join(savePath, entry.name));
+        }
+        try {
+          const s = await fs.promises.stat(path.join(savePath, entry.name));
+          return s.size;
+        } catch (e) {
+          return 0;
+        }
+      });
+      totalSize = topSizes.reduce((a, b) => a + b, 0);
+    } catch (err) {
+      if (err.code !== "EACCES" && err.code !== "ENOENT")
+        log.debug(`Top-level size scan failed for ${savePath}: ${err.message}`);
+    }
+
+    const stats = {
+      saveName,
+      totalSize,
+      folders: {},
+    };
+
+    for (const folder of folders) {
+      if (folderStatsByName[folder]) {
+        const { count, size } = folderStatsByName[folder];
+        stats.folders[folder] = {
+          fileCount: count,
+          size,
+          sizeFormatted: formatBytes(size),
+        };
       }
     }
 
@@ -2005,25 +2080,30 @@ router.get("/stats/:saveName", async (req, res) => {
 });
 
 // Helper functions
+//
+// getDirSize/countFiles/getDirStats all recurse with bounded concurrency
+// (via runWithConcurrency) rather than firing every entry at once — a
+// directory with hundreds of subdirectories previously opened hundreds of
+// simultaneous readdir/stat handles per recursion level, the same EMFILE /
+// thundering-herd risk called out on the B42 chunk scan above.
+const DIR_WALK_CONCURRENCY = 8;
+
 async function getDirSize(dirPath) {
   let totalSize = 0;
   try {
     const files = await fs.promises.readdir(dirPath, { withFileTypes: true });
-
-    const promises = files.map(async (file) => {
+    const sizes = await runWithConcurrency(files, DIR_WALK_CONCURRENCY, async (file) => {
       const filePath = path.join(dirPath, file.name);
       if (file.isDirectory()) {
         return getDirSize(filePath);
-      } else {
-        try {
-          const stats = await fs.promises.stat(filePath);
-          return stats.size;
-        } catch (e) {
-          return 0;
-        }
+      }
+      try {
+        const stats = await fs.promises.stat(filePath);
+        return stats.size;
+      } catch (e) {
+        return 0;
       }
     });
-    const sizes = await Promise.all(promises);
     totalSize = sizes.reduce((a, b) => a + b, 0);
   } catch (err) {
     if (err.code !== "EACCES" && err.code !== "ENOENT")
@@ -2032,22 +2112,17 @@ async function getDirSize(dirPath) {
   return totalSize;
 }
 
-// Count files recursively (handles B42's subdirectory structure)
-// Uses parallel I/O for speed on large saves with many chunk directories.
+// Count files recursively (handles B42's subdirectory structure).
 async function countFiles(dirPath) {
   let count = 0;
   try {
     const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
-    const subdirPromises = [];
-    for (const entry of entries) {
-      if (entry.isDirectory()) {
-        subdirPromises.push(countFiles(path.join(dirPath, entry.name)));
-      } else {
-        count++;
-      }
-    }
-    if (subdirPromises.length > 0) {
-      const subCounts = await Promise.all(subdirPromises);
+    const dirs = entries.filter((e) => e.isDirectory());
+    count += entries.length - dirs.length;
+    if (dirs.length > 0) {
+      const subCounts = await runWithConcurrency(dirs, DIR_WALK_CONCURRENCY, (entry) =>
+        countFiles(path.join(dirPath, entry.name)),
+      );
       count += subCounts.reduce((a, b) => a + b, 0);
     }
   } catch (err) {
@@ -2055,6 +2130,39 @@ async function countFiles(dirPath) {
       log.debug(`countFiles error for ${dirPath}: ${err.message}`);
   }
   return count;
+}
+
+// Combined file-count + total-size in a single recursive pass — for callers
+// (currently only /stats/:saveName) that need both numbers for the SAME
+// directory, where calling countFiles() and getDirSize() separately would
+// walk that directory's whole subtree twice for no reason.
+async function getDirStats(dirPath) {
+  let count = 0;
+  let size = 0;
+  try {
+    const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
+    await runWithConcurrency(entries, DIR_WALK_CONCURRENCY, async (entry) => {
+      const entryPath = path.join(dirPath, entry.name);
+      if (entry.isDirectory()) {
+        const sub = await getDirStats(entryPath);
+        count += sub.count;
+        size += sub.size;
+        return;
+      }
+      count++;
+      try {
+        const stats = await fs.promises.stat(entryPath);
+        size += stats.size;
+      } catch (e) {
+        // Matches getDirSize's silent-0-on-stat-failure — the file still
+        // counts, it just doesn't contribute a known size.
+      }
+    });
+  } catch (err) {
+    if (err.code !== "EACCES" && err.code !== "ENOENT")
+      log.debug(`getDirStats error for ${dirPath}: ${err.message}`);
+  }
+  return { count, size };
 }
 
 function formatBytes(bytes) {
