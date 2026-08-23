@@ -42,7 +42,8 @@
       "debugLogs": "Debug-Protokolle"
     },
     "notAvailableRemote": "Nicht verfügbar für Remote-Server (nur RCON)",
-    "localBadge": "Lokal"
+    "localBadge": "Lokal",
+    "requiresServer": "Füge zuerst einen Server hinzu — diese Seite braucht einen, um zu funktionieren"
   },
   "mobileMenu": {
     "open": "Menü öffnen",

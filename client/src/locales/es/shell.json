@@ -42,7 +42,8 @@
       "debugLogs": "Registros de depuración"
     },
     "notAvailableRemote": "No disponible para servidores remotos (solo RCON)",
-    "localBadge": "Local"
+    "localBadge": "Local",
+    "requiresServer": "Añade un servidor primero: esta página lo necesita para funcionar"
   },
   "mobileMenu": {
     "open": "Abrir menú",

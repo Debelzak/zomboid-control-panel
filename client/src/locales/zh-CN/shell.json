@@ -42,7 +42,8 @@
       "debugLogs": "调试日志"
     },
     "notAvailableRemote": "远程（仅 RCON）服务器不支持此功能",
-    "localBadge": "本地"
+    "localBadge": "本地",
+    "requiresServer": "请先添加服务器——此页需要服务器才能使用"
   },
   "mobileMenu": {
     "open": "打开菜单",
