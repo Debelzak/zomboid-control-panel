@@ -30,6 +30,7 @@
     "issuerUrlPlaceholder": "https://accounts.exemple.com",
     "issuerUrlHelp": "L'URL de base fournie par votre fournisseur d'identité pour OpenID Connect — le panneau découvre tout le reste à partir de celle-ci.",
     "clientId": "ID client",
+    "clientIdHelp": "L'identifiant public que votre fournisseur d'identité a attribué à ce panneau lorsque vous l'avez enregistré là-bas comme application — associé au secret client ci-dessous, mais pas sensible en lui-même. Copiez-le depuis la page d'enregistrement d'application de votre fournisseur.",
     "clientSecret": "Secret client",
     "clientSecretPlaceholderConfigured": "Laissez inchangé pour conserver le secret actuel",
     "clientSecretPlaceholderEmpty": "Saisissez le secret client",

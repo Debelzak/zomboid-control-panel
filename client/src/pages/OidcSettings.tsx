@@ -8,6 +8,7 @@ import { Card, CardHeader, CardDescription, CardContent } from '@/components/ui/
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { HelpTip } from '@/components/HelpTip'
 import { Switch } from '@/components/ui/switch'
 import {
   Select,
@@ -379,7 +380,10 @@ export default function OidcSettings({ embedded = false }: { embedded?: boolean 
 
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
-                  <Label htmlFor="oidc-client-id">{t('fields.clientId')}</Label>
+                  <div className="flex items-center gap-1.5">
+                    <Label htmlFor="oidc-client-id">{t('fields.clientId')}</Label>
+                    <HelpTip label={t('fields.clientId')}>{t('fields.clientIdHelp')}</HelpTip>
+                  </div>
                   <Input
                     id="oidc-client-id"
                     value={form.clientId}

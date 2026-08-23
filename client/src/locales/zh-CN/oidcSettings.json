@@ -30,6 +30,7 @@
     "issuerUrlPlaceholder": "https://accounts.example.com",
     "issuerUrlHelp": "身份提供方为 OpenID Connect 提供的基础 URL——面板将据此自动发现其余所有配置。",
     "clientId": "客户端 ID",
+    "clientIdHelp": "身份提供方在您将本面板注册为应用时为其分配的公开标识符——与下方的客户端密钥配对使用，但本身并不敏感。请从提供方的应用注册页面复制。",
     "clientSecret": "客户端密钥",
     "clientSecretPlaceholderConfigured": "留空以保留当前密钥",
     "clientSecretPlaceholderEmpty": "输入客户端密钥",

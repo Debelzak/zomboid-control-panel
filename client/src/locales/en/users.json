@@ -41,6 +41,7 @@
     "passwordHint": "Use at least 6 characters.",
     "confirmPasswordLabel": "Confirm password",
     "roleLabel": "Role",
+    "roleTip": "Sets what this account can do from the moment it signs in — the exact list of allowed actions lives in Roles & Permissions, not here. You can change it any time after creating the account, so a close guess is fine now.",
     "rolePlaceholder": "Choose a role…",
     "cancel": "Cancel",
     "create": "Create account",

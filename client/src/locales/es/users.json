@@ -40,6 +40,7 @@
     "passwordLabel": "Contraseña",
     "confirmPasswordLabel": "Confirmar contraseña",
     "roleLabel": "Rol",
+    "roleTip": "Determina lo que esta cuenta puede hacer desde el momento en que inicia sesión — la lista exacta de acciones permitidas está en Roles y permisos, no aquí. Puedes cambiarlo en cualquier momento después de crear la cuenta, así que una estimación aproximada ahora es suficiente.",
     "rolePlaceholder": "Elige un rol…",
     "cancel": "Cancelar",
     "create": "Crear cuenta",

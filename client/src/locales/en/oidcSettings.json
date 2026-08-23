@@ -41,6 +41,7 @@
     "issuerUrlPlaceholder": "https://accounts.example.com",
     "issuerUrlHelp": "The base URL your identity provider gave you for OpenID Connect — the panel discovers everything else from it.",
     "clientId": "Client ID",
+    "clientIdHelp": "The public identifier your identity provider assigned to this panel when you registered it as an application there — paired with the client secret below, but not sensitive on its own. Copy it from your provider's app registration page.",
     "clientSecret": "Client secret",
     "clientSecretPlaceholderConfigured": "Leave unchanged to keep the current secret",
     "clientSecretPlaceholderEmpty": "Enter the client secret",

@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { HelpTip } from '@/components/HelpTip'
 import {
   Dialog,
   DialogContent,
@@ -790,7 +791,12 @@ export default function RolesPermissions({ embedded = false }: { embedded?: bool
           </DialogHeader>
           {deleteTarget && deleteTarget.memberCount > 0 && (
             <div className="space-y-1.5">
-              <Label>{t('deleteRoleDialog.reassignLabel')}</Label>
+              <div className="flex items-center gap-1.5">
+                <Label>{t('deleteRoleDialog.reassignLabel')}</Label>
+                <HelpTip label={t('deleteRoleDialog.reassignLabel')}>
+                  {t('deleteRoleDialog.reassignTip')}
+                </HelpTip>
+              </div>
               <Select value={reassignTo} onValueChange={setReassignTo}>
                 <SelectTrigger className="h-9">
                   <SelectValue placeholder={t('deleteRoleDialog.reassignPlaceholder')} />

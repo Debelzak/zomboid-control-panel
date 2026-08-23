@@ -49,6 +49,7 @@
     "descriptionWithMembers_one": "{{count}} user currently holds this role. Choose a role to move them to first — deleting cannot be undone.",
     "descriptionWithMembers_other": "{{count}} users currently hold this role. Choose a role to move them to first — deleting cannot be undone.",
     "reassignLabel": "Move members to",
+    "reassignTip": "Every member of this role moves to the one you pick here, all at once — there's no way to split them across different roles from this dialog. To send people to different roles individually, cancel and use the \"Assign roles to users\" table below instead.",
     "reassignPlaceholder": "Choose a role…",
     "cancel": "Cancel",
     "confirm": "Delete role",

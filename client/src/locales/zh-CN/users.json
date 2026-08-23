@@ -40,6 +40,7 @@
     "passwordLabel": "密码",
     "confirmPasswordLabel": "确认密码",
     "roleLabel": "角色",
+    "roleTip": "决定该账户从登录那一刻起能做什么——允许操作的确切列表在「角色与权限」中设置，不在此处。创建账户后可随时更改，现在大致选一个即可。",
     "rolePlaceholder": "选择角色…",
     "cancel": "取消",
     "create": "创建账户",

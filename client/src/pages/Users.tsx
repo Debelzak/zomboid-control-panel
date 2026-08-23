@@ -12,6 +12,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { HelpTip } from '@/components/HelpTip'
 import {
   Dialog,
   DialogContent,
@@ -404,7 +405,10 @@ export default function Users({ embedded = false }: { embedded?: boolean }) {
               />
             </div>
             <div className="space-y-1.5">
-              <Label>{t('createDialog.roleLabel')}</Label>
+              <div className="flex items-center gap-1.5">
+                <Label>{t('createDialog.roleLabel')}</Label>
+                <HelpTip label={t('createDialog.roleLabel')}>{t('createDialog.roleTip')}</HelpTip>
+              </div>
               <Select value={roleId} onValueChange={setRoleId}>
                 <SelectTrigger className="h-9">
                   <SelectValue placeholder={t('createDialog.rolePlaceholder')} />

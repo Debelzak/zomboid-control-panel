@@ -49,6 +49,7 @@
     "descriptionWithMembers_one": "{{count}} Benutzer hat aktuell diese Rolle. Wähle zuerst eine Zielrolle — das Löschen kann nicht rückgängig gemacht werden.",
     "descriptionWithMembers_other": "{{count}} Benutzer haben aktuell diese Rolle. Wähle zuerst eine Zielrolle — das Löschen kann nicht rückgängig gemacht werden.",
     "reassignLabel": "Mitglieder verschieben nach",
+    "reassignTip": "Jedes Mitglied dieser Rolle wechselt sofort und vollständig zu der hier ausgewählten Rolle — eine Aufteilung auf verschiedene Rollen ist über diesen Dialog nicht möglich. Um Personen einzeln unterschiedlichen Rollen zuzuweisen, brich ab und nutze stattdessen die Tabelle „Rollen an Benutzer zuweisen“ weiter unten.",
     "reassignPlaceholder": "Rolle wählen…",
     "cancel": "Abbrechen",
     "confirm": "Rolle löschen",

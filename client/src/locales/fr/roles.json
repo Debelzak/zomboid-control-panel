@@ -49,6 +49,7 @@
     "descriptionWithMembers_one": "{{count}} utilisateur détient actuellement ce rôle. Choisissez d'abord un rôle vers lequel le déplacer — la suppression est définitive.",
     "descriptionWithMembers_other": "{{count}} utilisateurs détiennent actuellement ce rôle. Choisissez d'abord un rôle vers lequel les déplacer — la suppression est définitive.",
     "reassignLabel": "Déplacer les membres vers",
+    "reassignTip": "Tous les membres de ce rôle basculent d'un coup vers celui que vous choisissez ici — impossible de les répartir entre différents rôles depuis cette boîte de dialogue. Pour attribuer des rôles différents individuellement, annulez et utilisez plutôt le tableau « Attribuer des rôles aux utilisateurs » ci-dessous.",
     "reassignPlaceholder": "Choisissez un rôle…",
     "cancel": "Annuler",
     "confirm": "Supprimer le rôle",

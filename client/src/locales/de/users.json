@@ -40,6 +40,7 @@
     "passwordLabel": "Passwort",
     "confirmPasswordLabel": "Passwort bestätigen",
     "roleLabel": "Rolle",
+    "roleTip": "Legt fest, was dieses Konto ab der Anmeldung tun darf — die genaue Liste der erlaubten Aktionen findest du unter Rollen & Berechtigungen, nicht hier. Du kannst sie jederzeit nach dem Anlegen des Kontos ändern, eine grobe Einschätzung reicht also jetzt aus.",
     "rolePlaceholder": "Rolle wählen…",
     "cancel": "Abbrechen",
     "create": "Konto erstellen",
