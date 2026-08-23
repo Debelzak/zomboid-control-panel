@@ -898,7 +898,7 @@ export default function Backups() {
               </div>
 
               {/* Backup List */}
-              <ScrollArea className="h-[300px] sm:h-[400px]">
+              <ScrollArea className="h-[300px] sm:h-[400px] [&_[data-radix-scroll-area-viewport]>div]:!block">
                 <div className="space-y-2 pr-4">
                   {backups.map((backup, idx) => {
                     const isSelected = selectedBackups.has(backup.name)
@@ -909,50 +909,52 @@ export default function Backups() {
                       <div
                         key={backup.name}
                         className={cn(
-                          'group/backup flex items-center gap-3 p-3 rounded-lg border transition-colors',
+                          'group/backup flex flex-col gap-3 p-3 rounded-lg border transition-colors sm:flex-row sm:items-center',
                           isSelected
                             ? 'border-primary/40 bg-primary/[0.08]'
                             : 'bg-muted/20 border-border/40 hover:border-primary/30 hover:bg-muted/40'
                         )}
                       >
-                        <Checkbox
-                          checked={isSelected}
-                          onCheckedChange={() => toggleBackupSelection(backup.name)}
-                          disabled={isRestoring}
-                          aria-label={t('mainCard.selectBackupAria', { name: backup.name })}
-                        />
+                        <div className="flex flex-1 min-w-0 items-center gap-3">
+                          <Checkbox
+                            checked={isSelected}
+                            onCheckedChange={() => toggleBackupSelection(backup.name)}
+                            disabled={isRestoring}
+                            aria-label={t('mainCard.selectBackupAria', { name: backup.name })}
+                          />
 
-                        {/* Leading archive tile — latest backup glows primary, others sit muted */}
-                        <div
-                          className={cn(
-                            'grid place-items-center w-9 h-9 rounded-md border shrink-0',
-                            isLatest
-                              ? 'border-primary/40 bg-primary/[0.08] text-primary'
-                              : 'border-border/55 bg-muted/30 text-muted-foreground'
-                          )}
-                          aria-hidden="true"
-                        >
-                          <Archive className="w-4 h-4" />
-                        </div>
-
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <p className="font-medium text-sm text-foreground truncate">{backup.name}</p>
-                            {isLatest && (
-                              <span className="shrink-0 inline-flex h-5 items-center rounded-full bg-primary/15 px-2 text-[10px] font-medium uppercase tracking-wide text-primary">
-                                {t('mainCard.latestBadge')}
-                              </span>
+                          {/* Leading archive tile — latest backup glows primary, others sit muted */}
+                          <div
+                            className={cn(
+                              'grid place-items-center w-9 h-9 rounded-md border shrink-0',
+                              isLatest
+                                ? 'border-primary/40 bg-primary/[0.08] text-primary'
+                                : 'border-border/55 bg-muted/30 text-muted-foreground'
                             )}
+                            aria-hidden="true"
+                          >
+                            <Archive className="w-4 h-4" />
                           </div>
-                          <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
-                            <span className="inline-flex items-center gap-1 tabular-nums">
-                              <HardDrive className="w-3 h-3" />
-                              {formatBytes(backup.size)}
-                            </span>
-                            <span className="inline-flex items-center gap-1">
-                              <Clock className="w-3 h-3" />
-                              {formatDate(backup.created)}
-                            </span>
+
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <p className="font-medium text-sm text-foreground truncate">{backup.name}</p>
+                              {isLatest && (
+                                <span className="shrink-0 inline-flex h-5 items-center rounded-full bg-primary/15 px-2 text-[10px] font-medium uppercase tracking-wide text-primary">
+                                  {t('mainCard.latestBadge')}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
+                              <span className="inline-flex items-center gap-1 tabular-nums">
+                                <HardDrive className="w-3 h-3" />
+                                {formatBytes(backup.size)}
+                              </span>
+                              <span className="inline-flex items-center gap-1">
+                                <Clock className="w-3 h-3" />
+                                {formatDate(backup.created)}
+                              </span>
+                            </div>
                           </div>
                         </div>
 
