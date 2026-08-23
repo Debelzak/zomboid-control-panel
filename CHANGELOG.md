@@ -57,6 +57,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   A test enforces that Chinese has every key English does, with no gaps and no leftovers, so the
   translation cannot quietly rot as the panel grows.
 
+- **Panel settings, Integrations and Operations are reachable before you add a server.** With no
+  server configured, thirteen of the fifteen sections in the menu were switched off - including
+  three that have nothing to do with a game server. You can now open your own panel settings and set
+  up Discord on a fresh install. The sections that genuinely do need a server still say so, and now
+  say it in a tooltip you can actually see rather than one that takes a second to appear and never
+  appears at all on a touchscreen.
+
+- **Roles & Permissions groups its capability list, and the pages that load slowly say so.** The
+  permission matrix opens with twelve groups you can collapse, so a long list is navigable instead
+  of endless; everything starts expanded, so nothing changes unless you want it to. Users, Roles and
+  Settings now show the shape of the page while it loads rather than a bare spinner.
+
 - **A Sign-in (OIDC) settings screen**: single sign-on can now be set up from the panel itself,
   under Access Control > Sign-in. Enter your provider's address, client ID and secret, and press
   Test Connection to check the provider answers before you save. The redirect URI your provider
@@ -204,6 +216,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `client/src/locales/README.md`.
 
 ### Fixed
+- **Server Setup could hide the one thing stopping you finishing.** An admin password is required
+  before a server can start, and the final button refuses without it - but the field sat inside the
+  collapsed Advanced Options section among genuinely optional toggles. You could work through every
+  step and only discover the requirement at the review screen at the end. It now has its own visible
+  card, like the RCON settings, and the step tells you it is missing at the point you can act on it.
+  Both the quick and full setup flows.
+
+- **Browse Public told you to do things you could not do.** The page invited you to copy a server
+  address and to click a row for more detail; neither was possible - the row had no click handler
+  and there was no copy control anywhere on it. The address is now a copy button that confirms when
+  it has copied, so the instruction is true.
+
+- **The World Map's "no players" message could be unreadable on a phone.** The text is drawn onto
+  the map itself and was centred without accounting for the floating zoom and layer controls, so on
+  a narrow screen the first words of it sat underneath an opaque button.
+
+- **The save picker on Map Cleanup squeezed a whole list row into a closed drop-down.** When shut it
+  reused the full multi-line entry - name, date and size - inside a single-line control, so a long
+  save name was cut to around fifteen characters and you could not tell which save was selected.
+
 - **Chinese showed a stray Latin "s" on Chinese words, and German pluralised three phrases wrongly.**
   The Mods screen worked out plural endings in code - add an "s" unless the count is one - and handed
   the same answer to every language. That is an English grammar rule, and it was correct for French
