@@ -1681,9 +1681,22 @@ export default function Mods() {
 
       const result = await modsApi.writeToIni(modsData, mapFolders)
 
+      // The server's `message` already spells out which workshop IDs were
+      // subscribed but couldn't be enabled (see unresolvedModIds in
+      // server/routes/mods.js) -- reuse it as-is instead of composing a new
+      // (English-only, untranslated) sentence here. Append resolved mod
+      // names in parens so the warning names mods, not just numeric IDs.
+      const unresolvedIds: string[] = result.unresolvedModIds || []
+      const nameByWorkshopId = new Map(modsToInstall.map(m => [m.workshopId, m.name]))
+      const unresolvedNames = unresolvedIds.map(id => nameByWorkshopId.get(id) || id)
+      const hasResolvedNames = unresolvedNames.some((name, i) => name !== unresolvedIds[i])
+
       toast({
         title: t('toasts.configSavedTitle'),
-        description: t('toasts.configSavedDesc', { count: result.modsConfigured }),
+        description: unresolvedIds.length > 0
+          ? `${result.message}${hasResolvedNames ? ` (${unresolvedNames.join(', ')})` : ''}`
+          : t('toasts.configSavedDesc', { count: result.modsConfigured }),
+        variant: unresolvedIds.length > 0 ? 'destructive' : undefined,
       })
 
       setModsToInstall([])
