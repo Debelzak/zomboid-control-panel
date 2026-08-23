@@ -91,7 +91,7 @@
     },
     "serverSandboxCorrupt": {
       "label": "SandboxVars.lua reparieren",
-      "note": "Versucht eine automatische Reparatur (fehlender Blockkopf/fehlendes Komma). Zuerst wird eine Sicherungskopie der beschädigten Datei gespeichert. Entspricht die Beschädigung keinem bekannten Muster, wird nichts geschrieben."
+      "note": "Versucht eine automatische Reparatur (fehlender Blockkopf/fehlendes Komma). Zuerst wird ein Backup der beschädigten Datei gespeichert. Entspricht die Beschädigung keinem bekannten Muster, wird nichts geschrieben."
     },
     "serverRconPassword": {
       "label": "Serverkonfiguration öffnen",
@@ -619,7 +619,7 @@
             "message": "Die Prüfung des freien Speicherplatzes wird auf dieser Plattform nicht unterstützt."
           },
           "fail": {
-            "label": "Datenträger fast voll",
+            "label": "Festplatte fast voll",
             "message": "Nur {{free}} frei von {{total}} auf dem Datenlaufwerk.",
             "hint": "Speicherplatz freigeben — Spielstände und Backups schlagen sonst fehl"
           },
@@ -652,7 +652,7 @@
         "error": {
           "warn": {
             "label": "Speicherprüfungen fehlgeschlagen",
-            "message": "Protokoll-/Datenträgerprüfungen konnten nicht ausgeführt werden: {{reason}}"
+            "message": "Protokoll-/Festplattenprüfungen konnten nicht ausgeführt werden: {{reason}}"
           }
         }
       },

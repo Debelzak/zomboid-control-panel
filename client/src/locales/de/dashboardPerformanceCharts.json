@@ -3,7 +3,7 @@
   "players": "Spieler",
   "hostCpu": "Host-CPU",
   "hostMemory": "Host-Speicher",
-  "disk": "Datenträger",
+  "disk": "Disk",
   "onlineUnit": "online",
   "normal": "normal"
 }
