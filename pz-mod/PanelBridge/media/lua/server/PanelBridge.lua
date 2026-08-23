@@ -5049,25 +5049,29 @@ handlers.healPlayer = function(args)
         return false, nil, "Player not found: " .. username
     end
 
-    local healed = {}
-    local errors = {}
-
     -- Build 42's documented body-part collection is the complete supported
     -- healing path. Optional Java-method probes log engine errors even inside
     -- pcall, so do not call bodyDamage/Stats/Moodles compatibility methods.
+    -- No bodyDamage means the healing block below never runs at all -- that
+    -- is not a partial heal, it is no heal, and must not report success.
     local bodyDamage = player:getBodyDamage()
-    if bodyDamage then
-        local ok1, err1 = pcall(function()
-            local bodyParts = bodyDamage:getBodyParts()
-            for i = 0, bodyParts:size() - 1 do
-                local part = bodyParts:get(i)
-                part:RestoreToFullHealth()
-                part:SetFakeInfected(false)
-                healed.bodyDamage = true
-            end
-        end)
-        if not ok1 then table.insert(errors, "bodyDamage: " .. tostring(err1)) end
+    if not bodyDamage then
+        return false, nil, "Could not access player body damage; nothing was healed"
     end
+
+    local healed = {}
+    local errors = {}
+
+    local ok1, err1 = pcall(function()
+        local bodyParts = bodyDamage:getBodyParts()
+        for i = 0, bodyParts:size() - 1 do
+            local part = bodyParts:get(i)
+            part:RestoreToFullHealth()
+            part:SetFakeInfected(false)
+            healed.bodyDamage = true
+        end
+    end)
+    if not ok1 then table.insert(errors, "bodyDamage: " .. tostring(err1)) end
 
     -- CRITICAL: Network sync — transmit changes to client
     -- Without this, the server has the healed state but the player client doesn't see it
@@ -5677,6 +5681,7 @@ handlers.spawnHordeNearPlayer = function(args)
     local half = 8
     local method = "unknown"
     local spawned = 0
+    local verified = false
 
     local ok, err = pcall(function()
         -- Primary method for B41+B42: VirtualZombieManager spawns real zombies
@@ -5695,24 +5700,28 @@ handlers.spawnHordeNearPlayer = function(args)
                 if okZ then spawned = spawned + 1 end
             end
             method = "VirtualZombieManager.createRealZombieAlways"
+            verified = true
         else
             -- Fallback: ZombiePopulationManager horde APIs (may silently fail
-            -- if the area isn't fully loaded on the server)
+            -- if the area isn't fully loaded on the server). None of these
+            -- return a count, so `spawned` must not be set to `count` --
+            -- that would be a fabricated number, not an unverified one.
+            -- Report which method ran and leave spawned nil (unverified).
             local zpop = getZombiePopManager()
             if zpop and zpop.createHordeInAreaTo then
                 zpop:createHordeInAreaTo(cx - half, cy - half, half * 2, half * 2, math.floor(px), math.floor(py), count)
                 method = "createHordeInAreaTo"
-                spawned = count
+                spawned = nil
             elseif zpop and zpop.createHordeFromTo then
                 zpop:createHordeFromTo(cx, cy, math.floor(px), math.floor(py), count)
                 method = "createHordeFromTo"
-                spawned = count
+                spawned = nil
             else
                 local world = getWorld()
                 if world and world.CreateSwarm then
                     world:CreateSwarm(count, cx - half, cy - half, cx + half, cy + half)
                     method = "CreateSwarm"
-                    spawned = count
+                    spawned = nil
                 else
                     error("No zombie spawning API available (VirtualZombieManager / ZombiePopulationManager / IsoWorld.CreateSwarm all missing)")
                 end
@@ -5724,11 +5733,14 @@ handlers.spawnHordeNearPlayer = function(args)
         return false, nil, "Failed to spawn horde: " .. tostring(err)
     end
 
-    PanelBridge.warn("Spawned horde near player", { username = username, count = count, spawned = spawned, cx = cx, cy = cy, method = method })
+    PanelBridge.warn("Spawned horde near player", { username = username, count = count, spawned = spawned, verified = verified, cx = cx, cy = cy, method = method })
     return true, {
-        message = "Spawned " .. spawned .. "/" .. count .. " zombies near " .. username,
+        message = verified
+            and ("Spawned " .. spawned .. "/" .. count .. " zombies near " .. username)
+            or ("Requested " .. count .. " zombies near " .. username .. " via " .. method .. " (spawn count not verifiable for this method)"),
         count = count,
         spawned = spawned,
+        verified = verified,
         center = { x = cx, y = cy },
         distance = dist,
         method = method
@@ -5780,6 +5792,7 @@ handlers.spawnHordeBehindPlayer = function(args)
     local half = 8
     local method = "unknown"
     local spawned = 0
+    local verified = false
 
     local ok, err = pcall(function()
         local vzm = _G.VirtualZombieManager and _G.VirtualZombieManager.instance
@@ -5795,22 +5808,26 @@ handlers.spawnHordeBehindPlayer = function(args)
                 if okZ then spawned = spawned + 1 end
             end
             method = "VirtualZombieManager.createRealZombieAlways"
+            verified = true
         else
+            -- See spawnHordeNearPlayer: these fallback APIs return no count,
+            -- so `spawned` must not be set to `count` -- that would be a
+            -- fabricated number, not an unverified one.
             local zpop = getZombiePopManager()
             if zpop and zpop.createHordeInAreaTo then
                 zpop:createHordeInAreaTo(cx - half, cy - half, half * 2, half * 2, math.floor(px), math.floor(py), count)
                 method = "createHordeInAreaTo"
-                spawned = count
+                spawned = nil
             elseif zpop and zpop.createHordeFromTo then
                 zpop:createHordeFromTo(cx, cy, math.floor(px), math.floor(py), count)
                 method = "createHordeFromTo"
-                spawned = count
+                spawned = nil
             else
                 local world = getWorld()
                 if world and world.CreateSwarm then
                     world:CreateSwarm(count, cx - half, cy - half, cx + half, cy + half)
                     method = "CreateSwarm"
-                    spawned = count
+                    spawned = nil
                 else
                     error("No zombie spawning API available")
                 end
@@ -5822,11 +5839,14 @@ handlers.spawnHordeBehindPlayer = function(args)
         return false, nil, "Failed to spawn horde behind: " .. tostring(err)
     end
 
-    PanelBridge.warn("Spawned horde behind player", { username = username, count = count, spawned = spawned, direction = dirName, cx = cx, cy = cy, method = method })
+    PanelBridge.warn("Spawned horde behind player", { username = username, count = count, spawned = spawned, verified = verified, direction = dirName, cx = cx, cy = cy, method = method })
     return true, {
-        message = "Spawned " .. spawned .. "/" .. count .. " zombies behind " .. username,
+        message = verified
+            and ("Spawned " .. spawned .. "/" .. count .. " zombies behind " .. username)
+            or ("Requested " .. count .. " zombies behind " .. username .. " via " .. method .. " (spawn count not verifiable for this method)"),
         count = count,
         spawned = spawned,
+        verified = verified,
         center = { x = cx, y = cy },
         playerDirection = dirName,
         distance = dist,
