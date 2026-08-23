@@ -462,6 +462,19 @@ reliability, then interface and translation.
 
 #### Places the panel told you something that was not true
 
+- **The World Map now actually works out which map build to use, instead of always guessing.** The
+  panel is supposed to ask the map service which build is current. It had been failing every time
+  and silently falling back to a build number written into the panel - which happened to be right,
+  so nothing looked wrong. Two separate things were broken. The address it asked no longer exists;
+  the map site moved to a different one some time ago, so every request was answered with "not
+  found". And the request itself was being refused by the map site's bot protection, which rejects
+  the panel's own network library but not the standard `curl` tool the panel already ships with -
+  so discovery now goes through that instead. There was also a third problem waiting behind those
+  two: the panel walked the list of builds from oldest to newest and stopped at the first usable
+  one, so a genuinely newer build would never have been reached even once the requests started
+  working. It now asks the map service directly which build is current, and only falls back to
+  searching the list - newest first - if that one is not usable yet.
+
 - **The panel could stop noticing new Project Zomboid map releases without ever saying so.** The
   World Map works out which map build to use by asking the upstream map site, and if that lookup
   fails it falls back to a build number written into the panel. That fallback had been failing
