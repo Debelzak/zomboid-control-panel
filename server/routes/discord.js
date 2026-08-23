@@ -177,7 +177,24 @@ router.put("/config", async (req, res) => {
       prevToken !== finalToken || prevGuildId !== (guildId || null);
     if (discordBot.isRunning && credentialsChanged) {
       await discordBot.stop();
-      await discordBot.start();
+      // start()'s return value used to be discarded here even though the
+      // sibling route POST /start (below) already checks it correctly --
+      // start() genuinely returns false (not a throw) on a bad token or a
+      // ready-timeout, so a failed reconnect looked identical to a
+      // successful one. The saved config really is correct either way
+      // (that part doesn't depend on the reconnect), so this stays
+      // success:true and surfaces the reconnect outcome separately rather
+      // than conflating "your settings were saved" with "the bot is now
+      // running".
+      const started = await discordBot.start();
+      if (!started) {
+        return res.json({
+          success: true,
+          message: "Discord bot configuration saved, but the bot failed to reconnect.",
+          botStarted: false,
+          botStartError: describeStartFailure(discordBot.lastStartError),
+        });
+      }
     }
 
     res.json({
