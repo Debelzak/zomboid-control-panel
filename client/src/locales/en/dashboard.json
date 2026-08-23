@@ -278,6 +278,7 @@
     "filesCount": "{{count}} {{category}} files ({{mb}} MB)",
     "noCategoryFilesFound": "No {{category}} files found",
     "total": "Total: {{count}} files ({{mb}} MB)",
+    "truncatedWarning": "The scan stopped early on a very large save — these counts are a minimum, the real numbers may be higher.",
     "cancel": "Cancel",
     "preview": "Preview",
     "wipeNow": "Wipe now",

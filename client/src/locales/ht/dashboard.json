@@ -278,6 +278,7 @@
     "filesCount": "{{count}} dosye {{category}} ({{mb}} MB)",
     "noCategoryFilesFound": "Pa jwenn dosye {{category}}",
     "total": "Total: {{count}} dosye ({{mb}} MB)",
+    "truncatedWarning": "Eskanè a sispann bonè sou yon sovgad ki trè gwo — total sa yo se yon minimòm, chif reyèl yo ka pi wo.",
     "cancel": "Anile",
     "preview": "Apèsi",
     "wipeNow": "Efase kounye a",

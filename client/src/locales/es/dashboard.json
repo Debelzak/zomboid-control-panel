@@ -278,6 +278,7 @@
     "filesCount": "{{count}} archivos de {{category}} ({{mb}} MB)",
     "noCategoryFilesFound": "No se encontraron archivos de {{category}}",
     "total": "Total: {{count}} archivos ({{mb}} MB)",
+    "truncatedWarning": "El escaneo se detuvo antes de tiempo en una partida muy grande — estos totales son un mínimo, las cifras reales pueden ser mayores.",
     "cancel": "Cancelar",
     "preview": "Vista previa",
     "wipeNow": "Borrar ahora",

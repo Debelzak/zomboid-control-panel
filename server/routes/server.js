@@ -4062,6 +4062,87 @@ router.post("/update-check/interval", requirePermission("server.configure"), asy
 // Guard against concurrent wipe operations
 let wipeInProgress = false;
 
+// Run `worker` over `items` with at most `limit` in flight at once. Mirrors
+// chunks.js's runWithConcurrency (same reasoning: unbounded Promise.all over
+// a directory with hundreds of entries can exhaust file handles or, on slow
+// storage, queue so many concurrent round trips that it's slower than doing
+// them one at a time) -- duplicated locally rather than imported since
+// chunks.js doesn't export it and these two route files don't otherwise
+// depend on each other.
+const WIPE_PREVIEW_WALK_CONCURRENCY = 8;
+async function runWithConcurrencyBounded(items, limit, worker) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  const runners = Array.from(
+    { length: Math.min(limit, items.length) },
+    async () => {
+      while (true) {
+        const i = nextIndex++;
+        if (i >= items.length) return;
+        results[i] = await worker(items[i], i);
+      }
+    },
+  );
+  await Promise.all(runners);
+  return results;
+}
+
+// Recursively count files and total size under `dir`. Was fully synchronous
+// (fs.readdirSync/fs.statSync, no concurrency, no cap) -- Jim measured 20.7
+// SECONDS for map/ alone on a 147,136-file save, fully blocking the Node
+// event loop that whole time for every other admin session and RCON call on
+// the panel, not just the requester's own page. Now async with bounded
+// per-level concurrency (same shape as chunks.js's getDirStats) and a
+// shared `budget` -- a wall-clock deadline plus an entry cap, same pattern
+// as debug.js's scanSaveStats -- so a pathologically large or slow-storage
+// save can't hang the request open-endedly. Once the budget runs out,
+// `budget.truncated` is set and every further call returns zero rather than
+// silently continuing to count: the caller MUST report that flag rather
+// than presenting a wipe-preview number that quietly stopped being exact.
+export async function countDir(dir, budget) {
+  if (budget.truncated || Date.now() >= budget.deadline || budget.visited >= budget.maxEntries) {
+    budget.truncated = true;
+    return { files: 0, size: 0 };
+  }
+  let entries;
+  try {
+    entries = await fs.promises.readdir(dir, { withFileTypes: true });
+  } catch (e) {
+    log.debug(`countDir readdir failed for ${dir}: ${e.message}`);
+    return { files: 0, size: 0 };
+  }
+  const results = await runWithConcurrencyBounded(
+    entries,
+    WIPE_PREVIEW_WALK_CONCURRENCY,
+    async (entry) => {
+      if (budget.truncated || Date.now() >= budget.deadline || budget.visited >= budget.maxEntries) {
+        budget.truncated = true;
+        return { files: 0, size: 0 };
+      }
+      budget.visited++;
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        return countDir(fullPath, budget);
+      }
+      let size = 0;
+      try {
+        const stat = await fs.promises.stat(fullPath);
+        size = stat.size;
+      } catch (e) {
+        log.debug(`Stat failed for ${fullPath}: ${e.message}`);
+      }
+      return { files: 1, size };
+    },
+  );
+  let files = 0;
+  let size = 0;
+  for (const r of results) {
+    files += r.files;
+    size += r.size;
+  }
+  return { files, size };
+}
+
 // Preview what will be wiped (dry-run). Admin-only, same as /wipe itself --
 // this pairs with the actual wipe, so anyone who can't wipe has no reason
 // to preview one.
@@ -4110,32 +4191,19 @@ router.post("/wipe/preview", requirePermission("server.wipe"), async (req, res) 
     const preview = {};
     let totalFiles = 0;
     let totalSize = 0;
-
-    const countDir = (dir) => {
-      let files = 0;
-      let size = 0;
-      if (!fs.existsSync(dir)) return { files: 0, size: 0 };
-      try {
-        const entries = fs.readdirSync(dir, { withFileTypes: true });
-        for (const entry of entries) {
-          const fullPath = path.join(dir, entry.name);
-          if (entry.isDirectory()) {
-            const sub = countDir(fullPath);
-            files += sub.files;
-            size += sub.size;
-          } else {
-            files++;
-            try {
-              size += fs.statSync(fullPath).size;
-            } catch (e) {
-              log.debug(`Stat failed for ${fullPath}: ${e.message}`);
-            }
-          }
-        }
-      } catch (e) {
-        log.debug(`countDir readdir failed for ${dir}: ${e.message}`);
-      }
-      return { files, size };
+    // Shared across every countDir() call below so the budget covers the
+    // WHOLE preview request (every target's directories combined), not each
+    // directory independently -- otherwise several individually-under-
+    // budget walks could still add up to the multi-second block this fix
+    // exists to remove. 15s / 300,000 entries is generous headroom over
+    // Jim's 20.7s/147,136-file measurement (which was the fully synchronous,
+    // no-concurrency walk); truncation is a backstop for pathological or
+    // slow-storage cases, not an expected outcome for a normal save.
+    const budget = {
+      deadline: Date.now() + 15_000,
+      visited: 0,
+      maxEntries: 300_000,
+      truncated: false,
     };
 
     // Directories belonging to each target
@@ -4165,7 +4233,7 @@ router.post("/wipe/preview", requirePermission("server.wipe"), async (req, res) 
       for (const dirName of MAP_DIRS) {
         const dir = path.join(saveDir, dirName);
         if (fs.existsSync(dir)) {
-          const sub = countDir(dir);
+          const sub = await countDir(dir, budget);
           mapFiles += sub.files;
           mapSize += sub.size;
         }
@@ -4207,7 +4275,7 @@ router.post("/wipe/preview", requirePermission("server.wipe"), async (req, res) 
       for (const dirName of WORLD_DIRS) {
         const dir = path.join(saveDir, dirName);
         if (fs.existsSync(dir)) {
-          const sub = countDir(dir);
+          const sub = await countDir(dir, budget);
           worldFiles += sub.files;
           worldSize += sub.size;
         }
@@ -4253,7 +4321,7 @@ router.post("/wipe/preview", requirePermission("server.wipe"), async (req, res) 
           }
           const fullPath = path.join(saveDir, entry.name);
           if (entry.isDirectory()) {
-            const sub = countDir(fullPath);
+            const sub = await countDir(fullPath, budget);
             extraFiles += sub.files;
             extraSize += sub.size;
           } else {
@@ -4300,6 +4368,12 @@ router.post("/wipe/preview", requirePermission("server.wipe"), async (req, res) 
       preview,
       totalFiles,
       totalSize,
+      // True if the walk hit its wall-clock/entry-count budget before
+      // finishing -- the counts above are then a LOWER BOUND, not exact.
+      // Never silently swallowed: the wipe dialog is about to act on these
+      // numbers, so an operator seeing a truncated preview needs to know
+      // it undercounts rather than trusting it as final.
+      truncated: budget.truncated,
     });
   } catch (error) {
     log.error(`Wipe preview failed: ${error.message}`);
