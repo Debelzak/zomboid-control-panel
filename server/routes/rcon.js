@@ -18,10 +18,20 @@ const router = express.Router();
 // RCON endpoint the panel talks to), are admin+technician only, NOT
 // moderator: a moderator doing player moderation should use players.js's
 // structured endpoints, not an open console. Read-only status/reference
-// routes below (/status, /health, /history, /commands, /commands/:category)
-// stay open to every logged-in role deliberately — nothing sensitive is
-// returned and a moderator plausibly wants to see RCON status or the
-// command reference.
+// routes below (/status, /health, /commands, /commands/:category) stay open
+// to every logged-in role deliberately — nothing sensitive is returned and
+// a moderator plausibly wants to see RCON status or the command reference.
+//
+// /history is NOT in that group, despite looking like one more read-only
+// reference route: it returns the verbatim command_history log, and
+// logCommand() (database/init.js) stores the exact command STRING that was
+// sent, unredacted -- including, e.g., `adduser "player" "password"` from
+// the whitelist-add flow (a real PZ join password) or anything typed into
+// this file's own /execute console. Leaving it ungated meant any logged-in
+// role -- a moderator included, who never holds rcon.execute -- could read
+// every admin/technician's past RCON console session and every whitelist
+// password ever set, through an endpoint whose neighbors really are
+// harmless. Gated the same as /execute/connect/disconnect/test.
 
 function validateTestInput(host, port, password) {
   if (typeof host !== 'string' || host.length > 255 || !/^[a-zA-Z0-9.-]+$/.test(host)) {
@@ -177,7 +187,7 @@ router.post('/disconnect', requirePermission('rcon.execute'), async (req, res) =
 });
 
 // Get command history
-router.get('/history', async (req, res) => {
+router.get('/history', requirePermission('rcon.execute'), async (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit, 10) || 100, 1000);
     const history = await getCommandHistory(limit);

@@ -211,17 +211,23 @@ describe("players.js: split into players.moderate/gm_tools/view, all still open 
   }
 });
 
-describe("rcon.js: mixed -- /execute and connection lifecycle are admin+technician, status/reference stays open to everyone", () => {
+describe("rcon.js: mixed -- /execute, connection lifecycle and /history are admin+technician, status/reference stays open to everyone", () => {
   const RESTRICTED = [
     ["/execute", "post"],
     ["/connect", "post"],
     ["/test", "post"],
     ["/disconnect", "post"],
+    // /history looks like one more read-only reference route but isn't:
+    // it returns the verbatim command_history log, which stores the exact
+    // command string sent -- including e.g. a whitelist password from
+    // `adduser "player" "password"`, or anything typed into /execute
+    // itself. Was in OPEN below; fixed alongside the route (kevin,
+    // bug-hunt pass) once that stopped being true.
+    ["/history", "get"],
   ];
   const OPEN = [
     ["/status", "get"],
     ["/health", "get"],
-    ["/history", "get"],
     ["/commands", "get"],
     ["/commands/:category", "get"],
   ];
