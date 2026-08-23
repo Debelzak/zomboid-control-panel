@@ -296,6 +296,26 @@ reliability, then interface and translation.
   "N/A", which is exactly what an unreachable server looks like, so a working server and a broken
   feature were impossible to tell apart. Pings now return real times.
 
+- **You can now edit server configuration without stopping the server.** The panel used to refuse
+  every configuration save while the server was running - the `.ini`, sandbox settings, spawn points
+  and spawn regions - on the grounds that Project Zomboid would overwrite the file on shutdown and
+  throw your work away. We tested that against a real Build 42 server rather than assuming it: a
+  shutdown does not touch those files at all, and the next startup keeps an edit made while the
+  server was running. That applies to a forced stop as well as a clean one. So the refusal was
+  protecting against something that does not happen. Saving now works whenever you like, and tells
+  you plainly that the change reaches the running game when the server restarts. **Restoring a
+  backup and applying a template still require a stopped server** - those replace a whole file at
+  once rather than editing values, and that is a different question we have not yet answered.
+
+- **The Sandbox tab claimed to reload settings it cannot reload.** After saving sandbox settings the
+  panel sent the game a "reload options" command and could report "saved and reloaded". That command
+  only re-reads the main server `.ini`; it has never applied sandbox values. Until now the claim was
+  unreachable - the save itself was blocked while the server ran, so the command always failed and
+  you saw the honest "restart to apply" message instead. Allowing saves on a running server would
+  have made it reachable for the first time and it would have "succeeded" while doing nothing. The
+  panel no longer makes that claim for sandbox settings; it tells you to restart, which is true in
+  every case.
+
 - **Changing a mod setting told you to do something impossible.** Editing a mod setting reported
   "Stop the server before editing configuration" - but the Mod Settings page cannot load with the
   server stopped, so following the instruction left you with no way back in. The panel already had
