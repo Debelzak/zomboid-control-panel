@@ -1544,7 +1544,17 @@ export class RconService extends EventEmitter {
 
   // Safehouse
   async releaseSafehouse() {
-    return this.execute("releasesafehouse");
+    // ReleaseSafehouseCommand.class (real B42 dedicated server jar) calls
+    // isCommandComeFromServerConsole() and refuses with "...can be executed
+    // only from the game" for ANY console/RCON caller -- a hardcoded
+    // rejection keyed on connection type, not a syntax issue this panel
+    // could work around. Sending "releasesafehouse" here would always be
+    // rejected by the real server, and execute()'s failure detection
+    // doesn't recognise that rejection text, so it would report success
+    // while doing nothing. Refuse up front instead of lying about it.
+    throw new Error(
+      "Releasing a safehouse can only be done from in-game -- Project Zomboid's server refuses this over RCON, even from an admin console.",
+    );
   }
 
   // Test if connection is actually alive by sending a simple command
