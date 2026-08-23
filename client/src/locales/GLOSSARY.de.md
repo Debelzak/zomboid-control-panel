@@ -105,6 +105,35 @@ length rule).
 | not configured | nicht konfiguriert |
 | unknown | unbekannt |
 
+## Project Zomboid entities
+
+| English | de | Note |
+| --- | --- | --- |
+| safehouse | das Safehouse (pl. die Safehouses) | **stays literal** — see the ruling below |
+| faction | die Fraktion | |
+| territory | das Gebiet | |
+| claim (a safehouse) | beanspruchen | |
+| respawn | der Respawn · respawnen | |
+
+**Why safehouse stays English when fr, es and zh-CN all translated it.** Three reasons,
+and the third is the decisive one:
+
+1. German gaming idiom absorbs English feature names where French and Spanish resist
+   them. The precedent from the other three locales does not transfer.
+2. Length. *Safehouse* is nine characters; the honest German is fifteen, in table
+   headers, chips and operation labels.
+3. **The honest German reads as a description, not a feature name.** An attributive
+   adjective stays lowercase, so it is *das sichere Haus* — "the safe house" — not
+   *das Sichere Haus*. Sitting in an operations list next to *Fraktion*, a
+   description-shaped label stops naming the claimable thing the operator manages.
+
+Consistent with the [SAFEHOUSE] chat tag, which this glossary already leaves literal:
+the word is on screen untranslated either way, and splitting one concept across two
+words inside the same product is worse than a loanword.
+
+Compounds hyphenate, because they mix an English token: *Safehouse-Besitzer*,
+*Safehouse-Verwaltung*, *Safehouse-Mitglied*.
+
 ## Style rules
 
 1. **Register: du, lowercase.** This panel is run by game-server operators, and the
