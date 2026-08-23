@@ -237,6 +237,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   actually happens when you open the page: it was swinging between 1.7 and 12.4 seconds and is now
   a steady 1 second. The unpredictability was most of what made it feel broken.
 
+- **The panel could stop noticing new Project Zomboid map releases without ever saying so.** The
+  World Map works out which map build to use by asking the upstream map site, and if that lookup
+  fails it falls back to a build number written into the panel. That fallback had been failing
+  silently - and because the hardcoded build happens to match the current one, everything looked
+  healthy. The first sign of trouble would have been the next time Project Zomboid released a map
+  update: the panel would have quietly carried on serving the old geometry, and it would have shown
+  up as a map that is subtly wrong rather than as an error. **Debug > World Map** now has its own
+  check for this and says plainly when the panel is using the fallback and why, in all five
+  languages. The underlying lookup is still blocked by bot protection on the upstream host, which
+  is not something the panel can fix from its side - so the point of this change is that you will
+  find out, instead of finding out from a wrong map.
+
 - **The World Map was blank - every single tile was 404ing.** The upstream map host moved: tiles
   and the per-build descriptors are now served from `tiles.pzmap.org` and no longer sit under a
   `/maps` path segment. The panel was still asking for the old address, so nothing loaded at all.
