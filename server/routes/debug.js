@@ -4161,7 +4161,7 @@ router.get("/worldmap", requirePermission("diagnostics.manage"), async (req, res
           diagOk(
             "worldmap.tiles.buildDetect",
             "B42 build auto-detect healthy",
-            `Build ${resolution.build} was resolved dynamically from build_list.json.`,
+            `Build ${resolution.directory} was resolved dynamically from build_list.json.`,
             {
               category: "worldmap",
               // Resolution goes through curl now (Node's fetch and https
@@ -4172,7 +4172,9 @@ router.get("/worldmap", requirePermission("diagnostics.manage"), async (req, res
               // behaving inconsistently across identical requests, so this
               // is "working right now", not a permanent fix.
               hint: "Resolution depends on an upstream bot-detection heuristic outside the panel's control, which has been observed responding inconsistently to identical requests. Treat this as working right now, not permanently solved -- it can start failing again with no change on the panel's side.",
-              params: { build: resolution.build },
+              // i18n param key stays `build` (reads better in the message
+              // template) even though the source property is `directory`.
+              params: { build: resolution.directory },
             },
           ),
         );
@@ -4183,11 +4185,11 @@ router.get("/worldmap", requirePermission("diagnostics.manage"), async (req, res
           diagWarn(
             "worldmap.tiles.buildDetect",
             "B42 build auto-detect failed",
-            `Using hardcoded build ${resolution.build} because discovery failed: ${resolution.reason || "unknown reason"}. This will not track the next PZ map build until discovery starts working again.`,
+            `Using hardcoded build ${resolution.directory} because discovery failed: ${resolution.reason || "unknown reason"}. This will not track the next PZ map build until discovery starts working again.`,
             {
               category: "worldmap",
               hint: "Discovery reads build_list.json and each candidate's layer0.dzi from tiles.pzmap.org. If upstream is blocking the panel's requests specifically (e.g. bot protection keyed on the HTTP client), this may not be fixable from the panel side — watch for this warning after the next PZ map release, since that's when a stale build actually shows up as wrong map geometry.",
-              params: { build: resolution.build, reason: resolution.reason || "unknown reason" },
+              params: { build: resolution.directory, reason: resolution.reason || "unknown reason" },
             },
           ),
         );

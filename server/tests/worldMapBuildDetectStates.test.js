@@ -82,7 +82,7 @@ describe("GET /debug/worldmap: worldmap.tiles.buildDetect reports both getB42Res
   it("source: 'dynamic' -> status ok, with a hint that this depends on an upstream heuristic and isn't permanent", async () => {
     getB42ResolutionStatus.mockReturnValue({
       source: "dynamic",
-      build: "42.20.0",
+      directory: "42.20.0",
       reason: null,
     });
 
@@ -108,7 +108,7 @@ describe("GET /debug/worldmap: worldmap.tiles.buildDetect reports both getB42Res
   it("source: 'fallback' -> status warn", async () => {
     getB42ResolutionStatus.mockReturnValue({
       source: "fallback",
-      build: "42.19.0",
+      directory: "42.19.0",
       reason: "build_list.json listed no B42+ candidates",
     });
 
@@ -131,7 +131,7 @@ describe("GET /debug/worldmap: worldmap.tiles.buildDetect reports both getB42Res
     // must not be silently treated as healthy.
     getB42ResolutionStatus.mockReturnValue({
       source: "something-not-in-the-contract",
-      build: "42.19.0",
+      directory: "42.19.0",
       reason: null,
     });
 
