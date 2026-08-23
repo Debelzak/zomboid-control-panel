@@ -129,3 +129,18 @@ English `{{count}} items removed` and `Deleted {{name}}` carry no agreement. Spa
 - **If a string cannot be made agreement-safe without changing what it says, stop and report it.**
   That is a variant problem — it needs two different sentences on the server side, not a cleverer
   single translation — and it is not yours to fix in the locale file.
+
+## Discord and PanelBridge (added after the first pass — these recur)
+
+| English | es | Note |
+| --- | --- | --- |
+| Bot (the Discord bot) | bot | stays as-is; universally used in Spanish |
+| Guild (Server) ID | ID de servidor (Guild) | keep the Guild parenthetical — Discord's own Developer Portal term |
+| Intents / Privileged Gateway Intents | Intents / Privileged Gateway Intents | leave in English; they are literal Discord Developer Portal checkbox names |
+| bridge (generic, lowercase) | puente | but **PanelBridge** the product name stays literal |
+| GM | GM | do not expand |
+| Overseer / Observer | supervisor / observador | Project Zomboid access levels |
+
+Left untranslated as game-literal tokens: Project Zomboid's chat scopes (General, Say, Local,
+Shout, Q shouts), the `[ADMIN]` / `[SAY]` / `[FACTION]` / `[SAFEHOUSE]` chat tags, `SERVER.INI` and
+`SANDBOX` section labels, and `iso` in "iso regions" (the engine's own `Iso*` class prefix).

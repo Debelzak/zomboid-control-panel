@@ -114,3 +114,18 @@ Also never translated: file paths, folder names, environment variable names, err
 - **Keep destructive wording destructive.** A confirmation dialog that sounds reassuring in Chinese
   when it was alarming in English is a bug, not a translation choice. This has already happened once
   in French, where "Wipe server" was rendered as "reset".
+
+## Discord and PanelBridge (added after the first pass — these recur)
+
+| English | zh-CN | Note |
+| --- | --- | --- |
+| Bot (the Discord bot) | 机器人 | 30+ occurrences in discord.json alone |
+| Guild (Server) ID | 服务器（Guild）ID | keep the Guild parenthetical — it is Discord's own Developer Portal term |
+| Intents / Privileged Gateway Intents | 意图 / 特权网关意图 | established Discord bot-developer terminology |
+| bridge (generic, lowercase) | 桥接 | but **PanelBridge** the product name stays literal |
+| GM | GM | established acronym in Chinese gaming communities; do not expand |
+| Overseer / Observer | 监督者 / 观察者 | Project Zomboid access levels |
+
+Left untranslated as game-literal tokens: Project Zomboid's chat scopes (General, Say, Local,
+Shout, Q shouts), the `[ADMIN]` / `[SAY]` / `[FACTION]` / `[SAFEHOUSE]` chat tags, `SERVER.INI` and
+`SANDBOX` section labels, and `iso` in "iso regions" (the engine's own `Iso*` class prefix).
