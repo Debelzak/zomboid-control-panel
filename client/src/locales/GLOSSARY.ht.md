@@ -152,18 +152,19 @@ but the token itself never does. Example: English `Deleted {{name}}` could becom
 `{{name}} efase` (placeholder moved to the front, which reads more naturally in Kreyòl) — never
 `Item efase` (placeholder dropped) or `{{Name}} efase` (placeholder respelled).
 
-## Latin abbreviations and single-letter markers: keep as-is, all four
+## Latin abbreviations and single-letter markers: check what the badge actually is
 
-RULING (2026-08-23, requested by the operator's own question before Pam wrote a word — this is a
-decision, not a per-file judgment call). These recur across more than one bucket, so they are ONE
-answer applied everywhere rather than invented three times:
+RULING (2026-08-23, revised same day — requested by the operator's own question before Pam wrote a
+word). The first version of this ruling said "keep all four as-is" on the strength of a plausible-sounding
+principle, not the evidence. Rechecked directly against what fr/es/de actually do for each one; the
+correct rule is CHECK WHAT THE BADGE ACTUALLY IS, not a blanket keep-or-translate:
 
 | Marker | Where it shows up | Verdict |
 | --- | --- | --- |
 | `{{count}}s` / `m` / `h` / `d` (time-unit suffixes) | dashboard, mods, console namespaces | KEEP — space-constrained UI markers, read the same way across technical interfaces; a translated single letter is ambiguous where the original is not |
-| `B{{n}}` (Basement) | worldMap | KEEP — a map-domain marker matching the game's own convention; the reader is matching it against what the game displays |
-| `WS` (Workshop) | mods | KEEP — Workshop is already on the do-not-translate brand list above |
-| `RM` (Remote) | shell | KEEP, for consistency with the other three rather than because it is English-neutral on its own — one translated badge among three untranslated ones reads as a mistake |
+| `B{{n}}` (Basement) | worldMap | **TRANSLATE to `S{{n}}`** — fr and es both render this as `S{{n}}` (Sous-sol / Sótano), de as `K{{n}}` (Keller). `B` is OUR English convention for "Basement," not a Project Zomboid term the reader is matching against the game's own display — the first ruling asserted that without checking and was wrong. `S{{n}}` for Soubasman matches the two Latin-script locales exactly. |
+| `WS` (Workshop) | mods | KEEP — fr, de and es all keep `WS` too. Workshop is a brand (already on the do-not-translate list above), not an ordinary-word abbreviation. |
+| `RM` (Remote) | shell | KEEP — de and es keep `RM`; fr translates it (`DIS`). Two of three keep it, so ht keeps it too. |
 
 **Condition, and this is the part that matters:** wherever a badge like this has a tooltip, aria-label,
 or expanded form nearby, *that* gets translated normally. The abbreviation is a marker; the expanded
