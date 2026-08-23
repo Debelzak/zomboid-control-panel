@@ -152,6 +152,38 @@ but the token itself never does. Example: English `Deleted {{name}}` could becom
 `{{name}} efase` (placeholder moved to the front, which reads more naturally in Kreyòl) — never
 `Item efase` (placeholder dropped) or `{{Name}} efase` (placeholder respelled).
 
+## Latin abbreviations and single-letter markers: keep as-is, all four
+
+RULING (2026-08-23, requested by the operator's own question before Pam wrote a word — this is a
+decision, not a per-file judgment call). These recur across more than one bucket, so they are ONE
+answer applied everywhere rather than invented three times:
+
+| Marker | Where it shows up | Verdict |
+| --- | --- | --- |
+| `{{count}}s` / `m` / `h` / `d` (time-unit suffixes) | dashboard, mods, console namespaces | KEEP — space-constrained UI markers, read the same way across technical interfaces; a translated single letter is ambiguous where the original is not |
+| `B{{n}}` (Basement) | worldMap | KEEP — a map-domain marker matching the game's own convention; the reader is matching it against what the game displays |
+| `WS` (Workshop) | mods | KEEP — Workshop is already on the do-not-translate brand list above |
+| `RM` (Remote) | shell | KEEP, for consistency with the other three rather than because it is English-neutral on its own — one translated badge among three untranslated ones reads as a mistake |
+
+**Condition, and this is the part that matters:** wherever a badge like this has a tooltip, aria-label,
+or expanded form nearby, *that* gets translated normally. The abbreviation is a marker; the expanded
+text next to it is prose. Example: keep `{{count}}m` in the badge itself, but translate its
+`aria-label="X minutes remaining"` fully into Kreyòl.
+
+## Translate the explanation, never the token being explained
+
+A general rule, not specific to Discord or access levels, established by re-reading how the French
+locale already (inconsistently, but correctly in spirit) handles `players.json`: it translates
+*Moderateur*/*Observateur* as prose labels, but leaves `Overseer` and `GM` alone (PZ's own in-game
+terms) and keeps the literal words `User` and `None` inside parentheticals that are telling the
+operator which exact string to pick on their build.
+
+**The test:** if a string exists so the reader can match it against a literal value the game, a
+config file, or another piece of software displays — a build name, an access-level dropdown option, a
+config key, a chat tag — that string is a *token*, not prose, even if it happens to be an ordinary
+English word. Translate the sentence around it; never the token itself. The `Overseer / Observer / GM`
+ruling above is the concrete instance of this rule; it will come up again.
+
 ## Discord and PanelBridge
 
 | English | ht | Note |
@@ -161,7 +193,7 @@ but the token itself never does. Example: English `Deleted {{name}}` could becom
 | Intents / Privileged Gateway Intents | Intents / Privileged Gateway Intents | leave in English — literal Discord Developer Portal checkbox names |
 | bridge (generic, lowercase) | pon | but **PanelBridge** the product name stays literal |
 | GM | GM | do not expand |
-| Overseer / Observer | Overseer / Observer | Project Zomboid access-level names — left untranslated, unlike the Spanish locale's choice, because no Kreyòl PZ community precedent was found for these; flagged for review |
+| Overseer / Observer | Overseer / Observer | **settled, not a coin flip** — RULING (2026-08-23): stays untranslated. The five existing locales disagree with each other (fr even translates it inconsistently across its own file), so there is no house convention to match. These labels tell the operator which literal string their build's access-level dropdown accepts — the code's own comment notes `none` does nothing on some builds while `user` works — so the label exists to be matched against what the game displays in English, not to read naturally in Kreyòl. A translated label that drifts from its token defeats the label's purpose. See "Translate the explanation, never the token" below. |
 
 Left untranslated as game-literal tokens, same reasoning as the other locales: Project Zomboid's chat
 scopes (General, Say, Local, Shout, Q shouts), the `[ADMIN]` / `[SAY]` / `[FACTION]` / `[SAFEHOUSE]`
