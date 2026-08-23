@@ -996,13 +996,13 @@
           "buildDetect": {
             "ok": {
               "label": "Detección automática de la compilación B42 correcta",
-              "message": "La compilación {{build}} se resolvió dinámicamente desde build_list.json.",
+              "message": "La compilación {{build}} se resolvió dinámicamente desde el servicio de mapas.",
               "hint": "La resolución depende de una heurística antibots del servicio remoto, ajena al control del panel, que se ha observado responder de forma incoherente a solicitudes idénticas. Considérelo funcional por ahora, no resuelto de forma permanente: puede volver a fallar sin ningún cambio por parte del panel."
             },
             "warn": {
               "label": "Error en la detección automática de la compilación B42",
               "message": "Se está usando la compilación fija {{build}} porque la detección falló: {{reason}}. No se tendrá en cuenta la próxima compilación del mapa de PZ hasta que la detección vuelva a funcionar.",
-              "hint": "La detección lee build_list.json y el layer0.dzi de cada candidato en tiles.pzmap.org. Si el servicio remoto bloquea específicamente las solicitudes del panel (por ejemplo, una protección antibots basada en el cliente HTTP), puede que no sea posible solucionarlo desde el panel — vigile este aviso tras la próxima publicación del mapa de PZ, ya que es entonces cuando una compilación obsoleta se manifiesta como una geometría de mapa incorrecta."
+              "hint": "La detección pregunta al servicio de mapas cuál es la compilación actual, usando el curl del sistema. Llegar aquí significa que esa solicitud no tuvo éxito: falta curl, el panel no tiene acceso de red saliente, o el servicio de mapas rechazó la solicitud. Conviene comprobar los dos primeros casos por su parte; el tercero puede no ser corregible desde el panel. Vigile este aviso tras una publicación de mapa de Project Zomboid, ya que es entonces cuando una compilación obsoleta se manifiesta como una geometría de mapa incorrecta."
             }
           }
         },

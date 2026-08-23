@@ -996,13 +996,13 @@
           "buildDetect": {
             "ok": {
               "label": "Automatische B42-Build-Erkennung funktioniert",
-              "message": "Build {{build}} wurde dynamisch aus build_list.json ermittelt.",
+              "message": "Build {{build}} wurde dynamisch über den Kartendienst ermittelt.",
               "hint": "Die Auflösung hängt von einer vorgelagerten Bot-Erkennungsheuristik ab, die außerhalb der Kontrolle des Panels liegt und bei identischen Anfragen nachweislich unterschiedlich reagiert hat. Betrachten Sie dies als derzeit funktionierend, nicht als dauerhaft gelöst — es kann jederzeit wieder fehlschlagen, ohne dass sich am Panel etwas ändert."
             },
             "warn": {
               "label": "Automatische B42-Build-Erkennung fehlgeschlagen",
               "message": "Es wird der fest hinterlegte Build {{build}} verwendet, da die Erkennung fehlgeschlagen ist: {{reason}}. Der nächste PZ-Karten-Build wird nicht berücksichtigt, solange die Erkennung nicht wieder funktioniert.",
-              "hint": "Die Erkennung liest build_list.json sowie die layer0.dzi jedes Kandidaten von tiles.pzmap.org. Wenn die Gegenstelle gezielt die Anfragen des Panels blockiert (z. B. ein Bot-Schutz, der auf den HTTP-Client reagiert), lässt sich das möglicherweise nicht vom Panel aus beheben — achten Sie nach der nächsten PZ-Kartenveröffentlichung auf diese Warnung, denn dann wirkt sich ein veralteter Build als falsche Kartengeometrie aus."
+              "hint": "Die Erkennung fragt beim Kartendienst nach dem aktuellen Build und verwendet dazu das curl des Systems. Wenn Sie hier landen, ist diese Anfrage fehlgeschlagen — curl fehlt, das Panel hat keinen ausgehenden Netzwerkzugriff, oder der Kartendienst hat die Anfrage abgelehnt. Die ersten beiden Punkte sollten Sie auf Ihrer Seite prüfen; der dritte lässt sich möglicherweise nicht vom Panel aus beheben. Achten Sie nach einer Project-Zomboid-Kartenveröffentlichung auf diese Warnung, denn dann wirkt sich ein veralteter Build als falsche Kartengeometrie aus."
             }
           }
         },

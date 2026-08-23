@@ -996,13 +996,13 @@
           "buildDetect": {
             "ok": {
               "label": "B42 build auto-detect healthy",
-              "message": "Build {{build}} was resolved dynamically from build_list.json.",
+              "message": "Build {{build}} was resolved dynamically from the map service.",
               "hint": "Resolution depends on an upstream bot-detection heuristic outside the panel's control, which has been observed responding inconsistently to identical requests. Treat this as working right now, not permanently solved -- it can start failing again with no change on the panel's side."
             },
             "warn": {
               "label": "B42 build auto-detect failed",
               "message": "Using hardcoded build {{build}} because discovery failed: {{reason}}. This will not track the next PZ map build until discovery starts working again.",
-              "hint": "Discovery reads build_list.json and each candidate's layer0.dzi from tiles.pzmap.org. If upstream is blocking the panel's requests specifically (e.g. bot protection keyed on the HTTP client), this may not be fixable from the panel side — watch for this warning after the next PZ map release, since that's when a stale build actually shows up as wrong map geometry."
+              "hint": "Discovery asks the map service which build is current, using the system's curl. Landing here means that request did not succeed — curl is missing, the panel has no outbound network access, or the map service refused the request. The first two are worth checking on your side; the third may not be fixable from the panel. Watch for this after a Project Zomboid map release, since that is when a stale build shows up as wrong map geometry."
             }
           }
         },

@@ -996,13 +996,13 @@
           "buildDetect": {
             "ok": {
               "label": "Détection automatique du build B42 opérationnelle",
-              "message": "Le build {{build}} a été résolu dynamiquement depuis build_list.json.",
+              "message": "Le build {{build}} a été résolu dynamiquement depuis le service de cartes.",
               "hint": "La résolution dépend d'une heuristique de détection anti-bot en amont, hors du contrôle du panneau, dont le comportement s'est révélé incohérent pour des requêtes identiques. Considérez-la comme fonctionnelle pour l'instant, et non résolue de façon permanente — elle peut recommencer à échouer sans aucun changement côté panneau."
             },
             "warn": {
               "label": "Échec de la détection automatique du build B42",
               "message": "Utilisation du build codé en dur {{build}} car la détection a échoué : {{reason}}. Le prochain build de carte de PZ ne sera pas pris en compte tant que la détection ne fonctionnera pas à nouveau.",
-              "hint": "La détection lit build_list.json ainsi que le layer0.dzi de chaque candidat sur tiles.pzmap.org. Si le service distant bloque spécifiquement les requêtes du panneau (par exemple une protection anti-bot basée sur le client HTTP), il se peut que cela ne soit pas corrigeable côté panneau — surveillez cet avertissement après la prochaine sortie de carte PZ, car c'est à ce moment qu'un build obsolète se traduit par une géométrie de carte incorrecte."
+              "hint": "La détection demande au service de cartes quel build est actuel, en utilisant le curl du système. Arriver ici signifie que cette requête a échoué — curl est absent, le panneau n'a pas d'accès réseau sortant, ou le service de cartes a refusé la requête. Les deux premiers cas méritent d'être vérifiés de votre côté ; le troisième n'est peut-être pas corrigeable depuis le panneau. Surveillez cet avertissement après une sortie de carte de Project Zomboid, car c'est alors qu'un build obsolète se traduit par une géométrie de carte incorrecte."
             }
           }
         },
