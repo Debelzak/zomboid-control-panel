@@ -1732,13 +1732,24 @@ export default function WorldMap() {
 
     // Empty state
     if (currentPlayers.length === 0) {
+      // The floating control rail (top-3 left-3, w-12) permanently overlaps
+      // the canvas's left edge, so text centered on the full canvas width can
+      // render underneath it on narrow (mobile) viewports. Only nudge right
+      // when a naive center would tuck the text under the rail.
+      const railClearance = 72
       ctx.textAlign = 'center'
+
       ctx.fillStyle = C.emptyTitle
       ctx.font = '600 14px ui-sans-serif, system-ui, sans-serif'
-      ctx.fillText(t('emptyState.title'), W / 2, H / 2 - 8)
+      const title = t('emptyState.title')
+      const titleX = Math.max(W / 2, railClearance + ctx.measureText(title).width / 2)
+      ctx.fillText(title, titleX, H / 2 - 8)
+
       ctx.font = '400 11px ui-sans-serif, system-ui, sans-serif'
       ctx.fillStyle = C.emptySubtitle
-      ctx.fillText(t('emptyState.subtitle'), W / 2, H / 2 + 10)
+      const subtitle = t('emptyState.subtitle')
+      const subtitleX = Math.max(W / 2, railClearance + ctx.measureText(subtitle).width / 2)
+      ctx.fillText(subtitle, subtitleX, H / 2 + 10)
     }
 
     // Crosshair at cursor
