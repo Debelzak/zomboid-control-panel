@@ -1357,7 +1357,8 @@
     "intervalLabelNA": "间隔：N/A",
     "intervalNA": "N/A",
     "uptimeTitle": "运行时长",
-    "since": "自 {{date}} 起"
+    "since": "自 {{date}} 起",
+    "couldNotReachTitle": "无法访问健康检查接口"
   },
   "systemTab": {
     "nodeJs": "Node.js",

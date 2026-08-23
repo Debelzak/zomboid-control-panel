@@ -1357,7 +1357,8 @@
     "intervalLabelNA": "Intervall: k. A.",
     "intervalNA": "k. A.",
     "uptimeTitle": "Uptime",
-    "since": "Seit {{date}}"
+    "since": "Seit {{date}}",
+    "couldNotReachTitle": "Health-Endpunkt nicht erreichbar"
   },
   "systemTab": {
     "nodeJs": "Node.js",

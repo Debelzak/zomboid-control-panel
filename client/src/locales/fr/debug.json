@@ -1357,7 +1357,8 @@
     "intervalLabelNA": "Intervalle : N/A",
     "intervalNA": "N/A",
     "uptimeTitle": "Temps de fonctionnement",
-    "since": "Depuis {{date}}"
+    "since": "Depuis {{date}}",
+    "couldNotReachTitle": "Impossible de joindre le point de terminaison de santé"
   },
   "systemTab": {
     "nodeJs": "Node.js",

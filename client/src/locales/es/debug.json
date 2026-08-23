@@ -1357,7 +1357,8 @@
     "intervalLabelNA": "Intervalo: N/D",
     "intervalNA": "N/D",
     "uptimeTitle": "Tiempo de actividad",
-    "since": "Desde {{date}}"
+    "since": "Desde {{date}}",
+    "couldNotReachTitle": "No se pudo conectar con el endpoint de estado"
   },
   "systemTab": {
     "nodeJs": "Node.js",
