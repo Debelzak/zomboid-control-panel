@@ -809,6 +809,8 @@ export default function ServerConfig() {
   const [modSettingsLastLoaded, setModSettingsLastLoaded] = useState<Date | null>(null)
   const modSettingsAbortRef = useRef<AbortController | null>(null)
   const modSettingsSearchRef = useRef<HTMLInputElement | null>(null)
+  const iniSearchRef = useRef<HTMLInputElement | null>(null)
+  const sandboxSearchRef = useRef<HTMLInputElement | null>(null)
   const [savingOptions, setSavingOptions] = useState<Set<string>>(new Set())
 
   // Shared helper: is this mod option modified from its default?
@@ -1323,7 +1325,7 @@ export default function ServerConfig() {
               const raw = sectionData[setting.key]
               if (raw !== undefined && raw !== null && String(raw).trim() !== '') {
                 const parsed = parseNumericSettingValue(raw, setting)
-                if (parsed === null) throw new Error(t('toasts.settingInvalid', { label: setting.label }))
+                if (parsed === null) throw new Error(t('toasts.settingInvalid', { label: getSandboxSettingLabel(setting) }))
                 sectionData[setting.key] = parsed
               }
             }
@@ -1449,30 +1451,30 @@ export default function ServerConfig() {
     const filtered = INI_SCHEMA.filter(s => {
       if (deferredSearchQuery && !(
         s.key.toLowerCase().includes(lower) ||
-        s.label.toLowerCase().includes(lower) ||
-        s.description.toLowerCase().includes(lower)
+        getIniSettingLabel(s).toLowerCase().includes(lower) ||
+        getIniSettingDescription(s).toLowerCase().includes(lower)
       )) return false
       if (filterMode === 'modified' && !isIniNonDefault(s)) return false
       if (filterMode === 'nondefault' && !isIniModified(s)) return false
       return true
     })
     return groupByCategory(filtered)
-  }, [deferredSearchQuery, filterMode, isIniModified, isIniNonDefault])
+  }, [deferredSearchQuery, filterMode, isIniModified, isIniNonDefault, i18n.language])
 
   const filteredSandboxSettings = useMemo(() => {
     const lower = deferredSearchQuery.toLowerCase()
     const filtered = SANDBOX_SCHEMA.filter(s => {
       if (deferredSearchQuery && !(
         s.key.toLowerCase().includes(lower) ||
-        s.label.toLowerCase().includes(lower) ||
-        s.description.toLowerCase().includes(lower)
+        getSandboxSettingLabel(s).toLowerCase().includes(lower) ||
+        getSandboxSettingDescription(s).toLowerCase().includes(lower)
       )) return false
       if (filterMode === 'modified' && !isSandboxNonDefault(s)) return false
       if (filterMode === 'nondefault' && !isSandboxModified(s)) return false
       return true
     })
     return groupByCategory(filtered)
-  }, [deferredSearchQuery, filterMode, isSandboxModified, isSandboxNonDefault])
+  }, [deferredSearchQuery, filterMode, isSandboxModified, isSandboxNonDefault, i18n.language])
 
   // Modified-count per category for rail badges
   const iniModifiedByCategory = useMemo(() => {
@@ -1556,6 +1558,13 @@ export default function ServerConfig() {
 
   // Restore backup
   const handleRestoreBackup = async (filename: string) => {
+    const ok = await confirm({
+      title: t('restoreBackupConfirm.title'),
+      description: t('restoreBackupConfirm.description', { filename }),
+      confirmLabel: t('restoreBackupConfirm.confirmLabel'),
+    })
+    if (!ok) return
+
     try {
       await serverFilesApi.restoreBackup(filename)
       toast({ title: t('toasts.restoredTitle'), description: t('toasts.restoredDesc', { filename }) })
@@ -1770,7 +1779,7 @@ export default function ServerConfig() {
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
         e.preventDefault()
-        const searchInput = document.querySelector<HTMLInputElement>('input[placeholder*="Search settings"]')
+        const searchInput = activeTab === 'ini' ? iniSearchRef.current : sandboxSearchRef.current
         searchInput?.focus()
       }
     }
@@ -2092,6 +2101,7 @@ export default function ServerConfig() {
                     <div className="relative min-w-0 flex-1 sm:max-w-md">
                       <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                       <Input
+                        ref={iniSearchRef}
                         placeholder={t('search.settingsPlaceholder')}
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
@@ -2241,7 +2251,7 @@ export default function ServerConfig() {
                                     }`}
                                   >
                                     <CategoryIcon name={category.icon} isActive={isActive} className="h-4 w-4 shrink-0" />
-                                    <span className="min-w-0 flex-1 truncate font-medium">{getIniCategoryLabel(category)}</span>
+                                    <span className="min-w-0 flex-1 truncate font-medium" title={getIniCategoryLabel(category)}>{getIniCategoryLabel(category)}</span>
                                     {modCount > 0 && (
                                       <span
                                         className="shrink-0 rounded-full bg-warning/20 px-1.5 py-0.5 text-[9px] font-mono font-semibold uppercase tracking-wider text-warning"
@@ -2323,6 +2333,7 @@ export default function ServerConfig() {
                                                 onClick={() => setIniSettings(prev => ({ ...prev, [key]: orig ?? '' }))}
                                                 className="text-xs text-amber-500 hover:text-amber-400"
                                                 title={t('uncategorizedIni.undoTitle')}
+                                                aria-label={t('uncategorizedIni.undoTitle')}
                                               >↩</button>
                                             )}
                                           </div>
@@ -2497,6 +2508,7 @@ export default function ServerConfig() {
                     <div className="relative min-w-0 flex-1 sm:max-w-md">
                       <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                       <Input
+                        ref={sandboxSearchRef}
                         placeholder={t('search.sandboxPlaceholder')}
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
@@ -2644,7 +2656,7 @@ export default function ServerConfig() {
                                     }`}
                                   >
                                     <CategoryIcon name={category.icon} isActive={isActive} className="h-4 w-4 shrink-0" />
-                                    <span className="min-w-0 flex-1 truncate font-medium">{getSandboxCategoryLabel(category)}</span>
+                                    <span className="min-w-0 flex-1 truncate font-medium" title={getSandboxCategoryLabel(category)}>{getSandboxCategoryLabel(category)}</span>
                                     {modCount > 0 && (
                                       <span
                                         className="shrink-0 rounded-full bg-warning/20 px-1.5 py-0.5 text-[9px] font-mono font-semibold uppercase tracking-wider text-warning"
@@ -2745,6 +2757,7 @@ export default function ServerConfig() {
                                                 }}
                                                 className="text-xs text-amber-500 hover:text-amber-400"
                                                 title={t('uncategorizedSandbox.undoTitle')}
+                                                aria-label={t('uncategorizedSandbox.undoTitle')}
                                               >↩</button>
                                             )}
                                           </div>

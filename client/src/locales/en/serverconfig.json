@@ -264,6 +264,11 @@
     "description": "Delete template \"{{name}}\"? This cannot be undone.",
     "confirmLabel": "Delete"
   },
+  "restoreBackupConfirm": {
+    "title": "Restore this backup?",
+    "description": "Replace the current file with \"{{filename}}\"? Unsaved changes to the live config will be lost.",
+    "confirmLabel": "Restore"
+  },
   "fileBrowserDialog": {
     "title": "Select Image File",
     "description": "Browse to find a PNG image file for your server.",
