@@ -1486,7 +1486,7 @@ export default function Servers() {
                           </Tooltip>
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <Button size="iconDense" variant="ghost" disabled={pending} onClick={() => handleDockerAction(container, 'restart')} aria-label={t('card.restartContainer')}>
+                              <Button size="iconDense" variant="ghost" disabled={pending} onClick={() => handleDockerAction(container, 'restart')} aria-label={t('card.restartContainerAria', { name: container.name })}>
                                 {dockerActionPending === `restart-${container.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCw className="h-4 w-4" />}
                               </Button>
                             </TooltipTrigger>
@@ -1690,7 +1690,7 @@ export default function Servers() {
                   [t('tandem.rconPortLabel'), t('tandem.rconPortValue')],
                   [t('tandem.steamcmdLabel'), t('tandem.steamcmdValue')],
                 ].map(([k, v]) => (
-                  <li key={k} className="grid grid-cols-[9rem_1fr] gap-2 text-xs">
+                  <li key={k} className="grid grid-cols-[minmax(7rem,auto)_1fr] gap-2 text-xs">
                     <span className="text-muted-foreground">{k}</span>
                     <span>{v}</span>
                   </li>
@@ -1850,10 +1850,12 @@ export default function Servers() {
                       </p>
                       <div className="space-y-2 max-h-64 overflow-y-auto">
                         {autoScanResult.detectedConfigs.map((config, idx) => (
-                          <div
+                          <button
+                            type="button"
                             key={config.serverName || idx}
-                            className="p-3 rounded border bg-background hover:bg-accent cursor-pointer transition-colors"
+                            className="w-full text-left p-3 rounded border bg-background hover:bg-accent cursor-pointer transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
                             onClick={() => handleSelectScannedConfig(config, autoScanResult.installPaths[0])}
+                            aria-label={t('localForm.selectScannedConfigAria', { name: config.publicName || config.serverName })}
                           >
                             <div className="flex items-center justify-between">
                               <span className="font-medium">{config.publicName || config.serverName}</span>
@@ -1877,7 +1879,7 @@ export default function Servers() {
                                 {t('localForm.noInstallPath')}
                               </div>
                             )}
-                          </div>
+                          </button>
                         ))}
                       </div>
 
@@ -2021,7 +2023,7 @@ export default function Servers() {
                             </p>
                             <ul className="space-y-1">
                               {tandemConflicts.map((c: { label: string; detail: string }, i: number) => (
-                                <li key={`${c.label}-${i}`} className="grid grid-cols-[7rem_1fr] gap-2 text-xs">
+                                <li key={`${c.label}-${i}`} className="grid grid-cols-[minmax(6rem,auto)_1fr] gap-2 text-xs">
                                   <span className="text-muted-foreground">{c.label}</span>
                                   <span>{c.detail}</span>
                                 </li>
@@ -2450,9 +2452,8 @@ export default function Servers() {
               />
               <Button
                 type="button"
-                variant="outline"
+                variant="destructive"
                 size="sm"
-                className="text-destructive hover:text-destructive"
                 disabled={steamRunning || clearingInstall}
                 onClick={() => setConfirmClearInstall(true)}
               >
