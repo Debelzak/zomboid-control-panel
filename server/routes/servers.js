@@ -663,14 +663,24 @@ router.post("/", requirePermission("servers.manage"), async (req, res) => {
       return res.status(400).json({ error: "Invalid RCON port" });
     }
 
-    // Validate serverName against path traversal
-    const serverName = (config.serverName || "servertest").trim();
+    // Validate serverName against path traversal. This value becomes the PZ
+    // dedicated server's own internal name -- it names the .ini file and the
+    // Saves/Multiplayer/<serverName> folder the panel reads and writes.
+    // "servertest" used to fill in here when it was left blank, which is
+    // Project Zomboid's own vanilla single-player/test-server name: on a
+    // machine with a real, unrelated PZ install using that default name, the
+    // panel would silently adopt its save/config directory as this server's
+    // own. Fall back to the required display name instead of a shared,
+    // well-known default -- and reject outright if neither is usable, rather
+    // than inventing an identity.
+    const serverName = String(config.serverName || config.name || "").trim();
     if (!isValidServerName(serverName)) {
       return res
         .status(400)
         .json({
-          error:
-            "Invalid server name: only letters, numbers, underscores, hyphens and spaces allowed",
+          error: config.serverName
+            ? "Invalid server name: only letters, numbers, underscores, hyphens and spaces allowed"
+            : "Server name is required, or give the server a display name that can be reused as one (letters, numbers, underscores, hyphens and spaces only)",
         });
     }
     const dockerContainerName = String(config.dockerContainerName || "").trim();
@@ -688,7 +698,7 @@ router.post("/", requirePermission("servers.manage"), async (req, res) => {
 
     const server = await createServer({
       name: config.name,
-      serverName: config.serverName || "servertest",
+      serverName,
       installPath: config.installPath || "",
       zomboidDataPath: config.zomboidDataPath || null,
       serverConfigPath: config.serverConfigPath || null,

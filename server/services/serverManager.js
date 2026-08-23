@@ -1448,6 +1448,12 @@ export class ServerManager {
 
     return {
       running: isRunning,
+      // Distinguishes a confirmed-stopped server from "the process scan
+      // itself failed" -- both used to collapse to running: false here,
+      // so a hung/erroring OS scan (AV interference, WMI timeout,
+      // ps/pgrep unavailable) looked identical to a real stop. Callers
+      // that only checked .running had no way to tell.
+      scanFailed: Boolean(processDetails.scanFailed),
       startTime: this.startTime,
       uptime: uptimeSeconds,
       serverPath: this.serverPath,

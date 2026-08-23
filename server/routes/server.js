@@ -416,7 +416,13 @@ async function getServerName() {
     return activeServer.serverName;
   }
   const legacyName = await getSetting("serverName");
-  return legacyName || "servertest";
+  // No active server and no legacy settings name either -- "servertest" used
+  // to fill in here, which is Project Zomboid's own vanilla single-player/
+  // test-server name. On a machine with a real, unrelated PZ install at the
+  // default path, an unconfigured panel would silently target its
+  // Server/servertest.ini. Callers already gate on `!serverConfigPath`;
+  // returning null lets the same gate also catch "no server name configured".
+  return legacyName || null;
 }
 
 // Security: Sanitize string for use in batch files/commands
@@ -2354,7 +2360,7 @@ router.post("/configure-rcon", requirePermission("server.configure"), async (req
     const serverConfigPath = await getServerConfigPath();
     const serverName = await getServerName();
 
-    if (!serverConfigPath) {
+    if (!serverConfigPath || !serverName) {
       return res.status(400).json({
         error: "Server config path not set. Please run installation first.",
         code: ErrorCode.SERVER_CONFIG_PATH_NOT_SET,
@@ -2423,7 +2429,7 @@ router.post("/configure-network", requirePermission("server.configure"), async (
     const serverConfigPath = await getServerConfigPath();
     const serverName = await getServerName();
 
-    if (!serverConfigPath) {
+    if (!serverConfigPath || !serverName) {
       return res.status(400).json({
         error: "Server config path not set. Please run installation first.",
         code: ErrorCode.SERVER_CONFIG_PATH_NOT_SET,

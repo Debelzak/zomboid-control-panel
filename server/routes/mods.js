@@ -182,7 +182,16 @@ async function getServerName() {
     return activeServer.serverName;
   }
   const legacyName = await getSetting("serverName");
-  return legacyName || "servertest";
+  // No active server and no legacy settings name either -- there is no real
+  // server this could refer to. "servertest" used to fill in here, which
+  // happens to be Project Zomboid's own vanilla single-player/test-server
+  // name: on a machine that has a real (unrelated, never-added-to-the-panel)
+  // PZ install at the default path, an unconfigured panel would silently
+  // read/write ITS Server/servertest.ini and report success. Every call
+  // site below already gates on `!serverConfigPath`; returning null here
+  // (instead of a fabricated name) makes those same gates also catch "no
+  // server name configured" rather than papering over it.
+  return legacyName || null;
 }
 
 async function getServerPath() {
@@ -884,7 +893,7 @@ router.post("/sync-from-server", async (req, res) => {
     const serverConfigPath = await getServerConfigPath();
     const serverName = await getServerName();
 
-    if (!serverConfigPath) {
+    if (!serverConfigPath || !serverName) {
       log.warn("sync-from-server: Server config path not set");
       return res.json({
         success: false,
@@ -1842,7 +1851,7 @@ router.post("/write-to-ini", async (req, res) => {
     const serverName = await getServerName();
     const serverPath = await getServerPath();
 
-    if (!serverConfigPath) {
+    if (!serverConfigPath || !serverName) {
       return res.status(400).json({
         error: "Server config path not set. Please configure the server first.",
         code: ErrorCode.MODS_CONFIG_PATH_NOT_SET_GUIDANCE,
@@ -2045,7 +2054,7 @@ router.get("/current-config", async (req, res) => {
     const serverConfigPath = await getServerConfigPath();
     const serverName = await getServerName();
 
-    if (!serverConfigPath) {
+    if (!serverConfigPath || !serverName) {
       return res.json({
         configured: false,
         error: "Server config path not set",
@@ -2152,7 +2161,7 @@ router.post("/toggle-mod-id", async (req, res) => {
     const serverConfigPath = await getServerConfigPath();
     const serverName = await getServerName();
 
-    if (!serverConfigPath) {
+    if (!serverConfigPath || !serverName) {
       return res.status(400).json({
         error: "Server config path not set",
         code: ErrorCode.MODS_CONFIG_PATH_NOT_SET,
@@ -2274,7 +2283,7 @@ router.post("/batch-toggle-mod-ids", async (req, res) => {
     const serverConfigPath = await getServerConfigPath();
     const serverName = await getServerName();
 
-    if (!serverConfigPath) {
+    if (!serverConfigPath || !serverName) {
       return res.status(400).json({
         error: "Server config path not set",
         code: ErrorCode.MODS_CONFIG_PATH_NOT_SET,
@@ -2378,7 +2387,7 @@ router.post("/add-to-ini", async (req, res) => {
     const serverConfigPath = await getServerConfigPath();
     const serverName = await getServerName();
 
-    if (!serverConfigPath) {
+    if (!serverConfigPath || !serverName) {
       return res.status(400).json({
         error:
           "Server config path not set. Please configure the server first in Settings.",
@@ -3105,7 +3114,7 @@ router.post("/remove-from-ini", async (req, res) => {
     const serverPath = await getServerPath();
     const serverName = await getServerName();
 
-    if (!serverConfigPath) {
+    if (!serverConfigPath || !serverName) {
       return res.status(400).json({
         error: "Server config path not set",
         code: ErrorCode.MODS_CONFIG_PATH_NOT_SET,
@@ -3509,7 +3518,7 @@ router.post("/repair-map-entries", async (req, res) => {
     const serverPath = await getServerPath();
     const serverName = await getServerName();
 
-    if (!serverConfigPath || !serverPath) {
+    if (!serverConfigPath || !serverPath || !serverName) {
       return res.status(400).json({
         error: "Server path not configured.",
         code: ErrorCode.MODS_SERVER_PATH_NOT_CONFIGURED,
@@ -3638,7 +3647,7 @@ router.post("/deduplicate-mod-ids", async (req, res) => {
     const serverConfigPath = await getServerConfigPath();
     const serverName = await getServerName();
 
-    if (!serverConfigPath) {
+    if (!serverConfigPath || !serverName) {
       return res.status(400).json({
         error: "Server path not configured.",
         code: ErrorCode.MODS_SERVER_PATH_NOT_CONFIGURED,
@@ -3746,7 +3755,7 @@ router.post("/add-missing-dep", async (req, res) => {
     const serverConfigPath = await getServerConfigPath();
     const serverName = await getServerName();
     const serverPath = await getServerPath();
-    if (!serverConfigPath)
+    if (!serverConfigPath || !serverName)
       return res.status(400).json({
         error: "Server path not configured.",
         code: ErrorCode.MODS_SERVER_PATH_NOT_CONFIGURED,
@@ -3902,7 +3911,7 @@ router.post("/add-all-resolved-deps", async (req, res) => {
     const serverConfigPath = await getServerConfigPath();
     const serverName = await getServerName();
     const serverPath = await getServerPath();
-    if (!serverConfigPath) {
+    if (!serverConfigPath || !serverName) {
       return res.status(400).json({
         error: "Server config path not set",
         code: ErrorCode.MODS_CONFIG_PATH_NOT_SET,
@@ -4445,7 +4454,7 @@ router.post("/sync-mod-ids", async (req, res) => {
     const serverConfigPath = await getServerConfigPath();
     const serverName = await getServerName();
     const serverPath = await getServerPath();
-    if (!serverConfigPath) {
+    if (!serverConfigPath || !serverName) {
       return res.status(400).json({
         error: "Server config path not set",
         code: ErrorCode.MODS_CONFIG_PATH_NOT_SET,
@@ -4612,7 +4621,7 @@ router.get("/validate-config", async (req, res) => {
     const serverPath = await getServerPath();
     const serverName = await getServerName();
 
-    if (!serverConfigPath) {
+    if (!serverConfigPath || !serverName) {
       return res.status(400).json({
         error: "Server config path not set",
         code: ErrorCode.MODS_CONFIG_PATH_NOT_SET,
@@ -5216,7 +5225,7 @@ router.post("/add-mod-advanced", async (req, res) => {
     const serverName = await getServerName();
     const serverPath = await getServerPath();
 
-    if (!serverConfigPath) {
+    if (!serverConfigPath || !serverName) {
       return res.status(400).json({
         error: "Server config path not set",
         code: ErrorCode.MODS_CONFIG_PATH_NOT_SET,
