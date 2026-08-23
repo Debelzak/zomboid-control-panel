@@ -127,12 +127,12 @@
       "note": "检查 Discord 设置中的机器人令牌和 intents 权限。"
     },
     "bridgeConfigured": {
-      "label": "自动配置 bridge",
-      "note": "将面板指向活动服务器的 bridge 文件夹并启动监视器。之后游戏服务器必须在安装了 PanelBridge.lua 的情况下运行。"
+      "label": "自动配置桥接",
+      "note": "将面板指向活动服务器的桥接文件夹并启动监视器。之后游戏服务器必须在安装了 PanelBridge.lua 的情况下运行。"
     },
     "bridgeWritableOrHeartbeat": {
       "label": "打开服务器查找器",
-      "note": "重新部署 PanelBridge，确保服务器正在运行，并检查 bridge 文件夹的写入权限。"
+      "note": "重新部署 PanelBridge，确保服务器正在运行，并检查桥接文件夹的写入权限。"
     },
     "dbExistsOrWritable": {
       "label": "打开设置",
@@ -197,7 +197,7 @@
     "hidePassing": "隐藏通过项",
     "fixLabel": "修复：",
     "sourceRcon": "RCON",
-    "sourceBridge": "Bridge",
+    "sourceBridge": "桥接",
     "sourcePlayer": "玩家",
     "sourceServer": "服务器",
     "levelError": "错误",
@@ -255,7 +255,7 @@
     "dbBackupCreatedDesc": "备份已完成{{backupName}}。",
     "staleLocksRemovedTitle": "过期锁文件已删除",
     "staleLocksRemovedFallback": "已删除 {{count}} 个锁文件。",
-    "bridgeConfiguredTitle": "Bridge 已配置",
+    "bridgeConfiguredTitle": "桥接已配置",
     "bridgeConfiguredDesc": "正在监视 {{serverName}}。请启动服务器以完成握手。",
     "bridgeConfiguredServerFallback": "活动服务器",
     "crashLogsOpenedTitle": "崩溃日志已打开",
@@ -782,32 +782,32 @@
       "bridge": {
         "configured": {
           "skip": {
-            "label": "PanelBridge bridge 路径",
-            "message": "bridge 路径尚未配置（服务器可能正在启动）。"
+            "label": "PanelBridge 桥接路径",
+            "message": "桥接路径尚未配置（服务器可能正在启动）。"
           },
           "ok": {
-            "label": "bridge 路径已配置",
-            "message": "bridge IPC 目录已设置。"
+            "label": "桥接路径已配置",
+            "message": "桥接 IPC 目录已设置。"
           }
         },
         "writable": {
           "ok": {
-            "label": "bridge 目录可写",
+            "label": "桥接目录可写",
             "message": "面板可以为模组写入 commands.json。"
           },
           "warn": {
-            "label": "bridge 目录缺失",
-            "message": "bridge 文件夹尚不存在——模组首次写入 status.json 时会自动创建。"
+            "label": "桥接目录缺失",
+            "message": "桥接文件夹尚不存在——模组首次写入 status.json 时会自动创建。"
           },
           "fail": {
             "linux": {
-              "label": "bridge 目录不可写",
-              "message": "面板无法写入 bridge 目录。模组将无法接收命令。",
+              "label": "桥接目录不可写",
+              "message": "面板无法写入桥接目录。模组将无法接收命令。",
               "hint": "检查 Zomboid Lua 文件夹的所有者/权限（通常需要面板运行用户拥有 ~/Zomboid）"
             },
             "other": {
-              "label": "bridge 目录不可写",
-              "message": "面板无法写入 bridge 目录。模组将无法接收命令。",
+              "label": "桥接目录不可写",
+              "message": "面板无法写入桥接目录。模组将无法接收命令。",
               "hint": "检查 Lua 写入文件夹的文件系统权限"
             }
           }
@@ -836,8 +836,8 @@
         },
         "error": {
           "warn": {
-            "label": "Bridge 检查出错",
-            "message": "Bridge IPC 检查无法运行：{{reason}}"
+            "label": "桥接检查出错",
+            "message": "桥接 IPC 检查无法运行：{{reason}}"
           }
         }
       },
@@ -1000,13 +1000,13 @@
             "fail": {
               "label": "PanelBridge 未配置",
               "message": "地图通过 PanelBridge 获取玩家实时位置、载具和安全屋数据。缺少它时，地图将只显示静态底图。",
-              "hint": "请配置活动服务器的 Zomboid 数据路径，以便定位 bridge 文件夹。"
+              "hint": "请配置活动服务器的 Zomboid 数据路径，以便定位桥接文件夹。"
             }
           },
           "running": {
             "warn": {
               "label": "PanelBridge 服务未运行",
-              "message": "bridge 服务已配置，但当前未在轮询。实时地图数据将为空。"
+              "message": "桥接服务已配置，但当前未在轮询。实时地图数据将为空。"
             }
           },
           "mod": {
@@ -1119,10 +1119,10 @@
     "lastHeartbeatLabel": "上次心跳信号",
     "staleSuffix": " · 已过期",
     "consecutiveFailuresLabel": "连续失败次数",
-    "bridgePathLabel": "Bridge 路径",
+    "bridgePathLabel": "桥接路径",
     "requiredHandlersLabel": "所需处理程序",
     "requiredHandlersDesc": "地图会调用这些 PanelBridge 命令。如果游戏内模组中缺少它们，玩家、载具或空投将不会显示。",
-    "noBridgeData": "没有 bridge 数据——尚未配置。",
+    "noBridgeData": "没有桥接数据——尚未配置。",
     "liveProbesTitle": "实时数据探测",
     "liveProbesDesc": "运行与世界地图页面相同的 PanelBridge 调用。可用于在地图本身排查问题前，先确认模组是否正常响应。",
     "probeAll": "全部探测",
@@ -1148,7 +1148,7 @@
     "testActionsDescPrefix": "这些操作",
     "testActionsDescBold": "会影响实时游戏世界",
     "testActionsDescSuffix": "，且玩家可以看到。点击一次进入待命状态，4 秒内再次点击即可触发。",
-    "bridgeNotConnectedTitle": "Bridge 未连接",
+    "bridgeNotConnectedTitle": "桥接未连接",
     "bridgeNotConnectedDesc": "PanelBridge 模组必须在游戏内运行。测试操作已禁用。",
     "targetLabel": "目标：",
     "targetNoPlayersOnline": "没有玩家在线。",
@@ -1191,7 +1191,7 @@
   },
   "activityTab": {
     "title": "活动日志",
-    "description": "统一查看 RCON 命令、Bridge 操作、玩家事件和服务器事件",
+    "description": "统一查看 RCON 命令、桥接操作、玩家事件和服务器事件",
     "filterBySourceAria": "按来源筛选",
     "allSources": "全部来源",
     "searchPlaceholder": "搜索操作/详情……",

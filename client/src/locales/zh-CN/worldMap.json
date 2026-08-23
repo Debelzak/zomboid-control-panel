@@ -48,7 +48,7 @@
     "panToAriaWithHealth": "平移至 {{name}}，生命值 {{health}}%",
     "loading": "加载中……",
     "noPlayersOnline": "没有玩家在线",
-    "bridgeOffline": "bridge 离线"
+    "bridgeOffline": "桥接离线"
   },
   "hud": {
     "hoverForCoords": "悬停查看坐标"
@@ -101,7 +101,7 @@
     "repeatLastDrop": "重复上次空投",
     "savedPackages": "已保存的投放包",
     "presetCrates": "预设空投箱",
-    "bridgeOfflineDrops": "bridge 离线——空投不可用"
+    "bridgeOfflineDrops": "桥接离线——空投不可用"
   },
   "toasts": {
     "vehicleRepaired": "载具已修复",
