@@ -2186,6 +2186,121 @@ function buildThumbnailResolutionCheck(thumbStatus) {
   );
 }
 
+// Windowed inspection of the panel's own RCON command history (the same log
+// the Console page's History panel renders) for a real refusal FROM THE
+// GAME -- deliberately EXCLUDES connection/timeout failures, which the
+// rcon.connected check above already covers; reporting one outage through
+// two checks would be redundant, not more informative.
+//
+// A game-side rejection re-matches one of RconService.classifyRconResponse's
+// known patterns even after being persisted: logCommand() stores
+// rejection.error (the already-describe()-transformed text), not the raw
+// RCON reply, and each of the 4 known patterns still matches its own
+// transformed output (verified against server/services/rcon.js's
+// KNOWN_RCON_REJECTIONS literally, not guessed). A connection-error entry
+// (e.g. "Server is starting...") also carries success:0 but was never run
+// through classifyRconResponse in the first place, so re-classifying it here
+// correctly returns null and excludes it.
+const RCON_REJECTION_WINDOW_MS = 24 * 60 * 60 * 1000;
+const RCON_REJECTION_HISTORY_SCAN_LIMIT = 500; // matches RETENTION.command_history's own cap
+
+// Keyed to the SAME 4 rejection shapes rcon.js's KNOWN_RCON_REJECTIONS
+// classifies, matched here against the persisted (already-transformed) text
+// since classifyRconResponse itself only reports THAT something matched,
+// not WHICH pattern.
+const RCON_REJECTION_REASON_HINTS = [
+  {
+    match: /^Unknown command\b/i,
+    hint: "The command does not exist on this build — commands are added and removed between PZ versions, so it's worth checking it is still right for the installed build.",
+  },
+  {
+    match: /^Wrong arguments\b/i,
+    hint: "The game rejected the arguments. If this started recently, the syntax may have changed in an update — report the exact action to the panel developers.",
+  },
+  {
+    match: /^Not enough rights\b/i,
+    hint: "The RCON account lacks permission on the GAME SERVER. This is the game's own admin access level, separate from this panel's Roles & Permissions — fix in-game or via setaccesslevel.",
+  },
+  {
+    match: /can only be run from in-game/i,
+    hint: "Only works typed in-game, never over RCON. Expected for releasing a safehouse until PanelBridge supports it — not a misconfiguration.",
+  },
+];
+
+// Always present, both states -- not filler: there is no reliable way to
+// flag an UNRECOGNISED rejection shape without an unproven heuristic, so
+// this names where a human should look instead of pretending to cover it.
+const RCON_REJECTIONS_CLOSING_LINE =
+  "Everything the panel can positively identify as a rejection is listed above. For anything that looks wrong but is not, the Console page's command history shows the exact raw response every RCON command received, so a person can spot something no automated check catches.";
+
+// Pure summarizer -- no live RconService needed, `classify` is injected so
+// this (and buildRconCommandRejectionsCheck below) are testable without a
+// real RCON connection. `history` is getCommandHistory()'s raw array
+// (newest first, per appendCapped's default). Returns null if `classify`
+// itself isn't available (no rconService registered) -- distinct from a
+// clean zero-rejections result.
+function summarizeRconRejections(history, classify, { windowMs = RCON_REJECTION_WINDOW_MS, now = Date.now() } = {}) {
+  if (typeof classify !== "function") return null;
+  const cutoff = now - windowMs;
+  const byCommand = new Map();
+  let total = 0;
+  const reasonHints = new Set();
+
+  for (const entry of history || []) {
+    if (entry?.success) continue; // classifyRconResponse only ever fails a success:0 entry
+    const executedAt = new Date(entry?.executed_at).getTime();
+    if (!Number.isFinite(executedAt) || executedAt < cutoff) continue;
+    const rejection = classify(entry?.response);
+    if (!rejection) continue; // a connection/timeout failure, not a game rejection
+
+    total++;
+    byCommand.set(entry.command, (byCommand.get(entry.command) || 0) + 1);
+    const known = RCON_REJECTION_REASON_HINTS.find((r) => r.match.test(entry.response));
+    if (known) reasonHints.add(known.hint);
+  }
+
+  return {
+    total,
+    breakdown: [...byCommand.entries()].map(([command, count]) => ({ command, count })),
+    reasonHints: [...reasonHints],
+  };
+}
+
+function buildRconCommandRejectionsCheck(summary) {
+  if (!summary || typeof summary.total !== "number" || !Array.isArray(summary.breakdown)) {
+    // Unrecognised/unavailable -- fail closed to warn, not ok, same rule as
+    // worldmap.tiles.buildDetect and mods.thumbnailResolution.
+    return diagWarn(
+      "rcon.commandRejections",
+      "RCON command rejection status unavailable",
+      "Could not determine whether the game server has rejected any RCON commands recently.",
+      { category: "rcon", hint: RCON_REJECTIONS_CLOSING_LINE },
+    );
+  }
+
+  if (summary.total === 0) {
+    return diagOk(
+      "rcon.commandRejections",
+      "No RCON command rejections",
+      "No RCON commands have been rejected by the game server recently.",
+      { category: "rcon", hint: RCON_REJECTIONS_CLOSING_LINE },
+    );
+  }
+
+  const list = summary.breakdown.map((b) => `${b.command} (x${b.count})`).join(", ");
+  const hint = [...summary.reasonHints, RCON_REJECTIONS_CLOSING_LINE].join(" ");
+  return diagWarn(
+    "rcon.commandRejections",
+    "The game server has rejected some RCON commands",
+    `${summary.total} commands were rejected by the game server in the last 24 hours: ${list}.`,
+    {
+      category: "rcon",
+      hint,
+      params: { total: summary.total, list },
+    },
+  );
+}
+
 router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, res) => {
   const t0 = Date.now();
   try {
@@ -2310,6 +2425,29 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
               category: "services",
               hint: "Settings → RCON · server.ini → RCONPassword",
             },
+          ),
+        );
+      }
+
+      // Deliberately excludes connection/timeout failures -- rcon.connected
+      // above already covers that outage; reporting it through both checks
+      // would double-report the same thing. Own try/catch so a failure here
+      // can't take out checks already pushed above it.
+      try {
+        const summary = summarizeRconRejections(
+          await getCommandHistory(RCON_REJECTION_HISTORY_SCAN_LIMIT),
+          rconService?.classifyRconResponse
+            ? rconService.classifyRconResponse.bind(rconService)
+            : null,
+        );
+        checks.push(buildRconCommandRejectionsCheck(summary));
+      } catch (e) {
+        checks.push(
+          diagWarn(
+            "rcon.commandRejections",
+            "RCON command rejection status unavailable",
+            `Could not determine whether the game server has rejected any RCON commands recently: ${e?.message || "unknown"}`,
+            { category: "rcon" },
           ),
         );
       }
@@ -5472,3 +5610,6 @@ export {
 // Exported for direct unit testing of the GET /diagnostics thumbnail-
 // resolution check -- see server/tests/thumbnailResolutionCheck.test.js.
 export { buildThumbnailResolutionCheck };
+// Exported for direct unit testing of the GET /diagnostics RCON
+// command-rejection check -- see server/tests/rconCommandRejectionsCheck.test.js.
+export { summarizeRconRejections, buildRconCommandRejectionsCheck };
