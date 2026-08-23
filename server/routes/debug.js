@@ -43,6 +43,7 @@ import {
   getB42TopFormat,
   getB42ResolutionStatus,
 } from "./mapProxy.js";
+import { getThumbnailResolutionStatus } from "./mods.js";
 import {
   getCandidateZomboidPaths,
   inspectZomboidPath,
@@ -2115,6 +2116,76 @@ function fmtAge(ms) {
   return `${Math.round(h / 24)}d ago`;
 }
 
+// Mod thumbnails silently fail on every real request (GET /thumbnail/:id
+// returns HTTP 200 with a 1x1 transparent GIF on every failure path, so the
+// browser's onError can never fire), so this check is the only place a
+// failed resolution is ever surfaced. DELIBERATE DEVIATION from every other
+// check in this file: it counts ALL tracked mods host-wide, not just the
+// active server's. If it were server-scoped, a host with zero Steam access
+// whose active server happens to track no mods would report "0 of 0
+// failing" -- a clean green tick while everything is actually broken.
+// Thumbnails resolve per-mod, not per-server, and
+// getThumbnailResolutionStatus() itself counts unscoped -- this follows that
+// rather than re-scoping it to match the rest of the tab. Extracted as its
+// own function (mirrors buildSystemInfo/buildServerConfigSummary etc.
+// earlier in this file) so it's independently testable without invoking the
+// whole GET /diagnostics handler.
+function buildThumbnailResolutionCheck(thumbStatus) {
+  const failing = thumbStatus?.failing;
+  const total = thumbStatus?.total;
+  const lastError = thumbStatus?.lastError ?? null;
+
+  if (typeof failing !== "number" || typeof total !== "number") {
+    // Unrecognised shape from getThumbnailResolutionStatus() -- fail closed
+    // to warn, not ok, same rule as worldmap.tiles.buildDetect.
+    return diagWarn(
+      "mods.thumbnailResolution",
+      "Mod thumbnail status unavailable",
+      "Could not determine mod thumbnail resolution status.",
+      { category: "services" },
+    );
+  }
+
+  if (failing === 0) {
+    return diagOk(
+      "mods.thumbnailResolution",
+      "Mod thumbnails resolving normally",
+      total > 0
+        ? `${total} tracked mod${total === 1 ? "" : "s"}, all thumbnails resolving.`
+        : "No thumbnail resolution failures.",
+      { category: "services", params: { total } },
+    );
+  }
+
+  if (failing < total) {
+    const reason = lastError?.reason || "unknown reason";
+    const workshopId = lastError?.workshopId || "unknown";
+    const age = lastError ? fmtAge(Date.now() - lastError.at).replace(/ ago$/, "") : "unknown";
+    return diagWarn(
+      "mods.thumbnailResolution",
+      "Some mod thumbnails are not resolving",
+      `${failing} of ${total} tracked mods currently have no thumbnail. Last failure: ${reason} (Workshop ID ${workshopId}, ${age} ago).`,
+      {
+        category: "services",
+        hint: "Usually means those specific Workshop items were deleted, made private, or region-restricted on Steam — check the Workshop ID above on steamcommunity.com. Resolution retries automatically every 5 minutes; this clears on its own if the item is public and Steam is reachable.",
+        params: { failing, total, reason, workshopId, age },
+      },
+    );
+  }
+
+  const reason = lastError?.reason || "unknown reason";
+  return diagFail(
+    "mods.thumbnailResolution",
+    "No mod thumbnails are resolving",
+    `All ${total} tracked mods currently have no thumbnail. Last failure: ${reason}.`,
+    {
+      category: "services",
+      hint: "Every mod failing at once, rather than just a few, usually means this host cannot reach Steam at all rather than a problem with any individual mod — check outbound HTTPS to api.steampowered.com and steamuserimages-a.akamaihd.net / *.steamstatic.com / *.akamaihd.net / images.steamusercontent.com (firewall, proxy, or DNS). Once reachable, thumbnails resolve automatically within 5 minutes — no restart needed.",
+      params: { total, reason },
+    },
+  );
+}
+
 router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, res) => {
   const t0 = Date.now();
   try {
@@ -2326,6 +2397,25 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
           diagSkip("discord.bot", "Discord bot", "Not configured (optional).", {
             category: "services",
           }),
+        );
+      }
+
+      // Mod thumbnails silently fail (the endpoint returns HTTP 200 with a
+      // 1x1 transparent GIF on every failure path), so this is the only
+      // place a failed resolution is ever surfaced. Own try/catch (not the
+      // shared services.error catch below) so a failure here can't take out
+      // the checks already pushed above it, matching every other
+      // collector's degrade-alone contract.
+      try {
+        checks.push(buildThumbnailResolutionCheck(await getThumbnailResolutionStatus()));
+      } catch (e) {
+        checks.push(
+          diagWarn(
+            "mods.thumbnailResolution",
+            "Mod thumbnail status unavailable",
+            `Could not determine mod thumbnail resolution status: ${e?.message || "unknown"}`,
+            { category: "services" },
+          ),
         );
       }
     } catch (e) {
@@ -5379,3 +5469,6 @@ export {
   buildBackupsSummary,
   buildDiscordBotStatus,
 };
+// Exported for direct unit testing of the GET /diagnostics thumbnail-
+// resolution check -- see server/tests/thumbnailResolutionCheck.test.js.
+export { buildThumbnailResolutionCheck };
