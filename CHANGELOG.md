@@ -249,6 +249,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is not something the panel can fix from its side - so the point of this change is that you will
   find out, instead of finding out from a wrong map.
 
+- **The player activity log could record actions that never happened.** Kicks, access-level
+  changes, god mode, invisibility, noclip, and granting items, XP or vehicles were all written into
+  the activity history as soon as the panel sent them - without checking whether the game server
+  actually accepted the command. If the server was offline or restarting, the command quietly went
+  nowhere while the history recorded it as done. Reviewing what an administrator had done would
+  then show actions that never reached the game. Bans and whitelist changes were already fixed for
+  this; these eight had been missed. The history now records an action only once the server has
+  confirmed it.
+
 - **"Ping" on the Server Finder never worked, and said "N/A" instead of saying so.** The ping
   request was sent without the panel's own credentials, so the server rejected it before it ever
   reached the game server being tested - every time, for every signed-in user. The page then showed
@@ -637,6 +646,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on scanning and pattern-matching every process on the machine.
 
 ### Security and maintenance
+
+- **A single-use recovery code could be used more than once.** Recovery codes are meant to work
+  exactly once, and each redemption marks the code as spent. But two redemptions arriving at the
+  same moment were each reading the stored codes before either had written its result, so both saw
+  an unused code and both reset the password. The redemption path now takes the same lock the panel
+  already used for creating users and changing roles, so redemptions are handled strictly one at a
+  time and a spent code is spent.
 
 - **Any non-administrator account could take over the administrator account.** The recovery-codes
   endpoint checked that you were signed in, but not *who* you were - and the recovery codes it
