@@ -1,11 +1,14 @@
 import express from "express";
 import fs from "fs";
 import path from "path";
+import { execFile } from "child_process";
+import { promisify } from "util";
 import { createLogger } from "../utils/logger.js";
 import { getDataPaths } from "../utils/paths.js";
 import { getActiveServer } from "../database/init.js";
 import { listPersistedVehicles } from "../utils/vehiclesDb.js";
 const log = createLogger("API:MapProxy");
+const execFileAsync = promisify(execFile);
 
 const router = express.Router();
 
@@ -85,27 +88,112 @@ function writeDiskCacheAsync(relPath, buffer) {
 // b42map.com has migrated to pzmap.org. The old map.projectzomboid.com host
 // now redirects there, adding another failure point for direct browser loads.
 //
-// pzmap.org split into two hosts: the site root (and build_list.json, which
-// lives under a versioned static_<timestamp>/ path served FROM that root —
-// see getStaticRoot() below) stayed at pzmap.org, but tiles and every
-// per-build descriptor under a version directory (map_info.json, layer0.dzi,
-// base_top/layer0.dzi, and the tiles themselves) moved to tiles.pzmap.org
-// AND dropped the /maps path segment in the move:
+// pzmap.org split into two hosts: the site root and its build-list API stayed
+// at pzmap.org, but tiles and every per-build descriptor under a version
+// directory (map_info.json, layer0.dzi, base_top/layer0.dzi, and the tiles
+// themselves) moved to tiles.pzmap.org AND dropped the /maps path segment:
 //   old (404s now): https://pzmap.org/maps/<version>/base/layer<floor>_files/<level>/<tile>
 //   new:            https://tiles.pzmap.org/<version>/base/layer<floor>_files/<level>/<tile>
-// Verified directly (Node's own fetch, not curl, with this file's real
-// User-Agent) against both hosts for every shape this file requests: tiles,
-// map_info.json, layer0.dzi, base_top/layer0.dzi, and base_top tiles, for
-// both B42 and B41 version directories. Confirmed root/build_list.json did
-// NOT move: tiles.pzmap.org/ 404s outright (not just blocked), pzmap.org/
-// still serves it. Two different constants below, do not merge them.
-// We resolve the latest B42 version directory dynamically from build_list.json
-// so tile loading stays current when PZ ships new map builds without a panel update.
-const PZ_MAP_ROOT = "https://pzmap.org"; // site root + build_list.json only — unchanged by the migration
+//
+// build_list.json (what this file used to fetch for the build list) is DEAD,
+// not just blocked -- it's a genuine 404 on both hosts. pzmap.org's own
+// current bundle (read directly out of its shipped JS) fetches
+// GET pzmap.org/api/builds/default (the build pzmap.org itself is showing
+// right now) and GET pzmap.org/api/builds (the full list, oldest-first --
+// NOT newest-first, unlike the old build_list.json's assumed ordering) as a
+// fallback when no entry is flagged default. See fetchBuildDefault() /
+// fetchBuildList() below.
+//
+// Separately: every JSON/XML/HTML descriptor path this file needs on EITHER
+// host (pzmap.org/api/builds*, tiles.pzmap.org/<dir>/base/layer0.dzi,
+// .../map_info.json, .../base_top/layer0.dzi) is behind a Cloudflare
+// bot-management challenge that blocks Node's own TLS stack outright --
+// confirmed identically for both `fetch` and the `https` module, so this is
+// not a fetch-vs-https question, it's every HTTP client built on Node's TLS
+// stack. curl gets through this challenge far more reliably than either --
+// confirmed independently by two of us, across every path on both hosts,
+// many times over. Raw tile BYTES (.../layer<floor>_files/<level>/<tile>.jpg,
+// what serveTile() below fetches) are NOT behind this rule for any client
+// tested, including plain Node fetch -- that's why tile serving already
+// works today even though discovery doesn't; don't route serveTile()'s
+// per-tile hot path through curl, there's no need and spawning a process
+// per tile would be a real perf regression.
+//
+// What curl's success does NOT depend on, despite an earlier theory here:
+// a specific User-Agent string. We measured curl passing with a spoofed
+// full browser UA, and separately passing with this file's own honest
+// identifying UA below -- and, hours apart, saw one of those SAME requests
+// briefly 403 for no header-shaped reason at all. Whatever gates these
+// paths is probabilistic and/or IP- or time-scored, not a deterministic
+// per-request rule we can satisfy by getting a header right. So:
+// getB42Map() below treats every curl call as expected to occasionally (or
+// even permanently, if the heuristic tightens) fail -- caches a good
+// result, never caches a failure as if it were an answer, and always keeps
+// the hardcoded fallback as a real last resort. Do not build logic here
+// that assumes a successful resolve today predicts one tomorrow.
+const PZ_MAP_ROOT = "https://pzmap.org"; // site root + the build-list API — unchanged by the migration
 const PZ_TILES_ROOT = "https://tiles.pzmap.org"; // tiles + per-build descriptors, no /maps segment
+
+// Sent on principle (this is genuinely us, not a spoofed identity) and
+// because SOME plausible User-Agent is still better than none for a client
+// that might get more scrutiny with no header at all -- see the header
+// comment above for why this string is NOT load-bearing the way an earlier
+// version of this comment claimed. Keep it identifying; do not swap in a
+// browser-spoofing string on the theory that it's required, that theory
+// didn't hold up.
+const CURL_DISCOVERY_UA =
+  "ZomboidControlPanel/1.0 (+https://github.com/fpsacha/zomboid-control-panel)";
+const CURL_TIMEOUT_S = 8;
+const CURL_STATUS_MARKER = "\n__CURL_HTTP_STATUS__:";
+
+// Runs curl as a subprocess to reach a discovery URL Node's own TLS stack
+// cannot (see the comment above). ALWAYS an argument array, NEVER shell:true
+// and NEVER string-interpolated — the directory segment of these URLs
+// ultimately comes from a remote JSON document (pzmap.org's own response),
+// and this floor has already shipped one shell:true incident. `--` before
+// the URL stops curl from ever parsing it as a flag. Returns a fetch()-like
+// {ok, status, text} shape so callers don't need two code paths. Missing
+// curl (ENOENT) and a request failure both surface as a thrown Error —
+// callers must treat that as a degradation to the next tier, never as a
+// user-visible error.
+async function fetchViaCurl(url) {
+  let stdout;
+  try {
+    ({ stdout } = await execFileAsync(
+      "curl",
+      [
+        "-s",
+        "--max-time",
+        String(CURL_TIMEOUT_S),
+        "-A",
+        CURL_DISCOVERY_UA,
+        "-w",
+        `${CURL_STATUS_MARKER}%{http_code}`,
+        "--",
+        url,
+      ],
+      { timeout: (CURL_TIMEOUT_S + 2) * 1000, maxBuffer: 20 * 1024 * 1024 },
+    ));
+  } catch (err) {
+    throw new Error(
+      err.code === "ENOENT"
+        ? "curl is not available on this host"
+        : `curl request failed: ${err.message}`,
+    );
+  }
+  const idx = stdout.lastIndexOf(CURL_STATUS_MARKER);
+  if (idx === -1) throw new Error("curl output missing its status marker");
+  const status = Number(stdout.slice(idx + CURL_STATUS_MARKER.length).trim());
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    text: stdout.slice(0, idx),
+  };
+}
+
 // 42.19.0 was removed from map.projectzomboid.com - /maps/42.19.0/base/ now
 // 404s in its entirety, so the previous fallback could not serve a single tile.
-// It is still listed in build_list.json, so "listed" is not evidence a build is
+// It is still listed in the build list, so "listed" is not evidence a build is
 // still rendered; only the fallback needs to be a build that actually exists.
 const B42_DIR_FALLBACK = "42.20.0";
 const B42_DIR_TTL_MS = 24 * 60 * 60 * 1000; // re-resolve at most once per 24 h
@@ -136,18 +224,13 @@ const B42_GEOMETRY_FALLBACK = {
 // ratio instead puts markers ~2300 px (~36 tiles) west of where they are.
 async function fetchMapProjection(directory) {
   try {
-    const resp = await fetch(
+    // JSON descriptor path — Node's own TLS stack is challenged here, curl
+    // isn't (see CURL_DISCOVERY_UA above).
+    const resp = await fetchViaCurl(
       `${PZ_TILES_ROOT}/${directory}/base/map_info.json`,
-      {
-        signal: AbortSignal.timeout(5000),
-        headers: {
-          "User-Agent":
-            "ZomboidControlPanel/1.0 (+https://github.com/fpsacha/zomboid-control-panel)",
-        },
-      },
     );
     if (!resp.ok) return null;
-    const info = await resp.json();
+    const info = JSON.parse(resp.text);
     const x0 = Number(info?.x0);
     const y0 = Number(info?.y0);
     const sqr = Number(info?.sqr);
@@ -164,18 +247,17 @@ async function fetchMapProjection(directory) {
 // the build's own DZI descriptor and hand it to the client.
 async function fetchMapGeometry(directory) {
   try {
-    const resp = await fetch(
-      `${PZ_TILES_ROOT}/${directory}/base/layer0.dzi`,
-      {
-        signal: AbortSignal.timeout(5000),
-        headers: {
-          "User-Agent":
-            "ZomboidControlPanel/1.0 (+https://github.com/fpsacha/zomboid-control-panel)",
-        },
-      },
-    );
+    // XML descriptor path — same Cloudflare-vs-Node's-TLS-stack situation as
+    // fetchMapProjection() above. Runs alongside it (Promise.all, not a
+    // sequential await) since they're independent curl subprocess calls —
+    // each one pays its own connection setup cost, so serializing them here
+    // just adds latency to every cold discovery for no correctness benefit.
+    const [resp, projection] = await Promise.all([
+      fetchViaCurl(`${PZ_TILES_ROOT}/${directory}/base/layer0.dzi`),
+      fetchMapProjection(directory),
+    ]);
     if (!resp.ok) return null;
-    const xml = await resp.text();
+    const xml = resp.text;
     const tileSize = Number(xml.match(/TileSize="(\d+)"/)?.[1]);
     const width = Number(xml.match(/Width="(\d+)"/)?.[1]);
     const height = Number(xml.match(/Height="(\d+)"/)?.[1]);
@@ -185,7 +267,7 @@ async function fetchMapGeometry(directory) {
       width,
       height,
       maxLevel: Math.ceil(Math.log2(Math.max(width, height))),
-      ...((await fetchMapProjection(directory)) || {}),
+      ...(projection || {}),
     };
   } catch {
     return null;
@@ -214,9 +296,13 @@ let _b42DirFetchedAt = 0;
 // dynamic resolve would have picked (it does today), so the directory string
 // alone cannot tell a healthy resolve apart from a permanently broken one —
 // this is what makes the fallback silent without an explicit source flag.
-let _b42Source = null; // "dynamic" | "fallback"
-let _b42FallbackReason = null; // why we're on fallback, or null when the last resolution attempt succeeded
+let _b42Source = null; // "dynamic" | "fallback" — contract fixed in conv-mapbuild, shared with getB42ResolutionStatus()'s consumers
+let _b42FallbackReason = null; // why we're not on "dynamic", or null when the last resolution attempt succeeded
 
+// A HEAD probe against a tile BYTE path, not a JSON/XML descriptor — this is
+// the one discovery request that's fine on plain Node fetch (see the
+// perf-regression note on CURL_DISCOVERY_UA above): tile bytes aren't behind
+// the Cloudflare descriptor-path challenge for any client tested.
 async function hasTileCoverage(directory, geometry) {
   const level = Math.max(0, geometry.maxLevel - 6);
   const levelScale = 2 ** (geometry.maxLevel - level);
@@ -262,18 +348,12 @@ async function getB42TopFormat(directory) {
   const cached = _topFormatCache.get(directory);
   if (cached) return cached;
   try {
-    const resp = await fetch(
+    // XML descriptor path — curl, not fetch, same reason as fetchMapGeometry.
+    const resp = await fetchViaCurl(
       `${PZ_TILES_ROOT}/${directory}/base_top/layer0.dzi`,
-      {
-        signal: AbortSignal.timeout(5000),
-        headers: {
-          "User-Agent":
-            "ZomboidControlPanel/1.0 (+https://github.com/fpsacha/zomboid-control-panel)",
-        },
-      },
     );
     if (resp.ok) {
-      const xml = await resp.text();
+      const xml = resp.text;
       const format = xml.match(/Format="(\w+)"/)?.[1]?.toLowerCase();
       if (format && TOP_CONTENT_TYPES[format]) {
         _topFormatCache.set(directory, format);
@@ -286,85 +366,46 @@ async function getB42TopFormat(directory) {
   return TOP_FORMAT_FALLBACK;
 }
 
-// ─── Versioned static root ───────────────────────────────────────────────────
-// map.projectzomboid.com moved build_list.json behind a cache-busting directory
-// (/static_<timestamp>/build_list.json); the bare /build_list.json it used to
-// serve now 404s. That failure is silent - getB42Map() simply falls back - so
-// every install quietly pinned itself to B42_DIR_FALLBACK, and once 42.19.0 was
-// deleted upstream that meant a blank map with no error surfaced anywhere.
-//
-// The root document publishes the current directory as
-//   window.__PZMAP_STATIC_ROOT = 'static_20260803224102/';
-// so read it from there rather than hardcoding a timestamp that would rot the
-// next time upstream re-versions.
-const STATIC_ROOT_TTL_MS = 24 * 60 * 60 * 1000;
-let _staticRoot = null; // "static_<ts>/", or "" meaning the bare site root
-let _staticRootFetchedAt = 0;
-
-async function getStaticRoot() {
-  const now = Date.now();
-  if (_staticRoot !== null && now - _staticRootFetchedAt < STATIC_ROOT_TTL_MS) {
-    return _staticRoot;
+// pzmap.org's own bundle calls this first: the build it is showing right
+// now, computed upstream so we don't need to re-derive "current" from list
+// order at all. One request instead of a walk — this is the fast, preferred
+// path; fetchBuildList() below is the fallback for when this build itself
+// isn't usable yet (see hasTileCoverage's "listed but not rendered" note).
+async function fetchBuildDefault() {
+  const resp = await fetchViaCurl(`${PZ_MAP_ROOT}/api/builds/default`);
+  if (!resp.ok) {
+    throw new Error(`HTTP ${resp.status} for /api/builds/default`);
   }
-  try {
-    const resp = await fetch(`${PZ_MAP_ROOT}/`, {
-      signal: AbortSignal.timeout(5000),
-      headers: {
-        "User-Agent":
-          "ZomboidControlPanel/1.0 (+https://github.com/fpsacha/zomboid-control-panel)",
-      },
-    });
-    if (resp.ok) {
-      const html = await resp.text();
-      // Only the exact shape upstream publishes is accepted: this value becomes
-      // a URL path segment, so a looser pattern would let a malformed or
-      // adversarial match reach fetch().
-      const dir = html.match(
-        /__PZMAP_STATIC_ROOT\s*=\s*['"](static_\d+)\/?['"]/,
-      )?.[1];
-      if (dir) {
-        if (_staticRoot !== `${dir}/`) {
-          log.info(`PZ map static root resolved: ${dir}`);
-        }
-        _staticRoot = `${dir}/`;
-        _staticRootFetchedAt = now;
-        return _staticRoot;
-      }
-    }
-  } catch {
-    // Fall through to the bare site root below.
+  const entry = JSON.parse(resp.text);
+  if (!entry?.directory) {
+    throw new Error("/api/builds/default response had no directory");
   }
-  // Serving build_list.json from the site root is how upstream behaved before
-  // the move, so it stays the fallback: a revert keeps working untouched.
-  _staticRoot = _staticRoot ?? "";
-  _staticRootFetchedAt = now - STATIC_ROOT_TTL_MS + B42_DIR_RETRY_MS;
-  return _staticRoot;
+  return entry;
 }
 
-// Try the versioned location first, then the legacy bare path, so the panel
-// keeps working whichever layout upstream is currently serving.
+// Full build list. Confirmed directly against the live endpoint: entries
+// are OLDEST-first (id 1 is the ancient 0.1.5 build) — the opposite of what
+// the old build_list.json's ordering was assumed to be. getB42Map() reverses
+// this before walking it; walking it forward would only ever reach OLDER
+// builds than whatever's already resolved, never a build shipped after it.
 async function fetchBuildList() {
-  const staticRoot = await getStaticRoot();
-  const candidates = staticRoot
-    ? [`${staticRoot}build_list.json`, "build_list.json"]
-    : ["build_list.json"];
-  let lastError = null;
-  for (const rel of candidates) {
-    try {
-      const resp = await fetch(`${PZ_MAP_ROOT}/${rel}`, {
-        signal: AbortSignal.timeout(5000),
-        headers: {
-          "User-Agent":
-            "ZomboidControlPanel/1.0 (+https://github.com/fpsacha/zomboid-control-panel)",
-        },
-      });
-      if (resp.ok) return await resp.json();
-      lastError = new Error(`HTTP ${resp.status} for /${rel}`);
-    } catch (err) {
-      lastError = err;
-    }
+  const resp = await fetchViaCurl(`${PZ_MAP_ROOT}/api/builds`);
+  if (!resp.ok) {
+    throw new Error(`HTTP ${resp.status} for /api/builds`);
   }
-  throw lastError || new Error("build_list.json is unreachable");
+  const list = JSON.parse(resp.text);
+  if (!Array.isArray(list)) {
+    throw new Error("/api/builds response was not an array");
+  }
+  return list;
+}
+
+// The full string (not just a prefix) must match a plain version pattern —
+// this becomes a disk cache path segment and a URL path segment, so a
+// malformed/adversarial value from upstream's own JSON must never reach an
+// fs call or a fetch/curl URL unchecked.
+function isB42PlusCandidate(directory) {
+  return /^4[2-9][\w.\-]*$/.test(directory || "");
 }
 
 async function getB42Map() {
@@ -373,51 +414,72 @@ async function getB42Map() {
     return _b42Map;
   }
   let failureReason = null;
-  try {
-    const list = await fetchBuildList();
-    // Entries are ordered newest-first. Walk B42+ candidates until one
-    // actually has rendered tile coverage, not just a build_list.json entry.
-    // The full string (not just a prefix) must match a plain version
-    // pattern — this now also becomes a disk cache path segment, so a
-    // malformed/adversarial value from upstream must never reach fs calls.
-    const candidates = Array.isArray(list)
-      ? list.filter((e) => /^4[2-9][\w.\-]*$/.test(e.directory || ""))
-      : [];
-    if (candidates.length === 0) {
-      failureReason = "build_list.json listed no B42+ candidates";
-    }
-    for (const entry of candidates) {
-      if (!entry?.directory) continue;
-      const geometry = await fetchMapGeometry(entry.directory);
-      if (!geometry) {
-        failureReason = `could not read ${entry.directory}/base/layer0.dzi (discovery request to tiles.pzmap.org was refused)`;
-        log.warn(
-          `B42 map directory ${entry.directory} has no readable layer0.dzi — trying older build.`,
-        );
-        continue;
-      }
-      if (await hasTileCoverage(entry.directory, geometry)) {
-        if (_b42Map?.directory !== entry.directory || _b42Source !== "dynamic") {
-          log.info(
-            `B42 map directory resolved: ${entry.directory} (${geometry.width}x${geometry.height}, tile ${geometry.tileSize}, max level ${geometry.maxLevel})`,
-          );
-        }
-        _b42Map = { directory: entry.directory, ...geometry };
-        _b42DirFetchedAt = now;
-        _b42Source = "dynamic";
-        _b42FallbackReason = null;
-        return _b42Map;
-      }
-      failureReason = `${entry.directory} listed but has no rendered tile coverage yet`;
+
+  async function tryResolve(directory) {
+    const geometry = await fetchMapGeometry(directory);
+    if (!geometry) {
+      failureReason = `could not read ${directory}/base/layer0.dzi (discovery request to tiles.pzmap.org was refused)`;
       log.warn(
-        `B42 map directory ${entry.directory} listed but has no rendered tile coverage yet — trying older build.`,
+        `B42 map directory ${directory} has no readable layer0.dzi — trying another build.`,
       );
+      return false;
+    }
+    if (!(await hasTileCoverage(directory, geometry))) {
+      failureReason = `${directory} listed but has no rendered tile coverage yet`;
+      log.warn(
+        `B42 map directory ${directory} listed but has no rendered tile coverage yet — trying another build.`,
+      );
+      return false;
+    }
+    if (_b42Map?.directory !== directory || _b42Source !== "dynamic") {
+      log.info(
+        `B42 map directory resolved: ${directory} (${geometry.width}x${geometry.height}, tile ${geometry.tileSize}, max level ${geometry.maxLevel})`,
+      );
+    }
+    _b42Map = { directory, ...geometry };
+    _b42DirFetchedAt = now;
+    _b42Source = "dynamic";
+    _b42FallbackReason = null;
+    return true;
+  }
+
+  let alreadyTried = null;
+  try {
+    // Tier 1a: pzmap.org's own "this is current" flag.
+    const def = await fetchBuildDefault();
+    if (isB42PlusCandidate(def.directory)) {
+      alreadyTried = def.directory;
+      if (await tryResolve(def.directory)) return _b42Map;
+    } else {
+      failureReason = `/api/builds/default returned a non-B42+ directory (${def.directory})`;
     }
   } catch (err) {
     failureReason = err.message;
   }
-  // Every path that reaches here is a fallback — either the try block threw,
-  // or it ran to completion without a candidate returning early above.
+
+  try {
+    // Tier 1b: the default-flagged build wasn't reachable or isn't
+    // rendered yet — walk the rest of the list, newest-first (reversed;
+    // see fetchBuildList()'s comment), skipping whatever Tier 1a already
+    // tried.
+    const list = await fetchBuildList();
+    const candidates = list
+      .filter(
+        (e) => isB42PlusCandidate(e?.directory) && e.directory !== alreadyTried,
+      )
+      .reverse();
+    if (candidates.length === 0 && !alreadyTried) {
+      failureReason = failureReason || "/api/builds listed no B42+ candidates";
+    }
+    for (const entry of candidates) {
+      if (await tryResolve(entry.directory)) return _b42Map;
+    }
+  } catch (err) {
+    failureReason = failureReason || err.message;
+  }
+
+  // Every path that reaches here is a fallback — both tiers above either
+  // threw or ran to completion without a candidate returning early.
   if (_b42Source !== "fallback" || _b42FallbackReason !== failureReason) {
     log.warn(
       `B42 build auto-detect failed (${failureReason || "unknown reason"}) — serving hardcoded fallback ${_b42Map?.directory || B42_DIR_FALLBACK}. This will NOT track the next PZ map build until discovery starts working again.`,
@@ -439,15 +501,21 @@ async function getB42Dir() {
   return (await getB42Map()).directory;
 }
 
-// For the worldmap diagnostic: reports whether the build currently in use was
-// actually discovered from build_list.json or is the hardcoded fallback, and
-// why. Never infer health from the directory string alone (see _b42Source's
-// comment above) — call this instead.
+// For the worldmap diagnostic: reports whether the build currently in use
+// was actually discovered dynamically or is the hardcoded fallback, and
+// why. Never infer health from the directory string alone (see
+// _b42Source's comment above) — call this instead. Contract fixed in
+// conv-mapbuild (corrected): { source, directory, reason }, shared with
+// debug.js. Two source values only — a client-resolve tier was considered
+// and explicitly rejected: Pam could not get a single verified-working
+// cross-origin resolve through Cloudflare from any browser she could drive,
+// and shipping unverifiable fallback machinery is worse than not having it
+// — it's the same "looks healthy, isn't" shape as the defect this whole
+// feature exists to fix.
 function getB42ResolutionStatus() {
   return {
     source: _b42Source,
     directory: _b42Map?.directory ?? B42_DIR_FALLBACK,
-    usingFallback: _b42Source === "fallback",
     reason: _b42FallbackReason,
   };
 }
@@ -651,8 +719,8 @@ router.get("/vehicles", async (req, res) => {
 
 // Proxy DZI tiles from tiles.pzmap.org (migrated from pzmap.org, itself
 // migrated from b42map.com) to avoid CORS restrictions. Resolves the latest
-// B42 map directory dynamically from build_list.json so new PZ map builds
-// are picked up automatically.
+// B42 map directory dynamically from pzmap.org's build API (see the header
+// comment) so new PZ map builds are picked up automatically.
 // Validates inputs to prevent SSRF — only allows numeric level 0-22,
 // floor -17..30, and tile filenames matching the DZI convention.
 router.get("/tiles/:level/:tile", async (req, res) => {

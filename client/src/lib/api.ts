@@ -2997,33 +2997,9 @@ export const mapApi = {
     y0?: number;
     sqr?: number;
     scale?: number;
-    // "dynamic" | "client" | "fallback" -- whether the panel resolved this
-    // itself, the browser supplied it last time, or it's the hardcoded
-    // fallback. Drives whether WorldMap.tsx attempts a Tier 2 resolve.
-    source: "dynamic" | "client" | "fallback" | null;
   }> => apiGet("/map/resolve"),
   vehicles: (): Promise<{ vehicles: Array<{ id: number; x: number; y: number }> }> =>
     apiGet("/map/vehicles"),
-  // Tier 2: reports geometry the BROWSER fetched directly from
-  // tiles.pzmap.org (genuinely CORS-open, unlike pzmap.org itself) because
-  // GET /map/resolve reported the panel host couldn't resolve it. See
-  // server/routes/mapProxy.js's applyClientResolvedBuild() for what the
-  // server does with this -- it never overrides an already-healthy dynamic
-  // resolution, and validates `build` server-side regardless of what's sent.
-  resolveClient: (
-    build: string,
-    geometry: {
-      tileSize: number;
-      width: number;
-      height: number;
-      maxLevel: number;
-      x0: number;
-      y0: number;
-      sqr: number;
-      scale: number;
-    },
-  ): Promise<{ accepted: boolean; reason?: string }> =>
-    apiPost("/map/resolve/client", { build, ...geometry }),
 };
 
 export const panelUpdateApi = {
