@@ -5229,11 +5229,28 @@ handlers.setGodMode = function(args)
         return false, nil, "Failed to set godmode: " .. tostring(err)
     end
 
-    -- Verify it took effect
+    -- Verify it took effect. Written with an explicit if/then rather than
+    -- Lua's `a and b or c` idiom -- that idiom silently breaks when b (a
+    -- real, confirmed mismatch) is `false`: `true and false` short-circuits
+    -- to `false`, which is falsy, so it falls through to c (nil), making a
+    -- CONFIRMED FAILURE indistinguishable from an unverifiable state. That
+    -- would have made gating on verified==false below never actually fire.
     local godModeState = PanelBridge.tryGet(player, "isGodMod")
-    local verified = godModeState ~= nil and (godModeState == enabled) or nil
+    local verified
+    if godModeState == nil then
+        verified = nil
+    elseif godModeState == enabled then
+        verified = true
+    else
+        verified = false
+    end
 
     PanelBridge.info("Set godmode", { username = username, enabled = enabled, method = method, verified = verified })
+
+    if verified == false then
+        return false, nil, "Godmode call succeeded but did not take effect (state is still " .. tostring(godModeState) .. ")"
+    end
+
     return true, {
         message = "Godmode " .. (enabled and "enabled" or "disabled"),
         username = username,
@@ -5267,11 +5284,24 @@ handlers.setInvisible = function(args)
         return false, nil, "Failed to set invisible: " .. tostring(err)
     end
 
-    -- Verify
+    -- Verify. Explicit if/then, not `a and b or c` -- see setGodMode's comment
+    -- above for why that idiom silently turns a confirmed mismatch into nil.
     local invisibleState = PanelBridge.tryGet(player, "isInvisible")
-    local verified = invisibleState ~= nil and (invisibleState == enabled) or nil
+    local verified
+    if invisibleState == nil then
+        verified = nil
+    elseif invisibleState == enabled then
+        verified = true
+    else
+        verified = false
+    end
 
     PanelBridge.info("Set invisible", { username = username, enabled = enabled, verified = verified })
+
+    if verified == false then
+        return false, nil, "Invisibility call succeeded but did not take effect (state is still " .. tostring(invisibleState) .. ")"
+    end
+
     return true, {
         message = "Invisibility " .. (enabled and "enabled" or "disabled"),
         username = username,
@@ -5305,8 +5335,25 @@ handlers.setNoclip = function(args)
         return false, nil, "Failed to set noclip: " .. tostring(err)
     end
 
-    PanelBridge.info("Set noclip", { username = username, enabled = enabled })
-    return true, { message = "Noclip " .. (enabled and "enabled" or "disabled"), username = username }
+    -- Verify. isNoClip confirmed present on IsoPlayer/IsoMovingObject by
+    -- reading the real shipped B42 jar's constant pool directly (2026-08-23).
+    local noclipState = PanelBridge.tryGet(player, "isNoClip")
+    local verified
+    if noclipState == nil then
+        verified = nil
+    elseif noclipState == enabled then
+        verified = true
+    else
+        verified = false
+    end
+
+    PanelBridge.info("Set noclip", { username = username, enabled = enabled, verified = verified })
+
+    if verified == false then
+        return false, nil, "Noclip call succeeded but did not take effect (state is still " .. tostring(noclipState) .. ")"
+    end
+
+    return true, { message = "Noclip " .. (enabled and "enabled" or "disabled"), username = username, verified = verified }
 end
 
 -- Give item to player
