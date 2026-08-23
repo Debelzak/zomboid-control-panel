@@ -475,11 +475,14 @@ reliability, then interface and translation.
   GM tools that live in this same file — weather, zombie and player events, sound, chat, utilities,
   character import/export — are unaffected and stay open to every role, same as the equivalent tools
   elsewhere in the panel.
-- **Restoring a backup is now administrator-only**: previously any administrator or technician
-  account could roll the live world back to an older backup. Deleting, pruning or creating backups
-  is routine housekeeping and stays open to technicians, but restoring one discards everything since
-  that backup for every player currently on the server — a decision about other people's time, not a
-  maintenance task — so only an administrator can do it now.
+- **Restoring a backup no longer comes with the Technician role by default**: previously any
+  administrator or technician account could roll the live world back to an older backup. Deleting,
+  pruning or creating backups is routine housekeeping and stays with Technician, but restoring one
+  discards everything since that backup for every player currently on the server — a decision about
+  other people's time, not a maintenance task — so it now ships granted to Administrator only.
+  **This is a default, not a restriction.** "Restore a backup" is its own entry in Roles &
+  Permissions, so you can tick it back on for Technician, or for any custom role you have made,
+  whenever that suits how your team works.
 - **Only the panel's own startup script may run inline**: the browser was previously told to allow
   any inline script on the page, which weakens the main defence against a script being injected into
   it. It is now restricted to the exact fingerprint of the panel's own theme bootstrap, recalculated
