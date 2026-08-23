@@ -290,7 +290,7 @@
   "PANELBRIDGE_SERVER_NAME_NOT_CONFIGURED": "未配置服务器名称。",
   "PANELBRIDGE_NO_ACTIVE_SERVER": "未配置活动服务器。",
   "PANELBRIDGE_AUTO_CONFIGURE_NO_ACTIVE_SERVER": "未配置活动服务器，请先配置服务器。",
-  "PANELBRIDGE_PATH_NOT_DETERMINED": "无法确定服务器「{{serverName}}」的 bridge 路径。请确认已设置服务器的 installPath。",
+  "PANELBRIDGE_PATH_NOT_DETERMINED": "无法确定服务器「{{serverName}}」的桥接路径。请确认已设置服务器的 installPath。",
   "PANELBRIDGE_SERVER_NAME_REQUIRED": "serverName 为必填项",
   "PANELBRIDGE_INVALID_ZOMBOID_USER_FOLDER": "zomboidUserFolder 路径无效",
   "PANELBRIDGE_SAVE_PATH_REQUIRED": "zomboidSavePath 为必填项",
