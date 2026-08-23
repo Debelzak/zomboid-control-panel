@@ -1078,7 +1078,7 @@ export default function Debug() {
         setFixingDiagnosticsCheckId(null);
       }
     },
-    [fetchDiagnostics, toast, authFetch, confirm, t],
+    [fetchDiagnostics, toast, authFetch, confirm, t, i18n.language],
   );
 
   // Fetch world-map specific diagnostics
@@ -1824,14 +1824,14 @@ export default function Debug() {
           return t("common.daysAgo", { count: Math.floor(diff / 86400000) });
         }
         case "time":
-          return date.toLocaleTimeString();
+          return date.toLocaleTimeString(i18n.language);
         case "datetime":
-          return date.toLocaleString();
+          return date.toLocaleString(i18n.language);
         default:
-          return date.toLocaleTimeString();
+          return date.toLocaleTimeString(i18n.language);
       }
     },
-    [timeFormat],
+    [timeFormat, t, i18n.language],
   );
 
   const formatFileSize = (bytes: number) => {

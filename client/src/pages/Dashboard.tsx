@@ -327,7 +327,7 @@ export default function Dashboard() {
     } catch {
       // Ignore missing telemetry history so the rest of the dashboard can render.
     }
-  }, [])
+  }, [i18n.language])
   const fetchAutoStartSetting = useCallback(async () => {
     try {
       const r = await configApi.getAppSettings()
@@ -507,7 +507,7 @@ export default function Dashboard() {
       socket.off('perf:snapshot', onSnapshot)
       socket.emit('unsubscribe:perf')
     }
-  }, [socket, showPerformanceCharts])
+  }, [socket, showPerformanceCharts, i18n.language])
 
   useEffect(() => {
     const onVis = () => {
