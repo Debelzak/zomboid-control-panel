@@ -284,6 +284,63 @@ describe("rcon.js: mixed -- /execute, connection lifecycle and /history are admi
   });
 });
 
+describe("auth.js: recovery codes are admin-only, not delegable to users.manage or any other role", () => {
+  // generateRecoveryCodes()/getRecoveryCodeStatus()/resetPassword()
+  // (services/auth.js) don't operate on the CALLER's own account -- they
+  // always target "the" admin account. Before this gate, POST here only
+  // checked "is this a valid token for ANY account" -- so a moderator or
+  // technician using nothing but their own ordinary login could pull fresh
+  // PLAINTEXT admin recovery codes and use one (via the unauthenticated
+  // POST /recover-with-code) to set the admin account's own password.
+  // Fixed alongside the route (kevin, bug-hunt pass).
+  const ROUTES = [
+    ["/recovery-codes", "get"],
+    ["/recovery-codes", "post"],
+  ];
+
+  it.each(ROUTES)("refuses a moderator on %s %s", async (routePath, method) => {
+    const { default: router } = await import("../routes/auth.js");
+    const res = await runRoute(router, routePath, method, {
+      user: { role: "moderator" },
+      headers: {},
+      body: {},
+      params: {},
+      query: {},
+    });
+    expect(res.getStatusCode()).toBe(403);
+  });
+
+  it.each(ROUTES)(
+    "refuses a technician too on %s %s -- users.manage-adjacent is not enough, this is admin-only",
+    async (routePath, method) => {
+      const { default: router } = await import("../routes/auth.js");
+      const res = await runRoute(router, routePath, method, {
+        user: { role: "technician" },
+        headers: {},
+        body: {},
+        params: {},
+        query: {},
+      });
+      expect(res.getStatusCode()).toBe(403);
+    },
+  );
+
+  it.each(ROUTES)(
+    "does not refuse an admin at the role gate on %s %s (a missing Authorization header still 401s downstream -- this only proves the gate itself let an admin through)",
+    async (routePath, method) => {
+      const { default: router } = await import("../routes/auth.js");
+      const res = await runRoute(router, routePath, method, {
+        user: { role: "admin" },
+        headers: {},
+        body: {},
+        params: {},
+        query: {},
+      });
+      expect(res.getStatusCode()).not.toBe(403);
+    },
+  );
+});
+
 describe("mapProxy.js / serverStatus.js / system.js: deliberately open to every role", () => {
   it("mapProxy /resolve and /vehicles do not refuse a moderator", async () => {
     const { default: router } = await import("../routes/mapProxy.js");

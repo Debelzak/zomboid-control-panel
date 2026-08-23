@@ -661,8 +661,29 @@ const localResetTokenLimiter = rateLimit({
  *
  * Generated while signed in, redeemable from the login screen. Only hashes are
  * stored, and each code works exactly once.
+ *
+ * requireRole("admin") on both routes below, added deliberately: unlike
+ * every other per-account action in this file, generateRecoveryCodes()/
+ * getRecoveryCodeStatus()/resetPassword() (services/auth.js) do NOT operate
+ * on the calling user's own account — they always target "the" admin
+ * account (`users.find(u => u.role === "admin") || users[0]`), full stop.
+ * Before this, POST here only checked "is this a valid token for ANY
+ * account" (getAuthenticatedUser, below) — so a moderator or technician,
+ * using nothing but their own ordinary login, could call it directly,
+ * receive a fresh batch of PLAINTEXT admin recovery codes in the response
+ * (overwriting and invalidating whatever the real admin had saved), then
+ * hit the unauthenticated POST /recover-with-code with one of those codes
+ * to set the admin account's password to whatever they chose. That is a
+ * complete, self-service moderator-to-admin privilege escalation in two
+ * API calls, no admin cooperation needed. Same sensitivity class as
+ * /regenerate-jwt-secret above — worse, actually: that one only forces a
+ * re-login, this one hands out the admin account outright — so it gets the
+ * same requireRole("admin"), not a delegable requirePermission capability.
+ * GET is gated too: `remaining`/`configured`/`createdAt` for the admin
+ * account's own recovery net is reconnaissance a non-admin has no
+ * legitimate reason to see either.
  */
-router.get("/recovery-codes", async (req, res) => {
+router.get("/recovery-codes", requireRole("admin"), async (req, res) => {
   try {
     const user = await getAuthenticatedUser(req);
     if (!user)
@@ -676,7 +697,7 @@ router.get("/recovery-codes", async (req, res) => {
   }
 });
 
-router.post("/recovery-codes", async (req, res) => {
+router.post("/recovery-codes", requireRole("admin"), async (req, res) => {
   try {
     const user = await getAuthenticatedUser(req);
     if (!user)
