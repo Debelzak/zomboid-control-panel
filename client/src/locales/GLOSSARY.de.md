@@ -144,7 +144,7 @@ if you are about to coin one of these differently, do not.
 | --- | --- | --- |
 | spawn point / spawn region | der Spawnpunkt / die Spawnregion | closed compound; *Spawn* is an adopted loanword |
 | tile | die Kachel | world-map tile |
-| disk | der Datenträger **in prose** · **Disk** in a terse stat label | see the exemption below |
+| disk | die Festplatte **in prose** · **Disk** in a terse stat label | *von der Festplatte löschen*; **not** *Datenträger* — see below |
 | Mod Checker | der Mod-Checker | the feature's German name; **never** *Mod-Prüfung* |
 | item (a JSON array entry) | das Element | |
 | itemType (the Project Zomboid item id) | itemType | a payload field name — stays literal |
@@ -164,6 +164,14 @@ Nach dieser Änderung hätte niemand mehr die Berechtigung: {{action}}
 
 That is why the German for those two errors uses a colon construction rather than
 *niemand könnte mehr {{action}}* — the placeholder carries a label, not an infinitive.
+
+**Festplatte, not Datenträger — corrected after the fact.** I first recorded
+*Datenträger* from the one bucket that had landed. Four agents then independently wrote
+*Festplatte* in four other files, 35 occurrences against 5, and they are right:
+*Datenträger* is Windows-dialog register and this panel says *von der Festplatte
+löschen*. The five *Datenträger* occurrences are being corrected, not the thirty-five.
+Worth remembering how the wrong term got here: it was ruled from the first sample, not
+from the whole tree.
 
 **Terse stat labels follow ops-tooling convention, not this glossary.** `servers.json`'s
 resource row is a four-column grid — CPU / RAM / Netz / Disk — where each label has a
