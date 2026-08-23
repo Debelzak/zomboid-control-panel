@@ -3629,11 +3629,54 @@ handlers.teleportPlayer = function(args)
     PanelBridge.debug("teleportPlayer: " .. username .. " from " .. oldX .. "," .. oldY .. "," .. oldZ
         .. " to " .. x .. "," .. y .. "," .. z .. " — " .. debugStr)
 
+    -- Verify the teleport actually happened. The real failure mode here is
+    -- not "landed slightly off target" -- ground snap, z-level resolution
+    -- and tile centring can all legitimately shift the final position by a
+    -- tile or more, and gating on proximity to the target would manufacture
+    -- false failures for those. The failure this file's own comments and
+    -- changelog describe is teleportTo silently not sticking AT ALL: the
+    -- player still sitting at their ORIGIN while the response claims they
+    -- moved hundreds or thousands of tiles. So this compares distance
+    -- ACTUALLY moved against distance REQUESTED, not proximity to the
+    -- target -- no "how close counts as arrived" number needed.
+    -- EPSILON is a floating-point/rounding tolerance (sub-tile), not a
+    -- guess about game mechanics -- small enough that a genuine
+    -- single-floor (z-only) teleport still registers as a real move.
+    local EPSILON = 0.5
+    local function dist3(ax, ay, az, bx, by, bz)
+        return math.sqrt((ax - bx) ^ 2 + (ay - by) ^ 2 + (az - bz) ^ 2)
+    end
+    local requestedDistance = dist3(oldX, oldY, oldZ, x, y, z)
+    local actualDistance = dist3(oldX, oldY, oldZ, verifyX, verifyY, verifyZ)
+
+    local verified
+    if requestedDistance <= EPSILON then
+        -- Origin and target are too close together to tell "stayed put"
+        -- from "arrived" apart -- report unverified rather than guess.
+        verified = nil
+    elseif actualDistance <= EPSILON then
+        -- Asked to move a meaningful distance; the position barely changed
+        -- at all. This is the silent-no-op failure, not a rounding blip.
+        verified = false
+    else
+        verified = true
+    end
+
+    if verified == false then
+        return false, {
+            oldPosition = { x = oldX, y = oldY, z = oldZ },
+            newPosition = { x = x, y = y, z = z },
+            verifyPosition = { x = verifyX, y = verifyY, z = verifyZ },
+            debug = debugStr
+        }, "Teleport call succeeded but the player did not move (still at origin)"
+    end
+
     return true, {
         message = "Player teleported",
         oldPosition = { x = oldX, y = oldY, z = oldZ },
         newPosition = { x = x, y = y, z = z },
         verifyPosition = { x = verifyX, y = verifyY, z = verifyZ },
+        verified = verified,
         debug = debugStr
     }
 end
