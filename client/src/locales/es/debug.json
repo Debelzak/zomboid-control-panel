@@ -1080,7 +1080,7 @@
     "labelCopied": "Copiado: {{label}}",
     "copyPathTitle": "Copiar {{label}}",
     "couldNotReachTitle": "No se pudo contactar con el punto de conexión de diagnóstico",
-    "couldNotReachDesc": "{{error}} — compruebe que el backend del panel esté en ejecución y que la sesión siga autenticada.",
+    "couldNotReachDesc": "{{error}} — comprueba que el backend del panel esté en ejecución y que la sesión siga autenticada.",
     "retry": "Reintentar",
     "liveDescription": "Fuentes de mosaicos en vivo, flujo de datos de PanelBridge y diseño de la partida activa.",
     "okCount": "OK: {{count}}",
