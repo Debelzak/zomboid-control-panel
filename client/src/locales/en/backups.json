@@ -67,6 +67,10 @@
     "startingFallback": "Starting backup...",
     "creatingFallback": "Creating backup..."
   },
+  "restoreProgress": {
+    "title": "Restoring {{name}}…",
+    "note": "This can take a few minutes depending on world size. Don't close the panel or navigate away."
+  },
   "mainCard": {
     "title": "Backup Files",
     "savesNotFound": "Saves folder not found",

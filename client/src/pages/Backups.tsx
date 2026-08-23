@@ -765,6 +765,23 @@ export default function Backups() {
         </Card>
       )}
 
+      {/* Restore Progress — the server emits no progress events for restore (it's a
+          silent extract + pre-restore-backup sequence that can run minutes), so this
+          is a static reassurance rather than a real progress readout. */}
+      {restoringBackup && (
+        <Card className="border-warning/15 bg-warning/5">
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <Loader2 className="w-5 h-5 animate-spin text-warning shrink-0" />
+              <div className="min-w-0">
+                <p className="font-medium truncate">{t('restoreProgress.title', { name: restoringBackup })}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{t('restoreProgress.note')}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Progress Bar */}
       {(creatingBackup || backupProgress) && (
         <Card className="border-primary/15 bg-primary/5">
