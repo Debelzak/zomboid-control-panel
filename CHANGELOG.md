@@ -216,6 +216,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `client/src/locales/README.md`.
 
 ### Fixed
+- **Dragging the Map Cleanup map was jerky.** Panning or drawing a selection redrew the whole map
+  on every single mouse movement the browser reported - dozens of full repaints a second, each one
+  redrawing every visible chunk. The map now paints at most once per frame no matter how fast the
+  mouse moves: in a test firing 60 movements in a single burst, the old code would have attempted 60
+  repaints and the new code does exactly one. The map itself is unchanged - same chunks, same
+  colours, same selection behaviour - it simply stops doing work it was throwing away.
+
 - **Map Cleanup took far too long to open, and the wait got dramatically worse the bigger your
   save was.** Two separate causes, both fixed. The scan read your save's chunk directories strictly
   one at a time, so the wait tracked the *number of directories* rather than the amount of data -
