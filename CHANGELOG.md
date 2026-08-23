@@ -8,6 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **The panel is now available in German**: every screen, dialog, error message and health check -
+  6,855 pieces of text across 54 files - has been translated, and Deutsch now appears in the
+  language picker alongside English, French, Simplified Chinese and Spanish.
+
+  German addresses you as *du*, the way a tool you run for your own server should, and buttons read
+  as instructions rather than commands (*Speichern*, *Neu starten*). Project Zomboid's own
+  vocabulary stays where a German-speaking player expects it: *Mod*, *Chunk*, *Sandbox* and
+  *Safehouse* keep their English forms, as do mod IDs, Workshop IDs, chat tags like `[ADMIN]`,
+  `SERVER.INI` section names and SteamCMD's own output - so what you read in the panel still matches
+  what you see in a real log. A shared glossary keeps one word per concept across every screen.
+
+  German is longer than English - roughly a third longer, on average - so labels that live in narrow
+  spaces were written short on purpose: status chips, tab names, table headers and the CPU / RAM /
+  Netz / Disk row on the server card keep the compact wording German server tooling already uses.
+
+  Sentences that name something you picked - a mod, a player, a preset - were rewritten so the
+  grammar around them cannot go wrong. German changes the article and the ending depending on the
+  word being substituted, which no translation can know in advance, so those messages put the name
+  after a colon or at the front of the sentence instead of guessing.
+
 - **The panel is now available in Spanish**: every screen, dialog, error message and health check -
   6,855 pieces of text across 54 files - has been translated, and Español now appears in the
   language picker alongside English, French and Simplified Chinese.
