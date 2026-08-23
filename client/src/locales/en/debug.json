@@ -956,19 +956,19 @@
             },
             "fail": {
               "label": "B42 tile CDN unreachable",
-              "message": "Could not reach pzmap.org for B42 tiles ({{detail}}). The B42 base map will not load.",
+              "message": "Could not reach tiles.pzmap.org for B42 tiles ({{detail}}). The B42 base map will not load.",
               "hint": "Check the panel host's outbound HTTPS access. The /api/map/tiles proxy fetches tiles server-side."
             }
           },
           "b41": {
             "ok": {
               "label": "B41 tile CDN reachable",
-              "message": "pzmap.org responded in {{latencyMs}} ms (HTTP {{statusCode}})."
+              "message": "tiles.pzmap.org responded in {{latencyMs}} ms (HTTP {{statusCode}})."
             },
             "warn": {
               "label": "B41 tile CDN unreachable",
-              "message": "Could not reach pzmap.org ({{detail}}). B41 fallback tiles will not load.",
-              "hint": "Only relevant if you run a B41 server. Outbound HTTPS to pzmap.org is required."
+              "message": "Could not reach tiles.pzmap.org ({{detail}}). B41 fallback tiles will not load.",
+              "hint": "Only relevant if you run a B41 server. Outbound HTTPS to tiles.pzmap.org is required."
             }
           },
           "b42Top": {

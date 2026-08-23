@@ -29,7 +29,7 @@ import { sanitizeError, sanitizeErrorParams, SENSITIVE_FIELD_RE } from "../utils
 import { checkSandboxBraceBalance } from "./serverFiles.js";
 import panelBridgeService from "../services/panelBridge.js";
 import {
-  PZ_MAP_ROOT,
+  PZ_TILES_ROOT,
   getB42Dir,
   getB42TopFormat,
 } from "./mapProxy.js";
@@ -4141,14 +4141,14 @@ router.get("/worldmap", requirePermission("diagnostics.manage"), async (req, res
       b42TopFormat = b42Dir ? await getB42TopFormat(b42Dir).catch(() => null) : null;
       [b42Probe, b41Probe, b42TopProbe] = await Promise.all([
         probeTile(
-          `${PZ_MAP_ROOT}/maps/${b42Dir || "42.19.0"}/base/layer0_files/0/0_0.jpg`,
+          `${PZ_TILES_ROOT}/${b42Dir || "42.19.0"}/base/layer0_files/0/0_0.jpg`,
         ),
         probeTile(
-          `${PZ_MAP_ROOT}/maps/41.78.16/base/layer0_files/0/0_0.jpg`,
+          `${PZ_TILES_ROOT}/41.78.16/base/layer0_files/0/0_0.jpg`,
         ),
         b42Dir && b42TopFormat
           ? probeTile(
-              `${PZ_MAP_ROOT}/maps/${b42Dir}/base_top/layer0_files/10/0_0.${b42TopFormat}`,
+              `${PZ_TILES_ROOT}/${b42Dir}/base_top/layer0_files/10/0_0.${b42TopFormat}`,
             )
           : Promise.resolve(null),
       ]);
@@ -4174,7 +4174,7 @@ router.get("/worldmap", requirePermission("diagnostics.manage"), async (req, res
           diagFail(
             "worldmap.tiles.b42",
             "B42 tile CDN unreachable",
-            `Could not reach pzmap.org for B42 tiles (${b42Probe.error || `HTTP ${b42Probe.statusCode}`}). The B42 base map will not load.`,
+            `Could not reach tiles.pzmap.org for B42 tiles (${b42Probe.error || `HTTP ${b42Probe.statusCode}`}). The B42 base map will not load.`,
             {
               category: "worldmap",
               hint: "Check the panel host's outbound HTTPS access. The /api/map/tiles proxy fetches tiles server-side.",
@@ -4189,7 +4189,7 @@ router.get("/worldmap", requirePermission("diagnostics.manage"), async (req, res
           diagOk(
             "worldmap.tiles.b41",
             "B41 tile CDN reachable",
-            `pzmap.org responded in ${b41Probe.latencyMs} ms (HTTP ${b41Probe.statusCode}).`,
+            `tiles.pzmap.org responded in ${b41Probe.latencyMs} ms (HTTP ${b41Probe.statusCode}).`,
             {
               category: "worldmap",
               params: { latencyMs: b41Probe.latencyMs, statusCode: b41Probe.statusCode },
@@ -4201,10 +4201,10 @@ router.get("/worldmap", requirePermission("diagnostics.manage"), async (req, res
           diagWarn(
             "worldmap.tiles.b41",
             "B41 tile CDN unreachable",
-            `Could not reach pzmap.org (${b41Probe.error || `HTTP ${b41Probe.statusCode}`}). B41 fallback tiles will not load.`,
+            `Could not reach tiles.pzmap.org (${b41Probe.error || `HTTP ${b41Probe.statusCode}`}). B41 fallback tiles will not load.`,
             {
               category: "worldmap",
-              hint: "Only relevant if you run a B41 server. Outbound HTTPS to pzmap.org is required.",
+              hint: "Only relevant if you run a B41 server. Outbound HTTPS to tiles.pzmap.org is required.",
               params: { detail: b41Probe.error || `HTTP ${b41Probe.statusCode}` },
             },
           ),

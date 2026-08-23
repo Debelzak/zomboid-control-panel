@@ -36,9 +36,9 @@
     "signalLost": "signal.lost",
     "tilesOffline": "tiles offline",
     "coverageTitle": "No map tiles at this zoom",
-    "coverageDesc": "<1>pzmap.org</1> is reachable but hasn't rendered this area at this detail level. Zoom out, or try Refresh later.",
+    "coverageDesc": "<1>tiles.pzmap.org</1> is reachable but hasn't rendered this area at this detail level. Zoom out, or try Refresh later.",
     "networkTitle": "Map tiles aren't loading",
-    "networkDesc": "Panel can't reach <1>pzmap.org</1>. Check outbound HTTPS access and try Refresh."
+    "networkDesc": "Panel can't reach <1>tiles.pzmap.org</1>. Check outbound HTTPS access and try Refresh."
   },
   "roster": {
     "label": "roster",

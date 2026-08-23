@@ -829,13 +829,13 @@ export default function WorldMap() {
   const tileCacheRef = useRef<Record<string, HTMLImageElement | null | 'empty'>>({})
 
   // Resolved once per session: lets the browser build direct-to-upstream
-  // tile URLs (https://pzmap.org/maps/<dir>/...) instead of
+  // tile URLs (https://tiles.pzmap.org/<dir>/...) instead of
   // always routing through this server's proxy. Some deployments (e.g. a
   // Kubernetes cluster with a restrictive Gateway API egress policy) block
-  // outbound access to pzmap.org for the panel's own pod while
+  // outbound access to tiles.pzmap.org for the panel's own pod while
   // the admin's browser has no such restriction. /api/map/resolve has its
   // own cache + hardcoded fallback server-side, so it responds instantly
-  // even when the backend itself can't reach pzmap.org.
+  // even when the backend itself can't reach tiles.pzmap.org.
   const mapSourceRef = useRef<{ root: string; b42Dir: string; b41Path: string } | null>(null)
   useEffect(() => {
     let cancelled = false
@@ -845,7 +845,7 @@ export default function WorldMap() {
     return () => { cancelled = true }
   }, [])
 
-  // Builds the real pzmap.org URL for a tile, or null if we
+  // Builds the real tiles.pzmap.org URL for a tile, or null if we
   // haven't resolved enough info yet (falls back to the backend proxy).
   const buildDirectTileUrl = useCallback((level: number, col: number, row: number, floor: number, ext: string) => {
     const src = mapSourceRef.current
@@ -856,7 +856,9 @@ export default function WorldMap() {
     // Floor is a path segment on the real upstream, not a query param —
     // the ?floor= convention only exists on our own proxy route, which
     // encodes it that way because /tiles/:level/:tile has no :floor segment.
-    return `${src.root}/maps/${src.b42Dir}/base/layer${floor}_files/${level}/${col}_${row}.${ext}`
+    // No /maps/ segment here -- that's a proxy-route convention, not part of
+    // the real upstream path (dropped along with the pzmap.org -> tiles.pzmap.org move).
+    return `${src.root}/${src.b42Dir}/base/layer${floor}_files/${level}/${col}_${row}.${ext}`
   }, [])
 
   // Cap concurrent tile loads to avoid flooding the network

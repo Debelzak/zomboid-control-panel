@@ -84,10 +84,25 @@ function writeDiskCacheAsync(relPath, buffer) {
 // ─── B42 map version resolution ──────────────────────────────────────────────
 // b42map.com has migrated to pzmap.org. The old map.projectzomboid.com host
 // now redirects there, adding another failure point for direct browser loads.
-// Tiles are served at https://pzmap.org/maps/<version>/base/layer<floor>_files/<level>/<tile>
+//
+// pzmap.org split into two hosts: the site root (and build_list.json, which
+// lives under a versioned static_<timestamp>/ path served FROM that root —
+// see getStaticRoot() below) stayed at pzmap.org, but tiles and every
+// per-build descriptor under a version directory (map_info.json, layer0.dzi,
+// base_top/layer0.dzi, and the tiles themselves) moved to tiles.pzmap.org
+// AND dropped the /maps path segment in the move:
+//   old (404s now): https://pzmap.org/maps/<version>/base/layer<floor>_files/<level>/<tile>
+//   new:            https://tiles.pzmap.org/<version>/base/layer<floor>_files/<level>/<tile>
+// Verified directly (Node's own fetch, not curl, with this file's real
+// User-Agent) against both hosts for every shape this file requests: tiles,
+// map_info.json, layer0.dzi, base_top/layer0.dzi, and base_top tiles, for
+// both B42 and B41 version directories. Confirmed root/build_list.json did
+// NOT move: tiles.pzmap.org/ 404s outright (not just blocked), pzmap.org/
+// still serves it. Two different constants below, do not merge them.
 // We resolve the latest B42 version directory dynamically from build_list.json
 // so tile loading stays current when PZ ships new map builds without a panel update.
-const PZ_MAP_ROOT = "https://pzmap.org";
+const PZ_MAP_ROOT = "https://pzmap.org"; // site root + build_list.json only — unchanged by the migration
+const PZ_TILES_ROOT = "https://tiles.pzmap.org"; // tiles + per-build descriptors, no /maps segment
 // 42.19.0 was removed from map.projectzomboid.com - /maps/42.19.0/base/ now
 // 404s in its entirety, so the previous fallback could not serve a single tile.
 // It is still listed in build_list.json, so "listed" is not evidence a build is
@@ -122,7 +137,7 @@ const B42_GEOMETRY_FALLBACK = {
 async function fetchMapProjection(directory) {
   try {
     const resp = await fetch(
-      `${PZ_MAP_ROOT}/maps/${directory}/base/map_info.json`,
+      `${PZ_TILES_ROOT}/${directory}/base/map_info.json`,
       {
         signal: AbortSignal.timeout(5000),
         headers: {
@@ -150,7 +165,7 @@ async function fetchMapProjection(directory) {
 async function fetchMapGeometry(directory) {
   try {
     const resp = await fetch(
-      `${PZ_MAP_ROOT}/maps/${directory}/base/layer0.dzi`,
+      `${PZ_TILES_ROOT}/${directory}/base/layer0.dzi`,
       {
         signal: AbortSignal.timeout(5000),
         headers: {
@@ -205,7 +220,7 @@ async function hasTileCoverage(directory, geometry) {
     const row = Math.floor((levelH * fy) / geometry.tileSize);
     try {
       const resp = await fetch(
-        `${PZ_MAP_ROOT}/maps/${directory}/base/layer0_files/${level}/${col}_${row}.jpg`,
+        `${PZ_TILES_ROOT}/${directory}/base/layer0_files/${level}/${col}_${row}.jpg`,
         {
           method: "HEAD",
           signal: AbortSignal.timeout(4000),
@@ -241,7 +256,7 @@ async function getB42TopFormat(directory) {
   if (cached) return cached;
   try {
     const resp = await fetch(
-      `${PZ_MAP_ROOT}/maps/${directory}/base_top/layer0.dzi`,
+      `${PZ_TILES_ROOT}/${directory}/base_top/layer0.dzi`,
       {
         signal: AbortSignal.timeout(5000),
         headers: {
@@ -390,7 +405,7 @@ async function getB42Map() {
   }
   _b42Map = _b42Map || { directory: B42_DIR_FALLBACK, ...B42_GEOMETRY_FALLBACK };
   // Stamp the fallback too, not just a successful resolve — otherwise a
-  // backend that can never reach map.projectzomboid.com (e.g. a blocked
+  // backend that can never reach pzmap.org/tiles.pzmap.org (e.g. a blocked
   // cluster egress policy) eats the full fetch timeout on every single tile
   // request forever. Retry sooner than a successful resolve so a transient
   // upstream outage doesn't pin us to the fallback build for a whole day.
@@ -551,7 +566,7 @@ async function serveTile(req, res, url, contentType, relPath) {
 // direct-to-upstream tile URLs and load them straight from the browser
 // instead of always routing through this server's proxy. Some deployments
 // (e.g. a Kubernetes cluster with a restrictive Gateway API egress policy)
-// block outbound access to map.projectzomboid.com for the panel's own pod
+// block outbound access to tiles.pzmap.org for the panel's own pod
 // while the admin's browser has no such restriction — in that case every
 // tile-proxy fetch here fails no matter how good the retry/cache/circuit
 // breaker logic is, but the browser can just fetch tiles itself.
@@ -559,9 +574,9 @@ router.get("/resolve", async (req, res) => {
   const map = await getB42Map();
   res.set("Cache-Control", "public, max-age=3600");
   res.json({
-    root: PZ_MAP_ROOT,
+    root: PZ_TILES_ROOT,
     b42Dir: map.directory,
-    b41Path: "maps/41.78.16/base/layer0_files",
+    b41Path: "41.78.16/base/layer0_files",
     tileSize: map.tileSize,
     width: map.width,
     height: map.height,
@@ -599,9 +614,10 @@ router.get("/vehicles", async (req, res) => {
   }
 });
 
-// Proxy DZI tiles from map.projectzomboid.com (migrated from b42map.com) to
-// avoid CORS restrictions. Resolves the latest B42 map directory dynamically
-// from build_list.json so new PZ map builds are picked up automatically.
+// Proxy DZI tiles from tiles.pzmap.org (migrated from pzmap.org, itself
+// migrated from b42map.com) to avoid CORS restrictions. Resolves the latest
+// B42 map directory dynamically from build_list.json so new PZ map builds
+// are picked up automatically.
 // Validates inputs to prevent SSRF — only allows numeric level 0-22,
 // floor -17..30, and tile filenames matching the DZI convention.
 router.get("/tiles/:level/:tile", async (req, res) => {
@@ -627,7 +643,7 @@ router.get("/tiles/:level/:tile", async (req, res) => {
   }
 
   const dir = await getB42Dir();
-  const url = `${PZ_MAP_ROOT}/maps/${dir}/base/layer${floor}_files/${level}/${tile}`;
+  const url = `${PZ_TILES_ROOT}/${dir}/base/layer${floor}_files/${level}/${tile}`;
   const contentType = "image/jpeg";
   const relPath = path.join("b42", dir, `layer${floor}`, String(level), tile);
   await serveTile(req, res, url, contentType, relPath);
@@ -653,12 +669,12 @@ router.get("/toptiles/:level/:tile", async (req, res) => {
   // given build was rendered in, so the upstream descriptor decides.
   const format = await getB42TopFormat(dir);
   const upstreamTile = `${parsed[1]}.${format}`;
-  const url = `${PZ_MAP_ROOT}/maps/${dir}/base_top/layer0_files/${level}/${upstreamTile}`;
+  const url = `${PZ_TILES_ROOT}/${dir}/base_top/layer0_files/${level}/${upstreamTile}`;
   const relPath = path.join("b42-top", dir, String(level), upstreamTile);
   await serveTile(req, res, url, TOP_CONTENT_TYPES[format], relPath);
 });
 
-// Proxy B41 DZI tiles from map.projectzomboid.com.
+// Proxy B41 DZI tiles from tiles.pzmap.org.
 router.get("/b41tiles/:level/:tile", async (req, res) => {
   const level = parseInt(req.params.level, 10);
   const tile = req.params.tile;
@@ -670,7 +686,7 @@ router.get("/b41tiles/:level/:tile", async (req, res) => {
     return res.status(400).json({ error: "Invalid tile" });
   }
 
-  const url = `${PZ_MAP_ROOT}/maps/41.78.16/base/layer0_files/${level}/${tile}`;
+  const url = `${PZ_TILES_ROOT}/41.78.16/base/layer0_files/${level}/${tile}`;
   const relPath = path.join("b41", String(level), tile);
   await serveTile(req, res, url, "image/jpeg", relPath);
 });
@@ -679,4 +695,4 @@ export default router;
 
 // Exposed so the diagnostics route can probe the exact URLs this proxy would
 // request, instead of a hardcoded build that may not be the one in use.
-export { PZ_MAP_ROOT, getB42Dir, getB42TopFormat };
+export { PZ_MAP_ROOT, PZ_TILES_ROOT, getB42Dir, getB42TopFormat };
