@@ -1289,6 +1289,25 @@ export const ErrorCode = Object.freeze({
   /** server/routes/server.js -- same call site as ..._WINDOWS above,
    * isWindows false (Linux/macOS guidance). */
   DIRECTORY_READ_FAILED_POSIX: "DIRECTORY_READ_FAILED_POSIX",
+
+  /** server/services/oidc.js -- testOidcDiscovery()'s credential check (POST
+   * /api/auth/oidc/test-connection). The token-endpoint round trip with a
+   * deliberately bogus authorization code got back invalid_client -- the
+   * provider rejected the client ID or client secret itself, not just the
+   * fabricated code. Distinct from OIDC_TEST_UNDETERMINED below: this is a
+   * CONFIRMED rejection, not an ambiguous outcome. */
+  OIDC_CREDENTIALS_REJECTED: "OIDC_CREDENTIALS_REJECTED",
+  /** server/services/oidc.js -- testOidcDiscovery()'s credential check, two
+   * sites: an OAuth error code that's neither invalid_grant (success) nor
+   * invalid_client (confirmed rejection), or a non-OAuth failure (network
+   * error, HTML error page, timeout) after discovery already succeeded.
+   * Deliberately NOT reported as success and NOT the same claim as
+   * OIDC_CREDENTIALS_REJECTED -- "the issuer is reachable, but we can't
+   * confirm the credentials are valid" is a third, genuinely distinct
+   * outcome the whole point of this feature is to stop collapsing into a
+   * false "connection successful". Carries `{{reason}}` (the underlying
+   * OAuth error code or failure message, sanitizeError()'d). */
+  OIDC_TEST_UNDETERMINED: "OIDC_TEST_UNDETERMINED",
 });
 
 /**

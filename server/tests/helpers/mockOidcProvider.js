@@ -21,11 +21,56 @@ export async function makeSigningKey() {
   return { privateKey, publicJwk, kid };
 }
 
-export async function startMockOidcProvider({ clientId, defaultSubject = "user-123" }) {
+// strictAuth, when passed, turns on real Basic-auth client authentication at
+// /token -- OFF by default so every existing caller (the real login/callback
+// flow tests) keeps its original "the token endpoint always succeeds"
+// behaviour untouched. Opt in only for tests that need to distinguish
+// invalid_client from invalid_grant (server/services/oidc.js's
+// testOidcDiscovery -- see its own comment for why that distinction is the
+// whole point of the credential-check round trip).
+export async function startMockOidcProvider({
+  clientId,
+  defaultSubject = "user-123",
+  strictAuth = null,
+}) {
   const validKey = await makeSigningKey();
   let baseUrl;
   let nextIdTokenClaims = null; // null = use the default happy-path claims
   let nextSigningKey = null; // null = sign with validKey (the one published in JWKS)
+  // null = the default invalid_grant response below (a real IdP rejecting a
+  // fabricated code from a correctly-authenticated client). Override via
+  // setNextGrantError to simulate a third OAuth error code, for testing the
+  // "undetermined" outcome that isn't invalid_client or invalid_grant.
+  let nextGrantError = null;
+
+  function readBody(req) {
+    return new Promise((resolve, reject) => {
+      const chunks = [];
+      req.on("data", (chunk) => chunks.push(chunk));
+      req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+      req.on("error", reject);
+    });
+  }
+
+  // openid-client's default client authentication (client_secret_basic,
+  // since this mock's discovery document doesn't advertise
+  // token_endpoint_auth_methods_supported) sends `Authorization: Basic
+  // base64(client_id:client_secret)`. Returns null if missing/malformed.
+  function readBasicAuth(req) {
+    const header = req.headers["authorization"];
+    if (!header || !header.startsWith("Basic ")) return null;
+    try {
+      const decoded = Buffer.from(header.slice("Basic ".length), "base64").toString("utf8");
+      const sepIndex = decoded.indexOf(":");
+      if (sepIndex === -1) return null;
+      return {
+        clientId: decodeURIComponent(decoded.slice(0, sepIndex)),
+        clientSecret: decodeURIComponent(decoded.slice(sepIndex + 1)),
+      };
+    } catch {
+      return null;
+    }
+  }
 
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, baseUrl);
@@ -54,6 +99,48 @@ export async function startMockOidcProvider({ clientId, defaultSubject = "user-1
     }
 
     if (req.method === "POST" && url.pathname === "/token") {
+      if (strictAuth) {
+        // openid-client's default here is actually client_secret_post (the
+        // credentials go in the form body), not client_secret_basic --
+        // that default only applies when the caller passes an explicit
+        // clientAuthentication; this codebase's discovery() call passes the
+        // secret as a plain string with no explicit method, which
+        // Configuration treats as ClientSecretPost. Support both anyway:
+        // whichever the real request used should authenticate correctly.
+        const body = await readBody(req);
+        const params = new URLSearchParams(body);
+        const basicAuth = readBasicAuth(req);
+        const authClientId = params.get("client_id") || basicAuth?.clientId;
+        const authClientSecret = params.get("client_secret") || basicAuth?.clientSecret;
+        if (authClientId !== clientId || authClientSecret !== strictAuth.clientSecret) {
+          res.statusCode = 401;
+          res.setHeader("content-type", "application/json");
+          res.end(JSON.stringify({ error: "invalid_client", error_description: "Client authentication failed." }));
+          return;
+        }
+        if (params.get("grant_type") === "authorization_code") {
+          // The client authenticated fine -- but this mock never issued the
+          // `code` being redeemed (there is no real /authorize step here),
+          // so a real IdP in this situation rejects the CODE, not the
+          // client: invalid_grant. That is deliberately the success signal
+          // testOidcDiscovery is looking for -- unless a test has overridden
+          // it via setNextGrantError to simulate some other OAuth error.
+          const grantError = nextGrantError || {
+            status: 400,
+            error: "invalid_grant",
+            error_description: "Authorization code is invalid or expired.",
+          };
+          res.statusCode = grantError.status;
+          res.setHeader("content-type", "application/json");
+          res.end(
+            JSON.stringify({
+              error: grantError.error,
+              error_description: grantError.error_description,
+            }),
+          );
+          return;
+        }
+      }
       const now = Math.floor(Date.now() / 1000);
       const claims = {
         iss: baseUrl,
@@ -94,6 +181,10 @@ export async function startMockOidcProvider({ clientId, defaultSubject = "user-1
     setNextIdToken({ claims = null, signingKey = null } = {}) {
       nextIdTokenClaims = claims;
       nextSigningKey = signingKey;
+    },
+    /** Override /token's authorization_code error response (strictAuth only). Pass null to reset to the default invalid_grant. */
+    setNextGrantError(error) {
+      nextGrantError = error;
     },
     close() {
       return new Promise((resolve) => server.close(resolve));

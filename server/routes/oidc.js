@@ -370,6 +370,8 @@ router.post("/test-connection", requirePermission("panel.settings"), async (req,
     clientId:
       body.clientId !== undefined ? String(body.clientId).trim() : current.clientId,
     clientSecret,
+    redirectUri:
+      body.redirectUri !== undefined ? String(body.redirectUri).trim() : current.redirectUri,
     allowInsecureHttp:
       body.allowInsecureHttp !== undefined
         ? Boolean(body.allowInsecureHttp)

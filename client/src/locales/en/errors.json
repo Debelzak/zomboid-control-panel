@@ -352,5 +352,7 @@
   "PANELBRIDGE_INVALID_OBJECT_NAME": "Invalid object name",
   "PANELBRIDGE_INVALID_METHOD_NAME": "Invalid method name",
   "PANELBRIDGE_SCAN_ITEMS_NOT_RUNNING": "Bridge not running — server must be online to scan items",
-  "PANELBRIDGE_SCAN_VEHICLES_NOT_RUNNING": "Bridge not running — server must be online to scan vehicles"
+  "PANELBRIDGE_SCAN_VEHICLES_NOT_RUNNING": "Bridge not running — server must be online to scan vehicles",
+  "OIDC_CREDENTIALS_REJECTED": "The provider rejected the client ID or client secret. Double-check both against the identity provider's admin screen.",
+  "OIDC_TEST_UNDETERMINED": "The issuer is reachable, but this didn't confirm whether the credentials are valid: {{reason}}. Try signing in for a definitive answer."
 }

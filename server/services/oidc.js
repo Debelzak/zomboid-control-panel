@@ -18,6 +18,8 @@ import * as client from "openid-client";
 import { createLogger } from "../utils/logger.js";
 import { getSetting, setSetting } from "../database/init.js";
 import { readUiSecretFile, writeUiSecretFile } from "../utils/uiSecretFile.js";
+import { sanitizeError, sanitizeErrorParams } from "../utils/sanitize.js";
+import { ErrorCode } from "../utils/errorCodes.js";
 
 const log = createLogger("OIDC");
 
@@ -192,19 +194,55 @@ export function resetOidcConfigCache() {
 // to change -- this IS the real, non-test-only cache reset now.
 export const _resetOidcConfigCacheForTests = resetOidcConfigCache;
 
+// Reduces a discovered Configuration down to what the Settings screen shows
+// the operator after a successful test -- concrete endpoints and advertised
+// scopes to compare against the provider's own admin screen, rather than a
+// success implied by nothing more than a green checkmark.
+function describeDiscoveredMetadata(config) {
+  const metadata = config.serverMetadata();
+  return {
+    issuer: metadata.issuer,
+    authorizationEndpoint: metadata.authorization_endpoint || null,
+    tokenEndpoint: metadata.token_endpoint || null,
+    userinfoEndpoint: metadata.userinfo_endpoint || null,
+    jwksUri: metadata.jwks_uri || null,
+    scopesSupported: Array.isArray(metadata.scopes_supported) ? metadata.scopes_supported : [],
+  };
+}
+
 /**
  * Runs discovery against a CANDIDATE config the operator is about to save,
  * without touching the live memoized Configuration and without requiring a
  * full login round trip -- lets Settings offer a "Test Connection" button
  * that answers "is this issuer URL/client reachable and does it look like
- * a real OIDC provider" before the operator commits to it. redirectUri/
- * scope/providerName are irrelevant to discovery itself, so only issuerUrl/
- * clientId/clientSecret/allowInsecureHttp are needed here.
+ * a real OIDC provider" before the operator commits to it. providerName is
+ * irrelevant to discovery/auth itself, so it's not accepted here.
+ *
+ * Discovery alone is NOT a credential test: it's an unauthenticated GET of
+ * /.well-known/openid-configuration that takes clientId/clientSecret only
+ * to build a Configuration object and never sends either anywhere. A wrong
+ * client secret passes. A wrong client ID passes. An unregistered redirect
+ * URI passes. Everything that actually breaks a real login goes untested,
+ * and the operator finds out by signing out and landing in a failed
+ * redirect. So after discovery succeeds, this also makes ONE token-endpoint
+ * round trip with a deliberately bogus authorization code:
+ *   - a provider that rejects the CLIENT answers `invalid_client`
+ *   - a provider that accepts the client and only rejects the (fabricated)
+ *     code answers `invalid_grant` -- so invalid_grant is the SUCCESS
+ *     signal here, counter-intuitive enough to deserve this comment.
+ * Keyed on the OAuth `error` CODE in the JSON body, never the HTTP status:
+ * providers disagree on whether invalid_client is 401 or 400, and matching
+ * on status would be flaky across exactly the providers we most want to
+ * support. Any third outcome -- network failure, an HTML error page, an
+ * OAuth error code we don't recognise -- is reported as `undetermined`,
+ * never as success. A test that cannot fail is the bug this exists to fix;
+ * this must not become a second one.
  */
 export async function testOidcDiscovery({
   issuerUrl,
   clientId,
   clientSecret,
+  redirectUri,
   allowInsecureHttp,
 }) {
   if (!issuerUrl || !clientId || !clientSecret) {
@@ -224,12 +262,57 @@ export async function testOidcDiscovery({
   const execute = [client.enableNonRepudiationChecks];
   if (allowInsecureHttp) execute.push(client.allowInsecureRequests);
 
+  let config;
   try {
-    await client.discovery(issuer, clientId, clientSecret, undefined, { execute });
-    return { success: true };
+    config = await client.discovery(issuer, clientId, clientSecret, undefined, { execute });
   } catch (error) {
     log.warn(`OIDC test-connection discovery against ${issuerUrl} failed: ${error.message}`);
     return { success: false, error: error.message };
+  }
+
+  const bogusCode = `zcp-test-connection-${client.randomState()}`;
+  try {
+    await client.genericGrantRequest(config, "authorization_code", {
+      code: bogusCode,
+      ...(redirectUri ? { redirect_uri: redirectUri } : {}),
+    });
+    // A provider that accepts a code it never issued, without even
+    // rejecting the client, is not spec-compliant -- but credentials still
+    // weren't the reason for the (lack of) failure, so treat it the same
+    // as invalid_grant.
+    return { success: true, metadata: describeDiscoveredMetadata(config) };
+  } catch (error) {
+    if (error instanceof client.ResponseBodyError) {
+      if (error.error === "invalid_grant") {
+        return { success: true, metadata: describeDiscoveredMetadata(config) };
+      }
+      if (error.error === "invalid_client") {
+        return {
+          success: false,
+          code: ErrorCode.OIDC_CREDENTIALS_REJECTED,
+          error:
+            "The provider rejected the client ID or client secret. Double-check both against the identity provider's admin screen.",
+        };
+      }
+      log.warn(
+        `OIDC test-connection credential check against ${issuerUrl} got an unrecognised OAuth error: ${error.error}`,
+      );
+      return {
+        success: false,
+        code: ErrorCode.OIDC_TEST_UNDETERMINED,
+        error: `The issuer is reachable, but its response ("${error.error}") doesn't confirm whether the credentials are valid. Try signing in for a definitive answer.`,
+        params: sanitizeErrorParams({ reason: sanitizeError(error.error) }),
+      };
+    }
+    log.warn(
+      `OIDC test-connection credential check against ${issuerUrl} failed outside the OAuth error shape: ${error.message}`,
+    );
+    return {
+      success: false,
+      code: ErrorCode.OIDC_TEST_UNDETERMINED,
+      error: `The issuer is reachable, but the credential check itself failed unexpectedly: ${error.message}`,
+      params: sanitizeErrorParams({ reason: sanitizeError(error.message) }),
+    };
   }
 }
 

@@ -3172,6 +3172,17 @@ export interface OidcSettingsWithEnv extends OidcSettings {
 
 export type OidcSettingsUpdate = Partial<OidcSettingsFields> & { clientSecret?: string };
 
+// The resolved endpoints and advertised scopes from a successful test --
+// mirrors server/services/oidc.js's describeDiscoveredMetadata() exactly.
+export interface OidcDiscoveredMetadata {
+  issuer: string;
+  authorizationEndpoint: string | null;
+  tokenEndpoint: string | null;
+  userinfoEndpoint: string | null;
+  jwksUri: string | null;
+  scopesSupported: string[];
+}
+
 export const oidcSettingsApi = {
   get: (): Promise<OidcSettingsWithEnv> => apiGet("/auth/oidc/settings"),
 
@@ -3182,8 +3193,13 @@ export const oidcSettingsApi = {
       body: JSON.stringify(updates),
     }).then((response) => handleResponse(response)),
 
+  // Resolves ONLY on a confirmed-good credential check (server-side
+  // `success: true`) -- handleResponse() throws on `success: false`, so
+  // both "confirmed rejected" and "could not determine" arrive as a thrown
+  // ApiError instead, distinguished by its `.code` ("credentials_rejected"
+  // vs "undetermined"). See OidcSettings.tsx's handleTestConnection.
   testConnection: (
     updates: OidcSettingsUpdate,
-  ): Promise<{ success: boolean; error?: string }> =>
+  ): Promise<{ success: true; metadata: OidcDiscoveredMetadata }> =>
     apiPost("/auth/oidc/test-connection", updates),
 };

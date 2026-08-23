@@ -361,3 +361,137 @@ describe("POST /test-connection", () => {
     expect(payload.success).toBe(true);
   });
 });
+
+// The headline bug this whole feature exists to fix: discovery alone is an
+// unauthenticated GET that never sends clientId/clientSecret anywhere, so a
+// wrong secret, wrong client ID, or unregistered redirect URI all silently
+// passed the old test. These prove the credential round trip actually
+// distinguishes "the provider rejected the client" from "the provider
+// accepted the client and only rejected our fabricated code" (the success
+// signal) from a third, genuinely ambiguous outcome.
+describe("POST /test-connection -- credential check (strictAuth mock)", () => {
+  let provider;
+
+  beforeEach(async () => {
+    settingsStore.clear();
+    clearOidcEnv();
+    resetOidcConfigCache();
+    provider = await startMockOidcProvider({
+      clientId: "real-client",
+      strictAuth: { clientSecret: "real-secret" },
+    });
+  });
+
+  afterEach(async () => {
+    await provider.close();
+  });
+
+  it("succeeds AND returns the discovered endpoints/scopes when the client authenticates but the fabricated code is rejected (invalid_grant)", async () => {
+    const res = await runRoute(
+      "/test-connection",
+      "post",
+      makeReq({
+        body: {
+          issuerUrl: provider.baseUrl,
+          clientId: "real-client",
+          clientSecret: "real-secret",
+          allowInsecureHttp: true,
+        },
+      }),
+    );
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.success).toBe(true);
+    expect(payload.metadata).toEqual({
+      issuer: provider.baseUrl,
+      authorizationEndpoint: `${provider.baseUrl}/authorize`,
+      tokenEndpoint: `${provider.baseUrl}/token`,
+      userinfoEndpoint: null,
+      jwksUri: `${provider.baseUrl}/jwks`,
+      scopesSupported: [],
+    });
+  });
+
+  it("reports credentials_rejected, not a generic failure, when the client secret is wrong (invalid_client)", async () => {
+    const res = await runRoute(
+      "/test-connection",
+      "post",
+      makeReq({
+        body: {
+          issuerUrl: provider.baseUrl,
+          clientId: "real-client",
+          clientSecret: "totally-wrong-secret",
+          allowInsecureHttp: true,
+        },
+      }),
+    );
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.success).toBe(false);
+    expect(payload.code).toBe("OIDC_CREDENTIALS_REJECTED");
+  });
+
+  it("reports credentials_rejected when the client ID is wrong (invalid_client)", async () => {
+    const res = await runRoute(
+      "/test-connection",
+      "post",
+      makeReq({
+        body: {
+          issuerUrl: provider.baseUrl,
+          clientId: "wrong-client-id",
+          clientSecret: "real-secret",
+          allowInsecureHttp: true,
+        },
+      }),
+    );
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.success).toBe(false);
+    expect(payload.code).toBe("OIDC_CREDENTIALS_REJECTED");
+  });
+
+  it("reports undetermined, not success, for an OAuth error code that is neither invalid_grant nor invalid_client", async () => {
+    provider.setNextGrantError({
+      status: 400,
+      error: "invalid_request",
+      error_description: "redirect_uri is required for this client.",
+    });
+    const res = await runRoute(
+      "/test-connection",
+      "post",
+      makeReq({
+        body: {
+          issuerUrl: provider.baseUrl,
+          clientId: "real-client",
+          clientSecret: "real-secret",
+          allowInsecureHttp: true,
+        },
+      }),
+    );
+    const payload = res.json.mock.calls[0][0];
+    // The important assertion: this must NOT be reported as success just
+    // because discovery worked and the client wasn't explicitly rejected.
+    expect(payload.success).toBe(false);
+    expect(payload.code).toBe("OIDC_TEST_UNDETERMINED");
+  });
+
+  it("keying on the OAuth error code, not the HTTP status, still recognises invalid_client when a provider answers 400 instead of 401", async () => {
+    provider.setNextGrantError({
+      status: 400,
+      error: "invalid_client",
+      error_description: "Client authentication failed.",
+    });
+    const res = await runRoute(
+      "/test-connection",
+      "post",
+      makeReq({
+        body: {
+          issuerUrl: provider.baseUrl,
+          clientId: "real-client",
+          clientSecret: "real-secret",
+          allowInsecureHttp: true,
+        },
+      }),
+    );
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.success).toBe(false);
+    expect(payload.code).toBe("OIDC_CREDENTIALS_REJECTED");
+  });
+});

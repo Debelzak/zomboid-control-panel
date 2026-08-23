@@ -25,6 +25,17 @@
     "advanced": "Advanced",
     "advancedDescription": "Scope and transport options — leave as-is unless your provider needs something different."
   },
+  "providerPresets": {
+    "label": "Provider preset",
+    "custom": "Custom / other",
+    "help": "Fills in the issuer URL shape and recommended scope for a known provider. Replace anything in angle brackets with your own values before testing or saving.",
+    "google": { "label": "Google" },
+    "authentik": { "label": "Authentik" },
+    "keycloak": { "label": "Keycloak" },
+    "azuread": { "label": "Azure AD (Microsoft Entra ID)" },
+    "okta": { "label": "Okta" },
+    "auth0": { "label": "Auth0" }
+  },
   "fields": {
     "issuerUrl": "Issuer URL",
     "issuerUrlPlaceholder": "https://accounts.example.com",
@@ -56,9 +67,21 @@
     "settingsSavedTitle": "Sign-in settings saved",
     "settingsSavedDescription": "The panel will use the new settings for the next sign-in attempt.",
     "testSuccessTitle": "Connection successful",
-    "testSuccessDescription": "The panel could reach the identity provider and read its configuration.",
+    "testSuccessDescription": "The panel reached the identity provider and confirmed it accepts these credentials.",
     "testFailedTitle": "Connection failed",
+    "testUndeterminedTitle": "Could not confirm",
     "actionFailedTitle": "Action failed",
     "unknownError": "Unknown error"
+  },
+  "discoveryResult": {
+    "title": "What the provider returned",
+    "issuer": "Issuer",
+    "authorizationEndpoint": "Authorization endpoint",
+    "tokenEndpoint": "Token endpoint",
+    "userinfoEndpoint": "Userinfo endpoint",
+    "jwksUri": "JWKS URI",
+    "scopesSupported": "Scopes advertised",
+    "scopesNone": "Not advertised",
+    "notAvailable": "Not advertised"
   }
 }

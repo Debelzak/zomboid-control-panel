@@ -9,6 +9,13 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { useToast } from '@/components/ui/use-toast'
 import { copyText } from '@/lib/utils'
 import {
@@ -16,8 +23,42 @@ import {
   ApiError,
   type OidcSettingsWithEnv,
   type OidcSettingsUpdate,
+  type OidcDiscoveredMetadata,
 } from '@/lib/api'
 import { getUserErrorMessage } from '@/lib/errorMessage'
+
+// Prefills the issuer URL SHAPE and recommended scope for a known provider
+// -- not a locked-in choice. The operator still has to substitute their own
+// values (tenant ID, realm name, app slug, ...) for anything in angle
+// brackets, and can freely edit the result same as the free-form path.
+// issuerTemplate/scope are technical values (like fields.issuerUrlPlaceholder
+// below), not translated content -- only the picker's own labels are.
+interface ProviderPreset {
+  id: string
+  issuerTemplate: string
+  scope: string
+}
+const PROVIDER_PRESETS: ProviderPreset[] = [
+  { id: 'google', issuerTemplate: 'https://accounts.google.com', scope: 'openid email profile' },
+  {
+    id: 'authentik',
+    issuerTemplate: 'https://<authentik-domain>/application/o/<app-slug>/',
+    scope: 'openid email profile',
+  },
+  {
+    id: 'keycloak',
+    issuerTemplate: 'https://<keycloak-domain>/realms/<realm-name>',
+    scope: 'openid email profile',
+  },
+  {
+    id: 'azuread',
+    issuerTemplate: 'https://login.microsoftonline.com/<tenant-id>/v2.0',
+    scope: 'openid email profile',
+  },
+  { id: 'okta', issuerTemplate: 'https://<okta-domain>/oauth2/default', scope: 'openid email profile' },
+  { id: 'auth0', issuerTemplate: 'https://<your-domain>.auth0.com/', scope: 'openid email profile' },
+]
+const CUSTOM_PRESET_ID = 'custom'
 
 // Matches server/utils/sanitize.js's isMaskedSecret() -- prefilling the
 // field with exactly this sentinel when a secret is already stored, and
@@ -52,6 +93,8 @@ export default function OidcSettings() {
   const [testing, setTesting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  const [selectedPreset, setSelectedPreset] = useState<string>(CUSTOM_PRESET_ID)
+  const [discoveryResult, setDiscoveryResult] = useState<OidcDiscoveredMetadata | null>(null)
 
   const applySettings = (data: OidcSettingsWithEnv) => {
     setSettings(data)
@@ -108,6 +151,7 @@ export default function OidcSettings() {
   async function handleSave() {
     setSaving(true)
     setFormError(null)
+    setDiscoveryResult(null)
     try {
       const updates = buildUpdatePayload()
       const result = await oidcSettingsApi.update(updates)
@@ -128,28 +172,56 @@ export default function OidcSettings() {
   async function handleTestConnection() {
     setTesting(true)
     setFormError(null)
+    setDiscoveryResult(null)
     try {
       const updates = buildUpdatePayload()
       // apiPost's shared handleResponse() throws on an HTTP 200 body with
       // `success: false` (this codebase's other way of saying "this
       // failed" -- see lib/api.ts) rather than resolving with it, so a
-      // discovery failure always lands in the catch below, never in a
-      // `result.success === false` branch here.
-      await oidcSettingsApi.testConnection(updates)
+      // discovery/credential-check failure always lands in the catch below,
+      // never in a `result.success === false` branch here. A resolved
+      // result here means the provider actually accepted these credentials
+      // (not just that discovery worked) -- see testOidcDiscovery's own
+      // comment in server/services/oidc.js for the invalid_grant-is-success
+      // reasoning.
+      const result = await oidcSettingsApi.testConnection(updates)
+      setDiscoveryResult(result.metadata)
       toast({
         title: t('toasts.testSuccessTitle'),
         description: t('toasts.testSuccessDescription'),
         variant: 'success',
       })
     } catch (error) {
+      // `undetermined` (network failure, an HTML error page, an OAuth error
+      // code we don't recognise) is NOT the same claim as "these
+      // credentials are wrong" -- it gets its own title/tone rather than
+      // collapsing into the same destructive-red "Connection failed" toast
+      // a confirmed rejection gets.
+      const isUndetermined = error instanceof ApiError && error.code === 'OIDC_TEST_UNDETERMINED'
       toast({
-        title: t('toasts.testFailedTitle'),
+        title: isUndetermined ? t('toasts.testUndeterminedTitle') : t('toasts.testFailedTitle'),
         description: getUserErrorMessage(error, t('toasts.unknownError')),
-        variant: 'destructive',
+        variant: isUndetermined ? 'default' : 'destructive',
       })
     } finally {
       setTesting(false)
     }
+  }
+
+  // Prefills the issuer URL/scope shape for a known provider -- the
+  // operator still edits in their own tenant/realm/domain. Skips a field
+  // that's env-pinned (disabled in the UI below) so this can't silently
+  // write to something the operator has no way to actually change.
+  function handlePresetChange(id: string) {
+    setSelectedPreset(id)
+    setDiscoveryResult(null)
+    const preset = PROVIDER_PRESETS.find((p) => p.id === id)
+    if (!preset) return
+    setForm((prev) => ({
+      ...prev,
+      issuerUrl: envOverrides?.issuerUrl ? prev.issuerUrl : preset.issuerTemplate,
+      scope: envOverrides?.scope ? prev.scope : preset.scope,
+    }))
   }
 
   async function handleUseRedirectUri() {
@@ -218,11 +290,32 @@ export default function OidcSettings() {
                 <p className="text-xs text-muted-foreground">{t('sections.providerDescription')}</p>
               </div>
               <div className="space-y-1.5">
+                <Label htmlFor="oidc-provider-preset">{t('providerPresets.label')}</Label>
+                <Select value={selectedPreset} onValueChange={handlePresetChange}>
+                  <SelectTrigger id="oidc-provider-preset">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={CUSTOM_PRESET_ID}>{t('providerPresets.custom')}</SelectItem>
+                    {PROVIDER_PRESETS.map((preset) => (
+                      <SelectItem key={preset.id} value={preset.id}>
+                        {t(`providerPresets.${preset.id}.label`)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">{t('providerPresets.help')}</p>
+              </div>
+
+              <div className="space-y-1.5">
                 <Label htmlFor="oidc-issuer-url">{t('fields.issuerUrl')}</Label>
                 <Input
                   id="oidc-issuer-url"
                   value={form.issuerUrl}
-                  onChange={(e) => setForm((prev) => ({ ...prev, issuerUrl: e.target.value }))}
+                  onChange={(e) => {
+                    setForm((prev) => ({ ...prev, issuerUrl: e.target.value }))
+                    setDiscoveryResult(null)
+                  }}
                   placeholder={t('fields.issuerUrlPlaceholder')}
                   disabled={envOverrides?.issuerUrl}
                 />
@@ -358,6 +451,48 @@ export default function OidcSettings() {
                 {testing ? t('actions.testing') : t('actions.testConnection')}
               </Button>
             </div>
+
+            {discoveryResult && (
+              <div className="space-y-2.5 rounded-lg border border-primary/25 bg-primary/[0.03] p-4 text-sm">
+                <p className="font-medium text-foreground">{t('discoveryResult.title')}</p>
+                <dl className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
+                  <div className="min-w-0 space-y-0.5">
+                    <dt className="text-xs text-muted-foreground">{t('discoveryResult.issuer')}</dt>
+                    <dd className="break-all font-mono text-xs">{discoveryResult.issuer}</dd>
+                  </div>
+                  <div className="min-w-0 space-y-0.5">
+                    <dt className="text-xs text-muted-foreground">{t('discoveryResult.authorizationEndpoint')}</dt>
+                    <dd className="break-all font-mono text-xs">
+                      {discoveryResult.authorizationEndpoint || t('discoveryResult.notAvailable')}
+                    </dd>
+                  </div>
+                  <div className="min-w-0 space-y-0.5">
+                    <dt className="text-xs text-muted-foreground">{t('discoveryResult.tokenEndpoint')}</dt>
+                    <dd className="break-all font-mono text-xs">
+                      {discoveryResult.tokenEndpoint || t('discoveryResult.notAvailable')}
+                    </dd>
+                  </div>
+                  <div className="min-w-0 space-y-0.5">
+                    <dt className="text-xs text-muted-foreground">{t('discoveryResult.userinfoEndpoint')}</dt>
+                    <dd className="break-all font-mono text-xs">
+                      {discoveryResult.userinfoEndpoint || t('discoveryResult.notAvailable')}
+                    </dd>
+                  </div>
+                  <div className="min-w-0 space-y-0.5">
+                    <dt className="text-xs text-muted-foreground">{t('discoveryResult.jwksUri')}</dt>
+                    <dd className="break-all font-mono text-xs">{discoveryResult.jwksUri || t('discoveryResult.notAvailable')}</dd>
+                  </div>
+                  <div className="min-w-0 space-y-0.5">
+                    <dt className="text-xs text-muted-foreground">{t('discoveryResult.scopesSupported')}</dt>
+                    <dd className="break-all font-mono text-xs">
+                      {discoveryResult.scopesSupported.length > 0
+                        ? discoveryResult.scopesSupported.join(', ')
+                        : t('discoveryResult.scopesNone')}
+                    </dd>
+                  </div>
+                </dl>
+              </div>
+            )}
           </CardContent>
         </Card>
       ) : null}
