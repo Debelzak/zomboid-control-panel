@@ -189,7 +189,7 @@ function getModsNav(t: (key: string) => string): Array<{
 }
 
 export default function Mods() {
-  const { t } = useTranslation('mods')
+  const { t, i18n } = useTranslation('mods')
   const MODS_NAV = useMemo(() => getModsNav(t), [t])
   const [searchParams] = useSearchParams()
   const reviewUnresolved = searchParams.get('review') === 'unresolved'
@@ -1491,9 +1491,14 @@ export default function Mods() {
       const parts: string[] = [t('toasts.syncedFromServer', { count: result.synced || 0 })]
       if (result.skippedNonMod > 0) parts.push(t('toasts.skippedNonMod', { count: result.skippedNonMod }))
       if (result.skippedIgnored > 0) parts.push(t('toasts.skippedIgnored', { count: result.skippedIgnored }))
+      // Sentence separator/terminator is a language property, not something
+      // every locale's untranslated fragment can be assumed to want a Latin
+      // ". " for -- zh-CN's own fragments carry no punctuation and expect a
+      // full-width terminator instead.
+      const sentenceEnd = i18n.language === 'zh-CN' ? '。' : '. '
       toast({
         title: t('toasts.modsSyncedTitle'),
-        description: parts.join('. ') + '.',
+        description: parts.join(sentenceEnd) + sentenceEnd.trim(),
       })
       fetchData()
     } catch (error) {
