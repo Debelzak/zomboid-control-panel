@@ -10,6 +10,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.2.0] - 2026-08-22
 
 ### Added
+
+- **Help where people actually get stuck.** A small "?" next to a setting now explains what it does,
+  what happens if you get it wrong, and what the sensible choice is - in all five languages. It
+  opens on tap as well as hover, so it works on a phone, and it is reachable by keyboard and
+  readable by a screen reader. There are fifteen of them across nine screens, and that number is
+  deliberate: most settings in the panel already show a permanent description under the label, and
+  adding an icon there would only repeat what is already on screen. These are the places nothing was
+  explaining - things like the difference between a Workshop item's numeric ID and the internal mod
+  ID it actually registers (leave one out and part of the mod silently will not load), what RCON is
+  and why changing its password elsewhere makes the panel lose control of the server, that applying
+  a config template overwrites rather than merges, and what a Discord bot's requested permissions
+  do - and, just as importantly, what they do not.
 - **Server setting names and descriptions can now be translated.** The Server Configuration page
   draws its 154 server settings and 269 sandbox settings from a schema that held its text in English
   only, so that page stayed English no matter which language you picked. The text now resolves
