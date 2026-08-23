@@ -115,3 +115,27 @@ describe('Console -- server log clear button', () => {
     expect(enConsole.serverLog.clearTooltip).not.toMatch(/does not delete the server log file/i)
   })
 })
+
+// conv-hunt-pages-2 phone-width overflow sweep: the server-log path strip
+// uses `truncate` (correctly clipping a long path with an ellipsis so it
+// doesn't overflow its box) but never gives the full value anywhere else --
+// no title tooltip, no copy button. On a 390px viewport this cuts the path
+// off around a third of the way through, and there is no way to read the
+// rest. Every other path display in this codebase either wraps the full
+// value (Debug.tsx's CopyablePath, break-all) or truncates WITH a title
+// attribute carrying the full string (MountDiscoveryBanner.tsx) -- this is
+// the only one that truncates and gives up the value entirely.
+describe('Console -- server log path display', () => {
+  it('keeps the full log path available via title when the text is truncated for space', async () => {
+    render(
+      <TooltipProvider>
+        <ConfirmProvider>
+          <Console />
+        </ConfirmProvider>
+      </TooltipProvider>,
+    )
+
+    const pathEl = await screen.findByText('C:/servers/ashenwood/server-console.txt')
+    expect(pathEl).toHaveAttribute('title', 'C:/servers/ashenwood/server-console.txt')
+  })
+})

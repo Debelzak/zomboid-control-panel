@@ -792,7 +792,7 @@ export default function Console() {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-3 py-2 rounded-md border border-border/50 bg-card/70 backdrop-blur-sm">
             <div className="flex items-center gap-2 min-w-0">
               <span className="font-mono text-[9px] uppercase tracking-[0.24em] text-primary/60 shrink-0">{t('serverLog.pathLabel')}</span>
-              <p className="text-xs text-foreground/80 font-mono truncate">
+              <p className="text-xs text-foreground/80 font-mono truncate" title={serverLogPath || undefined}>
                 {serverLogPath ? serverLogPath : <span className="text-muted-foreground/50">{t('serverLog.loadingPath')}</span>}
               </p>
               {serverLogLoading && <Loader2 className="w-3 h-3 animate-spin text-primary/70 shrink-0" />}
