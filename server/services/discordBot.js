@@ -20,6 +20,7 @@ const log = createLogger("Discord");
 import { getActiveServer, getSetting, setSetting } from "../database/init.js";
 import { loadUiSecret, writeUiSecretFile } from "../utils/uiSecretFile.js";
 import { sanitizeError } from "../utils/sanitize.js";
+import { describeStartFailure } from "./discordStartFailure.js";
 import { readIniValues } from "../utils/templateFiles.js";
 import { runManagedLifecycle } from "./managedContainer.js";
 
@@ -1658,6 +1659,13 @@ export class DiscordBot {
       guildId: this.guildId,
       channelId: this.channelId,
       modRoleId: this.modRoleId || null,
+      // Persists past the one-time toast POST /start already shows, so a
+      // user who navigates away and comes back still sees why the last
+      // start attempt failed -- cleared the moment a start actually
+      // succeeds (see the clientReady handler in start()).
+      lastStartError: this.lastStartError
+        ? { kind: this.lastStartError.kind, message: describeStartFailure(this.lastStartError) }
+        : null,
     };
   }
 }

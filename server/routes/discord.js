@@ -2,6 +2,7 @@ import express from "express";
 import { createLogger } from "../utils/logger.js";
 import { sanitizeError } from "../utils/sanitize.js";
 import { normalizeChatRelayScope } from "../services/discordBot.js";
+import { describeStartFailure } from "../services/discordStartFailure.js";
 import { requirePermission } from "../services/permissions.js";
 const log = createLogger("API:Discord");
 
@@ -212,26 +213,11 @@ router.post("/start", async (req, res) => {
       // enabled in the Discord Developer Portal (the classic one: correct
       // token and IDs, still fails, and no amount of re-checking credentials
       // would ever find it) all looked identical. discordBot.lastStartError
-      // carries the real discord.js error code now; branch on it the same
-      // way POST /test already does on Discord's HTTP status.
-      const kind = discordBot.lastStartError?.kind;
-      let error;
-      if (kind === "NoToken") {
-        error = "No bot token is configured. Add one below and save.";
-      } else if (kind === "TokenInvalid") {
-        error = "Invalid token. Check the token below and save again.";
-      } else if (kind === "DisallowedIntents") {
-        error =
-          "Discord rejected the connection: this bot needs the Server Members and Message Content privileged intents enabled. Open your application in the Discord Developer Portal -> Bot, turn both on, then try starting the bot again. This is not a token or ID problem.";
-      } else if (kind === "ReadyTimeout") {
-        error =
-          "Discord didn't respond within 30 seconds. This usually means a network problem between the panel and Discord, not your configuration -- try again in a moment.";
-      } else if (discordBot.lastStartError?.message) {
-        error = `Failed to start bot: ${sanitizeError(discordBot.lastStartError.message)}`;
-      } else {
-        error = "Failed to start bot - check configuration";
-      }
-      res.status(400).json({ error });
+      // carries the real discord.js error code now; describeStartFailure()
+      // is the same mapping getStatus() uses for the persistent version of
+      // this same message, so the toast here and the record that survives a
+      // page refresh never say two different things about the same failure.
+      res.status(400).json({ error: describeStartFailure(discordBot.lastStartError) });
     }
   } catch (error) {
     log.error(`Failed to start Discord bot: ${error.message}`);

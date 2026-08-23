@@ -10,7 +10,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // directly from node_modules/discord.js's own ErrorCodes (TokenInvalid,
 // DisallowedIntents) rather than guessed. Named "kind", not "code" --
 // deliberately outside errorCodeRegistry.test.js's remit, since this never
-// reaches the client as a response code.
+// reaches the client as a response code. The kind->message mapping itself
+// lives in services/discordStartFailure.js, split out from discordBot.js so
+// it has no dependency on the discord.js package and this test doesn't need
+// to mock it.
 
 vi.mock("../services/discordBot.js", () => ({
   normalizeChatRelayScope: vi.fn((value) => value),

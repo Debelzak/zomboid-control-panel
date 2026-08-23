@@ -64,6 +64,7 @@ interface DiscordStatus {
   connected?: boolean;
   username?: string;
   error?: string;
+  lastStartError?: { kind: string | null; message: string } | null;
 }
 
 interface DiscordConfig {
@@ -1495,12 +1496,19 @@ export default function Discord() {
               {t("management.botStatus.dependencyNote")}
             </p>
 
-            {status?.error && (
+            {/* status.error is a live runtime/init failure; lastStartError is
+                the reason the last start() attempt failed, and unlike the
+                one-time toast POST /start shows, it survives a page refresh
+                or coming back later -- cleared server-side the moment a
+                start actually succeeds. */}
+            {(status?.error || status?.lastStartError) && (
               <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
                 <p className="text-sm text-destructive font-medium">
                   {t("management.botStatus.botErrorLabel")}
                 </p>
-                <p className="text-sm text-destructive/80">{status.error}</p>
+                <p className="text-sm text-destructive/80">
+                  {status?.error || status?.lastStartError?.message}
+                </p>
               </div>
             )}
 
