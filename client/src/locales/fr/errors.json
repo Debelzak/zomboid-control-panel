@@ -352,5 +352,7 @@
   "PANELBRIDGE_INVALID_OBJECT_NAME": "Nom d'objet invalide",
   "PANELBRIDGE_INVALID_METHOD_NAME": "Nom de méthode invalide",
   "PANELBRIDGE_SCAN_ITEMS_NOT_RUNNING": "Le pont n'est pas en cours d'exécution — le serveur doit être en ligne pour analyser les objets",
-  "PANELBRIDGE_SCAN_VEHICLES_NOT_RUNNING": "Le pont n'est pas en cours d'exécution — le serveur doit être en ligne pour analyser les véhicules"
+  "PANELBRIDGE_SCAN_VEHICLES_NOT_RUNNING": "Le pont n'est pas en cours d'exécution — le serveur doit être en ligne pour analyser les véhicules",
+  "OIDC_CREDENTIALS_REJECTED": "Le fournisseur a rejeté l'identifiant client ou le secret client. Vérifiez les deux dans l'interface d'administration de votre fournisseur d'identité.",
+  "OIDC_TEST_UNDETERMINED": "L'émetteur est joignable, mais ceci n'a pas permis de confirmer si les identifiants sont valides : {{reason}}. Essayez de vous connecter pour obtenir une réponse définitive."
 }

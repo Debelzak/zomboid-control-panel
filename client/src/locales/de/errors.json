@@ -352,5 +352,7 @@
   "PANELBRIDGE_INVALID_OBJECT_NAME": "Ungültiger Objektname",
   "PANELBRIDGE_INVALID_METHOD_NAME": "Ungültiger Methodenname",
   "PANELBRIDGE_SCAN_ITEMS_NOT_RUNNING": "Brücke läuft nicht — Server muss online sein, um Elemente zu scannen",
-  "PANELBRIDGE_SCAN_VEHICLES_NOT_RUNNING": "Brücke läuft nicht — Server muss online sein, um Fahrzeuge zu scannen"
+  "PANELBRIDGE_SCAN_VEHICLES_NOT_RUNNING": "Brücke läuft nicht — Server muss online sein, um Fahrzeuge zu scannen",
+  "OIDC_CREDENTIALS_REJECTED": "Der Anbieter hat die Client-ID oder das Client-Secret abgelehnt. Prüfen Sie beide in der Administrationsoberfläche Ihres Identitätsanbieters.",
+  "OIDC_TEST_UNDETERMINED": "Der Aussteller ist erreichbar, aber damit konnte nicht bestätigt werden, ob die Zugangsdaten gültig sind: {{reason}}. Melden Sie sich an, um eine eindeutige Antwort zu erhalten."
 }

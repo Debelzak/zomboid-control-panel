@@ -352,5 +352,7 @@
   "PANELBRIDGE_INVALID_OBJECT_NAME": "对象名称无效",
   "PANELBRIDGE_INVALID_METHOD_NAME": "方法名称无效",
   "PANELBRIDGE_SCAN_ITEMS_NOT_RUNNING": "Bridge 未运行——扫描物品需要服务器处于在线状态",
-  "PANELBRIDGE_SCAN_VEHICLES_NOT_RUNNING": "Bridge 未运行——扫描载具需要服务器处于在线状态"
+  "PANELBRIDGE_SCAN_VEHICLES_NOT_RUNNING": "Bridge 未运行——扫描载具需要服务器处于在线状态",
+  "OIDC_CREDENTIALS_REJECTED": "提供商拒绝了客户端 ID 或客户端密钥。请在身份提供商的管理界面中核对这两项。",
+  "OIDC_TEST_UNDETERMINED": "颁发者可以访问，但本次检测无法确认凭据是否有效：{{reason}}。请尝试登录以获得确定的结果。"
 }

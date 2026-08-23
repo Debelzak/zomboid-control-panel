@@ -56,9 +56,44 @@
     "settingsSavedTitle": "Anmeldeeinstellungen gespeichert",
     "settingsSavedDescription": "Das Panel verwendet die neuen Einstellungen ab dem nächsten Anmeldeversuch.",
     "testSuccessTitle": "Verbindung erfolgreich",
-    "testSuccessDescription": "Das Panel konnte den Identity-Provider erreichen und dessen Konfiguration lesen.",
+    "testSuccessDescription": "Das Panel hat den Identitätsanbieter erreicht und bestätigt, dass er diese Zugangsdaten akzeptiert.",
     "testFailedTitle": "Verbindung fehlgeschlagen",
     "actionFailedTitle": "Aktion fehlgeschlagen",
-    "unknownError": "Unbekannter Fehler"
+    "unknownError": "Unbekannter Fehler",
+    "testUndeterminedTitle": "Konnte nicht bestätigt werden"
+  },
+  "providerPresets": {
+    "label": "Anbieter-Voreinstellung",
+    "custom": "Benutzerdefiniert / andere",
+    "help": "Füllt die Form der Aussteller-URL und den empfohlenen Scope für einen bekannten Anbieter aus. Ersetzen Sie alles in spitzen Klammern durch Ihre eigenen Werte, bevor Sie testen oder speichern.",
+    "google": {
+      "label": "Google"
+    },
+    "authentik": {
+      "label": "Authentik"
+    },
+    "keycloak": {
+      "label": "Keycloak"
+    },
+    "azuread": {
+      "label": "Azure AD (Microsoft Entra ID)"
+    },
+    "okta": {
+      "label": "Okta"
+    },
+    "auth0": {
+      "label": "Auth0"
+    }
+  },
+  "discoveryResult": {
+    "title": "Antwort des Anbieters",
+    "issuer": "Aussteller",
+    "authorizationEndpoint": "Autorisierungs-Endpunkt",
+    "tokenEndpoint": "Token-Endpunkt",
+    "userinfoEndpoint": "Userinfo-Endpunkt",
+    "jwksUri": "JWKS-URI",
+    "scopesSupported": "Angebotene Scopes",
+    "scopesNone": "Nicht angeboten",
+    "notAvailable": "Nicht angeboten"
   }
 }

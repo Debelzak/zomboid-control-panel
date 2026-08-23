@@ -56,9 +56,44 @@
     "settingsSavedTitle": "登录设置已保存",
     "settingsSavedDescription": "面板将在下次登录时使用新设置。",
     "testSuccessTitle": "连接成功",
-    "testSuccessDescription": "面板已成功连接身份提供方并读取其配置。",
+    "testSuccessDescription": "面板已连接到身份提供商，并确认其接受这些凭据。",
     "testFailedTitle": "连接失败",
     "actionFailedTitle": "操作失败",
-    "unknownError": "未知错误"
+    "unknownError": "未知错误",
+    "testUndeterminedTitle": "无法确认"
+  },
+  "providerPresets": {
+    "label": "提供商预设",
+    "custom": "自定义 / 其他",
+    "help": "为已知提供商填入颁发者 URL 的格式和推荐的权限范围。在测试或保存之前，请将尖括号内的内容替换为您自己的值。",
+    "google": {
+      "label": "Google"
+    },
+    "authentik": {
+      "label": "Authentik"
+    },
+    "keycloak": {
+      "label": "Keycloak"
+    },
+    "azuread": {
+      "label": "Azure AD (Microsoft Entra ID)"
+    },
+    "okta": {
+      "label": "Okta"
+    },
+    "auth0": {
+      "label": "Auth0"
+    }
+  },
+  "discoveryResult": {
+    "title": "提供商的返回内容",
+    "issuer": "颁发者",
+    "authorizationEndpoint": "授权端点",
+    "tokenEndpoint": "令牌端点",
+    "userinfoEndpoint": "用户信息端点",
+    "jwksUri": "JWKS URI",
+    "scopesSupported": "已声明的权限范围",
+    "scopesNone": "未声明",
+    "notAvailable": "未声明"
   }
 }

@@ -352,5 +352,7 @@
   "PANELBRIDGE_INVALID_OBJECT_NAME": "Nombre de objeto no válido",
   "PANELBRIDGE_INVALID_METHOD_NAME": "Nombre de método no válido",
   "PANELBRIDGE_SCAN_ITEMS_NOT_RUNNING": "El puente no está en ejecución — el servidor debe estar en línea para analizar objetos",
-  "PANELBRIDGE_SCAN_VEHICLES_NOT_RUNNING": "El puente no está en ejecución — el servidor debe estar en línea para analizar vehículos"
+  "PANELBRIDGE_SCAN_VEHICLES_NOT_RUNNING": "El puente no está en ejecución — el servidor debe estar en línea para analizar vehículos",
+  "OIDC_CREDENTIALS_REJECTED": "El proveedor ha rechazado el ID de cliente o el secreto de cliente. Compruebe ambos en la pantalla de administración de su proveedor de identidad.",
+  "OIDC_TEST_UNDETERMINED": "Se puede acceder al emisor, pero esto no ha confirmado si las credenciales son válidas: {{reason}}. Inicie sesión para obtener una respuesta definitiva."
 }

@@ -56,9 +56,44 @@
     "settingsSavedTitle": "Ajustes de inicio de sesión guardados",
     "settingsSavedDescription": "El panel usará los nuevos ajustes en el próximo intento de inicio de sesión.",
     "testSuccessTitle": "Conexión correcta",
-    "testSuccessDescription": "El panel pudo contactar con el proveedor de identidad y leer su configuración.",
+    "testSuccessDescription": "El panel ha contactado con el proveedor de identidad y ha confirmado que acepta estas credenciales.",
     "testFailedTitle": "Error de conexión",
     "actionFailedTitle": "La acción falló",
-    "unknownError": "Error desconocido"
+    "unknownError": "Error desconocido",
+    "testUndeterminedTitle": "No se pudo confirmar"
+  },
+  "providerPresets": {
+    "label": "Preajuste de proveedor",
+    "custom": "Personalizado / otro",
+    "help": "Rellena la forma de la URL del emisor y el ámbito recomendado para un proveedor conocido. Sustituya todo lo que aparezca entre corchetes angulares por sus propios valores antes de probar o guardar.",
+    "google": {
+      "label": "Google"
+    },
+    "authentik": {
+      "label": "Authentik"
+    },
+    "keycloak": {
+      "label": "Keycloak"
+    },
+    "azuread": {
+      "label": "Azure AD (Microsoft Entra ID)"
+    },
+    "okta": {
+      "label": "Okta"
+    },
+    "auth0": {
+      "label": "Auth0"
+    }
+  },
+  "discoveryResult": {
+    "title": "Respuesta del proveedor",
+    "issuer": "Emisor",
+    "authorizationEndpoint": "Punto de conexión de autorización",
+    "tokenEndpoint": "Punto de conexión de token",
+    "userinfoEndpoint": "Punto de conexión userinfo",
+    "jwksUri": "URI de JWKS",
+    "scopesSupported": "Ámbitos anunciados",
+    "scopesNone": "No anunciados",
+    "notAvailable": "No anunciado"
   }
 }

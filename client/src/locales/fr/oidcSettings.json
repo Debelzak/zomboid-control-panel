@@ -56,9 +56,44 @@
     "settingsSavedTitle": "Paramètres de connexion enregistrés",
     "settingsSavedDescription": "Le panneau utilisera les nouveaux paramètres à la prochaine tentative de connexion.",
     "testSuccessTitle": "Connexion réussie",
-    "testSuccessDescription": "Le panneau a pu joindre le fournisseur d'identité et lire sa configuration.",
+    "testSuccessDescription": "Le panneau a joint le fournisseur d'identité et confirmé qu'il accepte ces identifiants.",
     "testFailedTitle": "Échec de la connexion",
     "actionFailedTitle": "Échec de l'action",
-    "unknownError": "Erreur inconnue"
+    "unknownError": "Erreur inconnue",
+    "testUndeterminedTitle": "Impossible de confirmer"
+  },
+  "providerPresets": {
+    "label": "Préréglage de fournisseur",
+    "custom": "Personnalisé / autre",
+    "help": "Remplit la forme de l'URL de l'émetteur et la portée recommandée pour un fournisseur connu. Remplacez tout ce qui figure entre chevrons par vos propres valeurs avant de tester ou d'enregistrer.",
+    "google": {
+      "label": "Google"
+    },
+    "authentik": {
+      "label": "Authentik"
+    },
+    "keycloak": {
+      "label": "Keycloak"
+    },
+    "azuread": {
+      "label": "Azure AD (Microsoft Entra ID)"
+    },
+    "okta": {
+      "label": "Okta"
+    },
+    "auth0": {
+      "label": "Auth0"
+    }
+  },
+  "discoveryResult": {
+    "title": "Réponse du fournisseur",
+    "issuer": "Émetteur",
+    "authorizationEndpoint": "Point de terminaison d'autorisation",
+    "tokenEndpoint": "Point de terminaison de jeton",
+    "userinfoEndpoint": "Point de terminaison userinfo",
+    "jwksUri": "URI JWKS",
+    "scopesSupported": "Portées annoncées",
+    "scopesNone": "Non annoncées",
+    "notAvailable": "Non annoncé"
   }
 }
