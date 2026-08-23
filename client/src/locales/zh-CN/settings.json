@@ -18,7 +18,8 @@
     "confirmNewPassword": "确认新密码",
     "newPasswordLocalReset": "本地重置的新密码",
     "confirmNewPasswordLocalReset": "确认本地重置的新密码",
-    "buyMeCoffeeKofi": "在 Ko-fi 请我喝杯咖啡"
+    "buyMeCoffeeKofi": "在 Ko-fi 请我喝杯咖啡",
+    "recoveryTokenLocalReset": "用于本地重置的恢复令牌"
   },
   "tabs": {
     "groups": {
@@ -524,7 +525,9 @@
       "failedFallback": "面板无法重新生成 JWT 密钥。",
       "resultTitle": "JWT 密钥已重新生成",
       "resultDescription": "所有会话已登出，包括当前会话。正在跳转到登录页面…"
-    }
+    },
+    "recoveryTokenLabel": "恢复令牌",
+    "recoveryTokenPlaceholder": "粘贴 data/reset-token.txt 中的令牌"
   },
   "about": {
     "elsewhereCardTitle": "保存在其他页面的设置",

@@ -18,7 +18,8 @@
     "confirmNewPassword": "Neues Passwort bestätigen",
     "newPasswordLocalReset": "Neues Passwort für lokales Zurücksetzen",
     "confirmNewPasswordLocalReset": "Neues Passwort für lokales Zurücksetzen bestätigen",
-    "buyMeCoffeeKofi": "Mir einen Kaffee auf Ko-fi spendieren"
+    "buyMeCoffeeKofi": "Mir einen Kaffee auf Ko-fi spendieren",
+    "recoveryTokenLocalReset": "Wiederherstellungs-Token für die lokale Zurücksetzung"
   },
   "tabs": {
     "groups": {
@@ -524,7 +525,9 @@
       "failedFallback": "Das Panel konnte das JWT-Secret nicht neu erzeugen.",
       "resultTitle": "JWT-Secret neu erzeugt",
       "resultDescription": "Alle Sitzungen wurden abgemeldet, auch diese. Weiterleitung zur Anmeldung…"
-    }
+    },
+    "recoveryTokenLabel": "Wiederherstellungs-Token",
+    "recoveryTokenPlaceholder": "Fügen Sie das Token aus data/reset-token.txt ein"
   },
   "about": {
     "elsewhereCardTitle": "Einstellungen auf anderen Seiten",

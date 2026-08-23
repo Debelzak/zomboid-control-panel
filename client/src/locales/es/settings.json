@@ -18,7 +18,8 @@
     "confirmNewPassword": "Confirmar nueva contraseña",
     "newPasswordLocalReset": "Nueva contraseña para el restablecimiento local",
     "confirmNewPasswordLocalReset": "Confirmar nueva contraseña para el restablecimiento local",
-    "buyMeCoffeeKofi": "Invítame a un café en Ko-fi"
+    "buyMeCoffeeKofi": "Invítame a un café en Ko-fi",
+    "recoveryTokenLocalReset": "Token de recuperación para el restablecimiento local"
   },
   "tabs": {
     "groups": {
@@ -524,7 +525,9 @@
       "failedFallback": "El panel no pudo regenerar el secreto JWT.",
       "resultTitle": "Secreto JWT regenerado",
       "resultDescription": "Se han cerrado todas las sesiones, incluida esta. Redirigiendo al inicio de sesión…"
-    }
+    },
+    "recoveryTokenLabel": "Token de recuperación",
+    "recoveryTokenPlaceholder": "Pegue el token de data/reset-token.txt"
   },
   "about": {
     "elsewhereCardTitle": "Ajustes que viven en otras páginas",

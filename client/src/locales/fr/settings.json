@@ -18,7 +18,8 @@
     "confirmNewPassword": "Confirmer le nouveau mot de passe",
     "newPasswordLocalReset": "Nouveau mot de passe pour la réinitialisation locale",
     "confirmNewPasswordLocalReset": "Confirmer le nouveau mot de passe pour la réinitialisation locale",
-    "buyMeCoffeeKofi": "M'offrir un café sur Ko-fi"
+    "buyMeCoffeeKofi": "M'offrir un café sur Ko-fi",
+    "recoveryTokenLocalReset": "Jeton de récupération pour la réinitialisation locale"
   },
   "tabs": {
     "groups": {
@@ -524,7 +525,9 @@
       "failedFallback": "Le panneau n'a pas pu régénérer le secret JWT.",
       "resultTitle": "Secret JWT régénéré",
       "resultDescription": "Toutes les sessions ont été déconnectées, y compris celle-ci. Redirection vers la connexion…"
-    }
+    },
+    "recoveryTokenLabel": "Jeton de récupération",
+    "recoveryTokenPlaceholder": "Collez le jeton depuis data/reset-token.txt"
   },
   "about": {
     "elsewhereCardTitle": "Paramètres situés sur d'autres pages",
