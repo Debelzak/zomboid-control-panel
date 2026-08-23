@@ -249,6 +249,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is not something the panel can fix from its side - so the point of this change is that you will
   find out, instead of finding out from a wrong map.
 
+- **"Ping" on the Server Finder never worked, and said "N/A" instead of saying so.** The ping
+  request was sent without the panel's own credentials, so the server rejected it before it ever
+  reached the game server being tested - every time, for every signed-in user. The page then showed
+  "N/A", which is exactly what an unreachable server looks like, so a working server and a broken
+  feature were impossible to tell apart. Pings now return real times.
+
+- **Scheduled tasks could vanish from the Scheduler page even though they were fine.** The page
+  loaded its tasks alongside several other things, and if any one of those other requests hiccupped
+  - the preset list, the run history, the scheduler's own status - the whole load was discarded and
+  the page said "no tasks scheduled". Your tasks were there, still scheduled, still running. Each of
+  those side requests now fails on its own without taking the task list down with it.
+
+- **A start command the panel warns about could still be saved.** The server edit dialog flags a
+  start command containing characters it will not accept, but saving went through anyway - and the
+  server applies the same rule when you actually press Start. So you could save, be told it saved,
+  and only discover the problem later with nothing pointing back to the dialog. The dialog now
+  refuses it at the point you save.
+
+- **The Voice Ban button did nothing the first time you pressed it.** If you opened Voice Ban for a
+  selected player and left the name field as-is, the first press was silently ignored - no error, no
+  message - and only a second press worked. It now works on the first press.
+
+- **The lost-password button could describe the wrong thing.** For an administrator who had already
+  saved recovery codes, the button offered to create a recovery file while actually opening the
+  recovery-code entry form. It now says what it does.
+
+- **A normal mod state was styled like a problem.** A mod whose ID has not been resolved yet - the
+  ordinary state before it has been downloaded - was shown with the same warning styling as a real
+  duplicate-ID conflict, so routine setup looked like something had gone wrong. It is now shown as
+  information, which is what the code always intended it to be.
+
 - **The World Map was blank - every single tile was 404ing.** The upstream map host moved: tiles
   and the per-build descriptors are now served from `tiles.pzmap.org` and no longer sit under a
   `/maps` path segment. The panel was still asking for the old address, so nothing loaded at all.
