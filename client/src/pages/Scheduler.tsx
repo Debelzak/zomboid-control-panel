@@ -125,6 +125,7 @@ export default function Scheduler() {
   const [loading, setLoading] = useState(false)
   const [initialLoading, setInitialLoading] = useState(true)
   const [runningTaskId, setRunningTaskId] = useState<number | null>(null)
+  const [broadcastingKey, setBroadcastingKey] = useState<string | null>(null)
   const [fetchError, setFetchError] = useState<string | null>(null)
   const { toast } = useToast()
 
@@ -303,7 +304,14 @@ export default function Scheduler() {
     setNewTaskName('')
     setNewTaskCron('')
     setNewTaskCommand('')
-    setNewTaskServerId('')
+    // Re-default to the active server rather than blanking the field — otherwise
+    // every task after the first requires a manual reselect, and a task created
+    // with no target silently follows whichever server is active when it fires
+    // instead of the one the operator was looking at.
+    setNewTaskServerId(() => {
+      const active = servers.find((s) => s.isActive)
+      return active ? String(active.id) : (servers[0] ? String(servers[0].id) : '')
+    })
     setScheduleMode('simple')
     setSimpleIntervalType('daily')
     setSimpleHour('06')
@@ -470,8 +478,8 @@ export default function Scheduler() {
     }
   }
 
-  const handleBroadcast = async (message: string) => {
-    setLoading(true)
+  const handleBroadcast = async (key: string, message: string) => {
+    setBroadcastingKey(key)
     try {
       await rconApi.execute(`servermsg "${message}"`)
       toast({
@@ -486,7 +494,7 @@ export default function Scheduler() {
         variant: 'destructive',
       })
     } finally {
-      setLoading(false)
+      setBroadcastingKey(null)
     }
   }
 
@@ -760,7 +768,8 @@ export default function Scheduler() {
               </div>
             </div>
             <DialogFooter>
-              <Button onClick={handleCreateTask} disabled={loading}>
+              <Button onClick={handleCreateTask} disabled={loading} className="gap-2">
+                {loading && <Loader2 className="w-4 h-4 animate-spin" />}
                 {editingTask ? t('dialog.saveChanges') : t('dialog.createTaskButton')}
               </Button>
             </DialogFooter>
@@ -967,35 +976,43 @@ export default function Scheduler() {
         <CardContent>
           <div className="flex flex-wrap gap-2">
             <Button
-              onClick={() => handleBroadcast(t('broadcastMessages.maintenanceStart'))}
+              onClick={() => handleBroadcast('maintenanceStart', t('broadcastMessages.maintenanceStart'))}
               variant="outline"
               size="sm"
-              disabled={loading || !serverRunning}
+              disabled={broadcastingKey !== null || loading || !serverRunning}
+              className="gap-2"
             >
+              {broadcastingKey === 'maintenanceStart' && <Loader2 className="w-4 h-4 animate-spin" />}
               {t('quickBroadcasts.maintenanceStart')}
             </Button>
             <Button
-              onClick={() => handleBroadcast(t('broadcastMessages.maintenanceEnd'))}
+              onClick={() => handleBroadcast('maintenanceEnd', t('broadcastMessages.maintenanceEnd'))}
               variant="outline"
               size="sm"
-              disabled={loading || !serverRunning}
+              disabled={broadcastingKey !== null || loading || !serverRunning}
+              className="gap-2"
             >
+              {broadcastingKey === 'maintenanceEnd' && <Loader2 className="w-4 h-4 animate-spin" />}
               {t('quickBroadcasts.maintenanceEnd')}
             </Button>
             <Button
-              onClick={() => handleBroadcast(t('broadcastMessages.saveWarning'))}
+              onClick={() => handleBroadcast('saveWarning', t('broadcastMessages.saveWarning'))}
               variant="outline"
               size="sm"
-              disabled={loading || !serverRunning}
+              disabled={broadcastingKey !== null || loading || !serverRunning}
+              className="gap-2"
             >
+              {broadcastingKey === 'saveWarning' && <Loader2 className="w-4 h-4 animate-spin" />}
               {t('quickBroadcasts.saveWarning')}
             </Button>
             <Button
-              onClick={() => handleBroadcast(t('broadcastMessages.welcome'))}
+              onClick={() => handleBroadcast('welcome', t('broadcastMessages.welcome'))}
               variant="outline"
               size="sm"
-              disabled={loading || !serverRunning}
+              disabled={broadcastingKey !== null || loading || !serverRunning}
+              className="gap-2"
             >
+              {broadcastingKey === 'welcome' && <Loader2 className="w-4 h-4 animate-spin" />}
               {t('quickBroadcasts.welcome')}
             </Button>
           </div>
