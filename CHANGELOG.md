@@ -216,6 +216,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `client/src/locales/README.md`.
 
 ### Fixed
+- **"Failed to start bot - check configuration" now tells you what is actually wrong.** The Discord
+  bot reported the same sentence whatever went wrong, and the real reason was being thrown away one
+  line before the response was written - the server knew, logged it, and then discarded it. The most
+  common cause is not a configuration mistake at all: this bot needs the **Server Members** and
+  **Message Content** privileged intents, which are toggles in the Discord Developer Portal that are
+  off by default and are separate from the token. A correct token and correct IDs fail every time
+  until those are on, and nothing in the panel said so. Start failures now name the cause - missing
+  intents, a bad token, no token at all, or Discord not answering - and the intents message says
+  plainly that it is not a credentials problem.
+
+- **Changing a mod setting told you to do something impossible.** Editing a mod setting reported
+  "Stop the server before editing configuration" - but the Mod Settings page cannot load with the
+  server stopped, so following the instruction left you with no way back in. The panel already had
+  the honest message written for this case and a generic error lookup was burying it. It now tells
+  you the truth: the change is applied to the running game, and it will reset when the server
+  restarts. Making it survive a restart is a separate fix still in progress.
+
 - **Server Setup could hide the one thing stopping you finishing.** An admin password is required
   before a server can start, and the final button refuses without it - but the field sat inside the
   collapsed Advanced Options section among genuinely optional toggles. You could work through every
