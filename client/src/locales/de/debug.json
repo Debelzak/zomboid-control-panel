@@ -1287,7 +1287,9 @@
     "downloadFailedDesc": "Protokolle konnten nicht heruntergeladen werden.",
     "downloadFileFailedDesc": "Herunterladen von {{name}} fehlgeschlagen",
     "downloadArchiveFailedDesc": "Herunterladen des Protokollarchivs fehlgeschlagen",
-    "logEntryCopiedDesc": "Protokolleintrag in die Zwischenablage kopiert."
+    "logEntryCopiedDesc": "Protokolleintrag in die Zwischenablage kopiert.",
+    "logsFetchFailedTitle": "Logs konnten nicht aktualisiert werden",
+    "logsFetchFailedDesc": "Die Log-Liste wurde nicht aktualisiert. Prüfe die Verbindung des Panels und versuche es erneut."
   },
   "crashesTab": {
     "crashLogsTitle": "Absturzprotokolle",

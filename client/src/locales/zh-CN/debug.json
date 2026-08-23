@@ -1287,7 +1287,9 @@
     "downloadFailedDesc": "下载日志失败",
     "downloadFileFailedDesc": "下载 {{name}} 失败",
     "downloadArchiveFailedDesc": "下载日志压缩包失败",
-    "logEntryCopiedDesc": "日志条目已复制到剪贴板。"
+    "logEntryCopiedDesc": "日志条目已复制到剪贴板。",
+    "logsFetchFailedTitle": "无法刷新日志",
+    "logsFetchFailedDesc": "日志列表未更新。请检查面板连接后重试。"
   },
   "crashesTab": {
     "crashLogsTitle": "崩溃日志",

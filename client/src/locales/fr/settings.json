@@ -82,7 +82,11 @@
   "pageHeader": {
     "title": "Paramètres",
     "defaultDescription": "Port du panneau, accès distant, intégrations serveur, sauvegardes et sécurité.",
-    "eyebrow": "Configuration"
+    "eyebrow": "Configuration",
+    "loadFailedTitle": "Impossible de charger les paramètres",
+    "loadFailedDesc": "{{error}} — afficher vos derniers paramètres enregistrés risquerait d'écraser de vraies valeurs par des espaces réservés ; rien n'est modifiable tant que le chargement n'a pas abouti.",
+    "loadFailedFallback": "La requête de paramètres a échoué.",
+    "retry": "Réessayer"
   },
   "unsavedBanner": {
     "label": "Modifications non enregistrées",
@@ -148,7 +152,9 @@
       "protocolNotAllowed": "Seules les origines http/https sont autorisées : {{origin}}",
       "tooLong": "Origine trop longue ({{length}} caractères). Maximum : {{max}}.",
       "tooMany": "Trop d'origines. Maximum : {{max}}."
-    }
+    },
+    "diagnosticsRefreshFailedTitle": "Impossible d'actualiser les diagnostics CORS",
+    "diagnosticsRefreshFailedDesc": "Les valeurs ci-dessous sont obsolètes, pas actuelles."
   },
   "updates": {
     "autoUpdateTitle": "Mise à jour automatique du panneau",
@@ -383,7 +389,9 @@
     "activeSuffix": "(Actif)",
     "installButton": "Installer le mod",
     "remoteInstallWarning": "Serveur distant : copiez PanelBridge.lua dans le dossier Lua distant via SFTP ou le gestionnaire de fichiers du fournisseur. L'installation locale automatique n'est pas disponible.",
-    "destinationLabel": "Destination :"
+    "destinationLabel": "Destination :",
+    "serversLoadFailed": "Impossible de charger la liste des serveurs — essayez de rouvrir cette page",
+    "statusFetchFailedFallback": "Impossible de joindre le point de terminaison de statut du bridge."
   },
   "mods": {
     "cardTitle": "Paramètres de mise à jour des mods",
@@ -459,7 +467,10 @@
     "autoExportLabel": "Exporter un personnage à la connexion d'un joueur",
     "autoExportDesc": "S'exécute environ dix secondes après le chargement du joueur, afin qu'un personnage puisse être restauré sans revenir en arrière sur tout le monde. Nécessite PanelBridge connecté.",
     "copiesKeptLabel": "Copies conservées par joueur",
-    "copiesKeptHelp": "Les exports les plus anciens sont supprimés une fois ce nombre dépassé par un joueur. Restaurez-les depuis la page Joueurs."
+    "copiesKeptHelp": "Les exports les plus anciens sont supprimés une fois ce nombre dépassé par un joueur. Restaurez-les depuis la page Joueurs.",
+    "loadFailedTitle": "Impossible de charger les sauvegardes",
+    "loadFailedDescription": "Il ne s'agit pas forcément d'une liste vide — la requête a échoué. Rouvrez cette page pour réessayer.",
+    "statusLoadFailed": "Impossible de vérifier si les sauvegardes planifiées sont actives — ce commutateur est désactivé tant que le chargement n’a pas abouti. Rouvrez cette page pour réessayer."
   },
   "security": {
     "cardTitle": "Sécurité et authentification",

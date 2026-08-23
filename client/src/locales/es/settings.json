@@ -82,7 +82,11 @@
   "pageHeader": {
     "title": "Ajustes",
     "defaultDescription": "Puerto del panel, acceso remoto, integraciones del servidor, copias de seguridad y seguridad.",
-    "eyebrow": "Configuración"
+    "eyebrow": "Configuración",
+    "loadFailedTitle": "No se pudo cargar la configuración",
+    "loadFailedDesc": "{{error}}: mostrar tu configuración guardada podría sobrescribir valores reales con marcadores de posición, así que nada es editable hasta que esto cargue.",
+    "loadFailedFallback": "La solicitud de configuración falló.",
+    "retry": "Reintentar"
   },
   "unsavedBanner": {
     "label": "Cambios sin guardar",
@@ -148,7 +152,9 @@
       "protocolNotAllowed": "Solo se permiten orígenes http/https: {{origin}}",
       "tooLong": "Origen demasiado largo ({{length}} caracteres). El máximo es {{max}}.",
       "tooMany": "Demasiados orígenes. El máximo es {{max}}."
-    }
+    },
+    "diagnosticsRefreshFailedTitle": "No se pudo actualizar el diagnóstico de CORS",
+    "diagnosticsRefreshFailedDesc": "Los valores de abajo están obsoletos, no son los actuales."
   },
   "updates": {
     "autoUpdateTitle": "Actualización automática del panel",
@@ -383,7 +389,9 @@
     "activeSuffix": "(activo)",
     "installButton": "Instalar mod",
     "remoteInstallWarning": "Servidor remoto: copia PanelBridge.lua en la carpeta Lua remota con SFTP o el gestor de archivos del proveedor. La instalación local automática no está disponible.",
-    "destinationLabel": "Destino:"
+    "destinationLabel": "Destino:",
+    "serversLoadFailed": "No se pudo cargar la lista de servidores: prueba a volver a abrir esta página",
+    "statusFetchFailedFallback": "No se pudo contactar con el punto de conexión de estado del bridge."
   },
   "mods": {
     "cardTitle": "Ajustes de actualización de mods",
@@ -459,7 +467,10 @@
     "autoExportLabel": "Exportar un personaje cuando un jugador se une",
     "autoExportDesc": "Se ejecuta unos diez segundos después de que el jugador carga, de modo que se puede restaurar un personaje sin revertir el mundo. Necesita PanelBridge conectado.",
     "copiesKeptLabel": "Copias conservadas por jugador",
-    "copiesKeptHelp": "Las exportaciones más antiguas se eliminan cuando un jugador supera este número. Restáuralas desde la página de Jugadores."
+    "copiesKeptHelp": "Las exportaciones más antiguas se eliminan cuando un jugador supera este número. Restáuralas desde la página de Jugadores.",
+    "loadFailedTitle": "No se pudieron cargar las copias de seguridad",
+    "loadFailedDescription": "Esto no significa necesariamente que la lista esté vacía: la solicitud falló. Vuelve a abrir esta página para reintentarlo.",
+    "statusLoadFailed": "No se pudo comprobar si las copias de seguridad programadas están activas: este interruptor permanece desactivado hasta que cargue. Vuelve a abrir esta página para reintentarlo."
   },
   "security": {
     "cardTitle": "Seguridad y autenticación",

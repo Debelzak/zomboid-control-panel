@@ -230,7 +230,9 @@
     "empty": "Keine deaktivierten Mods. Alles im Workshop-Ordner ist in der Server-INI aktiviert.",
     "openWorkshopPage": "Workshop-Seite öffnen",
     "enable": "Aktivieren",
-    "deleteFromDisk": "Von der Festplatte löschen"
+    "deleteFromDisk": "Von der Festplatte löschen",
+    "scanFailedTitle": "Deaktivierte Mods konnten nicht gescannt werden",
+    "scanFailedDesc": "Der Scan des Workshop-Ordners ist fehlgeschlagen. Versuche es erneut zu aktualisieren."
   },
   "ignoredPanel": {
     "count_one": "{{count}} ignorierte Mod",

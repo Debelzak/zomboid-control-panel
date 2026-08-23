@@ -53,15 +53,42 @@
     "groupMods": "Mods",
     "groupAdd": "Ajouter",
     "groupMaintenance": "Maintenance",
-    "installed": { "label": "Installés", "hint": "Objets Workshop suivis par ce panneau pour les mises à jour" },
-    "active": { "label": "Actifs sur le serveur", "hint": "Ce que la configuration du serveur charge réellement" },
-    "deactivated": { "label": "Désactivés", "hint": "Éléments suivis actuellement désactivés" },
-    "add": { "label": "Ajouter des mods", "hint": "Ajouter par ID Workshop ou URL" },
-    "collection": { "label": "Importer une collection", "hint": "Récupérer tous les objets d'une collection Steam" },
-    "order": { "label": "Ordre de chargement", "hint": "Ordre dans lequel les mods sont chargés" },
-    "conflicts": { "label": "Conflits", "hint": "Clashes et dépendances manquantes" },
-    "presets": { "label": "Préréglages", "hint": "Enregistrer et restaurer des ensembles de mods" },
-    "tools": { "label": "Outils", "hint": "Réparer, dédupliquer et nettoyer" }
+    "installed": {
+      "label": "Installés",
+      "hint": "Objets Workshop suivis par ce panneau pour les mises à jour"
+    },
+    "active": {
+      "label": "Actifs sur le serveur",
+      "hint": "Ce que la configuration du serveur charge réellement"
+    },
+    "deactivated": {
+      "label": "Désactivés",
+      "hint": "Éléments suivis actuellement désactivés"
+    },
+    "add": {
+      "label": "Ajouter des mods",
+      "hint": "Ajouter par ID Workshop ou URL"
+    },
+    "collection": {
+      "label": "Importer une collection",
+      "hint": "Récupérer tous les objets d'une collection Steam"
+    },
+    "order": {
+      "label": "Ordre de chargement",
+      "hint": "Ordre dans lequel les mods sont chargés"
+    },
+    "conflicts": {
+      "label": "Conflits",
+      "hint": "Clashes et dépendances manquantes"
+    },
+    "presets": {
+      "label": "Préréglages",
+      "hint": "Enregistrer et restaurer des ensembles de mods"
+    },
+    "tools": {
+      "label": "Outils",
+      "hint": "Réparer, dédupliquer et nettoyer"
+    }
   },
   "collectionDialog": {
     "title": "Importer une collection Steam Workshop",
@@ -203,7 +230,9 @@
     "empty": "Aucun mod désactivé. Tout ce qui se trouve dans le dossier Workshop est activé dans l'INI du serveur.",
     "openWorkshopPage": "Ouvrir la page Workshop",
     "enable": "Activer",
-    "deleteFromDisk": "Supprimer du disque"
+    "deleteFromDisk": "Supprimer du disque",
+    "scanFailedTitle": "Impossible d'analyser les mods désactivés",
+    "scanFailedDesc": "L'analyse du dossier Workshop a échoué. Essayez d'actualiser à nouveau."
   },
   "ignoredPanel": {
     "count_one": "{{count}} mod ignoré",

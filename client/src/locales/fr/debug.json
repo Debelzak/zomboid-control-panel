@@ -1287,7 +1287,9 @@
     "downloadFailedDesc": "Échec du téléchargement des journaux",
     "downloadFileFailedDesc": "Échec du téléchargement de {{name}}",
     "downloadArchiveFailedDesc": "Échec du téléchargement du pack de journaux",
-    "logEntryCopiedDesc": "Entrée de journal copiée dans le presse-papiers."
+    "logEntryCopiedDesc": "Entrée de journal copiée dans le presse-papiers.",
+    "logsFetchFailedTitle": "Impossible d'actualiser les journaux",
+    "logsFetchFailedDesc": "La liste des journaux n'a pas été mise à jour. Vérifiez la connexion du panneau et réessayez."
   },
   "crashesTab": {
     "crashLogsTitle": "Journaux de plantage",

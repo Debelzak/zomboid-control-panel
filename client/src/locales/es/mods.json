@@ -230,7 +230,9 @@
     "empty": "No hay mods deshabilitados. Todo lo que hay en la carpeta de Workshop está habilitado en el INI del servidor.",
     "openWorkshopPage": "Abrir página de Workshop",
     "enable": "Habilitar",
-    "deleteFromDisk": "Eliminar del disco"
+    "deleteFromDisk": "Eliminar del disco",
+    "scanFailedTitle": "No se pudieron buscar los mods desactivados",
+    "scanFailedDesc": "Falló el análisis de la carpeta de Workshop. Prueba a actualizar de nuevo."
   },
   "ignoredPanel": {
     "count_one": "{{count}} mod ignorado",

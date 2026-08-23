@@ -82,7 +82,11 @@
   "pageHeader": {
     "title": "设置",
     "defaultDescription": "面板端口、远程访问、服务器集成、备份与安全。",
-    "eyebrow": "配置"
+    "eyebrow": "配置",
+    "loadFailedTitle": "无法加载设置",
+    "loadFailedDesc": "{{error}}——显示上次保存的设置可能会用占位值覆盖真实值，因此在加载成功前无法编辑。",
+    "loadFailedFallback": "设置请求失败。",
+    "retry": "重试"
   },
   "unsavedBanner": {
     "label": "未保存的更改",
@@ -148,7 +152,9 @@
       "protocolNotAllowed": "仅允许 http/https 来源：{{origin}}",
       "tooLong": "来源过长（{{length}} 个字符）。最大为 {{max}}。",
       "tooMany": "来源过多。最大为 {{max}}。"
-    }
+    },
+    "diagnosticsRefreshFailedTitle": "无法刷新 CORS 诊断",
+    "diagnosticsRefreshFailedDesc": "下方数据已过时，并非当前值。"
   },
   "updates": {
     "autoUpdateTitle": "面板自动更新",
@@ -383,7 +389,9 @@
     "activeSuffix": "（活动）",
     "installButton": "安装模组",
     "remoteInstallWarning": "远程服务器：请使用 SFTP 或托管服务商的文件管理器，将 PanelBridge.lua 复制到远程 Lua 文件夹。本地自动安装不可用。",
-    "destinationLabel": "目标位置："
+    "destinationLabel": "目标位置：",
+    "serversLoadFailed": "无法加载服务器列表——请尝试重新打开此页面",
+    "statusFetchFailedFallback": "无法访问 Bridge 状态接口。"
   },
   "mods": {
     "cardTitle": "模组更新设置",
@@ -459,7 +467,10 @@
     "autoExportLabel": "玩家加入时导出角色",
     "autoExportDesc": "在玩家加载后约十秒运行，因此可在不回滚世界的情况下还原单个角色。需要 PanelBridge 处于已连接状态。",
     "copiesKeptLabel": "每位玩家保留的副本数",
-    "copiesKeptHelp": "当某玩家的导出数量超过此值时，最旧的导出将被删除。可在「玩家」页面还原。"
+    "copiesKeptHelp": "当某玩家的导出数量超过此值时，最旧的导出将被删除。可在「玩家」页面还原。",
+    "loadFailedTitle": "无法加载备份",
+    "loadFailedDescription": "这不一定表示列表为空——备份列表请求失败了。请重新打开此页面重试。",
+    "statusLoadFailed": "无法确认定时备份是否已开启——在加载完成前此开关不可用。请重新打开此页面重试。"
   },
   "security": {
     "cardTitle": "安全与身份验证",

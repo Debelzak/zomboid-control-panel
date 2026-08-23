@@ -53,15 +53,42 @@
     "groupMods": "模组",
     "groupAdd": "添加",
     "groupMaintenance": "维护",
-    "installed": { "label": "已安装", "hint": "面板正在跟踪更新的创意工坊项目" },
-    "active": { "label": "服务器上已启用", "hint": "服务器配置实际加载的内容" },
-    "deactivated": { "label": "已停用", "hint": "当前已关闭的已跟踪项目" },
-    "add": { "label": "添加模组", "hint": "通过 Workshop ID 或链接添加" },
-    "collection": { "label": "导入收藏集", "hint": "从 Steam 收藏集中拉取所有项目" },
-    "order": { "label": "加载顺序", "hint": "模组的加载顺序" },
-    "conflicts": { "label": "冲突", "hint": "冲突和缺失的依赖项" },
-    "presets": { "label": "预设", "hint": "保存和恢复模组集合" },
-    "tools": { "label": "工具", "hint": "修复、去重和清理" }
+    "installed": {
+      "label": "已安装",
+      "hint": "面板正在跟踪更新的创意工坊项目"
+    },
+    "active": {
+      "label": "服务器上已启用",
+      "hint": "服务器配置实际加载的内容"
+    },
+    "deactivated": {
+      "label": "已停用",
+      "hint": "当前已关闭的已跟踪项目"
+    },
+    "add": {
+      "label": "添加模组",
+      "hint": "通过 Workshop ID 或链接添加"
+    },
+    "collection": {
+      "label": "导入收藏集",
+      "hint": "从 Steam 收藏集中拉取所有项目"
+    },
+    "order": {
+      "label": "加载顺序",
+      "hint": "模组的加载顺序"
+    },
+    "conflicts": {
+      "label": "冲突",
+      "hint": "冲突和缺失的依赖项"
+    },
+    "presets": {
+      "label": "预设",
+      "hint": "保存和恢复模组集合"
+    },
+    "tools": {
+      "label": "工具",
+      "hint": "修复、去重和清理"
+    }
   },
   "collectionDialog": {
     "title": "导入 Steam 创意工坊收藏集",
@@ -203,7 +230,9 @@
     "empty": "没有已禁用的模组。创意工坊文件夹中的所有内容均已在服务器 INI 中启用。",
     "openWorkshopPage": "打开创意工坊页面",
     "enable": "启用",
-    "deleteFromDisk": "从磁盘删除"
+    "deleteFromDisk": "从磁盘删除",
+    "scanFailedTitle": "无法扫描已停用的模组",
+    "scanFailedDesc": "Workshop 文件夹扫描失败。请再次刷新。"
   },
   "ignoredPanel": {
     "count_one": "{{count}} 个已忽略的模组",

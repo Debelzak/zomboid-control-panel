@@ -82,7 +82,11 @@
   "pageHeader": {
     "title": "Einstellungen",
     "defaultDescription": "Panel-Port, Fernzugriff, Serverintegrationen, Backups und Sicherheit.",
-    "eyebrow": "Konfiguration"
+    "eyebrow": "Konfiguration",
+    "loadFailedTitle": "Einstellungen konnten nicht geladen werden",
+    "loadFailedDesc": "{{error}} — die zuletzt gespeicherten Einstellungen anzuzeigen, würde echte Werte durch Platzhalter überschreiben können; bis zum erfolgreichen Laden ist nichts bearbeitbar.",
+    "loadFailedFallback": "Die Anfrage der Einstellungen ist fehlgeschlagen.",
+    "retry": "Erneut versuchen"
   },
   "unsavedBanner": {
     "label": "Nicht gespeicherte Änderungen",
@@ -148,7 +152,9 @@
       "protocolNotAllowed": "Nur http/https-Ursprünge sind erlaubt: {{origin}}",
       "tooLong": "Ursprung zu lang ({{length}} Zeichen). Maximum: {{max}}.",
       "tooMany": "Zu viele Ursprünge. Maximum: {{max}}."
-    }
+    },
+    "diagnosticsRefreshFailedTitle": "CORS-Diagnose konnte nicht aktualisiert werden",
+    "diagnosticsRefreshFailedDesc": "Die Werte unten sind veraltet, nicht aktuell."
   },
   "updates": {
     "autoUpdateTitle": "Automatisches Panel-Update",
@@ -383,7 +389,9 @@
     "activeSuffix": "(Aktiv)",
     "installButton": "Mod installieren",
     "remoteInstallWarning": "Remote-Server: Kopiere PanelBridge.lua per SFTP oder über den Dateimanager deines Anbieters in den Remote-Lua-Ordner. Die automatische lokale Installation ist nicht verfügbar.",
-    "destinationLabel": "Ziel:"
+    "destinationLabel": "Ziel:",
+    "serversLoadFailed": "Serverliste konnte nicht geladen werden — öffne die Seite erneut",
+    "statusFetchFailedFallback": "Der Status-Endpunkt der Bridge ist nicht erreichbar."
   },
   "mods": {
     "cardTitle": "Mod-Update-Einstellungen",
@@ -459,7 +467,10 @@
     "autoExportLabel": "Charakter beim Beitritt eines Spielers exportieren",
     "autoExportDesc": "Läuft etwa zehn Sekunden nachdem der Spieler geladen wurde, sodass ein einzelner Charakter wiederhergestellt werden kann, ohne die Welt zurückzusetzen. Erfordert eine Verbindung zu PanelBridge.",
     "copiesKeptLabel": "Aufbewahrte Kopien pro Spieler",
-    "copiesKeptHelp": "Die ältesten Exporte werden gelöscht, sobald ein Spieler diese Anzahl überschreitet. Du kannst sie auf der Seite „Spieler“ wiederherstellen."
+    "copiesKeptHelp": "Die ältesten Exporte werden gelöscht, sobald ein Spieler diese Anzahl überschreitet. Du kannst sie auf der Seite „Spieler“ wiederherstellen.",
+    "loadFailedTitle": "Backups konnten nicht geladen werden",
+    "loadFailedDescription": "Das heißt nicht unbedingt, dass die Liste leer ist — die Anfrage ist fehlgeschlagen. Öffne die Seite erneut, um es noch einmal zu versuchen.",
+    "statusLoadFailed": "Es ließ sich nicht prüfen, ob geplante Backups aktiv sind — dieser Schalter bleibt bis zum Laden deaktiviert. Öffne die Seite erneut, um es noch einmal zu versuchen."
   },
   "security": {
     "cardTitle": "Sicherheit & Authentifizierung",
