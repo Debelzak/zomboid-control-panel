@@ -249,6 +249,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is not something the panel can fix from its side - so the point of this change is that you will
   find out, instead of finding out from a wrong map.
 
+- **If you locked yourself out of the local administrator account, the recovery form could never
+  work.** Resetting a lost local password requires a one-time token that the panel writes to
+  `data/reset-token.txt` - but the form had no field to type it into. The token was therefore always
+  empty, the submit button was enabled anyway, and pressing it failed every time with a complaint
+  about the missing token. This is the panel's only self-service way back into a locked-out local
+  admin account, and it could not be completed by anybody. The form now has the field, and the
+  button stays disabled until you fill it in.
+
+- **The Bridge status could say "offline" long after the bridge came back.** The panel stops polling
+  the game bridge when it sees a failure, and the thing that restarts the polling was the polling
+  itself - so once it stopped, nothing was left to notice a recovery. Restarting the game or
+  reloading the mod would reconnect the bridge while the panel went on showing "Bridge offline"
+  until you reloaded the page. It now keeps checking and recovers on its own.
+
+- **The Console could keep showing RCON as "online" after the connection had died.** The page only
+  recognised two specific raw connection errors, but the server translates most real disconnects
+  into readable sentences first - so the messages the page was watching for never arrived, and the
+  badge kept its last known good state. Sending an announcement did not update the badge at all,
+  even on the errors it did recognise. Both now react to the messages the server actually sends.
+
+- **On Windows, a failed installation told you to edit a Linux service file.** When the install path
+  is not writable, the panel appended advice about editing `zomboid-panel.service` and restarting
+  the service - instructions that do not exist on Windows, which is a fully supported platform here.
+  The advice is now shown only on Linux.
+
+- **A failed backup left an error card on screen forever.** When backup creation failed immediately,
+  the error card was shown but never scheduled to clear itself, unlike every other backup error. It
+  now clears like the rest.
+
+- **Two places recorded a failure and then lost it.** A diagnostics auto-fix that failed, and the
+  inline actions on the Events page (vehicle repair, alarms, locks, adding a player to a safehouse),
+  both reported problems only as a pop-up notification. Once it faded, or you changed tabs, there
+  was no sign anything had been attempted. Both now leave a record you can still see afterwards.
+
 - **Stopping the server usually worked but often said it had failed.** When Project Zomboid shuts
   down it closes the panel's command connection as it goes - which is what a successful shutdown
   looks like. The panel treated that closed connection as a failed command, so pressing Stop could
