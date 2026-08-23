@@ -229,6 +229,15 @@ reliability, then interface and translation.
   a screen remembering to ask. It now refuses both cases, and, like wiping, refuses outright when
   it cannot tell whether the server is running rather than assuming it is stopped.
 
+- **On a phone, the Backups page could push the buttons for your backups completely off the side of
+  the screen.** When a backup's filename was long - which it is whenever the server has a
+  descriptive name, since the filename is built from it - the rows in the Backup Files list grew
+  wider than the screen, carrying the view, restore, download and delete buttons out of sight. That
+  list cannot be scrolled sideways, so those buttons were not just awkward to reach, they were
+  unreachable: on the one page where they are how you get your data back. Most obvious in German or
+  another language with longer labels, but it happened in English too. Rows now stack on narrow
+  screens, so the buttons stay reachable and the filename stays readable.
+
 - **The panel was quietly deleting backups you uploaded yourself**: automatic cleanup kept only the
   most recent backups and treated an archive you had uploaded by hand exactly like one the panel
   made on a schedule. On the default settings that meant a backup you deliberately saved was deleted
