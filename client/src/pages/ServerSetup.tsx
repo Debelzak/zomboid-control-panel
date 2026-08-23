@@ -1833,7 +1833,7 @@ export default function ServerSetup() {
             <Terminal className="w-4 h-4" />
             <span className="text-sm font-medium">{t("full.step4.logTitle")}</span>
           </div>
-          <ScrollArea className="h-[200px] bg-black rounded-lg p-3">
+          <ScrollArea className="h-[200px] bg-background rounded-lg p-3">
             <div className="font-mono text-xs space-y-0.5">
               {logs.map((log, i) => (
                 <div
@@ -2444,7 +2444,7 @@ export default function ServerSetup() {
             <Terminal className="w-4 h-4" />
             <span className="text-sm font-medium">{t("quick.step3.logTitle")}</span>
           </div>
-          <ScrollArea className="h-[150px] bg-black rounded-lg p-3">
+          <ScrollArea className="h-[150px] bg-background rounded-lg p-3">
             <div className="font-mono text-xs space-y-0.5">
               {logs.map((log, i) => (
                 <div
