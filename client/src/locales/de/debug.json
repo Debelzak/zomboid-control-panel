@@ -1107,7 +1107,7 @@
     "tileLabelB42Preview": "B42 Ebene 0 / 0_0",
     "tileLabelB41Preview": "B41 / 0_0",
     "tileFailedIcon": "Fehlgeschlagen",
-    "tileFailedBadge": "Kachel fehlgeschlagen",
+    "tileFailedBadge": "Kachelfehler",
     "tileLoadedBadge": "Geladen",
     "tileLoadingBadge": "Wird geladen…",
     "tileCornerHint": "Kachel 0_0 ist die leere Kartenecke — ein einfarbiges Quadrat hier bedeutet, dass der Proxy funktioniert.",

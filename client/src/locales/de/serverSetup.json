@@ -145,7 +145,7 @@
       "buildStable": "Build 42 (Stabil)",
       "buildLabel": "Build: {{buildId}}",
       "customDataLocation": "Eigener Konfigurationspfad",
-      "setBadge": "Festgelegt",
+      "setBadge": "Gesetzt",
       "customDataHelp": "Lass dieses Feld leer, um einen Datenordner neben dem Installationsordner zu erstellen. Wähle in Docker beim Überschreiben einen bind-gemounteten Ordner."
     },
     "step3": {
