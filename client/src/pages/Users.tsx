@@ -5,6 +5,7 @@ import { Users as UsersIcon, UserPlus, ShieldAlert, Loader2, ArrowRight, Trash2 
 import { useAuth } from '@/contexts/AuthContext'
 import { useConfirm } from '@/contexts/ConfirmContext'
 import { PageHeader } from '@/components/PageHeader'
+import { PageSkeleton } from '@/components/PageSkeleton'
 import { EmptyState } from '@/components/EmptyState'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -238,6 +239,17 @@ export default function Users() {
     }
   }
 
+  if (loading) {
+    return (
+      <PageSkeleton
+        variant="list"
+        eyebrow={t('pageHeader.eyebrow')}
+        title={t('pageHeader.title')}
+        description={t('pageHeader.description')}
+      />
+    )
+  }
+
   return (
     <div className="space-y-6 page-transition">
       <PageHeader
@@ -247,7 +259,7 @@ export default function Users() {
         icon={<UsersIcon className="h-6 w-6" />}
         tone="config"
         actions={
-          !permissionDenied && !loading ? (
+          !permissionDenied ? (
             <Button onClick={openCreateDialog}>
               <UserPlus className="h-4 w-4" />
               {t('toolbar.addUser')}
@@ -256,11 +268,7 @@ export default function Users() {
         }
       />
 
-      {loading ? (
-        <div className="flex items-center justify-center py-16 text-muted-foreground">
-          <Loader2 className="h-6 w-6 animate-spin" />
-        </div>
-      ) : permissionDenied ? (
+      {permissionDenied ? (
         <EmptyState
           icon={<ShieldAlert className="h-14 w-14 text-muted-foreground/40" />}
           title={t('permissionDenied.title')}

@@ -1,7 +1,8 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ShieldCheck, ShieldAlert, Plus, Pencil, Trash2, Loader2, Lock } from 'lucide-react'
+import { ShieldCheck, ShieldAlert, Plus, Pencil, Trash2, Loader2, Lock, ChevronDown } from 'lucide-react'
 import { PageHeader } from '@/components/PageHeader'
+import { PageSkeleton } from '@/components/PageSkeleton'
 import { EmptyState } from '@/components/EmptyState'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -70,6 +71,20 @@ export default function RolesPermissions() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [permissionDenied, setPermissionDenied] = useState(false)
+
+  // Which capability groups are collapsed in the matrix. Empty by default --
+  // every group starts open, matching the matrix's pre-collapsible behavior,
+  // so collapsing is something the operator opts into rather than a hidden
+  // capability they have to know to expand.
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
+  function toggleGroup(group: string) {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev)
+      if (next.has(group)) next.delete(group)
+      else next.add(group)
+      return next
+    })
+  }
 
   const [users, setUsers] = useState<ManagedUserAccount[] | null>(null)
   const [usersDenied, setUsersDenied] = useState(false)
@@ -383,6 +398,17 @@ export default function RolesPermissions() {
     }
   }
 
+  if (loading) {
+    return (
+      <PageSkeleton
+        variant="list"
+        eyebrow={t('pageHeader.eyebrow')}
+        title={t('pageHeader.title')}
+        description={t('pageHeader.description')}
+      />
+    )
+  }
+
   return (
     <div className="space-y-6 page-transition">
       <PageHeader
@@ -392,7 +418,7 @@ export default function RolesPermissions() {
         icon={<ShieldCheck className="h-6 w-6" />}
         tone="config"
         actions={
-          !permissionDenied && !loading ? (
+          !permissionDenied ? (
             <Button onClick={openCreateDialog}>
               <Plus className="h-4 w-4" />
               {t('toolbar.newRole')}
@@ -401,11 +427,7 @@ export default function RolesPermissions() {
         }
       />
 
-      {loading ? (
-        <div className="flex items-center justify-center py-16 text-muted-foreground">
-          <Loader2 className="h-6 w-6 animate-spin" />
-        </div>
-      ) : permissionDenied ? (
+      {permissionDenied ? (
         <EmptyState
           icon={<ShieldAlert className="h-14 w-14 text-muted-foreground/40" />}
           title={t('permissionDenied.title')}
@@ -480,17 +502,32 @@ export default function RolesPermissions() {
                     </tr>
                   </thead>
                   <tbody>
-                    {groups.map((group) => (
+                    {groups.map((group) => {
+                      const collapsed = collapsedGroups.has(group.group)
+                      return (
                       <Fragment key={group.group}>
                         <tr className="border-t border-border/50 bg-muted/30">
-                          <td
-                            colSpan={roles.length + 1}
-                            className="sticky left-0 bg-muted/30 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-foreground/70"
-                          >
-                            {groupLabel(group.group)}
+                          <td colSpan={roles.length + 1} className="sticky left-0 bg-muted/30 p-0">
+                            <button
+                              type="button"
+                              onClick={() => toggleGroup(group.group)}
+                              aria-expanded={!collapsed}
+                              className="flex w-full items-center gap-1.5 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-foreground/70 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary"
+                            >
+                              <ChevronDown
+                                className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform motion-reduce:transition-none ${collapsed ? '-rotate-90' : ''}`}
+                                aria-hidden="true"
+                              />
+                              {groupLabel(group.group)}
+                              {collapsed && (
+                                <span className="font-normal normal-case tracking-normal text-muted-foreground/80">
+                                  ({t('matrix.capabilityCount', { count: group.capabilities.length })})
+                                </span>
+                              )}
+                            </button>
                           </td>
                         </tr>
-                        {group.capabilities.map((cap) => (
+                        {!collapsed && group.capabilities.map((cap) => (
                           <tr key={cap.key} className="border-b border-border/30 last:border-0 hover:bg-muted/10">
                             <td className="sticky left-0 z-10 bg-card px-3 py-2 align-top">
                               <div className="flex items-center gap-1.5">
@@ -527,7 +564,8 @@ export default function RolesPermissions() {
                           </tr>
                         ))}
                       </Fragment>
-                    ))}
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>
