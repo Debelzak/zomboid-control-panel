@@ -210,3 +210,76 @@ describe("getB42ResolutionStatus() contract shape", () => {
     expect(typeof status.directory).toBe("string"); // always B42_DIR_FALLBACK or a resolved build, never null
   });
 });
+
+// Regression for conv-mapcleanup-perf: on a cold cache, EVERY concurrent
+// tile request called getB42Map()/getB42TopFormat() independently, each one
+// re-running the full curl-based discovery instead of sharing the one
+// already in flight. Measured against a real isolated server: 80 concurrent
+// cold requests to GET /toptiles took 7.3s uncoalesced, 1.4s after adding
+// in-flight-promise sharing (matching a single request's own cold cost) --
+// this pins that behaviour so it can't silently regress back to N redundant
+// curl spawns per page load.
+describe("getB42Map() / getB42TopFormat(): concurrent-call coalescing", () => {
+  it("getB42Dir(): N concurrent cold calls trigger the discovery curl calls only once, not N times", async () => {
+    let defaultCalls = 0;
+    mockCurlRouter((url) => {
+      if (url.endsWith("/api/builds/default")) {
+        defaultCalls++;
+        return curlResult(200, JSON.stringify({ directory: "42.20.0", default: true }));
+      }
+      if (url.includes("/base/layer0.dzi")) return curlResult(200, dziXml(GEOMETRY_42_20_0));
+      if (url.includes("/base/map_info.json")) return curlResult(200, mapInfoJson());
+      throw new Error(`unexpected curl URL in test: ${url}`);
+    });
+
+    const { getB42Dir } = await freshModule();
+    const originalFetch = global.fetch;
+    global.fetch = vi.fn(async () => ({ ok: true }));
+    try {
+      const N = 20;
+      const results = await Promise.all(Array.from({ length: N }, () => getB42Dir()));
+      expect(results).toEqual(Array(N).fill("42.20.0"));
+      // One shared resolution, not one per caller -- the whole point of the fix.
+      expect(defaultCalls).toBe(1);
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it("getB42TopFormat(): N concurrent cold calls for the same directory curl the descriptor only once", async () => {
+    let descriptorCalls = 0;
+    mockCurlRouter((url) => {
+      if (url.endsWith("/base_top/layer0.dzi")) {
+        descriptorCalls++;
+        return curlResult(200, '<?xml version="1.0"?><Image Format="webp"/>');
+      }
+      throw new Error(`unexpected curl URL in test: ${url}`);
+    });
+
+    const { getB42TopFormat } = await freshModule();
+    const N = 20;
+    const results = await Promise.all(
+      Array.from({ length: N }, () => getB42TopFormat("42.20.0")),
+    );
+    expect(results).toEqual(Array(N).fill("webp"));
+    expect(descriptorCalls).toBe(1);
+  });
+
+  it("getB42TopFormat(): a later call after the first resolves reuses the cache, no new curl call", async () => {
+    let descriptorCalls = 0;
+    mockCurlRouter((url) => {
+      if (url.endsWith("/base_top/layer0.dzi")) {
+        descriptorCalls++;
+        return curlResult(200, '<?xml version="1.0"?><Image Format="jpg"/>');
+      }
+      throw new Error(`unexpected curl URL in test: ${url}`);
+    });
+
+    const { getB42TopFormat } = await freshModule();
+    const first = await getB42TopFormat("42.20.0");
+    const second = await getB42TopFormat("42.20.0");
+    expect(first).toBe("jpg");
+    expect(second).toBe("jpg");
+    expect(descriptorCalls).toBe(1);
+  });
+});

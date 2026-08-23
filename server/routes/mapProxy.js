@@ -291,6 +291,14 @@ const COVERAGE_PROBE_FRACTIONS = [
 ];
 let _b42Map = null;
 let _b42DirFetchedAt = 0;
+// A cold cache means every concurrent tile request on the same page load
+// calls getB42Map() before any of them has finished resolving — without
+// this, EACH ONE independently reruns the full discovery (its own
+// fetchBuildDefault/fetchBuildList/fetchMapGeometry/hasTileCoverage curl
+// round trips) instead of sharing the one already in flight. Measured: 80
+// concurrent cold tile requests took 7.3s with this uncoalesced; under 1s
+// once discovery was already warm. Same shape as THUMB_INFLIGHT in mods.js.
+let _b42ResolvePromise = null;
 // Tracks WHY the current _b42Map is what it is, for the worldmap diagnostic.
 // The fallback directory can coincidentally match the directory a real
 // dynamic resolve would have picked (it does today), so the directory string
@@ -343,10 +351,24 @@ const TOP_CONTENT_TYPES = {
   png: "image/png",
 };
 const _topFormatCache = new Map(); // directory -> format
+// Same coalescing problem and fix as _b42ResolvePromise above: a cold cache
+// means every concurrent toptiles request independently curls the same
+// base_top/layer0.dzi descriptor instead of sharing the one in flight.
+const _topFormatInflight = new Map(); // directory -> Promise<format>
 
 async function getB42TopFormat(directory) {
   const cached = _topFormatCache.get(directory);
   if (cached) return cached;
+  const pending = _topFormatInflight.get(directory);
+  if (pending) return pending;
+  const resolvePromise = resolveB42TopFormat(directory).finally(() => {
+    _topFormatInflight.delete(directory);
+  });
+  _topFormatInflight.set(directory, resolvePromise);
+  return resolvePromise;
+}
+
+async function resolveB42TopFormat(directory) {
   try {
     // XML descriptor path — curl, not fetch, same reason as fetchMapGeometry.
     const resp = await fetchViaCurl(
@@ -413,6 +435,14 @@ async function getB42Map() {
   if (_b42Map && now - _b42DirFetchedAt < B42_DIR_TTL_MS) {
     return _b42Map;
   }
+  if (_b42ResolvePromise) return _b42ResolvePromise;
+  _b42ResolvePromise = resolveB42Map(now).finally(() => {
+    _b42ResolvePromise = null;
+  });
+  return _b42ResolvePromise;
+}
+
+async function resolveB42Map(now) {
   let failureReason = null;
 
   async function tryResolve(directory) {
