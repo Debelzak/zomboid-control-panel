@@ -3060,6 +3060,18 @@ local function serializeInventory(container, depth, maxItems, currentCount)
                     end
                 end
 
+                -- getDelta() does not exist on InventoryItem -- confirmed
+                -- 2026-08-23 against the real shipped projectzomboid.jar --
+                -- so this has always been nil. There is no single replacement:
+                -- the jar declares two distinct real floats instead, getJobDelta
+                -- (progress on a job left in the item, e.g. a partly-read book)
+                -- and getUseDelta (remaining fraction on a drainable item, e.g.
+                -- a lighter or propane tank) -- exporting both, additively,
+                -- rather than guessing which one "delta" meant. data.delta
+                -- itself is left as-is (still always nil) since fixing it would
+                -- mean picking one of the two and silently dropping the other.
+                data.jobDelta = PanelBridge.tryGet(item, "getJobDelta")
+                data.useDelta = PanelBridge.tryGet(item, "getUseDelta")
                 data.delta = PanelBridge.tryGet(item, "getDelta")
 
                 return data
@@ -3432,6 +3444,15 @@ handlers.importPlayerData = function(args)
                                     -- Set uses if available (for drainable items)
                                     if itemData.uses and newItem.setCurrentUses then
                                         newItem:setCurrentUses(itemData.uses)
+                                    end
+                                    -- setDelta() does not exist either (same jar check as the
+                                    -- export side, see serializeInventory) -- restore the two
+                                    -- real fields a newer export may carry instead.
+                                    if itemData.jobDelta and newItem.setJobDelta then
+                                        newItem:setJobDelta(itemData.jobDelta)
+                                    end
+                                    if itemData.useDelta and newItem.setUseDelta then
+                                        newItem:setUseDelta(itemData.useDelta)
                                     end
                                     -- Set delta if available
                                     if itemData.delta and newItem.setDelta then
