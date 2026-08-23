@@ -143,6 +143,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The panel is now available in Haitian Creole.** Kreyol ayisyen joins English, French, German,
+  Spanish and Simplified Chinese in the language menu - all 55 sets of text, around 7,000 individual
+  strings, translated from the English originals. Nothing about the existing five languages changed.
+  An honest caveat, since it is your server and your players: this was translated carefully and
+  consistently, working from a shared glossary so the same word is used for the same thing everywhere,
+  but not by a native speaker. Terms that were genuine judgment calls are listed in
+  client/src/locales/GLOSSARY.ht.md rather than being quietly smoothed over, so a Kreyol speaker can
+  review the handful of real decisions in a few minutes instead of reading seven thousand strings.
+
 - **Two more health checks on the Debug page.** One reports how many of your tracked mods currently
   have no Workshop thumbnail and why - most often because Steam itself cannot be reached from the
   panel's machine - and the panel now stops re-requesting every one of them on every page load once
