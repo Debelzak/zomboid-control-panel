@@ -143,6 +143,11 @@ export class DiscordBot {
     this.modRoleId = null;
     this.channelId = null;
     this.isRunning = false;
+    // Last start() failure, surfaced through routes/discord.js so a bad
+    // token, disallowed privileged intents, and a network timeout stop
+    // wearing the same "check configuration" message. Same pattern as
+    // DockerClient.lastError.
+    this.lastStartError = null;
     this.webhookEvents = {};
     this.commandPermissions = { ...DEFAULT_COMMAND_PERMISSIONS };
     this.chatRelayEnabled = true;
@@ -1408,6 +1413,7 @@ export class DiscordBot {
 
     if (!this.token) {
       log.info("bot not configured (no token)");
+      this.lastStartError = { kind: "NoToken", message: "No bot token is configured." };
       return false;
     }
 
@@ -1556,10 +1562,11 @@ export class DiscordBot {
       // Await the 'clientReady' event so that isRunning === true before start() returns.
       // client.login() resolves when the WebSocket authenticates; 'clientReady' fires after.
       await new Promise((resolve, reject) => {
-        const timeout = setTimeout(
-          () => reject(new Error("Bot ready timeout after 30s")),
-          30000,
-        );
+        const timeout = setTimeout(() => {
+          const timeoutError = new Error("Bot ready timeout after 30s");
+          timeoutError.code = "ReadyTimeout";
+          reject(timeoutError);
+        }, 30000);
         this.client.once("clientReady", async () => {
           clearTimeout(timeout);
           log.info(`bot logged in as ${this.client.user.tag}`);
@@ -1569,6 +1576,7 @@ export class DiscordBot {
             log.warn(`Failed to register slash commands: ${e.message}`);
           }
           this.isRunning = true;
+          this.lastStartError = null;
           this._startPresenceUpdates();
           resolve();
         });
@@ -1580,6 +1588,12 @@ export class DiscordBot {
       return true;
     } catch (error) {
       log.error(`Failed to start Discord bot: ${error.message}`);
+      // "kind", not "code" -- this never reaches the client as a response
+      // code (routes/discord.js only reads it to choose which plain-text
+      // message to send), so it's outside the ErrorCode registry's remit
+      // (server/utils/errorCodes.js) despite mirroring discord.js's own
+      // internal error codes (TokenInvalid, DisallowedIntents, ...).
+      this.lastStartError = { kind: error.code || null, message: error.message };
       if (this.logTailer && this._onGameChat) {
         try {
           this.logTailer.off("chatMessage", this._onGameChat);
