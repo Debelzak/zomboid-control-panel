@@ -520,7 +520,7 @@ export default function Login() {
                   {creatingLocalReset ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
                   {creatingLocalReset
                     ? t('lostPassword.creatingLocalReset')
-                    : resetAvailable
+                    : (resetAvailable || recoveryCodesAvailable)
                       ? t('lostPassword.useRecoveryToken')
                       : localResetSupported
                         ? t('lostPassword.createRecoveryFile')
