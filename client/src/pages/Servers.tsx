@@ -185,6 +185,13 @@ function formatBytes(bytes: number) {
   return `${(bytes / 1024 ** index).toFixed(index === 0 ? 0 : 1)} ${units[index]}`
 }
 
+// Mirrors the server's own range check (server/routes/servers.js POST /,
+// "Invalid RCON port" / "Invalid server port") so the client can reject
+// out-of-range ports before a round trip instead of after one.
+export function isValidPort(port: number): boolean {
+  return Number.isFinite(port) && port >= 1 && port <= 65535
+}
+
 export default function Servers() {
   const { t } = useTranslation('servers')
   const [servers, setServers] = useState<ServerInstance[]>([])
@@ -948,8 +955,12 @@ export default function Servers() {
     if (!editingServer || savingEdit) return
 
     // Validate port range
-    if (editingServer.rconPort < 1 || editingServer.rconPort > 65535) {
+    if (!isValidPort(editingServer.rconPort)) {
       toast({ title: t('toasts.error'), description: t('toasts.rconPortRangeError'), variant: 'destructive' })
+      return
+    }
+    if (!isValidPort(editingServer.serverPort)) {
+      toast({ title: t('toasts.error'), description: t('toasts.gamePortRangeError'), variant: 'destructive' })
       return
     }
 
@@ -1123,6 +1134,15 @@ export default function Servers() {
         toast({ title: t('toasts.error'), description: t('toasts.rconPasswordRequiredIni'), variant: 'destructive' })
         return
       }
+    }
+
+    if (!isValidPort(newServer.rconPort)) {
+      toast({ title: t('toasts.error'), description: t('toasts.rconPortRangeError'), variant: 'destructive' })
+      return
+    }
+    if (!isValidPort(newServer.serverPort)) {
+      toast({ title: t('toasts.error'), description: t('toasts.gamePortRangeError'), variant: 'destructive' })
+      return
     }
 
     setAddingServer(true)
