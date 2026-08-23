@@ -6896,6 +6896,11 @@ handlers.moderationKickUser = function(args)
 
     if not username then return false, nil, "Username required" end
 
+    -- BanSystem.KickUser is declared `void` in the real B42 jar (verified
+    -- 2026-08-23 by reading zombie/network/BanSystem.class's method table
+    -- directly: KickUser(String,String,String)V) -- there is no return
+    -- value to read back, ever. pcall not throwing is the only signal this
+    -- API can give, and that ceiling is already what this handler checks.
     local ok, err = pcall(function()
         if BanSystem and BanSystem.KickUser then
             BanSystem.KickUser(username, reason, description)
@@ -6923,6 +6928,19 @@ handlers.moderationBanUser = function(args)
     end)
     if not ok then return false, nil, "Ban user failed: " .. tostring(resultOrErr) end
 
+    -- BanSystem.BanUser returns a String (verified 2026-08-23 against the
+    -- real B42 jar's method table: BanUser(String,UdpConnection,String,Z)
+    -- Ljava/lang/String;). Reading the method's own bytecode string
+    -- constants shows literal rejection messages baked in --
+    -- "You don't have capability to ban/unban users." and "This user
+    -- can't be banned." -- alongside an empty string on the path that
+    -- reaches the actual ban/unban. Gate on that: empty/nil means nothing
+    -- rejected the request, anything else is the game's own reason it did
+    -- not happen -- this was previously captured as `details` and thrown away.
+    if resultOrErr ~= nil and resultOrErr ~= "" then
+        return false, nil, "Ban user rejected: " .. tostring(resultOrErr)
+    end
+
     return true, {
         message = ban and "User banned" or "User unbanned",
         username = username,
@@ -6945,6 +6963,12 @@ handlers.moderationBanIP = function(args)
     end)
     if not ok then return false, nil, "Ban IP failed: " .. tostring(resultOrErr) end
 
+    -- Same String-return contract as BanUser -- see its comment for the
+    -- jar evidence. Empty/nil means nothing rejected the request.
+    if resultOrErr ~= nil and resultOrErr ~= "" then
+        return false, nil, "Ban IP rejected: " .. tostring(resultOrErr)
+    end
+
     return true, {
         message = ban and "IP banned" or "IP unbanned",
         ip = ip,
@@ -6966,6 +6990,12 @@ handlers.moderationBanSteamID = function(args)
         error("BanSystem.BanUserBySteamID not available")
     end)
     if not ok then return false, nil, "Ban SteamID failed: " .. tostring(resultOrErr) end
+
+    -- Same String-return contract as BanUser -- see its comment for the
+    -- jar evidence. Empty/nil means nothing rejected the request.
+    if resultOrErr ~= nil and resultOrErr ~= "" then
+        return false, nil, "Ban SteamID rejected: " .. tostring(resultOrErr)
+    end
 
     return true, {
         message = ban and "SteamID banned" or "SteamID unbanned",
