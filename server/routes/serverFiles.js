@@ -178,12 +178,20 @@ router.use(async (req, res, next) => {
 // mechanism, and each handler's own response for where restartRequired is
 // attached.
 //
-// HONEST CAVEAT for whoever reads this next: the measurement covered a
-// CLEAN shutdown on a B42 server via RCON `quit` only. A B41 server and the
-// force-stop/kill path are untested. The operator's ruling covers all of
-// that from his own experience running these servers and outranks one
-// narrow experiment — but it IS judgement layered on top of measurement,
-// not measurement alone, and the two should stay distinguishable here.
+// HONEST CAVEAT for whoever reads this next: the measurement covers a B42
+// server only, both a clean RCON `quit` and a hard `taskkill /F` force-stop
+// (dwight, 2026-08-23, replicating serverManager.stopServer(false)'s actual
+// mechanism) — both behave identically for this question: neither rewrites
+// either file, both preserve an edit made on disk while running, and
+// startup afterward rewrites-but-preserves in both cases. Two things remain
+// genuinely untested: a B41 server (no B41 dedicated-server install was
+// available to test against), and whether a kill landing mid-write could
+// corrupt an in-flight write specifically (no write was ever caught in
+// flight in either session, clean or forced). The operator's ruling covers
+// all of this from his own experience running these servers and outranks
+// one narrow experiment — but it IS judgement layered on top of
+// measurement, not measurement alone, and the two should stay
+// distinguishable here.
 const LOCAL_CONFIG_MUTATIONS = new Set([
   "PUT /ini",
   "PUT /sandbox",
