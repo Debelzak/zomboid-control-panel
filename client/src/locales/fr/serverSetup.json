@@ -252,6 +252,8 @@
     "saveFailedDesc": "Impossible d'enregistrer le chemin de SteamCMD.",
     "serverStartingTitle": "Démarrage du serveur",
     "serverStartingDesc": "Redirection vers le tableau de bord...",
-    "startFailedTitle": "Échec du démarrage"
+    "startFailedTitle": "Échec du démarrage",
+    "registerFailedTitle": "Fichiers du serveur installés, mais l'enregistrement a échoué",
+    "registerFailedDesc": "Les fichiers du jeu sont sur le disque, mais le panneau n'a pas pu ajouter ce serveur à sa base de données : il n'apparaîtra donc pas encore dans Mes serveurs. Consultez le journal ci-dessus, puis relancez l'installation — la réexécution est sans risque."
   }
 }

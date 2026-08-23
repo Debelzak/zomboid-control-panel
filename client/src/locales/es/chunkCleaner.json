@@ -153,7 +153,10 @@
     "chunksDeletedVehicles_one": " + {{count}} vehículo de la base de datos de la partida",
     "chunksDeletedVehicles_other": " + {{count}} vehículos de la base de datos de la partida",
     "chunksDeletedBackupSuffix": " (copia de seguridad creada)",
-    "deleteChunksFailedFallback": "No se pudieron eliminar los chunks"
+    "deleteChunksFailedFallback": "No se pudieron eliminar los chunks",
+    "chunksDeletedPartialTitle": "No se pudieron eliminar algunos chunks",
+    "chunksDeletedPartialDesc_one": "Se eliminó {{deleted}} chunk, pero {{count}} falló. Comprueba que el archivo no esté bloqueado por otro proceso e inténtalo de nuevo.",
+    "chunksDeletedPartialDesc_other": "Se eliminaron {{deleted}} chunks, pero {{count}} fallaron. Comprueba que los archivos no estén bloqueados por otro proceso e inténtalo de nuevo."
   },
   "canvasLabels": {
     "chunkCell": "Chunk {{cx}}, {{cy}}  |  Celda {{gx}}, {{gy}}",

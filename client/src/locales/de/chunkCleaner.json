@@ -153,7 +153,10 @@
     "chunksDeletedVehicles_one": " + {{count}} Fahrzeug aus der Spielstand-DB",
     "chunksDeletedVehicles_other": " + {{count}} Fahrzeuge aus der Spielstand-DB",
     "chunksDeletedBackupSuffix": " (Backup erstellt)",
-    "deleteChunksFailedFallback": "Löschen der Chunks fehlgeschlagen"
+    "deleteChunksFailedFallback": "Löschen der Chunks fehlgeschlagen",
+    "chunksDeletedPartialTitle": "Einige Chunks konnten nicht gelöscht werden",
+    "chunksDeletedPartialDesc_one": "{{deleted}} Chunk entfernt, aber {{count}} ist fehlgeschlagen. Prüfe, ob die Datei von einem anderen Prozess gesperrt ist, und versuche es erneut.",
+    "chunksDeletedPartialDesc_other": "{{deleted}} Chunks entfernt, aber {{count}} sind fehlgeschlagen. Prüfe, ob die Dateien von einem anderen Prozess gesperrt sind, und versuche es erneut."
   },
   "canvasLabels": {
     "chunkCell": "Chunk {{cx}}, {{cy}}  |  Zelle {{gx}}, {{gy}}",

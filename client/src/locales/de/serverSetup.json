@@ -252,6 +252,8 @@
     "saveFailedDesc": "SteamCMD-Pfad konnte nicht gespeichert werden.",
     "serverStartingTitle": "Server startet",
     "serverStartingDesc": "Weiterleitung zum Dashboard…",
-    "startFailedTitle": "Start fehlgeschlagen"
+    "startFailedTitle": "Start fehlgeschlagen",
+    "registerFailedTitle": "Serverdateien installiert, aber die Registrierung ist fehlgeschlagen",
+    "registerFailedDesc": "Die Spieldateien liegen auf der Festplatte, aber das Panel konnte diesen Server nicht in seine Datenbank eintragen, deshalb erscheint er noch nicht unter Meine Server. Sieh dir das Log oben an und starte die Servereinrichtung erneut — ein erneuter Durchlauf ist unbedenklich."
   }
 }

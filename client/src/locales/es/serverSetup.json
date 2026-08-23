@@ -252,6 +252,8 @@
     "saveFailedDesc": "No se pudo guardar la ruta de SteamCMD.",
     "serverStartingTitle": "Iniciando servidor",
     "serverStartingDesc": "Redirigiendo al tablero…",
-    "startFailedTitle": "Error al iniciar"
+    "startFailedTitle": "Error al iniciar",
+    "registerFailedTitle": "Archivos del servidor instalados, pero falló el registro",
+    "registerFailedDesc": "Los archivos del juego están en el disco, pero el panel no pudo añadir este servidor a su base de datos, así que aún no aparecerá en Mis servidores. Revisa el registro de arriba y vuelve a ejecutar la instalación: repetirla es seguro."
   }
 }

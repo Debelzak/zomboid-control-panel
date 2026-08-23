@@ -153,7 +153,10 @@
     "chunksDeletedVehicles_one": " + {{count}} véhicule retiré de la base de la sauvegarde",
     "chunksDeletedVehicles_other": " + {{count}} véhicules retirés de la base de la sauvegarde",
     "chunksDeletedBackupSuffix": " (sauvegarde créée)",
-    "deleteChunksFailedFallback": "Échec de la suppression des chunks"
+    "deleteChunksFailedFallback": "Échec de la suppression des chunks",
+    "chunksDeletedPartialTitle": "Certains chunks n'ont pas pu être supprimés",
+    "chunksDeletedPartialDesc_one": "{{deleted}} chunk supprimé, mais {{count}} a échoué. Vérifiez que le fichier n'est pas verrouillé par un autre processus, puis réessayez.",
+    "chunksDeletedPartialDesc_other": "{{deleted}} chunks supprimés, mais {{count}} ont échoué. Vérifiez que les fichiers ne sont pas verrouillés par un autre processus, puis réessayez."
   },
   "canvasLabels": {
     "chunkCell": "Chunk {{cx}}, {{cy}}  |  Cellule {{gx}}, {{gy}}",

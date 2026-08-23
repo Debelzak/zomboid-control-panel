@@ -252,6 +252,8 @@
     "saveFailedDesc": "无法保存 SteamCMD 路径。",
     "serverStartingTitle": "服务器启动中",
     "serverStartingDesc": "正在跳转到仪表盘...",
-    "startFailedTitle": "启动失败"
+    "startFailedTitle": "启动失败",
+    "registerFailedTitle": "服务器文件已安装，但注册失败",
+    "registerFailedDesc": "游戏文件已写入磁盘，但面板未能将此服务器添加到数据库，因此它还不会出现在“我的服务器”中。请查看上方日志，然后重新运行服务器安装——重复运行是安全的。"
   }
 }
