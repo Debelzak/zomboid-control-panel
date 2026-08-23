@@ -21,10 +21,11 @@ vi.mock("../services/remoteConfigFiles.js", () => ({
 
 const {
   isLocalConfigMutation,
+  isLocalConfigEdit,
+  isLocalConfigOverwrite,
 } = await import("../routes/serverFiles.js");
-const { requireStoppedForLocalConfigMutation } = await import(
-  "../services/configMutationGuard.js"
-);
+const { requireStoppedForLocalConfigMutation, warnRunningForLocalConfigEdit } =
+  await import("../services/configMutationGuard.js");
 
 function createResponse() {
   const response = { status: vi.fn(), json: vi.fn() };
@@ -56,28 +57,70 @@ describe("local config mutation safety", () => {
     expect(isLocalConfigMutation(createRequest("POST", "/save-and-reload"))).toBe(false);
   });
 
-  it("rejects mutations while the local server is running", async () => {
-    const response = createResponse();
-    const next = vi.fn();
-
-    await requireStoppedForLocalConfigMutation(
-      createRequest("PUT", "/sandbox", true),
-      response,
-      next,
-    );
-
-    expect(response.status).toHaveBeenCalledWith(409);
-    expect(response.json).toHaveBeenCalledWith({
-      code: "SERVER_RUNNING",
-      error: "Stop the server before editing configuration.",
-    });
-    expect(next).not.toHaveBeenCalled();
+  // The 2026-08-23 operator ruling split isLocalConfigMutation's old
+  // one-guard-fits-all into two disjoint classes with different behavior
+  // while the server runs: ordinary edits are now WARNED, not blocked;
+  // wholesale overwrites (restore, template-apply) are still blocked. These
+  // two tests pin that split itself, independent of which middleware each
+  // class is routed to below.
+  it("classifies the nine edit routes as edits, not overwrites", () => {
+    for (const routeKey of [
+      "PUT /ini",
+      "PUT /sandbox",
+      "POST /sandbox/repair",
+      "PUT /spawnpoints",
+      "PUT /spawnregions",
+      "PUT /raw/ini",
+      "PUT /raw/sandbox",
+      "PUT /raw/spawnpoints",
+      "PUT /raw/spawnregions",
+    ]) {
+      const [method, path] = routeKey.split(" ");
+      const req = createRequest(method, path);
+      expect(isLocalConfigEdit(req), routeKey).toBe(true);
+      expect(isLocalConfigOverwrite(req), routeKey).toBe(false);
+    }
   });
 
-  it("fails closed when local server state cannot be checked", async () => {
+  it("classifies restore and template-apply as overwrites, not edits", () => {
+    const restore = createRequest("POST", "/restore/world.bak");
+    const apply = createRequest("POST", "/templates/demo/apply");
+    expect(isLocalConfigOverwrite(restore)).toBe(true);
+    expect(isLocalConfigEdit(restore)).toBe(false);
+    expect(isLocalConfigOverwrite(apply)).toBe(true);
+    expect(isLocalConfigEdit(apply)).toBe(false);
+  });
+
+  // Pins the part of the operator's ruling that changed: restore and
+  // template-apply are wholesale file overwrites, not edits, and stay
+  // refused while the server runs regardless of the edit ruling above.
+  it("still rejects restore and template-apply while the local server is running", async () => {
+    for (const [method, path] of [
+      ["POST", "/restore/world.bak"],
+      ["POST", "/templates/demo/apply"],
+    ]) {
+      const response = createResponse();
+      const next = vi.fn();
+
+      await requireStoppedForLocalConfigMutation(
+        createRequest(method, path, true),
+        response,
+        next,
+      );
+
+      expect(response.status, `${method} ${path}`).toHaveBeenCalledWith(409);
+      expect(response.json, `${method} ${path}`).toHaveBeenCalledWith({
+        code: "SERVER_RUNNING",
+        error: "Stop the server before editing configuration.",
+      });
+      expect(next, `${method} ${path}`).not.toHaveBeenCalled();
+    }
+  });
+
+  it("fails closed when local server state cannot be checked (restore/template-apply path)", async () => {
     const response = createResponse();
     const next = vi.fn();
-    const request = createRequest("PUT", "/ini");
+    const request = createRequest("POST", "/restore/world.bak");
     request.app.get = () => ({});
 
     await requireStoppedForLocalConfigMutation(request, response, next);
@@ -89,11 +132,11 @@ describe("local config mutation safety", () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  it("allows stopped local and remote mutations", async () => {
+  it("allows stopped and remote restore/template-apply through requireStoppedForLocalConfigMutation", async () => {
     const stoppedResponse = createResponse();
     const stoppedNext = vi.fn();
     await requireStoppedForLocalConfigMutation(
-      createRequest("PUT", "/ini", false),
+      createRequest("POST", "/restore/world.bak", false),
       stoppedResponse,
       stoppedNext,
     );
@@ -103,11 +146,85 @@ describe("local config mutation safety", () => {
     const remoteResponse = createResponse();
     const remoteNext = vi.fn();
     await requireStoppedForLocalConfigMutation(
-      createRequest("PUT", "/ini", true),
+      createRequest("POST", "/restore/world.bak", true),
       remoteResponse,
       remoteNext,
     );
     expect(remoteNext).toHaveBeenCalledOnce();
+  });
+
+  // The new behavior: warnRunningForLocalConfigEdit never refuses. It only
+  // ever sets req.configEditRestartWarning so the route handler knows
+  // whether to say the write won't reach the running game yet.
+  describe("warnRunningForLocalConfigEdit (the nine edit routes)", () => {
+    it("allows the write through and flags a restart warning while running", async () => {
+      const response = createResponse();
+      const next = vi.fn();
+      const request = createRequest("PUT", "/sandbox", true);
+
+      await warnRunningForLocalConfigEdit(request, response, next);
+
+      expect(next).toHaveBeenCalledOnce();
+      expect(response.status).not.toHaveBeenCalled();
+      expect(request.configEditRestartWarning).toBe(true);
+    });
+
+    it("allows the write through with no restart warning when confirmed stopped", async () => {
+      const response = createResponse();
+      const next = vi.fn();
+      const request = createRequest("PUT", "/ini", false);
+
+      await warnRunningForLocalConfigEdit(request, response, next);
+
+      expect(next).toHaveBeenCalledOnce();
+      expect(request.configEditRestartWarning).toBe(false);
+    });
+
+    it("warns rather than silently assuming stopped when server state can't be checked", async () => {
+      const response = createResponse();
+      const next = vi.fn();
+      const request = createRequest("PUT", "/ini");
+      request.app.get = () => ({});
+
+      await warnRunningForLocalConfigEdit(request, response, next);
+
+      expect(next).toHaveBeenCalledOnce();
+      expect(response.status).not.toHaveBeenCalled();
+      expect(request.configEditRestartWarning).toBe(true);
+    });
+
+    it("warns rather than silently assuming stopped when checkServerRunning itself throws", async () => {
+      const response = createResponse();
+      const next = vi.fn();
+      const request = {
+        method: "PUT",
+        path: "/ini",
+        app: {
+          get: () => ({
+            checkServerRunning: vi.fn(async () => {
+              throw new Error("boom");
+            }),
+          }),
+        },
+      };
+
+      await warnRunningForLocalConfigEdit(request, response, next);
+
+      expect(next).toHaveBeenCalledOnce();
+      expect(request.configEditRestartWarning).toBe(true);
+    });
+
+    it("skips the warning check entirely for a remote server", async () => {
+      getActiveServer.mockResolvedValue({ isRemote: true });
+      const response = createResponse();
+      const next = vi.fn();
+      const request = createRequest("PUT", "/ini", true);
+
+      await warnRunningForLocalConfigEdit(request, response, next);
+
+      expect(next).toHaveBeenCalledOnce();
+      expect(request.configEditRestartWarning).toBeUndefined();
+    });
   });
 });
 

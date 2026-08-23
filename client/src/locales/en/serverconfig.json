@@ -32,8 +32,8 @@
     "fileMissingAria": "file missing"
   },
   "stopServerAlert": {
-    "title": "Stop the server before saving",
-    "description": "Project Zomboid can overwrite these files while it is running. You can prepare changes here, then stop the server and save them."
+    "title": "The server is running",
+    "description": "You can save changes now. They won't reach the running game until the server restarts."
   },
   "invalidValuesAlert": {
     "title": "Fix invalid values before saving",

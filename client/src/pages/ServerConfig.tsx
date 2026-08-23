@@ -27,6 +27,7 @@ import {
   Upload,
   RotateCcw,
   AlertTriangle,
+  Info,
   Copy,
   Check,
   Filter,
@@ -1253,14 +1254,6 @@ export default function ServerConfig() {
   const handleSaveIni = async () => {
     setSaving(true)
     try {
-      if (serverRunning === true) {
-        toast({
-          title: t('toasts.stopServerTitle'),
-          description: t('toasts.stopServerDesc'),
-          variant: 'destructive',
-        })
-        return
-      }
       if (invalidIniSettings.length > 0) {
         toast({
           title: t('toasts.invalidIniTitle'),
@@ -1311,14 +1304,6 @@ export default function ServerConfig() {
   const handleSaveSandbox = async () => {
     setSaving(true)
     try {
-      if (serverRunning === true) {
-        toast({
-          title: t('toasts.stopServerTitle'),
-          description: t('toasts.stopServerDesc'),
-          variant: 'destructive',
-        })
-        return
-      }
       if (editorMode === 'structured' && invalidSandboxSettings.length > 0) {
         toast({
           title: t('toasts.invalidSandboxTitle'),
@@ -1327,6 +1312,12 @@ export default function ServerConfig() {
         })
         return
       }
+      // Sandbox settings have no RCON live-reload path: PZ's own /reloadoptions
+      // command only re-reads ServerOptions.ini, never SandboxVars.lua (see
+      // PanelBridge.lua's own comment to that effect). Unlike the INI save
+      // below, a sandbox change always needs a restart to reach the running
+      // game -- whether the server is stopped right now or running -- so
+      // this never attempts a live reload and never claims one succeeded.
       if (editorMode === 'raw') {
         await serverFilesApi.saveRaw('sandbox', rawContent)
         setOriginalRawContent(rawContent)
@@ -1356,14 +1347,7 @@ export default function ServerConfig() {
         setOriginalSandboxData(cleanData)
       }
 
-      // Try to reload via RCON, but don't fail if RCON is not connected
-      try {
-        await serverFilesApi.saveAndReload()
-        toast({ title: t('toasts.savedAndReloadedTitle'), description: t('toasts.savedSandboxReloadedDesc') })
-      } catch {
-        // File was saved, but RCON reload failed - that's okay
-        toast({ title: t('toasts.savedTitle'), description: t('toasts.savedRestartToApply') })
-      }
+      toast({ title: t('toasts.savedTitle'), description: t('toasts.savedRestartToApply') })
 
       // Refresh from server to ensure frontend matches the saved file
       try {
@@ -1389,12 +1373,13 @@ export default function ServerConfig() {
   const handleSaveSpawnPoints = async () => {
     setSaving(true)
     try {
-      if (editorMode === 'raw') {
-        await serverFilesApi.saveRaw('spawnpoints', rawContent)
-      } else {
-        await serverFilesApi.saveSpawnPoints(spawnPoints)
-      }
-      toast({ title: t('toasts.savedTitle'), description: t('toasts.spawnPointsSavedDesc') })
+      const result = editorMode === 'raw'
+        ? await serverFilesApi.saveRaw('spawnpoints', rawContent)
+        : await serverFilesApi.saveSpawnPoints(spawnPoints)
+      toast({
+        title: t('toasts.savedTitle'),
+        description: result?.restartRequired ? t('toasts.savedRestartToApply') : t('toasts.spawnPointsSavedDesc'),
+      })
       if (editorMode === 'raw') {
         loadData()
       }
@@ -1412,12 +1397,13 @@ export default function ServerConfig() {
   const handleSaveSpawnRegions = async () => {
     setSaving(true)
     try {
-      if (editorMode === 'raw') {
-        await serverFilesApi.saveRaw('spawnregions', rawContent)
-      } else {
-        await serverFilesApi.saveSpawnRegions(spawnRegions)
-      }
-      toast({ title: t('toasts.savedTitle'), description: t('toasts.spawnRegionsSavedDesc') })
+      const result = editorMode === 'raw'
+        ? await serverFilesApi.saveRaw('spawnregions', rawContent)
+        : await serverFilesApi.saveSpawnRegions(spawnRegions)
+      toast({
+        title: t('toasts.savedTitle'),
+        description: result?.restartRequired ? t('toasts.savedRestartToApply') : t('toasts.spawnRegionsSavedDesc'),
+      })
       if (editorMode === 'raw') {
         loadData()
       }
@@ -1976,8 +1962,8 @@ export default function ServerConfig() {
           ))}
         </TabsList>
         {serverRunning === true && ['ini', 'sandbox', 'spawnpoints', 'spawnregions'].includes(activeTab) && (
-          <Alert className="mt-3 border-warning/40 bg-warning/10">
-            <AlertTriangle className="h-4 w-4 text-warning" />
+          <Alert className="mt-3 border-primary/30 bg-primary/5">
+            <Info className="h-4 w-4 text-primary" />
             <AlertTitle>{t('stopServerAlert.title')}</AlertTitle>
             <AlertDescription>
               {t('stopServerAlert.description')}
@@ -2051,7 +2037,7 @@ export default function ServerConfig() {
                   >
                     <ExternalLink className="h-3 w-3" /> {t('editorToolbar.wiki')}
                   </a>
-                  <Button onClick={handleSaveIni} disabled={saving || !hasIniChanges || serverRunning === true || invalidIniSettings.length > 0} variant="command" size="sm" className="h-7 gap-1.5 text-xs font-medium">
+                  <Button onClick={handleSaveIni} disabled={saving || !hasIniChanges || invalidIniSettings.length > 0} variant="command" size="sm" className="h-7 gap-1.5 text-xs font-medium">
                     {saving ? (
                       <Loader2 className="h-3 w-3 animate-spin" />
                     ) : (
@@ -2472,7 +2458,7 @@ export default function ServerConfig() {
                   >
                     <ExternalLink className="h-3 w-3" /> {t('editorToolbar.wiki')}
                   </a>
-                  <Button onClick={handleSaveSandbox} disabled={saving || !hasSandboxChanges || serverRunning === true || invalidSandboxSettings.length > 0} variant="command" size="sm" className="h-7 gap-1.5 text-xs font-medium">
+                  <Button onClick={handleSaveSandbox} disabled={saving || !hasSandboxChanges || invalidSandboxSettings.length > 0} variant="command" size="sm" className="h-7 gap-1.5 text-xs font-medium">
                     {saving ? (
                       <Loader2 className="h-3 w-3 animate-spin" />
                     ) : (
@@ -3564,7 +3550,7 @@ export default function ServerConfig() {
               variant="command"
               size="sm"
               onClick={activeTab === 'ini' ? handleSaveIni : handleSaveSandbox}
-              disabled={saving || serverRunning === true || (activeTab === 'ini' ? invalidIniSettings.length > 0 : invalidSandboxSettings.length > 0)}
+              disabled={saving || (activeTab === 'ini' ? invalidIniSettings.length > 0 : invalidSandboxSettings.length > 0)}
               className="h-8 gap-1.5 text-xs font-medium"
             >
               {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}

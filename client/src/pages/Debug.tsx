@@ -1091,14 +1091,20 @@ export default function Debug() {
                 result.message || t("diagnostics.alreadyValidFallback"),
             });
           } else {
+            // SandboxVars.lua has no live-reload path (PZ's own /reloadoptions
+            // only re-reads ServerOptions.ini, never sandbox vars — see
+            // handleSaveSandbox's comment in ServerConfig.tsx), so a repair
+            // always needs a restart to reach the running game regardless of
+            // whether the server happened to be running when it was repaired.
             toast({
               title: t("diagnostics.sandboxRepairedTitle"),
               description:
-                result.message ||
-                t("diagnostics.sandboxRepairedFallback", {
-                  count: result.changes?.length ?? 0,
-                  restartHint,
-                }),
+                (result.message
+                  ? `${result.message}${restartHint}`
+                  : t("diagnostics.sandboxRepairedFallback", {
+                      count: result.changes?.length ?? 0,
+                      restartHint,
+                    })),
             });
           }
         }

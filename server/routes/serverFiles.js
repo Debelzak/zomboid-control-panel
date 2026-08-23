@@ -18,7 +18,10 @@ import {
   pushRemoteConfigFiles,
   validateRemoteConfigTransport,
 } from "../services/remoteConfigFiles.js";
-import { requireStoppedForLocalConfigMutation } from "../services/configMutationGuard.js";
+import {
+  requireStoppedForLocalConfigMutation,
+  warnRunningForLocalConfigEdit,
+} from "../services/configMutationGuard.js";
 import { requirePermission } from "../services/permissions.js";
 import { ErrorCode } from "../utils/errorCodes.js";
 
@@ -152,23 +155,35 @@ router.use(async (req, res, next) => {
   next();
 });
 
-// Routes gated by requireStoppedForLocalConfigMutation. The original
-// justification for gating ANY of these was the assumption that PZ rewrites
-// its config files on shutdown and would discard a live edit — measured
-// 2026-08-23 against a real B42 dedicated server (clean RCON `quit`, the same
-// path server.js's POST /stop uses): a clean shutdown touches NEITHER
-// SandboxVars.lua NOR the server .ini at all (byte-identical mtime/hash
-// before and after), and the next startup rewrites both but PRESERVES an
-// edit made on disk while the server was running — measured, not assumed.
-// So the assumption behind this whole list was false, at least for a clean
-// stop. "PUT /sandbox-option" is deliberately removed below on the strength
-// of that evidence, since a stuck-forever refusal (the mod-settings tab can
-// only ever call this while the server is running, so it 409'd every time)
-// is a real bug and this route's own file write already no-ops safely when
-// there's nothing to change (see persisted:false below). The other nine
-// entries are NOT touched here — carded separately for the same
-// re-evaluation post-deploy, since a wrong generalization there risks a
-// whole ini/spawn-region file, not just one sandbox key.
+// Ordinary edits to one of these files. The original justification for
+// BLOCKING all of these outright while the server ran was the assumption
+// that PZ rewrites its config files on shutdown and would discard a live
+// edit — measured 2026-08-23 against a real B42 dedicated server (clean RCON
+// `quit`, the same path server.js's POST /stop uses): a clean shutdown
+// touches NEITHER SandboxVars.lua NOR the server .ini at all (byte-identical
+// mtime/hash before and after), and the next startup rewrites both but
+// PRESERVES an edit made on disk while the server was running — measured,
+// not assumed. "PUT /sandbox-option" was the first removed on that evidence
+// alone (a stuck-forever refusal was a real, reported bug).
+//
+// For these remaining nine, the operator has since RULED (2026-08-23, his
+// own knowledge of the game, not derived from the measurement above): edits
+// are always allowed while the server runs; a write just does not reach the
+// live game until the next restart. That ruling is what changed the
+// behavior below from "refuse" to "allow and say so" — the measurement only
+// established that a clean shutdown/startup cycle doesn't lose the edit,
+// which is necessary for the ruling to be safe but isn't by itself a claim
+// about every route below applying live or requiring a restart uniformly.
+// See warnRunningForLocalConfigEdit() in configMutationGuard.js for the
+// mechanism, and each handler's own response for where restartRequired is
+// attached.
+//
+// HONEST CAVEAT for whoever reads this next: the measurement covered a
+// CLEAN shutdown on a B42 server via RCON `quit` only. A B41 server and the
+// force-stop/kill path are untested. The operator's ruling covers all of
+// that from his own experience running these servers and outranks one
+// narrow experiment — but it IS judgement layered on top of measurement,
+// not measurement alone, and the two should stay distinguishable here.
 const LOCAL_CONFIG_MUTATIONS = new Set([
   "PUT /ini",
   "PUT /sandbox",
@@ -181,21 +196,46 @@ const LOCAL_CONFIG_MUTATIONS = new Set([
   "PUT /raw/spawnregions",
 ]);
 
-export function isLocalConfigMutation(req) {
-  const routeKey = `${req.method} ${req.path}`;
-  if (LOCAL_CONFIG_MUTATIONS.has(routeKey)) return true;
+// A wholesale file replacement, not an edit: applying a template or
+// restoring a backup overwrites everything in one of these files at once,
+// without the operator reviewing each changed value the way a form save
+// implies. The operator's "edits are fine while running" ruling above was
+// about editing, and the 2026-08-23 measurement says nothing about whether
+// the running game tolerates one of its own open config files being
+// replaced wholesale underneath it — a restore in particular is the one
+// operation where getting that wrong destroys the very thing the operator
+// was trying to protect. Left gated (409 while running) deliberately,
+// pending its own evidence rather than inheriting the edit ruling by
+// assumption.
+function isLocalConfigOverwrite(req) {
   if (req.method === "POST" && /^\/templates\/[^/]+\/apply$/.test(req.path)) {
     return true;
   }
   return req.method === "POST" && /^\/restore\/[^/]+$/.test(req.path);
 }
 
-export { requireStoppedForLocalConfigMutation };
-router.use((req, res, next) =>
-  isLocalConfigMutation(req)
-    ? requireStoppedForLocalConfigMutation(req, res, next)
-    : next(),
-);
+function isLocalConfigEdit(req) {
+  return LOCAL_CONFIG_MUTATIONS.has(`${req.method} ${req.path}`);
+}
+
+export function isLocalConfigMutation(req) {
+  return isLocalConfigEdit(req) || isLocalConfigOverwrite(req);
+}
+
+export {
+  requireStoppedForLocalConfigMutation,
+  isLocalConfigEdit,
+  isLocalConfigOverwrite,
+};
+router.use((req, res, next) => {
+  if (isLocalConfigOverwrite(req)) {
+    return requireStoppedForLocalConfigMutation(req, res, next);
+  }
+  if (isLocalConfigEdit(req)) {
+    return warnRunningForLocalConfigEdit(req, res, next);
+  }
+  return next();
+});
 
 // Escape strings for safe interpolation into Lua source code
 function escapeLuaString(str) {
@@ -1157,6 +1197,7 @@ router.put("/ini", async (req, res) => {
       path: filePath,
       settings: persistedSettings,
       ...(backupWarning ? { backupWarning } : {}),
+      ...(req.configEditRestartWarning ? { restartRequired: true } : {}),
     });
   } catch (error) {
     log.error("Failed to save INI:", error);
@@ -1266,6 +1307,7 @@ router.put("/sandbox", async (req, res) => {
       message: fileExists ? "Sandbox settings saved" : "SandboxVars file created",
       path: filePath,
       ...(backupWarning ? { backupWarning } : {}),
+      ...(req.configEditRestartWarning ? { restartRequired: true } : {}),
     });
   } catch (error) {
     log.error("Failed to save SandboxVars:", error);
@@ -1543,6 +1585,7 @@ router.post("/sandbox/repair", async (req, res) => {
       repaired: true,
       changes: result.changes,
       message: `Repaired ${result.changes.length} issue${result.changes.length === 1 ? "" : "s"} in SandboxVars.lua. A backup of the broken file was saved first (${result.backupName}).`,
+      ...(req.configEditRestartWarning ? { restartRequired: true } : {}),
     });
   } catch (error) {
     log.error("Failed to repair SandboxVars:", error);
@@ -1608,6 +1651,7 @@ router.put("/spawnpoints", async (req, res) => {
       success: true,
       message: "Spawn points saved",
       ...(backupWarning ? { backupWarning } : {}),
+      ...(req.configEditRestartWarning ? { restartRequired: true } : {}),
     });
   } catch (error) {
     log.error("Failed to save spawn points:", error);
@@ -1672,6 +1716,7 @@ router.put("/spawnregions", async (req, res) => {
       success: true,
       message: "Spawn regions saved",
       ...(backupWarning ? { backupWarning } : {}),
+      ...(req.configEditRestartWarning ? { restartRequired: true } : {}),
     });
   } catch (error) {
     log.error("Failed to save spawn regions:", error);
@@ -1771,6 +1816,7 @@ router.put("/raw/:type", async (req, res) => {
       success: true,
       message: "File saved",
       ...(backupWarning ? { backupWarning } : {}),
+      ...(req.configEditRestartWarning ? { restartRequired: true } : {}),
     });
   } catch (error) {
     log.error("Failed to save raw file:", error);
