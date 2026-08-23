@@ -48,7 +48,7 @@
     "panToAriaWithHealth": "Ansicht zu {{name}} schwenken, Gesundheit {{health}}%",
     "loading": "lädt …",
     "noPlayersOnline": "keine Spieler online",
-    "bridgeOffline": "PanelBridge offline"
+    "bridgeOffline": "Brücke offline"
   },
   "hud": {
     "hoverForCoords": "Für Koordinaten hovern"
@@ -101,7 +101,7 @@
     "repeatLastDrop": "Letzten Drop wiederholen",
     "savedPackages": "gespeicherte Pakete",
     "presetCrates": "vordefinierte Kisten",
-    "bridgeOfflineDrops": "PanelBridge offline — Drops nicht verfügbar"
+    "bridgeOfflineDrops": "Brücke offline — Drops nicht verfügbar"
   },
   "toasts": {
     "vehicleRepaired": "Fahrzeug repariert",

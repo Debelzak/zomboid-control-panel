@@ -262,10 +262,10 @@
     "autoStartDesc": "Wird automatisch übersprungen, wenn der RCON-Port bereits belegt ist, damit ein bereits laufender Server nie doppelt gestartet wird. Erfordert einen lokalen Installationspfad; von einem Anbieter gehostete Server werden vom Anbieter gestartet."
   },
   "bridge": {
-    "cardTitle": "Panel Bridge",
+    "cardTitle": "PanelBridge",
     "cardDesc": "Verbindet dieses Panel mit dem laufenden Spiel für Wetter, Versorgung, erweiterten Chat und weitere Aktionen in der Spielwelt",
     "howItWorksButton": "Funktionsweise",
-    "dialogTitle": "Panel Bridge",
+    "dialogTitle": "PanelBridge",
     "dialogDesc": "Eine Lua-Mod, die innerhalb von Project Zomboid läuft und diesem Panel direkten Zugriff auf die laufende Spielwelt gibt.",
     "unlocksTitle": "Was du damit freischaltest",
     "unlockWeatherTitle": "Wetter & Klima",
@@ -324,7 +324,7 @@
     "fileWatcherActive": "Aktiv",
     "fileWatcherPollingOnly": "Nur Polling",
     "pendingLabel": "Ausstehend:",
-    "errorTitle": "Panel-Bridge-Fehler",
+    "errorTitle": "PanelBridge-Fehler",
     "stopBridge": "Brücke stoppen",
     "pinging": "Wird gepingt...",
     "pingMod": "Mod pingen",
@@ -876,11 +876,11 @@
     },
     "bridgeStopped": {
       "title": "Brücke gestoppt",
-      "description": "Panel Bridge wurde gestoppt"
+      "description": "PanelBridge wurde gestoppt"
     },
     "bridgeStopFailed": {
       "title": "Stoppen fehlgeschlagen",
-      "fallback": "Das Panel konnte Panel Bridge nicht stoppen. Versuche es erneut."
+      "fallback": "Das Panel konnte PanelBridge nicht stoppen. Versuche es erneut."
     },
     "bridgeConfigured": {
       "title": "Brücke konfiguriert",

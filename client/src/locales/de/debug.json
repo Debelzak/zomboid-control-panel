@@ -28,7 +28,7 @@
       "openChunkCleaner": "Chunk-Bereinigung öffnen",
       "openBackups": "Backups öffnen",
       "openDiscord": "Discord öffnen",
-      "openBridgeSettings": "Bridge-Einstellungen öffnen",
+      "openBridgeSettings": "Brückeneinstellungen öffnen",
       "openDependencyReview": "Abhängigkeitsprüfung öffnen",
       "openWorldMap": "Weltkarte öffnen"
     },
@@ -127,12 +127,12 @@
       "note": "Überprüfe das Bot-Token und die Intents in den Discord-Einstellungen."
     },
     "bridgeConfigured": {
-      "label": "Bridge automatisch konfigurieren",
-      "note": "Verweist das Panel auf den Bridge-Ordner des aktiven Servers und startet den Watcher. Der Spielserver muss anschließend mit installierter PanelBridge.lua laufen."
+      "label": "Brücke automatisch konfigurieren",
+      "note": "Verweist das Panel auf den Brückenordner des aktiven Servers und startet den Watcher. Der Spielserver muss anschließend mit installierter PanelBridge.lua laufen."
     },
     "bridgeWritableOrHeartbeat": {
       "label": "Serversuche öffnen",
-      "note": "Stelle PanelBridge erneut bereit, stelle sicher, dass der Server läuft, und überprüfe die Schreibrechte für den Bridge-Ordner."
+      "note": "Stelle PanelBridge erneut bereit, stelle sicher, dass der Server läuft, und überprüfe die Schreibrechte für den Brückenordner."
     },
     "dbExistsOrWritable": {
       "label": "Einstellungen öffnen",
@@ -197,7 +197,7 @@
     "hidePassing": "Bestandene ausblenden",
     "fixLabel": "Fix:",
     "sourceRcon": "RCON",
-    "sourceBridge": "Bridge",
+    "sourceBridge": "Brücke",
     "sourcePlayer": "Spieler",
     "sourceServer": "Server",
     "levelError": "Fehler",
@@ -255,7 +255,7 @@
     "dbBackupCreatedDesc": "Backup abgeschlossen{{backupName}}.",
     "staleLocksRemovedTitle": "Veraltete Sperrdateien entfernt",
     "staleLocksRemovedFallback": "{{count}} Sperrdatei(en) gelöscht.",
-    "bridgeConfiguredTitle": "Bridge konfiguriert",
+    "bridgeConfiguredTitle": "Brücke konfiguriert",
     "bridgeConfiguredDesc": "Beobachtet {{serverName}}. Starte den Server, um den Handshake abzuschließen.",
     "bridgeConfiguredServerFallback": "den aktiven Server",
     "crashLogsOpenedTitle": "Absturzprotokolle geöffnet",
@@ -783,31 +783,31 @@
         "configured": {
           "skip": {
             "label": "PanelBridge-Pfad",
-            "message": "Bridge-Pfad noch nicht konfiguriert (der Server startet möglicherweise gerade)."
+            "message": "Brückenpfad noch nicht konfiguriert (der Server startet möglicherweise gerade)."
           },
           "ok": {
-            "label": "Bridge-Pfad konfiguriert",
-            "message": "Das Bridge-IPC-Verzeichnis ist festgelegt."
+            "label": "Brückenpfad konfiguriert",
+            "message": "Das Brücken-IPC-Verzeichnis ist festgelegt."
           }
         },
         "writable": {
           "ok": {
-            "label": "Bridge-Verzeichnis beschreibbar",
+            "label": "Brückenverzeichnis beschreibbar",
             "message": "Das Panel kann commands.json für die Mod schreiben."
           },
           "warn": {
-            "label": "Bridge-Verzeichnis fehlt",
-            "message": "Der Bridge-Ordner existiert noch nicht — er wird erstellt, sobald die Mod erstmals status.json schreibt."
+            "label": "Brückenverzeichnis fehlt",
+            "message": "Der Brückenordner existiert noch nicht — er wird erstellt, sobald die Mod erstmals status.json schreibt."
           },
           "fail": {
             "linux": {
-              "label": "Bridge-Verzeichnis nicht beschreibbar",
-              "message": "Das Panel kann nicht in das Bridge-Verzeichnis schreiben. Die Mod empfängt keine Befehle.",
+              "label": "Brückenverzeichnis nicht beschreibbar",
+              "message": "Das Panel kann nicht in das Brückenverzeichnis schreiben. Die Mod empfängt keine Befehle.",
               "hint": "Prüfe die Besitzrechte / chmod-Einstellungen des Zomboid-Lua-Ordners (oft muss der Panel-Benutzer ~/Zomboid besitzen)."
             },
             "other": {
-              "label": "Bridge-Verzeichnis nicht beschreibbar",
-              "message": "Das Panel kann nicht in das Bridge-Verzeichnis schreiben. Die Mod empfängt keine Befehle.",
+              "label": "Brückenverzeichnis nicht beschreibbar",
+              "message": "Das Panel kann nicht in das Brückenverzeichnis schreiben. Die Mod empfängt keine Befehle.",
               "hint": "Prüfe die Dateisystemberechtigungen des Lua-Schreibordners."
             }
           }
@@ -836,8 +836,8 @@
         },
         "error": {
           "warn": {
-            "label": "Bridge-Prüfungen fehlgeschlagen",
-            "message": "Bridge-IPC-Prüfungen konnten nicht ausgeführt werden: {{reason}}"
+            "label": "Brückenprüfungen fehlgeschlagen",
+            "message": "Brücken-IPC-Prüfungen konnten nicht ausgeführt werden: {{reason}}"
           }
         }
       },
@@ -1000,13 +1000,13 @@
             "fail": {
               "label": "PanelBridge nicht konfiguriert",
               "message": "Die Karte bezieht Live-Positionen von Spielern, Fahrzeugen und Safehouses von PanelBridge. Ohne PanelBridge zeigt die Karte nur die statischen Basiskacheln.",
-              "hint": "Lege den Zomboid-Datenpfad des aktiven Servers fest, damit der Bridge-Ordner gefunden werden kann."
+              "hint": "Lege den Zomboid-Datenpfad des aktiven Servers fest, damit der Brückenordner gefunden werden kann."
             }
           },
           "running": {
             "warn": {
               "label": "PanelBridge-Dienst läuft nicht",
-              "message": "Der Bridge-Dienst ist konfiguriert, fragt aber derzeit nicht ab. Live-Kartendaten bleiben leer."
+              "message": "Der Brückendienst ist konfiguriert, fragt aber derzeit nicht ab. Live-Kartendaten bleiben leer."
             }
           },
           "mod": {
@@ -1119,10 +1119,10 @@
     "lastHeartbeatLabel": "Letzter Heartbeat",
     "staleSuffix": " · veraltet",
     "consecutiveFailuresLabel": "Aufeinanderfolgende Fehlschläge",
-    "bridgePathLabel": "Bridge-Pfad",
+    "bridgePathLabel": "Brückenpfad",
     "requiredHandlersLabel": "Erforderliche Handler",
     "requiredHandlersDesc": "Die Karte ruft diese PanelBridge-Befehle auf. Fehlen sie im Spiel-Mod, werden Spieler, Fahrzeuge oder Luftabwürfe nicht angezeigt.",
-    "noBridgeData": "Keine Bridge-Daten — nicht konfiguriert.",
+    "noBridgeData": "Keine Brückendaten — nicht konfiguriert.",
     "liveProbesTitle": "Live-Datenabfragen",
     "liveProbesDesc": "Führe dieselben PanelBridge-Aufrufe aus, die auch die Weltkarten-Seite macht. Nützlich, um zu bestätigen, dass der Mod reagiert, bevor du die Fehlersuche auf der Karte selbst beginnst.",
     "probeAll": "Alle abfragen",
@@ -1148,7 +1148,7 @@
     "testActionsDescPrefix": "Diese Aktionen",
     "testActionsDescBold": "wirken sich auf die laufende Spielwelt aus",
     "testActionsDescSuffix": "und sind für Spieler sichtbar. Einmal klicken zum Scharfmachen, innerhalb von 4 Sekunden erneut klicken zum Auslösen.",
-    "bridgeNotConnectedTitle": "Bridge nicht verbunden",
+    "bridgeNotConnectedTitle": "Brücke nicht verbunden",
     "bridgeNotConnectedDesc": "Der PanelBridge-Mod muss im Spiel laufen. Testaktionen sind deaktiviert.",
     "targetLabel": "Ziel:",
     "targetNoPlayersOnline": "Keine Spieler online.",
@@ -1191,7 +1191,7 @@
   },
   "activityTab": {
     "title": "Aktivitätsprotokoll",
-    "description": "Einheitliche Ansicht von RCON-Befehlen, Bridge-Aktionen, Spielerereignissen und Serverereignissen",
+    "description": "Einheitliche Ansicht von RCON-Befehlen, Brückenaktionen, Spielerereignissen und Serverereignissen",
     "filterBySourceAria": "Nach Quelle filtern",
     "allSources": "Alle Quellen",
     "searchPlaceholder": "Aktion / Detail suchen…",
