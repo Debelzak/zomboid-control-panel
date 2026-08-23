@@ -21,6 +21,8 @@
  */
 
 import {
+  getDb,
+  commitNow,
   getRoles,
   getRoleById,
   getRoleByName,
@@ -611,6 +613,27 @@ export async function updateRole(
   }
 
   const nextName = typeof name === "string" && name.trim() ? name.trim() : existing.name;
+
+  // requirePermission() resolves a user's capabilities via
+  // getRoleByName(req.user.role) -- a plain string match against every
+  // current member's OWN user.role field, not roleId (see
+  // changeUserRoleById's and reassignRoleMembers's own comments for the
+  // same constraint). A seeded role's name is also load-bearing elsewhere
+  // as a fixed string: USER_ROLES/DEFAULT_ROLE_CAPABILITIES key in
+  // auth.js/permissions.js, and getUsersForRole()/reassignRoleMembers()
+  // both match a seeded role's members by `u.role === role.name`. Renaming
+  // "admin" here -- nothing above blocked it -- would desync the roles
+  // collection's row from every admin's stored role string in one write:
+  // getRoleByName("admin") then finds nothing, and every admin fails every
+  // requirePermission check on their very next request. That is a total,
+  // immediate self-lockout that completely bypasses the recovery-lockout
+  // rules below, because those only fire on a CAPABILITIES change -- a
+  // name-only edit trips neither rule 1 nor rule 2. Refuse it outright,
+  // the same way deleteRole() already refuses to delete a seeded role.
+  if (existing.isSeeded && nextName !== existing.name) {
+    throw makeError(null, "Built-in roles cannot be renamed.", 403);
+  }
+
   if (roles.some((r) => String(r.id) !== String(id) && r.name === nextName)) {
     throw makeError(
       ErrorCode.ROLE_NAME_TAKEN,
@@ -649,6 +672,28 @@ export async function updateRole(
     updatedAt: new Date().toISOString(),
   };
   await replaceRoleById(id, updated);
+
+  // A custom role's name just changed under its current members' feet --
+  // propagate it to every user.role string that pointed at the OLD name,
+  // the exact same write reassignRoleMembers() already does when moving
+  // members to a DIFFERENT role. Without this, getRoleByName(req.user.role)
+  // finds nothing for any of them until an admin notices and reassigns
+  // each one by hand. Only the roleId branch is needed here (unlike
+  // getUsersForRole()'s own isSeeded-name fallback): a seeded role can
+  // never reach this line, it was refused above.
+  if (nextName !== existing.name) {
+    const db = await getDb();
+    const users = db.data.users || [];
+    let changed = false;
+    for (const u of users) {
+      if (String(u.roleId) === String(existing.id)) {
+        u.role = nextName;
+        changed = true;
+      }
+    }
+    if (changed) await commitNow();
+  }
+
   return updated;
 }
 

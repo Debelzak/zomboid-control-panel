@@ -21,6 +21,8 @@ function seedBuiltinRole(id, name, capabilities) {
 }
 
 vi.mock("../database/init.js", () => ({
+  getDb: async () => ({ data: { users } }),
+  commitNow: async () => {},
   getRoles: async () => Array.from(rolesById.values()),
   getRoleById: async (id) => rolesById.get(String(id)) || null,
   getRoleByName: async (name) =>
@@ -278,5 +280,73 @@ describe("deleteRole -- lockout rule 3 (must not orphan members)", () => {
     await expect(deleteRole("role-nonexistent")).rejects.toMatchObject({
       code: "ROLE_NOT_FOUND",
     });
+  });
+});
+
+// A role's .name is also the exact string every current member's user.role
+// field stores -- requirePermission() resolves capabilities via
+// getRoleByName(req.user.role), a plain name match, not roleId (same
+// constraint reassignRoleMembers already has to honor above). Renaming a
+// role without fixing up its members desyncs that string from the row that
+// now defines their capabilities: getRoleByName(oldName) finds nothing, and
+// every member fails every requirePermission check on their very next
+// request -- for a seeded role, that is every admin/technician/moderator on
+// the panel at once, and it bypasses rules 1/2 entirely since neither one
+// fires on a name-only change.
+describe("updateRole -- renaming a role", () => {
+  it("refuses to rename a seeded role, even with no capability change", async () => {
+    seedBuiltinRole("role-admin", "admin", ["roles.manage", "users.manage"]);
+    users = [{ id: "u1", role: "admin", roleId: "role-admin" }];
+
+    await expect(
+      updateRole("role-admin", { name: "Administrator" }),
+    ).rejects.toThrow(/renamed/i);
+    expect(rolesById.get("role-admin").name).toBe("admin"); // untouched
+    expect(users[0].role).toBe("admin"); // untouched
+  });
+
+  it("refuses to rename a seeded role even when capabilities are unchanged in the same request", async () => {
+    seedBuiltinRole("role-mod", "moderator", ["players.moderate"]);
+
+    await expect(
+      updateRole("role-mod", { name: "Moderator+", capabilities: ["players.moderate"] }),
+    ).rejects.toThrow(/renamed/i);
+  });
+
+  it("renames a custom role and propagates the new name to every current member", async () => {
+    seedRole("role-custom", "Old Name", ["players.view"]);
+    users = [
+      { id: "u1", role: "Old Name", roleId: "role-custom" },
+      { id: "u2", role: "Old Name", roleId: "role-custom" },
+    ];
+
+    const result = await updateRole("role-custom", { name: "New Name" });
+
+    expect(result.name).toBe("New Name");
+    expect(users[0].role).toBe("New Name");
+    expect(users[1].role).toBe("New Name");
+  });
+
+  it("does not touch an unrelated role's members when renaming", async () => {
+    seedRole("role-a", "Role A", ["players.view"]);
+    seedRole("role-b", "Role B", ["players.view"]);
+    users = [
+      { id: "u1", role: "Role A", roleId: "role-a" },
+      { id: "u2", role: "Role B", roleId: "role-b" },
+    ];
+
+    await updateRole("role-a", { name: "Role A Renamed" });
+
+    expect(users[0].role).toBe("Role A Renamed");
+    expect(users[1].role).toBe("Role B"); // untouched
+  });
+
+  it("leaves members alone when the request does not actually change the name", async () => {
+    seedRole("role-custom", "Same Name", ["players.view"]);
+    users = [{ id: "u1", role: "Same Name", roleId: "role-custom" }];
+
+    await updateRole("role-custom", { name: "Same Name", capabilities: ["players.view", "players.gm_tools"] });
+
+    expect(users[0].role).toBe("Same Name");
   });
 });
