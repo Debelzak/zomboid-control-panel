@@ -69,6 +69,9 @@ describe('getBridgeVerifiedState', () => {
       'vehicleSetTrunkLocked',
       'vehicleSetFuel',
       'vehicleSetBattery',
+      'moderationBanUser',
+      'moderationBanIP',
+      'moderationBanSteamID',
     ]
     expect([...VERIFY_GATED_ACTIONS].sort()).toEqual([...expected].sort())
   })
