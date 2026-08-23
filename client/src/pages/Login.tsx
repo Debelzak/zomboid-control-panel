@@ -372,6 +372,7 @@ export default function Login() {
                     type="button"
                     onClick={() => setShowNewPassword(!showNewPassword)}
                     className="absolute inset-y-0 right-3 flex items-center rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                    title={showNewPassword ? t('signIn.hidePassword') : t('signIn.showPassword')}
                     aria-label={showNewPassword ? t('signIn.hidePassword') : t('signIn.showPassword')}
                     aria-pressed={showNewPassword}
                   >
@@ -484,6 +485,7 @@ export default function Login() {
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
                     className="absolute inset-y-0 right-3 flex items-center rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                    title={showPassword ? t('signIn.hidePassword') : t('signIn.showPassword')}
                     aria-label={showPassword ? t('signIn.hidePassword') : t('signIn.showPassword')}
                     aria-pressed={showPassword}
                   >
