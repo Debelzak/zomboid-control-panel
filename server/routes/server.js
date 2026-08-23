@@ -20,6 +20,7 @@ import { requirePermission } from "../services/permissions.js";
 import { runManagedLifecycle } from "../services/managedContainer.js";
 import { ErrorCode } from "../utils/errorCodes.js";
 import { ProgressCode } from "../utils/progressCodes.js";
+import { invalidateMapFolderScan } from "./chunks.js";
 
 const router = express.Router();
 
@@ -4495,6 +4496,12 @@ router.post("/wipe", requirePermission("server.wipe"), async (req, res) => {
           deletedCount > 0
             ? `deleted ${deletedCount} directories`
             : "not found";
+        // chunks.js's /chunks and /stats routes cache a scan of this save's
+        // map/ folder for a few seconds (see getMapFolderScan()'s comment).
+        // This wipe just deleted it out from under that cache -- without
+        // this, a page reload within the TTL window would show chunk counts
+        // for a map/ folder that no longer exists.
+        invalidateMapFolderScan(path.join(saveDir, "map"));
       }
 
       if (targets.includes("players")) {

@@ -22,7 +22,7 @@ import {
 import { ErrorCode } from "../utils/errorCodes.js";
 
 // Re-export for tests / other modules that still pull these from chunks.js.
-export { normalizeUserPath, getCandidateZomboidPaths };
+export { normalizeUserPath, getCandidateZomboidPaths, invalidateMapFolderScan };
 
 const router = express.Router();
 
