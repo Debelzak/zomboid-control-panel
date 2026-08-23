@@ -11,6 +11,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Mod thumbnails did not load for anyone in 1.2.0.** Every Workshop thumbnail in the panel came
+  back rejected as unauthenticated, on every install, for every signed-in user including
+  administrators. The cause was two correct decisions that stopped agreeing. Thumbnail images are
+  requested by the browser through ordinary image tags, which cannot send a login header, so the
+  panel deliberately exempts that one address from its login check. Last release moved every mod
+  route behind a single permission gate applied to the whole group, and that gate refuses anything
+  arriving without a signed-in user before it ever looks at what the user is allowed to do. The
+  exemption that makes thumbnails work was therefore exactly what made them fail. The exemption is
+  now written out explicitly at the gate itself, with each half of the pair naming the other, and a
+  test requests a thumbnail with no login header at all and fails if it is refused - the check the
+  original change did not have. If your thumbnails have been missing since updating, this was not
+  Steam and not your server.
+
+- **Server ports outside the valid range could be typed in and submitted.** The Add Server and Edit
+  Server dialogs accepted any number in their game-port and RCON-port fields - 0, 99999, anything -
+  and left the save button enabled. The request then travelled to the server and came back as a
+  generic failure with nothing pointing at which field was wrong. Only one of the four fields had a
+  range check. All four now refuse to submit an out-of-range port and say so next to the field.
+
+- **The Events page offered two controls that could never have worked.** Create Faction and Remove
+  Faction were listed among the world actions, but Project Zomboid provides no way to do either
+  from a mod - the methods are absent from the entire game, not merely undocumented - so both had
+  always failed. They have been removed rather than disabled, because a greyed-out control with an
+  explanation is still an invitation to switch it back on later.
+
 - **Four more places could act on a server whose state the panel could not actually determine.** The
   fix above closed that gap for wiping the world, updating through SteamCMD, the unattended
   auto-updater and automatic mod restarts. The same "cannot tell" being read as "confirmed stopped"
