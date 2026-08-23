@@ -125,6 +125,13 @@ const ACCESS_LEVELS = ['admin', 'moderator', 'overseer', 'gm', 'observer', 'user
 // and many server builds also accept `setaccesslevel "<user>" "user"` directly.
 // Some operators report that "none" silently does nothing on their build while
 // "user" works. We expose both so admins can pick whichever their build accepts.
+// Mirrors server/routes/players.js's own SteamID64 check (/^\d{17}$/ on both
+// /banid and /unbanid) so a manually-typed SteamID can't reach a submit
+// button in a shape the server will reject.
+export function sanitizeSteamId(value: string): string {
+  return value.replace(/\D/g, '').slice(0, 17);
+}
+
 function getAccessLevelLabels(t: TFunction): Record<string, string> {
   return {
     admin: t('accessLevels.admin'),
@@ -1486,7 +1493,7 @@ export default function Players() {
                   <div className="flex gap-2">
                     <Input
                       value={allowedSteamIdInput}
-                      onChange={(event) => setAllowedSteamIdInput(event.target.value.replace(/\D/g, '').slice(0, 17))}
+                      onChange={(event) => setAllowedSteamIdInput(sanitizeSteamId(event.target.value))}
                       placeholder="76561198XXXXXXXXX"
                       inputMode="numeric"
                       className="h-8 font-mono text-xs"
@@ -2082,7 +2089,7 @@ export default function Players() {
                           <Label>{t('steamIdBanDialog.steamIdLabel')}</Label>
                           <Input
                             value={banSteamId}
-                            onChange={(e) => setBanSteamId(e.target.value)}
+                            onChange={(e) => setBanSteamId(sanitizeSteamId(e.target.value))}
                             placeholder="76561198XXXXXXXXX"
                           />
                         </div>
@@ -2102,7 +2109,7 @@ export default function Players() {
                         <Button
                           variant="destructive"
                           onClick={handleSteamIdBan}
-                          disabled={loading || !banSteamId}
+                          disabled={loading || banSteamId.length !== 17}
                         >
                           {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
                           {t('steamIdBanDialog.submit')}
@@ -2228,13 +2235,13 @@ export default function Players() {
                           <Input
                             id="unban-steamid"
                             value={unbanSteamId}
-                            onChange={(e) => setUnbanSteamId(e.target.value)}
+                            onChange={(e) => setUnbanSteamId(sanitizeSteamId(e.target.value))}
                             placeholder={t('unbanSteamIdDialog.placeholder')}
                           />
                         </div>
                       </div>
                       <DialogFooter>
-                        <Button onClick={handleUnbanSteamId} disabled={loading || !unbanSteamId}>
+                        <Button onClick={handleUnbanSteamId} disabled={loading || unbanSteamId.length !== 17}>
                           {t('unbanSteamIdDialog.submit')}
                         </Button>
                       </DialogFooter>
