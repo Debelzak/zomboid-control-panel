@@ -869,7 +869,7 @@ export default function Console() {
                 role="log"
                 aria-live="polite"
                 aria-label={t('serverLog.serverOutputAria')}
-                className="h-[calc(100vh-400px)] min-h-[280px] overflow-auto bg-black/60 p-3 font-mono text-xs terminal-output"
+                className="h-[calc(100vh-400px)] min-h-[280px] overflow-auto bg-background/60 p-3 font-mono text-xs terminal-output"
               >
                 {filteredLogLines.length === 0 ? (
                   <div className="p-2 font-mono text-[11px] text-muted-foreground/70">
@@ -1018,7 +1018,7 @@ export default function Console() {
               role="log"
               aria-live="polite"
               aria-label={t('rcon.outputAria')}
-              className="h-[18rem] min-h-[220px] sm:h-[22rem] lg:h-[26rem] overflow-auto bg-black/60 p-3 terminal-output"
+              className="h-[18rem] min-h-[220px] sm:h-[22rem] lg:h-[26rem] overflow-auto bg-background/60 p-3 terminal-output"
             >
               {liveLog.length === 0 ? (
                 <EmptyState compact type="noMessages" title={t('rcon.noCommandsTitle')} description={t('rcon.noCommandsDesc')} />
@@ -1210,7 +1210,7 @@ export default function Console() {
                     aria-label={t('history.searchAria')}
                   />
                 </div>
-                <ScrollArea className="h-[16rem] min-h-[200px] sm:h-[20rem] rounded-lg border border-border/30 bg-black/40">
+                <ScrollArea className="h-[16rem] min-h-[200px] sm:h-[20rem] rounded-lg border border-border/30 bg-background/40">
                   {history.length === 0 ? (
                     <EmptyState compact type="noData" title={t('history.emptyTitle')} description={t('history.emptyDesc')} />
                   ) : (

@@ -592,7 +592,7 @@ export default function Layout({ children }: LayoutProps) {
       {/* Mobile Menu Overlay */}
       {mobileMenuOpen && (
         <div
-          className="fixed inset-0 z-40 bg-black/50 backdrop-blur-[1px] lg:hidden"
+          className="fixed inset-0 z-40 bg-background/50 backdrop-blur-[1px] lg:hidden"
           onClick={() => setMobileMenuOpen(false)}
           aria-hidden="true"
         />

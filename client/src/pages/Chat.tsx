@@ -454,7 +454,7 @@ export default function Chat() {
               ) : (
                 <div className="space-y-1">
                   {players.map((player) => (
-                    <div key={player.name} className="flex items-center gap-2 px-2 py-1.5 rounded-sm border-l-2 border-transparent hover:border-primary/50 hover:bg-muted/40 transition-colors min-w-0">
+                    <div key={player.name} className="flex items-center gap-2 px-2 py-1.5 rounded-sm hover:bg-muted/40 transition-colors min-w-0">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0 animate-pulse" aria-hidden="true" />
                       <span className="text-xs font-medium text-foreground/90 truncate">{player.name}</span>
                     </div>
@@ -521,7 +521,7 @@ export default function Chat() {
                   <div key={`preset-${idx}`} className="flex items-center gap-1">
                     <button
                       type="button"
-                      className="group flex-1 min-h-9 px-2 py-1.5 text-left rounded-sm border-l-2 border-transparent bg-muted/15 hover:border-amber-400/60 hover:bg-muted/40 focus-visible:border-amber-400/60 focus-visible:outline-none transition-colors text-xs text-foreground/85 whitespace-normal"
+                      className="group flex-1 min-h-9 px-2 py-1.5 text-left rounded-sm bg-muted/15 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60 transition-colors text-xs text-foreground/85 whitespace-normal"
                       onClick={() => {
                         if (presetsEditing) {
                           setEditingIdx(idx)
