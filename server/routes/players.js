@@ -180,7 +180,12 @@ router.post('/kick', requirePermission("players.moderate"), async (req, res) => 
 
     const result = await rconService.kickPlayer(username, reason);
     log.info(`POST /kick: ${username} (reason=${reason || 'none'})`);
-    await logPlayerAction(username, 'kick', reason);
+    // Same unconditional-write shape as /ban et al.: only log the action if
+    // RCON actually performed it, so the activity log doesn't claim a kick
+    // happened when the server never received it.
+    if (result?.success) {
+      await logPlayerAction(username, 'kick', reason);
+    }
 
     res.json(result);
   } catch (error) {
@@ -285,7 +290,12 @@ router.post('/access-level', requirePermission("players.moderate"), async (req, 
 
     const result = await rconService.setAccessLevel(username, level);
     log.info(`POST /access-level: ${username} → ${level}`);
-    await logPlayerAction(username, 'access_level', level);
+    // Same unconditional-write shape as /ban et al.: only log the action if
+    // RCON actually performed it, so the activity log doesn't claim an
+    // access-level change happened when the server never received it.
+    if (result?.success) {
+      await logPlayerAction(username, 'access_level', level);
+    }
 
     res.json(result);
   } catch (error) {
@@ -439,7 +449,10 @@ router.post('/add-item', requirePermission("players.gm_tools"), async (req, res)
     // PanelBridge's inventory:AddItem() works server-side but client doesn't see items until relog
     result = await rconService.addItem(username, item, itemCount);
     log.info(`POST /add-item: ${item} x${itemCount} to ${username} via RCON`);
-    if (username) {
+    // Same unconditional-write shape as /ban et al.: only log the action if
+    // RCON actually performed it, so the activity log doesn't claim an item
+    // was given when the server never received it.
+    if (username && result?.success) {
       await logPlayerAction(username, 'add_item', `${item} x${itemCount}`);
     }
 
@@ -474,7 +487,12 @@ router.post('/add-xp', requirePermission("players.gm_tools"), async (req, res) =
 
     const result = await rconService.addXp(username, perk, amount);
     log.info(`POST /add-xp: ${perk}=${amount} to ${username}`);
-    await logPlayerAction(username, 'add_xp', `${perk}=${amount}`);
+    // Same unconditional-write shape as /ban et al.: only log the action if
+    // RCON actually performed it, so the activity log doesn't claim XP was
+    // granted when the server never received it.
+    if (result?.success) {
+      await logPlayerAction(username, 'add_xp', `${perk}=${amount}`);
+    }
 
     res.json(result);
   } catch (error) {
@@ -505,7 +523,10 @@ router.post('/add-vehicle', requirePermission("players.gm_tools"), async (req, r
 
     const result = await rconService.addVehicle(vehicle, username);
     log.info(`POST /add-vehicle: ${vehicle} for ${username || 'self'}`);
-    if (username) {
+    // Same unconditional-write shape as /ban et al.: only log the action if
+    // RCON actually performed it, so the activity log doesn't claim a
+    // vehicle was spawned when the server never received it.
+    if (username && result?.success) {
       await logPlayerAction(username, 'add_vehicle', vehicle);
     }
 
@@ -554,7 +575,12 @@ router.post('/godmode', requirePermission("players.gm_tools"), async (req, res) 
 
     const result = await setPlayerMode(req, 'setGodMode', 'setGodMode', username, enabled);
     log.info(`POST /godmode: ${username} → ${enabled ? 'ON' : 'OFF'} via ${result.via}`);
-    await logPlayerAction(username, 'godmode', enabled ? 'enabled' : 'disabled');
+    // Same unconditional-write shape as /ban et al.: only log the action if
+    // the underlying command actually performed it, so the activity log
+    // doesn't claim godmode changed when the server never received it.
+    if (result?.success) {
+      await logPlayerAction(username, 'godmode', enabled ? 'enabled' : 'disabled');
+    }
 
     res.json(result);
   } catch (error) {
@@ -577,7 +603,12 @@ router.post('/invisible', requirePermission("players.gm_tools"), async (req, res
 
     const result = await setPlayerMode(req, 'setInvisible', 'setInvisible', username, enabled);
     log.info(`POST /invisible: ${username} → ${enabled ? 'ON' : 'OFF'} via ${result.via}`);
-    await logPlayerAction(username, 'invisible', enabled ? 'enabled' : 'disabled');
+    // Same unconditional-write shape as /ban et al.: only log the action if
+    // the underlying command actually performed it, so the activity log
+    // doesn't claim invisibility changed when the server never received it.
+    if (result?.success) {
+      await logPlayerAction(username, 'invisible', enabled ? 'enabled' : 'disabled');
+    }
 
     res.json(result);
   } catch (error) {
@@ -600,7 +631,12 @@ router.post('/noclip', requirePermission("players.gm_tools"), async (req, res) =
 
     const result = await setPlayerMode(req, 'setNoclip', 'setNoclip', username, enabled);
     log.info(`POST /noclip: ${username} → ${enabled ? 'ON' : 'OFF'} via ${result.via}`);
-    await logPlayerAction(username, 'noclip', enabled ? 'enabled' : 'disabled');
+    // Same unconditional-write shape as /ban et al.: only log the action if
+    // the underlying command actually performed it, so the activity log
+    // doesn't claim noclip changed when the server never received it.
+    if (result?.success) {
+      await logPlayerAction(username, 'noclip', enabled ? 'enabled' : 'disabled');
+    }
 
     res.json(result);
   } catch (error) {

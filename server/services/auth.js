@@ -1171,42 +1171,55 @@ class AuthService {
   /**
    * Consume a recovery code and set a new password. The code is burned whether
    * or not the caller knows the old password, so each one works exactly once.
+   *
+   * Wrapped in _withMutex for the same reason createUser/changeUserRoleById/
+   * deleteUser/bootstrapAdminFromExternalIdentity are: this is a check-then-
+   * write (is this code still unused? -> mark it used) with an await
+   * (resetPassword's real bcrypt.hash, ~150-300ms) between the check and the
+   * write. Without serializing, two concurrent redemptions of the SAME code
+   * each read their own independent JSON.parse of the stored entries, so
+   * neither sees the other's not-yet-persisted usedAt mark -- both pass
+   * validation and both successfully reset the password, defeating "each
+   * code works exactly once" on an unauthenticated, admin-password-reset
+   * endpoint. Reproduced in server/tests/recoveryCodeRedeemRace.test.js.
    */
   async redeemRecoveryCode(code, newPassword) {
-    if (typeof code !== "string" || !code.trim()) {
-      throw new Error("A recovery code is required");
-    }
-    const stored = await getSetting("authRecoveryCodes");
-    let entries = [];
-    try {
-      entries = stored ? JSON.parse(stored) : [];
-    } catch {
-      entries = [];
-    }
-    if (entries.length === 0) {
-      throw new Error("No recovery codes have been generated for this panel.");
-    }
+    return this._withMutex(async () => {
+      if (typeof code !== "string" || !code.trim()) {
+        throw new Error("A recovery code is required");
+      }
+      const stored = await getSetting("authRecoveryCodes");
+      let entries = [];
+      try {
+        entries = stored ? JSON.parse(stored) : [];
+      } catch {
+        entries = [];
+      }
+      if (entries.length === 0) {
+        throw new Error("No recovery codes have been generated for this panel.");
+      }
 
-    const candidate = crypto
-      .createHash("sha256")
-      .update(code.trim().toUpperCase(), "utf8")
-      .digest();
-    const match = entries.find((entry) => {
-      if (entry.usedAt) return false;
-      const storedDigest = Buffer.from(entry.hash, "hex");
-      if (storedDigest.length !== candidate.length) return false;
-      return crypto.timingSafeEqual(storedDigest, candidate);
+      const candidate = crypto
+        .createHash("sha256")
+        .update(code.trim().toUpperCase(), "utf8")
+        .digest();
+      const match = entries.find((entry) => {
+        if (entry.usedAt) return false;
+        const storedDigest = Buffer.from(entry.hash, "hex");
+        if (storedDigest.length !== candidate.length) return false;
+        return crypto.timingSafeEqual(storedDigest, candidate);
+      });
+      if (!match) {
+        throw new Error("That recovery code is not valid or has already been used.");
+      }
+
+      const result = await this.resetPassword(newPassword);
+      match.usedAt = new Date().toISOString();
+      await setSetting("authRecoveryCodes", JSON.stringify(entries));
+      const remaining = entries.filter((entry) => !entry.usedAt).length;
+      log.info(`Recovery code redeemed for ${result.username}; ${remaining} remaining`);
+      return { ...result, remaining };
     });
-    if (!match) {
-      throw new Error("That recovery code is not valid or has already been used.");
-    }
-
-    const result = await this.resetPassword(newPassword);
-    match.usedAt = new Date().toISOString();
-    await setSetting("authRecoveryCodes", JSON.stringify(entries));
-    const remaining = entries.filter((entry) => !entry.usedAt).length;
-    log.info(`Recovery code redeemed for ${result.username}; ${remaining} remaining`);
-    return { ...result, remaining };
   }
 
   /**
