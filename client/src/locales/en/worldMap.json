@@ -203,6 +203,12 @@
     "cancel": "Cancel",
     "confirm": "Delete"
   },
+  "removeVehicleDialog": {
+    "title": "Remove vehicle?",
+    "description": "The {{vehicle}} at {{x}}, {{y}} will be deleted from the world. This cannot be undone.",
+    "cancel": "Cancel",
+    "confirm": "Remove vehicle"
+  },
   "canvasAria": "World map showing Knox County with player positions. Use arrow keys to pan, plus/minus to zoom.",
   "emptyState": {
     "title": "No players on the map",

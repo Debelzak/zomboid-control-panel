@@ -631,6 +631,8 @@ export default function WorldMap() {
   const [activeTemplateId, setActiveTemplateId] = useState<string | null>(null)
   // Confirm-deletion dialog state for custom drop packages.
   const [deleteTemplateId, setDeleteTemplateId] = useState<string | null>(null)
+  // Confirm-deletion dialog state for removing a vehicle from the world.
+  const [removeVehicleTarget, setRemoveVehicleTarget] = useState<{ id: number; label: string; x: number; y: number } | null>(null)
   const [templateNameInput, setTemplateNameInput] = useState('')
   const [savingTemplate, setSavingTemplate] = useState(false)
   const persistDropTemplates = useCallback((next: DropTemplate[]) => {
@@ -2999,16 +3001,15 @@ export default function WorldMap() {
                   icon={<Trash2 className="w-3.5 h-3.5 text-destructive" />}
                   label={t('contextMenu.removeVehicle')}
                   tone="danger"
-                  loading={actionLoading === 'vehicle-remove'}
                   onClick={() => {
-                    setActionLoading('vehicle-remove')
-                    panelBridgeApi.sendCommand('removeVehicle', { vehicleId: contextMenu.vehicle!.id })
-                      .then(() => {
-                        toast({ title: t('toasts.vehicleRemoved') })
-                        fetchOverlays()
-                      })
-                      .catch((err) => toast({ title: t('toasts.removeFailed'), description: err instanceof Error ? err.message : t('toasts.unknownError'), variant: 'destructive' }))
-                      .finally(() => { setActionLoading(null); setContextMenu(null) })
+                    const v = contextMenu.vehicle!
+                    setRemoveVehicleTarget({
+                      id: v.id,
+                      label: v.type || v.scriptName?.split('.').pop() || t('vehicleFallback'),
+                      x: Math.round(v.x),
+                      y: Math.round(v.y),
+                    })
+                    setContextMenu(null)
                       }}
                     />
                     <ContextMenuItem
@@ -3629,6 +3630,52 @@ export default function WorldMap() {
               }}
             >
               {t('deletePackageDialog.confirm')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Confirm removal of a vehicle from the world — permanent, not undoable. */}
+      <AlertDialog
+        open={!!removeVehicleTarget}
+        onOpenChange={(open) => { if (!open) setRemoveVehicleTarget(null) }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('removeVehicleDialog.title')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {removeVehicleTarget && t('removeVehicleDialog.description', {
+                vehicle: removeVehicleTarget.label,
+                x: removeVehicleTarget.x,
+                y: removeVehicleTarget.y,
+              })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={actionLoading === 'vehicle-remove'}>
+              {t('removeVehicleDialog.cancel')}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={actionLoading === 'vehicle-remove'}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={(e) => {
+                e.preventDefault()
+                const target = removeVehicleTarget
+                if (!target) return
+                setActionLoading('vehicle-remove')
+                panelBridgeApi.sendCommand('removeVehicle', { vehicleId: target.id })
+                  .then(() => {
+                    toast({ title: t('toasts.vehicleRemoved') })
+                    fetchOverlays()
+                  })
+                  .catch((err) => toast({ title: t('toasts.removeFailed'), description: err instanceof Error ? err.message : t('toasts.unknownError'), variant: 'destructive' }))
+                  .finally(() => { setActionLoading(null); setRemoveVehicleTarget(null) })
+              }}
+            >
+              {actionLoading === 'vehicle-remove'
+                ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                : <Trash2 className="w-4 h-4 mr-2" />}
+              {t('removeVehicleDialog.confirm')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
