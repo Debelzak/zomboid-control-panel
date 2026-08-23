@@ -132,3 +132,82 @@ describe("GET /api/chunks/chunks/:saveName and /api/chunks/stats/:saveName", () 
     expect(body.totalSize).toBe(0);
   });
 });
+
+// getMapFolderScan()'s short TTL cache (conv-operator-scale) bridges the gap
+// between /saves and the /chunks+/stats that follows it on the same page
+// mount, since they aren't concurrent and pure in-flight sharing can't help.
+// That TTL is explicitly a BACKSTOP, not the primary correctness mechanism —
+// this pins both halves: the cache really is reused within the window (or
+// /saves+/chunks+/stats gain nothing from it), and delete-chunks/
+// delete-region really do invalidate it immediately rather than leaving a
+// stale chunk count visible after the exact action a user takes to change
+// that count.
+describe("map/ scan caching: TTL backstop + explicit invalidation on delete", () => {
+  let dataRoot;
+  const saveName = "PinnedTestSave";
+
+  function postDeleteChunks(body) {
+    return getHandler("/delete-chunks", "post")(
+      {
+        body: { force: true, createBackup: false, deleteVehicles: false, ...body },
+        app: { get: () => null },
+      },
+      createResponse(),
+    );
+  }
+
+  async function getChunks() {
+    const response = createResponse();
+    await getHandler("/chunks/:saveName")(
+      { params: { saveName }, query: { customPath: dataRoot }, app: { get: () => null } },
+      response,
+    );
+    return response.json.mock.calls[response.json.mock.calls.length - 1][0];
+  }
+
+  beforeEach(() => {
+    getActiveServer.mockReset();
+    getSetting.mockReset();
+    dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), "chunks-scan-ttl-FakeZomboidData-"));
+    buildFixture(dataRoot, saveName);
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    fs.rmSync(dataRoot, { recursive: true, force: true });
+  });
+
+  it("serves a cached scan within the TTL even though a file was deleted directly on disk (simulating a writer this cache can't see, e.g. /wipe or a backup restore), then re-scans once the TTL elapses", async () => {
+    const first = await getChunks();
+    expect(first.totalChunks).toBe(7); // 6 map/ chunks + 1 chunkdata entry
+
+    // A write this module has no way to intercept -- not routed through
+    // delete-chunks/delete-region, so nothing calls invalidateMapFolderScan().
+    fs.rmSync(path.join(dataRoot, "Saves", "Multiplayer", saveName, "map", "0", "0.bin"));
+
+    const withinTtl = await getChunks();
+    expect(withinTtl.totalChunks).toBe(7); // still the cached, now-stale count
+
+    vi.setSystemTime(3001); // MAP_SCAN_TTL_MS is 3000
+    const afterTtl = await getChunks();
+    expect(afterTtl.totalChunks).toBe(6);
+  });
+
+  it("delete-chunks invalidates the cache immediately -- the very next call sees the deletion, even though it lands well inside the TTL window", async () => {
+    const first = await getChunks();
+    expect(first.totalChunks).toBe(7);
+
+    await postDeleteChunks({
+      saveName,
+      customPath: dataRoot,
+      chunks: [{ file: "0/0.bin", x: 0, y: 0 }],
+    });
+
+    // No time has passed (still t=0) -- if the TTL were the only mechanism
+    // this would still return the stale cached 7.
+    const afterDelete = await getChunks();
+    expect(afterDelete.totalChunks).toBe(6);
+  });
+});

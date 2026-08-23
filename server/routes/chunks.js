@@ -1472,6 +1472,11 @@ router.post("/delete-chunks", requirePermission("chunks.manage"), async (req, re
       `Deleted ${deleted} chunks from save ${sanitizedSaveName} (cell aux files removed: ${cellCleanup.removed.length}, vehicles removed: ${vehiclesResult.deleted})`,
     );
 
+    // /saves' and /chunks+/stats' cached scan of this save's map/ folder
+    // (see getMapFolderScan()'s comment) is now stale -- a follow-up load
+    // must not report chunks we just deleted.
+    invalidateMapFolderScan(path.join(savePath, "map"));
+
     res.json({
       success: true,
       deleted,
@@ -1894,6 +1899,11 @@ router.post("/delete-region", requirePermission("chunks.manage"), async (req, re
       `Deleted ${deleted} chunks in region [${minX},${minY}]-[${maxX},${maxY}] from ${sanitizedSaveName} (cell files removed: ${cellCleanup.removed.length}, vehicles: ${vehiclesResult.deleted})`,
     );
 
+    // /saves' and /chunks+/stats' cached scan of this save's map/ folder
+    // (see getMapFolderScan()'s comment) is now stale -- a follow-up load
+    // must not report chunks we just deleted.
+    invalidateMapFolderScan(mapPath);
+
     res.json({
       success: true,
       deleted,
@@ -2187,33 +2197,71 @@ async function getDirStats(dirPath) {
   return { count, size };
 }
 
-// /chunks/:saveName and /stats/:saveName both need to walk map/'s B42
-// {X}/{Y}.bin structure for the SAME save, and the client fires both routes
-// concurrently on every page load (ChunkCleaner.tsx's Promise.allSettled).
-// Without sharing this, EACH one independently walks the same tree -- on a
-// 147,136-file synthetic fixture matching a real operator save, /chunks
-// alone took 6.2s and /stats alone 9.3s (via getDirStats(mapPath)
-// re-statting every file /chunks had just stat'd), 15.3s when both ran
-// concurrently as the client actually calls them. getMapFolderScan()
-// coalesces concurrent callers onto one in-flight walk.
+// /saves, /chunks/:saveName and /stats/:saveName all need to walk map/'s
+// B42 {X}/{Y}.bin structure for the SAME save. /chunks and /stats fire
+// concurrently on every page load (ChunkCleaner.tsx's Promise.allSettled) --
+// on a 147,136-file synthetic fixture matching a real operator save, that
+// pair alone went from 15.3s to ~5.6s once they shared one in-flight walk
+// instead of each doing its own. /saves runs BEFORE that pair, sequentially
+// (the client awaits fetchSaves() to completion before auto-selecting a
+// save and firing /chunks+/stats) -- by the time /chunks+/stats start,
+// /saves' own walk has already resolved and its in-flight entry is gone,
+// so pure in-flight sharing can't bridge that gap. Nothing changes on disk
+// during that gap either: it's the same page mount, no user action has
+// happened yet. Measured full-mount-sequence cost of paying for that
+// second walk anyway: /saves (~5-8s, see commit c67099f) then /chunks+
+// /stats (~5.6s) again, back to back.
 //
-// Deliberately NOT a TTL cache like the B42 discovery cache in mapProxy.js
-// -- kept in the map ONLY while the walk is actually in flight, cleared the
-// instant it resolves. The files here can be mutated by /delete-chunks
-// between one page load and the next; a longer-lived cache would risk
-// serving stale post-delete counts/chunks to a follow-up load. The two
-// concurrent callers this exists for land within the same page load, well
-// inside an in-flight window with no TTL needed.
+// So there are two layers here:
+//  1. In-flight sharing (as before) for genuinely concurrent callers.
+//  2. A SHORT (few-second) TTL cache on top, to bridge the sequential
+//     /saves -> /chunks+/stats gap within one page mount.
+//
+// The TTL is a BACKSTOP, not the primary correctness mechanism -- EXPLICIT
+// invalidation is. Every write this file makes to a save's map/ directory
+// (delete-chunks, delete-region) calls invalidateMapFolderScan() directly,
+// so a chunk count is never stale after an action taken from this app's own
+// chunk-deletion UI, which is the case that actually feeds a destructive
+// decision (delete once, reload, see the old count, delete "again").
+// The TTL exists for writers THIS FILE CANNOT SEE: server.js's /wipe
+// recursively deletes map/ outright, and backupService.js's restoreBackup()
+// extracts a full save over the existing one -- both mutate the same tree
+// from a different module with no path to call into this one or be called
+// back. Kept short deliberately: a stale read in the few seconds after
+// either of those is a narrow accident of timing (the user would have to
+// return to this exact save's chunk view within the TTL window), not a
+// standing risk the way an un-invalidated cache would be.
+const MAP_SCAN_TTL_MS = 3000;
+const _mapScanCache = new Map(); // mapPath -> { result, at }
 const _mapScanInflight = new Map(); // mapPath -> Promise<scan result>
 
 async function getMapFolderScan(mapPath, emitProgress) {
+  const cached = _mapScanCache.get(mapPath);
+  if (cached && Date.now() - cached.at < MAP_SCAN_TTL_MS) {
+    return cached.result;
+  }
   const inflight = _mapScanInflight.get(mapPath);
   if (inflight) return inflight;
-  const promise = scanMapFolder(mapPath, emitProgress).finally(() => {
-    _mapScanInflight.delete(mapPath);
-  });
+  const promise = scanMapFolder(mapPath, emitProgress)
+    .then((result) => {
+      _mapScanCache.set(mapPath, { result, at: Date.now() });
+      return result;
+    })
+    .finally(() => {
+      _mapScanInflight.delete(mapPath);
+    });
   _mapScanInflight.set(mapPath, promise);
   return promise;
+}
+
+// Call after any write THIS FILE makes to a save's map/ directory. Clears
+// only the resolved-and-cached entry -- a walk already in flight was
+// started before this write and will still hand its (pre-write) result to
+// whoever is already awaiting it, but there is nothing safe to cancel
+// mid-walk, and the NEXT call sees a cache miss here and starts fresh once
+// that in-flight walk clears itself.
+function invalidateMapFolderScan(mapPath) {
+  _mapScanCache.delete(mapPath);
 }
 
 // The actual walk, extracted verbatim from the old inline /chunks scan loop
