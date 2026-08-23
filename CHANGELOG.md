@@ -275,9 +275,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Changing a mod setting told you to do something impossible.** Editing a mod setting reported
   "Stop the server before editing configuration" - but the Mod Settings page cannot load with the
   server stopped, so following the instruction left you with no way back in. The panel already had
-  the honest message written for this case and a generic error lookup was burying it. It now tells
-  you the truth: the change is applied to the running game, and it will reset when the server
-  restarts. Making it survive a restart is a separate fix still in progress.
+  the honest message written for this case and a generic error lookup was burying it. **And the
+  change now actually sticks.** The panel was refusing to save the setting to disk while the server
+  ran, on the assumption that Project Zomboid rewrites its configuration on shutdown and would throw
+  the edit away. We tested that against a real Build 42 server instead of assuming it: a clean
+  shutdown does not touch `SandboxVars.lua` or the server `.ini` at all, and the next startup
+  preserves a change written while the server was running. So the refusal was protecting against
+  something that does not happen, on the one setting that could never be saved any other way. Mod
+  settings now apply to the running game and survive a restart.
 
 - **Server Setup could hide the one thing stopping you finishing.** An admin password is required
   before a server can start, and the final button refuses without it - but the field sat inside the
